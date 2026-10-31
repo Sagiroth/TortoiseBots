@@ -109,6 +109,7 @@
 - Onyxia's Deep Breath now shows on the raid map while she breathes: the lane, a casting bar and its 5 s countdown (the breath is cast without a cast bar, so it was not shown before).
 - Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
 - A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
+- New: the boss panel covers Emerald Sanctum: Erennius and Solnius with their casts, Solnius's transform and sleep phases, and the portal adds the panel can list.
 
 ## v1.14.0 (2026-10-28)
 

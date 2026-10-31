@@ -157,6 +157,17 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// Emerald Sanctum: Solnius sleeps on aura 25148 (listed before the hp rule), the transform latches p2, and the
+// phase-1 casts hide in p2 while Acid Breath appears in it.
+const solnius = (REAL.byEntry || REAL.bosses || REAL)["60748"];
+assert.deepStrictEqual(solnius.phases.map((x) => x.rule), ["aura=25148", "hp<90", "start"]);
+assert.strictEqual(B.phaseOf(solnius, { hp: 100, au: [] }).phase, "p1");
+assert.strictEqual(B.phaseOf(solnius, { hp: 85, au: [] }).phase, "p2");
+assert.strictEqual(B.phaseOf(solnius, { hp: 50, au: [{ id: 25148 }] }).phase, "sleep");
+const solP2 = B.model(REAL, { entry: 60748, hp: 85, au: [] }, [], 0, 0);
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 56507).inPhase, false, "Corrosive Bolt is a p1 cast");
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath is a p2 cast");
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
