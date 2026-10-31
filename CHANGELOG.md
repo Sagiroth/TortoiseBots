@@ -87,6 +87,7 @@
 - Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
 
 ### Dashboard
+- New: the run controls (pause, resume, skip, stop, status, start, revive, gear) also show in the Fight debugger, under the raid frames.
 - Fixed: in the Fight debugger the live events list now sits under the map, the checks and the timeline instead of leaving a tall blank band beside the raid frames and the map.
 - Fixed: the live events list is readable: the time in its own column, the text wrapping instead of being cut off, deaths and wipes red and boss casts yellow, a scroll box that keeps your place when new events arrive.
 - Fixed: while a fight is live the Fight debugger no longer scrolls the page back up by itself after you clicked a raid frame, a fight card or a commander tab.

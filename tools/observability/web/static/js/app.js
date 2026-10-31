@@ -7958,12 +7958,17 @@
       setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
       setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
       if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
-      cmdControlAsk(on => {
-        const ctl = card.querySelector('.cmd-controls');
-        if (ctl) ctl.hidden = !on;
-        if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
-      });
     }
+    // The run controls live in .cmd-panels on the Live page; in the debugger they move to the card body, full width under
+    // the raid frames. The fetch runs once per page load; the place runs here too, so a card whose answer has not arrived
+    // yet still moves (hidden) and never flashes in the wrong parent once the answer lands.
+    cmdPlaceControls(card, debug && raid && cmdControlOn);
+    cmdControlAsk(on => {
+      const ctl = card.querySelector('.cmd-controls');
+      if (ctl) ctl.hidden = !on || !raid;
+      if (on && raid) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+      cmdPlaceControls(card, debug && raid && on);
+    });
     const left = card.querySelector('.cmd-left');
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
@@ -8036,6 +8041,15 @@
     if (!live || !body) return;
     if (debug) { if (live.parentElement !== body) body.appendChild(live); }
     else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
+  }
+  // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
+  // raid frames); on the Live page they sit back in .cmd-panels with the notes, threat and deaths.
+  function cmdPlaceControls(card, inDebug) {
+    const ctl = card.querySelector('.cmd-controls'), body = card.querySelector('.cmd-body');
+    if (!ctl || !body) return;
+    const home = card.querySelector('.cmd-panels');
+    if (inDebug) { if (ctl.parentElement !== body) body.insertBefore(ctl, card.querySelector('.fd-bosses')); }
+    else if (home && ctl.parentElement !== home) home.appendChild(ctl);
   }
 
   function ensureFightMount(card) {

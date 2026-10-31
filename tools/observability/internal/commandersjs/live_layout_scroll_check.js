@@ -16,15 +16,18 @@ const src = fs.readFileSync(process.argv[3], "utf8");
 const body = css.match(/\.cmd-card\.fd-on \.cmd-body \{([^}]*)\}/);
 assert.ok(body, "the debugger's card body rule exists");
 assert.ok(/"rail centre roles"\s*"rail live roles"/.test(body[1]), "live sits under the centre column, between rail and roles");
+assert.ok(/"frames frames frames"\s*"controls controls controls"/.test(body[1]), "controls sit under the raid frames, full width");
 const rowsDecl = body[1].match(/grid-template-rows:\s*([^;]*);/);
 assert.ok(rowsDecl, "the body states its rows");
 const tracks = rowsDecl[1].trim().split(/\s+/);
-assert.deepStrictEqual(tracks, ["auto", "auto", "auto", "auto", "auto", "1fr"],
-  "six tracks for the six area rows, only the closing one flexible (a 1fr that is not last, or fewer tracks than rows, brings the stretch back)");
-assert.strictEqual(body[1].match(/"[^"]*"/g).length, tracks.length, "one track per area row (run, frames, bosses, centre, live, filler)");
+assert.deepStrictEqual(tracks, ["auto", "auto", "auto", "auto", "auto", "auto", "1fr"],
+  "seven tracks for the seven area rows, only the closing one flexible (a 1fr that is not last, or fewer tracks than rows, brings the stretch back)");
+assert.strictEqual(body[1].match(/"[^"]*"/g).length, tracks.length, "one track per area row (run, frames, controls, bosses, centre, live, filler)");
 assert.ok(/\.cmd-card\.fd-on \.cmd-live \{[^}]*grid-area:\s*live/.test(css), "the strip has the live grid area in debug mode");
+assert.ok(/\.cmd-card\.fd-on \.cmd-controls \{[^}]*grid-area:\s*controls/.test(css), "the controls panel has the controls grid area in debug mode");
 const phone = css.slice(css.indexOf("@media (max-width: 760px) {\n  .cmd-card.fd-on .cmd-body"));
 assert.ok(/"centre" "live" "roles"/.test(phone.slice(0, 400)), "on a phone the strip follows the map column");
+assert.ok(/"frames" "controls" "bosses"/.test(phone.slice(0, 400)), "on a phone the controls follow the raid frames");
 const rows = css.match(/\.cmd-live-events \{([^}]*)\}/)[1];
 assert.ok(/max-height:\s*260px/.test(rows) && /overflow-y:\s*auto/.test(rows), "the strip is bounded and scrolls on its own");
 assert.ok(/font-size:\s*0\.82rem/.test(rows) && /line-height:\s*1\.35/.test(rows), "0.82rem text at line-height 1.35");
