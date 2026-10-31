@@ -4210,7 +4210,7 @@
         }
       ],
       "notes": [
-        "One shared 30 s timer casts Magic Reflection 20619 or Damage Reflection 21075 at random (`rand() % 2`); the teleport's first window is 10000 + rand() % 20000 and its repeat 20000 + rand() % 10000; the Ragnaros event spells 19774 / 20568 / 19773 are gossip-event casts."
+        "One shared 30 s timer casts Magic Reflection 20619 or Damage Reflection 21075 at random (`rand() % 2`); Teleport 20618 runs on two independent timers (one on his current victim and one on a random other attacker); each fires first at 10000 + rand() % 20000 and then every 20000 + rand() % 10000; every teleport resets his threat (DoResetThreat); the Ragnaros event spells 19774 / 20568 / 19773 are gossip-event casts."
       ]
     },
     "11502": {
@@ -4815,7 +4815,7 @@
         }
       ],
       "notes": [
-        "Rune of Detonation and Rune of Combustion alternate on one shared 20 s timer, Detonation first (boss_thane.cpp:86, 205-223); Rune of Power 52724/52729 is recast at 75, 50 and 25 percent and its zones are refreshed every 2 s for 7 s; the image casts Arcane Rupture and Arcane Barrage itself."
+        "Rune of Detonation and Rune of Combustion alternate on one shared 20 s timer, Detonation first (boss_thane.cpp:86, 205-223); Rune of Power 52724/52729 is recast at 75, 50 and 25 percent and its zones are first extended 7 s after the cast and then every 2 s for as long as the fight lasts (DynamicObject::Delay); the image casts Arcane Rupture and Arcane Barrage itself."
       ]
     }
   },
