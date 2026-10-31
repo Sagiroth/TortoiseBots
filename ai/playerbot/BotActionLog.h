@@ -38,6 +38,13 @@ public:
     // that was never opened.
     static void Close(PlayerbotAI* ai);
 
+    // Close every open file (config turned off, shutdown). World thread.
+    static void CloseAll();
+
+    // Guid-keyed close for logout/shutdown, where the Player object is
+    // already gone but the low guid was recorded at login.
+    static void Close(uint32 botGuidLow);
+
     // Get the open handle for this bot, or null if not open. Cheap.
     static std::FILE* GetHandle(PlayerbotAI* ai);
 

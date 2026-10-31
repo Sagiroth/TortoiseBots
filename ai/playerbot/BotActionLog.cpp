@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <mutex>
+#include <vector>
 #include <sstream>
 #include <sys/stat.h>
 
@@ -292,8 +293,12 @@ void BotActionLog::Close(PlayerbotAI* ai)
     if (!ai) return;
     Player* bot = ai->GetBot();
     if (!bot) return;
+    Close(bot->GetGUIDLow());
+    SC_LOG("BotActionLog closed bot=%s", bot->GetName());
+}
 
-    uint32 guid = bot->GetGUIDLow();
+void BotActionLog::Close(uint32 guid)
+{
     std::FILE* handle = nullptr;
     {
         std::lock_guard<std::mutex> g(sFilesMutex);
@@ -309,7 +314,25 @@ void BotActionLog::Close(PlayerbotAI* ai)
         fflush(handle);
         fclose(handle);
     }
-    SC_LOG("BotActionLog closed bot=%s", bot->GetName());
+}
+
+void BotActionLog::CloseAll()
+{
+    std::vector<std::FILE*> handles;
+    {
+        std::lock_guard<std::mutex> g(sFilesMutex);
+        sScope.clear();
+        for (auto& kv : sFiles)
+            if (kv.second.file)
+                handles.push_back(kv.second.file);
+        sFiles.clear();
+    }
+    for (std::FILE* handle : handles)
+    {
+        fprintf(handle, "# end-of-log (CloseAll called)\n");
+        fflush(handle);
+        fclose(handle);
+    }
 }
 
 std::FILE* BotActionLog::GetHandle(PlayerbotAI* ai)
@@ -630,6 +653,17 @@ void BotActionLog::Maintain()
 {
     static bool everSwept = false;
     static int64 lastSweepSec = 0;
+    static bool wasEnabled = false;
+    static ActionLogScope lastScope = ActionLogScope::Commanded;
+    static bool haveLastScope = false;
+
+    bool const enabled = ai::botdiag::IsActionLogEnabled();
+    ActionLogScope const scope = sPlayerbotAIConfig.actionLogScope;
+    if (ActionLogNeedsCloseAll(wasEnabled, enabled, lastScope, scope, haveLastScope))
+        CloseAll();
+    wasEnabled = enabled;
+    lastScope = scope;
+    haveLastScope = true;
 
     int64 const nowSec = static_cast<int64>(std::time(nullptr));
     if (!ActionLogSweepDue(everSwept, nowSec - lastSweepSec, sWrittenSinceSweep.load(),

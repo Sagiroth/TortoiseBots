@@ -23,6 +23,7 @@
 #include "../commands/BotCommands.h"
 #include "../commands/BotCommandHandlers.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/BotActionLog.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
 #include "Log.h"
@@ -268,6 +269,7 @@ void BotHostAdapter::OnShutdown()
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
     BotPacketAdapter::ClearDeferredPackets();
+    ai::botdiag::BotActionLog::CloseAll();
     BotManager::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
     BotActivityLeaseManager::Instance().Clear();

@@ -3,6 +3,7 @@
 #include "BotManager.h"
 #include "PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/BotActionLog.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "ByteBuffer.h"
@@ -13,7 +14,11 @@
 
 namespace TortoiseBots {
 
-PlayerbotAIAdapter::PlayerbotAIAdapter(Player* bot, Player* master) : bot_(bot), master_(master) {}
+PlayerbotAIAdapter::PlayerbotAIAdapter(Player* bot, Player* master) : bot_(bot), master_(master)
+{
+    if (bot_)
+        botGuidLow_ = bot_->GetObjectGuid().GetCounter(); // pi-lens-ignore: clang:all
+}
 
 PlayerbotAIAdapter::~PlayerbotAIAdapter()
 {
@@ -121,6 +126,8 @@ void PlayerbotAIAdapter::DetachMaster()
 
 void PlayerbotAIAdapter::Shutdown()
 {
+    if (botGuidLow_)
+        ai::botdiag::BotActionLog::Close(botGuidLow_);
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_); // pi-lens-ignore: clang:all
     delete ai_; ai_ = nullptr; // pi-lens-ignore: clang:all
     initialized_ = false;
