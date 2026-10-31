@@ -106,6 +106,7 @@
 - New: Lower Karazhan Halls boss data: the five entries' abilities, timers, phases and adds (Brood Queen Araxxna, Lord Blackwald II, Grizikil, Clawlord Howlfang and Moroes).
 - New: the dashboard's boss data now covers Timbermaw Hold (map 819), with its eight bosses, what each one casts or summons, its notes and its adds. The core has no Timbermaw script, so every timer is blank and the notes say where each spell comes from.
 - New: the boss panel knows the ten Blackrock Depths and seven Lower Blackrock Spire bosses: their abilities with cast windows and targets, the cones and areas they hit, every add each one brings, and a note where the fight has a trick the panel cannot show.
+- New: the boss panel now knows Zul'Farrak and Sunken Temple, all 15 bosses with their abilities, timers, adds and notes.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
 - The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
 - Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.
