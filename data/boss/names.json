@@ -52,6 +52,10 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "5568": {
+      "name": "Trample",
+      "castMs": 0
+    },
     "6524": {
       "name": "Ground Tremor",
       "castMs": 0
@@ -80,6 +84,14 @@
       "name": "Heal Brother",
       "castMs": 0
     },
+    "7645": {
+      "name": "Dominate Mind",
+      "castMs": 0
+    },
+    "7948": {
+      "name": "Wild Regeneration",
+      "castMs": 0
+    },
     "8195": {
       "name": "Teleport",
       "castMs": 0
@@ -102,6 +114,10 @@
     },
     "8600": {
       "name": "Fevered Plague",
+      "castMs": 0
+    },
+    "8876": {
+      "name": "Thrash",
       "castMs": 0
     },
     "9613": {
@@ -232,6 +248,10 @@
       "name": "Rain of Fire",
       "castMs": 0
     },
+    "12024": {
+      "name": "Net",
+      "castMs": 0
+    },
     "12039": {
       "name": "Heal",
       "castMs": 0
@@ -288,6 +308,10 @@
       "name": "Curse of Weakness",
       "castMs": 0
     },
+    "12742": {
+      "name": "Immolate",
+      "castMs": 0
+    },
     "12882": {
       "name": "Wing Flap",
       "castMs": 0
@@ -302,6 +326,10 @@
     },
     "12890": {
       "name": "Deep Slumber",
+      "castMs": 0
+    },
+    "13338": {
+      "name": "Curse of Tongues",
       "castMs": 0
     },
     "13446": {
@@ -322,6 +350,14 @@
     },
     "13736": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "13745": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "13748": {
+      "name": "Arcane Bolt",
       "castMs": 0
     },
     "13880": {
@@ -364,8 +400,28 @@
       "name": "Remorseless Attacks",
       "castMs": 0
     },
+    "14145": {
+      "name": "Fire Blast",
+      "castMs": 0
+    },
+    "14443": {
+      "name": "Multi-Shot",
+      "castMs": 0
+    },
+    "14516": {
+      "name": "Strike",
+      "castMs": 0
+    },
     "14744": {
       "name": "Burning Spirit",
+      "castMs": 0
+    },
+    "15228": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "15234": {
+      "name": "Lightning Bolt",
       "castMs": 0
     },
     "15245": {
@@ -378,6 +434,10 @@
     },
     "15305": {
       "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "15331": {
+      "name": "Shadow Weaving",
       "castMs": 0
     },
     "15346": {
@@ -410,6 +470,14 @@
     },
     "15572": {
       "name": "Sunder Armor",
+      "castMs": 0
+    },
+    "15577": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15581": {
+      "name": "Sinister Strike",
       "castMs": 0
     },
     "15582": {
@@ -452,12 +520,24 @@
       "name": "Mortal Strike",
       "castMs": 0
     },
+    "15749": {
+      "name": "Shield Charge",
+      "castMs": 0
+    },
     "15754": {
       "name": "Cleave",
       "castMs": 0
     },
     "15847": {
       "name": "Tail Sweep",
+      "castMs": 0
+    },
+    "15982": {
+      "name": "Healing Wave",
+      "castMs": 0
+    },
+    "16046": {
+      "name": "Blast Wave",
       "castMs": 0
     },
     "16075": {
@@ -484,12 +564,20 @@
       "name": "Infected Bite",
       "castMs": 0
     },
+    "16170": {
+      "name": "Bloodlust",
+      "castMs": 0
+    },
     "16171": {
       "name": "Empower Will",
       "castMs": 0
     },
     "16245": {
       "name": "Freeze Anim",
+      "castMs": 0
+    },
+    "16247": {
+      "name": "Curse of Thorns",
       "castMs": 0
     },
     "16350": {
@@ -532,6 +620,14 @@
       "name": "Hex",
       "castMs": 0
     },
+    "16727": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "16740": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
     "16785": {
       "name": "Flamebreak",
       "castMs": 0
@@ -556,8 +652,36 @@
       "name": "Hover",
       "castMs": 0
     },
+    "17139": {
+      "name": "Power Word: Shield",
+      "castMs": 0
+    },
+    "17146": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "17156": {
+      "name": "Maul",
+      "castMs": 0
+    },
     "17172": {
       "name": "Hex",
+      "castMs": 0
+    },
+    "17194": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "17228": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "17287": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "17290": {
+      "name": "Fireball",
       "castMs": 0
     },
     "17492": {
@@ -614,6 +738,10 @@
     },
     "19272": {
       "name": "Lava Breath",
+      "castMs": 0
+    },
+    "19319": {
+      "name": "Vicious Bite",
       "castMs": 0
     },
     "19408": {
@@ -784,6 +912,10 @@
       "name": "Creeping Plague",
       "castMs": 0
     },
+    "20537": {
+      "name": "Counterspell",
+      "castMs": 0
+    },
     "20553": {
       "name": "Golemagg's Trust",
       "castMs": 0
@@ -824,8 +956,20 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "20735": {
+      "name": "Multi-Shot",
+      "castMs": 0
+    },
+    "20989": {
+      "name": "Sleep",
+      "castMs": 0
+    },
     "21049": {
       "name": "Bloodlust",
+      "castMs": 0
+    },
+    "21060": {
+      "name": "Blind",
       "castMs": 0
     },
     "21075": {
@@ -842,6 +986,10 @@
     },
     "21387": {
       "name": "Melt Weapon",
+      "castMs": 0
+    },
+    "22128": {
+      "name": "Thorns",
       "castMs": 0
     },
     "22277": {
@@ -868,12 +1016,48 @@
       "name": "Slow",
       "castMs": 0
     },
+    "22419": {
+      "name": "Riptide",
+      "castMs": 0
+    },
+    "22420": {
+      "name": "Submersion",
+      "castMs": 0
+    },
+    "22421": {
+      "name": "Massive Geyser",
+      "castMs": 0
+    },
+    "22424": {
+      "name": "Blast Wave",
+      "castMs": 0
+    },
     "22425": {
       "name": "Fireball Volley",
       "castMs": 0
     },
+    "22478": {
+      "name": "Intense Pain",
+      "castMs": 0
+    },
     "22539": {
       "name": "Shadow Flame",
+      "castMs": 0
+    },
+    "22651": {
+      "name": "Sacrifice",
+      "castMs": 0
+    },
+    "22660": {
+      "name": "Dire Wolf Form",
+      "castMs": 0
+    },
+    "22661": {
+      "name": "Enervate",
+      "castMs": 0
+    },
+    "22662": {
+      "name": "Wither",
       "castMs": 0
     },
     "22663": {
@@ -912,16 +1096,116 @@
       "name": "Veil of Shadow",
       "castMs": 0
     },
+    "22688": {
+      "name": "Tree Form",
+      "castMs": 0
+    },
+    "22689": {
+      "name": "Mangle",
+      "castMs": 0
+    },
+    "22691": {
+      "name": "Disarm",
+      "castMs": 0
+    },
+    "22709": {
+      "name": "Void Bolt",
+      "castMs": 0
+    },
+    "22710": {
+      "name": "Enlarge",
+      "castMs": 0
+    },
+    "22713": {
+      "name": "Flame Buffet",
+      "castMs": 0
+    },
+    "22714": {
+      "name": "Summon Hydroling",
+      "castMs": 0
+    },
+    "22833": {
+      "name": "Booze Spit",
+      "castMs": 0
+    },
+    "22835": {
+      "name": "Drunken Rage",
+      "castMs": 0
+    },
+    "22857": {
+      "name": "Retaliation",
+      "castMs": 0
+    },
     "22859": {
       "name": "Mortal Cleave",
+      "castMs": 0
+    },
+    "22883": {
+      "name": "Heal",
+      "castMs": 0
+    },
+    "22884": {
+      "name": "Psychic Scream",
+      "castMs": 0
+    },
+    "22886": {
+      "name": "Berserker Charge",
+      "castMs": 0
+    },
+    "22908": {
+      "name": "Volley",
+      "castMs": 0
+    },
+    "22910": {
+      "name": "Immolation Trap",
       "castMs": 0
     },
     "22911": {
       "name": "Charge",
       "castMs": 0
     },
+    "22914": {
+      "name": "Concussive Shot",
+      "castMs": 0
+    },
+    "22916": {
+      "name": "Uppercut",
+      "castMs": 0
+    },
+    "22917": {
+      "name": "Shadowform",
+      "castMs": 0
+    },
+    "22919": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
+    "22920": {
+      "name": "Arcane Blast",
+      "castMs": 0
+    },
+    "22924": {
+      "name": "Grasping Vines",
+      "castMs": 0
+    },
+    "22939": {
+      "name": "Summon Mana Bursts",
+      "castMs": 0
+    },
+    "22940": {
+      "name": "Arcane Blast",
+      "castMs": 0
+    },
     "22992": {
       "name": "Shadow Flame",
+      "castMs": 0
+    },
+    "22994": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "22995": {
+      "name": "Summon",
       "castMs": 0
     },
     "23023": {
@@ -962,6 +1246,10 @@
     },
     "23187": {
       "name": "Frost Burn",
+      "castMs": 0
+    },
+    "23224": {
+      "name": "Veil of Shadow",
       "castMs": 0
     },
     "23308": {
@@ -1536,6 +1824,18 @@
       "name": "Reflection",
       "castMs": 0
     },
+    "27636": {
+      "name": "Starshards",
+      "castMs": 0
+    },
+    "27637": {
+      "name": "Regrowth",
+      "castMs": 0
+    },
+    "27639": {
+      "name": "Call Pet",
+      "castMs": 0
+    },
     "27680": {
       "name": "Berserk",
       "castMs": 0
@@ -1912,6 +2212,10 @@
       "name": "Terrifying Roar",
       "castMs": 0
     },
+    "29849": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
     "29865": {
       "name": "Poison Aura",
       "castMs": 0
@@ -2269,7 +2573,7 @@
       "castMs": 0
     },
     "51224": {
-      "name": "Knight\u2019s Glory",
+      "name": "Knight’s Glory",
       "castMs": 0
     },
     "51225": {
@@ -2289,7 +2593,7 @@
       "castMs": 0
     },
     "51229": {
-      "name": "King\u2019s Fury",
+      "name": "King’s Fury",
       "castMs": 0
     },
     "51230": {
@@ -2758,6 +3062,45 @@
     "11382": {
       "name": "Bloodlord Mandokir"
     },
+    "11450": {
+      "name": "Gordok Reaver"
+    },
+    "11459": {
+      "name": "Ironbark Protector"
+    },
+    "11460": {
+      "name": "Alzzin's Minion"
+    },
+    "11467": {
+      "name": "Tsu'zee"
+    },
+    "11484": {
+      "name": "Residual Monstrosity"
+    },
+    "11486": {
+      "name": "Prince Tortheldrin"
+    },
+    "11487": {
+      "name": "Magister Kalendris"
+    },
+    "11488": {
+      "name": "Illyanna Ravenoak"
+    },
+    "11489": {
+      "name": "Tendris Warpwood"
+    },
+    "11490": {
+      "name": "Zevrim Thornhoof"
+    },
+    "11492": {
+      "name": "Alzzin the Wildshaper"
+    },
+    "11496": {
+      "name": "Immol'thar"
+    },
+    "11501": {
+      "name": "King Gordok"
+    },
     "11502": {
       "name": "Ragnaros"
     },
@@ -2854,8 +3197,17 @@
     "13148": {
       "name": "Flame of Ragnaros"
     },
+    "13276": {
+      "name": "Wildspawn Imp"
+    },
+    "13280": {
+      "name": "Hydrospawn"
+    },
     "14020": {
       "name": "Chromaggus"
+    },
+    "14122": {
+      "name": "Massive Geyser"
     },
     "14261": {
       "name": "Blue Drakonid"
@@ -2875,11 +3227,56 @@
     "14302": {
       "name": "Chromatic Drakonid"
     },
+    "14308": {
+      "name": "Ferra"
+    },
+    "14321": {
+      "name": "Guard Fengus"
+    },
+    "14322": {
+      "name": "Stomper Kreeg"
+    },
+    "14323": {
+      "name": "Guard Slip'kik"
+    },
+    "14324": {
+      "name": "Cho'Rush the Observer"
+    },
+    "14325": {
+      "name": "Captain Kromcrush"
+    },
+    "14326": {
+      "name": "Guard Mol'dar"
+    },
+    "14327": {
+      "name": "Lethtendris"
+    },
+    "14349": {
+      "name": "Pimgib"
+    },
+    "14350": {
+      "name": "Hydroling"
+    },
+    "14354": {
+      "name": "Pusillin"
+    },
+    "14396": {
+      "name": "Eye of Immol'thar"
+    },
+    "14397": {
+      "name": "Mana Burst"
+    },
     "14453": {
       "name": "Orb of Domination"
     },
     "14456": {
       "name": "Blackwing Guardsman"
+    },
+    "14502": {
+      "name": "Xorothian Dreadsteed"
+    },
+    "14506": {
+      "name": "Lord Hel'nurath"
     },
     "14507": {
       "name": "High Priest Venoxis"
@@ -2916,6 +3313,9 @@
     },
     "14668": {
       "name": "Corrupted Infernal"
+    },
+    "14690": {
+      "name": "Revanchion"
     },
     "14826": {
       "name": "Sacrificed Troll"
@@ -3147,6 +3547,12 @@
     },
     "16073": {
       "name": "Spirit of Lord Valthalak"
+    },
+    "16097": {
+      "name": "Isalien"
+    },
+    "16098": {
+      "name": "Empyrean"
     },
     "16124": {
       "name": "Unrelenting Trainee"

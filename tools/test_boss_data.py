@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 173)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 815)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2720,6 +2720,258 @@ class DungeonTrollValueTest(unittest.TestCase):
                     self.assertEqual(boss["phases"], [], boss["name"])
                 for ability in boss["abilities"]:
                     self.assertEqual(ability["castMs"], 0, ability["name"])
+
+
+class DungeonDireMaulValueTest(unittest.TestCase):
+    """Pins every Dire Maul row read off the core sources.
+
+    The fixture is written from the scripts, EventAI rows, creature_spells and
+    spell_template, not generated from the CSV. Script timers are ms literals;
+    EventAI timers are ms; a creature_spells list stores seconds in a one-line
+    dump, so its a/b/c are 0 and the windows are in the notes. Alzzin's three
+    forms are the only phase rules: his normal, wolf (22660) and tree (22688)
+    auras are exclusive and each ability runs in one form.
+    """
+
+    ABILITIES = {
+        (11490, 22478): ('0', '20000', '26000', 't=aoe;aura;int;ok.interrupt=nokick'),
+        (11490, 22651): ('0', '15000', '18000', 't=random;int;aura;ok.dispel=nodispel'),
+        (13280, 22419): ('0', '10000', '20000', 't=aoe;aura'),
+        (13280, 22420): ('0', '0', '0', 't=aoe;aura'),
+        (13280, 22421): ('0', '0', '0', 't=random;int;summon=14122'),
+        (13280, 22714): ('0', '0', '0', 't=self;summon=14350;hp75'),
+        (14327, 13338): ('0', '0', '0', 't=random;aura'),
+        (14327, 16247): ('0', '0', '0', 't=victim;int;aura'),
+        (14327, 17228): ('0', '0', '0', 't=aoe;ok=heal'),
+        (14327, 12742): ('0', '0', '0', 't=random;int;aura'),
+        (14327, 22709): ('0', '0', '0', 't=victim;int'),
+        (11492, 22660): ('0', '0', '0', 't=self;self;ok=phase'),
+        (11492, 22688): ('0', '0', '0', 't=self;self;ok=phase'),
+        (11492, 22128): ('0', '0', '0', 'p=normal;t=self;self'),
+        (11492, 22662): ('0', '0', '0', 'p=normal;t=victim;int;aura'),
+        (11492, 22661): ('0', '0', '0', 'p=normal;t=random;int;aura'),
+        (11492, 22689): ('0', '0', '0', 'p=wolf;t=victim;aura;ok.dispel=nodispel'),
+        (11492, 19319): ('0', '0', '0', 'p=wolf;t=victim;ok=tank'),
+        (11492, 10101): ('0', '0', '0', 'p=tree;t=victim;ok=heal'),
+        (11492, 22691): ('0', '0', '0', 'p=tree;t=victim;aura;ok.dispel=nodispel'),
+        (11492, 7948): ('0', '0', '0', 'p=tree;t=self;self;int;hp50'),
+        (14326, 15749): ('500', '12000', '16000', 't=random;ok=heal'),
+        (14326, 11972): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14326, 14516): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14326, 10101): ('0', '20000', '30000', 't=victim;ok=heal'),
+        (14326, 8269): ('0', '0', '0', 't=self;self;hp50;ok.purge=nopurge'),
+        (14323, 15749): ('500', '12000', '16000', 't=random;ok=heal'),
+        (14323, 11972): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14323, 14516): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14323, 10101): ('0', '20000', '30000', 't=victim;ok=heal'),
+        (14323, 8269): ('0', '0', '0', 't=self;self;hp50;ok.purge=nopurge'),
+        (14321, 15749): ('500', '12000', '16000', 't=random;ok=heal'),
+        (14321, 11972): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14321, 14516): ('0', '10000', '15000', 't=victim;ok=tank'),
+        (14321, 10101): ('0', '20000', '30000', 't=victim;ok=heal'),
+        (14321, 8269): ('0', '0', '0', 't=self;self;hp50;ok.purge=nopurge'),
+        (14325, 22859): ('0', '15000', '20000', 't=victim;aura;ok.dispel=nodispel'),
+        (14325, 19134): ('10000', '30000', '35000', 't=aoe;aura;ok.dispel=nodispel'),
+        (14325, 22857): ('0', '0', '0', 't=self;self;hp25;ok.purge=nopurge'),
+        (11501, 15572): ('0', '0', '0', 't=victim;aura;ok.dispel=nodispel'),
+        (11501, 15708): ('0', '12000', '20000', 't=victim;aura;ok.dispel=nodispel'),
+        (11501, 16727): ('0', '20000', '30000', 't=aoe;aura;ok.dispel=nodispel'),
+        (11501, 22886): ('0', '25000', '30000', 't=random;ok=heal'),
+        (14324, 17290): ('0', '0', '0', 't=victim;int'),
+        (14324, 16170): ('0', '10000', '20000', 't=ally;self'),
+        (14324, 13745): ('0', '0', '0', 't=aoe;int'),
+        (14324, 15331): ('0', '20000', '30000', 't=self;ok=script'),
+        (14324, 8376): ('0', '20000', '30000', 't=self;summon=6066;int;ok.interrupt=nokick'),
+        (14324, 15982): ('0', '10000', '15000', 't=ally;int'),
+        (14324, 15234): ('0', '0', '0', 't=victim;int'),
+        (14324, 15305): ('0', '15000', '25000', 't=victim;int'),
+        (14324, 22883): ('0', '10000', '15000', 't=ally;int'),
+        (14324, 17194): ('0', '0', '0', 't=victim;int'),
+        (14324, 17139): ('0', '17000', '22000', 't=ally;self'),
+        (14324, 22884): ('0', '15000', '20000', 't=aoe;aura;ok.dispel=nodispel'),
+        (11489, 5568): ('0', '9000', '14000', 't=aoe;ok=heal'),
+        (11489, 22916): ('0', '12000', '15000', 't=victim;ok=heal'),
+        (11489, 22924): ('0', '17000', '22000', 't=aoe;aura;int;ok.interrupt=nokick'),
+        (11489, 8269): ('0', '0', '0', 't=self;self;hp30;ok.purge=nopurge'),
+        (11489, 22994): ('0', '0', '0', 't=victim;aura;ok.dispel=nodispel'),
+        (11488, 22908): ('0', '0', '0', 't=aoe;ground'),
+        (11488, 22914): ('0', '0', '0', 't=aoe;aura;int;ok.interrupt=nokick'),
+        (11488, 22910): ('0', '0', '0', 't=self;ok=script'),
+        (11488, 20735): ('0', '6000', '9000', 't=random;ok=heal'),
+        (11487, 17146): ('0', '9000', '11000', 't=victim;aura'),
+        (11487, 22919): ('0', '18000', '23000', 't=victim;int;aura;ok.dispel=nodispel'),
+        (11487, 17287): ('0', '0', '0', 't=victim;int'),
+        (11487, 7645): ('0', '25000', '35000', 't=random;int;aura'),
+        (11487, 22917): ('0', '0', '0', 't=self;self;hp50;ok.purge=nopurge'),
+        (11496, 5568): ('0', '9000', '14000', 't=aoe;ok=heal'),
+        (11496, 16128): ('0', '8000', '12000', 't=victim;aura'),
+        (11496, 8269): ('50000', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (11486, 22920): ('0', '10000', '15000', 't=victim;ok=heal'),
+        (11486, 20537): ('0', '25000', '30000', 't=random'),
+        (11486, 22995): ('0', '13000', '20000', 't=victim;ok=script'),
+        (11486, 15589): ('0', '10000', '20000', 't=aoe;ok=heal'),
+        (11486, 8876): ('0', '0', '0', 't=victim;ok=tank'),
+        (14690, 29849): ('0', '0', '0', 't=aoe;aura'),
+        (14690, 15245): ('0', '0', '0', 't=aoe;int'),
+        (14354, 15228): ('0', '0', '0', 't=victim;int'),
+        (14354, 14145): ('0', '0', '0', 't=victim;ok=heal'),
+        (14354, 22424): ('0', '0', '0', 't=aoe;aura;ok.dispel=nodispel'),
+        (14308, 22911): ('0', '6000', '10000', 't=victim;ok=heal'),
+        (14308, 17156): ('0', '15000', '20000', 't=victim;ok=tank'),
+        (14506, 17146): ('28000', '10000', '30000', 't=victim;aura'),
+        (14506, 23224): ('16000', '20000', '85000', 't=victim;int;aura'),
+        (14506, 20989): ('21000', '15000', '36000', 't=random;aura'),
+        (14506, 18670): ('20000', '6000', '10000', 't=victim;ok=heal'),
+        (14502, 16636): ('8000', '10000', '18000', 't=random;ok=heal'),
+        (14502, 22713): ('10000', '7000', '12000', 't=victim;aura'),
+        (16097, 12024): ('0', '0', '0', 't=random;aura;ok.dispel=nodispel'),
+        (16097, 27636): ('0', '0', '0', 't=victim;int;aura;ok.dispel=nodispel'),
+        (16097, 27637): ('0', '0', '0', 't=ally;int'),
+        (16097, 14443): ('0', '0', '0', 't=victim;ok=heal'),
+        (16097, 27639): ('0', '0', '0', 't=self;summon=16098;hp90'),
+        (11467, 15581): ('0', '0', '0', 't=victim;ok=tank'),
+        (11467, 12540): ('0', '0', '0', 't=random;aura;ok.dispel=nodispel'),
+        (11467, 21060): ('0', '0', '0', 't=random;aura;ok.dispel=nodispel'),
+        (14349, 22710): ('0', '0', '0', 't=ally;int;ok.interrupt=nokick'),
+        (14349, 22713): ('0', '0', '0', 't=victim;aura'),
+        (14349, 16046): ('0', '0', '0', 't=aoe;aura;ok.dispel=nodispel'),
+        (14349, 15228): ('0', '0', '0', 't=victim;int'),
+        (14322, 15577): ('0', '0', '0', 't=aoe;ok=heal'),
+        (14322, 22833): ('0', '0', '0', 't=aoe;cone;aura;ok.dispel=nodispel'),
+        (14322, 16740): ('0', '0', '0', 't=aoe;ok=heal'),
+        (14322, 8269): ('0', '0', '0', 't=self;self;hp30;ok.purge=nopurge'),
+        (14322, 22835): ('0', '0', '0', 't=self;self;hp15;ok.purge=nopurge'),
+        (11484, 13748): ('0', '2400', '3800', 't=victim;int'),
+        (11484, 22940): ('0', '3800', '5200', 't=aoe;ok=heal'),
+        (11484, 22939): ('0', '0', '0', 't=self;summon=14397'),
+    }
+
+    PHASES = [
+        (11492, 'tree', 'aura=22688', 1),
+        (11492, 'wolf', 'aura=22660', 2),
+        (11492, 'normal', 'start', 3),
+    ]
+
+    ADDS = [
+        (13280, 14350, 'summon', 1),
+        (13280, 14122, 'trigger', 0),
+        (11492, 11460, 'summon', 0),
+        (14325, 11450, 'summon', 1),
+        (11501, 14324, 'linked', 1),
+        (14324, 6066, 'totem', 1),
+        (11489, 11459, 'linked', 1),
+        (11496, 14396, 'summon', 1),
+        (14354, 13276, 'summon', 0),
+        (16097, 16098, 'summon', 1),
+        (11484, 14397, 'summon', 0),
+    ]
+
+    BOSSES = [11467, 11484, 11486, 11487, 11488, 11489, 11490, 11492, 11496, 11501, 13280, 14308, 14321, 14322, 14323, 14324, 14325, 14326, 14327, 14349, 14354, 14502, 14506, 14690, 16097]
+
+    def setUp(self):
+        all_rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        self.rows = [r for r in all_rows if r["map"] == "dire_maul"]
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        self.doc = boss_data.build_document(all_rows, names)
+
+    def test_expected_boss_set(self):
+        # The plan's 14 bosses plus Cho'Rush; the extras the completeness rule adds:
+        # Pusillin, Ferra, Isalien, Tsu'zee, Pimgib, Stomper Kreeg, Residual Monstrosity,
+        # Lord Hel'nurath, Xorothian Dreadsteed and the event-only Revanchion.
+        self.assertEqual(sorted(int(e) for e in self.doc["bosses"] if self.doc["bosses"][e]["map"] == "dire_maul"), self.BOSSES)
+
+    def test_abilities_match_source(self):
+        got = {}
+        for row in self.rows:
+            if row["row"] == "ability":
+                got[(int(row["boss"]), int(row["key"]))] = (row["a"], row["b"], row["c"], row["d"])
+        self.assertEqual(got, self.ABILITIES)
+        for boss in self.doc["bosses"].values():
+            if boss["map"] == "dire_maul":
+                for ability in boss["abilities"]:
+                    self.assertEqual(ability["castMs"], 0, ability["name"])
+
+    def test_phases_and_adds(self):
+        phases = [(int(r["boss"]), r["key"], r["a"], int(r["b"])) for r in self.rows if r["row"] == "phase"]
+        self.assertEqual(phases, self.PHASES)
+        adds = [(int(r["boss"]), int(r["key"]), r["a"], int(r["b"])) for r in self.rows if r["row"] == "add"]
+        self.assertEqual(adds, self.ADDS)
+        for boss in self.doc["bosses"].values():
+            if boss["map"] != "dire_maul":
+                continue
+            if boss["entry"] == 11492:
+                self.assertEqual([p["name"] for p in boss["phases"]], ["tree", "wolf", "normal"])
+            else:
+                self.assertEqual(boss["phases"], [], boss["name"])
+
+    def test_semantic_choices_from_the_core(self):
+        bosses = {int(e): b for e, b in self.doc["bosses"].items() if b["map"] == "dire_maul"}
+        def ability(entry, sid):
+            return next(a for a in bosses[entry]["abilities"] if a["sid"] == sid)
+
+        # Alzzin's forms are exclusive and each ability is tagged with its form.
+        self.assertTrue(ability(11492, 22660)["self"])
+        self.assertTrue(ability(11492, 22688)["self"])
+        self.assertEqual(ability(11492, 22662)["phase"], "normal")
+        self.assertEqual(ability(11492, 22689)["phase"], "wolf")
+        self.assertEqual(ability(11492, 7948)["phase"], "tree")
+        # Each form timer ticks only inside its form, so no row carries a repeat window;
+        # Wild Regeneration also needs the script's below-50-percent gate.
+        for sid in (22662, 22661, 22689, 19319, 10101, 22691, 7948):
+            row = ability(11492, sid)
+            self.assertEqual((row["b"], row["c"]), (0, 0), f"Alzzin {sid}")
+        self.assertEqual(ability(11492, 7948)["hp"], 50)
+        # Intense Pain is a DoT on everyone near Zevrim, not a self aura.
+        row = ability(11490, 22478)
+        self.assertEqual(row["target"], "aoe")
+        self.assertTrue(row["aura"])
+        self.assertFalse(row["self"])
+        self.assertEqual(ability(11490, 22651)["okNeeds"], {"dispel": "nodispel"})
+        # Cho'Rush's constant named Frost Nova is the database's passive Shadow Weaving talent.
+        self.assertEqual(ability(14324, 15331)["name"], "Shadow Weaving")
+        self.assertFalse(ability(14324, 15331)["self"])
+        self.assertEqual(ability(14324, 15331)["ok"], "script")
+        # Tortheldrin's Counterspell interrupts a player: it stays an open classify line.
+        self.assertEqual(ability(11486, 20537)["target"], "random")
+        self.assertEqual(ability(11486, 20537)["ok"], "")
+        self.assertEqual(ability(11486, 20537)["okNeeds"], {})
+        self.assertEqual(ability(11486, 8876)["target"], "victim")
+        self.assertEqual(ability(11486, 8876)["ok"], "tank")
+        self.assertEqual(ability(14324, 8376)["summon"], 6066)
+        self.assertEqual(ability(14324, 8376)["okNeeds"], {"interrupt": "nokick"})
+        # Hydrospawn: EventAI Riptide keeps its ms window; the list spells are 0.
+        row = ability(13280, 22419)
+        self.assertEqual((row["a"], row["b"], row["c"]), (0, 10000, 20000))
+        for sid in (22420, 22421):
+            row = ability(13280, sid)
+            self.assertEqual((row["a"], row["b"], row["c"]), (0, 0, 0), f"Hydrospawn {sid}")
+        self.assertEqual(ability(13280, 22714)["summon"], 14350)
+        self.assertEqual(ability(13280, 22714)["hp"], 75)
+        self.assertEqual(ability(13280, 22421)["summon"], 14122)
+        self.assertEqual(next(a for a in bosses[13280]["adds"] if a["entry"] == 14122)["role"], "trigger")
+        # Script timers stay literal; the spell list of Illyanna is zeroed.
+        self.assertEqual((ability(11489, 22924)["b"], ability(11489, 22924)["c"]), (17000, 22000))
+        self.assertEqual((ability(11488, 22908)["b"], ability(11488, 22908)["c"]), (0, 0))
+        self.assertEqual((ability(11488, 22908)["ground"]), True)
+        self.assertEqual((ability(11488, 22914)["okNeeds"]), {"interrupt": "nokick"})
+        # EventAI hp casts and script one-shots are hp flags, not phases.
+        self.assertEqual(ability(16097, 27639)["hp"], 90)
+        self.assertEqual(ability(16097, 27639)["summon"], 16098)
+        self.assertEqual(ability(14325, 22857)["hp"], 25)
+        self.assertEqual(ability(14325, 19134)["target"], "aoe")
+        # A trap and a teleport are not ground/cone shapes; Booze Spit is a cone.
+        self.assertTrue(ability(14322, 22833)["cone"])
+        self.assertFalse(ability(11488, 22910)["ground"])
+        self.assertFalse(ability(11486, 22995)["summon"])
+        # Enlarge is a cast the core cannot stop, so int plus nokick.
+        self.assertTrue(ability(14349, 22710)["int"])
+        self.assertEqual(ability(14349, 22710)["okNeeds"], {"interrupt": "nokick"})
+        # Stomper's two EventAI hp events are rows, not phases.
+        self.assertEqual(ability(14322, 8269)["hp"], 30)
+        self.assertEqual(ability(14322, 22835)["hp"], 15)
+        # The only two-list boss: Isalien's EventAI and list both run.
+        self.assertEqual([a["sid"] for a in bosses[16097]["abilities"]],
+                         [12024, 27636, 27637, 14443, 27639])
 
 
 class UbrsValueTest(unittest.TestCase):
