@@ -85,6 +85,25 @@ ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), r
 
 }
 
+bool ItemUsageValue::IsCraftingTool(uint32 itemId)
+{
+    static std::unordered_set<uint32> const tools = []()
+    {
+        std::unordered_set<uint32> ids;
+        for (uint32 spellId = 1; spellId < sSpellMgr.GetMaxSpellId(); ++spellId)
+        {
+            SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
+            if (!spell || !spell->HasEffect(SPELL_EFFECT_CREATE_ITEM))
+                continue;
+            for (uint32 totem : spell->Totem)
+                if (totem)
+                    ids.insert(totem);
+        }
+        return ids;
+    }();
+    return tools.count(itemId) != 0;
+}
+
 ItemUsage ItemUsageValue::Calculate()
 {
     ItemQualifier itemQualifier(qualifier);
@@ -124,6 +143,12 @@ ItemUsage ItemUsageValue::Calculate()
             }
         }
     }
+
+    // A tool a recipe requires (Arclight Spanner, Gyromatic Micro-Adjustor,
+    // Blacksmith Hammer) stays in the bags: selling or posting it leaves the
+    // bot unable to craft that recipe.
+    if (IsCraftingTool(itemId))
+        return ItemUsage::ITEM_USAGE_KEEP;
 
     //FORCE
     ForceItemUsage forceUsage = AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", proto->ItemId, ForceItemUsage::FORCE_USAGE_NONE);

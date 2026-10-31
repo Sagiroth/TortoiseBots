@@ -68,6 +68,7 @@ namespace ai
     class ItemUsageValue : public CalculatedValue<ItemUsage>, public Qualified
     {
     public:
+        static bool IsCraftingTool(uint32 itemId);
         ItemUsageValue(PlayerbotAI* ai, std::string name = "item usage") : CalculatedValue<ItemUsage>(ai, name), Qualified() {}
         virtual ItemUsage Calculate() override;
 
