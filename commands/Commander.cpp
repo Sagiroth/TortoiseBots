@@ -12438,9 +12438,14 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
             reads.push_back(AuraReadOf(holder));
     mob.auras = CommanderTelemetry::SelectUnitAuras(reads);
     Creature* creature = unit->ToCreature();
+    std::vector<int32> immuneMasks;
+    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_SCHOOL_IMMUNITY))
+        if (aura)
+            immuneMasks.push_back(aura->GetModifier()->m_miscvalue);
+    uint32 const immuneMask = CommanderTelemetry::FoldImmuneSchools(immuneMasks);
     mob.flags = CommanderTelemetry::UnitFlags(
         unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE),
-        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_IMMUNE_TO_PLAYER),
+        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_IMMUNE_TO_PLAYER) || CommanderTelemetry::ImmuneToAllSchools(immuneMask),
         unit->IsHovering() || unit->IsFlying(),
         unit->GetStandState() == UNIT_STAND_STATE_DEAD,
         creature && creature->IsInEvadeMode());
