@@ -564,6 +564,66 @@
       "name": "King’s Fury",
       "castMs": 0
     },
+    "51212": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "51213": {
+      "name": "Empowered Shadow Bolt",
+      "castMs": 0
+    },
+    "51214": {
+      "name": "Heal",
+      "castMs": 0
+    },
+    "51215": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "51216": {
+      "name": "Redemption",
+      "castMs": 0
+    },
+    "51217": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "51218": {
+      "name": "Episcopacy",
+      "castMs": 0
+    },
+    "51219": {
+      "name": "Shield Bash",
+      "castMs": 0
+    },
+    "51220": {
+      "name": "Advance",
+      "castMs": 0
+    },
+    "51221": {
+      "name": "Fortify",
+      "castMs": 0
+    },
+    "51223": {
+      "name": "Siege Equipment",
+      "castMs": 0
+    },
+    "51224": {
+      "name": "Knight’s Glory",
+      "castMs": 0
+    },
+    "51225": {
+      "name": "Glorious Cleave",
+      "castMs": 0
+    },
+    "51226": {
+      "name": "Trample",
+      "castMs": 0
+    },
+    "51227": {
+      "name": "Summon Ghastly Horseman",
+      "castMs": 0
+    },
     "51194": {
       "name": "Rift Entanglement",
       "castMs": 0
@@ -859,6 +919,12 @@
     },
     "59974": {
       "name": "Rift Elemental"
+    },
+    "59980": {
+      "name": "Draenei Truthseeker"
+    },
+    "59960": {
+      "name": "Crumbling Exile"
     },
     "59990": {
       "name": "Infernal"

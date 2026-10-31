@@ -54,6 +54,9 @@
         61951,
         61958,
         59967,
+        59971,
+        59970,
+        59968,
         59981,
         59961,
         59991
@@ -3289,8 +3292,8 @@
       ],
       "notes": [
         "Blood Boil 10 s, Flock of Ravens 15 s then 33 s, Blood Siphon 6-8 s and Lunar Shift 25 s come from creature_spells 619390, a one-line tw_world dump.",
-        "Ravens take damage only from players with Blue Moon (51080); half the raid gets Blue Moon at the pull and the rest Red Moon, and Lunar Shift swaps the two and resets 100% threat.",
-        "66.6 and 33.3 percent: Worgen Dimension (51096) and two Blue plus two Red Owls at fixed points; the intermission ends when all four owls die, and each lives at most 60 s.",
+        "Ravens take damage only from players with Blue Moon (51080); the first half of the raid gets Red Moon (51081) and the rest Blue Moon at the pull, and Lunar Shift swaps the two and resets 100% threat.",
+        "66.6 and 33.3 percent: Worgen Dimension (51096) makes him immune to all attacks and spells, and two Blue plus two Red Owls spawn at fixed points with a 60 s timed despawn. The dimension ends only after four owl DEATHS, so owls not killed within 60 s despawn without counting and leave him immune.",
         "51087 Owl Gaze is bound to an aura script but no tw_world creature or spell list casts it."
       ]
     },
@@ -3441,7 +3444,7 @@
           "ground": true,
           "cone": false,
           "tail": false,
-          "int": false,
+          "int": true,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3674,15 +3677,15 @@
           "entry": 59996,
           "name": "Unstable Magic Zone",
           "role": "summon",
-          "priority": 1
+          "priority": 0
         }
       ],
       "notes": [
         "Repeats are 15 s, 24 s and 9 s times max(30, health percent)/100, so they shorten as he dies (4.5, 7.2 and 2.7 s at 30 percent).",
-        "Overload, Unstable Magic and Prison only go to a random player who is not the victim and has none of 51100, 51101 or 51107.",
+        "Overload, Unstable Magic and Prison walk the threat list and take the first eligible player: the highest-threat non-victim who has none of 51100, 51101 or 51107 (the data's t=random is the nearest label).",
         "On overload expiry the player casts 51099 Arcane Bomb and 51101 Arcane Dampening on itself with Anomalus as the original caster.",
         "Manabound Strikes 51105 is applied by the passive aura 51106 and 51098 pulses 51097 around the boss; neither has a cast event.",
-        "The Unstable Magic Zone lives 8 s, cannot be damaged, and on death hits the nearest player within 8 yd or else every player within 200 yd for 51104."
+        "Unstable Magic Zone 59996 takes no damage and dies after 8 s, so nothing kills it (kill priority 0): it needs a soaker within 8 yd, or on death every player within 200 yd takes 51104."
       ]
     },
     "61958": {
@@ -3729,7 +3732,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3752,7 +3755,7 @@
           "ground": true,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3773,7 +3776,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3794,7 +3797,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3815,7 +3818,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3836,7 +3839,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3857,7 +3860,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 0,
           "hp": 0,
           "ok": "",
@@ -3878,7 +3881,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": true,
+          "int": false,
           "summon": 59994,
           "hp": 0,
           "ok": "",
@@ -4013,9 +4016,9 @@
         }
       ],
       "notes": [
-        "Six spells are picked at random (plus Shadow Bolt in shadowform, Shadebolt otherwise) and cast whenever the boss is not already casting; there is no timer.",
+        "Six spells are picked at random (plus Shadow Bolt in shadowform, Shadebolt otherwise) and cast whenever the boss is not already casting; there is no timer. None is flagged interruptible: do not interrupt him.",
         "Gaze of the Guardian is first cast 20-25 s after the pull, then every 20-25 s.",
-        "Interrupting any cast adds a Guardians Ire stack; at 4 stacks the boss casts Medivhs Fury.",
+        "Do not interrupt him: every interrupt effect adds a Guardian's Ire stack, and 4 stacks cast Medivh's Fury.",
         "At 80, 50 and 20 percent one Unstoppable Infernal is summoned; 50 percent adds Shadowform; 20 percent adds Enrage and Medivhs Fury.",
         "While shadowformed a Shade of Medivh is summoned every 10 s; Shadow Bolt 51122 also summons one through its spell effect.",
         "The Shade casts 24668 Shadow Bolt; the Infernal casts 51124 Charge of Flame then 51123 Pulse of Fire (creature_spells 599940 and 599950, one-line dumps)."
@@ -4063,7 +4066,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": false,
+          "int": true,
           "summon": 59972,
           "hp": 0,
           "ok": "",
@@ -4119,9 +4122,9 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "self",
+          "target": "aoe",
           "aura": false,
-          "self": true,
+          "self": false,
           "mark": false,
           "ground": false,
           "cone": false,
@@ -4129,10 +4132,8 @@
           "int": false,
           "summon": 0,
           "hp": 0,
-          "ok": "",
-          "okNeeds": {
-            "purge": "nopurge"
-          }
+          "ok": "heal",
+          "okNeeds": {}
         }
       ],
       "phases": [
@@ -4185,21 +4186,434 @@
         }
       ],
       "notes": [
-        "Bishop 59971: Heal 51214 (12 s), Shadow Bolt Volley 51215 (15 s), Redemption 51216 (30 s, only while the Knight lives), Silence 51217 (14 s, only while the Rook lives) and Shadow Bolt 51212 or 51213 by distance.",
-        "Rook 59970: Shield Bash 51219 (11 s, 5.5 s alone), Advance 51220 (20 s, 10 s alone), Fortify 51221 (35 s, while the Bishop lives) and Siege Equipment 51223 (25 s, 12.5 s alone).",
-        "Knight 59968: Glorious Cleave 51225 (1.3 s), Trample 51226 (11 s, while the Rook lives) and Summon Ghastly Horseman 51227 (20-30 s, 10-15 s alone, three at once when alone).",
-        "Every piece gains Episcopacy 51218 when it is the only one left; each dying Bishop, Rook or Knight casts Kings Fury 51229 on the King, and the King removes Invulnerability 51228 when alone.",
+        "When a Bishop, Rook or Knight dies the King casts Kings Fury 51229 on himself, and he removes Invulnerability 51228 when he is the only piece left.",
         "Pawns Advance (51210, aura script) recalculates each pawns weapon damage from the number of nearby pawns every second.",
         "Void Zone 28863 summons a persistent object (spell effect 41), a damaging area the schema cannot flag as ground.",
-        "The Kings creature template carries aura 51228 and spell list 599670.",
+        "The Kings creature template carries aura 51228 and spell list 599670, but there is no creature_spells row for 599670: every King cast comes from the script.",
         "Summon Pawn is first cast 8-14 s after the pull and Kings Curse 40-50 s; both keep their random window afterward."
+      ]
+    },
+    "59971": {
+      "entry": 59971,
+      "name": "Bishop",
+      "map": "upper_karazhan_halls",
+      "order": 23,
+      "abilities": [
+        {
+          "sid": 51212,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51213,
+          "name": "Empowered Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51214,
+          "name": "Heal",
+          "castMs": 0,
+          "a": 12000,
+          "b": 12000,
+          "c": 12000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51215,
+          "name": "Shadow Bolt Volley",
+          "castMs": 0,
+          "a": 15000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51216,
+          "name": "Redemption",
+          "castMs": 0,
+          "a": 30000,
+          "b": 30000,
+          "c": 30000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51217,
+          "name": "Silence",
+          "castMs": 0,
+          "a": 14000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51218,
+          "name": "Episcopacy",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Heal 51214 goes to a pawn below 75% health within 40 yd; Redemption 51216 only fires after the Knight is dead, on a dead Pawn within 40 yd (it brings it back to life); Silence 51217 only after the Rook is dead, on a random mana user.",
+        "Shadow Bolt is 51212 within 10 yd of the Bishop and Empowered Shadow Bolt 51213 beyond; Episcopacy 51218 is cast once the Bishop is the only piece left."
+      ]
+    },
+    "59970": {
+      "entry": 59970,
+      "name": "Rook",
+      "map": "upper_karazhan_halls",
+      "order": 24,
+      "abilities": [
+        {
+          "sid": 51219,
+          "name": "Shield Bash",
+          "castMs": 0,
+          "a": 11000,
+          "b": 11000,
+          "c": 11000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51220,
+          "name": "Advance",
+          "castMs": 0,
+          "a": 20000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51221,
+          "name": "Fortify",
+          "castMs": 0,
+          "a": 35000,
+          "b": 35000,
+          "c": 35000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 51223,
+          "name": "Siege Equipment",
+          "castMs": 0,
+          "a": 25000,
+          "b": 25000,
+          "c": 25000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51218,
+          "name": "Episcopacy",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Fortify 51221 only fires after the Bishop is dead; Siege Equipment 51223 only after the Knight is dead; Shield Bash 51219 and Advance 51220 halve their repeats when the Rook is the only piece left.",
+        "Episcopacy 51218 is cast once the Rook is the only piece left."
+      ]
+    },
+    "59968": {
+      "entry": 59968,
+      "name": "Knight",
+      "map": "upper_karazhan_halls",
+      "order": 25,
+      "abilities": [
+        {
+          "sid": 51224,
+          "name": "Knight’s Glory",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 51225,
+          "name": "Glorious Cleave",
+          "castMs": 0,
+          "a": 1300,
+          "b": 1300,
+          "c": 1300,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51226,
+          "name": "Trample",
+          "castMs": 0,
+          "a": 11000,
+          "b": 11000,
+          "c": 11000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51227,
+          "name": "Summon Ghastly Horseman",
+          "castMs": 0,
+          "a": 20000,
+          "b": 20000,
+          "c": 30000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59969,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51218,
+          "name": "Episcopacy",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 59969,
+          "name": "Ghastly Horseman",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Trample 51226 only fires after the Rook is dead; Summon Ghastly Horseman 51227 only after the Bishop is dead, and when the Knight is the only piece it is every 10-15 s and summons three at once; Glorious Cleave 51225 every 1.3 s.",
+        "Knights Glory 51224 is cast at spawn; Episcopacy 51218 is cast once the Knight is the only piece left."
       ]
     },
     "59981": {
       "entry": 59981,
       "name": "Sanv Tas'dal",
       "map": "upper_karazhan_halls",
-      "order": 23,
+      "order": 26,
       "abilities": [
         {
           "sid": 51194,
@@ -4293,20 +4707,18 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "self",
+          "target": "aoe",
           "aura": false,
-          "self": true,
+          "self": false,
           "mark": false,
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": false,
+          "int": true,
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {
-            "purge": "nopurge"
-          }
+          "okNeeds": {}
         },
         {
           "sid": 51205,
@@ -4468,11 +4880,17 @@
           "name": "Rift Elemental",
           "role": "summon",
           "priority": 1
+        },
+        {
+          "entry": 59980,
+          "name": "Draenei Truthseeker",
+          "role": "linked",
+          "priority": 0
         }
       ],
       "notes": [
         "The four normal abilities pause between 80 and 50 percent: only Overflowing Hatred and the portals run, and they resume at 50 percent.",
-        "Overflowing Hatred: first 6 s after 80 percent, every 8.5 s until 50 percent, then every 30-37 s; Rift Feedback: first 60 s after 50 percent, then every 45 s.",
+        "Overflowing Hatred: first 6 s after 80 percent, every 8.5 s until 50 percent, then the first cast after 50 percent comes 55 s later, then every 30-37 s; Rift Feedback: first 60 s after 50 percent, then every 45 s.",
         "51204 leaves the aura that triggers 51203; each tick deals 6000 fire to players around the targets and Rift Feedback deals 12000 arcane.",
         "Opening the Rift also summons a Rift-Lost Draenei every second through 51208 (misc 59975).",
         "The three portals are script summons at fixed points; each summons Rift-Lost, Shadow-Lost or Netherwalker every 7 s and a Riftwalker or Riftstalker every 30-50 s.",
@@ -4483,19 +4901,27 @@
       "entry": 59961,
       "name": "Rupturan The Broken",
       "map": "upper_karazhan_halls",
-      "order": 24,
+      "order": 27,
       "abilities": [],
       "phases": [],
-      "adds": [],
+      "adds": [
+        {
+          "entry": 59960,
+          "name": "Crumbling Exile",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
       "notes": [
-        "No script, no spell list and no EventAI: this core gives him only health and melee (1,230,919 health, 7811-9201 damage), so his fight is not implemented in this checkout."
+        "No script, no spell list and no EventAI: this core gives him only health and melee (1,230,919 health, 7811-9201 damage), so his fight is not implemented in this checkout.",
+        "The four Crumbling Exiles 59960 carry spell list 599600: 51283 Rupture (physical damage and -11% hit chance) every 15-25 s, 51284 Shifting Rock (+3000 armor) every 30-45 s, 51286 Molten Surge (charge for fire damage and a stun) every 7-15 s; aura 51285 Splintered Exile deals 150 physical damage to attackers when hit."
       ]
     },
     "59991": {
       "entry": 59991,
       "name": "Kruul",
       "map": "upper_karazhan_halls",
-      "order": 25,
+      "order": 28,
       "abilities": [
         {
           "sid": 51164,
@@ -4526,7 +4952,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "aoe",
+          "target": "random",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4619,7 +5045,7 @@
           "ground": false,
           "cone": false,
           "tail": false,
-          "int": false,
+          "int": true,
           "summon": 0,
           "hp": 0,
           "ok": "heal",
@@ -4654,7 +5080,7 @@
       "notes": [
         "Mark of the Highlord goes to up to 3 random mana users; each tick casts 51165 Shadow Nova from the player with Kruul as the original caster.",
         "Before 25 percent Mark repeats every 30 s and Call goes on the victim every 25 s; after 25 percent Mark is 15 s, Call 15 s on a random player and Void Bolt Volley 10 s.",
-        "Wings of Oblivion knocks players back and applies Wrath of the Highlord 51173; Remorseless Strikes replaces his melee swing.",
+        "Wings of Oblivion knocks players back and applies Wrath of the Highlord 51173; Remorseless Strikes replaces his melee swing and each hit stacks a 10% damage-taken debuff (aura 87, up to 99 stacks): tank swap.",
         "The summoned Infernal is rooted (22707) and gets Inferno Effect 51167; its Hellfire Aura 51169 burns nearby players."
       ]
     }

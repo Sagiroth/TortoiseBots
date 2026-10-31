@@ -179,6 +179,25 @@ const chess = KARA["59967"];
 assert.deepStrictEqual(chess.phases.map((x) => x.rule), ["aura=51228", "start"]);
 assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [{ id: 51228 }] }).phase, "shielded");
 assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [] }).phase, "fight");
+// The chess pieces are their own boss entries: the panel looks a boss up by the exact engaged entry, so a King-only
+// block left Bishop/Rook/Knight with no abilities. Each piece must render its own list, with names.
+for (const [entry, name, spells] of [
+  ["59971", "Bishop", [51212, 51213, 51214, 51215, 51216, 51217, 51218]],
+  ["59970", "Rook", [51218, 51219, 51220, 51221, 51223]],
+  ["59968", "Knight", [51218, 51224, 51225, 51226, 51227]],
+]) {
+  const block = KARA[entry];
+  assert.strictEqual(block.name, name, entry + " block name");
+  assert.deepStrictEqual(block.abilities.map((a) => a.sid).sort((a, b) => a - b), spells, entry + " abilities");
+  const piece = B.model(REAL, { entry: Number(entry), hp: 100, au: [] }, [], 0, 0);
+  assert.strictEqual(piece.boss.name, name);
+  assert.strictEqual(piece.abilities.length, spells.length, entry + " model abilities");
+  assert.ok(piece.abilities.every((a) => a.inPhase), entry + " lists every ability");
+  assert.ok(piece.abilities.every((a) => a.name && !/^spell /.test(a.name)), entry + " names every ability");
+}
+const kingModel = B.model(REAL, { entry: 59967, hp: 100, au: [] }, [], 0, 0);
+assert.ok(kingModel.abilities.some((a) => a.sid === 51229), "the King keeps Kings Fury");
+assert.ok(!kingModel.abilities.some((a) => a.sid === 51214), "the King does not carry the Bishop's spells");
 const sanv = KARA["59981"];
 assert.deepStrictEqual(sanv.phases.map((x) => x.rule), ["hp<20", "hp<50", "hp<80", "start"]);
 assert.strictEqual(B.phaseOf(sanv, { hp: 90 }).phase, "fight");

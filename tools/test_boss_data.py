@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 25)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 166)
+        self.assertEqual(len(doc["bosses"]), 28)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 183)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -642,7 +642,7 @@ KARA_ABILITIES = {
         51185: kara_ability(b=30000, c=30000, target="self", summon=59987),
         51180: kara_ability(b=14000, c=17000, target="random", ground=True),
         51181: kara_ability(a=7000, b=30000, c=35000, target="random", aura=True, int=True),
-        51182: kara_ability(target="victim", ground=True),
+        51182: kara_ability(target="victim", ground=True, int=True),
         51184: kara_ability(target="victim", int=True),
         51186: kara_ability(b=13000, c=13000, target="aoe", aura=True),
         26662: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
@@ -654,14 +654,16 @@ KARA_ABILITIES = {
     },
     61958: {  # Echo of Medivh
         51111: kara_ability(b=20000, c=25000, target="aoe", aura=True, okNeeds={"dispel": "nodispel"}),
-        51112: kara_ability(target="random", aura=True, int=True, okNeeds={"dispel": "nodispel"}),
-        51113: kara_ability(target="random", ground=True, int=True),
-        51114: kara_ability(target="aoe", aura=True, int=True),
-        51116: kara_ability(target="random", aura=True, int=True),
-        51118: kara_ability(target="random", aura=True, int=True),
-        51120: kara_ability(target="random", int=True),
-        51121: kara_ability(target="random", int=True),
-        51122: kara_ability(target="random", int=True, summon=59994),
+        # Interrupting him is punished: these stay unflagged so the bots do not kick (any interrupt effect
+        # adds a Guardian's Ire stack, 4 stacks cast Medivh's Fury).
+        51112: kara_ability(target="random", aura=True, okNeeds={"dispel": "nodispel"}),
+        51113: kara_ability(target="random", ground=True),
+        51114: kara_ability(target="aoe", aura=True),
+        51116: kara_ability(target="random", aura=True),
+        51118: kara_ability(target="random", aura=True),
+        51120: kara_ability(target="random"),
+        51121: kara_ability(target="random"),
+        51122: kara_ability(target="random", summon=59994),
         51125: kara_ability(target="self", self=True, ok="phase"),
         8269: kara_ability(target="self", self=True, hp=20, ok="phase"),
         51110: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
@@ -669,17 +671,41 @@ KARA_ABILITIES = {
     },
     59967: {  # King, the chess event
         28863: kara_ability(a=20000, b=20000, c=20000, target="random"),
-        51230: kara_ability(b=8000, c=14000, target="self", summon=59972),
+        51230: kara_ability(b=8000, c=14000, target="self", summon=59972, int=True),
         51231: kara_ability(b=40000, c=50000, target="aoe", aura=True),
         51228: kara_ability(target="self", self=True, ok="phase"),
-        51229: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51229: kara_ability(target="aoe", ok="heal"),
+    },
+    59971: {  # Bishop, its own block so the panel finds it by entry
+        51212: kara_ability(target="victim"),
+        51213: kara_ability(target="victim"),
+        51214: kara_ability(a=12000, b=12000, c=12000, target="ally"),
+        51215: kara_ability(a=15000, b=15000, c=15000, target="aoe", ok="heal"),
+        51216: kara_ability(a=30000, b=30000, c=30000, target="ally"),
+        51217: kara_ability(a=14000, b=14000, c=14000, target="random", aura=True),
+        51218: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+    },
+    59970: {  # Rook
+        51219: kara_ability(a=11000, b=11000, c=11000, target="victim", ok="tank"),
+        51220: kara_ability(a=20000, b=20000, c=20000, target="random"),
+        51221: kara_ability(a=35000, b=35000, c=35000, target="self", self=True,
+                            okNeeds={"purge": "nopurge"}),
+        51223: kara_ability(a=25000, b=25000, c=25000, target="self"),
+        51218: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+    },
+    59968: {  # Knight
+        51224: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51225: kara_ability(a=1300, b=1300, c=1300, target="victim", ok="tank"),
+        51226: kara_ability(a=11000, b=11000, c=11000, target="victim", ok="tank"),
+        51227: kara_ability(a=20000, b=20000, c=30000, target="self", summon=59969),
+        51218: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
     },
     59981: {  # Sanv Tas'dal
         51194: kara_ability(a=5000, b=13000, c=13000, target="random", aura=True),
         51195: kara_ability(a=3000, b=11000, c=11000, target="random", aura=True),
         51196: kara_ability(a=7000, b=15000, c=15000, target="aoe", aura=True),
         51198: kara_ability(a=1500, b=5500, c=5500, target="random", aura=True, int=True),
-        51204: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51204: kara_ability(target="aoe", int=True),
         51205: kara_ability(b=45000, c=45000, target="aoe", ok="heal"),
         51209: kara_ability(target="self", hp=50, ok="phase"),
         51206: kara_ability(target="self", self=True, hp=20, ok="phase"),
@@ -687,11 +713,11 @@ KARA_ABILITIES = {
     },
     59991: {  # Kruul
         51164: kara_ability(a=2000, b=4000, c=4000, target="victim", ok="tank"),
-        51166: kara_ability(a=30000, target="aoe", aura=True),
+        51166: kara_ability(a=30000, target="random", aura=True),
         51170: kara_ability(a=25000, target="random", summon=59990),
         51172: kara_ability(target="aoe", hp=25, ok="phase"),
         51173: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
-        51174: kara_ability(b=10000, c=10000, target="aoe", ok="heal"),
+        51174: kara_ability(b=10000, c=10000, target="aoe", ok="heal", int=True),
     },
     59961: {},  # Rupturan the Broken: no script, no spells in this core
 }
@@ -794,7 +820,20 @@ class KaraUpperValueTest(unittest.TestCase):
         self.assertFalse(ability(59967, 28863)["int"])
         self.assertFalse(ability(61958, 51111)["int"])
         self.assertTrue(ability(61946, 51184)["int"])  # channelInterruptFlags & 4
-        self.assertTrue(ability(61958, 51112)["int"])  # castingTimeIndex 130, preventionType 1
+        self.assertTrue(ability(59981, 51204)["int"])  # channel, channelInterruptFlags & 4
+        self.assertTrue(ability(59991, 51174)["int"])  # preventionType 1, interruptFlags & 2
+        # Echo's whole random list is kickable in the core but must not be kicked (Guardian's Ire stacks).
+        for sid in range(51112, 51123):
+            if sid in (51115, 51117, 51119):
+                continue
+            self.assertFalse(ability(61958, sid)["int"], f"Echo {sid} must not be int")
+        # The dying piece makes the King cast his own Fury, so it is raid damage around him, not a self buff.
+        self.assertEqual(ability(59967, 51229)["target"], "aoe")
+        self.assertFalse(ability(59967, 51229)["self"])
+        # Each chess piece has its own ability block, so the panel finds it by the engaged entry.
+        for entry in (59971, 59970, 59968):
+            self.assertIn(51218, {a["sid"] for a in self.bosses[entry]["abilities"]})
+            self.assertTrue(ability(entry, 51218)["self"])
         # The boss aura phase rules are visible auras, not passives.
         for entry, sid in ((61939, 51096), (61946, 51176), (61958, 51125), (59967, 51228),
                            (59991, 51173)):
