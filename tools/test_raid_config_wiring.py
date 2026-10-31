@@ -49,7 +49,7 @@ class RaidConfigWiringTest(unittest.TestCase):
         # guard read goes on past a dead (or non-tank) lead bot, around a living anchor (DungeonRun::GuardReadMode).
         code = strip_comments(COMMANDER)
         read = body(code, "void ReadGuardFacts(Player* lead,", "\n}\n")
-        self.assertIn("ai::PlanStep const* hold, bool raidBoss)", read)
+        self.assertIn("ai::PlanStep const* hold, bool raidBoss, bool raidWalk = false)", read)
         mode = read.index("GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);")
         fill = read.index("f.partyAttackers.push_back(fact);")
         self.assertLess(mode, fill)
@@ -60,8 +60,8 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("if (mode == GuardRead::None)\n        return;", read)
         # The attackers are read around the anchor, within the raid boss range when it is one.
         self.assertIn("float const range = raidBoss ? kRaidBossGuardYd : kGuardYd;", read)
-        self.assertIn("bot->GetDistance(anchor) > range", read)
-        self.assertIn("fact.distLead = anchor->GetDistance(attacker);", read)
+        self.assertIn("botYd = bot == anchor ? 0.0f : bot->GetDistance(anchor);", read)
+        self.assertIn("float const mobYd = anchor->GetDistance(attacker);", read)
         self.assertIn("fact.victimName = victim->GetName();", read)
         self.assertIn("f.leadHeldEntries.push_back(attacker->GetEntry());", read)
         self.assertIn("if (bot != lead || mode == GuardRead::RaidAnchor)", read)
