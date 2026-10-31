@@ -225,6 +225,23 @@ const bindTest = grab("cmdControlsBind");
   await new Promise((res) => nbox.cmdControlAsk((on) => { nseen.push(on); res(); }));
   assert.deepStrictEqual(nseen, [false, false], "a confirmed off stays off");
   assert.strictEqual(fetchCalls, 1, "a confirmed off fetches once");
+  // A malformed answer ({} with no enabled) is a failure too: the paint still gets its callback
+  // (hidden), and the in-flight fetch is cleared so a later ask can retry.
+  const mbox = {
+    fetch: () => { fetchCalls++; return Promise.resolve({}); },
+    jsonOrThrow: (r) => r,
+    Date,
+  };
+  fetchCalls = 0;
+  vm.createContext(mbox);
+  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\nlet cmdControlRetryAt = 0;\n" + askSrc, mbox);
+  vm.runInContext("function __asking() { return cmdControlAsking; }", mbox);
+  const mseen = await Promise.race([
+    new Promise((res) => mbox.cmdControlAsk((on) => res(on))),
+    new Promise((res) => setTimeout(() => res("no callback"), 500)),
+  ]);
+  assert.strictEqual(mseen, false, "a malformed answer still calls the paint back, hidden");
+  assert.strictEqual(mbox.__asking(), null, "a malformed answer clears the in-flight fetch");
   console.log("controls retry ok");
 })().catch((e) => { console.error(e); process.exit(1); });
 

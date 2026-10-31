@@ -6260,13 +6260,12 @@
     if (cmdControlOn !== null) { cb(cmdControlOn); return; }
     if (Date.now() < cmdControlRetryAt) { cb(false); return; }
     if (!cmdControlAsking) {
-      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(
-        v => {
-          if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
-          cmdControlOn = !!v.enabled;
-        },
-        () => { cmdControlRetryAt = Date.now() + 30000; },
-      ).then(() => { cmdControlAsking = null; });
+      // A failed fetch and a malformed answer both leave the answer unknown and retry after 30 s.
+      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(v => {
+        if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
+        cmdControlOn = !!v.enabled;
+      }).catch(() => { cmdControlRetryAt = Date.now() + 30000; })
+        .then(() => { cmdControlAsking = null; });
     }
     cmdControlAsking.then(() => cb(cmdControlOn === true));
   }
