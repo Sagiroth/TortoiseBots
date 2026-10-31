@@ -709,9 +709,10 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         TickOut out;
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return out;
         Stored& stored = it->second;
-        OrderRecord& record = stored.record;
-        out.haveRow = true;
         // A cancelled stub parks the guild-gold debt only: no travel, no
         // timers, no delivery. The refund drain pays it; FinishRepaid clears
         // the row once the gold is back.

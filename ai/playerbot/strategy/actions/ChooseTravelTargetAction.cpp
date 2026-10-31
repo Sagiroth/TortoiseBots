@@ -623,9 +623,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             {
                 // The order moved to a new leg (AH): parking "guild order"
                 // would idle the bot for the park window on a leg that was
-                // never searched. The new leg travels at once.
+                // never searched. The new leg travels on the next tick.
                 SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
-                return;
+                return false;
             }
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,

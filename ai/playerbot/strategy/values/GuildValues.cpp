@@ -22,6 +22,7 @@ namespace
 {
 
 using TortoiseBots::GuildOrders::NeedItem;
+using TortoiseBots::GuildOrders::BankLegSkipped;
 using TortoiseBots::GuildOrders::OrderRecord;
 using TortoiseBots::GuildOrders::OrderReason;
 using TortoiseBots::GuildOrders::OrderType;
@@ -138,7 +139,6 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     // the cooldown, so the ladder moves down instead of walking back.
     bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId,
         WorldTimer::getMSTime(), order.bankEmptyMs);
-    bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     bool canFarm = IsUnlimitedVendorItem(candidate.itemId) && order.reason != OrderReason::NoSource;
     if (!canFarm)

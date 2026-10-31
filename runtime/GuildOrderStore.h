@@ -65,8 +65,12 @@ void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
 // over, like any farmed item. World thread only (the drains) or the bot's
 // map-thread action.
 void NoteSupplyProgress(uint32_t botGuidLow);
+// A banker visit found none of the item: skip the bank leg for it until the
+// cooldown. A move clears the marker. World thread only (the drains).
+void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
+void ClearBankEmpty(uint32_t botGuidLow);
+// Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
-
 // A sub-order was placed or already exists. Worker C replaces the separate
 // false stub with the hierarchy-aware store implementation when merging.
 bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
