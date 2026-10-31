@@ -425,8 +425,8 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts or hires.");
         return true;
     }
-    bool canMake = false, canFarm = false;
-    if (!GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm))
+    bool canMake = false, canFarm = false, gathers = false;
+    if (!GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm, gathers))
     {
         OrderError(handler, "noskill", "The new bot can neither make nor farm that item.");
         return true;

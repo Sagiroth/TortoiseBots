@@ -116,8 +116,8 @@ bool GuildOrderBuyAction::Execute(Event& event)
     Unit* auctioneer = FindNearbyAuctioneer();
     if (!auctioneer)
     {
-        Unit* near = GuildOrderAuctioneerNear(ai, bot);
-        return near && MoveNear(near, INTERACTION_DISTANCE - 1.0f);
+        Unit* nearby = GuildOrderAuctioneerNear(ai, bot);
+        return nearby && MoveNear(nearby, INTERACTION_DISTANCE - 1.0f);
     }
 
     uint32_t itemId = stored->supplyItemId;
