@@ -84,6 +84,10 @@ Player* CheckMailAction::GetProcessableOwner(Mail* mail)
     if (sPlayerbotAIConfig.IsInRandomAccountList(account))
         return nullptr;
 
+    // Guild members mail reagents for guild orders: the bot keeps them.
+    if (bot->GetGuildId() && owner->GetGuildId() == bot->GetGuildId())
+        return nullptr;
+
     return owner;
 }
 
