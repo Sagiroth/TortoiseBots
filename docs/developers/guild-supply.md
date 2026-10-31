@@ -2,7 +2,7 @@
 id: developers-guild-supply
 title: Guild Supply Chain
 category: developers
-summary: How guild orders use the guild bank as the crafting store: ladder, refunds, bot rank and bank access, sub-orders.
+summary: "How guild orders use the guild bank as the crafting store: ladder, refunds, bot rank and bank access, sub-orders."
 tags: [developer, guild-orders, guild-bank, supply]
 relates_to:
   - play-guild-orders
