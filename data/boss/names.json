@@ -44,6 +44,10 @@
       "name": "Gathering Speed",
       "castMs": 0
     },
+    "3356": {
+      "castMs": 0,
+      "name": "Flame Lash"
+    },
     "3391": {
       "name": "Thrash",
       "castMs": 0
@@ -52,13 +56,29 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "5568": {
+      "castMs": 0,
+      "name": "Trample"
+    },
+    "6268": {
+      "castMs": 0,
+      "name": "Rushing Charge"
+    },
     "6524": {
       "name": "Ground Tremor",
+      "castMs": 0
+    },
+    "6533": {
+      "name": "Net",
       "castMs": 0
     },
     "6605": {
       "name": "Terrifying Screech",
       "castMs": 0
+    },
+    "6742": {
+      "castMs": 0,
+      "name": "Bloodlust"
     },
     "7155": {
       "name": "CreatureSpecial",
@@ -80,9 +100,25 @@
       "name": "Heal Brother",
       "castMs": 0
     },
+    "7964": {
+      "castMs": 0,
+      "name": "Smoke Bomb"
+    },
+    "8053": {
+      "castMs": 0,
+      "name": "Flame Shock"
+    },
+    "8143": {
+      "castMs": 0,
+      "name": "Tremor Totem"
+    },
     "8195": {
       "name": "Teleport",
       "castMs": 0
+    },
+    "8242": {
+      "castMs": 0,
+      "name": "Shield Slam"
     },
     "8258": {
       "name": "Devotion Aura",
@@ -92,9 +128,17 @@
       "name": "Enrage",
       "castMs": 0
     },
+    "8292": {
+      "castMs": 0,
+      "name": "Chain Bolt"
+    },
     "8362": {
       "name": "Renew",
       "castMs": 0
+    },
+    "8374": {
+      "castMs": 0,
+      "name": "Arcing Smash"
     },
     "8376": {
       "name": "Earthgrab Totem",
@@ -104,6 +148,18 @@
       "name": "Fevered Plague",
       "castMs": 0
     },
+    "9143": {
+      "castMs": 0,
+      "name": "Bomb"
+    },
+    "9482": {
+      "castMs": 0,
+      "name": "Amplify Flames"
+    },
+    "9532": {
+      "castMs": 0,
+      "name": "Lightning Bolt"
+    },
     "9613": {
       "name": "Shadow Bolt",
       "castMs": 0
@@ -112,9 +168,45 @@
       "name": "Holy Smite",
       "castMs": 0
     },
+    "9874": {
+      "castMs": 0,
+      "name": "Self Destruct"
+    },
+    "9941": {
+      "castMs": 0,
+      "name": "Spell Reflection"
+    },
+    "10061": {
+      "castMs": 0,
+      "name": "Summon Obsidian Shard"
+    },
+    "10072": {
+      "castMs": 0,
+      "name": "Splintered Obsidian"
+    },
     "10101": {
       "name": "Knock Away",
       "castMs": 0
+    },
+    "10132": {
+      "castMs": 0,
+      "name": "Sand Storms"
+    },
+    "10252": {
+      "castMs": 0,
+      "name": "Awaken Earthen Guardians"
+    },
+    "10254": {
+      "castMs": 0,
+      "name": "Stone Dwarf Awaken Visual"
+    },
+    "10258": {
+      "castMs": 0,
+      "name": "Awaken Vault Warder"
+    },
+    "10260": {
+      "castMs": 0,
+      "name": "Reconstruct"
     },
     "10413": {
       "name": "Earth Shock",
@@ -196,6 +288,10 @@
       "name": "War Stomp",
       "castMs": 0
     },
+    "11892": {
+      "castMs": 0,
+      "name": "Shrink"
+    },
     "11894": {
       "name": "Antu'sul's Minion",
       "castMs": 0
@@ -215,6 +311,10 @@
     "11962": {
       "name": "Immolate",
       "castMs": 0
+    },
+    "11969": {
+      "castMs": 0,
+      "name": "Fire Nova"
     },
     "11972": {
       "name": "Shield Bash",
@@ -288,6 +388,10 @@
       "name": "Curse of Weakness",
       "castMs": 0
     },
+    "12747": {
+      "castMs": 0,
+      "name": "Entangling Roots"
+    },
     "12882": {
       "name": "Wing Flap",
       "castMs": 0
@@ -344,6 +448,10 @@
       "name": "Holy Strike",
       "castMs": 0
     },
+    "14030": {
+      "name": "Hooked Net",
+      "castMs": 0
+    },
     "14032": {
       "name": "Shadow Word: Pain",
       "castMs": 0
@@ -363,6 +471,10 @@
     "14144": {
       "name": "Remorseless Attacks",
       "castMs": 0
+    },
+    "14516": {
+      "castMs": 0,
+      "name": "Strike"
     },
     "14744": {
       "name": "Burning Spirit",
@@ -416,6 +528,10 @@
       "name": "Backstab",
       "castMs": 0
     },
+    "15584": {
+      "castMs": 0,
+      "name": "Cleave"
+    },
     "15586": {
       "name": "Heal",
       "castMs": 0
@@ -426,6 +542,10 @@
     },
     "15589": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15593": {
+      "name": "War Stomp",
       "castMs": 0
     },
     "15605": {
@@ -440,12 +560,20 @@
       "name": "Snap Kick",
       "castMs": 0
     },
+    "15620": {
+      "castMs": 0,
+      "name": "Shoot"
+    },
     "15636": {
       "name": "Avatar of Flame",
       "castMs": 0
     },
     "15642": {
       "name": "Ironfoe",
+      "castMs": 0
+    },
+    "15667": {
+      "name": "Sinister Strike",
       "castMs": 0
     },
     "15708": {
@@ -456,9 +584,25 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "15795": {
+      "name": "Throw",
+      "castMs": 0
+    },
+    "15801": {
+      "castMs": 0,
+      "name": "Lightning Bolt"
+    },
     "15847": {
       "name": "Tail Sweep",
       "castMs": 0
+    },
+    "15976": {
+      "castMs": 0,
+      "name": "Puncture"
+    },
+    "16006": {
+      "castMs": 0,
+      "name": "Chain Lightning"
     },
     "16075": {
       "name": "Throw Axe",
@@ -471,6 +615,10 @@
     "16098": {
       "name": "Curse of Blood",
       "castMs": 2000
+    },
+    "16100": {
+      "castMs": 0,
+      "name": "Shoot"
     },
     "16103": {
       "name": "Summon Spire Spiderling",
@@ -590,6 +738,10 @@
     },
     "18500": {
       "name": "Wing Buffet",
+      "castMs": 0
+    },
+    "18651": {
+      "name": "Multi-Shot",
       "castMs": 0
     },
     "18670": {
@@ -844,6 +996,46 @@
       "name": "Melt Weapon",
       "castMs": 0
     },
+    "21390": {
+      "castMs": 0,
+      "name": "Multi-Shot"
+    },
+    "21655": {
+      "castMs": 0,
+      "name": "Blink"
+    },
+    "21687": {
+      "castMs": 0,
+      "name": "Toxic Volley"
+    },
+    "21807": {
+      "castMs": 0,
+      "name": "Wrath"
+    },
+    "21808": {
+      "castMs": 0,
+      "name": "Summon Shardlings"
+    },
+    "21832": {
+      "castMs": 0,
+      "name": "Boulder"
+    },
+    "21833": {
+      "castMs": 0,
+      "name": "Goblin Dragon Gun"
+    },
+    "21869": {
+      "castMs": 0,
+      "name": "Repulsive Gaze"
+    },
+    "21909": {
+      "castMs": 0,
+      "name": "Dust Field"
+    },
+    "21968": {
+      "castMs": 0,
+      "name": "Corrupt Forces of Nature"
+    },
     "22277": {
       "name": "Elemental Shield",
       "castMs": 0
@@ -919,6 +1111,10 @@
     "22911": {
       "name": "Charge",
       "castMs": 0
+    },
+    "22916": {
+      "castMs": 0,
+      "name": "Uppercut"
     },
     "22992": {
       "name": "Shadow Flame",
@@ -1896,6 +2092,10 @@
       "name": "Mind Flay",
       "castMs": 0
     },
+    "29419": {
+      "castMs": 0,
+      "name": "Flash Bomb"
+    },
     "29423": {
       "name": "KelThuzad Channel",
       "castMs": 0
@@ -2497,6 +2697,15 @@
     "2139": {
       "name": "Loktanag the Vile"
     },
+    "2748": {
+      "name": "Archaedas"
+    },
+    "4854": {
+      "name": "Grimlok"
+    },
+    "4857": {
+      "name": "Stone Keeper"
+    },
     "5263": {
       "name": "Mummified Atal'ai"
     },
@@ -2536,8 +2745,44 @@
     "5722": {
       "name": "Hazzas"
     },
+    "5913": {
+      "name": "Tremor Totem"
+    },
     "6066": {
       "name": "Earthgrab Totem"
+    },
+    "6906": {
+      "name": "Baelog"
+    },
+    "6907": {
+      "name": "Eric \"The Swift\""
+    },
+    "6908": {
+      "name": "Olaf"
+    },
+    "6910": {
+      "name": "Revelosh"
+    },
+    "7023": {
+      "name": "Obsidian Sentinel"
+    },
+    "7076": {
+      "name": "Earthen Guardian"
+    },
+    "7077": {
+      "name": "Earthen Hallshaper"
+    },
+    "7206": {
+      "name": "Ancient Stone Keeper"
+    },
+    "7209": {
+      "name": "Obsidian Shard"
+    },
+    "7226": {
+      "name": "Sand Storm"
+    },
+    "7228": {
+      "name": "Ironaya"
     },
     "7267": {
       "name": "Chief Ukorz Sandscalp"
@@ -2562,6 +2807,12 @@
     },
     "7286": {
       "name": "Zul'Farrak Zombie"
+    },
+    "7291": {
+      "name": "Galgann Firehammer"
+    },
+    "7309": {
+      "name": "Earthen Custodian"
     },
     "7604": {
       "name": "Sergeant Bly"
@@ -2704,6 +2955,9 @@
     "9938": {
       "name": "Magmus"
     },
+    "10120": {
+      "name": "Vault Warder"
+    },
     "10162": {
       "name": "Lord Victor Nefarius"
     },
@@ -2785,6 +3039,9 @@
     "11673": {
       "name": "Ancient Core Hound"
     },
+    "11783": {
+      "name": "Theradrim Shardling"
+    },
     "11981": {
       "name": "Flamegor"
     },
@@ -2827,6 +3084,24 @@
     "12143": {
       "name": "Son of Flame"
     },
+    "12201": {
+      "name": "Princess Theradras"
+    },
+    "12203": {
+      "name": "Landslide"
+    },
+    "12225": {
+      "name": "Celebras the Cursed"
+    },
+    "12236": {
+      "name": "Lord Vyletongue"
+    },
+    "12237": {
+      "name": "Meshlok the Harvester"
+    },
+    "12258": {
+      "name": "Razorlash"
+    },
     "12259": {
       "name": "Gehennas"
     },
@@ -2853,6 +3128,27 @@
     },
     "13148": {
       "name": "Flame of Ragnaros"
+    },
+    "13282": {
+      "name": "Noxxion"
+    },
+    "13456": {
+      "name": "Noxxion's Spawn"
+    },
+    "13596": {
+      "name": "Rotgrip"
+    },
+    "13601": {
+      "name": "Tinkerer Gizlock"
+    },
+    "13738": {
+      "name": "Veng"
+    },
+    "13739": {
+      "name": "Maraudos"
+    },
+    "13743": {
+      "name": "Corrupt Force of Nature"
     },
     "14020": {
       "name": "Chromaggus"
