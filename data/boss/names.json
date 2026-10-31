@@ -1460,6 +1460,270 @@
       "name": "Molten Bulwark",
       "castMs": 0
     },
+    "51080": {
+      "name": "Blue Moon",
+      "castMs": 0
+    },
+    "51081": {
+      "name": "Red Moon",
+      "castMs": 0
+    },
+    "51082": {
+      "name": "Blood Boil",
+      "castMs": 0
+    },
+    "51083": {
+      "name": "Flock of Ravens",
+      "castMs": 0
+    },
+    "51084": {
+      "name": "Blood Siphon",
+      "castMs": 0
+    },
+    "51085": {
+      "name": "Lunar Shift",
+      "castMs": 0
+    },
+    "51086": {
+      "name": "Lunar Shift",
+      "castMs": 0
+    },
+    "51096": {
+      "name": "Worgen Dimension",
+      "castMs": 0
+    },
+    "51100": {
+      "name": "Arcane Overload",
+      "castMs": 0
+    },
+    "51102": {
+      "name": "Unstable Magic",
+      "castMs": 0
+    },
+    "51107": {
+      "name": "Arcane Prison",
+      "castMs": 0
+    },
+    "51109": {
+      "name": "Guardians Ire",
+      "castMs": 0
+    },
+    "51110": {
+      "name": "Medivhs Fury",
+      "castMs": 0
+    },
+    "51111": {
+      "name": "Gaze of the Guardian",
+      "castMs": 0
+    },
+    "51112": {
+      "name": "Pyroblast",
+      "castMs": 0
+    },
+    "51113": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
+    "51114": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "51116": {
+      "name": "Arcane Blast",
+      "castMs": 0
+    },
+    "51118": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "51120": {
+      "name": "Arcane Bolt",
+      "castMs": 0
+    },
+    "51121": {
+      "name": "Shadebolt",
+      "castMs": 0
+    },
+    "51122": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "51125": {
+      "name": "Shadowform",
+      "castMs": 0
+    },
+    "51164": {
+      "name": "Remorseless Strikes",
+      "castMs": 0
+    },
+    "51166": {
+      "name": "Mark of the Highlord",
+      "castMs": 0
+    },
+    "51170": {
+      "name": "Call from the Twisting Nether",
+      "castMs": 0
+    },
+    "51172": {
+      "name": "Wings of Oblivion",
+      "castMs": 0
+    },
+    "51173": {
+      "name": "Wrath of the Highlord",
+      "castMs": 0
+    },
+    "51174": {
+      "name": "Void Bolt Volley",
+      "castMs": 0
+    },
+    "51176": {
+      "name": "Draconic Ley Charge",
+      "castMs": 0
+    },
+    "51178": {
+      "name": "Summon Manascale Ley-Seeker",
+      "castMs": 0
+    },
+    "51179": {
+      "name": "Summon Manascale Whelps",
+      "castMs": 0
+    },
+    "51180": {
+      "name": "Blizzard",
+      "castMs": 0
+    },
+    "51181": {
+      "name": "Gaze of Incantagos",
+      "castMs": 0
+    },
+    "51182": {
+      "name": "Guided Ley-Beam",
+      "castMs": 0
+    },
+    "51184": {
+      "name": "Arcane Missiles",
+      "castMs": 0
+    },
+    "51185": {
+      "name": "Ley-Line Disturbance",
+      "castMs": 0
+    },
+    "51186": {
+      "name": "Curse of Manascale",
+      "castMs": 0
+    },
+    "51194": {
+      "name": "Rift Entanglement",
+      "castMs": 0
+    },
+    "51195": {
+      "name": "Nether Banishment",
+      "castMs": 0
+    },
+    "51196": {
+      "name": "Curse of the Rift",
+      "castMs": 0
+    },
+    "51198": {
+      "name": "Netherbolt",
+      "castMs": 0
+    },
+    "51204": {
+      "name": "Overflowing Hatred",
+      "castMs": 0
+    },
+    "51205": {
+      "name": "Rift Feedback",
+      "castMs": 0
+    },
+    "51206": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "51207": {
+      "name": "Leader of the Tribe",
+      "castMs": 0
+    },
+    "51209": {
+      "name": "Opening the Rift",
+      "castMs": 0
+    },
+    "51212": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "51213": {
+      "name": "Empowered Shadow Bolt",
+      "castMs": 0
+    },
+    "51214": {
+      "name": "Heal",
+      "castMs": 0
+    },
+    "51215": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "51216": {
+      "name": "Redemption",
+      "castMs": 0
+    },
+    "51217": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "51218": {
+      "name": "Episcopacy",
+      "castMs": 0
+    },
+    "51219": {
+      "name": "Shield Bash",
+      "castMs": 0
+    },
+    "51220": {
+      "name": "Advance",
+      "castMs": 0
+    },
+    "51221": {
+      "name": "Fortify",
+      "castMs": 0
+    },
+    "51223": {
+      "name": "Siege Equipment",
+      "castMs": 0
+    },
+    "51224": {
+      "name": "Knight\u2019s Glory",
+      "castMs": 0
+    },
+    "51225": {
+      "name": "Glorious Cleave",
+      "castMs": 0
+    },
+    "51226": {
+      "name": "Trample",
+      "castMs": 0
+    },
+    "51227": {
+      "name": "Summon Ghastly Horseman",
+      "castMs": 0
+    },
+    "51228": {
+      "name": "Invulnerability",
+      "castMs": 0
+    },
+    "51229": {
+      "name": "King\u2019s Fury",
+      "castMs": 0
+    },
+    "51230": {
+      "name": "Summon Pawn",
+      "castMs": 0
+    },
+    "51231": {
+      "name": "Kings Curse",
+      "castMs": 0
+    },
     "52722": {
       "name": "Arcane Rupture",
       "castMs": 0
@@ -2103,6 +2367,105 @@
     "57643": {
       "name": "Image of Sorcerer-Thane Thaurissan"
     },
+    "59955": {
+      "name": "Manascale Whelp"
+    },
+    "59960": {
+      "name": "Crumbling Exile"
+    },
+    "59961": {
+      "name": "Rupturan The Broken"
+    },
+    "59967": {
+      "name": "King"
+    },
+    "59968": {
+      "name": "Knight"
+    },
+    "59969": {
+      "name": "Ghastly Horseman"
+    },
+    "59970": {
+      "name": "Rook"
+    },
+    "59971": {
+      "name": "Bishop"
+    },
+    "59972": {
+      "name": "Pawn"
+    },
+    "59973": {
+      "name": "Rift Portal"
+    },
+    "59974": {
+      "name": "Rift Elemental"
+    },
+    "59975": {
+      "name": "Rift-Lost Draenei"
+    },
+    "59976": {
+      "name": "Draenei Riftstalker"
+    },
+    "59977": {
+      "name": "Draenei Riftwalker"
+    },
+    "59978": {
+      "name": "Draenei Netherwalker"
+    },
+    "59979": {
+      "name": "Shadow-Lost Draenei"
+    },
+    "59980": {
+      "name": "Draenei Truthseeker"
+    },
+    "59981": {
+      "name": "Sanv Tas'dal"
+    },
+    "59982": {
+      "name": "Mana Affinity"
+    },
+    "59983": {
+      "name": "Black Affinity"
+    },
+    "59984": {
+      "name": "Blue Affinity"
+    },
+    "59985": {
+      "name": "Green Affinity"
+    },
+    "59986": {
+      "name": "Red Affinity"
+    },
+    "59987": {
+      "name": "Crystal Affinity"
+    },
+    "59989": {
+      "name": "Manascale Ley-Seeker"
+    },
+    "59990": {
+      "name": "Infernal"
+    },
+    "59991": {
+      "name": "Kruul"
+    },
+    "59994": {
+      "name": "Shade of Medivh"
+    },
+    "59995": {
+      "name": "Unstoppable Infernal"
+    },
+    "59996": {
+      "name": "Unstable Magic Zone"
+    },
+    "59997": {
+      "name": "Red Owl"
+    },
+    "59998": {
+      "name": "Blue Owl"
+    },
+    "59999": {
+      "name": "Blood Raven"
+    },
     "61192": {
       "name": "Shadowbane Darkcaster"
     },
@@ -2147,6 +2510,18 @@
     },
     "61225": {
       "name": "Moroes"
+    },
+    "61939": {
+      "name": "Keeper Gnarlmoon"
+    },
+    "61946": {
+      "name": "Ley-Watcher Incantagos"
+    },
+    "61951": {
+      "name": "Anomalus"
+    },
+    "61958": {
+      "name": "Echo of Medivh"
     },
     "65020": {
       "name": "Basalthar"

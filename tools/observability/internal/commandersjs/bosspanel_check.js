@@ -290,6 +290,62 @@ assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 27564).inPhase, t
 assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57097).inPhase, true,
   "Shuffle Kick runs in both phases");
 
+// Upper Karazhan Halls: an aura phase outranks the health rule, Sanv's four health phases step down, and no Kara
+// ability is p-tagged (its phases change timers, not the ability set), so every row stays listed.
+const KARA = REAL.byEntry || REAL.bosses || REAL;
+const gnarl = KARA["61939"];
+assert.deepStrictEqual(gnarl.phases.map((x) => x.rule), ["aura=51096", "start"]);
+assert.strictEqual(B.phaseOf(gnarl, { hp: 50, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(gnarl, { hp: 50, au: [{ id: 51096 }] }).phase, "intermission");
+const incant = KARA["61946"];
+assert.deepStrictEqual(incant.phases.map((x) => x.rule), ["aura=51176", "hp<40", "start"]);
+assert.strictEqual(B.phaseOf(incant, { hp: 90, au: [{ id: 51176 }] }).phase, "charged");
+assert.strictEqual(B.phaseOf(incant, { hp: 90, au: [] }).phase, "exposed");
+assert.strictEqual(B.phaseOf(incant, { hp: 35, au: [] }).phase, "devouring");
+assert.strictEqual(B.model(REAL, { entry: 61946, hp: 90, au: [] }, [], 0, 0).abilities.find((a) => a.sid === 51180).inPhase,
+  true, "Blizzard is listed once the seekers are gone");
+const echo = KARA["61958"];
+assert.deepStrictEqual(echo.phases.map((x) => x.rule), ["aura=8269", "aura=51125", "start"]);
+assert.strictEqual(B.phaseOf(echo, { hp: 60, au: [{ id: 51125 }] }).phase, "shadow");
+assert.strictEqual(B.phaseOf(echo, { hp: 15, au: [{ id: 51125 }, { id: 8269 }] }).phase, "enraged");
+const chess = KARA["59967"];
+assert.deepStrictEqual(chess.phases.map((x) => x.rule), ["aura=51228", "start"]);
+assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [{ id: 51228 }] }).phase, "shielded");
+assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [] }).phase, "fight");
+// The chess pieces are their own boss entries: the panel looks a boss up by the exact engaged entry, so a King-only
+// block left Bishop/Rook/Knight with no abilities. Each piece must render its own list, with names.
+for (const [entry, name, spells] of [
+  ["59971", "Bishop", [51212, 51213, 51214, 51215, 51216, 51217, 51218]],
+  ["59970", "Rook", [51218, 51219, 51220, 51221, 51223]],
+  ["59968", "Knight", [51218, 51224, 51225, 51226, 51227]],
+]) {
+  const block = KARA[entry];
+  assert.strictEqual(block.name, name, entry + " block name");
+  assert.deepStrictEqual(block.abilities.map((a) => a.sid).sort((a, b) => a - b), spells, entry + " abilities");
+  const piece = B.model(REAL, { entry: Number(entry), hp: 100, au: [] }, [], 0, 0);
+  assert.strictEqual(piece.boss.name, name);
+  assert.strictEqual(piece.abilities.length, spells.length, entry + " model abilities");
+  assert.ok(piece.abilities.every((a) => a.inPhase), entry + " lists every ability");
+  assert.ok(piece.abilities.every((a) => a.name && !/^spell /.test(a.name)), entry + " names every ability");
+}
+const kingModel = B.model(REAL, { entry: 59967, hp: 100, au: [] }, [], 0, 0);
+assert.ok(kingModel.abilities.some((a) => a.sid === 51229), "the King keeps Kings Fury");
+assert.ok(!kingModel.abilities.some((a) => a.sid === 51214), "the King does not carry the Bishop's spells");
+const sanv = KARA["59981"];
+assert.deepStrictEqual(sanv.phases.map((x) => x.rule), ["hp<20", "hp<50", "hp<80", "start"]);
+assert.strictEqual(B.phaseOf(sanv, { hp: 90 }).phase, "fight");
+assert.strictEqual(B.phaseOf(sanv, { hp: 60 }).phase, "portals");
+assert.strictEqual(B.phaseOf(sanv, { hp: 40 }).phase, "rift");
+assert.strictEqual(B.phaseOf(sanv, { hp: 15 }).phase, "enraged");
+assert.strictEqual(B.phaseOf(sanv, { hp: 40 }, "enraged").phase, "enraged", "the 20% rule latches");
+const kruul = KARA["59991"];
+assert.deepStrictEqual(kruul.phases.map((x) => x.rule), ["aura=51173", "start"]);
+assert.strictEqual(B.phaseOf(kruul, { hp: 20, au: [{ id: 51173 }] }).phase, "enraged");
+for (const entry of ["61939", "61946", "61958", "59967", "59981", "59991"]) {
+  const m = B.model(REAL, { entry: Number(entry), hp: 40, au: [] }, [], 0, 0);
+  assert.ok(m.abilities.length > 0 && m.abilities.every((a) => a.inPhase), entry + " keeps every ability listed");
+}
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
