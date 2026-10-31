@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 170)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 789)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2720,6 +2720,245 @@ class DungeonTrollValueTest(unittest.TestCase):
                     self.assertEqual(boss["phases"], [], boss["name"])
                 for ability in boss["abilities"]:
                     self.assertEqual(ability["castMs"], 0, ability["name"])
+
+
+class DungeonVaultCryptMorassValueTest(unittest.TestCase):
+    """Every Stormwind Vault, Karazhan Crypt and Black Morass row, read off the core.
+
+    The fixture is transcribed from the cited source, not generated from the CSV:
+    script timers only where the C++ stores the millisecond number, creature_spells
+    timers 0 because that dump is one line, and the exact flags, phases and adds.
+    Alarus, the three echoes, Rotmaw, Mossheart and Epidamu get their own blocks
+    because the panel looks a unit up by exact entry; Medivh, Nazorna, the unused
+    Chronormu/Gerastrasz pair, the GM-only Crypt Watcher and the never-spawned
+    Harbinger Aph'ygth (65114, a registered script with no spawn) are not fought and stay out.
+    """
+
+    MAP_BOSSES = {
+        "stormwind_vault": {80851, 80854, 80853, 80850, 80852, 93107},
+        "karazhan_crypt": {91916, 91920, 91929, 92935, 91919, 91917, 91928},
+        "black_morass": {65125, 65116, 65117, 65118, 65119, 65113, 65122, 65124, 61575},
+    }
+
+    ABILITIES = {
+        (80851, 7141): ("0", "0", "0", "p=fight;t=self;ok=script"),
+        (80851, 23951): ("0", "0", "0", "p=fight;t=self;self"),
+        (80851, 23931): ("0", "0", "0", "p=fight;t=aoe;aura"),
+        (80851, 9632): ("0", "0", "0", "p=bladestorm;t=self;self;ok.purge=nopurge"),
+        (80854, 46320): ("0", "0", "0", "t=random;ok=heal"),
+        (80854, 16588): ("0", "0", "0", "t=self;hp5;int"),
+        (80854, 11286): ("0", "0", "0", "t=random;aura;ok.dispel=nodispel"),
+        (80854, 11294): ("0", "0", "0", "t=victim;ok=tank"),
+        (80854, 24222): ("0", "0", "0", "t=self;ok=script"),
+        (80853, 18656): ("0", "0", "0", "t=victim;aura"),
+        (80853, 11700): ("0", "0", "0", "t=victim;aura;int"),
+        (80853, 10947): ("0", "0", "0", "t=victim;int"),
+        (80853, 17618): ("0", "0", "0", "t=self;summon=10482"),
+        (80850, 28873): ("0", "0", "0", "t=victim;ok=tank"),
+        (80850, 7074): ("0", "0", "0", "t=aoe;aura"),
+        (80850, 17228): ("0", "0", "0", "t=aoe;ok=heal"),
+        (80852, 19717): ("0", "0", "0", "p=fight;t=aoe;ground"),
+        (80852, 25306): ("0", "0", "0", "p=fight;t=random;aura;int"),
+        (80852, 18670): ("0", "0", "0", "p=fight;t=victim;ok=tank"),
+        (80852, 11958): ("0", "0", "0", "t=self;self;hp10;ok=phase"),
+        (93107, 17503): ("0", "0", "0", "t=victim;aura"),
+        (93107, 12888): ("16000", "16000", "16000", "t=random;aura"),
+        (93107, 30094): ("0", "0", "0", "t=aoe;aura"),
+        (91916, 17715): ("0", "0", "0", "t=self;self;int;ok.purge=nopurge"),
+        (91916, 18099): ("0", "0", "0", "t=aoe;aura"),
+        (91916, 12096): ("0", "0", "0", "t=victim;aura;int"),
+        (91916, 18763): ("0", "0", "0", "t=victim;aura;int"),
+        (91920, 15579): ("0", "0", "0", "t=random;ok=tank"),
+        (91920, 16727): ("0", "0", "0", "t=aoe;aura"),
+        (91920, 10101): ("0", "0", "0", "t=random;ok=tank"),
+        (91929, 12252): ("0", "0", "0", "t=aoe;cone;aura;ok.dispel=nodispel"),
+        (91929, 3609): ("0", "0", "0", "t=random;aura"),
+        (91929, 19469): ("0", "0", "0", "t=random;aura"),
+        (92935, 16867): ("0", "0", "0", "t=aoe;aura"),
+        (91919, 16867): ("0", "0", "0", "t=aoe;aura"),
+        (91919, 15708): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (91919, 26048): ("0", "0", "0", "t=aoe;int"),
+        (91917, 25052): ("0", "0", "0", "t=victim;int"),
+        (91917, 26103): ("0", "0", "0", "t=aoe;ok=heal"),
+        (91928, 16431): ("0", "0", "0", "t=self;self"),
+        (91928, 17738): ("0", "0", "0", "t=random;aura;int"),
+        (91928, 15232): ("0", "0", "0", "t=victim;int"),
+        (65125, 21919): ("12000", "12000", "12000", "t=victim;ok=tank"),
+        (65125, 16096): ("0", "25000", "25000", "t=aoe;aura;ok.dispel=nodispel"),
+        (65125, 17234): ("15000", "10000", "10000", "t=random;ok=heal"),
+        (65125, 28131): ("300000", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (65116, 20717): ("3000", "15000", "15000", "p=fight;t=aoe;cone;aura;ok.dispel=nodispel"),
+        (65116, 23919): ("12000", "12000", "12000", "p=fight;t=aoe;cone;aura;ok.dispel=nodispel"),
+        (65116, 24857): ("10000", "10000", "10000", "p=fight;t=random;ok=heal"),
+        (65116, 18647): ("0", "0", "0", "t=self;self;ok=phase"),
+        (65117, 7074): ("0", "0", "0", "t=aoe;ok=script"),
+        (65117, 19280): ("0", "15000", "15000", "t=random;aura"),
+        (65117, 11433): ("0", "25000", "25000", "t=aoe;ground;int"),
+        (65117, 28412): ("0", "10000", "10000", "t=victim;aura;ok.dispel=nodispel"),
+        (65117, 19777): ("0", "6000", "6000", "t=victim;ok=tank"),
+        (65118, 7074): ("0", "0", "0", "t=aoe;ok=script"),
+        (65118, 19630): ("0", "8000", "8000", "t=aoe;cone"),
+        (65118, 9482): ("0", "30000", "30000", "t=aoe;aura;int"),
+        (65118, 20228): ("0", "10000", "10000", "t=victim;aura"),
+        (65119, 7074): ("0", "0", "0", "t=aoe;ok=script"),
+        (65119, 20545): ("0", "0", "0", "t=self;self"),
+        (65119, 23106): ("0", "8000", "8000", "t=victim;int"),
+        (65119, 26550): ("0", "18000", "18000", "t=aoe;ground"),
+        (65119, 15234): ("0", "1000", "1000", "t=victim;int"),
+        (65113, 18328): ("5000", "60000", "60000", "t=aoe;aura;ok.dispel=nodispel"),
+        (65113, 13737): ("18000", "18000", "18000", "t=victim;aura;ok.dispel=nodispel"),
+        (65113, 12887): ("25000", "25000", "25000", "t=aoe;cone"),
+        (65113, 22067): ("17000", "10000", "17000", "t=self;self"),
+        (65113, 28131): ("0", "0", "0", "t=self;self;ok=phase"),
+        (65122, 7102): ("1000", "15000", "15000", "t=victim;aura"),
+        (65122, 25371): ("10000", "25000", "25000", "t=victim;aura"),
+        (65122, 28467): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (65122, 25051): ("5000", "18000", "18000", "t=victim;aura;ok.dispel=nodispel"),
+        (65122, 10689): ("0", "0", "0", "t=random;ok=heal"),
+        (65124, 8148): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (65124, 20664): ("0", "20000", "20000", "t=self;self"),
+        (65124, 20699): ("25000", "25000", "25000", "t=aoe;aura"),
+        (65124, 6870): ("0", "0", "0", "t=victim;aura"),
+        (65124, 6866): ("0", "0", "0", "t=victim;aura"),
+        (65124, 14535): ("0", "0", "0", "t=aoe;aura"),
+        (61575, 17682): ("0", "0", "0", "t=random;aura;int"),
+        (61575, 17287): ("0", "0", "0", "t=victim;int"),
+        (61575, 57102): ("0", "0", "0", "t=random;aura"),
+        (61575, 9433): ("0", "0", "0", "t=aoe;ok=heal"),
+    }
+
+    PHASES = {
+        80851: [(1, "bladestorm", "hp<5"), (2, "fight", "start")],
+        80852: [(1, "iceblock", "aura=11958"), (2, "fight", "start")],
+        65116: [(1, "banished", "aura=18647"), (2, "fight", "start")],
+        65113: [(1, "enraged", "aura=28131"), (2, "fight", "start")],
+    }
+
+    ADDS = {
+        80853: [(10482, "summon", 1)],
+        93107: [(60612, "summon", 1)],
+        91916: [(91927, "linked", 0)],
+        65116: [(65117, "summon", 1), (65118, "summon", 1), (65119, "summon", 1)],
+    }
+
+    MAPS = ("stormwind_vault", "karazhan_crypt", "black_morass")
+
+    def rows(self):
+        return [r for r in boss_data.read_rows(boss_data.DEFAULT_CSV) if r["map"] in self.MAPS]
+
+    def test_boss_set_per_dungeon(self):
+        got = {}
+        for row in self.rows():
+            got.setdefault(row["map"], set()).add(int(row["boss"]))
+        self.assertEqual(got, self.MAP_BOSSES)
+
+    def test_abilities_match_source(self):
+        got = {}
+        for row in self.rows():
+            if row["row"] == "ability":
+                got[(int(row["boss"]), int(row["key"]))] = (
+                    row["a"], row["b"], row["c"], row["d"]
+                )
+        self.assertEqual(got, self.ABILITIES)
+
+    def test_phases_and_adds(self):
+        phases = {}
+        adds = {}
+        for row in self.rows():
+            if row["row"] == "phase":
+                phases.setdefault(int(row["boss"]), []).append(
+                    (int(row["b"]), row["key"], row["a"])
+                )
+            elif row["row"] == "add":
+                adds.setdefault(int(row["boss"]), []).append(
+                    (int(row["key"]), row["a"], int(row["b"]))
+                )
+        self.assertEqual(phases, self.PHASES)
+        self.assertEqual(adds, self.ADDS)
+
+    def test_every_ability_has_a_target_or_an_ok_answer(self):
+        for (boss, sid), (_, _, _, flags) in self.ABILITIES.items():
+            self.assertTrue(
+                "t=" in flags or "ok=" in flags or "ok." in flags,
+                f"boss {boss} spell {sid} says nothing about what it needs: {flags}",
+            )
+
+    def test_kick_and_area_flags_follow_the_core_rule(self):
+        parsed = {}
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            parsed[(int(row["boss"]), int(row["key"]))] = boss_data.parse_flags(row["d"])
+        ints = {key for key, flags in parsed.items() if flags["int"]}
+        self.assertEqual(ints, {
+            (80854, 16588), (80853, 11700), (80853, 10947),
+            (80852, 25306),
+            (91916, 17715), (91916, 12096), (91916, 18763),
+            (91919, 26048), (91917, 25052), (91928, 17738), (91928, 15232),
+            (65117, 11433), (65118, 9482),
+            (65119, 23106), (65119, 15234), (61575, 17682), (61575, 17287),
+        })
+        cones = {key for key, flags in parsed.items() if flags["cone"]}
+        self.assertEqual(cones, {(91929, 12252), (65116, 20717), (65116, 23919),
+                                 (65118, 19630), (65113, 12887)})
+        ground = {key for key, flags in parsed.items() if flags["ground"]}
+        self.assertEqual(ground, {(80852, 19717), (65117, 11433), (65119, 26550)})
+
+    def test_phase_tags_only_hide_what_really_stops(self):
+        parsed = {}
+        for row in self.rows():
+            if row["row"] == "ability":
+                parsed[(int(row["boss"]), int(row["key"]))] = boss_data.parse_flags(row["d"])
+        # Volkan's last phase replaces every other cast, Blink and Bloodlust included.
+        self.assertEqual(
+            {key for key, flags in parsed.items() if key[0] == 80851 and flags["phase"]},
+            {(80851, 7141), (80851, 23951), (80851, 23931), (80851, 9632)},
+        )
+        # Tham'Grarr's Ice Block stops the fight while it holds.
+        self.assertEqual(
+            {key for key, flags in parsed.items() if key[0] == 80852 and flags["phase"]},
+            {(80852, 19717), (80852, 25306), (80852, 18670)},
+        )
+        # Epochronos cannot cast while banished.
+        self.assertEqual(
+            {key for key, flags in parsed.items() if key[0] == 65116 and flags["phase"]},
+            {(65116, 20717), (65116, 23919), (65116, 24857)},
+        )
+        # Chronar's enrage stops nothing.
+        self.assertFalse(
+            {key for key, flags in parsed.items() if key[0] == 65113 and flags["phase"]}
+        )
+
+    def test_creature_spell_lists_have_no_script_timer(self):
+        for row in self.rows():
+            if row["map"] != "karazhan_crypt" or row["row"] != "ability":
+                continue
+            self.assertEqual((row["a"], row["b"], row["c"]), ("0", "0", "0"), row["_line"])
+
+    def test_cast_time_is_kept_where_names_json_has_it(self):
+        doc = boss_data.build_document(
+            boss_data.read_rows(boss_data.DEFAULT_CSV),
+            boss_data.read_names(boss_data.DEFAULT_NAMES),
+        )
+        for boss in doc["bosses"].values():
+            if boss["map"] not in self.MAPS:
+                continue
+            for ability in boss["abilities"]:
+                expected = 1500 if ability["sid"] == 26103 else 0
+                self.assertEqual(ability["castMs"], expected, ability["name"])
+
+    def test_fought_units_have_a_block_and_the_rest_do_not(self):
+        entries = {
+            boss["entry"] for boss in boss_data.build_document(
+                boss_data.read_rows(boss_data.DEFAULT_CSV),
+                boss_data.read_names(boss_data.DEFAULT_NAMES),
+            )["bosses"].values()
+            if boss["map"] in self.MAPS
+        }
+        for entry in (91928, 65117, 65118, 65119, 65122, 65124, 61575):
+            self.assertIn(entry, entries, f"fought unit {entry} has no block")
+        for entry in (50105, 91931, 80830, 50080, 50117, 65114):
+            self.assertNotIn(entry, entries, f"{entry} is not fought and must stay out")
 
 
 class UbrsValueTest(unittest.TestCase):

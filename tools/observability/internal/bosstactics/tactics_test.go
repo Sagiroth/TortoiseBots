@@ -512,7 +512,7 @@ func TestRaidMapsMatchTheCommittedCSV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []uint32{109, 209, 229, 230, 249, 309, 409, 469, 509, 531, 532, 533, 807, 814, 819}; !reflect.DeepEqual(maps, want) {
+	if want := []uint32{35, 109, 209, 229, 230, 249, 269, 309, 409, 469, 509, 531, 532, 533, 800, 807, 814, 819}; !reflect.DeepEqual(maps, want) {
 		t.Fatalf("RaidMaps() = %v, want %v", maps, want)
 	}
 }

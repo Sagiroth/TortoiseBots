@@ -2491,6 +2491,278 @@
     "58117": {
       "name": "Emerald Dream Welcome",
       "castMs": 0
+    },
+    "7141": {
+      "name": "Simple Teleport",
+      "castMs": 0
+    },
+    "23951": {
+      "name": "Bloodlust",
+      "castMs": 0
+    },
+    "23931": {
+      "name": "Thunderclap",
+      "castMs": 0
+    },
+    "9632": {
+      "name": "Bladestorm",
+      "castMs": 0
+    },
+    "46320": {
+      "name": "Backstab",
+      "castMs": 0
+    },
+    "16588": {
+      "name": "Dark Mending",
+      "castMs": 0
+    },
+    "11286": {
+      "name": "Gouge",
+      "castMs": 0
+    },
+    "11294": {
+      "name": "Sinister Strike",
+      "castMs": 0
+    },
+    "24222": {
+      "name": "Vanish Visual",
+      "castMs": 0
+    },
+    "18656": {
+      "name": "Corruption",
+      "castMs": 0
+    },
+    "11700": {
+      "name": "Drain Life",
+      "castMs": 0
+    },
+    "17618": {
+      "name": "Summon Risen Lackey",
+      "castMs": 0
+    },
+    "28873": {
+      "name": "Lich Slap",
+      "castMs": 0
+    },
+    "7074": {
+      "name": "Screams of the Past",
+      "castMs": 0
+    },
+    "17228": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "25306": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "11958": {
+      "name": "Ice Block",
+      "castMs": 0
+    },
+    "17503": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "12888": {
+      "name": "Cause Insanity",
+      "castMs": 0
+    },
+    "30094": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "17715": {
+      "name": "Consuming Shadows",
+      "castMs": 0
+    },
+    "18099": {
+      "name": "Chill Nova",
+      "castMs": 0
+    },
+    "12096": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "18763": {
+      "name": "Freeze",
+      "castMs": 0
+    },
+    "15579": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "16727": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "12252": {
+      "name": "Web Spray",
+      "castMs": 0
+    },
+    "3609": {
+      "name": "Paralyzing Poison",
+      "castMs": 0
+    },
+    "19469": {
+      "name": "Poison Mind",
+      "castMs": 0
+    },
+    "16867": {
+      "name": "Banshee Curse",
+      "castMs": 0
+    },
+    "26048": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "25052": {
+      "name": "Acid Spit",
+      "castMs": 0
+    },
+    "16431": {
+      "name": "Bone Armor",
+      "castMs": 0
+    },
+    "17738": {
+      "name": "Curse of the Plague Rat",
+      "castMs": 0
+    },
+    "15232": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "21919": {
+      "name": "Thrash",
+      "castMs": 0
+    },
+    "16096": {
+      "name": "Cowering Roar",
+      "castMs": 0
+    },
+    "17234": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "20717": {
+      "name": "Sand Breath",
+      "castMs": 0
+    },
+    "24857": {
+      "name": "Arcane Blast",
+      "castMs": 0
+    },
+    "18647": {
+      "name": "Banish",
+      "castMs": 0
+    },
+    "19280": {
+      "name": "Devouring Plague",
+      "castMs": 0
+    },
+    "11433": {
+      "name": "Death & Decay",
+      "castMs": 0
+    },
+    "28412": {
+      "name": "Death Coil",
+      "castMs": 0
+    },
+    "19630": {
+      "name": "Cone of Fire",
+      "castMs": 0
+    },
+    "9482": {
+      "name": "Amplify Flames",
+      "castMs": 0
+    },
+    "20545": {
+      "name": "Lightning Shield",
+      "castMs": 0
+    },
+    "23106": {
+      "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "26550": {
+      "name": "Lightning Cloud",
+      "castMs": 0
+    },
+    "15234": {
+      "name": "Lightning Bolt",
+      "castMs": 0
+    },
+    "18328": {
+      "name": "Incapacitating Shout",
+      "castMs": 0
+    },
+    "13737": {
+      "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "22067": {
+      "name": "Reflection",
+      "castMs": 0
+    },
+    "7102": {
+      "name": "Contagion of Rot",
+      "castMs": 0
+    },
+    "25371": {
+      "name": "Consume",
+      "castMs": 0
+    },
+    "28467": {
+      "name": "Mortal Wound",
+      "castMs": 0
+    },
+    "25051": {
+      "name": "Sunder Armor",
+      "castMs": 0
+    },
+    "10689": {
+      "name": "Knockback",
+      "castMs": 0
+    },
+    "8148": {
+      "name": "Thorns Aura",
+      "castMs": 0
+    },
+    "20664": {
+      "name": "Rejuvenation",
+      "castMs": 0
+    },
+    "20699": {
+      "name": "Entangling Roots",
+      "castMs": 0
+    },
+    "6870": {
+      "name": "Moss Covered Feet",
+      "castMs": 0
+    },
+    "6866": {
+      "name": "Moss Covered Hands",
+      "castMs": 0
+    },
+    "14535": {
+      "name": "Dredge Sickness",
+      "castMs": 0
+    },
+    "17682": {
+      "name": "Drain Mana",
+      "castMs": 0
+    },
+    "17287": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "57102": {
+      "name": "Temporal Conflux",
+      "castMs": 0
+    },
+    "9433": {
+      "name": "Arcane Explosion",
+      "castMs": 0
     }
   },
   "creatures": {
@@ -3507,6 +3779,81 @@
     },
     "533002": {
       "name": "Plague Cloud"
+    },
+    "10482": {
+      "name": "Risen Lackey"
+    },
+    "60612": {
+      "name": "Frigid Guardian"
+    },
+    "91927": {
+      "name": "Midnight"
+    },
+    "65117": {
+      "name": "Echo of the Lich King"
+    },
+    "65118": {
+      "name": "Echo of Kael'thas Sunstrider"
+    },
+    "65119": {
+      "name": "Echo of Lady Vashj"
+    },
+    "80851": {
+      "name": "Volkan Cruelblade"
+    },
+    "80854": {
+      "name": "Damian"
+    },
+    "80853": {
+      "name": "Aszosh Grimflame"
+    },
+    "80850": {
+      "name": "Black Bride"
+    },
+    "80852": {
+      "name": "Tham'Grarr"
+    },
+    "93107": {
+      "name": "Arc'tiras"
+    },
+    "91916": {
+      "name": "Archlich Enkhraz"
+    },
+    "91920": {
+      "name": "Marrowspike"
+    },
+    "91929": {
+      "name": "Hivaxxis"
+    },
+    "92935": {
+      "name": "Guard Captain Gort"
+    },
+    "91919": {
+      "name": "Commander Andreon"
+    },
+    "91917": {
+      "name": "Corpsemuncher"
+    },
+    "91928": {
+      "name": "Alarus"
+    },
+    "65125": {
+      "name": "Antnormi"
+    },
+    "65116": {
+      "name": "Time-Lord Epochronos"
+    },
+    "65113": {
+      "name": "Chronar"
+    },
+    "65122": {
+      "name": "Rotmaw"
+    },
+    "65124": {
+      "name": "Mossheart"
+    },
+    "61575": {
+      "name": "Epidamu"
     }
   }
 }

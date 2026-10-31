@@ -509,4 +509,39 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+
+// ---- the dungeon batch's phase rules: Bladestorm latches at 5 percent, Ice Block and Banish hide the fight,
+// Chronar's enrage is only a label -----------------------------------------------------------------------------
+const volkan = B.bossFor(REAL, 80851);
+const volkanFight = B.model(REAL, { entry: 80851, hp: 40, au: [] }, [], 0, 0);
+assert.strictEqual(volkanFight.phase, "fight");
+assert.strictEqual(volkanFight.abilities.find((a) => a.sid === 23931).inPhase, true, "Thunderclap in the fight phase");
+assert.strictEqual(volkanFight.abilities.find((a) => a.sid === 9632).inPhase, false, "Bladestorm waits for 5 percent");
+const volkanStorm = B.model(REAL, { entry: 80851, hp: 4, au: [] }, [], 0, 0);
+assert.strictEqual(B.phaseOf(volkan, { hp: 4 }).phase, "bladestorm");
+assert.strictEqual(volkanStorm.abilities.find((a) => a.sid === 23931).inPhase, false, "Thunderclap stops in Bladestorm");
+assert.strictEqual(volkanStorm.abilities.find((a) => a.sid === 9632).inPhase, true, "Bladestorm is the last phase");
+assert.strictEqual(volkanStorm.abilities.find((a) => a.sid === 7141).inPhase, false, "Blink stops in Bladestorm");
+assert.strictEqual(volkanStorm.abilities.find((a) => a.sid === 23951).inPhase, false, "Bloodlust stops in Bladestorm");
+assert.strictEqual(volkanFight.abilities.find((a) => a.sid === 7141).inPhase, true, "Blink is a fight-phase ability");
+assert.strictEqual(volkanFight.abilities.find((a) => a.sid === 23951).inPhase, true, "Bloodlust is a fight-phase ability");
+
+const tham = B.bossFor(REAL, 80852);
+assert.strictEqual(B.phaseOf(tham, { hp: 10, au: [{ id: 11958 }] }).phase, "iceblock");
+assert.strictEqual(B.phaseOf(tham, { hp: 10, au: [] }).phase, "fight");
+const thamBlock = B.model(REAL, { entry: 80852, hp: 10, au: [{ id: 11958 }] }, [], 0, 0);
+assert.strictEqual(thamBlock.abilities.find((a) => a.sid === 19717).inPhase, false, "Rain of Fire stops in Ice Block");
+assert.strictEqual(thamBlock.abilities.find((a) => a.sid === 11958).inPhase, true, "the Ice Block aura itself stays");
+
+const epo = B.bossFor(REAL, 65116);
+assert.strictEqual(B.phaseOf(epo, { hp: 40, au: [{ id: 18647 }] }).phase, "banished");
+assert.strictEqual(B.phaseOf(epo, { hp: 40, au: [] }).phase, "fight");
+const epoBanished = B.model(REAL, { entry: 65116, hp: 40, au: [{ id: 18647 }] }, [], 0, 0);
+assert.strictEqual(epoBanished.abilities.find((a) => a.sid === 20717).inPhase, false, "Sand Breath stops in Banish");
+assert.strictEqual(epoBanished.abilities.find((a) => a.sid === 18647).inPhase, true, "the Banish aura stays");
+
+const chronar = B.bossFor(REAL, 65113);
+const chronarRage = B.model(REAL, { entry: 65113, hp: 30, au: [{ id: 28131 }] }, [], 0, 0);
+assert.strictEqual(chronarRage.phase, "enraged");
+assert.strictEqual(chronarRage.abilities.find((a) => a.sid === 18328).inPhase, true, "Chronar keeps casting while enraged");
 console.log("boss panel ok");
