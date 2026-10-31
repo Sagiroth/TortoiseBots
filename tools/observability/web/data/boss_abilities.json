@@ -51,6 +51,7 @@
       "bosses": [
         9816,
         10429,
+        10339,
         10430,
         10363,
         16042
@@ -3078,7 +3079,7 @@
           "sid": 23462,
           "name": "Fire Nova",
           "castMs": 0,
-          "a": 6000,
+          "a": 0,
           "b": 6000,
           "c": 6000,
           "phase": "",
@@ -3099,7 +3100,7 @@
           "sid": 23341,
           "name": "Flame Buffet",
           "castMs": 0,
-          "a": 3000,
+          "a": 0,
           "b": 14000,
           "c": 14000,
           "phase": "",
@@ -3122,7 +3123,7 @@
           "sid": 20228,
           "name": "Pyroblast",
           "castMs": 0,
-          "a": 14000,
+          "a": 0,
           "b": 15000,
           "c": 15000,
           "phase": "",
@@ -3152,8 +3153,8 @@
         }
       ],
       "notes": [
-        "The cage is the first phase: Emberseer is unselectable and immune until every Blackhand Incarcerator within 35 yd is dead, then he removes the cage and casts 16047 and 16048. His three timers start counting at that liberation, not at the pull.",
-        "Pyro Blast's timer adds 15 s to whatever was left, so a late cast shortens the next gap; it retries until a random target exists.",
+        "The cage is the first phase: Emberseer is unselectable and immune until every Blackhand Incarcerator within 35 yd is dead, then he removes the cage and casts 16047 and 16048. There is no pull timer: Fire Nova first lands 6 s after he is freed, Flame Buffet 3 s and Pyro Blast 14 s, and the repeats run from each cast.",
+        "Pyro Blast's timer adds 15 s to whatever was left, whether or not the cast succeeded, so a failed attempt waits that window instead of retrying on the next tick; a late cast shortens the next gap.",
         "The Incarcerators cast 16045 Encage on a random player in line of sight and then Strike; those are add casts, not Emberseer's."
       ]
     },
@@ -3182,7 +3183,9 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
         },
         {
           "sid": 15708,
@@ -3261,16 +3264,113 @@
       ],
       "notes": [
         "Gyth is summoned by the instance and his EventAI summons Rend below 20% HP; Rend's timers start at that summon. creature_spells stores 20/18, 9/16 and 5/10 s and the list casts at most one due spell per 1.2 s update.",
-        "Enrage 8269 is a passive self aura, so the panel sees the HP crossing and no cast event.",
-        "Gyth's Flame Breath 16390 is a 2 s cast and a 120-degree 20 yd front cone in the shape table; Corrosive Acid Breath 16359 and Freeze 16350 are instant and draw no shape.",
-        "Gyth casts Corrosive Acid Breath 16359, Freeze 16350, Flame Breath 16390 and Knock Away 10101 from its own list and Chromatic Chaos 16337 below 50%; the panel sees Gyth only as an add."
+        "Enrage 8269 is a passive self aura, so the panel sees the HP crossing and no cast event."
+      ]
+    },
+    "10339": {
+      "entry": 10339,
+      "name": "Gyth",
+      "map": "upper_blackrock_spire",
+      "order": 20,
+      "abilities": [
+        {
+          "sid": 16359,
+          "name": "Corrosive Acid Breath",
+          "castMs": 0,
+          "a": 8000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16350,
+          "name": "Freeze",
+          "castMs": 0,
+          "a": 11000,
+          "b": 16000,
+          "c": 16000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16390,
+          "name": "Flame Breath",
+          "castMs": 0,
+          "a": 4000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10101,
+          "name": "Knock Away",
+          "castMs": 0,
+          "a": 23000,
+          "b": 23000,
+          "c": 23000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Gyth has no boss AI: the default AggressorAI runs his creature_spells list 103390, at most one due spell per 1.2 s update, and the stored timers count from when he engages.",
+        "Flame Breath 16390 is a 2 s cast and a 120-degree 20 yd front cone in the shape table; Corrosive Acid Breath 16359 and Freeze 16350 are instant 20 yd cones and draw no shape.",
+        "Chromatic Chaos 16337 is not on Gyth's spell list: his 50% EventAI event (1033901) runs script 1033901, which casts it at Lord Victor Nefarius 10162."
       ]
     },
     "10430": {
       "entry": 10430,
       "name": "The Beast",
       "map": "upper_blackrock_spire",
-      "order": 20,
+      "order": 21,
       "abilities": [
         {
           "sid": 16785,
@@ -3406,7 +3506,7 @@
       "phases": [],
       "adds": [],
       "notes": [
-        "Flamebreak damages and knocks back everything within 10 yd; Berserker Charge knocks its target back. Flamebreak's first window is 8-12 s and Fire Blast's 8-11 s; afterward both are 14-20 s. The first Berserker Charge is immediate on the current victim; later ones pick a random target that is not the tank.",
+        "Flamebreak damages and knocks back everything within 10 yd; Berserker Charge knocks its target back. Flamebreak's first window is 8-12 s and Fire Blast's 8-11 s; afterward both are 14-20 s. The first Berserker Charge picks the current victim because the timer is 0 when the fight starts; later ones pick a random target that is not the tank, and a failed cast leaves the timer at 0 and retries every tick.",
         "Immolate 15506 is re-applied whenever it is missing and is passive, so it has no cast event.",
         "The script's Fire Blast constant is 14144, but spell_template 14144 is Remorseless Attacks and its only effect applies the aura to the caster; it arms a proc on the Beast, not fire damage on the target.",
         "He evades when pulled by a pet or when he leaves z 75 to 125; skinning him casts 16710 and summons Finkle Einhorn 10776, which is not a combat add."
@@ -3416,7 +3516,7 @@
       "entry": 10363,
       "name": "General Drakkisath",
       "map": "upper_blackrock_spire",
-      "order": 21,
+      "order": 22,
       "abilities": [
         {
           "sid": 12097,
@@ -3560,7 +3660,7 @@
       "entry": 16042,
       "name": "Lord Valthalak",
       "map": "upper_blackrock_spire",
-      "order": 22,
+      "order": 23,
       "abilities": [
         {
           "sid": 27286,
@@ -3569,7 +3669,7 @@
           "a": 0,
           "b": 8000,
           "c": 12000,
-          "phase": "",
+          "phase": "phase1",
           "target": "victim",
           "aura": false,
           "self": false,
@@ -3687,8 +3787,8 @@
         }
       ],
       "notes": [
-        "Shadow Wrath's first cast is 8-12 s after the pull and then every 8-12 s in every phase.",
-        "EventAI phases: 1 on aggro, 2 below 40% (casts Enrage 8269) and 3 below 15%. Summon Spectral Assassin stops in phase 2; the phase-3 loops cast Shadow Bolt Volley and Enrage only while those auras are missing.",
+        "Shadow Wrath's first cast is 8-12 s after the pull and then every 8-12 s, in phase 1 only: its EventAI row skips phases 2 and 3, so it stops in phase 2 like Summon Spectral Assassin.",
+        "EventAI phases: 1 on aggro, 2 below 40% (casts Enrage 8269) and 3 below 15%. Summon Spectral Assassin and Shadow Wrath stop in phase 2; the phase-3 loops cast Shadow Bolt Volley and Enrage only while those auras are missing.",
         "Enrage 8269 is passive, so it cannot signal a phase; the phase rows are HP thresholds and phase 3 outranks phase 2.",
         "Shadow Bolt Volley 27382 is a self aura that pulses 27383 at nearby players every 2 s; the cast is instant and has no cast bar.",
         "Spirit of Lord Valthalak 16073 is summoned on death at 44.71/-536/110, not during the fight."

@@ -245,6 +245,18 @@ class BossDataTest(unittest.TestCase):
         errors, _ = fx.validate()
         self.assertTrue(any("a=14000" in e for e in errors), errors)
 
+    def test_a_creature_spells_row_gives_its_timers_in_seconds(self):
+        # The loader multiplies the four timer columns by IN_MILLISECONDS, so a
+        # 14000 ms row cites the line that stores 14.
+        fx = self.make([ability(a="14000", b="14000", c="14000", source="spells.sql:1"), add(),
+                        phase("p1", "start", 1, source="boss.cpp:3")])
+        (fx.dir / "core" / "spells.sql").write_text(
+            "INSERT INTO `creature_spells` VALUES (9,'Boss',24328,100,1,0,0,0,14,14,14,14,0);\n"
+        )
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertEqual(errors, [])
+
     def test_spell_id_must_be_cited(self):
         rows = [ability(source="boss.cpp:3;boss.cpp:4"), add(),
                 phase("p1", "start", 1, source="boss.cpp:3")]
@@ -578,8 +590,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 22)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 135)
+        self.assertEqual(len(doc["bosses"]), 23)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 139)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -598,18 +610,18 @@ class UbrsValueTest(unittest.TestCase):
 
     The fixture is transcribed from the cited source, not generated from the CSV:
     timers, target, flags, phase and cast ms for every ability, plus every phase
-    rule and add. The creature_spells lists store seconds, so Rend's and
-    Drakkisath's columns are 0 and the note carries the cadence (ObjectMgr.cpp
-    multiplies by IN_MILLISECONDS).
+    rule and add. A creature_spells row stores seconds; Gyth's four timers are
+    the stored values x1000, while Rend's and Drakkisath's stay 0 with their
+    cadence in the notes.
     """
 
     EXPECTED = {
         "9816": {
             "name": "Pyroguard Emberseer",
             "abilities": {
-                23462: (6000, 6000, 6000, "aoe", "", ()),
-                23341: (3000, 14000, 14000, "aoe", "", ("aura", "ok.dispel=nodispel")),
-                20228: (14000, 15000, 15000, "random", "", ("aura", "ok.dispel=nodispel")),
+                23462: (0, 6000, 6000, "aoe", "", ()),
+                23341: (0, 14000, 14000, "aoe", "", ("aura", "ok.dispel=nodispel")),
+                20228: (0, 15000, 15000, "random", "", ("aura", "ok.dispel=nodispel")),
             },
             "phases": [],
             "adds": {10316: ("ward", 1)},
@@ -617,13 +629,24 @@ class UbrsValueTest(unittest.TestCase):
         "10429": {
             "name": "Warchief Rend Blackhand",
             "abilities": {
-                13736: (0, 0, 0, "aoe", "", ("int",)),
+                13736: (0, 0, 0, "aoe", "", ("int", "ok.interrupt=nokick")),
                 15708: (0, 0, 0, "victim", "", ("aura", "ok.dispel=nodispel")),
                 15754: (0, 0, 0, "victim", "", ()),
                 8269: (0, 0, 0, "self", "", ("self", "hp20")),
             },
             "phases": [],
             "adds": {10339: ("linked", 1)},
+        },
+        "10339": {
+            "name": "Gyth",
+            "abilities": {
+                16359: (8000, 7000, 7000, "aoe", "", ("aura", "cone")),
+                16350: (11000, 16000, 16000, "aoe", "", ("aura", "cone")),
+                16390: (4000, 10000, 10000, "aoe", "", ("cone", "int")),
+                10101: (23000, 23000, 23000, "victim", "", ()),
+            },
+            "phases": [],
+            "adds": {},
         },
         "10430": {
             "name": "The Beast",
@@ -654,7 +677,7 @@ class UbrsValueTest(unittest.TestCase):
         "16042": {
             "name": "Lord Valthalak",
             "abilities": {
-                27286: (0, 8000, 12000, "victim", "", ()),
+                27286: (0, 8000, 12000, "victim", "phase1", ()),
                 27249: (10000, 10000, 10000, "self", "phase1", ("summon=16066",)),
                 27382: (0, 0, 0, "self", "phase3", ("self",)),
                 8269: (0, 0, 0, "self", "", ("self", "hp40")),
@@ -728,6 +751,9 @@ class UbrsValueTest(unittest.TestCase):
         volley = next(a for a in val["abilities"] if a["sid"] == 27382)
         self.assertEqual(volley["phase"], "phase3")
         self.assertEqual(volley["target"], "self")
+        # 1604205 has inverse phase mask 13, so Shadow Wrath runs in phase 1 only.
+        wrath = next(a for a in val["abilities"] if a["sid"] == 27286)
+        self.assertEqual(wrath["phase"], "phase1")
         # The Beast's script-pointed 14144 is a self aura in spell_template, not a hit on the victim.
         beast = next(a for a in self.boss("10430")["abilities"] if a["sid"] == 14144)
         self.assertEqual(beast["target"], "self")
@@ -735,6 +761,24 @@ class UbrsValueTest(unittest.TestCase):
         # Fireball has a cast time but interruptFlags 0: the core cannot kick it.
         fireball = next(a for a in self.boss("10430")["abilities"] if a["sid"] == 16788)
         self.assertEqual(fireball["okNeeds"], {"interrupt": "nokick"})
+        # Whirlwind is a channel with preventionType 2: the core cannot kick it either.
+        whirlwind = next(a for a in self.boss("10429")["abilities"] if a["sid"] == 13736)
+        self.assertEqual(whirlwind["okNeeds"], {"interrupt": "nokick"})
+        # Emberseer's timers start at liberation, so no ability has a pull timer.
+        emberseer = self.boss("9816")
+        self.assertTrue(all(a["a"] == 0 for a in emberseer["abilities"]))
+        emberseer_notes = " ".join(emberseer["notes"])
+        self.assertIn("6 s after he is freed", emberseer_notes)
+        self.assertIn("Flame Buffet 3 s", emberseer_notes)
+        self.assertIn("Pyro Blast 14 s", emberseer_notes)
+        # Gyth's own block takes the creature_spells timers in ms.
+        gyth = {a["sid"]: a for a in self.boss("10339")["abilities"]}
+        self.assertEqual((gyth[16359]["a"], gyth[16359]["b"]), (8000, 7000))
+        self.assertEqual((gyth[16350]["a"], gyth[16350]["b"]), (11000, 16000))
+        self.assertEqual((gyth[16390]["a"], gyth[16390]["b"]), (4000, 10000))
+        self.assertEqual((gyth[10101]["a"], gyth[10101]["b"]), (23000, 23000))
+        self.assertTrue(gyth[16390]["int"] and gyth[16390]["cone"])
+        self.assertIn("Nefarius", " ".join(self.boss("10339")["notes"]))
         # The creature_spells cadences are in the notes because the columns are 0.
         rend_notes = " ".join(self.boss("10429")["notes"])
         self.assertIn("20/18", rend_notes)

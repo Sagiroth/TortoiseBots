@@ -60,6 +60,10 @@
       "name": "Enrage",
       "castMs": 0
     },
+    "10101": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
     "12097": {
       "name": "Pierce Armor",
       "castMs": 0
@@ -114,6 +118,18 @@
     },
     "16245": {
       "name": "Freeze Anim",
+      "castMs": 0
+    },
+    "16350": {
+      "name": "Freeze",
+      "castMs": 0
+    },
+    "16359": {
+      "name": "Corrosive Acid Breath",
+      "castMs": 0
+    },
+    "16390": {
+      "name": "Flame Breath",
       "castMs": 0
     },
     "16419": {
