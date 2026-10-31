@@ -509,4 +509,27 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// Dungeon batch 10: Mr. Smite's weapon phases step 33 % before 66 % (a 20 % pull must see the hammer, not the axes),
+// and Thermaplugg's below-50 phase hides his phase-1 knock-away and bomb activation.
+const EARLY = REAL.byEntry || REAL.bosses || REAL;
+const smite = EARLY["646"];
+assert.deepStrictEqual(smite.phases.map((x) => x.rule), ["hp<33", "hp<66", "start"]);
+assert.strictEqual(B.phaseOf(smite, { hp: 90 }).phase, "sword");
+assert.strictEqual(B.phaseOf(smite, { hp: 50 }).phase, "axed");
+assert.strictEqual(B.phaseOf(smite, { hp: 20 }).phase, "hammer");
+assert.strictEqual(B.phaseOf(smite, { hp: 20 }, "axed").phase, "hammer", "the lower rung is listed first");
+const smiteHammer = B.model(REAL, { entry: 646, hp: 20, au: [] }, [], 0, 0);
+assert.strictEqual(smiteHammer.phase, "hammer");
+assert.strictEqual(smiteHammer.abilities.find((a) => a.sid === 6435).inPhase, true, "Smite Slam is the hammer");
+assert.strictEqual(smiteHammer.abilities.find((a) => a.sid === 3391).inPhase, false, "Thrash is the axe phase");
+assert.strictEqual(smiteHammer.abilities.find((a) => a.sid === 6432).inPhase, true, "Smite Stomp has no phase tag");
+const therma = EARLY["7800"];
+assert.deepStrictEqual(therma.phases.map((x) => x.rule), ["hp<50", "start"]);
+assert.strictEqual(B.phaseOf(therma, { hp: 80 }).phase, "fight");
+assert.strictEqual(B.phaseOf(therma, { hp: 30 }).phase, "below");
+const thermaBelow = B.model(REAL, { entry: 7800, hp: 30, au: [] }, [], 0, 0);
+assert.strictEqual(thermaBelow.abilities.find((a) => a.sid === 11130).inPhase, true, "the phase-2 knock-away");
+assert.strictEqual(thermaBelow.abilities.find((a) => a.sid === 11795).inPhase, true, "the phase-2 bomb activation");
+assert.strictEqual(thermaBelow.abilities.find((a) => a.sid === 10101).inPhase, false, "the phase-1 knock-away");
+assert.strictEqual(thermaBelow.abilities.find((a) => a.sid === 11511).inPhase, false, "the phase-1 bomb activation");
 console.log("boss panel ok");
