@@ -77,6 +77,9 @@ private:
     };
     void LadderBuildBuckets(std::vector<std::vector<size_t>>& buckets, uint32_t nowMs, LadderSkips& skips);
     int LadderPickFromBuckets(std::vector<std::vector<size_t>>& buckets, std::vector<uint32_t> const& onlinePerBand, uint32_t onlineAlliance, uint32_t onlineHorde) const;
+    // Unfinished-order candidates this pass can queue, in login order. Runs
+    // before the pinned, ladder and ring passes.
+    void QueueOrderBots(uint32_t target, uint32_t perInterval, uint32_t& online, uint32_t& added);
     void LadderLog(uint32_t diff);
     void RemoveExpiredBots(uint32_t diff);
     uint32_t TargetCount() const;

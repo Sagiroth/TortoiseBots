@@ -6,6 +6,7 @@
 #include <utility>
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
+#include <unordered_set>
 
 namespace ai
 {
@@ -70,6 +71,14 @@ namespace ai
 		bool HasFocusQuest() const {return !focusList.empty();}
 		bool IsFocusQuest(uint32 questId) const { return focusList.find(questId) != focusList.end(); }
 
+		// Order mode: the bot farms a guild order item in its planned zone.
+		// Destination gates skip leisure rules for order sources of that item.
+		bool IsOrderMode() const { return orderItemId != 0; }
+		uint32 GetOrderItem() const { return orderItemId; }
+		uint32 GetOrderZone() const { return orderZoneId; }
+		void SetOrderMode(uint32 itemId, uint32 zoneId) { orderItemId = itemId; orderZoneId = zoneId; }
+		void ClearOrderMode() { orderItemId = 0; orderZoneId = 0; }
+
 		bool GetBoolValue(const std::string& valueName) const {return boolValues.at(valueName);};
 		bool GetBoolValue2(const std::string& valueName, const std::string& qualifier) const { return boolValues.at(valueName + "::" + qualifier); };
 		uint8 GetUint8Value(const std::string& valueName) const { return uint8Values.at(valueName);};
@@ -81,6 +90,8 @@ namespace ai
 		Team team = TEAM_NONE;
 		uint32 level = 0;
 		uint32 identitySeed = 0;
+		uint32 orderItemId = 0;
+		uint32 orderZoneId = 0;
 		uint16 currentSkill[MAX_SKILL_TYPE] = {0};
 		uint16 skillMax[MAX_SKILL_TYPE] = { 0 };
 		uint8 groupSize = 0;
@@ -462,11 +473,24 @@ namespace ai
 
 		WorldPosition* GetFishSpot(WorldPosition start, bool onlyNearestGrid = false);
 
+		// Whether the fish dataset holds at least one spot in the zone: the
+		// guild-order planner skips zones it cannot serve, so the travel leg
+		// never plans water it has no walkable point in.
+		bool FishZoneHasSpots(uint32 zoneId) const;
+
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
 		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0);
 		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0) const;
+		// Zone-scoped order-leg search: like GetPartitions, but the point walk
+		// only considers points inside zoneId and walks every distance band,
+		// not just the closest one. A planned zone whose spawns sit farther
+		// than another zone's would otherwise come back empty after the
+		// caller pins the nearest-point list to the zone. Points stay
+		// nearest-first inside each band, so the pick still prefers near.
+		// Bounded by the entries' own spawn points; no world scan.
+		PartitionedTravelList GetOrderZonePartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, uint32 zoneId, bool onlyPossible = false, float maxDistance = 0.0f) const;
 		static void ShuffleTravelPoints(std::vector<TravelPoint>& points);
 
 		// Grind-spot demand: how many travel targets currently hold a destination.
@@ -544,6 +568,10 @@ namespace ai
 
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
+		// Zones holding at least one fish spot, built with the destinations
+		// above: the order planner asks per search row, so it reads a set,
+		// never a point walk.
+		std::unordered_set<uint32> fishSpotZones;
 		std::unordered_map<uint32, int32> areaLevels;
 		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
 		// (0 = unresolvable at build, fail closed at use). Built once at startup

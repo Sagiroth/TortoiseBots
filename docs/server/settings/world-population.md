@@ -44,6 +44,8 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.InviteChat`](#aiplayerbotinvitechat) | `1` | Broadcasts group and raid invitation announcements in say or guild chat. |
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
+| [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
+| [`AiPlayerbot.ProfessionsGrowWithLevel`](#aiplayerbotprofessionsgrowwithlevel) | `1` | Pool bots get profession skill and recipes with their level. |
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
@@ -60,6 +62,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
 | [`AiPlayerbot.BotQuestLogUpkeep`](#aiplayerbotbotquestlogupkeep) | `1` | Enables autonomous quest log pruning, turn-in prioritization, and cleanup. |
+| [`AiPlayerbot.AutoDoQuests`](#aiplayerbotautodoquests) | `1` | Pool bots quest and travel on their own; off also disables guild orders. |
 | [`AiPlayerbot.LeaveOutgrownZones`](#aiplayerbotleaveoutgrownzones) | `1` | Forces bots to travel to level-appropriate zones when outleveling an area. |
 | [`AiPlayerbot.AllowIsolatedCustomStartingZones`](#aiplayerbotallowisolatedcustomstartingzones) | `0` | Normalizes bots created in isolated custom islands to mainland start zones. |
 | [`AiPlayerbot.EnableRandomTeleports`](#aiplayerbotenablerandomteleports) | `1` | Scatters newly seeded bots to level-appropriate overworld destinations. |
@@ -443,6 +446,34 @@ If a guild exceeds this membership cap, bots will begin leaving the guild autono
 
 </details>
 
+### `AiPlayerbot.TalentsInPublicNote`
+Bots write their spec, talents and both primary professions with skill into their guild public note.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+A guilded bot shows a line like `Arms 31/20/0 Mi245 BS230`: a short spec label, spent talent points per tree, then each primary profession as a two-letter abbreviation plus skill value (Al, BS, En, Eg, Hb, LW, Mi, Sk, Ta). Short labels keep spec, talents and both professions inside the 31-character guild note cap for every spec.
+
+The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Writing the bot's own public note is a server feature: no guild rank right is needed, and bots never read or write officer notes.
+
+</details>
+
+### `AiPlayerbot.ProfessionsGrowWithLevel`
+Pool bots get profession skill of level x 5 and every trainer recipe they qualify for.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this on, a pool bot's profession pair keeps pace with its level: skill around level x 5 and all qualifying trainer recipes granted automatically.
+
+With this off, bots still get their profession pair at level 5, but only as the real rank-1 Apprentice of each profession (skill 1, no automatic recipes). Further ranks and recipes come only from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
+
+Use at your own risk: bots levelling a profession from 1 to 300 on their own has not been tested.
+
+</details>
+
 ### `AiPlayerbot.EnableGreet`
 Master switch for bot greetings when passing real players.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -653,6 +684,15 @@ When enabled, masterless pool bots actively manage their quest logs:
 - War-effort item turn-ins and banned joke quests are declined.
 
 Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
+
+### `AiPlayerbot.AutoDoQuests`
+Pool bots pick up quests on their own and try to complete them.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this off, pool bots get no quest travel data and never pick the travel, fishing-trip or RPG strategies, so they stop questing and roaming on their own. Guild orders need the same travel data: with this off the order source index stays empty and `.bot order` answers `disabled`. See [Guild Orders](../../play/guild-orders.md).
 
 </details>
 

@@ -1313,8 +1313,19 @@ AiPlayerbot.BotLogFile =
 # Bots may also use the innkeeper "summon me" path when resolving a summon order
 #AiPlayerbot.SummonAtInnkeepersEnabled = 1
 
-# Bots will put their talentspec in guild notes when they change/tell their talents if they have the rights.
-# AiPlayerbot.TalentsInPublicNote = 0
+# Bots write their spec, talents and both primary professions with skill into
+# their guild public note (e.g. "Arms 31/20/0 Mi245 BS230"), refreshed on
+# talent changes and every few minutes on skill changes. No guild rank right
+# needed; bots never read or write officer notes for this.
+# AiPlayerbot.TalentsInPublicNote = 1
+
+# Pool bots get profession skill of level x 5 and every trainer recipe they
+# qualify for. Off: bots still get their profession pair at level 5, but only
+# as the real rank-1 Apprentice of each (skill 1, no automatic recipes);
+# further ranks and recipes come only from trainer visits, skill from gathering
+# and crafting. Switching it changes nothing for existing bots. Use at your own
+# risk: bots levelling a profession from 1 to 300 on their own has not been tested.
+# AiPlayerbot.ProfessionsGrowWithLevel = 1
 
 #max limit of members in a guild (bots will leave guild if there are more members than this number)
 # AiPlayerbot.GuildMaxBotLimit = 1000

@@ -20,6 +20,9 @@
 #include "../../runtime/RunTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
+#include "../../runtime/GuildOrderStore.h"
+#include "../../runtime/GuildOrderFishingPolicy.h"
+#include "playerbot/GuildOrderSources.h"
 #include "../../runtime/HireMasterPolicy.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
@@ -64,6 +67,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
+#include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
@@ -187,6 +192,13 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
         allowActiveCheckTimer[i] = time(nullptr);
         allowActive[i] = false;
     }
+
+    // Jitter the first public-note refresh across the window, so a mass
+    // login does not recompute every guilded bot's note on the same tick.
+    // A nonzero seed makes the throttle due only after a random share of
+    // the window has passed (unsigned wrap-safe).
+    m_lastPublicNoteMs = WorldTimer::getMSTime() -
+        (TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - (urand(0, TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - 1)));
 
 	accountId = sObjectMgr.GetPlayerAccountIdByGUID(bot->getObjectGuid());
 
@@ -742,6 +754,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // one Hourglass Sand; MC visitors get one Quintessence.
         EnsureAutoToolsKit();
     }
+
+    // Spec/talent/profession line in the guild public note: talent changes
+    // refresh at once (ApplyTalents); this picks up skill-ups, throttled.
+    RefreshPublicNote();
 
     // Alt level sync - level up non-random bots to match master level
     if (sPlayerbotAIConfig.syncAltLevelToMaster && bot->IsAlive() && master && !sRandomBotFacade.IsRandomBot(bot)
@@ -1478,6 +1494,94 @@ void PlayerbotAI::EnsureAutoToolsKit()
     {
         EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
     }
+    // Guild fishing orders: the plan counts the best pole and lure, so the
+    // bot carries what the plan assumed. Real items, not cheats: the grant
+    // mints the cheapest pole that reaches the planned zone and a stack of
+    // lures, then stops - the fishing action equips and reapplies them.
+    if (bot->GetGuildId() && bot->HasSkill(SKILL_FISHING))
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (order && order->type == TortoiseBots::GuildOrders::OrderType::Farm &&
+            order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+            order->farmZoneId)
+        {
+            bool fishes = false;
+            uint32_t zoneSkill = 0;
+            for (ai::GuildOrderEntrySource const& source : ai::GuildOrderSourcesFor(order->itemId))
+            {
+                if (source.flag != TortoiseBots::GuildOrders::SourceFish)
+                    continue;
+                uint32_t fishZone = uint32_t(-(source.entry + ai::kFishingZoneEntryBias));
+                AreaTableEntry const* fishArea =
+                    AreaEntry::GetById(uint32_t(-(source.entry + ai::kFishingZoneEntryBias)));
+                if (fishArea && fishArea->ZoneId)
+                    fishZone = fishArea->ZoneId;
+                if (fishZone != order->farmZoneId)
+                    continue;
+                fishes = true;
+                zoneSkill = std::max(zoneSkill, source.reqSkill);
+            }
+            if (fishes)
+            {
+                uint32_t fishingSkill = bot->GetSkillValue(SKILL_FISHING);
+                uint32_t pole = TortoiseBots::GuildOrders::FishingPoleFor(int32_t(zoneSkill), fishingSkill);
+                bool needLure = int32_t(zoneSkill) > int32_t(fishingSkill) &&
+                    TortoiseBots::GuildOrders::FishingZoneReachable(int32_t(zoneSkill), fishingSkill);
+                if (pole && !bot->HasItemCount(pole, 1))
+                {
+                    ItemPosCountVec dest;
+                    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, pole, 1) == EQUIP_ERR_OK)
+                        bot->StoreNewItem(dest, pole, true, Item::GenerateItemRandomPropertyId(pole));
+                }
+                if (needLure)
+                    EnsureCheatItem(TortoiseBots::GuildOrders::kBestFishingLureItemId,
+                        TortoiseBots::GuildOrders::kFishingLureGrantCount);
+            }
+        }
+    }
+}
+
+void PlayerbotAI::RefreshPublicNote()
+{
+    if (!sPlayerbotAIConfig.talentsInPublicNote || !bot || !bot->GetGuildId())
+        return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!TortoiseBots::PublicNoteRefreshDue(m_lastPublicNoteMs, nowMs))
+        return;
+    m_lastPublicNoteMs = nowMs;
+    // Cheap change gate before the talent scan: primary skill values only.
+    // Talent changes refresh at once via ApplyTalents; this tick path only
+    // needs to notice skill-ups, so an unchanged skill pair skips the scan.
+    static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                       SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+    uint32_t seen = 0;
+    TortoiseBots::PublicNoteInputs inputs;
+    inputs.classId = bot->GetClass();
+    for (uint16 id : kPrimary)
+    {
+        if (seen >= 2 || !bot->HasSkill(id))
+            continue;
+        if (seen == 0)
+        {
+            inputs.skillId0 = id;
+            inputs.skillValue0 = bot->GetSkillValue(id);
+        }
+        else
+        {
+            inputs.skillId1 = id;
+            inputs.skillValue1 = bot->GetSkillValue(id);
+        }
+        ++seen;
+    }
+    if (m_publicNoteSkillsSeeded && inputs.skillId0 == m_lastPublicNote.skillId0 &&
+        inputs.skillValue0 == m_lastPublicNote.skillValue0 &&
+        inputs.skillId1 == m_lastPublicNote.skillId1 &&
+        inputs.skillValue1 == m_lastPublicNote.skillValue1)
+        return;
+    TalentSpec::SetPublicNote(bot);
+    m_publicNoteSkillsSeeded = true;
+    m_lastPublicNote = inputs;
 }
 
 void PlayerbotAI::NoteDamager(Unit* damager)
@@ -1657,6 +1761,7 @@ void PlayerbotAI::OnDeath()
         if (!HasActivePlayerMaster() && !bot->InBattleGround())
         {
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
+            TortoiseBots::GuildOrders::NoteDeath(bot->GetGUIDLow());
 
             // Two deaths in a row to the same kind of creature within fifteen minutes: the bot
             // leaves that kind alone for half an hour - it is not picked as a target and the

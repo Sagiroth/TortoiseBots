@@ -5,6 +5,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderStore.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireGearCache.h"
 #include "../runtime/RandomBotService.h"
@@ -118,6 +119,7 @@ void BotHostAdapter::OnStartup()
     RandomBotService::Instance().Initialize();
     BattlegroundQueueService::Instance().Initialize();
     ClaimLifecycle::Instance().Initialize();
+    GuildOrders::Initialize();
     // Run trace: mark the summaries of runs the last server never finalised.
     RunTraceService::Instance().Initialize();
 
@@ -244,6 +246,7 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // Issue #192: complete queued hire provisions, then sweep grace timers.
     HireProvisionService::Instance().Update(diff);
     HireLifecycle::Instance().Update(diff);
+    GuildOrders::Update(diff);
     AhMarketService::Instance().Update(diff);
     BattlegroundQueueService::Instance().Update(diff);
     ObservabilityEmitter::Instance().Update(diff);

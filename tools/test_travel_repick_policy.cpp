@@ -164,6 +164,11 @@ int main()
     CHECK(!ai::TravelCooldownParksPurpose(false, true));
     CHECK(!ai::TravelCooldownParksPurpose(false, false));
     CHECK(ai::TRAVEL_COOLDOWN_PARK_SECONDS == 5 * 60);
+    // The cooldown park files under the key the request gate reads back: an
+    // order leg's "guild order" purpose, not the numeric grind id (4096).
+    CHECK(ai::TravelCooldownParkKey(true, 4096) == "guild order");
+    CHECK(ai::TravelCooldownParkKey(false, 4096) == "4096");
+    CHECK(ai::TravelCooldownParkKey(false, 64) == "64");
     std::cout << "  [PASS] cooldown parks the purpose only for never-arrived pool trips\n";
 
     // Giver re-pick loop: the 1st and 2nd consecutive same-quest picks ride

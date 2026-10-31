@@ -35,6 +35,7 @@
 #include "../../runtime/StartZoneBalance.h"
 
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GuildOrderSources.h"
 
 #include <iostream>
 #include <numeric>
@@ -1096,7 +1097,8 @@ bool PlayerbotAIConfig::Initialize()
         generateFishLocations = false;
     }
     syncAltLevelToMaster = config.GetBoolDefault("AiPlayerbot.SyncAltLevelToMaster", false);
-    talentsInPublicNote = config.GetBoolDefault("AiPlayerbot.TalentsInPublicNote", false);
+    talentsInPublicNote = config.GetBoolDefault("AiPlayerbot.TalentsInPublicNote", true);
+    professionsGrowWithLevel = config.GetBoolDefault("AiPlayerbot.ProfessionsGrowWithLevel", true);
 
     //LLM START
     // The native generator is deliberately disabled until an asynchronous,
@@ -1261,6 +1263,9 @@ bool PlayerbotAIConfig::Initialize()
         sLog.outString("Loading Quest Detail Data...");
         sTravelMgr.LoadQuestTravelTable();
     }
+
+    sLog.outString("Loading guild order sources.");
+    ai::BuildGuildOrderSourceIndex();
 
     sLog.outString("Loading taxi node zones.");
     sTravelMgr.LoadTaxiNodeZones();

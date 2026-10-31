@@ -110,6 +110,161 @@
 - Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
 - A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
 
+## v1.14.0 (2026-10-28)
+
+### Classes & Combat
+- Protection warriors now open with Shield Slam and use Sunder Armor as their filler. [#1296](https://github.com/Sagiroth/TortoiseBots/pull/1296)
+- Protection warriors now have Mocking Blow as a second taunt, used only when enough rage remains after swapping stances. [#1296](https://github.com/Sagiroth/TortoiseBots/pull/1296)
+- Protection warriors now save Challenging Shout for three or more loose enemies instead of wasting it early. [#1296](https://github.com/Sagiroth/TortoiseBots/pull/1296)
+- Bear tanks, priests, restoration druids and restoration shamans had their tanking and healing choices corrected to match the Turtle class guides. [#1296](https://github.com/Sagiroth/TortoiseBots/pull/1296)
+
+### Dungeon Finder
+- Bot groups now use the same dungeon level ranges as the game client, so queues stop breaking on the wrong levels. [#1287](https://github.com/Sagiroth/TortoiseBots/pull/1287)
+- Five Turtle dungeons that had no level range, including Frostmane Hollow and Stormwrought Castle, can now be filled with bots. [#1287](https://github.com/Sagiroth/TortoiseBots/pull/1287)
+- Hired companions now accept your dungeon finder invite instead of ignoring the popup. [#1287](https://github.com/Sagiroth/TortoiseBots/pull/1287)
+
+### Bot Groups
+- With bot dungeon groups switched on, a waiting bot group now advertises itself in the LookingForGroup channel and stops once it is full. [#1288](https://github.com/Sagiroth/TortoiseBots/pull/1288)
+- Whispering a group leader "inv" now gets you an invite. [#1288](https://github.com/Sagiroth/TortoiseBots/pull/1288)
+- This is off by default; server owners enable it with the bot group setting (AiPlayerbot.BotLfgGroups = 1). [#1288](https://github.com/Sagiroth/TortoiseBots/pull/1288)
+
+### Behind the scenes
+- Builds now run one optional-server-module job instead of two, saving about 50 minutes per pull request. [#1290](https://github.com/Sagiroth/TortoiseBots/pull/1290)
+
+---
+
+## v1.13.0 (2026-10-27)
+
+### Classes & Combat
+- Casters that walked into range could stop casting entirely; they now cast Wrath, Starfire, Regrowth and Healing Touch again. [#1282](https://github.com/Sagiroth/TortoiseBots/pull/1282)
+
+### Groups & Dungeons
+- Bots in a player's group now hold their attacks at the start of a fight so the player can pull first. [#1263](https://github.com/Sagiroth/TortoiseBots/pull/1263)
+- Razorfen Kraul no longer leaves packs behind near Ramtusk, Scholomance kills Marduk first, and Deadmines hall fights at the right distance. [#1263](https://github.com/Sagiroth/TortoiseBots/pull/1263)
+- In bot-only runs, bots receive the keys and items a dungeon needs, then hand them back when the run ends or a player joins. [#1265](https://github.com/Sagiroth/TortoiseBots/pull/1265)
+- Bots never take back a copy of a key or item they already owned themselves. [#1265](https://github.com/Sagiroth/TortoiseBots/pull/1265)
+- When a real player is in the group, the run waits at locked doors for the player instead of opening them. [#1265](https://github.com/Sagiroth/TortoiseBots/pull/1265)
+- The Gahz'rilla leg of Zul'Farrak runs now works. [#1265](https://github.com/Sagiroth/TortoiseBots/pull/1265)
+- At a locked door, the lead bot now asks in /s for the key and the Lockpicking skill needed, once per wait. [#1268](https://github.com/Sagiroth/TortoiseBots/pull/1268)
+- A skipped optional leg now names in chat the item the run was missing. [#1268](https://github.com/Sagiroth/TortoiseBots/pull/1268)
+- Reviving a bot no longer pauses the dungeon run. [#1280](https://github.com/Sagiroth/TortoiseBots/pull/1280)
+- When only game master accounts are still alive, the run now regroups and revives the party by itself. [#1280](https://github.com/Sagiroth/TortoiseBots/pull/1280)
+- Refusals when changing run speed now say clearly why they were refused. [#1280](https://github.com/Sagiroth/TortoiseBots/pull/1280)
+- World bots can now form dungeon groups that wait for a player, off by default; turn it on with the BotLfgGroups setting. [#1283](https://github.com/Sagiroth/TortoiseBots/pull/1283)
+- These bot groups currently end after two minutes, because travelling to the dungeon is not built yet. [#1283](https://github.com/Sagiroth/TortoiseBots/pull/1283)
+
+### Loot
+- A new HireLoot setting, on by default, can stop hired companions from looting corpses and rolling on items. [#1279](https://github.com/Sagiroth/TortoiseBots/pull/1279)
+- Your addon can now ask for the last 24 hours of loot picked up by your own alts and hired companions, 40 rows at a time. [#1275](https://github.com/Sagiroth/TortoiseBots/pull/1275)
+- Each item a bot loots now appears in your addon straight away instead of only after your next login. [#1278](https://github.com/Sagiroth/TortoiseBots/pull/1278)
+
+### Quests & Levelling
+- Bots can now turn in talk-to quests they pick up from follow distance, instead of carrying them forever. [#1272](https://github.com/Sagiroth/TortoiseBots/pull/1272)
+- Hired companions no longer take part in quests, including quest orders, since their progress was never kept. [#1279](https://github.com/Sagiroth/TortoiseBots/pull/1279)
+
+### World & Economy
+- Mercenary Hire recruiters are now gone from inns while hiring is turned off, including for game masters, and return when you turn hiring back on. [#1272](https://github.com/Sagiroth/TortoiseBots/pull/1272) [#1276](https://github.com/Sagiroth/TortoiseBots/pull/1276) [#1277](https://github.com/Sagiroth/TortoiseBots/pull/1277)
+
+### Behind the scenes
+- Loot and money log lines now record where they came from and item quality, so a loot history can be built from them. [#1274](https://github.com/Sagiroth/TortoiseBots/pull/1274)
+- Bot loot roll decisions are now written to the log for troubleshooting. [#1272](https://github.com/Sagiroth/TortoiseBots/pull/1272)
+- Docs refreshed: README updated, guidance added for reading large files, and stale references to removed donor code dropped. [#1259](https://github.com/Sagiroth/TortoiseBots/pull/1259) [#1273](https://github.com/Sagiroth/TortoiseBots/pull/1273)
+
+---
+
+## v1.12.0 (2026-10-26)
+
+### Dungeons
+- Bots can now lead or follow a full dungeon run and clear it using ready-made routes. [#1250](https://github.com/Sagiroth/TortoiseBots/pull/1250)
+- There are routes for 36 dungeons, including the classic five-player dungeons and Turtle's own. [#1250](https://github.com/Sagiroth/TortoiseBots/pull/1250)
+- During a run, bots walk the route and pull each group from a safe spot. [#1250](https://github.com/Sagiroth/TortoiseBots/pull/1250)
+
+### Addon & Interface
+- The Party tab now shows each bot's real spec, so a retribution paladin or balance druid no longer looks like a tank. [#1253](https://github.com/Sagiroth/TortoiseBots/pull/1253)
+- A shaman using the tank kit now shows as Enhancement Tank in the Party tab. [#1254](https://github.com/Sagiroth/TortoiseBots/pull/1254), [TortoiseBotsManager #44](https://github.com/Sagiroth/TortoiseBotsManager/pull/44)
+
+### Commands
+- Server owners can use `.bot features all <text>` to list up to 200 matching bot settings, with secret values hidden. [#1252](https://github.com/Sagiroth/TortoiseBots/pull/1252)
+- You can now ask which dungeon route plan you are currently in. [#1252](https://github.com/Sagiroth/TortoiseBots/pull/1252)
+
+### Behind the scenes
+- Fixed a Windows-only problem so the dungeon feature builds correctly on Windows. [#1252](https://github.com/Sagiroth/TortoiseBots/pull/1252)
+- Updated the documentation for the messages the server sends to the addon. [#1253](https://github.com/Sagiroth/TortoiseBots/pull/1253)
+
+---
+
+## v1.11.0 (2026-10-25)
+
+### Companions & Battlegrounds
+- Taking hired companions into a battleground no longer crashes the server; they are sent home safely instead. [#1241](https://github.com/Sagiroth/TortoiseBots/pull/1241)
+- Hired companions are now for open-world play only and will not join battlegrounds. [#1241](https://github.com/Sagiroth/TortoiseBots/pull/1241)
+- Queuing for a battleground warns you once, and your companions drop out of the queue on their own. [#1241](https://github.com/Sagiroth/TortoiseBots/pull/1241)
+- You cannot hire companions while queued for or inside a battleground, and the recruiter now tells you why. [#1241](https://github.com/Sagiroth/TortoiseBots/pull/1241)
+- Server owners who want companions in player battles can switch this back on with the new hire setting. [#1241](https://github.com/Sagiroth/TortoiseBots/pull/1241)
+
+### Classes & Combat
+- Priests now use Fade to shed threat instead of standing in danger. [#1242](https://github.com/Sagiroth/TortoiseBots/pull/1242)
+
+### Dungeons & World
+- Bots no longer get stuck on the stairs in Shadowfang Keep. [#1223](https://github.com/Sagiroth/TortoiseBots/pull/1223)
+
+### Commands
+- The addon has new commands available. [#1242](https://github.com/Sagiroth/TortoiseBots/pull/1242)
+
+### Server & Database
+- Servers on MySQL 8 now start up cleanly instead of stopping with a database error. [#1245](https://github.com/Sagiroth/TortoiseBots/pull/1245)
+- The quest reward setting's description now explains that bots only ask when more than one reward is useful to them. [#1244](https://github.com/Sagiroth/TortoiseBots/pull/1244)
+
+---
+
+## v1.10.0 (2026-10-23)
+
+### World PvP
+- Pool bots now flag for PvP at login using the /pvp preference, and open-world PvP is on by default. [#1232](https://github.com/Sagiroth/TortoiseBots/pull/1232)
+- About a quarter of free pool bots take a world PvP role, rerolled every 30 minutes and never during a fight. [#1232](https://github.com/Sagiroth/TortoiseBots/pull/1232)
+- These bots hunt flagged enemy players and flagged enemy bots nearby, but never attack unflagged players. [#1232](https://github.com/Sagiroth/TortoiseBots/pull/1232)
+- They avoid invisible GMs, targets 5+ levels higher, players in challenge modes except War Mode, and safe zones or battlegrounds. [#1232](https://github.com/Sagiroth/TortoiseBots/pull/1232)
+- Their chance to attack drops when the level gap is 2 to 4 levels. [#1232](https://github.com/Sagiroth/TortoiseBots/pull/1232)
+
+### Gear & Items
+- The random gear blacklist now applies to random bots, hired bots, `.bot autogear`, and `.autogear`. [#1230](https://github.com/Sagiroth/TortoiseBots/pull/1230)
+- It also covers empty-slot fillers, shirts, tabards, and level-60 hire gear sets. [#1230](https://github.com/Sagiroth/TortoiseBots/pull/1230)
+- A blocked item is never handed out; the bot picks the next best item or leaves the slot empty. [#1230](https://github.com/Sagiroth/TortoiseBots/pull/1230)
+
+### Dashboard
+- Logging out of the dashboard now only works from the dashboard itself, so another website can no longer log a GM out with a simple link. [#1221](https://github.com/Sagiroth/TortoiseBots/pull/1221)
+- The Logout link is now a button that sends the secure request and then takes you to the login page. [#1221](https://github.com/Sagiroth/TortoiseBots/pull/1221)
+
+### Behind the scenes
+- Server monitoring can now forward data to extra addresses for a second dashboard; set `-forward-udp` or `FORWARD_UDP`. [#1222](https://github.com/Sagiroth/TortoiseBots/pull/1222)
+- It allows up to 4 targets, and a failing target won't stop the main listener. [#1222](https://github.com/Sagiroth/TortoiseBots/pull/1222)
+- Large bot code files were split into smaller topic files and the rule files were grouped into folders; no gameplay change. [#1231](https://github.com/Sagiroth/TortoiseBots/pull/1231) [#1233](https://github.com/Sagiroth/TortoiseBots/pull/1233) [#1234](https://github.com/Sagiroth/TortoiseBots/pull/1234)
+
+---
+
+## v1.9.0 (2026-10-22)
+
+### Classes & Combat
+- Hunters now fire Multi-Shot at the right moment and actually place Freezing Traps in dungeons. [#1162](https://github.com/Sagiroth/TortoiseBots/pull/1162)
+
+### Commands
+- A new `.autogear` command outfits your own character with the best gear for a talent spec you choose. [#1215](https://github.com/Sagiroth/TortoiseBots/pull/1215)
+- It only ever upgrades, so running it again finds nothing better and leaves your character alone. [#1215](https://github.com/Sagiroth/TortoiseBots/pull/1215)
+- Swapped-out items are never destroyed; they go to your bags, or arrive by mail if your bags are full. [#1215](https://github.com/Sagiroth/TortoiseBots/pull/1215)
+- You can set an item level ceiling to lower the gear cap; at level 60 it can raise it instead. [#1215](https://github.com/Sagiroth/TortoiseBots/pull/1215)
+
+### Raids & Dungeons
+- Bots summoned into a raid keep their raid behaviour after arriving, even if they start fighting straight away. [#1218](https://github.com/Sagiroth/TortoiseBots/pull/1218)
+
+### Diagnostics
+- You can now switch on optional logging of raid boss threat and spell hits to help report problems. [#1219](https://github.com/Sagiroth/TortoiseBots/pull/1219)
+- Threat is recorded roughly every two seconds per boss, and the health numbers in the log are samples, not exact values. [#1219](https://github.com/Sagiroth/TortoiseBots/pull/1219)
+
+### Behind the scenes
+- The oversized command-handling file was split up so future changes are easier to make. [#1175](https://github.com/Sagiroth/TortoiseBots/pull/1175)
+
+---
+
 ## v1.8.0 (2026-10-22)
 
 ### Classes & Combat

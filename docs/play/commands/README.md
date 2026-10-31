@@ -149,6 +149,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot corpserun`](roster-and-hiring.md#bot-corpse-run) | Roster & Hiring | One-word form of `.bot corpse run`. |
 | [`.bot learn`](roster-and-hiring.md#bot-learn) | Roster & Hiring | Commands bots to train spells at nearby trainers. |
 | [`.bot trade`](roster-and-hiring.md#bot-trade) | Roster & Hiring | Opens a trade window with the targeted companion. |
+| [`.bot order`](roster-and-hiring.md#bot-order) | Roster & Hiring | Gives a guild bot a farm/buy/craft order, cancels or lists orders. |
 | [`.bot list`](bot-panel.md#bot-list) | Inspection | Lists online bots you control. |
 | [`.bot status`](bot-panel.md#bot-status) | Inspection | Displays lifecycle and AI state of a controlled bot. |
 | [`.bot stats`](bot-panel.md#bot-stats) | Inspection | Summarizes controlled bot fleet statistics. |

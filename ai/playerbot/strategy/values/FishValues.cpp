@@ -3,9 +3,25 @@
 #include "playerbot/ServerFacade.h"
 #include "../../policy/loot/FishingSpotPolicy.h"
 #include "FishValues.h"
+#include "playerbot/TravelMgr.h"
 #include "Timer.h"
 
 using namespace ai;
+
+bool ai::IsOrderFishing(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!AI_VALUE(bool, "travel target working"))
+        return false;
+    TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+    TravelDestination* dest = target ? target->GetDestination() : nullptr;
+    if (!dest || dest->GetPurpose() != TravelDestinationPurpose::GatherFishing)
+        return false;
+    for (std::string const& condition : target->GetConditions())
+        if (condition == "has guild travel order")
+            return true;
+    return false;
+}
 
 bool CanFishValue::Calculate()
 {
@@ -26,6 +42,11 @@ bool CanFishValue::Calculate()
 
     if (AI_VALUE(uint8, "bag space") > 90)
         return false;
+
+    // A fishing order works its spot as the job itself: no side-activity
+    // budget, and its own travel target is what brought the bot here.
+    if (IsOrderFishing(ai))
+        return !AI_VALUE2(std::list<Item*>, "inventory items", "fishing pole").empty();
 
     uint32 const now = WorldTimer::getMSTime();
     int const casts = AI_VALUE2(int, "manual int", "fish session casts");

@@ -14,9 +14,11 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/GatherSpotPolicy.h"
+#include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
 class Player;
@@ -893,6 +895,9 @@ public:
     // max-for-level. All branches no-op without the item cheat.
     bool EnsureCheatItem(uint32 itemId, uint32 count);
     void EnsureAutoToolsKit();
+    // Throttled guild public-note refresh: talent changes refresh at once via
+    // TalentSpec::ApplyTalents; skill-ups arrive through this tick path.
+    void RefreshPublicNote();
     std::vector<ai::DeathAttackerEntry> deathAttackers_;
     uint32 deathAttackersMs_ = 0; // WorldTimer ms of the last sample, 0 = none
     // Last own cast that started the global cooldown (see
@@ -951,6 +956,18 @@ public:
     bool IsEmptyGatherSpot(uint32 mapId, float x, float y, uint32 nowMs) const
     {
         return ai::IsDeathPositionAvoided(mapId, x, y, nowMs, emptyGatherSpots_, ai::kEmptyGatherSpots);
+    }
+    // Workshop points a craft-order leg failed to walk to. Same shape as the
+    // empty-gather book: the point stays refused for a while so the next
+    // order-focus pick walks another forge instead of back to this one.
+    ai::UnreachableFocusSpot unreachableFocusSpots_[ai::kUnreachableFocusSpots] = {};
+    void MarkUnreachableFocusSpot(uint32 mapId, float x, float y, uint32 nowMs)
+    {
+        ai::AddUnreachableFocusSpot(unreachableFocusSpots_, ai::kUnreachableFocusSpots, mapId, x, y, nowMs);
+    }
+    bool IsFocusPointAvoided(uint32 mapId, float x, float y, uint32 nowMs) const
+    {
+        return ai::IsFocusPointAvoided(mapId, x, y, nowMs, unreachableFocusSpots_, ai::kUnreachableFocusSpots);
     }
     // Errand death park (see OnDeath): the non-grind destination (purpose +
     // entry) the bot last died pursuing, how often in a row, and the
@@ -1137,6 +1154,13 @@ protected:
     uint32 m_lastRationRefillMs = 0;
     // Last ms clock the auto-tools kit ensure ran; same bag-walking reason.
     uint32 m_lastAutoToolsKitMs = 0;
+    // Last ms clock the guild public note was refreshed for skill changes;
+    // the note rewrites at most every few minutes per bot.
+    uint32 m_lastPublicNoteMs = 0;
+    // Last-seen primary skill pair behind the note (PublicNotePolicy.h):
+    // the tick recomputes the note only when a shown skill value changed.
+    TortoiseBots::PublicNoteInputs m_lastPublicNote;
+    bool m_publicNoteSkillsSeeded = false;
     // First tick (ms clock) the core reported alive while the engine was still DEAD;
     // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
     uint32 m_aliveWhileDeadSinceMs = 0;

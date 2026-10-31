@@ -776,6 +776,7 @@ public:
     uint32 botAcceptDuelMinimumLevel;
 
     bool talentsInPublicNote;
+    bool professionsGrowWithLevel;
     bool nonGmFreeSummon;
 
     BotSelfBotLevel selfBotLevel;

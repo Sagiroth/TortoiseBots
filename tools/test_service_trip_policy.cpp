@@ -33,8 +33,9 @@ int main()
     std::cout << "Starting TortoiseBots service trip policy tests...\n";
 
     // Service purposes: numeric AH/vendor/repair/mail/trainer ids, plus the
-    // named city/trainer/mount/reagent-vendor requests. Quest/grind (empty,
-    // "quest") and every other named leisure trip stay out.
+    // named city/trainer/mount requests and the guild order legs (workshop,
+    // reagent vendor, banker). Quest/grind (empty, "quest") and every other
+    // named leisure trip stay out.
     CHECK(ServiceTripIsServicePurpose("1024"));   // AH
     CHECK(ServiceTripIsServicePurpose("512"));    // Vendor
     CHECK(ServiceTripIsServicePurpose("256"));    // Repair
@@ -44,13 +45,14 @@ int main()
     CHECK(ServiceTripIsServicePurpose("trainer class"));
     CHECK(ServiceTripIsServicePurpose("trainer trade"));
     CHECK(ServiceTripIsServicePurpose("mount"));
-    CHECK(ServiceTripIsServicePurpose("reagent vendor"));
+    CHECK(ServiceTripIsServicePurpose("order focus"));
+    CHECK(ServiceTripIsServicePurpose("order vendor"));
+    CHECK(ServiceTripIsServicePurpose("guild order"));
     CHECK(!ServiceTripIsServicePurpose(""));
     CHECK(!ServiceTripIsServicePurpose("quest"));
     CHECK(!ServiceTripIsServicePurpose("4096"));  // Grind
     CHECK(!ServiceTripIsServicePurpose("64"));    // GenericRpg
     CHECK(!ServiceTripIsServicePurpose("pvp"));
-    CHECK(!ServiceTripIsServicePurpose("guild order"));
     CHECK(!ServiceTripIsServicePurpose("tabard"));
     CHECK(!ServiceTripIsServicePurpose("petition"));
     CHECK(SERVICE_TRIP_PURPOSE_BITS == ((1u << 7) | (1u << 8) | (1u << 9) | (1u << 10) | (1u << 11)));

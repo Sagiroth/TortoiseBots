@@ -46,6 +46,7 @@
 #include "playerbot/PlayerbotFactory.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/GuildOrderSources.h"
 #include "playerbot/SurvivePolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
@@ -517,12 +518,15 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     // (".bot action pull [seconds]", 0-60); flee = ".bot action flee";
     // inventory = ".bot inv" / ".bot item"; behavior = ".bot behavior" and the
     // BOTSTATE snapshot; loot-log = ".bot lootlog" and its TBM:LOOT history
-    // lines; downtime = ".bot downtime" town errands for own alts;
+    // lines; guild-orders = ".bot order" and its TBM:ORDER lines, only while
+    // the order source index is ready (travel tables loaded);
+    // downtime = ".bot downtime" town errands for own alts;
     // dungeon-run = ".bot run" and its TBM:RUN status lines,
     // only while the dungeon run is enabled. Old addons ignore unknown lines and items.
     bool const dungeonRun = RemoteCommander::RunSurfaceOn(CurrentCommanderGates());
-    handler->PSendSysMessage("TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime%s",
-        dungeonRun ? ",dungeon-run" : "");
+    bool const guildOrders = ai::GuildOrderSourcesReady();
+    handler->PSendSysMessage("TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime%s%s",
+        guildOrders ? ",guild-orders" : "", dungeonRun ? ",dungeon-run" : "");
     // Transport trailer: the addon sends its next commands over the addon
     // channel only while this says "party". See AddonCommandChannel.
     handler->PSendSysMessage("TBM:TRANSPORT|%s", AddonCommandChannel(requester));

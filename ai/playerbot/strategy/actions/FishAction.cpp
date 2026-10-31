@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/FishValues.h"
 #include "Timer.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GuidPosition.h"
@@ -10,9 +11,10 @@
 #include "FishAction.h"
 #include "playerbot/TravelMgr.h"
 #include "../../policy/loot/FishingSpotPolicy.h"
+#include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderFishingPolicy.h"
 #include "TellLosAction.h"
 #include "EquipAction.h"
-
 using namespace ai;
 
 bool MoveToFishAction::isUseful()
@@ -21,8 +23,10 @@ bool MoveToFishAction::isUseful()
     {
         // The travel-table spot is primary; the open-water path below only
         // runs when the travel target is idle (levelling first - never while
-        // an errand is being walked or worked).
-        if (AI_VALUE(bool, "travel target active"))
+        // an errand is being walked). At WORK the move sets the spot and
+        // hands over to the cast; without it the spot stays empty and the
+        // cast below never fires.
+        if (AI_VALUE(bool, "travel target active") && !AI_VALUE(bool, "travel target working"))
             return false;
     }
     else if (AI_VALUE2(bool, "manual bool", "no fish water"))
@@ -321,10 +325,26 @@ bool MoveToFishAction::Execute(Event& event)
 
     fishSpot = AI_VALUE2(WorldPosition, "custom position", "fish spot");
 
-    if (!fishSpot && qualifier == "travel") //Get travel fish spot if available.
+    if (qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-        fishSpot = *target->getPosition();
+        // WORK arrives at the destination's nearest point (IsIn vs radiusMin),
+        // while the target holds the one point picked at search: on a wide
+        // fishing destination those differ by ~1 km, and the bot would walk
+        // off its arrival to the far point. Fish the nearest point instead.
+        WorldPosition const* targetPos = target ? target->getPosition() : nullptr;
+        if (target && target->GetDestination())
+            if (WorldPosition* closest = target->GetDestination()->GetClosestPoint(WorldPosition(bot)))
+                targetPos = closest;
+        // The stored spot outlives its travel target: after a re-pick the bot
+        // works the new point while the spot still names the old one, so the
+        // cast never comes in range. A spot far from (or off the map of) the
+        // current target is re-taken from the target.
+        if (fishSpot && targetPos && *targetPos &&
+            ai::FishingSpotStale(fishSpot.distance(*targetPos), fishSpot.GetMapId() == targetPos->GetMapId()))
+            fishSpot = WorldPosition();
+        if (!fishSpot && targetPos)
+            fishSpot = *targetPos;
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
         {
@@ -408,7 +428,12 @@ bool MoveToFishAction::Execute(Event& event)
 
     SET_AI_VALUE2(WorldPosition, "custom position", "fish spot", fishSpot);
 
-    if (fishSpot.distance(bot) < 1.0f)
+    // The spot is a water point; the bot casts standing on the bank beside
+    // it, never on the point itself. One yard never arrives (the travel
+    // leg already stops up to 5 yd out), so the move re-fires every tick
+    // and the cast below never runs. Five yards matches the travel arrival
+    // radius (INTERACTION_DISTANCE) and hands over to the cast.
+    if (fishSpot.distance(bot) < INTERACTION_DISTANCE)
         return false;
 
     return MoveTo(fishSpot);
@@ -428,7 +453,8 @@ bool FishAction::isUseful()
     int const casts = AI_VALUE2(int, "manual int", "fish session casts");
     int const start = AI_VALUE2(int, "manual int", "fish session start");
     int const ended = AI_VALUE2(int, "manual int", "fish session end");
-    bool const poolPath = ai::FishingSpotApplies(sRandomBotFacade.IsFreeBot(bot), ai->HasRealPlayerMaster());
+    bool const poolPath = ai::FishingSpotApplies(sRandomBotFacade.IsFreeBot(bot), ai->HasRealPlayerMaster()) &&
+        !ai::IsOrderFishing(ai);
     if (poolPath && uint32(start) != 0 && ai::FishingSessionExpired(uint32(start), casts, nowUseful))
     {
         EndFishingSession(ai, "budget spent");
@@ -447,8 +473,9 @@ bool FishAction::isUseful()
             return false;
 
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
+        TravelDestination* dest = target ? target->GetDestination() : nullptr;
 
-        if (target->GetDestination()->GetPurpose() != TravelDestinationPurpose::GatherFishing)
+        if (!dest || dest->GetPurpose() != TravelDestinationPurpose::GatherFishing)
             return false;
 
         if (!bot->GetGroup() || ai->IsGroupLeader() || target->GetTimeLeft() < 0)
@@ -463,7 +490,7 @@ bool FishAction::isUseful()
     if (!AI_VALUE(bool, "can fish"))
         return false;
 
-    if (fishSpot.distance(bot) > 1.0f)
+    if (fishSpot.distance(bot) > INTERACTION_DISTANCE)
         return false;
 
     return true;
@@ -522,9 +549,11 @@ bool FishAction::Execute(Event& event)
     ai->StopMoving();
 
     // The zone must be fishable for this bot (same rule as the travel fish
-    // errand): no base skill means no fish here, otherwise skill covers the
-    // requirement with the errand's -5 head start. Checked at cast time so a
-    // bot that walks to water in a zone it cannot fish never casts.
+    // errand): a missing or negative base skill never blocks - the core
+    // rolls open-water catches from fishing_loot_template regardless, and
+    // the success chance runs inside its loot roll. Positive requirements
+    // keep the errand's -5 head start. Checked at cast time so a bot that
+    // walks to water in a zone it cannot fish never casts.
     if (water)
     {
         WorldPosition const waterPos(water);
@@ -533,7 +562,9 @@ bool FishAction::Execute(Event& event)
         int32 baseSkill = sObjectMgr.GetFishingBaseSkillLevel(areaId ? areaId : zoneId);
         if (!baseSkill && areaId && areaId != zoneId)
             baseSkill = sObjectMgr.GetFishingBaseSkillLevel(zoneId);
-        if (!ai::FishingZoneSkillOk(baseSkill, bot->GetSkillValue(SKILL_FISHING)))
+        // An order bot is judged on its granted pole and lure, which it puts
+        // on only below this check; the order planner vetted that sum.
+        if (!ai::IsOrderFishing(ai) && !ai::FishingZoneSkillOk(baseSkill, bot->GetSkillValue(SKILL_FISHING)))
         {
             RESET_AI_VALUE2(WorldPosition, "custom position", "fish spot");
             SET_AI_VALUE2(bool, "manual bool", "no fish water", true);
@@ -578,9 +609,25 @@ bool FishAction::Execute(Event& event)
     // one, and its first entry was a spare more often than not: equipping it swapped the two
     // poles, the next tick swapped them back - 140,000 swaps in half an hour for four bots
     // that carried a second pole. Without a pole in hand the best one is taken.
+    // A guild fishing order names its pole: the grant minted exactly the
+    // cheapest pole that reaches the planned zone, so it wins over item
+    // level - an old pole outranks nothing when the zone needs the grant.
     Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    bool const poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
+    bool poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
         mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE;
+    uint32_t orderPole = ai::GuildOrderFishingPoleFor(bot);
+    if (orderPole && (!poleInHand || mainHand->GetEntry() != orderPole))
+    {
+        for (Item* candidate : poles)
+            if (candidate->GetEntry() == orderPole)
+            {
+                EquipAction::EquipItem(ai, GetMaster(), candidate);
+                mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+                poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
+                    mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE;
+                break;
+            }
+    }
     if (!poleInHand)
     {
         Item* pole = poles.front();
@@ -588,6 +635,24 @@ bool FishAction::Execute(Event& event)
             if (candidate->GetProto()->ItemLevel > pole->GetProto()->ItemLevel)
                 pole = candidate;
         EquipAction::EquipItem(ai, GetMaster(), pole);
+    }
+
+    // A guild fishing order fishes with the lure the plan counted: the
+    // grant keeps a stack in the bags, and the temp enchant goes back on
+    // while the order works the zone. Lures are consumed, so a missing
+    // stack simply fishes unlured.
+    if (ai::GuildOrderFishingPoleFor(bot))
+    {
+        Item* lure = nullptr;
+        for (Item* candidate : AI_VALUE2(std::list<Item*>, "inventory items",
+            chat->formatQItem(TortoiseBots::GuildOrders::kBestFishingLureItemId)))
+        {
+            lure = candidate;
+            break;
+        }
+        if (lure && poleInHand && mainHand->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
+            ai->DoSpecificAction("use", Event("fish lure",
+                chat->formatQItem(lure->GetEntry()) + " " + chat->formatQItem(mainHand->GetEntry())));
     }
 
     Event fishCastEvent = Event("fish", "7731 " + chat->formatWorldobject(bot));
@@ -600,8 +665,12 @@ bool FishAction::Execute(Event& event)
         SET_AI_VALUE2(int, "manual int", "fish session casts", castsNow);
         // Budget spent (5 casts or 5 min): the session ends now and the pole
         // comes off at once - no waiting for the next tick's audit.
+        // Only a started open-water session has a budget: travel and order
+        // fishing never start one, and an unstarted session reads as expired,
+        // which pulled the pole off right after every cast.
         uint32 const sessionStart = uint32(AI_VALUE2(int, "manual int", "fish session start"));
-        if (ai::FishingSessionExpired(sessionStart, castsNow, WorldTimer::getMSTime()))
+        if (sessionStart != 0 && !ai::IsOrderFishing(ai) &&
+            ai::FishingSessionExpired(sessionStart, castsNow, WorldTimer::getMSTime()))
         {
             EndFishingSession(ai, "budget spent");
             if (ai->CanDoSpecificAction("equip upgrades"))

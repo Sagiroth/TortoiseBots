@@ -54,6 +54,8 @@ using BotChatAdapter = Service<10>;
 using BotPacketAdapter = Service<11>;
 // The opt-in run trace: one atomic load per tick while no run is active.
 using RunTraceService = Service<13>;
+// Guild orders: the per-tick order update (give-up clock, progress, group gate).
+namespace GuildOrders { inline void Update(uint32 diff) { assert(diff == 50); calls.push_back(15); } }
 // Issue #884: the remote commander's binding sweep.
 namespace BotCommands { inline void UpdateRemoteCommanders(uint32 diff) { assert(diff == 50); calls.push_back(12); } inline void CleanupRunGivenItemsTick() { calls.push_back(14); } }
 struct BotHostAdapter { uint32 m_ticks = 0; void OnUpdate(uint32 diff); };
@@ -79,11 +81,11 @@ int main() {
     // up to the bound the command drain returned, then the services (the
     // remote commander sweep, 12, right after the bot update; the run trace, 13, last).
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,7,8,9,14,13}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,15,7,8,9,14,13}));
     assert(adapter.m_ticks == 1);
     sPlayerbotAIConfig.enabled = false;
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,7,8,9,14,13,10,13}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,15,7,8,9,14,13,10,13}));
     assert(adapter.m_ticks == 1);
     // A config reload: the run leader's keys are read again once, on the next tick, enabled or not.
     assert(sPlayerbotAIConfig.reloads == 0);

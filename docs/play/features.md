@@ -140,6 +140,7 @@ For population counts, XP multipliers, stall timers, and gear quality caps, see 
 | Pool bots invite solo questers to party | Yes | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Player invites](../world/social.md#grouping--party-invites) |
 | Masterless bots form spontaneous groups | No | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) | [Bot parties](../world/social.md#grouping--party-invites) |
 | Group invite broadcasts in chat | Yes | [`AiPlayerbot.InviteChat`](../server/settings/world-population.md#aiplayerbotinvitechat) | [Invite chat](../world/social.md#grouping--party-invites) |
+| Send guild bots to fetch items for the guild bank | Yes | [`AiPlayerbot.AutoDoQuests`](../server/settings/world-population.md#aiplayerbotautodoquests) | [Guild orders](guild-orders.md) |
 | Bots buy charters and form guilds | Yes | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Bot guilds](../world/social.md#autonomous-guild-formation) |
 | Emote greetings when encountering players | Yes | [`AiPlayerbot.EnableGreet`](../server/settings/world-population.md#aiplayerbotenablegreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Masterless pool bots greet players | No | [`AiPlayerbot.RandomBotGreet`](../server/settings/world-population.md#aiplayerbotrandombotgreet) | [Greetings](../world/social.md#greetings--emotes) |
