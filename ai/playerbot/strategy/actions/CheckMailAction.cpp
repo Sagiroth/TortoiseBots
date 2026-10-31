@@ -70,7 +70,7 @@ bool CheckMailAction::isUseful()
     {
         if (GetProcessableOwner(*i, bot))
             return true;
-        if (IsGuildMail(*i, bot) && !(*i)->items.empty() && !(*i)->COD && AI_VALUE(uint8, "bag space") < 95)
+        if (IsGuildMail(*i, bot) && CanTakeGuildMail(*i, master))
             return true;
     }
 
@@ -114,12 +114,34 @@ bool CheckMailAction::IsGuildMail(Mail* mail, Player* bot)
 
 // Takes a guild mail's items into the bags without a mailbox trip, as the
 // core's take-item handler does; cash-on-delivery mail stays untouched.
+// Something to take right now: the money, or the first item when it fits
+// the bags. A unique item the bot already holds, or full bags, leave the mail
+// alone instead of retrying it every tick.
+bool CheckMailAction::CanTakeGuildMail(Mail* mail, MasterPlayer* master)
+{
+    if (mail->COD || mail->deliver_time > time(nullptr))
+        return false;
+    if (mail->money)
+        return true;
+    if (mail->items.empty())
+        return false;
+    Item* item = master->GetMItem(mail->items[0].item_guid);
+    ItemPosCountVec dest;
+    return item && bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) == EQUIP_ERR_OK;
+}
+
 void CheckMailAction::TakeGuildMail(Mail* mail)
 {
     MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
-    if (!master || mail->COD || mail->items.empty())
+    if (!master || !CanTakeGuildMail(mail, master))
         return;
     bool taken = false;
+    if (mail->money)
+    {
+        bot->ModifyMoney(int32(mail->money));
+        mail->money = 0;
+        taken = true;
+    }
     while (!mail->items.empty())
     {
         uint32 itemGuid = mail->items[0].item_guid;

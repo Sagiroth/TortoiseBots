@@ -12,8 +12,11 @@ float TravelActionMultiplier::GetValue(Action* action)
 {
     if (action == NULL) return 1.0f;
 
-    bool hasTarget = AI_VALUE(bool, "travel target active");
     std::string name = action->GetName();
+    // Only travel requests are vetoed here; every other action leaves at once.
+    if (name.compare(0, 7, "request") != 0)
+        return 1.0f;
+    bool hasTarget = AI_VALUE(bool, "travel target active");
 
     // Orders and meetings pass both vetoes below (a held trip, a starved
     // grind pick). The purpose is the qualifier: the action name never

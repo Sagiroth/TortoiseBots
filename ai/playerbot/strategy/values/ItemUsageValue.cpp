@@ -93,7 +93,7 @@ bool ItemUsageValue::IsCraftingTool(uint32 itemId)
         for (uint32 spellId = 1; spellId < sSpellMgr.GetMaxSpellId(); ++spellId)
         {
             SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
-            if (!spell || !spell->HasEffect(SPELL_EFFECT_CREATE_ITEM))
+            if (!spell || (!spell->HasEffect(SPELL_EFFECT_CREATE_ITEM) && !spell->HasEffect(SPELL_EFFECT_ENCHANT_ITEM)))
                 continue;
             for (uint32 totem : spell->Totem)
                 if (totem)

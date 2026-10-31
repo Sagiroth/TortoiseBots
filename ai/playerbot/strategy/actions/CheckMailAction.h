@@ -4,6 +4,8 @@
 #include "playerbot/strategy/Action.h"
 #include "QuestAction.h"
 
+class MasterPlayer;
+
 namespace ai
 {
     class CheckMailAction : public Action
@@ -30,5 +32,6 @@ namespace ai
         static Player* GetProcessableOwner(Mail* mail, Player* bot);
         static bool IsGuildMail(Mail* mail, Player* bot);
         void TakeGuildMail(Mail* mail);
+        bool CanTakeGuildMail(Mail* mail, MasterPlayer* master);
     };
 }

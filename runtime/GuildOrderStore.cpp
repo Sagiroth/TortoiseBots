@@ -682,6 +682,28 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    // One hand-over per delivered sub-order: the parent fetches it from the
+    // bank once; a later shortage runs the ladder again (bank empty, then a
+    // new sub-order) instead of bouncing off the same finished row.
+    bool TakeDeliveredSubOrder(uint32_t parentBotGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<Stored*> delivered;
+        for (auto& [guid, stored] : m_orders)
+        {
+            OrderRecord const& row = stored.record;
+            if (row.parentBotGuidLow != parentBotGuidLow || row.itemId != itemId || row.cancelled)
+                continue;
+            if (!IsFinished(row.state))
+                return false;
+            if ((row.state == OrderState::Done || row.state == OrderState::Stocked) && !row.handedOver)
+                delivered.push_back(&stored);
+        }
+        for (Stored* stored : delivered)
+            stored->record.handedOver = true;
+        return !delivered.empty();
+    }
+
     void ClearBankEmpty(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1995,17 +2017,7 @@ bool Cancel(uint32_t botGuidLow)
 
 bool SubOrderDelivered(uint32_t parentBotGuidLow, uint32_t itemId)
 {
-    bool delivered = false;
-    for (OrderRecord const& row : All())
-    {
-        if (row.parentBotGuidLow != parentBotGuidLow || row.itemId != itemId || row.cancelled)
-            continue;
-        if (!IsFinished(row.state))
-            return false;
-        if (row.state == OrderState::Done || row.state == OrderState::Stocked)
-            delivered = true;
-    }
-    return delivered;
+    return OrderStore::Instance().TakeDeliveredSubOrder(parentBotGuidLow, itemId);
 }
 
 bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
@@ -2262,7 +2274,8 @@ void WakeParentsOfDeliveredChildren()
     {
         if (!snapshot.parentBotGuidLow || snapshot.cancelled)
             continue;
-        if (snapshot.state != OrderState::Done && snapshot.state != OrderState::Stocked)
+        if ((snapshot.state != OrderState::Done && snapshot.state != OrderState::Stocked) ||
+            snapshot.handedOver)
             continue;
         std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
         if (!parent || parent->cancelled || parent->state == OrderState::Waiting)
