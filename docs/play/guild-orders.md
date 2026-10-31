@@ -42,6 +42,19 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 
 You must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes (set in the normal guild rank settings). Anyone else gets an error. Notes are only the permission check: orders themselves are given with the addon or the chat command, and anything written in officer notes is ignored.
 
+## Guild bank access
+
+Every bot in a guild with at least one real player in it holds the guild's **bot rank**: by default the highest rank below the guild master, so all bots share one rank you can open bank tabs to. A bot that joins the guild gets the bot rank at once; bots already in the guild are moved there once when the server starts. Guilds made up only of bots keep their own ranks (including a bot guild master, which is never moved). Your own characters are never touched: only bot characters get the bot rank, and bots in such guilds no longer promote, demote, kick or invite anyone.
+
+```text
+.bot order rank <rankIndex>
+.bot order access
+```
+
+- **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
+- **See what the bots can reach:** `.bot order access` (and the top of `.bot order list`) shows the bot rank, which bank tabs it reaches and which it does not, and whether it may take guild gold (guilds without an unlocked bank show no tabs and no gold). The header shows red when anything is missing — a tab the bots cannot use, or no gold access: open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank.
+- **Turn it off:** setting `AiPlayerbot.GuildOrderBotRank = 0` leaves every rank alone; `.bot order access` then answers that the server does not manage bot ranks.
+
 ## What the bot does
 
 | Order | What the bot does |
@@ -82,6 +95,6 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 
 ## Requirements
 
-- The guild needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master.
+- The guild needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master. Bots in a guild with a real player hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank access; all-bot guilds keep their own ranks.
 - Guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, `.bot order` answers `disabled`.
 - Guild bank item withdrawals and guild bank gold use are controlled by [`AiPlayerbot.GuildOrderBankWithdraw`](../server/settings/guild-orders.md#aiplayerbotguildorderbankwithdraw) and [`AiPlayerbot.GuildOrderBankGold`](../server/settings/guild-orders.md#aiplayerbotguildorderbankgold); both default to `1`.

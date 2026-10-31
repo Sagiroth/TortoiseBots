@@ -663,6 +663,10 @@ public:
     bool guildOrderBankGold;
     bool guildOrderSubOrders;
     uint32_t guildOrderSubOrderDepth;
+    // Guild bank access for guild bots: every bot in a guild with a real
+    // player member holds one shared rank (`.bot order rank` picks it,
+    // defaulting to the rank below the master).
+    bool guildOrderBotRank;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the

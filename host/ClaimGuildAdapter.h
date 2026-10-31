@@ -14,6 +14,7 @@ class ClaimGuildAdapter final : public GuildScript
 public:
     ClaimGuildAdapter();
 
+    void OnAddMember(Guild* guild, Player* player, uint8& rank) override;
     void OnRemoveMember(Guild* guild, Player* player, bool isDisbanding, bool isKicked) override;
     void OnDisband(Guild* guild) override;
 };
