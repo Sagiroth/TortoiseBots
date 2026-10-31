@@ -191,15 +191,23 @@ inline SeatCancelAction NextSeatCancelAction(SeatCancelState const& state)
 enum class SeatJoinStep : uint8_t
 {
     Join,    // a seat hire not joined yet: JoinBoundRaid
-    Joined,  // a seat hire that already stands in the bound raid: nothing to join
+    Joined,  // already stands in the bound group (a joined seat hire, or a normal hire the binding holds)
     Reunite, // a normal hire: the ordinary regroup with its master
 };
 
-inline SeatJoinStep DecideHireJoinStep(bool intoBoundRaid, bool boundSeatJoined)
+inline SeatJoinStep DecideHireJoinStep(bool intoBoundRaid, bool boundSeatJoined, bool heldByBinding)
 {
     if (!intoBoundRaid)
-        return SeatJoinStep::Reunite;
+        return heldByBinding ? SeatJoinStep::Joined : SeatJoinStep::Reunite;
     return boundSeatJoined ? SeatJoinStep::Joined : SeatJoinStep::Join;
+}
+
+// #1367: a normal hire the hirer's own binding took in while it mustered (the bind ran while its join
+// summon was open) already stands in the bound group: it is not pulled out by a Reunite. Never a seat
+// hire (rechecked and joined by JoinBoundRaid), never a bot outside that group (nobody is added).
+inline bool HireHeldByOwnBinding(bool seatHire, bool recordBound, bool inHirersBindingGroup)
+{
+    return !seatHire && recordBound && inHirersBindingGroup;
 }
 
 // The hire intro goes out once the hire is grouped with its master, or, for a seat hire, once it joined the

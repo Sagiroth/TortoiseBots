@@ -65,6 +65,30 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertLess(summon, join)
         self.assertLess(join, grouped)
 
+    def test_a_normal_hire_held_by_its_binding_is_not_pulled_out(self):
+        prov = body(HIRE_SRC, "bool HireProvisionService::ProvisionNow(", "void HireProvisionService::ProvisionHeavy(")
+        # issue #1367: worked out after the last seat recheck, right before the join; a held hire is Joined.
+        order = [
+            "if (SeatHireCancelled(bot, master, pending))\n            return true;",
+            "bool const heldByBinding = HireHeldByOwnBinding(intoBoundRaid,",
+            "IsBoundByHirer(pending.botGuid)",
+            "BotCommands::IsInOwnBindingGroup(master, bot)",
+            "DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined, heldByBinding)",
+            "AnnounceIntro(bot, master, pending, heldByBinding)",
+        ]
+        at = [prov.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+
+    def test_the_own_binding_query_never_moves_anyone(self):
+        query = body(CMD_SRC, "bool IsInOwnBindingGroup(", "\n}\n")
+        self.assertIn("FindByCommander(", query)
+        self.assertIn("binding->groupId", query)
+        self.assertIn("IsMember(bot->GetObjectGuid())", query)
+        for forbidden in ("AddMember", "RemoveMember", "HandleGroupInviteOpcode", "JoinLeadGroup",
+                          "ReleaseBinding", "StandingBinding", "SettleCommanderBinding"):
+            self.assertNotIn(forbidden, query)
+        self.assertNotIn("binding->raid", query)
+
     def test_a_seat_hire_is_rechecked_right_before_the_join_and_cancelled_never_reunited(self):
         prov = body(HIRE_SRC, "bool HireProvisionService::ProvisionNow(", "void HireProvisionService::ProvisionHeavy(")
         # the mode decides, the binding is not asked for the mode again
@@ -78,7 +102,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
             "ProvisionHeavy(bot, pending, ai,",
             "PlayerConvenience::Instance().IsBusy(pending.botGuid)",
             "if (SeatHireCancelled(bot, master, pending))\n            return true;",
-            "SeatJoinStep const joinStep = DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined);",
+            "SeatJoinStep const joinStep = DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined, heldByBinding);",
             "bool const joined = joinStep == SeatJoinStep::Joined ||",
             "(joinStep == SeatJoinStep::Join ? BotCommands::JoinBoundRaid(master, bot) : Reunite(bot, master))",
             "if (!joined)",
@@ -127,7 +151,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
 
     def test_a_joined_seat_hire_sends_its_intro(self):
         intro = body(HIRE_SRC, "void HireProvisionService::AnnounceIntro(", "\n}\n")
-        self.assertIn("if (!HireIntroMayGo(bot->IsInSameRaidWith(master), pending.boundSeatJoined))\n        return;", intro)
+        self.assertIn("if (!HireIntroMayGo(bot->IsInSameRaidWith(master), pending.boundSeatJoined || heldByBinding))\n        return;", intro)
         self.assertNotIn("if (!bot->IsInSameRaidWith(master))", intro)
 
     def test_a_raid_hire_job_keeps_its_mode(self):
@@ -327,6 +351,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         header = (ROOT / "runtime/CommandedGroupQuery.h").read_text()
         self.assertIn("BoundRaidFacts BoundRaidOf(Player* commander);", header)
         self.assertIn("bool JoinBoundRaid(Player* commander, Player* bot);", header)
+        self.assertIn("bool IsInOwnBindingGroup(Player* commander, Player* bot);", header)
         self.assertIn('#include "CommandedGroupQuery.h"', HIRE)
 
 

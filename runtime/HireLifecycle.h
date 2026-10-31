@@ -56,6 +56,9 @@ public:
 
     bool IsHired(ObjectGuid botGuid) const;
     ObjectGuid GetMaster(ObjectGuid botGuid) const;
+    // #1367: the hire's record is in state Bound (the hirer's own binding took it in). False for a
+    // Transition or None record, and for a bot that is not hired.
+    bool IsBoundByHirer(ObjectGuid botGuid) const;
 
     // The hire was confirmed grouped with its master (called from both
     // Reunite paths). Until this is set the hire is still being provisioned

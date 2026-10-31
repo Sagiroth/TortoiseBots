@@ -93,6 +93,9 @@ struct BoundRaidFacts
     uint32_t groupId = 0;
 };
 BoundRaidFacts BoundRaidOf(Player* commander);
+// The bot is a member of the group of the commander's standing binding (any kind). Read-only; world thread
+// only.
+bool IsInOwnBindingGroup(Player* commander, Player* bot);
 // A new hire of the commander joins his bound raid: into the lead bot's group, into the binding (follow
 // target, hire state) and into the raid layout, where only the new bot is placed: nobody else moves. True once the bot is in the
 // bound group (also on later calls); false while it cannot join yet (not settled in the world, no
