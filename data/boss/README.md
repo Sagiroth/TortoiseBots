@@ -149,7 +149,7 @@ machine form, `--fail-on-missing` exits 1 when anything is missing. `--db` refus
 
 `source` is one or more `path:line[-line]` citations separated by `;`; paths are
 relative to the core checkout (`--core-dir`, default `$TORTOISE_CORE_DIR` or
-`~/tortoise-wow`). A timer or spell id must appear inside one of the cited
+`~/tortoise-wow`); a `data/` path is relative to this repository. A timer or spell id must appear inside one of the cited
 ranges; a constant name (`SPELL_X`) counts when its definition in the same file
 holds the id. A value `N` is also accepted as `N//1000` on a line using
 `IN_MILLISECONDS`. Knowledge-base notes use `kb:<file>#<heading-slug>` under

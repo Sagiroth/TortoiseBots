@@ -151,6 +151,23 @@
         59961,
         59991
       ]
+    },
+    {
+      "key": "timbermaw_hold",
+      "mapId": 819,
+      "name": "Timbermaw Hold",
+      "bosses": [
+        62934,
+        62936,
+        62937,
+        2139,
+        62935,
+        62940,
+        62946,
+        62938,
+        60699,
+        62941
+      ]
     }
   ],
   "bosses": {
@@ -13958,6 +13975,774 @@
         "Before 25 percent Mark repeats every 30 s and Call goes on the victim every 25 s; after 25 percent Mark is 15 s, Call 15 s on a random player and Void Bolt Volley 10 s.",
         "Wings of Oblivion knocks players back and applies Wrath of the Highlord 51173; Remorseless Strikes replaces his melee swing and each hit stacks a 10% damage-taken debuff (aura 87, up to 99 stacks): tank swap.",
         "The summoned Infernal is rooted (22707) and gets Inferno Effect 51167; its Hellfire Aura 51169 burns nearby players."
+      ]
+    },
+    "62934": {
+      "entry": 62934,
+      "name": "Karrsh the Sentinel",
+      "map": "timbermaw_hold",
+      "order": 84,
+      "abilities": [],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "No script and no EventAI row or spell list exist for Karrsh; the template is EventAI with no creature_ai_events row and no spell ids. His mechanics were never recorded; the guide only says his health was raised. See the raid notes."
+      ]
+    },
+    "62936": {
+      "entry": 62936,
+      "name": "Rotgrowl",
+      "map": "timbermaw_hold",
+      "order": 85,
+      "abilities": [
+        {
+          "sid": 49039,
+          "name": "Spirit Bond",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 49040,
+          "name": "Broken Bond",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 62937,
+          "name": "Kodiak",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Spirit Bond and Broken Bond are self auras whose text names Kodiak; no EventAI or spell list links either spell to Rotgrowl or Kodiak and which unit carries the aura is not in the data. There is no creature_linking row. Both are instant with no timer.",
+        "Spirit Bond reduces damage taken by 90 percent while Kodiak lives; Broken Bond raises damage taken by 30 percent while Kodiak is dead. No cast site exists so the panel can only show the rows."
+      ]
+    },
+    "62937": {
+      "entry": 62937,
+      "name": "Kodiak",
+      "map": "timbermaw_hold",
+      "order": 86,
+      "abilities": [],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Kodiak 62937 is rank 3 and has its own spawn about 5 yd from Rotgrowl; the run plan pulls both in one step and kills Kodiak first. Its template has no spell ids and it has no EventAI row so no ability is known."
+      ]
+    },
+    "2139": {
+      "entry": 2139,
+      "name": "Loktanag the Vile",
+      "map": "timbermaw_hold",
+      "order": 87,
+      "abilities": [
+        {
+          "sid": 52806,
+          "name": "Venomous Vines",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52808,
+          "name": "Aura of Infection",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 52812,
+          "name": "Spores of Corruption",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52813,
+          "name": "Infected Secretion",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "The four spells are the template's spell_id1 to spell_id4 (52806 52813 52812 52808) and the AI is EventAI with no event rows; the core never casts them. No timer exists. Aura of Infection ticks every 2 s and Infected Secretion's pool every 1 s while it lasts.",
+        "Venomous Vines is a disease and Spores of Corruption a curse; Aura of Infection has no dispel. The guide calls him the poison-cloud boss but the data cannot confirm which spell that is."
+      ]
+    },
+    "62935": {
+      "entry": 62935,
+      "name": "Ormanos the Cracked",
+      "map": "timbermaw_hold",
+      "order": 88,
+      "abilities": [
+        {
+          "sid": 49027,
+          "name": "Tremors of Ormanos",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 49028,
+          "name": "Spawn Tremor of Ormanos",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 51608,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 49029,
+          "name": "Rampaging Earth",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 49030,
+          "name": "Rampaging Earth",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 49031,
+          "name": "Rampaging Earth",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 51608,
+          "name": "Tremor of Ormanos",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "The five spells are name and description matches only; 49030 says Ormanos prepares to charge and 49029 says the damage depends on the charge. No EventAI row or spell list links them to the creature and no timer exists.",
+        "Tremors is a 200 nature per 2 s ground zone at a dynamic object; Rampaging Earth knocks the charge target back and the charge length scales the damage. The guide's stomp and soak have no spell id."
+      ]
+    },
+    "62940": {
+      "entry": 62940,
+      "name": "Selenaxx Foulheart",
+      "map": "timbermaw_hold",
+      "order": 89,
+      "abilities": [
+        {
+          "sid": 52770,
+          "name": "Foulheart Siphon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52763,
+          "name": "Curse of Foulheart",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52790,
+          "name": "Summon Foulheart Imp",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 62945,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 62945,
+          "name": "Foulheart Imp",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Name matches only; no EventAI rows and no timer. Foulheart Siphon drains mana and damages every 1 s; Curse of Foulheart is a 100 yd curse; the imp summon is a 1.5 s cast. The guide's stacking portal debuff has no spell id in the core.",
+        "The guide says about 40 imps spawn and that satyrs can be enslaved or killed without a wipe; no satyr spell or add count is in the core."
+      ]
+    },
+    "62946": {
+      "entry": 62946,
+      "name": "Trioch the Devourer",
+      "map": "timbermaw_hold",
+      "order": 90,
+      "abilities": [
+        {
+          "sid": 34720,
+          "name": "Corrosive Spit",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 34721,
+          "name": "Icicle Crash",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 34722,
+          "name": "Icicle Crash",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 34723,
+          "name": "Frozen Spit",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Corrosive and Frozen Spit leave an aura with dispel 0; the two Icicle Crash rows are instant point hits of 8 yd and 100 yd. The spells are matched by name and no EventAI row or timer exists.",
+        "34724 to 34727 are self head markers with no damage in the row; the head and fury damage lives in a script the core does not have. The guide's fire breath has no spell id."
+      ]
+    },
+    "62938": {
+      "entry": 62938,
+      "name": "Archdruid Kronn",
+      "map": "timbermaw_hold",
+      "order": 91,
+      "abilities": [
+        {
+          "sid": 34767,
+          "name": "Intruder of the Dream",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Ultimate Sacrifice 34779 heals Kronn but its caster is an ally; Reform Body 34780 and Return to Body 34781 are the form swap. No EventAI rows and no timers exist.",
+        "Intruder of the Dream is a 100 nature per 3 s aura with no dispel. Emerald Dream Welcome 58117 is a player buff whose text says the target is no longer considered an intruder of the Emerald Dream; it is passive and hidden (attributes 0x40|0x80) and leaves no boss aura so it is a note and not an ability row."
+      ]
+    },
+    "60699": {
+      "entry": 60699,
+      "name": "Dreamform of Kronn",
+      "map": "timbermaw_hold",
+      "order": 92,
+      "abilities": [],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Dreamform of Kronn 60699 is a creature template only: rank 3 and 210000 hp with EventAI and no spell ids. The creature table has no spawn row for it and no script or creature_ai_events row exists so the form Kronn swaps into is never created by the core."
+      ]
+    },
+    "62941": {
+      "entry": 62941,
+      "name": "Chieftain Partath",
+      "map": "timbermaw_hold",
+      "order": 93,
+      "abilities": [
+        {
+          "sid": 34741,
+          "name": "Chieftain of Withermaw",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 34742,
+          "name": "Withermaw Ritual",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 62943,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 34748,
+          "name": "Shade of the Withermaw",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 52788,
+          "name": "Curse of the Withermaw",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52798,
+          "name": "Totem of Corruption",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 62886,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 62943,
+          "name": "Withermaw Shadowkeeper",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 62886,
+          "name": "Totem of Corruption",
+          "role": "totem",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Name matches only; no EventAI rows and no timers. 52789 is an add's shield and 52800 with 52799 is the totem's pulse and its Seeping Mass summon; their caster is not Partath so they are kept out of the ability rows.",
+        "The core template is faction 370 (friendly to players); the plan says 915 is needed and the guide says a guild killed him. Adds did not respawn after a reset in the guide."
       ]
     }
   },

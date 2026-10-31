@@ -1436,6 +1436,38 @@
       "name": "Slime Bolt",
       "castMs": 0
     },
+    "34720": {
+      "name": "Corrosive Spit",
+      "castMs": 0
+    },
+    "34721": {
+      "name": "Icicle Crash",
+      "castMs": 0
+    },
+    "34722": {
+      "name": "Icicle Crash",
+      "castMs": 0
+    },
+    "34723": {
+      "name": "Frozen Spit",
+      "castMs": 0
+    },
+    "34741": {
+      "name": "Chieftain of Withermaw",
+      "castMs": 0
+    },
+    "34742": {
+      "name": "Withermaw Ritual",
+      "castMs": 0
+    },
+    "34748": {
+      "name": "Shade of the Withermaw",
+      "castMs": 0
+    },
+    "34767": {
+      "name": "Intruder of the Dream",
+      "castMs": 0
+    },
     "42036": {
       "name": "Quaking Stomp",
       "castMs": 0
@@ -1458,6 +1490,34 @@
     },
     "47375": {
       "name": "Molten Bulwark",
+      "castMs": 0
+    },
+    "49027": {
+      "name": "Tremors of Ormanos",
+      "castMs": 0
+    },
+    "49028": {
+      "name": "Spawn Tremor of Ormanos",
+      "castMs": 0
+    },
+    "49029": {
+      "name": "Rampaging Earth",
+      "castMs": 0
+    },
+    "49030": {
+      "name": "Rampaging Earth",
+      "castMs": 0
+    },
+    "49031": {
+      "name": "Rampaging Earth",
+      "castMs": 0
+    },
+    "49039": {
+      "name": "Spirit Bond",
+      "castMs": 0
+    },
+    "49040": {
+      "name": "Broken Bond",
       "castMs": 0
     },
     "51080": {
@@ -1752,6 +1812,42 @@
       "name": "Rune of Power",
       "castMs": 0
     },
+    "52763": {
+      "name": "Curse of Foulheart",
+      "castMs": 0
+    },
+    "52770": {
+      "name": "Foulheart Siphon",
+      "castMs": 0
+    },
+    "52788": {
+      "name": "Curse of the Withermaw",
+      "castMs": 0
+    },
+    "52790": {
+      "name": "Summon Foulheart Imp",
+      "castMs": 0
+    },
+    "52798": {
+      "name": "Totem of Corruption",
+      "castMs": 0
+    },
+    "52806": {
+      "name": "Venomous Vines",
+      "castMs": 0
+    },
+    "52808": {
+      "name": "Aura of Infection",
+      "castMs": 0
+    },
+    "52812": {
+      "name": "Spores of Corruption",
+      "castMs": 0
+    },
+    "52813": {
+      "name": "Infected Secretion",
+      "castMs": 0
+    },
     "57056": {
       "name": "Leeching Bite",
       "castMs": 0
@@ -1827,9 +1923,16 @@
     "57100": {
       "name": "Moroes Curse",
       "castMs": 0
+    },
+    "58117": {
+      "name": "Emerald Dream Welcome",
+      "castMs": 0
     }
   },
   "creatures": {
+    "2139": {
+      "name": "Loktanag the Vile"
+    },
     "10162": {
       "name": "Lord Victor Nefarius"
     },
@@ -2352,6 +2455,9 @@
     "30008": {
       "name": "Skitterweb Egg"
     },
+    "51608": {
+      "name": "Tremor of Ormanos"
+    },
     "52145": {
       "name": "Incindis"
     },
@@ -2466,6 +2572,9 @@
     "59999": {
       "name": "Blood Raven"
     },
+    "60699": {
+      "name": "Dreamform of Kronn"
+    },
     "61192": {
       "name": "Shadowbane Darkcaster"
     },
@@ -2522,6 +2631,39 @@
     },
     "61958": {
       "name": "Echo of Medivh"
+    },
+    "62886": {
+      "name": "Totem of Corruption"
+    },
+    "62934": {
+      "name": "Karrsh the Sentinel"
+    },
+    "62935": {
+      "name": "Ormanos the Cracked"
+    },
+    "62936": {
+      "name": "Rotgrowl"
+    },
+    "62937": {
+      "name": "Kodiak"
+    },
+    "62938": {
+      "name": "Archdruid Kronn"
+    },
+    "62940": {
+      "name": "Selenaxx Foulheart"
+    },
+    "62941": {
+      "name": "Chieftain Partath"
+    },
+    "62943": {
+      "name": "Withermaw Shadowkeeper"
+    },
+    "62945": {
+      "name": "Foulheart Imp"
+    },
+    "62946": {
+      "name": "Trioch the Devourer"
     },
     "65020": {
       "name": "Basalthar"
