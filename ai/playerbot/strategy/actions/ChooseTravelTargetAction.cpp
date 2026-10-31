@@ -213,6 +213,28 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
     return false;
 }
 
+// An order mailbox in the bot's own capital first: a mailbox has no faction
+// to judge, and the nearest one may stand in a hostile camp (live: a bot
+// died in a loop at a pirate and a Tel Co. camp). Other mailboxes stay only
+// when no capital one is in the search.
+static void PreferCapitalMailboxes(PartitionedTravelList& list, Team team)
+{
+    auto outsideCapital = [team](TravelPoint const& point)
+    {
+        WorldPosition* position = std::get<WorldPosition*>(point);
+        return !position || !position->HasAreaFlag(AREA_FLAG_CAPITAL) || position->IsEnemyHomeZoneFor(team);
+    };
+    bool capital = false;
+    for (auto& [partition, points] : list)
+        for (TravelPoint const& point : points)
+            if (!outsideCapital(point))
+                capital = true;
+    if (!capital)
+        return;
+    for (auto& [partition, points] : list)
+        points.erase(std::remove_if(points.begin(), points.end(), outsideCapital), points.end());
+}
+
 static bool HasGuildOrderBankSupply(uint32_t botGuidLow)
 {
     std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
@@ -2509,8 +2531,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     // The search runs on its own snapshot: flag the order
                     // mailbox so the outgrown veto keeps the destination.
                     travelInfo.SetOrderMailbox();
-                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                    PreferCapitalMailboxes(list, travelInfo.GetTeam());
+                    return list;
                 });
             SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild mail");
         }
@@ -2627,8 +2651,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     // The search runs on its own snapshot: flag the order
                     // mailbox so the outgrown veto keeps the destination.
                     travelInfo.SetOrderMailbox();
-                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                    PreferCapitalMailboxes(list, travelInfo.GetTeam());
+                    return list;
                 });
             mailboxLeg = true;
         }
@@ -2640,8 +2666,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]() mutable
                 {
                     travelInfo.SetOrderMailbox();
-                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                    PreferCapitalMailboxes(list, travelInfo.GetTeam());
+                    return list;
                 });
             mailboxLeg = true;
         }
