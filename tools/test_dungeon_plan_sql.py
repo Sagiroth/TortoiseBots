@@ -5284,27 +5284,119 @@ class DungeonPlanSql(unittest.TestCase):
                 self.assertLessEqual(float(r["radius"]), 35)
         self.assertIn("'turtle-agent b0152b5 dungeons/timbermaw_hold.json'", text)
     def test_zul_gurub_is_the_raid_prep(self):
-        # 20261028110000 (turtle-agent prep/raid-zg 6bb3eab, 2026-10-28): the 20-man ZG prep of RAID-PREP-zg.md.
-        # 9 legs, 1105 steps (the move rows include the approach and via points), 169 merged pulls (cap 12, radius <= 35),
-        # the eight bosses in the guide's order. The runts (2914, 13321, 4075, 1420, 14881) and the two event triggers
-        # (14758, 15091) are in no pull; the first-add rows are the encounter units.
+        # 20261031030000 (turtle-agent fix/zg-step31-walk13 c16c7b3, 2026-10-31): leg 0 after walk 13 on dev's
+        # 20261028110000 walk-0 export. 9 legs, 1104 steps, 169 pulls, the eight bosses in the guide's order.
+        # Leg 0 (41 step rows + its leg row, 42 lines) is the re-spaced walk-13 rows: 10 pulls, 7 of them
+        # stand-pull rows (flag 8192, pulled from the move row right before them), and the plan row kills the
+        # Gurubashi Bat Rider first (kill_first 14750). Legs 1-8 are dev's export byte for byte (1072 lines).
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261028110000_world.sql")
-        self.assertIn("('zul_gurub', 309, '', '', '', 'turtle-agent b8cfadd dungeons/zul_gurub.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261031030000_world.sql")
+        self.assertIn("('zul_gurub', 309, '', '', '14750', 'turtle-agent c16c7b3 dungeons/zul_gurub.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
                          ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 1105)
+        self.assertEqual(len(rows), 1104)
+        self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
+                         [41, 142, 28, 61, 121, 75, 114, 290, 232])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [10, 21, 6, 7, 25, 23, 20, 39, 18])
+        leg0 = leg_steps(rows, 0)
+        self.assertEqual(len([line for line in text.splitlines() if re.match(r"\('zul_gurub', 0,", line)]), 42)
+        self.assertEqual(len(leg0), 41)
+        moves = [(r["x"], r["y"]) for r in leg0 if r["kind"] == "move"]
+        self.assertIn(("-12028", "-1510"), moves)
+        self.assertLess(moves.index(("-12028", "-1510")), leg0.index([r for r in leg0 if r["kind"] == "pull"][0]))
+        self.assertIn(("-11928.5", "-1364.5"), moves)
+        for stand_xy in (("-12040.8", "-1466.1334"), ("-12054", "-1449.8667"), ("-12057", "-1448"), ("-12093", "-1446"),
+                      ("-12093", "-1464"), ("-12108", "-1479"), ("-12183", "-1488"), ("-12204", "-1494"),
+                      ("-12177", "-1479"), ("-12177", "-1461"), ("-12180", "-1452"), ("-12186", "-1458"),
+                      ("-12225", "-1445"), ("-12241.56", "-1399.14")):
+            self.assertIn(stand_xy, moves)
+        for gone in (("-12120", "-1494"), ("-12215.199", "-1495.7334"), ("-12240", "-1497.5"), ("-12250", "-1497.5"),
+                     ("-12264", "-1497.5"), ("-12285", "-1490"), ("-12233", "-1390"), ("-12102.933", "-1465.6001"),
+                     ("-12113.333", "-1482.6667"), ("-12112", "-1486"), ("-12165", "-1478"), ("-12192", "-1490"),
+                     ("-12203", "-1414"), ("-12189", "-1473"), ("-12090", "-1446"), ("-12097.2", "-1483.1"),
+                     ("-12201", "-1494"), ("-12183", "-1446"), ("-12188", "-1489"), ("-12198", "-1494")):
+            self.assertNotIn(gone, moves)
+        # The bat pack (the third pull) is pulled from the east end of the plateau: the move right before it, 9.9 yd
+        # from its centre, is on the plateau, the climb before it is the east slope, and no move row before it stands
+        # on the stairs (x -12060 to -12100, z 95 to 125).
+        third = leg0.index([r for r in leg0 if r["kind"] == "pull"][2])
+        self.assertEqual((leg0[third]["x"], leg0[third]["y"]), ("-12054.76", "-1438.19"))
+        self.assertEqual((leg0[third - 1]["x"], leg0[third - 1]["y"]), ("-12057", "-1448"))
+        self.assertEqual([(r["x"], r["y"]) for r in leg0[third - 4:third - 1]],
+                         [("-12038.936", "-1474.1852"), ("-12040.8", "-1466.1334"), ("-12054", "-1449.8667")])
+        self.assertFalse([r for r in leg0[:third] if r["kind"] == "move" and -12100.0 <= float(r["x"]) <= -12060.0
+                          and 95.0 <= float(r["z"]) <= 125.0])
+        # Jeklik's keep-out: every leg-0 row before her own is 49.85 yd or more from her row (2D); the last approach row
+        # stays within 50 yd (3D), or the exporter would cut approach rows between it and her.
+        jek = leg0[-1]
+        self.assertEqual((jek["kind"], jek["entry"]), ("boss", "14517"))
+        def jek_yd(r, flat=True):
+            d = [float(r[k]) - float(jek[k]) for k in ("x", "y", "z")]
+            return math.hypot(d[0], d[1]) if flat else math.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
+        self.assertGreaterEqual(min(jek_yd(r) for r in leg0[:-1]), 49.85)
+        self.assertLessEqual(jek_yd(leg0[-2], flat=False), 50.0)
+        pulls0 = [r for r in leg0 if r["kind"] == "pull"]
+        self.assertEqual([p["radius"] for p in pulls0], ["6.3", "8.8", "11.9", "72", "4.6", "1", "5.5", "10", "33", "9"])
+        self.assertEqual([(p["x"], p["y"], p["entries"], p["flags"], p["param"]) for p in pulls0[3:]],
+                         [("-12148", "-1458", "11351,11831", "8192", "0"), ("-12148", "-1485", "11368,14750", "8192", "0"),
+                          ("-12153.9", "-1489.43", "11368,14750", "8192", "0"), ("-12208.9", "-1478.72", "11368,14750", "8192", "0"),
+                          ("-12228", "-1478", "11368,14750", "8192", "0"), ("-12218", "-1440", "11351,11831", "8192", "0"),
+                          ("-12228", "-1440", "11368,14750", "8192", "0")])
+        self.assertEqual([p["flags"] for p in pulls0[:3]], ["0", "0", "0"])
+        # The seven stand-pull rows run at these seqs with param 0, each pulled from the move row right before it.
+        self.assertEqual([p["seq"] for p in pulls0[3:]], ["21", "23", "25", "28", "32", "35", "37"])
+        stand = lambda p: leg0[leg0.index(p) - 1]
+        for p in pulls0[3:]:
+            self.assertEqual(p["param"], "0")
+            self.assertEqual(stand(p)["kind"], "move")
+        self.assertEqual([(stand(p)["kind"], stand(p)["x"], stand(p)["y"]) for p in pulls0[3:]],
+                         [("move", "-12093", "-1446"), ("move", "-12093", "-1464"), ("move", "-12108", "-1479"),
+                          ("move", "-12183", "-1488"), ("move", "-12180", "-1452"), ("move", "-12204", "-1494"),
+                          ("move", "-12186", "-1458")])
+        xyz = lambda r: [float(r[k]) for k in ("x", "y", "z")]
+        # A stand-pull row is seen from its stand (the run leader's 60 yd), and its radius takes in the DB spawns of
+        # its own formations only (zg-census.txt, creature_groups): F2 49134-49136; F3 49155 (and its rider 49154, 2.0 yd)
+        # but not F4's bats 49151/49153 beside it; F4 49151; F7 49131-49133; F5 49140 and not F6's 49123; F6 49123 and
+        # not ledge bat 91551 (-12263.2 -1452.55 143.5).
+        for p in pulls0[3:]:
+            self.assertLessEqual(math.dist(xyz(stand(p)), xyz(p)), 60.0)
+        own = lambda p, spawn: math.dist(xyz(p), spawn) <= float(p["radius"]) + 1.0
+        self.assertTrue(all(own(pulls0[3], s) for s in ((-12215.5, -1465.09, 130.648), (-12219.2, -1464.7, 130.698), (-12218.4, -1467.39, 130.725))))
+        self.assertTrue(own(pulls0[4], (-12152.1, -1486.58, 130.85)) and own(pulls0[4], (-12152.5, -1484.64, 130.725)))
+        self.assertFalse(own(pulls0[4], (-12153.9, -1489.43, 130.725)) or own(pulls0[4], (-12153.8, -1482.52, 130.85)))
+        # The static pack's own formation: its bat 49138's spawn (the row's centre), none of F5's (49140 24 yd off).
+        self.assertTrue(own(pulls0[6], (-12208.9, -1478.72, 131.35)) and not own(pulls0[6], (-12233.1, -1486.77, 132.874)))
+        self.assertTrue(own(pulls0[5], (-12153.9, -1489.43, 130.725)) and not own(pulls0[5], (-12155.9, -1487.27, 130.85)))
+        self.assertTrue(own(pulls0[7], (-12233.1, -1486.77, 132.874)) and not own(pulls0[7], (-12233.9, -1433.44, 130.711)))
+        self.assertTrue(all(own(pulls0[8], s) for s in ((-12236.9, -1414.1, 131.2), (-12238.7, -1413.23, 130.725), (-12238.1, -1416.02, 130.817))))
+        self.assertTrue(own(pulls0[9], (-12233.9, -1433.44, 130.711)) and not own(pulls0[9], (-12233.1, -1486.77, 132.874)))
+        self.assertFalse(own(pulls0[9], (-12263.2, -1452.55, 143.499)) or own(pulls0[8], (-12263.2, -1452.55, 143.499)))
+        # The static pack from its stand: its bat 49138 (the row's centre) in the tank's 28.5 yd shot (29.5 yd gun range
+        # less the run leader's 1 yd stand-pull margin), and every unit of it 27.3 yd or more off (out of its aggro with
+        # the party 5-7 yd round the lead bot: walk 10 woke it from 23.3 yd while the row held the shot).
+        s5 = xyz(stand(pulls0[6]))
+        self.assertLessEqual(math.dist(s5, (-12208.9, -1478.72, 131.35)), 28.5)
+        for unit in ((-12217.9, -1480.52, 130.975), (-12208.9, -1478.72, 131.35), (-12222.8, -1485.23, 131.253),
+                     (-12221.5, -1477.08, 130.85), (-12214.8, -1484.34, 131.35)):
+            self.assertGreater(math.dist(s5, unit), 27.3)
+        # Legs 1-8 are the rows of 20261028110000, byte for byte.
+        with open(os.path.join(ROOT, "data/sql/world/20261028110000_world.sql"), encoding="utf-8") as handle:
+            before = handle.read()
+        keep = lambda t: [line for line in t.splitlines()
+                          if re.match(r"\('zul_gurub', [0-8], '", line) or re.match(r"\('zul_gurub', [1-8], \d", line)]
+        self.assertEqual(len(keep(before)), 1072)
+        self.assertEqual(keep(text), keep(before))
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
                          ["14517", "14507", "14510", "14599", "14515", "11382", "11380", "14834"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss"})
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertEqual(len(pulls), 169)
-        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls if not int(r["flags"]) & 8192), 35.0)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls if int(r["flags"]) & 8192), 72.0)
         self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 12)
         for entry in ("2914", "13321", "4075", "1420", "14881", "14758", "15091"):
             self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
@@ -5313,11 +5405,8 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(boss["14510"]["entries"], "11388")
         self.assertEqual(boss["14599"]["entries"], "11347,11348,11361")
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["zul_gurub"])
-        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (309) AND `entry` IN (14517, 14507, 14510, 14599, 14515, 11382, 11380, 14834);", text)
-        for row in ("(309, 14517, 'interrupt', 0, 23954, 0, 0, 'Jeklik: Great Heal 23954 (boss_jeklik.cpp, 4 s cast)')",
-                    "(309, 11380, 'kill_first', 14987, 0, 1, 0, 'Jindo: Powerfull Healing Ward 14987 first (boss_jindo.cpp)')",
-                    "(309, 14515, 'behind', 0, 26350, 0, 10, 'Arlokk: Cleave 26350 cone, stay out of her front (boss_arlokk.cpp)')"):
-            self.assertIn(row, text)
+        self.assertNotIn("`ai_dungeon_boss`", text)
+        self.assertNotIn("`ai_boss_tactic`", text)
 
 if __name__ == "__main__":
     unittest.main()
