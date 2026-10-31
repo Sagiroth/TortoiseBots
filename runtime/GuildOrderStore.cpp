@@ -1838,6 +1838,21 @@ bool Cancel(uint32_t botGuidLow)
     return gone;
 }
 
+bool SubOrderDelivered(uint32_t parentBotGuidLow, uint32_t itemId)
+{
+    bool delivered = false;
+    for (OrderRecord const& row : All())
+    {
+        if (row.parentBotGuidLow != parentBotGuidLow || row.itemId != itemId || row.cancelled)
+            continue;
+        if (!IsFinished(row.state))
+            return false;
+        if (row.state == OrderState::Done || row.state == OrderState::Stocked)
+            delivered = true;
+    }
+    return delivered;
+}
+
 bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
 {
     if (!sPlayerbotAIConfig.guildOrderSubOrders || !itemId || !count)
@@ -2182,9 +2197,17 @@ void Update(uint32_t diff)
         // A finished sub-order that did not deliver fails the parent: the
         // full cancel path reaps its branch (queues, travel target) and
         // puts the item on the parent's need list.
-        if (!snapshot.parentBotGuidLow || snapshot.state == OrderState::Done ||
-            !IsFinished(snapshot.state))
+        if (!snapshot.parentBotGuidLow || snapshot.state == OrderState::Done)
             continue;
+        if (!IsFinished(snapshot.state))
+        {
+            // A running sub-order whose parent is gone or finished has no
+            // one to supply: it stops instead of farming for nobody.
+            std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
+            if (!snapshot.cancelled && (!parent || IsFinished(parent->state)))
+                Cancel(snapshot.botGuidLow);
+            continue;
+        }
         Cancel(snapshot.botGuidLow);
     }
     WakeParentsOfDeliveredChildren();

@@ -160,6 +160,11 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     }
     if (sameItem)
     {
+        // A delivered sub-order put the item in the guild bank: fetch it
+        // there instead of asking for it again.
+        if (current == SupplyStep::Sub && !bankSkipped && sPlayerbotAIConfig.guildOrderBankWithdraw &&
+            TortoiseBots::GuildOrders::SubOrderDelivered(order.botGuidLow, candidate.itemId))
+            return SupplyStep::Bank;
         if (current == SupplyStep::AuctionHouse || current == SupplyStep::Sub || current == SupplyStep::Need)
             return current;
         if (current == SupplyStep::Farm && canFarm)
