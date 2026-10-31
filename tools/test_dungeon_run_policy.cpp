@@ -20652,7 +20652,7 @@ static void TestPatrolStandPullIgnoresAnotherFloor()
     Run r = Start(&plan, 1);
     Facts f = PatrolPullFacts(22.0f);
     f.standPatrols.push_back(PatrolUnit(20, 11368, 20.0f, 200));
-    f.standPatrols.back().z += kPackResidueZYd + 1.0f;
+    f.standPatrols.back().z = f.leadZ + kPackResidueZYd + 1.0f;
     CHECK(Tick(r, f) == "pullback 9");
     Run near = Start(&plan, 1);
     Facts g = PatrolPullFacts(22.0f);
@@ -20664,6 +20664,37 @@ static void TestPatrolStandPullIgnoresAnotherFloor()
     offFloor.z -= kPackResidueZYd + 1.0f;
     g.standPatrols.push_back(offFloor);
     CHECK(Tick(near, g) == "pullback 9");
+}
+
+// The pull row sits on another height than the stand (a ramp or a ledge): a patrol beside the lead bot, on the lead
+// bot's floor, still holds the pull, though its z is far off the row's; one at the row's height beside the lead bot
+// (far below it, and off the way's floor there) does not.
+static void TestPatrolStandPullFloorFollowsTheLeadBot()
+{
+    float const drop = kPackResidueZYd + 6.0f;
+    DungeonPlan plan = PatrolPullPlan();
+    plan.steps[1].z -= drop;
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(22.0f);
+    f.units.front().z -= drop;
+    f.standPatrols = {f.units.front()};
+    UnitFact beside = PatrolUnit(20, 11368, 15.0f, 200);
+    beside.x = f.leadX;
+    beside.y = f.leadY + 15.0f;
+    beside.z = f.leadZ;
+    f.standPatrols.push_back(beside);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("waiting for 11368") != std::string::npos);
+    Run low = Start(&plan, 1);
+    Facts g = PatrolPullFacts(22.0f);
+    g.units.front().z -= drop;
+    g.standPatrols = {g.units.front()};
+    UnitFact below = PatrolUnit(20, 11368, 35.0f, 200);
+    below.x = g.leadX;
+    below.y = g.leadY + 35.0f;
+    below.z = g.leadZ - drop;
+    g.standPatrols.push_back(below);
+    CHECK(Tick(low, g) == "pullback 9");
 }
 
 // The pack's unit in the residue band (just outside the radius), out of shot: the gate holds at the stand. (Before:
@@ -25642,6 +25673,7 @@ int main()
     TestPatrolStandPullWaitsForTheOtherPatrol();
     TestPatrolStandPullWaitsForAPatrolNearThePullsWay();
     TestPatrolStandPullIgnoresAnotherFloor();
+    TestPatrolStandPullFloorFollowsTheLeadBot();
     TestPatrolStandPullHoldsForAResidueUnit();
     TestPatrolStandPullShootsAPatrollerInShot();
     TestPatrolStandPullSameFormationDoesNotBlock();

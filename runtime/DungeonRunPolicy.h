@@ -10469,6 +10469,8 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     // How far (2D) a unit stands from the pick and the line the pick runs along to the lead bot (-1: the pick's
     // position not read).
     bool const pickRead = pick->x != 0.0f || pick->y != 0.0f;
+    // A unit on another floor of the way (its z off the way's z at its closest point, more than the residue band) is
+    // not near it: -1 like an unread pick.
     auto pathYd = [&](const UnitFact& u)
     {
         if (!pickRead)
@@ -10477,6 +10479,9 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
         float const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
         float t = len2 > 0.0f ? ((u.x - ax) * dx + (u.y - ay) * dy) / len2 : 0.0f;
         t = std::max(0.0f, std::min(1.0f, t));
+        float const wayZ = pick->z + t * (f.leadZ - pick->z);
+        if (std::fabs(u.z - wayZ) > kPackResidueZYd)
+            return -1.0f;
         return std::hypot(u.x - (ax + t * dx), u.y - (ay + t * dy));
     };
     const UnitFact* other = nullptr;
@@ -10485,13 +10490,13 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     {
         if (!u.hostile || u.guid == pick->guid || r.passed.count(u.guid))
             continue;
-        if (std::fabs(u.z - s.z) > kPackResidueZYd)
-            continue; // another floor: not in this pull's fight, however near it stands in x/y
         if (pick->formation && u.formation == pick->formation)
             continue; // its own formation comes with it anyway
         float const py = pathYd(u);
         bool const nearPath = py >= 0.0f && py <= kStandPullPathClearYd;
-        if (u.distLead > clearYd && !nearPath)
+        // Near the lead bot only on the lead bot's floor: the stand and the pull row may sit at other heights.
+        bool const nearLead = u.distLead <= clearYd && std::fabs(u.z - f.leadZ) <= kPackResidueZYd;
+        if (!nearLead && !nearPath)
             continue;
         if (!other || u.distLead < other->distLead)
         {
