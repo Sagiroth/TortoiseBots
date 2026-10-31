@@ -1408,27 +1408,6 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-// Durable module bots only: claimed into a guild, or on a random-pool
-// account. Never autonomous alts, never hired bots (they belong to a
-// player), never real players' own characters. Same-guild membership is a
-// separate live check at each call site (member rows plus GetGuildId()).
-bool IsDurableOrderBot(uint32_t guidLow)
-{
-    if (!guidLow)
-        return false;
-    ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
-    if (!BotManager::Instance().IsBot(guid))
-        return false;
-    if (AltBotService::Instance().IsAutonomous(guidLow))
-        return false;
-    if (HireLifecycle::Instance().IsHired(guid))
-        return false;
-    if (ClaimLifecycle::Instance().IsClaimed(guidLow))
-        return true;
-    uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
-    return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
-}
-
 void SendOrderLine(OrderRecord const& order, uint32_t have);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. A member-list query runs once per due
@@ -1568,6 +1547,27 @@ void SendNeedWhisper(OrderRecord const& order)
 }
 
 } // namespace
+
+// Durable module bots only: claimed into a guild, or on a random-pool
+// account. Never autonomous alts, never hired bots (they belong to a
+// player), never real players' own characters. Same-guild membership is a
+// separate live check at each call site (member rows plus GetGuildId()).
+bool IsDurableOrderBot(uint32_t guidLow)
+{
+    if (!guidLow)
+        return false;
+    ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+    if (!BotManager::Instance().IsBot(guid))
+        return false;
+    if (AltBotService::Instance().IsAutonomous(guidLow))
+        return false;
+    if (HireLifecycle::Instance().IsHired(guid))
+        return false;
+    if (ClaimLifecycle::Instance().IsClaimed(guidLow))
+        return true;
+    uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
+    return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
+}
 
 bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm)
 {
