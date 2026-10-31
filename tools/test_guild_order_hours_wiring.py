@@ -4,7 +4,6 @@ runtime/GuildOrderStore.cpp appends <hours>, <keep>, <parent>, gold cap, step an
 need to TBM:ORDER while keeping every older field in place; the addon docs
 document the same shape. A give with no hours token stores no time limit.
 """
-"""
 import pathlib
 import unittest
 
@@ -35,8 +34,9 @@ class GuildOrderHoursWiringTest(unittest.TestCase):
         policy = (ROOT / "runtime/GuildOrderGiveUpPolicy.h").read_text()
         self.assertIn("kDefaultOrderHours = kUnlimitedOrderHours", policy)
 
-    def test_addon_documents_no_limit_default(self):
-        self.assertIn("no hours given (or `inf`) means no time limit", ADDON)
+    def test_command_doc_documents_no_limit_default(self):
+        commands = (ROOT / "docs/play/commands/roster-and-hiring.md").read_text()
+        self.assertIn("no hours given (or `inf`) means no time limit", commands)
 
 
 if __name__ == "__main__":
