@@ -395,15 +395,15 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;
     }
-    if (!GuildOrders::IsDurableOrderBot(newGuid.GetCounter(), sub->guildId))
+    Player* live = sObjectAccessor.FindPlayer(newGuid);
+    if (!live || !live->IsInWorld() || live->GetGuildId() != sub->guildId)
     {
-        OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts, hires or other guilds' bots.");
+        OrderError(handler, "no-bot", "The new bot is offline or not in the order's guild.");
         return true;
     }
-    Player* live = sObjectAccessor.FindPlayer(newGuid);
-    if (!live || !live->IsInWorld())
+    if (!GuildOrders::IsDurableOrderBot(newGuid.GetCounter()))
     {
-        OrderError(handler, "no-bot", "The new bot is offline: its recipes cannot be checked.");
+        OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts or hires.");
         return true;
     }
     bool canMake = false, canFarm = false;

@@ -957,12 +957,13 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-// Durable module bots only: claimed into the guild, or on a random-pool
+// Durable module bots only: claimed into a guild, or on a random-pool
 // account. Never autonomous alts, never hired bots (they belong to a
-// player), never real players' own characters.
-bool IsDurableOrderBot(uint32_t guidLow, uint32_t guildId)
+// player), never real players' own characters. Same-guild membership is a
+// separate live check at each call site (member rows plus GetGuildId()).
+bool IsDurableOrderBot(uint32_t guidLow)
 {
-    if (!guidLow || !guildId)
+    if (!guidLow)
         return false;
     ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
     if (!BotManager::Instance().IsBot(guid))
@@ -970,10 +971,6 @@ bool IsDurableOrderBot(uint32_t guidLow, uint32_t guildId)
     if (AltBotService::Instance().IsAutonomous(guidLow))
         return false;
     if (HireLifecycle::Instance().IsHired(guid))
-        return false;
-    // Owner rule: pool-account or claimed is the "module bot" test, same
-    // guild is the "may work for this guild" test; both are required.
-    if (Player::GetGuildIdFromDB(guid) != guildId)
         return false;
     if (ClaimLifecycle::Instance().IsClaimed(guidLow))
         return true;
@@ -1029,11 +1026,11 @@ bool PlaceSubOrders(uint32_t nowMs)
                 uint32_t guidLow = fields[0].GetUInt32();
                 if (!guidLow || guidLow == parent->botGuidLow)
                     continue;
-                if (!IsDurableOrderBot(guidLow, parent->guildId))
-                    continue;
                 ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
                 Player* bot = sObjectAccessor.FindPlayer(guid);
                 if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
+                    continue;
+                if (!IsDurableOrderBot(guidLow))
                     continue;
                 SubOrderCandidate candidate;
                 candidate.botGuidLow = guidLow;
