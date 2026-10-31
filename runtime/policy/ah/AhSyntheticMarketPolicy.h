@@ -48,18 +48,20 @@ namespace ai
     inline constexpr uint32_t kAhItemFlagHasLoot = 0x00000004;
 
     // Synthetic supply eligibility (AhMarketService::IsItemEligible):
-    // stackable, inside the quality/level caps, not blacklisted, and - unless
-    // forced by an override - not soulbound-on-pickup, not a quest item, and
-    // without a loot window.
+    // stackable, inside the quality/level caps, not blacklisted, never an
+    // unlimited vendor item, and - unless forced by an override - not
+    // soulbound-on-pickup, not a quest item, and without a loot window.
     inline bool AhItemEligible(bool blacklisted, bool forced, bool stackable,
         uint32_t quality, uint32_t maxQuality,
         uint32_t requiredLevel, uint32_t maxRequiredLevel,
         uint32_t itemLevel, uint32_t maxItemLevel,
-        uint32_t bonding, uint32_t flags)
+        uint32_t bonding, uint32_t flags, bool unlimitedVendorStock = false)
     {
         if (!stackable || quality > maxQuality)
             return false;
         if (blacklisted)
+            return false;
+        if (unlimitedVendorStock)
             return false;
         if (forced)
             return true;

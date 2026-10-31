@@ -715,7 +715,9 @@ bool AhMarketService::IsItemEligible(ItemPrototype const* proto, bool forced) co
         uint32_t(proto->Quality), sPlayerbotAIConfig.ahMarketMaxQuality,
         proto->RequiredLevel, m_maxRequiredLevel,
         proto->ItemLevel, m_maxItemLevel,
-        uint32_t(proto->Bonding), proto->Flags);
+        uint32_t(proto->Bonding), proto->Flags,
+        ai::ItemUsageValue::IsItemSoldByAnyVendor(proto) &&
+            !ai::ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto));
 }
 
 uint32_t AhMarketService::CalculatePrice(ItemPrototype const* proto) const

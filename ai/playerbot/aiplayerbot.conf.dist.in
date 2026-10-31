@@ -2415,6 +2415,10 @@ AiPlayerbot.RandomBotsMaxLoginsPerInterval = 30
 # Empty by default (disabled); a value is a comma separated item id list.
 # AiPlayerbot.VendorOverAHItemIds =
 #
+# List of item ids bots never post to the auction house (owner-editable).
+# Default posts nothing for 18256 (Imbued Vial); a value is a comma separated item id list.
+AiPlayerbot.AhSellBlacklist = 18256
+#
 # (0-1) Whether bot should check ALL auction house listings when browsing (by default only checks a small amount)
 # AiPlayerbot.BotCheckAllAuctionListings = 0
 #
