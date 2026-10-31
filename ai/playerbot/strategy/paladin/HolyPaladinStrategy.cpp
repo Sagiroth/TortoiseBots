@@ -65,7 +65,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // (party mana-regen utility via Judgement of Wisdom; Seal of Light's
     // direct heal-on-swing is redundant with our 5 healing buttons)
     triggers.push_back(new TriggerNode(
-        "seal",
+        "seal in melee",
         NextAction::array(0, new NextAction("seal of wisdom", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
