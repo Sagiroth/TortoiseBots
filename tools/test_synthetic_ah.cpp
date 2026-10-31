@@ -313,7 +313,7 @@ struct MockAhMarketService
             proto->Quality, config.ahMarketMaxQuality,
             proto->RequiredLevel, maxRequiredLevel,
             proto->ItemLevel, maxItemLevel,
-            proto->Bonding, proto->Flags);
+            proto->Bonding, proto->Flags, false);
     }
 
     uint32 CalculatePrice(ItemPrototype const* proto) const

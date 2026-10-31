@@ -171,6 +171,7 @@ public:
     bool shouldQueryAHListingsOutsideOfAH;
     std::list<uint32> ahOverVendorItemIds;
     std::list<uint32> vendorOverAHItemIds;
+    std::list<uint32> ahSellBlacklist;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes

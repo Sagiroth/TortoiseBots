@@ -13,6 +13,7 @@
 #include "playerbot/policy/quest/QuestLogPolicy.h"
 #include "../../../../runtime/policy/provision/ClassConsumablePolicy.h"
 #include "../../../../runtime/policy/ah/AhReadModelPolicy.h"
+#include "../../../../runtime/policy/ah/AhSellPolicy.h"
 
 using namespace ai;
 
@@ -1948,9 +1949,12 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         return false;
     }
 
-    if (AreCurrentAHListingsTooCheap(proto))
+    for (auto itemId : sPlayerbotAIConfig.ahSellBlacklist)
     {
-        return false;
+        if (itemId == proto->ItemId)
+        {
+            return false;
+        }
     }
 
     for (auto itemId : sPlayerbotAIConfig.ahOverVendorItemIds)
@@ -1967,6 +1971,16 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         {
             return false;
         }
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendor(proto), IsItemSoldByAnyVendorButHasLimitedMaxCount(proto)))
+    {
+        return false;
+    }
+
+    if (AreCurrentAHListingsTooCheap(proto))
+    {
+        return false;
     }
 
     //exceptions
@@ -2069,6 +2083,19 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
         return false;
     }
 
+    for (auto itemId : sPlayerbotAIConfig.ahSellBlacklist)
+    {
+        if (itemId == proto->ItemId)
+        {
+            return false;
+        }
+    }
+
+    if (!IsItemSoldByAnyVendorButHasLimitedMaxCount(proto))
+    {
+        return false;
+    }
+
     if (AreCurrentAHListingsTooCheap(proto))
     {
         return false;
@@ -2157,6 +2184,19 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
 
 bool ItemUsageValue::IsWorthBuyingFromAhToResellAtAH(ItemPrototype const* proto, uint32 totalCost, uint32 itemCount)
 {
+    for (auto itemId : sPlayerbotAIConfig.ahSellBlacklist)
+    {
+        if (itemId == proto->ItemId)
+        {
+            return false;
+        }
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendor(proto), IsItemSoldByAnyVendorButHasLimitedMaxCount(proto)))
+    {
+        return false;
+    }
+
     uint32 pricePerItem = totalCost / itemCount;
 
     //bottom half is probably always worth buying? That should reduce oversupply

@@ -128,7 +128,7 @@ bool BuyAction::Execute(Event& event)
                 bool const cheatStock = proto->Class == ITEM_CLASS_QUIVER && ai->HasCheat(BotCheatMask::item);
                 // if item is worth selling to AH?
                 bool canFlipAH = !cheatStock &&
-                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
+                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount != 0);
 
                 pmo.reset();
 
