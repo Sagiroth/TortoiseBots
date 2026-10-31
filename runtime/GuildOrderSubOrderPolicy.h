@@ -19,6 +19,11 @@ namespace GuildOrders
 inline constexpr uint32_t kSubOrderDefaultDepth = 3;
 // Busy-only queued requests retry on this interval, not every world tick.
 inline constexpr uint32_t kSubOrderRetryMs = 45000;
+// Planner evaluations per PlaceSubOrders tick: each SubOrderCandidateUsable
+// call may walk the source index, so a tick with many due requests shares
+// the budget and requeues the rest on the retry timer instead of stalling
+// the world thread.
+inline constexpr size_t kSubOrderPlannerEvalsPerTick = 8;
 
 // Remaining spend for one ancestor pair (the store walks the whole branch):
 // the smallest cap remainder wins, uncapped rows do not bind.

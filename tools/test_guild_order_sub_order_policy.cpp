@@ -13,7 +13,9 @@ int main()
 {
     CHECK(kSubOrderDefaultDepth == 3);
     CHECK(kSubOrderRetryMs == 45000);
-    // Branch gold caps nest: the spendable budget is the smallest remaining
+    // The per-tick planner budget is small: sub-order ticks stay bounded
+    // while the retry timer drains the rest.
+    CHECK(kSubOrderPlannerEvalsPerTick > 0 && kSubOrderPlannerEvalsPerTick <= 16);
     // cap over the row and every ancestor, uncapped only when no row caps.
     CHECK(BranchGoldRemaining(500, true, 200, 500, true, 0) == 300);
     CHECK(BranchGoldRemaining(500, true, 500, 500, true, 0) == 0);
