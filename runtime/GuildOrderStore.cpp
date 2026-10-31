@@ -494,6 +494,10 @@ public:
         if (reason == OrderReason::None && step == record.supplyStep && record.supplyItemId == itemId &&
             (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoSource))
             reason = record.reason;
+        // The farm give-up verdict belongs to the farm leg: a sub-order is
+        // normal progress, so the addon must not show it as a failure.
+        if (step == SupplyStep::Sub && reason == OrderReason::NoSource)
+            reason = OrderReason::None;
         if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems && step != SupplyStep::Need)
         {
             record.state = OrderState::Working;
