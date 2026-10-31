@@ -691,9 +691,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
                 time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
         }
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
-        // An order reagent or workshop with no reachable destination fails
-        // the order: every candidate was rejected by the pick gates.
-        if (purposeKey == "order focus" || purposeKey == "order vendor")
+        // A workshop with no reachable destination fails the order; an
+        // empty vendor search goes through the leg streak above instead.
+        if (purposeKey == "order focus")
         {
             TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
                 TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),

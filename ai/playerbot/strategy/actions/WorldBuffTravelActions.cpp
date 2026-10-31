@@ -233,6 +233,8 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
             ai::BotInstantFlightFinish(bot, { srcNode, destTaxiNode });
 
         bot->SetMoney(savedMoney);
+
+        return didFly;
     }
 
     return false;

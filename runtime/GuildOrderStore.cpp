@@ -955,6 +955,8 @@ public:
         moved.searchFailsInZone = 0;
         moved.bankEmptyItemId = 0;
         moved.bankEmptyMs = 0;
+        moved.mailEmptyItemId = 0;
+        moved.mailEmptyMs = 0;
         moved.guildGoldWithdrawn = 0;
         m_orders[newBotGuidLow] = Stored{moved};
         MarkDirtyLocked(m_orders[newBotGuidLow]);
