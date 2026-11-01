@@ -91,7 +91,11 @@ namespace
         bool pacedRow = false;
         for (const BossTacticRow& row : *rows)
             pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
-        return pacedRow && OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue());
+        // Opt-in like HeldDpsTarget: only a bot that runs "boss tactics" in combat is paced, so a bot without it keeps
+        // its explicit order.
+        if (!pacedRow || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
+        return OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue());
     }
 
     // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives

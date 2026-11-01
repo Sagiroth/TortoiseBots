@@ -3,6 +3,7 @@
 #include "../ai/playerbot/BossTacticsPolicy.h"
 
 #include <cstdlib>
+#include <limits>
 #include <iostream>
 
 #define CHECK(x) do { \
@@ -45,12 +46,13 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     return c;
 }
 
-static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat)
+static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
 {
     SoleCandidate c;
     c.guid = guid;
     c.hpPct = hpPct;
     c.inCombat = inCombat;
+    c.eligible = eligible;
     return c;
 }
 
@@ -290,6 +292,27 @@ int main()
         const std::vector<SoleCandidate> waiting = { Sole(0x3001, 100, true), Sole(0x3002, 1, false) };
         CHECK(PickSoleKill(waiting) == 0);
         CHECK(OneAtATimeHolds(0x3001, 0x3002));
+
+        // A crowd-controlled (ineligible) Servant is never the pick, however wounded: the raid does not converge on a sheep.
+        const std::vector<SoleCandidate> sheeped = { Sole(0x4001, 100, true), Sole(0x4002, 1, true, false) };
+        CHECK(PickSoleKill(sheeped) == 0);
+        CHECK(PickSoleKill({ Sole(0x4002, 1, true, false) }) == -1);
+
+        // "a held CC'd Servant 5 yd from the cast vetoes the area action": the held subject is chosen among the
+        // fight-wide candidates (the pick, plus the held Servant that is crowd-controlled and so ineligible), by
+        // distance from the cast, and never from the bot's collapsible attackers list (which this helper is not given).
+        const std::vector<SoleCandidate> pile = { Sole(0x5001, 40, true), Sole(0x5002, 100, true, false) };
+        const float kNear = 10.0f;
+        CHECK(HeldSubjectIndex(pile, { 30.0f, 5.0f }, kNear, false) == 1);    // the CC'd Servant 5 yd away: vetoed
+        CHECK(HeldSubjectIndex(pile, { 3.0f, 30.0f }, kNear, false) == -1);   // only the pick is near: nothing held
+        CHECK(HeldSubjectIndex(pile, { 30.0f, 30.0f }, kNear, false) == -1);  // both out of reach
+        CHECK(HeldSubjectIndex(pile, { 30.0f, 5.0f }, 1.0e30f, false) == 1);  // the attacker debuff has no distance bound
+        CHECK(HeldSubjectIndex({ Sole(0x5002, 100, true, false) }, { 5.0f }, kNear, false) == -1);   // no pick: no pacing
+        CHECK(HeldSubjectIndex(pile, { 30.0f, std::numeric_limits<float>::infinity() }, 1.0e30f, false) == -1);   // unresolved
+        // A hold_kill budget that is over holds every candidate, the pick included.
+        CHECK(HeldSubjectIndex(pile, { 3.0f, 30.0f }, kNear, true) == 0);
+        CHECK(HeldSubjectIndex(pile, { 30.0f, 30.0f }, kNear, true) == -1);
+        CHECK(HeldSubjectIndex({}, {}, kNear, true) == -1);
 
         // The row is about its own boss_entry (like a tank_hold row) and needs no blocker: a hold_kill row of the same
         // entry stays a rule of its own.
@@ -534,6 +557,23 @@ int main()
         CHECK(!flags.HasAvoidCastMap(70));    // rows, but no avoid_cast row
         CHECK(flags.HasMap(70));
         CHECK(!flags.HasAvoidCastMap(1));
+    }
+
+    // The hold map flag: only a map with a hold_kill or one_at_a_time row, only after the seal. A map with only
+    // kill_first or interrupt rows is not one (the hold multiplier does no scan for heals, buffs or moves there).
+    {
+        BossTacticTable holds;
+        CHECK(holds.Add(Row(70, 6910, BossTacticKind::Interrupt, 0, 8292, 0, 0.0f)));
+        CHECK(holds.Add(Row(70, 6911, BossTacticKind::KillFirst)));
+        CHECK(holds.Add(Row(309, 15111, BossTacticKind::OneAtATime)));
+        CHECK(holds.Add(Row(429, 11488, BossTacticKind::HoldKill, 11489)));
+        CHECK(!holds.HasHoldMap(309));        // not before the seal
+        holds.Seal();
+        CHECK(holds.HasHoldMap(309));
+        CHECK(holds.HasHoldMap(429));
+        CHECK(!holds.HasHoldMap(70));         // rows, but only interrupt and kill_first
+        CHECK(holds.HasMap(70));
+        CHECK(!holds.HasHoldMap(1));
     }
 
     // Zones: 3D, centre to centre, the edge is out.

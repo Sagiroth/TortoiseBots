@@ -120,6 +120,8 @@ namespace ai
             maps_[row.map] = true;
             if (row.kind == BossTacticKind::AvoidCast)
                 avoidCastMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
+                holdMaps_[row.map] = true;
             ++size_;
             return true;
         }
@@ -141,6 +143,13 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && avoidCastMaps_.find(map) != avoidCastMaps_.end();
         }
 
+        // Whether the map has a hold_kill or one_at_a_time row (the hold multiplier's scan for heals, buffs and moves
+        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). False before the seal.
+        bool HasHoldMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
         // The rows of one boss entry, or null. Null before the seal.
         const std::vector<BossTacticRow>* Rows(std::uint32_t map, std::uint32_t bossEntry) const
         {
@@ -159,6 +168,7 @@ namespace ai
         std::unordered_map<std::uint64_t, std::vector<BossTacticRow>> rows_;
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
+        std::unordered_map<std::uint32_t, bool> holdMaps_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };
@@ -515,24 +525,26 @@ namespace ai
         return freeDpsBot && KillHeld(rows, entry, countNear);
     }
 
-    // A live unit of the paced entry, as the one_at_a_time pick sees it: health first, guid as the tie-break, and
-    // whether it fights at all. Every bot builds the same list from its fight (the cached attacker list), so the pick
-    // needs no vote and no new state.
+    // A living unit of the paced entry that fights, as the one_at_a_time pick sees it: health first, guid as the
+    // tie-break. `eligible` is whether it may be THE pick (not crowd-controlled, not running home); only PickSoleKill
+    // reads it. An ineligible unit is still a unit of the entry that stands in the pile, so the area veto still counts
+    // it. Every bot builds the same list from the fight-wide grid search, so the pick needs no vote and no new state.
     struct SoleCandidate
     {
         std::uint64_t guid = 0;
         int hpPct = 100;
         bool inCombat = false;
+        bool eligible = true;
     };
 
     // Index of the one unit the whole fight kills next, or -1 when none of the entry fights yet: the lowest health
-    // among the candidates that are in combat, the lowest guid on a tie.
+    // among the eligible candidates that are in combat, the lowest guid on a tie.
     inline int PickSoleKill(const std::vector<SoleCandidate>& c)
     {
         int best = -1;
         for (std::size_t i = 0; i < c.size(); ++i)
         {
-            if (!c[i].inCombat)
+            if (!c[i].inCombat || !c[i].eligible)
                 continue;
             if (best < 0 || c[i].hpPct < c[best].hpPct || (c[i].hpPct == c[best].hpPct && c[i].guid < c[best].guid))
                 best = static_cast<int>(i);
@@ -546,6 +558,26 @@ namespace ai
     inline bool OneAtATimeHolds(std::uint64_t solePick, std::uint64_t guid)
     {
         return solePick != 0 && solePick != guid;
+    }
+
+    // Index of the held unit of a paced entry the area veto answers to, among the fight-wide candidates (the value's
+    // living, fighting units of the entry, crowd-controlled ones included; NOT the bot's collapsible attackers list):
+    // the first candidate within `maxDistance` (`distance[i]`, infinity for one that could not be resolved) that is held,
+    // or -1. `budgetHolds` is a hold_kill row whose blocker budget is over: every candidate of the entry is held. Else
+    // (a one_at_a_time row) every candidate except the sole pick is held, an ineligible one included, so a crowd-
+    // controlled Servant next to the cast still vetoes it. -1 when the entry has no pick yet (nothing is paced).
+    inline int HeldSubjectIndex(const std::vector<SoleCandidate>& c, const std::vector<float>& distance,
+                                float maxDistance, bool budgetHolds)
+    {
+        const int pick = PickSoleKill(c);
+        for (std::size_t i = 0; i < c.size() && i < distance.size(); ++i)
+        {
+            if (distance[i] > maxDistance)
+                continue;
+            if (budgetHolds || (pick >= 0 && OneAtATimeHolds(c[pick].guid, c[i].guid)))
+                return static_cast<int>(i);
+        }
+        return -1;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

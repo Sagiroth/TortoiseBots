@@ -42,10 +42,11 @@ uint32 HoldKillBlockersValue::Calculate()
     return count;
 }
 
-// The one_at_a_time pick's candidates: the living creatures of the entry within kHoldKillRangeYd that fight and are not
-// being crowd-controlled or running home. A Servant of a later wave, out of combat at the portal, is not on the list,
-// so it never becomes the pick of the wave the raid is on. Never the bot's own "attackers" list, which "focus rti
-// targets" collapses to the raid mark.
+// The one_at_a_time candidates: every living creature of the entry within kHoldKillRangeYd of the bot that fights. A
+// crowd-controlled or evading one stays on the list with `eligible` false: only PickSoleKill reads that flag (the raid
+// never converges on a sheep or a mob running home), while the area veto still counts it as a held unit standing in the
+// pile. A Servant of a later wave, out of combat at the portal, is not on the list, so it never becomes the pick of the
+// wave the raid is on. Never the bot's own "attackers" list, which "focus rti targets" collapses to the raid mark.
 std::vector<SoleCandidate> SoleKillCandidatesValue::Calculate()
 {
     std::vector<SoleCandidate> candidates;
@@ -55,12 +56,11 @@ std::vector<SoleCandidate> SoleKillCandidatesValue::Calculate()
     {
         if (!creature->IsAlive() || !creature->IsInCombat())
             continue;
-        if (creature->IsInEvadeMode() || FindNonCcTargetStrategy::IsCrowdControlled(ai, creature))
-            continue;
         SoleCandidate candidate;
         candidate.guid = creature->GetObjectGuid().GetRawValue();
         candidate.hpPct = static_cast<int>(creature->GetHealthPercent());
         candidate.inCombat = true;
+        candidate.eligible = !creature->IsInEvadeMode() && !FindNonCcTargetStrategy::IsCrowdControlled(ai, creature);
         candidates.push_back(candidate);
     }
     return candidates;

@@ -33,10 +33,14 @@ namespace ai
     // bot and entry. Never the bots' "attackers" list: a Portal of Madness is unselectable and never attacks.
     std::uint32_t HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry);
 
+    // The living, fighting units of `entry` within kHoldKillRangeYd of the bot, a crowd-controlled or evading one
+    // included (`eligible` false): the "sole kill candidates" value, one cached grid search per bot and entry, the
+    // fight's own units of the entry, never the bot's "attackers" list, which "focus rti targets" collapses to the raid
+    // mark.
+    std::vector<SoleCandidate> SoleKillCandidates(PlayerbotAI* ai, std::uint32_t entry);
+
     // The guid of the one living unit of `entry` the fight kills next (0 when nobody of that entry fights yet): the
-    // lowest health among the units that fight, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill). The
-    // candidates come from the "sole kill candidates" value (one cached grid search per bot and entry, the fight's own
-    // units of the entry, never the bot's "attackers" list, which "focus rti targets" collapses to the raid mark).
+    // lowest health among the eligible candidates, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill).
     std::uint64_t SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry);
 
     // A listed spell being cast right now, by a creature in the fight.

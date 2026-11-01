@@ -19,11 +19,12 @@ namespace ai
         uint32 Calculate() override;
     };
 
-    // "sole kill candidates::<entry>": the living units of the entry within kHoldKillRangeYd that fight and can be the
-    // one_at_a_time pick (the whole fight's units of that entry, lowest health first, lowest guid on a tie: the pick
-    // rule is BossTacticsPolicy's PickSoleKill). Never the bot's own "attackers" list, which "focus rti targets"
-    // collapses to the raid mark, so every bot of the fight reads the same set. The same grid search as the blocker
-    // count, at most once a second per bot and entry.
+    // "sole kill candidates::<entry>": the living units of the entry within kHoldKillRangeYd that fight, the whole
+    // fight's units of that entry (the pick rule is BossTacticsPolicy's PickSoleKill: lowest health, lowest guid on a
+    // tie, among the `eligible` ones; a crowd-controlled or evading unit stays on the list, ineligible, for the area
+    // veto). Never the bot's own "attackers" list, which "focus rti targets" collapses to the raid mark, so every bot
+    // of the fight reads the same set. The same grid search as the blocker count, at most once a second per bot and
+    // entry.
     class SoleKillCandidatesValue : public CalculatedValue<std::vector<SoleCandidate>>, public Qualified
     {
     public:
