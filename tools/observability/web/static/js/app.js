@@ -5799,7 +5799,7 @@
       // The cast clock starts when the report arrives, not when the refresh gate lets it on screen: the module read "time left"
       // before the report was sent.
       const nowMs = performance.now();
-      list.forEach(bind => cmdNoteMobTimes(bind, nowMs));
+      list.forEach(bind => { cmdApplyBossRanks(bind); cmdNoteMobTimes(bind, nowMs); });
       // What the page remembers (paths, hp changes, events) keeps every report, so a slow refresh rate loses no part of a path; while
       // paused it is held too, so nothing on the map moves, and it is replayed in order on resume.
       refreshGate.note(() => list.forEach(bind => { CmdView.note(cmdTracker, bind, updatedAt); UnitInfo.noteEvents(cmdEvents, bind, updatedAt); cmdNotePaths(bind, updatedAt); }));
@@ -6516,6 +6516,20 @@
   const cmdBossSeen = {}; // commander -> entry -> {name, seenAt}: a boss the fight had and the reports now leave out
   function cmdBossTable() {
     return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
+  }
+  // A rank-3 add the table lists as an add (Thaurissan's Image, Gnarlmoon's owls) is drawn as an elite (BossPanel.rankFor).
+  function cmdApplyBossRanks(bind) {
+    const table = cmdBossTable();
+    if (!table || !bind || !Array.isArray(bind.mobs) || typeof BossPanel === 'undefined' || !BossPanel.rankFor) return;
+    bind.mobs.forEach(m => { if (m && m.rank === 'b') m.rank = BossPanel.rankFor(table, bind.mobs_map, m); });
+  }
+  // The table is one slow static file and the first report can land before it: rank what the page already holds, then paint, so
+  // that report is drawn with the table's ranks and not the rank the report carried.
+  function cmdBossTableLoaded() {
+    (state.commanders.list || []).forEach(bind => cmdApplyBossRanks(bind));
+    covCompute();
+    if (state.activeTab === 'commanders') renderCommanders();
+    else if (state.activeTab === 'coverage') renderCoverage();
   }
   function cmdBossPanels(bind, fight, mobs, events, startMs, nowMs) {
     const panel = typeof BossPanel !== 'undefined' ? BossPanel : null, table = cmdBossTable();
@@ -9170,9 +9184,11 @@
     }
     const mobs = [];
     const mobAt = FightReplay.mobsAt(track && track.prep, tS);
+    const bossTable = cmdBossTable();
     Object.keys(mobAt).forEach(id => {
       const m = mobAt[id];
       const mob = { id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' };
+      if (bossTable && typeof BossPanel !== 'undefined' && BossPanel.rankFor) mob.rank = BossPanel.rankFor(bossTable, map, mob);
       // The boss overlay at the cursor: the frame at or before it carries the cast (its absolute end gives the time left there),
       // and the facing turns the shorter way between two frames that both report it (else the nearest one that does).
       const a = frame && frame.mobs ? frame.mobs[id] : null;
@@ -10077,11 +10093,7 @@
   refreshGate.onChange(() => { seedCmdTrails(state.commanders.list); if (cmdDemo.on) { clearInterval(cmdDemo.timer); cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); } });
   fetchCommanders();
   // The boss table is one static file (a missing one leaves every panel and map mark away, never an error).
-  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(() => {
-    covCompute();
-    if (state.activeTab === 'commanders') renderCommanders();
-    else if (state.activeTab === 'coverage') renderCoverage();
-  });
+  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(cmdBossTableLoaded);
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
   setInterval(refreshGate.guard(fetchRoster), 60000);
