@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <mutex>
+#include <vector>
 #include <sstream>
 #include <sys/stat.h>
 
@@ -38,6 +39,7 @@ namespace ai { namespace botdiag {
 std::unordered_map<uint32, BotActionLog::OpenFile> BotActionLog::sFiles;
 std::unordered_map<uint32, BotActionLog::ScopeState> BotActionLog::sScope;
 std::unordered_set<uint32> BotActionLog::sTraced;
+std::unordered_set<uint32> BotActionLog::sRetired;
 
 // sFiles is reachable from any map thread (Spell.cpp / Unit.cpp hooks fire
 // on whatever thread is updating that bot's map). Guard every read/write so
@@ -195,13 +197,16 @@ std::FILE* BotActionLog::Open(PlayerbotAI* ai)
     if (!bot) return nullptr;
 
     uint32 guid = bot->GetGUIDLow();
-
     {
         std::lock_guard<std::mutex> g(sFilesMutex);
         auto it = sFiles.find(guid);
         if (it != sFiles.end() && it->second.file)
             return it->second.file;
         if (!ScopeAllowedLocked(guid))
+            return nullptr;
+        // Logout tombstone: the AI is gone; a map-thread hook holding the
+        // dead pointer must not reopen a file Close just shut.
+        if (sRetired.count(guid))
             return nullptr;
     }
 
@@ -249,12 +254,13 @@ std::FILE* BotActionLog::Open(PlayerbotAI* ai)
     {
         std::lock_guard<std::mutex> g(sFilesMutex);
         // Another thread may have raced us through the open()+fopen window
-        // for the same guid. If so, close our handle and use theirs.
+        // for the same guid, or logout may have retired it meanwhile.
+        // Either way, close our handle instead of registering a live fd.
         auto race = sFiles.find(guid);
-        if (race != sFiles.end() && race->second.file)
+        if ((race != sFiles.end() && race->second.file) || sRetired.count(guid))
         {
             fclose(f);
-            return race->second.file;
+            return (race != sFiles.end()) ? race->second.file : nullptr;
         }
         OpenFile& entry = sFiles[guid];
         entry.file = f;
@@ -292,12 +298,24 @@ void BotActionLog::Close(PlayerbotAI* ai)
     if (!ai) return;
     Player* bot = ai->GetBot();
     if (!bot) return;
+    SC_LOG("BotActionLog closed bot=%s", bot->GetName() ? bot->GetName() : "?");
+    Close(bot->GetGUIDLow());
+}
 
-    uint32 guid = bot->GetGUIDLow();
+void BotActionLog::NoteLogin(uint32 botGuidLow)
+{
+    std::lock_guard<std::mutex> g(sFilesMutex);
+    sRetired.erase(botGuidLow);
+}
+
+void BotActionLog::Close(uint32 guid)
+{
     std::FILE* handle = nullptr;
     {
         std::lock_guard<std::mutex> g(sFilesMutex);
         sScope.erase(guid);
+        sTraced.erase(guid);
+        sRetired.insert(guid);
         auto it = sFiles.find(guid);
         if (it == sFiles.end()) return;
         handle = it->second.file;
@@ -309,7 +327,27 @@ void BotActionLog::Close(PlayerbotAI* ai)
         fflush(handle);
         fclose(handle);
     }
-    SC_LOG("BotActionLog closed bot=%s", bot->GetName());
+}
+
+void BotActionLog::CloseAll()
+{
+    std::vector<std::FILE*> handles;
+    {
+        std::lock_guard<std::mutex> g(sFilesMutex);
+        sScope.clear();
+        sTraced.clear();
+        sRetired.clear();
+        for (auto& kv : sFiles)
+            if (kv.second.file)
+                handles.push_back(kv.second.file);
+        sFiles.clear();
+    }
+    for (std::FILE* handle : handles)
+    {
+        fprintf(handle, "# end-of-log (CloseAll called)\n");
+        fflush(handle);
+        fclose(handle);
+    }
 }
 
 std::FILE* BotActionLog::GetHandle(PlayerbotAI* ai)
@@ -630,6 +668,17 @@ void BotActionLog::Maintain()
 {
     static bool everSwept = false;
     static int64 lastSweepSec = 0;
+    static bool wasEnabled = false;
+    static ActionLogScope lastScope = ActionLogScope::Commanded;
+    static bool haveLastScope = false;
+
+    bool const enabled = ai::botdiag::IsActionLogEnabled();
+    ActionLogScope const scope = sPlayerbotAIConfig.actionLogScope;
+    if (ActionLogNeedsCloseAll(wasEnabled, enabled, lastScope, scope, haveLastScope))
+        CloseAll();
+    wasEnabled = enabled;
+    lastScope = scope;
+    haveLastScope = true;
 
     int64 const nowSec = static_cast<int64>(std::time(nullptr));
     if (!ActionLogSweepDue(everSwept, nowSec - lastSweepSec, sWrittenSinceSweep.load(),

@@ -7,6 +7,7 @@
 // and free of core/database types on purpose: the thresholds are exercised
 // standalone in tools/test_guild_order_giveup_policy.cpp. The order store
 // feeds this function plain counters it already keeps per order.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -66,11 +67,52 @@ inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, 
 inline constexpr uint32_t kSearchFailZoneMove = 3;
 inline constexpr uint32_t kOrderLegParkSeconds = 15;
 
+// Failed searches moved the farm leg through this many zones without one
+// landed pick: the leg cannot reach its spots, so the ladder moves on
+// (sub-order or need list). The whole plan, capped: a 30-zone plan would
+// otherwise cost ~1.5 h of empty searches before giving up.
+inline constexpr uint32_t kSearchZoneMovesExhaustPlan = 8;
+
+inline bool SearchZoneMovesExhaustPlan(uint32_t zoneMoves, size_t planZones)
+{
+    size_t const limit = std::min<size_t>(planZones > 0 ? planZones : 1, kSearchZoneMovesExhaustPlan);
+    return zoneMoves > 0 && zoneMoves >= limit;
+}
+
 // Whether the failed-search count moves the zone. Counts only consecutive
 // failures in one zone: a landed search resets it.
 inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
 {
     return searchFailsInZone >= kSearchFailZoneMove;
+}
+
+// Auction-house visits that never reach an auctioneer. The search layer
+// keeps offering the next city while the bot stands where it landed, so the
+// count lives on the leg, not the pick streak: after this many arrived visits
+// the leg moves down the ladder by itself, whether or not the pick streak
+// survived the re-picks in between. The live value rides
+// `AiPlayerbot.GuildOrderAuctionVisits` (0 disables the exit); this constant
+// is its default and the unit-test pin.
+inline constexpr uint32_t kAuctionVisitsWithoutAuctioneer = 3;
+
+// Whether the arrived-visit count ends the auction leg at the configured
+// limit. Zero disables the exit.
+inline bool AuctionVisitsMoveLadder(uint32_t arrivedVisits, uint32_t limit)
+{
+    return limit > 0 && arrivedVisits >= limit;
+}
+
+// One arrived trip on the auction leg, decided before touching the counter.
+// An auctioneer in reach hands the leg to the buy action, so the streak
+// clears; any other arrival counts, and the leg exits once the count would
+// reach the configured limit. Real arrivals only: a stuck drop is not one.
+enum class AuctionArrival : uint8_t { Reset, Count, CountAndExit };
+
+inline AuctionArrival ClassifyAuctionArrival(bool auctioneerInReach, uint32_t arrivedSoFar, uint32_t limit)
+{
+    if (auctioneerInReach)
+        return AuctionArrival::Reset;
+    return AuctionVisitsMoveLadder(arrivedSoFar + 1, limit) ? AuctionArrival::CountAndExit : AuctionArrival::Count;
 }
 
 // The order ends once the bot has worked its chosen hours in total without
@@ -94,6 +136,23 @@ inline constexpr uint32_t kNoGainWorkedSeconds = 3 * 3600;
 inline bool IsOrderNoProgress(uint32_t workedNoGainSec)
 {
     return workedNoGainSec >= kNoGainWorkedSeconds;
+}
+
+// A craft order farming a reagent hands it down the ladder (sub-order, then
+// the need list) after this long worked without one: the whole-order
+// watchdog above would otherwise end the order before the farm zones are
+// exhausted. The hand-off below always exists (a sub-order attempt, then the
+// need list), so the short limit is the live one; the full hour only runs
+// when the caller passes no hand-off.
+inline constexpr uint32_t kSupplyFarmNoGainSeconds = 3600;
+inline constexpr uint32_t kSupplyFarmNoGainWithFallbackSeconds = 20 * 60;
+
+inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool hasHandOff = true)
+{
+    if (!craftFarmLeg)
+        return false;
+    uint32_t limit = hasHandOff ? kSupplyFarmNoGainWithFallbackSeconds : kSupplyFarmNoGainSeconds;
+    return workedNoGainSec >= limit;
 }
 
 // Reported progress never drops: offline (or not yet re-seen) bots keep

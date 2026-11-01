@@ -78,6 +78,37 @@ inline uint32 CraftAffordableCasts(SpellEntry const* pSpellInfo, uint32 casts, H
     }
     return affordable;
 }
+// Direct reagents of an item through recipes the bot knows, for the order
+// keep set: one spell-map scan per item. Callers cache per order (the set
+// below), never per item tick.
+inline std::vector<uint32> KnownReagentsFor(Player* bot, uint32 itemId)
+{
+    std::vector<uint32> reagents;
+    if (!bot || !itemId)
+        return reagents;
+    for (auto& [spellId, spellState] : bot->GetSpellMap())
+    {
+        if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
+            continue;
+        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+        if (!pSpellInfo)
+            continue;
+        bool makesItem = false;
+        for (int i = 0; i < 3; ++i)
+            if (pSpellInfo->Effect[i] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->EffectItemType[i] == itemId)
+                makesItem = true;
+        if (!makesItem)
+            continue;
+        for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        {
+            if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+                continue;
+            reagents.push_back(uint32(pSpellInfo->Reagent[i]));
+        }
+        return reagents;
+    }
+    return reagents;
+}
 
 // First missing farmable reagent for a craft order: short of the casts
 // needed, not sold unlimited by a vendor, and the planner can source it.

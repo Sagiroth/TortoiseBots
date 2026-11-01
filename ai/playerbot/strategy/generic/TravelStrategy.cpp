@@ -12,20 +12,25 @@ float TravelActionMultiplier::GetValue(Action* action)
 {
     if (action == NULL) return 1.0f;
 
-    bool hasTarget = AI_VALUE(bool, "travel target active");
     std::string name = action->GetName();
+    // Only travel requests are vetoed here; every other action leaves at once.
+    if (name.compare(0, 7, "request") != 0)
+        return 1.0f;
+    bool hasTarget = AI_VALUE(bool, "travel target active");
+
+    // Orders and meetings pass both vetoes below (a held trip, a starved
+    // grind pick). The purpose is the qualifier: the action name never
+    // carries it, so matching the name kept them behind a leisure trip.
+    if (RequestTravelTargetAction* request = dynamic_cast<RequestTravelTargetAction*>(action))
+    {
+        std::string const purpose = request->getQualifier();
+        if (purpose == "guild meeting" || purpose == "order vendor" ||
+            purpose == "order focus" || purpose == "guild order")
+            return 1.0f;
+    }
 
     if (hasTarget && name.find("request") == 0)
     {
-        if (name.find("guild meeting") != std::string::npos)
-            return 1.0f;
-        if (name.find("order vendor") != std::string::npos)
-            return 1.0f;
-        if (name.find("order focus") != std::string::npos)
-            return 1.0f;
-        if (name.find("guild order") != std::string::npos)
-            return 1.0f;
-
         // A bag-pressure vendor errand may start while the bot is merely parked
         // at its destination (arrived, working it, or in cooldown): the bags are
         // at the pressure line and there is no vendor within walking distance, so

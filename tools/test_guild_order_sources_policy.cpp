@@ -114,6 +114,16 @@ int main()
     CHECK(!FallbackSourceLevelFits(35, 30));
     CHECK(!FallbackSourceLevelFits(0, 30));
     CHECK(!SourceLevelFits(34, 30) && FallbackSourceLevelFits(34, 30));
+    // Solo farm legs never plan instance zones: the open-world continents
+    // pass, dungeons/raids/BGs (Deadmines 36, Scarlet Monastery 43, the
+    // custom 822 map) do not.
+    CHECK(FarmZoneMapSoloWalkable(0));
+    CHECK(FarmZoneMapSoloWalkable(1));
+    CHECK(FarmZoneMapSoloWalkable(530));
+    CHECK(FarmZoneMapSoloWalkable(571));
+    CHECK(!FarmZoneMapSoloWalkable(36));
+    CHECK(!FarmZoneMapSoloWalkable(43));
+    CHECK(!FarmZoneMapSoloWalkable(822));
 
     CHECK(FarPartitionSkipApplies(false));
     CHECK(!FarPartitionSkipApplies(true));

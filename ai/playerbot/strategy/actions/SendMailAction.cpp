@@ -95,6 +95,9 @@ bool SendMailAction::Execute(Event& event)
         for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
         {
             Item* item = *i;
+            // Never mail away order stock.
+            if (item && bot->GetGuildId() && GuildOrderConsumesItem(bot, item->GetProto()->ItemId))
+                continue;
             if (item->IsSoulBound() || item->IsConjuredConsumable())
             {
                 std::ostringstream out;

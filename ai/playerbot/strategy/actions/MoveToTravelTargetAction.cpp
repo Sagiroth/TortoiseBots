@@ -18,6 +18,9 @@
 #include "playerbot/policy/travel/UndercityLiftPolicy.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "GuildOrderBuyAction.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderStore.h"
 #include "runtime/HireLifecycle.h"
 #include "runtime/AltBotService.h"
 #include <cstdlib>
@@ -381,9 +384,22 @@ bool MoveToTravelTargetAction::TryRescueStuckTravel(TravelTarget* target, std::s
          (ai->IsOwnedBot() || !sRandomBotFacade.IsRandomBot(bot))) ||
         TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
         return false;
-
     WorldPosition const botPos(bot);
-    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance))
+    bool const watched = ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) ||
+        ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance);
+    if (ai::WatchedRescueMayStep(watched, target->IsForced()))
+    {
+        // A watched rescue refuses the teleport but the walk is unwatched:
+        // stepping toward the target instead of returning silently keeps
+        // the bot progressing (and logging) instead of freezing in place.
+        if (TryStepTowardTarget(location))
+        {
+            target->SetRetry(true, 1);
+            return true;
+        }
+        return false;
+    }
+    if (watched)
         return false;
 
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -707,6 +723,7 @@ static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* t
         ClearFlightPlan(ai);
         return false;
     }
+    ai::BotInstantFlightFinish(bot, { fromNode, toNode });
 
     sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", fromEntry->name[LOCALE_enUS], toEntry->name[LOCALE_enUS]);
     ClearFlightPlan(ai);
@@ -822,6 +839,32 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
     return true;
 }
 
+
+// One arrived guild-order trip on the auction leg: an auctioneer in reach
+// hands the leg to the buy action (the streak clears), any other arrival
+// counts, and the leg moves down the ladder at the visit limit.
+static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
+{
+    using namespace TortoiseBots::GuildOrders;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::AuctionHouse)
+        return;
+    switch (ClassifyAuctionArrival(GuildOrderAuctioneerNear(ai, bot) != nullptr, record->arrivedAuctionVisits,
+        sPlayerbotAIConfig.guildOrderAuctionVisits))
+    {
+        case AuctionArrival::Reset:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), true);
+            break;
+        case AuctionArrival::Count:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            break;
+        case AuctionArrival::CountAndExit:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            AdvanceGuildOrderAfterAuction(ai, bot, *record);
+            break;
+    }
+}
+
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
@@ -832,7 +875,16 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
     }
 
+    TravelStatus const statusBeforeCheck = target->GetStatus();
     target->CheckStatus();
+    // A guild-order trip the walk itself finished (the destination radius
+    // beat the NPC lookup: the auctioneer is out of arrival range,
+    // despawned or behind geometry) still counts as an arrival. Once per
+    // trip: only the tick that flips it to WORK counts.
+    if (statusBeforeCheck == TravelStatus::TRAVEL_STATUS_TRAVEL &&
+        target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+        AI_VALUE2(std::string, "manual string", "future travel purpose") == "guild order")
+        CountGuildOrderAuctionArrival(ai, bot);
 
     if (target->GetStatus() != TravelStatus::TRAVEL_STATUS_TRAVEL)
         return true;
@@ -980,9 +1032,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     // A service NPC already in reach counts as arrived, even when the walk
     // point below sits inside geometry. Runs before the jitter so the
-    // arrival verdict never depends on the re-rolled point.
+    // arrival verdict never depends on the re-rolled point. A guild-order
+    // arrival counts on the auction leg unless an auctioneer is in reach:
+    // reaching the point is not reaching the auctioneer.
     if (!hasFlightPlan && CheckServiceArrival(target, purpose))
+    {
+        if (purpose == "guild order")
+            CountGuildOrderAuctionArrival(ai, bot);
         return true;
+    }
 
     // With a flight plan the bot walks to the master (x/y/z/mapId staged
     // above), so the arrival jitter below must not re-aim at the final
@@ -1200,6 +1258,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // ClearValues on the pick path); only this purpose stands down.
             // A dropped workshop leg re-picks after a minute: the order makes
             // no progress while parked, so the next forge must come soon.
+            // A stuck drop is not an arrival: the bot never reached the
+            // destination, so the auction-leg visit count stays untouched.
+            // Real arrivals count (and exit) in CountGuildOrderAuctionArrival.
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,

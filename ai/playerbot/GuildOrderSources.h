@@ -75,6 +75,12 @@ uint32_t GuildOrderFishingPoleFor(Player* bot);
 // forks per type and never looks the record up twice.
 std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot);
 
+// Whether the bot's Working order has its supply item waiting in the mailbox
+// (the supply leg's mail item). Snapshot by PlayerTravelInfo so the async
+// mail search and the order leg read the same verdict without touching the
+// store on the worker. World thread only (reads mail state).
+bool GuildOrderMailWaiting(Player* bot);
+
 // Order-mode destination gate over the index: the entry is an order source
 // of the item and usable in the planned zone (level + 3, +4 for mobs in the
 // travel leg's fallback window, skill, team).

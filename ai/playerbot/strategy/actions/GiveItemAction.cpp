@@ -1,4 +1,5 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
 #include "GiveItemAction.h"
 
@@ -33,6 +34,10 @@ bool GiveItemAction::Execute(Event& event)
 
         // A dungeon run's given item (key, mallet) stays with its bot until the run takes it back.
         if (TortoiseBots::RunGivenItems::Has(item->GetGUIDLow()))
+            continue;
+
+        // Never hand over order stock to another bot.
+        if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item->GetProto()->ItemId))
             continue;
 
         if (receiver->CanUseItem(item->GetProto()) != EQUIP_ERR_OK)

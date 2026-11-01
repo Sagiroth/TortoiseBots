@@ -893,7 +893,7 @@ public:
     // stack of the behaviour item the bot needs right now (rogue tools,
     // Hourglass Sand on Bronze, Quintessence in MC); lockpicking rides at
     // max-for-level. All branches no-op without the item cheat.
-    bool EnsureCheatItem(uint32 itemId, uint32 count);
+    bool EnsureCheatItem(uint32 itemId, uint32 count, bool requireCheat = true);
     void EnsureAutoToolsKit();
     // Throttled guild public-note refresh: talent changes refresh at once via
     // TalentSpec::ApplyTalents; skill-ups arrive through this tick path.

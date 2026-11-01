@@ -52,6 +52,9 @@ private:
     Player* bot_;
     Player* master_;
     PlayerbotAI* ai_ = nullptr; // raw ptr, owned via PlayerbotAIStorage lifecycle; avoids unique_ptr incomplete type at header
+    // Low guid of the bot this adapter was built for. The Player object is
+    // gone by logout/shutdown, so the action-log close keys on this.
+    uint32_t botGuidLow_ = 0;
     bool initialized_ = false;
 };
 

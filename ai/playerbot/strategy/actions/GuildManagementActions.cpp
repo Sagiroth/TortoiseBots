@@ -70,6 +70,8 @@ bool GuildManageNearbyAction::Execute(Event& event)
 {
     uint32 found = 0;
 
+    if (!bot->GetGuildId() || TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()))
+        return false;
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
     MemberSlot* botMember = guild->GetMemberSlot(bot->getObjectGuid());
 
@@ -236,6 +238,11 @@ bool GuildManageNearbyAction::isUseful()
         activity != TortoiseBots::BotActivity::PlayerMaster)
         return false;
     if (!bot->GetGuildId())
+        return false;
+    // Bots in a guild with a real player member hold one shared bot rank:
+    // no promoting, demoting or inviting, so the old behaviour stays and
+    // the bots never fight the rank setting.
+    if (TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()))
         return false;
 
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());

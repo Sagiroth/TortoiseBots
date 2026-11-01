@@ -82,14 +82,15 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (!order.IsCraftOrder())
         return false;
 
+    AI_VALUE(uint32, "guild order farm item");
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (record && record->state != OrderState::Working)
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Craft)
         return false;
 
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 itemId = record->supplyItemId;
+    uint32 delivered = itemId == record->itemId ? std::min(record->delivered, record->amount) : 0;
+    uint32 orderAmount = ai->GetInventoryItemsCountWithId(itemId) + delivered + record->supplyCount;
     if (!itemId || !orderAmount)
         return false;
 
@@ -107,8 +108,10 @@ bool GuildCraftOrderAction::Execute(Event& event)
     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
     if (currentCount >= orderAmount)
     {
-        if (record)
+        if (itemId == record->itemId)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::None);
+        else
+            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::None, 0, 0);
         return true;
     }
 
@@ -125,13 +128,10 @@ bool GuildCraftOrderAction::Execute(Event& event)
     for (uint8 i = 0; i < MAX_SPELL_TOTEMS; ++i)
     {
         uint32 totem = pSpellInfo->Totem[i];
-        if (totem && !bot->HasItemCount(totem, 1))
-        {
-            if (ai->HasCheat(BotCheatMask::item))
-                ai->EnsureCheatItem(totem, 1);
-            if (!bot->HasItemCount(totem, 1))
-                return false;
-        }
+        // Recipe tools are always at hand (CraftToolsAlways): a missing one
+        // is minted, cheat or not, so no order stalls on a spanner or hammer.
+        if (totem && !ai->EnsureCheatItem(totem, 1, !sPlayerbotAIConfig.craftToolsAlways))
+            return false;
     }
 
     // Affordable casts first: what the bags hold right now decides whether
@@ -146,33 +146,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
         uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
         affordable = std::min(affordable,
             TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
-    }
-
-    // Fail early, before spending anything: every farm reagent's verdict
-    // first, so a dead reagent stops the order before vendor gold is spent.
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 reagentId = pSpellInfo->Reagent[i];
-        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
-            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
-        if (!TortoiseBots::CraftOrderPolicy::ReagentShortfall(pSpellInfo->ReagentCount[i], casts, have))
-            continue;
-
-        SourcePlan plan = ai::PlanGuildOrderSources(bot, reagentId, OrderType::Farm);
-        if (plan.verdict != OrderReason::None)
-        {
-            ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot source reagent " + std::to_string(reagentId), "debug travel");
-            if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(plan.verdict), plan.verdict);
-            return false;
-        }
     }
 
     // Vendor reagents: only what the bot can fully afford for at least one
@@ -217,11 +190,16 @@ bool GuildCraftOrderAction::Execute(Event& event)
             return false;
         }
 
+        // The vendor leg below buys this reagent; the craft step only makes
+        // room for it. An autonomous alt never travels to buy: it cannot
+        // reach a vendor, so the player gets the need list. No gold means
+        // the same, never a farm trip or a sub-order for a vendor item.
         if (autonomous)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: autonomous bot cannot buy reagent " + std::to_string(reagentId), "debug travel");
             if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+                TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
+                    { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
             return false;
         }
 
@@ -232,7 +210,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot afford reagent " + std::to_string(reagentId), "debug travel");
             if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+                TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
+                    { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
             return false;
         }
 
@@ -308,6 +287,17 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return false;
     }
 
+    if (bot->IsMounted())
+    {
+        ai->Unmount();
+        return true;
+    }
+    if (bot->IsMoving())
+    {
+        ai->StopMoving();
+        return true;
+    }
+
     // The core focus check runs at cast time: name the forge, not the void.
     // One call casts once; the trigger refires for the rest of the batch.
     uint32 spellDuration = 0;
@@ -324,12 +314,9 @@ bool GuildCraftOrderAction::isUseful()
     if (!bot->GetGuildId())
         return false;
 
-    if (bot->IsMoving())
-        return false;
-
-    if (bot->IsMounted())
-        return false;
-
+    // Moving or mounted is no reason to wait: Execute stops and dismounts
+    // right before the cast. A bot jittering on a failed path never stood
+    // still, so its craft step never ran (live: Copper Tubes for 30 min).
     if (bot->IsNonMeleeSpellCasted(false, true, true))
         return false;
 
@@ -337,13 +324,14 @@ bool GuildCraftOrderAction::isUseful()
     if (!order.IsCraftOrder())
         return false;
 
+    AI_VALUE(uint32, "guild order farm item");
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (record && record->state != OrderState::Working)
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Craft)
         return false;
 
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
+    uint32 itemId = record->supplyItemId;
+    uint32 orderAmount = record->supplyCount;
     if (!itemId || !orderAmount)
         return false;
 

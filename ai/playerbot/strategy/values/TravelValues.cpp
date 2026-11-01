@@ -11,6 +11,7 @@
 #include "runtime/AltBotService.h"
 #include "runtime/GuildOrderStore.h"
 #include "BudgetValues.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
 #include "GuildValues.h"
 #include "Guild/GuildMgr.h"
 
@@ -503,11 +504,18 @@ bool ShouldTravelNamedValue::Calculate()
             else if (wantWork && !delivering && target->GetDestination() &&
                 target->GetDestination()->GetPurpose() == TravelDestinationPurpose::Mail)
             {
-                // The mailbox leg is done once no order items wait in the
-                // mail: expire it so the farm, buy or delivery leg re-picks
-                // instead of idling at the mailbox.
+                // The mailbox leg walks for the supply item, not the order
+                // item: a bought reagent waits in the mail while the order
+                // item does not, and reading the order item here expired the
+                // trip on every check so the bot re-picked between mailboxes
+                // instead of walking to one and taking the mail.
                 GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-                if (order.itemId && OrderMailboxItems(bot, order.itemId) == 0)
+                std::optional<TortoiseBots::GuildOrders::OrderRecord> mailRecord =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                uint32_t mailItemId = mailRecord ?
+                    TortoiseBots::GuildOrders::SupplyMailItemId(mailRecord->supplyStep,
+                        mailRecord->supplyItemId, order.itemId) : order.itemId;
+                if (mailItemId && OrderMailboxItems(bot, mailItemId) == 0)
                 {
                     target->SetForced(false);
                     target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);

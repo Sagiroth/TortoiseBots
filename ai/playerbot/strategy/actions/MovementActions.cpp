@@ -290,7 +290,9 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
 
     bool goTaxi = ai::BotTaxiRouteAllowed({ tEntry->from, tEntry->to }) && bot->ActivateTaxiPathTo({tEntry->from, tEntry->to}, unit, 1);
 
-    if (!goTaxi)
+    if (goTaxi)
+        ai::BotInstantFlightFinish(bot, {tEntry->from, tEntry->to});
+    else
         bot->SetMoney(botMoney);
 
     return goTaxi;
@@ -1609,7 +1611,12 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
             case SwimHandoffResult::Refused: return false;
             case SwimHandoffResult::NotTaken: break;
         }
-        return true; // Path collapsed — will rebuild next tick.
+        // No route and no swim: the caller counts the failure instead of
+        // decaying its budget on a phantom success. Stamped shortcut-empty
+        // (the reason made for this site), not empty-path: the route existed
+        // until makeShortCut cleared it.
+        lastMove.moveFailReason = MOVE_FAIL_SHORTCUT_EMPTY;
+        return false;
     }
 
 

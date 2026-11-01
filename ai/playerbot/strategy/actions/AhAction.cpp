@@ -6,6 +6,7 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -150,6 +151,10 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
 bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* auctioneer, uint32 time)
 {
+    // The order protected set bypasses usage lists on explicit posts: never
+    // hand over the order item, the supply item or a known-recipe reagent.
+    if (item && bot->GetGuildId() && GuildOrderConsumesItem(bot, item->GetProto()->ItemId))
+        return false;
     ObjectGuid itemGuid = item->getObjectGuid();
     ItemPrototype const* proto = item->GetProto();
 

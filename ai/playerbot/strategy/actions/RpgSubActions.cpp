@@ -248,7 +248,7 @@ bool RpgTaxiAction::Execute(Event& event)
         bot->SetMoney(money);
         return false;
     }
-
+    ai::BotInstantFlightFinish(bot, { entry->from, entry->to });
 
     sLog.outDetail("Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[LOCALE_enUS], nodeTo->name[LOCALE_enUS], nodes.size());
     bot->SetMoney(money);

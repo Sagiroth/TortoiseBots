@@ -1,4 +1,5 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
 #include "DestroyItemAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
@@ -30,6 +31,9 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
 	for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
     {
 		Item* item = *i;
+        // Never destroy order stock on an explicit id call.
+        if (item && bot->GetGuildId() && GuildOrderConsumesItem(bot, item->GetProto()->ItemId))
+            continue;
         std::ostringstream out; out << chat->formatItem(item) << " destroyed";
         bot->DestroyItem(item->GetBagSlot(),item->GetSlot(), true);
         ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -84,6 +88,10 @@ bool SmartDestroyItemAction::DestroyUsages(Player* requester, std::vector<ItemUs
         for (auto& item : items)
         {
             if (HAS_AI_VALUE2("force item usage", item))
+                continue;
+            // Order stock is never bag-pressure relief: the keep set already
+            // shields it from usage lists, this covers explicit id calls.
+            if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item))
                 continue;
 
             FindItemByIdVisitor visitor(item);

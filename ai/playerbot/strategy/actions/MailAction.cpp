@@ -240,6 +240,65 @@ private:
     std::vector<std::string> items;
 };
 
+// Takes one order item id from waiting mail: fits that single item through
+// the core's per-item check (stack merge included) instead of demanding free
+// slots for the whole mailbox. A bot whose bags hold nothing sellable still
+// lifts its order item this way; the broad take above needs two free slots
+// and would refuse forever. Stops at the first item that no longer fits so
+// the leg can park instead of looping past unrelated mail.
+uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
+{
+    if (!ai || !itemId)
+        return 0;
+    Player* bot = ai->GetBot();
+    MasterPlayer* owner = GetMailOwner(bot);
+    if (!bot || !owner)
+        return 0;
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
+    if (mailbox.IsEmpty())
+        return 0;
+    uint32_t taken = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = owner->GetMailBegin(); itr != owner->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        uint32_t wantedGuid = 0;
+        for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
+            if (it->item_template == itemId)
+            {
+                wantedGuid = it->item_guid;
+                break;
+            }
+        if (!wantedGuid)
+            continue;
+        Item* item = owner->GetMItem(wantedGuid);
+        if (!item)
+            continue;
+        uint32_t count = item->GetCount();
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        WorldPacket packet;
+        packet << mailbox;
+        packet << mail->messageID;
+        bot->GetSession()->HandleMailTakeItem(packet);
+        taken += count;
+        Mail* current = owner->GetMail(mail->messageID);
+        if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
+        {
+            WorldPacket delPacket;
+            delPacket << mailbox;
+            delPacket << mail->messageID;
+            bot->GetSession()->HandleMailDelete(delPacket);
+        }
+    }
+    return taken;
+}
+
 class DeleteMailProcessor : public MailProcessor
 {
 public:

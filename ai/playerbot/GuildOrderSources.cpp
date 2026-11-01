@@ -11,6 +11,8 @@
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
+#include "runtime/GuildOrderRefundPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -365,6 +367,11 @@ void BuildGuildOrderSourceIndex()
         std::map<uint32_t, GuildOrderZoneSlice> slices;
         for (AsyncGuidPosition const& point : points)
         {
+            // A solo farm leg never walks into an instance: the travel
+            // search only serves points on the bot's own map, so an
+            // instance slice would plan a zone the leg can never reach.
+            if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(point.getMapId()))
+                continue;
             uint32_t areaId = 0;
             bool allyHome = false, hordeHome = false;
             uint32_t const zoneId = ZoneOf(point.getAreaFlag(), point.getMapId(), areaId, allyHome, hordeHome);
@@ -431,6 +438,12 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
         return { record->itemId, record->farmZoneId };
     if (record->type != OrderType::Craft)
         return { 0, 0 };
+    // The supply ladder's farm leg may farm a reagent of a sub-component
+    // (Mageweave for the trigger of Rocket Boots), which the direct-reagent
+    // lookup below never names: without order mode the search drops every
+    // planned zone as outgrown or across the sea.
+    if (record->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Farm && record->supplyItemId)
+        return { record->supplyItemId, record->farmZoneId };
 
     // Same reagent the "guild order farm item" value picks: one shared
     // function, so order mode and travel never farm different items.
@@ -442,6 +455,24 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
     if (!reagent)
         return { 0, 0 };
     return { reagent, record->farmZoneId };
+}
+
+bool GuildOrderMailWaiting(Player* bot)
+{
+    if (!bot || !bot->GetGuildId())
+        return false;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working)
+        return false;
+    // Same mail item the mailbox leg walks for (the supply leg's mail
+    // item): the travel search gates on this snapshot, so both agree on
+    // what waits. A skipped (unreachable) leg stays skipped.
+    uint32_t mailItemId = TortoiseBots::GuildOrders::SupplyMailItemId(record->supplyStep,
+        record->supplyItemId, record->itemId);
+    if (!mailItemId || !ai::OrderMailboxItems(bot, mailItemId))
+        return false;
+    return !TortoiseBots::GuildOrders::MailLegSkipped(mailItemId, record->mailEmptyItemId,
+        WorldTimer::getMSTime(), record->mailEmptyMs);
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
@@ -528,6 +559,8 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     for (GuildOrderZoneSlice const& slice : slices->second)
     {
         if (slice.zoneId != zoneId || slice.spawns == 0)
+            continue;
+        if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(slice.mapId))
             continue;
         bool const enemyHome = team == uint32_t(ALLIANCE) ? (slice.team & (1 << 1)) :
             (team == uint32_t(HORDE) ? (slice.team & (1 << 0)) : false);
@@ -747,6 +780,11 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
 
         for (GuildOrderZoneSlice const& slice : slices->second)
         {
+            // Belt and braces with the index build: slices cached before
+            // this filter shipped (or on a map the rule does not know) never
+            // plan a dungeon zone for a solo farm leg.
+            if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(slice.mapId))
+                continue;
             bool const enemyHome = team == ALLIANCE ? (slice.team & (1 << 1)) : (slice.team & (1 << 0));
             if (enemyHome)
                 continue;

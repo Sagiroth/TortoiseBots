@@ -29,6 +29,16 @@ inline bool CreatureRankExcludedFromSoloFarm(uint32_t rank)
 {
     return rank == 1 || rank == 2 || rank == 3;
 }
+// A solo farm leg never walks into an instance: the travel search only
+// serves points on the bot's own map at a survivable area level, so a
+// planned dungeon zone only buys empty searches. Instance maps are read
+// from the map entry at the call site; the rule itself stays unit tested.
+// Map ids 0/1/530/571 are the open-world continents; everything else
+// (dungeons, raids, battlegrounds) is not a farm zone.
+inline bool FarmZoneMapSoloWalkable(uint32_t mapId)
+{
+    return mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571;
+}
 
 // Drops below this chance never look farmable: rare world drops would
 // otherwise win zones by spawn count while the bot grinds hundreds of kills.

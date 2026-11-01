@@ -52,7 +52,52 @@ int main()
     CHECK(SearchFailsMoveZone(3));
     CHECK(SearchFailsMoveZone(4));
 
-    // The order ends once the bot worked its chosen hours in total.
+    // A craft reagent farm hands off after 20 min; the full hour only when
+    // the hand-off is disabled. The ladder below always offers a sub-order
+    // or the need list.
+    CHECK(kSupplyFarmNoGainSeconds == 3600);
+    CHECK(kSupplyFarmNoGainWithFallbackSeconds == 20 * 60);
+    CHECK(!SupplyFarmGivesUp(true, 20 * 60 - 1));
+    CHECK(SupplyFarmGivesUp(true, 20 * 60));
+    CHECK(!SupplyFarmGivesUp(false, 7200));
+    CHECK(!SupplyFarmGivesUp(true, 3599, false));
+    CHECK(SupplyFarmGivesUp(true, 3600, false));
+    CHECK(!SupplyFarmGivesUp(false, 7200, false));
+
+    // Search-forced zone moves give up after a bounded number of zones, not
+    // the full plan length: a 30-zone plan costs 8 moves, not ~1.5 h.
+    CHECK(kSearchZoneMovesExhaustPlan == 8);
+    CHECK(!SearchZoneMovesExhaustPlan(0, 1));
+    CHECK(!SearchZoneMovesExhaustPlan(7, 30));
+    CHECK(SearchZoneMovesExhaustPlan(8, 30));
+    CHECK(SearchZoneMovesExhaustPlan(8, 1));
+    CHECK(SearchZoneMovesExhaustPlan(1, 1));
+    CHECK(SearchZoneMovesExhaustPlan(3, 3));
+    CHECK(!SearchZoneMovesExhaustPlan(2, 3));
+    CHECK(SearchZoneMovesExhaustPlan(1, 0));
+    CHECK(SearchZoneMovesExhaustPlan(9, 30));
+
+    // Arrived auction visits without an auctioneer in reach move the leg
+    // down at the configured limit: the search layer keeps offering the
+    // next city, so the count lives on the leg, not the pick streak.
+    // Zero disables the exit.
+    CHECK(kAuctionVisitsWithoutAuctioneer == 3);
+    CHECK(!AuctionVisitsMoveLadder(0, 3));
+    CHECK(!AuctionVisitsMoveLadder(2, 3));
+    CHECK(AuctionVisitsMoveLadder(3, 3));
+    CHECK(AuctionVisitsMoveLadder(9, 3));
+    CHECK(!AuctionVisitsMoveLadder(99, 0));
+    CHECK(ClassifyAuctionArrival(true, 0, 3) == AuctionArrival::Reset);
+    CHECK(ClassifyAuctionArrival(true, 9, 3) == AuctionArrival::Reset);
+    CHECK(ClassifyAuctionArrival(true, 0, 0) == AuctionArrival::Reset);
+    // Any other arrival counts, exiting once the count would hit the limit.
+    CHECK(ClassifyAuctionArrival(false, 0, 3) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 1, 3) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 2, 3) == AuctionArrival::CountAndExit);
+    CHECK(ClassifyAuctionArrival(false, 9, 3) == AuctionArrival::CountAndExit);
+    // Zero disables the exit: arrivals keep counting, never exiting.
+    CHECK(ClassifyAuctionArrival(false, 0, 0) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 99, 0) == AuctionArrival::Count);
     CHECK(!IsOrderTimeout(3599, 1));
     CHECK(IsOrderTimeout(3600, 1));
     CHECK(!IsOrderTimeout(3600, 2));

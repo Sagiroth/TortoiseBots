@@ -164,4 +164,17 @@ inline bool ActionLogSweepDue(bool everSwept, int64_t secondsSinceSweep, uint64_
     return maxTotalMB != 0 && bytesSinceSweep >= static_cast<uint64_t>(maxTotalMB) * kActionLogMB / 4;
 }
 
+// Shutdown transition: the per-tick Maintain closes every open descriptor
+// when the log is switched off or the scope narrows to none, so logged-out
+// bots stop holding one fd each until the table fills.
+inline bool ActionLogNeedsCloseAll(bool wasEnabled, bool enabled,
+                                   ActionLogScope lastScope, ActionLogScope scope,
+                                   bool haveLastScope)
+{
+    if (!enabled && wasEnabled)
+        return true;
+    return enabled && haveLastScope && lastScope != ActionLogScope::None &&
+        scope == ActionLogScope::None;
+}
+
 }}  // namespace ai::botdiag

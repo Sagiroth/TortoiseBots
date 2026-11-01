@@ -107,6 +107,15 @@ namespace ai
         dy = std::sin(angle) * radius * mod;
     }
 
+    // A teleport rescue refused for a watching player still leaves the plain
+    // walk: stepping toward the destination (with its own move log row)
+    // instead of returning silently, so a watched bot progresses instead of
+    // freezing. Never for a forced trip: the forced target's own guards own it.
+    inline bool WatchedRescueMayStep(bool watched, bool forced)
+    {
+        return watched && !forced;
+    }
+
     // Rescue gate: every clause must hold. `busy` folds combat / taxi /
     // teleport-in-flight; `watched` folds players near either end.
     inline bool ServiceTripRescueEligible(bool atMaxRetry, bool randomMasterless,
