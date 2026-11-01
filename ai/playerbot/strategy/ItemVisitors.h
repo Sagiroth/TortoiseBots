@@ -2,6 +2,7 @@
 #include "playerbot/ServerFacade.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "values/ItemUsageValue.h"
+#include "../../runtime/GuildOrderConsumablePolicy.h"
 #include "../../runtime/GuildOrderProtectedItems.h"
 #include "../../runtime/GuildOrderStore.h"
 #include "../GuildOrderCraft.h"

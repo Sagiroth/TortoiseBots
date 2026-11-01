@@ -151,7 +151,8 @@ ItemUsage ItemUsageValue::Calculate()
                 cache.type = orderStored->type;
                 cache.supplyItemId = orderStored->supplyItemId;
                 cache.kept.clear();
-                auto reagentsFor = [bot](uint32 parent) { return ai::KnownReagentsFor(bot, parent); };
+                Player* keepBot = bot;
+                auto reagentsFor = [keepBot](uint32 parent) { return ai::KnownReagentsFor(keepBot, parent); };
                 TortoiseBots::GuildOrders::CollectOrderProtectedItems(orderStored->itemId, false,
                     orderStored->type == TortoiseBots::GuildOrders::OrderType::Craft,
                     orderStored->supplyItemId, reagentsFor, cache.kept);

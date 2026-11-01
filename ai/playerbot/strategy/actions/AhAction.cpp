@@ -151,11 +151,14 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
 bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* auctioneer, uint32 time)
 {
-    // The order keep set bypasses usage lists on explicit posts: never hand
-    // over the order item, the supply item or a known-recipe reagent.
+    // The order protected set bypasses usage lists on explicit posts: never
+    // hand over the order item, the supply item or a known-recipe reagent.
     if (item && bot->GetGuildId() && GuildOrderConsumesItem(bot, item->GetProto()->ItemId))
         return false;
     ObjectGuid itemGuid = item->getObjectGuid();
+    ItemPrototype const* proto = item->GetProto();
+
+    ItemQualifier itemQualifier(item);
 
     uint32 cnt = item->GetCount();
 
