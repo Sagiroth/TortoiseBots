@@ -1,13 +1,20 @@
 #pragma once
 
-// Need-list recovery for guild orders: a row parked in Waiting/needitems
-// re-runs the ladder when its facts change, so a rule deployed later (or a
-// restocked bank, a new listing, a fuller purse) resumes the order instead
-// of waiting on the player forever. Header-only and free of core/database
-// types on purpose: exercised standalone in tools/test_guild_order_need_policy.cpp.
-// The store feeds this header plain readiness flags it already computed;
-// the header only picks the leg and gates the cadence.
+// Need-list recovery for guild orders: an item only the player can bring sits
+// on the row's need list while the bot keeps sourcing every other component,
+// so the list is valid on a working row too, not only on a row parked in
+// Waiting/needitems. A parked row re-runs the ladder when its facts change,
+// so a rule deployed later (or a restocked bank, a new listing, a fuller
+// purse) resumes the order instead of waiting on the player forever.
+// Header-only and free of core/database types on purpose: exercised
+// standalone in tools/test_guild_order_need_policy.cpp. The store feeds this
+// header plain readiness flags it already computed; the header only picks the
+// leg and gates the cadence.
+#include "GuildOrderContract.h"
+
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace TortoiseBots
 {
@@ -55,6 +62,122 @@ inline NeedResumeLeg NeedResumeLegFor(bool vendorReady, bool bankReady, bool ahR
     if (retryLadder)
         return NeedResumeLeg::Ladder;
     return NeedResumeLeg::None;
+}
+
+inline bool NeedListHas(std::vector<NeedItem> const& need, uint32_t itemId)
+{
+    if (!itemId)
+        return false;
+    for (NeedItem const& item : need)
+        if (item.itemId == itemId && item.count)
+            return true;
+    return false;
+}
+
+// The failed sub-order's item joins the list with the larger count; a new id
+// goes to the back, so the order of first appearance survives.
+inline void MergeNeedItem(std::vector<NeedItem>& need, uint32_t itemId, uint32_t count)
+{
+    if (!itemId || !count)
+        return;
+    for (NeedItem& item : need)
+    {
+        if (item.itemId != itemId)
+            continue;
+        if (count > item.count)
+            item.count = count;
+        return;
+    }
+    need.push_back(NeedItem{ itemId, count });
+}
+
+// The whole-tree walk's count is the live shortage (the player brought part of
+// it, or the bot got it some other way): an entry the walk no longer names
+// leaves the list, an entry still named keeps the list's order but the walk's
+// count.
+inline void PruneNeedItems(std::vector<NeedItem>& need, std::vector<NeedItem> const& missingNow)
+{
+    size_t kept = 0;
+    for (NeedItem const& item : need)
+    {
+        uint32_t count = 0;
+        for (NeedItem const& missing : missingNow)
+            if (missing.itemId == item.itemId && missing.count > count)
+                count = missing.count;
+        if (!count)
+            continue;
+        need[kept] = NeedItem{ item.itemId, count };
+        ++kept;
+    }
+    need.resize(kept);
+}
+
+// What a craft order does with what is left: supplyable work first, then a
+// running sub-order (work, not the player's items), then a park, and a plan
+// with nothing left to wait for goes back to the ladder.
+enum class PartialNeedVerdict : uint8_t { Supply, WaitOnSubOrders, Park };
+
+inline PartialNeedVerdict PartialNeedVerdictFor(bool supplyableLeft, bool subOrdersRunning, bool needListed)
+{
+    if (supplyableLeft)
+        return PartialNeedVerdict::Supply;
+    if (subOrdersRunning)
+        return PartialNeedVerdict::WaitOnSubOrders;
+    if (needListed)
+        return PartialNeedVerdict::Park;
+    return PartialNeedVerdict::Supply;
+}
+
+// The player hears about a list once, as soon as it exists, on a working row
+// as well as on a parked one.
+inline bool NeedWhisperDue(OrderState state, OrderReason reason, bool needListed, bool whispered)
+{
+    if (!needListed || whispered)
+        return false;
+    return state == OrderState::Working || (state == OrderState::Waiting && reason == OrderReason::NeedItems);
+}
+
+// The bank and ladder lanes serve parked need rows and working rows that carry
+// a need list; the bank lane also keeps its slow look at a Sub leg.
+inline bool NeedBankLaneEligible(OrderState state, OrderReason reason, SupplyStep step, bool needListed)
+{
+    if (state == OrderState::Waiting && reason == OrderReason::NeedItems)
+        return true;
+    return state == OrderState::Working && (step == SupplyStep::Sub || needListed);
+}
+
+inline bool NeedLadderLaneEligible(OrderState state, OrderReason reason, bool needListed)
+{
+    if (state == OrderState::Waiting && reason == OrderReason::NeedItems)
+        return true;
+    return state == OrderState::Working && needListed;
+}
+
+// One recipe material, as the ladder's walk saw it.
+enum class MaterialOutcome : uint8_t { Owned, Missing, Craftable, Blocked };
+
+struct MaterialFold
+{
+    MaterialOutcome outcome = MaterialOutcome::Owned;
+    size_t index = 0; // the picked material; the material count when none was picked
+};
+
+// A missing reagent comes first (raw materials before intermediates), then a
+// craftable component, then a blocked one (on the need list itself, or nested
+// under a blocked component); all owned (or no material at all) means the item
+// itself can be crafted now.
+inline MaterialFold FoldMaterials(MaterialOutcome const* outcomes, size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+        if (outcomes[i] == MaterialOutcome::Missing)
+            return MaterialFold{ MaterialOutcome::Missing, i };
+    for (size_t i = 0; i < count; ++i)
+        if (outcomes[i] == MaterialOutcome::Craftable)
+            return MaterialFold{ MaterialOutcome::Craftable, i };
+    for (size_t i = 0; i < count; ++i)
+        if (outcomes[i] == MaterialOutcome::Blocked)
+            return MaterialFold{ MaterialOutcome::Blocked, count };
+    return MaterialFold{ MaterialOutcome::Owned, count };
 }
 
 } // namespace GuildOrders
