@@ -18,9 +18,11 @@
 -- The Gurubashi Bat Rider 14750 (20261030160000_world.sql) gets NO tank_hold row: its Unstable Concoction 24024 is a
 -- 10 yd self blast it casts once before it dies, and holding a tank in it only kills the tank.
 --
--- Idempotent: the DELETE removes only this row's key, then it goes back in. Never edit this file once applied; add a
--- newer migration.
+-- Idempotent: the DELETE is scoped to the Voidwalker's own boss entry (the shape tools/test_dungeon_plan_sql.py
+-- requires of a later migration that INSERTs a (map, boss_entry) key again), so its avoid_cast row from 20261101020000
+-- goes back in unchanged beside the new tank_hold row. Never edit this file once applied; add a newer migration.
 
-DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 15146 AND `kind` = 'tank_hold' AND `target_entry` = 0 AND `spell_id` = 0;
+DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (15146);
 INSERT INTO `ai_boss_tactic` (`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment`) VALUES
+(309, 15146, 'avoid_cast', 0, 24614, 0, 8, 'Mad Voidwalker: Consuming Shadows 24614, a 15 s channel; its 24615 hits every enemy within 5 yd (radius index 8) for 400 shadow a second (EventAI 1514601, target within 5 yd)'),
 (309, 15146, 'tank_hold', 0, 0, 0, 0, 'Mad Voidwalker: a tank may hold it in melee while Consuming Shadows 24614 is on a non-tank; once the tank has it within 6 yd it channels instead of casting Shadow Shock 24616');

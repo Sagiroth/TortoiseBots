@@ -107,11 +107,26 @@ class BossTacticsSql(unittest.TestCase):
                 self.assertGreater(float(param), 0.0, where)
 
     def test_primary_keys_are_unique(self):
+        # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
+        # (20261101040000 re-inserts the Mad Voidwalker's avoid_cast row after its boss-scoped DELETE, the shape
+        # test_dungeon_plan_sql.py requires when a later migration adds a row to an existing (map, boss_entry)).
         seen = set()
-        for name, map_id, boss, kind, target, spell, _priority, _param in migration_rows():
-            key = (map_id, boss, kind, target, spell)
-            self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
-            seen.add(key)
+        for kind, payload in migration_statements():
+            if kind == "insert":
+                name, map_id, boss, row_kind, target, spell, _priority, _param = payload
+                key = (int(map_id), int(boss), row_kind, int(target), int(spell))
+                self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
+                seen.add(key)
+                continue
+            _name, match = payload
+            map_id = int(match.group(1))
+            if match.group(4):
+                seen.discard((map_id, int(match.group(3)), match.group(4), int(match.group(5)), int(match.group(6))))
+            elif match.group(2):
+                bosses = {int(entry) for entry in match.group(2).split(",")}
+                seen -= {key for key in seen if key[0] == map_id and key[1] in bosses}
+            else:
+                seen -= {key for key in seen if key[0] == map_id}
 
     def test_deletes_are_map_scoped(self):
         for path in migration_paths():
