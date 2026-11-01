@@ -47,10 +47,15 @@ class RaidConfigWiringTest(unittest.TestCase):
     def test_guard_read_fills_the_raid_attackers_with_the_lead_dead(self):
         # DungeonRun::RaidGuardTick's dead-lead branch needs Facts::partyAttackers: in a raid's boss fight the glue's
         # guard read goes on past a dead (or non-tank) lead bot, around a living anchor (DungeonRun::GuardReadMode).
+        # A raid's trash fight whose off-tanks pick up (DungeonRun::RaidTrashOffTanks) is the other case: the mobs a
+        # dead main tank left on the healers are still the off-tanks' to take (DungeonRun::GuardTarget's dead-lead
+        # branch), which only works if the glue reads the raid's attackers then too. A party run, a dead lead bot
+        # with no off-tank, and every other fight keep reading nothing.
         code = strip_comments(COMMANDER)
         read = body(code, "void ReadGuardFacts(Player* lead,", "\n}\n")
-        self.assertIn("ai::PlanStep const* hold, bool raidBoss, bool raidWalk = false)", read)
-        mode = read.index("GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);")
+        self.assertIn("ai::PlanStep const* hold, bool raidBoss, bool raidTrashOffTanks, bool raidWalk = false)", read)
+        mode = read.index(
+            "GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss, raidTrashOffTanks);")
         fill = read.index("f.partyAttackers.push_back(fact);")
         self.assertLess(mode, fill)
         before = read[:mode]
@@ -65,16 +70,37 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("fact.victimName = victim->GetName();", read)
         self.assertIn("f.leadHeldEntries.push_back(attacker->GetEntry());", read)
         self.assertIn("if (bot != lead || mode == GuardRead::RaidAnchor)", read)
-        # Both call sites say whether it is a raid's boss fight.
+        # Both call sites say whether it is a raid's boss fight, and whether it is a raid's trash fight whose
+        # off-tanks pick up (the same rule GuardTarget's dead-lead branch reads: DungeonRun::RaidTrashOffTanks).
         self.assertEqual(code.count("TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f)"), 2)
+        self.assertEqual(code.count("TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f)"), 2)
+        self.assertIn("bool const raidTrashOffTanks = TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f);", code)
+        self.assertIn("TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f), raidWalk);", code)
+        self.assertIn("ReadGuardFacts(lead, bots, f, hold, raidBoss, raidTrashOffTanks);", code)
         self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", read)
 
     def test_boss_off_tanks_are_raid_wide(self):
         code = strip_comments(COMMANDER)
         self.assertIn("(yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd || !lead->IsAlive()) &&", code)
         self.assertIn("f.raid.bossOffTanksAlive.push_back(member.name);", code)
-        # The trash fights' off-tanks keep kGuardYd.
-        self.assertIn("bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&", code)
+        # The trash fights' off-tanks keep kGuardYd, and are not measured from a dead lead bot either: the fight may
+        # have moved off its body (or the lead bot released), and the pick-ups must not switch themselves off there.
+        self.assertIn("(yd <= kGuardYd || !lead->IsAlive()) &&", code)
+        self.assertIn("f.raid.offTanksAlive.push_back(member.name);", code)
+        # With the lead bot dead the anchor the attackers are read around is one of the boss fight's off-tanks, then
+        # one of the trash fight's, then any living bot on its map.
+        anchor = body(code, "Player* RaidGuardAnchor(Player* lead,", "\n}\n")
+        # ... but first, with the lead bot dead, the member the fight is around (an off-tank in combat, else a member
+        # with attackers: DungeonRun::DeadLeadGuardAnchor), never the first off-tank in the list: an idle one far off
+        # hid the loose mobs. The first-in-list loops stay as the fallback when nobody fights.
+        self.assertIn("DeadLeadGuardAnchor(f)", anchor)
+        self.assertLess(anchor.index("DeadLeadGuardAnchor(f)"), anchor.index("f.raid.bossOffTanksAlive"))
+        # ... and the off-tanks enrolled with the lead bot dead are only those in the fight, dropped once the
+        # members are read and before the guard read asks whether any is alive.
+        self.assertIn("if (f.raid.on && !lead->IsAlive())\n        TortoiseBots::DungeonRun::DropIdleDeadLeadOffTanks(f);", code)
+        self.assertLess(code.index("DropIdleDeadLeadOffTanks(f);"), code.index("ReadGuardFacts(lead, bots, f,\n"))
+        self.assertLess(anchor.index("f.raid.bossOffTanksAlive"), anchor.index("f.raid.offTanksAlive"))
+        self.assertLess(anchor.index("f.raid.offTanksAlive"), anchor.rindex("for (Player* bot : bots)"))
 
 
 if __name__ == "__main__":

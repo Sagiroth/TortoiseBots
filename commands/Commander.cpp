@@ -8094,14 +8094,25 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
     f.leadReaching = !(victim && party.count(victim->GetObjectGuid().GetRawValue()));
 }
 
-// Whose distance, attack rules and friendliness a raid boss fight's attackers are read by (ReadGuardFacts,
-// AddPlayerAttackers): the lead bot, or with it dead its first living off-tank in range, else any living bot on its
-// map. Null when none is.
+// Whose distance, attack rules and friendliness a raid fight's attackers are read by (ReadGuardFacts,
+// AddPlayerAttackers): the lead bot, or with it dead the member the fight is around (DungeonRun::DeadLeadGuardAnchor:
+// an off-tank in combat, else a member with attackers), else the old fallback: its first living off-tank in range (the
+// boss fight's, else the trash fight's), else any living bot on its map. Null when none is.
 Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
 {
     if (lead->IsAlive())
         return lead;
+    int const fighting = TortoiseBots::DungeonRun::DeadLeadGuardAnchor(f);
+    if (fighting >= 0)
+        for (Player* bot : bots)
+            if (bot->GetName() == f.members[fighting].name && bot->IsAlive() && bot->IsInWorld() &&
+                bot->GetMap() == lead->GetMap())
+                return bot;
     for (std::string const& name : f.raid.bossOffTanksAlive)
+        for (Player* bot : bots)
+            if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+                return bot;
+    for (std::string const& name : f.raid.offTanksAlive)
         for (Player* bot : bots)
             if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
                 return bot;
@@ -8122,10 +8133,13 @@ Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, Tortoise
 // attackers within kRaidBossGuardYd count, each with its victim's name, and with the lead bot dead (or no tank) the
 // raid's attackers are still read, around a living anchor (DungeonRun::GuardReadMode), so an off-tank takes the boss
 // off a non-tank (DungeonRun::RaidGuardTick).
+// `raidTrashOffTanks`: a raid's trash fight whose off-tanks pick up (DungeonRun::RaidTrashFight with a living
+// off-tank): the lead bot dead, the same read is on within kGuardYd, so those off-tanks still take the loose mobs off
+// the healers (DungeonRun::GuardTarget's dead-lead branch). Never a party run's, and a boss fight's own case above.
 // `raidWalk`: a raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main
 // tank into Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin). Only until the run joins the fight.
 void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f,
-    ai::PlanStep const* hold, bool raidBoss, bool raidWalk = false)
+    ai::PlanStep const* hold, bool raidBoss, bool raidTrashOffTanks, bool raidWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     PlayerbotAI* leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
@@ -8136,7 +8150,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         ReadReachFacts(lead, leadAi, bots, f);
         f.leadIsTank = PlayerbotAI::IsTank(lead);
     }
-    GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);
+    GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss, raidTrashOffTanks);
     if (mode == GuardRead::None)
         return;
     Player* const anchor = RaidGuardAnchor(lead, bots, f);
@@ -9131,7 +9145,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.yd = yd;
         // The raid trash guard sends a loose mob to a living off-tank near the
         // lead bot and not busy with a commander task (DungeonRun::RaidTrashFight).
-        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
+        // With the lead bot dead, any on its map: the fight may have moved off its body.
+        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() &&
+            (yd <= kGuardYd || !lead->IsAlive()) &&
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.offTanksAlive.push_back(member.name);
         // ... and with AiPlayerbot.DungeonRunRaidBossRules the boss fight's off-tanks, raid-wide: within
@@ -9216,6 +9232,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 raidManas.push_back(mana);
         }
     }
+    // With the lead bot dead the off-tanks above are raid-wide on its map: keep those in the fight (in combat, or within
+    // kGuardYd of a member with attackers), so an idle one far off does not anchor the guard's read
+    // (DungeonRun::DropIdleDeadLeadOffTanks).
+    if (f.raid.on && !lead->IsAlive())
+        TortoiseBots::DungeonRun::DropIdleDeadLeadOffTanks(f);
     if (f.raid.on)
     {
         f.minHealthPct = TortoiseBots::RaidLayout::RestFloor(raidHealths, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
@@ -9271,9 +9292,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // pick are once per fight.
         bool const raidWalk = current && current->kind == ai::PlanStepKind::Move && !slot.run.raidWalkJoined &&
             TortoiseBots::DungeonRun::RaidTrashFight(slot.run, f);
+        // A raid's trash fight whose off-tanks pick up (DungeonRun::RaidTrashOffTanks): the guard read is on with the
+        // lead bot dead too, so they still take the loose mobs off the healers (DungeonRun::GuardReadMode).
         ReadGuardFacts(lead, bots, f,
             current && current->kind == ai::PlanStepKind::Hold ? current : nullptr,
-            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f), raidWalk);
+            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f),
+            TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f), raidWalk);
     }
 
     // A hold's done condition on every tick, its spot in sight or not
@@ -10351,8 +10375,10 @@ void ReadRunPlayers(DungeonRunSlot const& slot, uint64 commanderRaw, Player* lea
     ai::PlanStep const* current = TortoiseBots::DungeonRun::FactStep(slot.run);
     ai::PlanStep const* hold = current && current->kind == ai::PlanStepKind::Hold ? current : nullptr;
     bool const raidBoss = TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f);
+    // A raid's trash fight whose off-tanks pick up: the same read with the lead bot dead (DungeonRun::GuardReadMode).
+    bool const raidTrashOffTanks = TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f);
     if (fresh)
-        ReadGuardFacts(lead, bots, f, hold, raidBoss);
+        ReadGuardFacts(lead, bots, f, hold, raidBoss, raidTrashOffTanks);
     AddPlayerAttackers(lead, bots, fighting, f, hold, raidBoss);
 }
 
