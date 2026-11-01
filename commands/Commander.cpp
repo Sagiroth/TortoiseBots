@@ -3094,6 +3094,25 @@ static void UpdateHeldAttacks(uint32 diff)
     }
 }
 
+// Whether the focus target is a creature a tank_hold row names (ai_boss_tactic): a caster whose avoid_cast blast a
+// tank may hold, and whose own loose adds only a tank can take off a non-tank. On such a target the focus order arms
+// the DPS and the healers and leaves the tanks to their own pick; every other target, and every map without such a
+// row, arms the tanks as before.
+static bool FocusIsTankHoldTarget(Unit* target)
+{
+    if (!target)
+        return false;
+    const std::vector<ai::BossTacticRow>* rows = ai::GetBossTactics().Rows(target->GetMapId(), target->GetEntry());
+    if (!rows)
+        return false;
+    for (const ai::BossTacticRow& row : *rows)
+    {
+        if (row.kind == ai::BossTacticKind::TankHold)
+            return true;
+    }
+    return false;
+}
+
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
 // group, every bot attacks its Skull target.
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
@@ -3101,6 +3120,7 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
+    bool const dpsOnly = FocusIsTankHoldTarget(target);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3110,6 +3130,11 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         if (!ai)
             continue;
         RelaxTacticalMovement(ai);
+        // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
+        // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
+        // whole party (the run leader counts on every focus order doing that).
+        if (dpsOnly && ai->IsTank(bot))
+            continue;
         bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
         bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
         ExecuteQuietNextAction(ai, true);

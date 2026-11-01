@@ -39,6 +39,7 @@
 #include "IsFacingValue.h"
 #include "ItemCountValue.h"
 #include "SpellIdValue.h"
+#include "HoldKillBlockersValue.h"
 #include "ItemForSpellValue.h"
 #include "SpellCastUsefulValue.h"
 #include "LastSpellCastValue.h"
@@ -225,6 +226,8 @@ namespace ai
             creators["trinkets on use"] = [](PlayerbotAI* ai) { return new EquipedUsableTrinketValue(ai); };
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
+            creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };
+            creators["sole kill candidates"] = [](PlayerbotAI* ai) { return new SoleKillCandidatesValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };
             creators["spell cast useful"] = [](PlayerbotAI* ai) { return new SpellCastUsefulValue(ai); };
             creators["spell ready"] = [](PlayerbotAI* ai) { return new SpellReadyValue(ai); };
