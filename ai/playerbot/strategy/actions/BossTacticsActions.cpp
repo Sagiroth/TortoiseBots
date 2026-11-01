@@ -1055,6 +1055,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // instance, or one the boss is not fighting, reserves no seat.
     bool selfCounts = false;
     std::vector<StandBot> bots;
+    std::vector<std::uint64_t> dead;  // group members that died: their plan entry frees its spot for the living
     const ObjectGuid selfGuid = bot->GetObjectGuid();
     if (boss)
     {
@@ -1081,8 +1082,14 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         {
             for (Player* member : LiveGroupMembers(group))
             {
-                if (member == bot || !member->IsInWorld() || member->GetMapId() != mapId || !sServerFacade.IsAlive(member))
+                if (member == bot || !member->IsInWorld() || member->GetMapId() != mapId)
                     continue;
+                // A member that died frees the seat its plan entry holds; one that only left the fight keeps it.
+                if (!sServerFacade.IsAlive(member))
+                {
+                    dead.push_back(member->GetObjectGuid().GetRawValue());
+                    continue;
+                }
                 PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
                 if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
                     continue;
@@ -1121,8 +1128,8 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         return target;
 
     // The side is the side of the lane (anchor -> release anchor) the bot stands on. The seats come from the window's
-    // one plan (PlanStandSeats), built when the window opens, grown by bots that join the fight later; a seat once
-    // given never moves.
+    // one plan (PlanStandSeats), built when the window opens, grown by the bots that join the fight later and by the
+    // seat a dead bot frees; a seat once given never moves while its bot lives.
     const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
     StandSeat seat;
     {
@@ -1142,7 +1149,8 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             it = g_standPlans.insert_or_assign(key, std::move(plan)).first;
         }
         else
-            ExtendStandPlan(it->second.seats, points, bots, lane);  // a bot engaged after the window opened gets a free seat
+            // a bot engaged after the window opened, or one whose seat a death freed, gets a free seat
+            ExtendStandPlan(it->second.seats, points, bots, lane, dead);
         it->second.lastReadMs = nowMs;
         for (const StandSeat& planned : it->second.seats)
         {

@@ -911,7 +911,7 @@ int main()
         const std::vector<StandBot> healers = { { 1, -12036.0f, -1704.0f },  { 2, -12038.5f, -1706.5f },
                                                 { 3, -11998.22f, -1706.64f }, { 4, -11997.89f, -1684.15f },
                                                 { 5, -12016.77f, -1672.08f } };
-        CHECK(ExtendStandPlan(plan, healerPoints, healers, lane));
+        CHECK(ExtendStandPlan(plan, healerPoints, healers, lane, {}));
         CHECK(plan.size() == 5);
         for (const StandSeat& seat : plan)
             CHECK(seat.valid);
@@ -931,7 +931,7 @@ int main()
 
         // Every healer is already named: the grow is a no-op and leaves the plan as it is.
         const std::vector<StandSeat> grown = plan;
-        CHECK(!ExtendStandPlan(plan, healerPoints, healers, lane));
+        CHECK(!ExtendStandPlan(plan, healerPoints, healers, lane, {}));
         CHECK(plan.size() == grown.size());
         for (std::size_t i = 0; i < plan.size(); ++i)
         {
@@ -948,7 +948,7 @@ int main()
             { 14, -12005.74f, -1675.60f }, { 15, -12027.94f, -1675.31f }, { 16, -12037.09f, -1682.91f },
             { 17, -12040.94f, -1694.25f }, { 18, -12030.0f, -1715.0f }
         };
-        CHECK(ExtendStandPlan(empty, rangedPoints, ranged, lane));
+        CHECK(ExtendStandPlan(empty, rangedPoints, ranged, lane, {}));
         CHECK(empty.size() == 8);
         int seatedRanged = 0;
         int unseatedRanged = 0;
@@ -961,6 +961,112 @@ int main()
             for (std::size_t b = a + 1; b < empty.size(); ++b)
                 if (empty[a].valid && empty[b].valid)
                     CHECK(Dist(empty[a].x, empty[a].y, empty[b].x, empty[b].y) >= 11.0f);
+    }
+
+    // Death alone frees a seat: twelve ranged points in a line 12 yd apart, one slot each, seat twelve bots on their
+    // own spots. A bot that dies loses its entry and the spot goes to whoever takes its place; a bot that only drops
+    // off the threat list keeps the seat it holds; an unseated entry is given a second look only when a seat was freed
+    // or a newcomer arrived.
+    {
+        std::vector<BossStandRow> rows;
+        for (std::uint8_t seq = 0; seq < 12; ++seq)
+            rows.push_back(Row(1, 0, 0, 400, StandRole::Ranged, 777, 0, seq, 12.0f * seq, 0.0f, 1.0f, 0.0f, 1));
+        const std::vector<const BossStandRow*> points = Points(rows);
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        CHECK(!lane.valid);  // no release anchor: every bot takes the side of its nearest point
+
+        const auto seatOf = [](const std::vector<StandSeat>& plan, std::uint64_t id)
+        {
+            for (const StandSeat& seat : plan)
+                if (seat.id == id)
+                    return seat;
+            return StandSeat();
+        };
+        const auto sameSeat = [](const StandSeat& a, const StandSeat& b)
+        {
+            return a.id == b.id && a.valid == b.valid && a.x == b.x && a.y == b.y && a.z == b.z;
+        };
+
+        std::vector<StandBot> seated;
+        for (std::uint64_t id = 1; id <= 12; ++id)
+            seated.push_back({ id, 12.0f * static_cast<float>(id - 1), 0.0f });
+        const std::vector<StandSeat> full = PlanStandSeats(points, seated, lane);
+        CHECK(full.size() == 12);
+        for (const StandSeat& seat : full)
+            CHECK(seat.valid && std::fabs(seat.y) < 0.001f);
+        CHECK(std::fabs(seatOf(full, 5).x - 48.0f) < 0.001f);  // every bot sits on its own spot
+
+        // A bot dies and a newcomer joins in the same tick: the newcomer takes the dead bot's spot, every living bot
+        // keeps the seat it had.
+        std::vector<StandBot> living;
+        for (const StandBot& bot : seated)
+            if (bot.id != 5)
+                living.push_back(bot);
+        living.push_back({ 13, 60.0f, 5.0f });  // the late 13th
+        std::vector<StandSeat> plan = full;
+        CHECK(ExtendStandPlan(plan, points, living, lane, { 5 }));
+        CHECK(plan.size() == 12);  // eleven living bots and the newcomer: the dead bot's entry is gone
+        CHECK(seatOf(plan, 5).id == 0);
+        CHECK(seatOf(plan, 13).valid && std::fabs(seatOf(plan, 13).x - 48.0f) < 0.001f &&
+              std::fabs(seatOf(plan, 13).y) < 0.001f);
+        for (const StandSeat& was : full)
+            if (was.id != 5)
+                CHECK(sameSeat(seatOf(plan, was.id), was));
+
+        // An entry left unseated becomes seated when a seat is freed: thirteen bots on twelve spots leave the
+        // thirteenth without one, and a death hands it the spot.
+        std::vector<StandBot> thirteen = seated;
+        thirteen.push_back({ 13, 60.0f, 5.0f });
+        std::vector<StandSeat> overflow = PlanStandSeats(points, std::vector<StandBot>(), lane);
+        CHECK(ExtendStandPlan(overflow, points, thirteen, lane, {}));
+        CHECK(overflow.size() == 13);
+        CHECK(!seatOf(overflow, 13).valid);  // its side's spots run out
+        const std::vector<StandSeat> overflowBefore = overflow;
+        std::vector<StandBot> overflowLiving;
+        for (const StandBot& bot : thirteen)
+            if (bot.id != 5)
+                overflowLiving.push_back(bot);
+        CHECK(ExtendStandPlan(overflow, points, overflowLiving, lane, { 5 }));
+        CHECK(overflow.size() == 12);
+        CHECK(seatOf(overflow, 5).id == 0);
+        CHECK(seatOf(overflow, 13).valid && std::fabs(seatOf(overflow, 13).x - 48.0f) < 0.001f &&
+              std::fabs(seatOf(overflow, 13).y) < 0.001f);
+        for (const StandSeat& was : overflowBefore)
+            if (was.id != 5 && was.id != 13)  // the dead entry is gone, the unseated one is the point
+                CHECK(sameSeat(seatOf(overflow, was.id), was));
+
+        // A bot that only drops off the threat list keeps its seat: bot 6 leaves `bots` and the newcomer stands on its
+        // spot, which is not freed for it.
+        std::vector<StandBot> without6;
+        for (const StandBot& bot : seated)
+            if (bot.id != 6)
+                without6.push_back(bot);
+        without6.push_back({ 13, 60.0f, 1.0f });
+        std::vector<StandSeat> kept = full;
+        CHECK(ExtendStandPlan(kept, points, without6, lane, {}));
+        CHECK(kept.size() == 13);
+        CHECK(seatOf(kept, 6).valid && std::fabs(seatOf(kept, 6).x - 60.0f) < 0.001f);
+        CHECK(!seatOf(kept, 13).valid);  // every spot is held
+        for (const StandSeat& was : full)
+            CHECK(sameSeat(seatOf(kept, was.id), was));
+
+        // Nothing to add, nobody dead and no unseated entry: a no-op that leaves the plan untouched.
+        std::vector<StandSeat> quiet = full;
+        CHECK(!ExtendStandPlan(quiet, points, seated, lane, {}));
+        CHECK(quiet.size() == full.size());
+        for (std::size_t i = 0; i < quiet.size(); ++i)
+            CHECK(sameSeat(quiet[i], full[i]));
+        // An id the plan does not hold frees nothing.
+        CHECK(!ExtendStandPlan(quiet, points, seated, lane, { 999 }));
+        for (std::size_t i = 0; i < quiet.size(); ++i)
+            CHECK(sameSeat(quiet[i], full[i]));
+        // An unseated entry is not reconsidered while nobody died and no newcomer arrived: nothing could have given it
+        // a spot.
+        std::vector<StandSeat> stuck = overflowBefore;
+        CHECK(!ExtendStandPlan(stuck, points, thirteen, lane, {}));
+        for (std::size_t i = 0; i < stuck.size(); ++i)
+            CHECK(sameSeat(stuck[i], overflowBefore[i]));
+        CHECK(!seatOf(stuck, 13).valid);
     }
 
     // Late joiners are seated jointly: two free seats on one side, at x = 0 and x = 60, and two newcomers, the lower
@@ -985,7 +1091,7 @@ int main()
         std::vector<StandSeat> plan = PlanStandSeats(points, std::vector<StandBot>(), lane);
         CHECK(plan.empty());
         const std::vector<StandBot> late = { { 1, 28.0f, 32.0f }, { 2, 0.0f, 32.0f } };
-        CHECK(ExtendStandPlan(plan, points, late, lane));
+        CHECK(ExtendStandPlan(plan, points, late, lane, {}));
         CHECK(plan.size() == 2);
         for (const StandSeat& seat : plan)
             CHECK(seat.valid);
@@ -1011,7 +1117,7 @@ int main()
         CHECK(plan.size() == 1 && plan[0].valid);
         bool tie = false;
         CHECK(StandSideOf(points, lane, { 0, plan[0].x, plan[0].y }, tie) == 0);
-        CHECK(ExtendStandPlan(plan, points, { { 1, 5, 30 }, { 2, 5, -30 } }, lane));
+        CHECK(ExtendStandPlan(plan, points, { { 1, 5, 30 }, { 2, 5, -30 } }, lane, {}));
         CHECK(plan.size() == 2);
         for (const StandSeat& seat : plan)
             CHECK(seat.valid);

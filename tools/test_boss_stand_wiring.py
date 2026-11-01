@@ -282,18 +282,21 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue()", fn)
 
     def test_the_seats_come_from_one_plan_per_window(self):
-        # The seats of a window are planned when the window opens, grown by the bots that join the fight later, never
-        # reshuffled: a seat once given never moves, and every bot of the role reads the same plan.
+        # The seats of a window are planned when the window opens, grown by the bots that join the fight later and by
+        # the seat a death frees, never reshuffled: a seat once given never moves while its bot lives, and every bot of
+        # the role reads the same plan.
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         self.assertIn("PlanStandSeats(points, bots, lane)", fn)
         self.assertIn("StandPlanStale(nowMs, it->second.lastReadMs)", fn)
         self.assertIn("it->second.lastReadMs = nowMs;", fn)
         # A bot that engages after the window opened grows the plan in the else of the stale check (the window's plan
         # already exists and is fresh), under the same lock, before the read is stamped.
-        self.assertIn("else\n            ExtendStandPlan(it->second.seats, points, bots, lane);", fn)
+        call = ("else\n            // a bot engaged after the window opened, or one whose seat a death freed, "
+                "gets a free seat\n            ExtendStandPlan(it->second.seats, points, bots, lane, dead);")
+        self.assertIn(call, fn)
         self.assertLess(fn.index("plan.seats = PlanStandSeats(points, bots, lane);"),
-                        fn.index("ExtendStandPlan(it->second.seats, points, bots, lane);"))
-        self.assertLess(fn.index("ExtendStandPlan(it->second.seats, points, bots, lane);"),
+                        fn.index("ExtendStandPlan(it->second.seats, points, bots, lane, dead);"))
+        self.assertLess(fn.index("ExtendStandPlan(it->second.seats, points, bots, lane, dead);"),
                         fn.index("it->second.lastReadMs = nowMs;"))
         self.assertNotIn("AssignStandSlot(", fn)
         declared = body(ACTIONS, "// The seat plan of an open window",
@@ -311,6 +314,20 @@ class BossStandWiring(unittest.TestCase):
                       "static_cast<uint8>(role), points[0]->windowSpell, groupGuid };", fn)
         self.assertIn("old = StandPlanStale(nowMs, old->second.lastReadMs) ? g_standPlans.erase(old) : "
                       "std::next(old);", fn)
+
+    def test_a_dead_group_member_frees_its_seat(self):
+        # Only death frees a seat: the loop that builds the role's members hands the plan the ids of the group's dead
+        # members, so the plan can hand their spots to the bots still fighting.
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("std::vector<std::uint64_t> dead;", fn)
+        self.assertIn("if (!sServerFacade.IsAlive(member))\n                {\n                    "
+                      "dead.push_back(member->GetObjectGuid().GetRawValue());\n                    continue;\n                }", fn)
+        self.assertIn("ExtendStandPlan(it->second.seats, points, bots, lane, dead);", fn)
+        # A death frees a seat and nothing else does: the plan's seat of a member that is absent from `bots` but not
+        # dead is left alone (ExtendStandPlan removes entries of `dead` alone).
+        policy = body(POLICY, "inline bool ExtendStandPlan(", end="\n    }\n")
+        self.assertIn("if (!dead.empty())", policy)
+        self.assertIn("std::find(dead.begin(), dead.end(), seat.id) != dead.end()", policy)
 
     def test_the_plan_is_filed_by_window_spell_and_group(self):
         # Two rows of one anchor and role can open on different window spells inside the idle time: the plan of one

@@ -800,19 +800,39 @@ namespace ai
         return plan;
     }
 
-    // The window's plan, grown by the members of `bots` it does not name yet; every bot the plan names is left alone,
-    // so a window whose members are all named is a plain no-op (every bot asks for its seat each tick). Each newcomer
-    // gets its side (StandSideOf; a tie goes to the side with fewer members, in id order), and a side's newcomers then
-    // take that side's free spots together, min-cost (stand_detail::SeatBots): as many within kBossStandReach as the
-    // spots allow, then the least total walk; seated one newcomer after another the last of them can be left a walk an
-    // earlier one took. A spot is free while no VALID entry of the plan sits within 0.01 yd of it. Existing entries,
-    // valid or not, are never changed or removed. Newcomers beyond the free spots are added with valid = false (they
-    // keep the reactive dodge, as in PlanStandSeats). The plan stays in ascending id order.
+    // The window's plan, grown by the members of `bots` it does not name yet, and by the entries a death freed. Every
+    // valid entry of a bot in `bots` is left where it is, so a window whose members are all named is a plain no-op
+    // (every bot asks for its seat each tick): a bot's seat never moves under it while it lives, whatever it does.
+    //  - A bot named in `dead` loses its entry first (an empty `dead` costs no work): only death frees a seat, a bot
+    //    that merely drops off the threat list keeps the one it holds.
+    //  - The real newcomers and the entries left without a seat (an earlier batch ran the side's spots out) are then
+    //    seated as one batch per side, in id order; a retried entry keeps its slot, a newcomer is appended. Each
+    //    takes its side (StandSideOf; a tie goes to the side with fewer members, in id order), and a side's batch
+    //    takes that side's free spots together, min-cost (stand_detail::SeatBots): as many within kBossStandReach as
+    //    the spots allow, then the least total walk; seated one after another the last of them can be left a walk an
+    //    earlier one took. A spot is free while no VALID entry of the plan sits within 0.01 yd of it.
+    //  - Bots beyond the free spots are added (or left) with valid = false: they keep the reactive dodge, as in
+    //    PlanStandSeats.
+    // An unseated entry is only worth a retry when this call freed a seat or a newcomer arrived; nothing else can
+    // have given it a spot, and retrying it every tick would keep every window off the fast path. The plan stays in
+    // ascending id order.
     inline bool ExtendStandPlan(std::vector<StandSeat>& plan, const std::vector<const BossStandRow*>& points,
-                                const std::vector<StandBot>& bots, const StandLane& lane)
+                                const std::vector<StandBot>& bots, const StandLane& lane,
+                                const std::vector<std::uint64_t>& dead)
     {
         if (points.empty())
             return false;
+        bool freed = false;
+        if (!dead.empty())
+        {
+            const std::size_t before = plan.size();
+            plan.erase(std::remove_if(plan.begin(), plan.end(),
+                                      [&dead](const StandSeat& seat)
+                                      { return std::find(dead.begin(), dead.end(), seat.id) != dead.end(); }),
+                       plan.end());
+            freed = plan.size() != before;
+        }
+
         const auto named = [&plan](std::uint64_t id)
         {
             for (const StandSeat& seat : plan)
@@ -828,13 +848,13 @@ namespace ai
             newcomer = true;
             break;
         }
-        if (!newcomer)
-            return false;  // nothing to add: the plan is left as it is, unsorted
+        if (!newcomer && !freed)
+            return false;  // nothing to add and nothing freed: the plan is left as it is, unsorted
 
         std::vector<StandBot> sorted(bots);
         std::stable_sort(sorted.begin(), sorted.end(), [](const StandBot& a, const StandBot& b) { return a.id < b.id; });
 
-        // The newcomers by side, in id order; the count that breaks a tie rises with every member placed, as in
+        // The seats handed out stay where they are; the count that breaks a tie rises with every member placed, as in
         // PlanStandSeats.
         std::size_t count[2] = { 0, 0 };
         for (const StandSeat& seat : plan)
@@ -844,17 +864,35 @@ namespace ai
             bool seatTie = false;
             ++count[StandSideOf(points, lane, { 0, seat.x, seat.y }, seatTie)];
         }
+
+        // The batch by side, in id order: a newcomer at the slot its entry is appended to, a retried entry at the slot
+        // it already holds.
         std::vector<StandBot> sided[2];
+        std::vector<std::size_t> sidedIndex[2];
         for (const StandBot& bot : sorted)
         {
-            if (named(bot.id))
-                continue;
+            std::size_t at = plan.size();
+            const auto entry = std::find_if(plan.begin(), plan.end(),
+                                            [&bot](const StandSeat& seat) { return seat.id == bot.id; });
+            if (entry != plan.end())
+            {
+                if (entry->valid)
+                    continue;  // seated already: its seat never moves
+                at = static_cast<std::size_t>(entry - plan.begin());
+            }
+            else
+            {
+                StandSeat seat;
+                seat.id = bot.id;
+                plan.push_back(seat);  // invalid until SeatBots hands it one of the side's free spots
+            }
             bool tie = false;
             std::uint8_t side = StandSideOf(points, lane, bot, tie);
             if (tie)
                 side = count[1] < count[0] ? 1 : 0;
             ++count[side];
             sided[side].push_back(bot);
+            sidedIndex[side].push_back(at);
         }
 
         for (std::uint8_t s = 0; s < 2; ++s)
@@ -878,16 +916,7 @@ namespace ai
                 if (!held)
                     free.push_back(spot);
             }
-            std::vector<std::size_t> index;
-            index.reserve(sided[s].size());
-            for (const StandBot& bot : sided[s])
-            {
-                StandSeat seat;
-                seat.id = bot.id;
-                index.push_back(plan.size());
-                plan.push_back(seat);  // invalid until SeatBots hands it one of the side's free spots
-            }
-            stand_detail::SeatBots(plan, index, sided[s], free);
+            stand_detail::SeatBots(plan, sidedIndex[s], sided[s], free);
         }
         std::stable_sort(plan.begin(), plan.end(), [](const StandSeat& a, const StandSeat& b) { return a.id < b.id; });
         return true;
