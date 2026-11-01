@@ -2414,7 +2414,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         std::string leg = logged ?
             TortoiseBots::GuildOrders::OrderLegToken(logged->supplyStep, logged->supplyItemId) : "-";
         std::string key = logged ? TortoiseBots::GuildOrders::OrderRequestKey(logged->supplyStep,
-            logged->supplyItemId, logged->parentBotGuidLow, logged->itemId, logged->type) : "-";
+            logged->supplyItemId, logged->parentBotGuidLow, logged->itemId, logged->type, logged->createdAt) : "-";
         std::string lastKey = AI_VALUE2(std::string, "manual string", "order request leg::" + travelName);
         if (TortoiseBots::GuildOrders::OrderRequestLogDue(lastKey, key,
             time(0), AI_VALUE2(time_t, "manual time", "order request log::" + travelName)))
