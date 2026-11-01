@@ -132,6 +132,7 @@ namespace ai
             creators["reach party member to resurrect"] = [](PlayerbotAI* ai) { return new ReachPartyMemberToResurrectAction(ai); };
             creators["reach party member for totem"] = [](PlayerbotAI* ai) { return new ReachPartyMemberForTotemAction(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeAction(ai); };
+            creators["flee from area"] = [](PlayerbotAI* ai) { return new FleeFromAreaAction(ai); };
             creators["flee with pet"] = [](PlayerbotAI* ai) { return new FleeWithPetAction(ai); };
             creators["avoid aoe"] = [](PlayerbotAI* ai) { return new AvoidAoeAction(ai); };
             creators["wait for attack keep safe distance"] = [](PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); };
@@ -356,8 +357,10 @@ namespace ai
             creators["disable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsDisableStrategyAction(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
+            creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };
             creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastAction(ai); };
+            creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
             creators["enable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreEnableDungeonStrategyAction(ai); };

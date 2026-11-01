@@ -37,6 +37,9 @@ namespace ai
     {
     public:
         OnyxiaBreathSafeZoneAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia breath safe zone") {}
+        // A bot a stand set seats (ai_boss_stand) is never picked as a reaction: picking it already stops the bot's
+        // move and cast (PlayerbotAI::UpdateAIReaction), which would cancel the walk to the seat every tick.
+        bool isUseful() override;
         bool Execute(Event& event) override;
     };
 

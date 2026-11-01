@@ -250,6 +250,10 @@ constexpr std::uint32_t kStrandSettleMs = 2000;   // the stranded lead bot's tel
 constexpr std::uint32_t kStrandTries = 3;         // ... failed teleports (refused, or the lead bot not there after it) a step
 constexpr std::uint32_t kStrandWaits = 10;        // ... "wait" answers a step, then a pause
 constexpr std::uint32_t kStrandSummonWaitMs = 120000; // ... a bot left behind in a fight is waited for this long, then a pause
+constexpr float kStrandRearmYd = 100.0f;          // ... a lead bot moved this far from the point it was teleported to
+                                                  //     arms the rescue again (RearmStrandIfLeadMovedAway)
+constexpr std::uint32_t kStrandRearmsPerStep = 2; // ... at most this often a step, then the latch holds (the walk
+                                                  //     back's pause path takes it)
 constexpr std::uint32_t kEscapeSettleMs = 2000;   // the hop is over once the lead bot stands still this long ...
 constexpr std::uint32_t kEscapeCapMs = 6000;      // ... or after this long
 constexpr float kEscapeMovedYd = 2.0f;            // the glue refuses the hop when the lead bot moved this far since the read
@@ -1811,6 +1815,10 @@ struct Run
     std::size_t strandCountStep = static_cast<std::size_t>(-1);
     std::uint32_t strandTries = 0;
     std::uint32_t strandWaits = 0;
+    // The latch re-arms a lead bot moved away again (RearmStrandIfLeadMovedAway) at most kStrandRearmsPerStep times a
+    // step (strandRearmStep: the step they count for, as strandCountStep; ResetStep leaves them).
+    std::size_t strandRearmStep = static_cast<std::size_t>(-1);
+    std::uint32_t strandRearms = 0;
     // The teleport due now (or just failed) is a ReplayRescue's (set by ReplayRescue beside RescueDue): when
     // StrandFailed gives up on it, the walk back replays the plan's points (ReplayWalkBack, spec 2B) instead of
     // hopping straight toward the target the run had just refused. Cleared when the lead bot arrives (its step's
@@ -5838,6 +5846,34 @@ inline void RearmRescueAfterDeath(Run& r)
     r.strandStep = static_cast<std::size_t>(-1);
 }
 
+// The once-a-step latch is not re-armed by a lead bot that was moved away after its rescue's teleport: the glue's own
+// mass summon (the agent's `.go xyz`/`.summon` sequence racing the run's own wipe recovery) put the lead bot back at
+// the instance entrance, 560 yd from the point it was teleported to, and the walk back that followed could not
+// teleport it a second time (RescueAllowed false): it gave the point up and the lead bot ended stuck in the river
+// (ZG walk 22 test2 r4 step 99). Out of combat, in the same step, a lead bot farther than kStrandRearmYd from the
+// point it was teleported to (the walk back still at that point: the lead bot was not walked back there) arms the
+// latch again, and the walk back's rescue may teleport once more; the step's failed tries and waits stay counted, and
+// a step re-arms it at most kStrandRearmsPerStep times (past that the point is refused as before, the walk back's
+// own pause path).
+inline void RearmStrandIfLeadMovedAway(Run& r, const Facts& f)
+{
+    if (r.strandStep != r.step || r.strandOn || r.strandDue || !r.walkBack || !r.plan ||
+        r.walkBackIdx != r.strandIdx || r.strandIdx >= r.plan->steps.size() || f.anyInCombat)
+        return;
+    const PlanStep& p = r.plan->steps[r.strandIdx];
+    if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z) <= kStrandRearmYd)
+        return;
+    if (r.strandRearmStep != r.step)
+    {
+        r.strandRearmStep = r.step;
+        r.strandRearms = 0;
+    }
+    if (r.strandRearms >= kStrandRearmsPerStep)
+        return;
+    ++r.strandRearms;
+    r.strandStep = static_cast<std::size_t>(-1);
+}
+
 // A failed teleport of the stranded lead bot (refused, or the lead bot not at the
 // point after it): due again on the next tick, kStrandTries times a step; then the
 // walk back goes on as before (the point is passed when refused again) — or as the replay when the failed teleport
@@ -9679,6 +9715,7 @@ inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& orde
 {
     if (!r.walkBack)
         return false;
+    RearmStrandIfLeadMovedAway(r, f);
     if (r.walkBackIdx < r.step && FallenFirst(r, f))
         return true;
     if (StrandedTeleportTick(r, f, dt, order))
@@ -12767,6 +12804,98 @@ inline bool RaidTrashFight(const Run& r, const Facts& f)
         !r.raidBossFight;
 }
 
+// ... and one whose off-tanks pick up: a living off-tank can take a loose mob off the party (GuardTarget's dead-lead
+// branch, CheckGuard's off-tank round robin). The glue's guard read asks the same of a raid trash fight with the lead
+// bot dead (GuardReadMode), so the read and the pick agree on which fights have off-tanks.
+inline bool RaidTrashOffTanks(const Run& r, const Facts& f)
+{
+    return RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty();
+}
+
+// With the lead bot dead the raid's fight is wherever its members are, so the guard's anchor (the glue's
+// RaidGuardAnchor) and the off-tanks that count are chosen from the fight itself, never first-in-list: an idle
+// off-tank far off hid the loose mobs (Codex round 2). Facts::members holds the living ones; a member on another map
+// (yd 1000) or outside the plan's map is no part of the fight.
+constexpr float kMemberOtherMapYd = 1000.0f; // MemberFact::yd of a bot on another map
+inline bool FightMember(const MemberFact& m)
+{
+    return m.yd < kMemberOtherMapYd && !m.offPlanMap;
+}
+
+// How many of the other fight members that have attackers stand within kGuardYd of members[i].
+inline std::uint32_t AttackedMembersNear(const std::vector<MemberFact>& members, std::size_t i)
+{
+    std::uint32_t n = 0;
+    for (std::size_t j = 0; j < members.size(); ++j)
+    {
+        if (j == i || !FightMember(members[j]) || members[j].attackers == 0)
+            continue;
+        const float dx = members[j].x - members[i].x, dy = members[j].y - members[i].y, dz = members[j].z - members[i].z;
+        if (dx * dx + dy * dy + dz * dz <= kGuardYd * kGuardYd)
+            ++n;
+    }
+    return n;
+}
+
+// The member the guard reads the raid's attackers around while the lead bot is dead: (1) an off-tank (RaidFacts::
+// offTanksAlive or bossOffTanksAlive) in combat, the one with the most attacked members within kGuardYd; else (2) the
+// member with attackers that has the most other attacked members within kGuardYd; else -1 (nobody fights: the glue's
+// old fallback). A tie goes to the first in the list. The index into Facts::members.
+inline int DeadLeadGuardAnchor(const Facts& f)
+{
+    int best = -1;
+    std::uint32_t bestN = 0;
+    for (std::size_t i = 0; i < f.members.size(); ++i)
+    {
+        const MemberFact& m = f.members[i];
+        bool offTank = false;
+        for (const std::string& n : f.raid.offTanksAlive)
+            offTank = offTank || n == m.name;
+        for (const std::string& n : f.raid.bossOffTanksAlive)
+            offTank = offTank || n == m.name;
+        if (!FightMember(m) || !offTank || !m.inCombat)
+            continue;
+        const std::uint32_t n = AttackedMembersNear(f.members, i);
+        if (best < 0 || n > bestN)
+        {
+            best = static_cast<int>(i);
+            bestN = n;
+        }
+    }
+    if (best >= 0)
+        return best;
+    for (std::size_t i = 0; i < f.members.size(); ++i)
+    {
+        if (!FightMember(f.members[i]) || f.members[i].attackers == 0)
+            continue;
+        const std::uint32_t n = AttackedMembersNear(f.members, i);
+        if (best < 0 || n > bestN)
+        {
+            best = static_cast<int>(i);
+            bestN = n;
+        }
+    }
+    return best;
+}
+
+// With the lead bot dead the trash fight's off-tanks (RaidFacts::offTanksAlive, read raid-wide on its map) are only
+// those in the fight: in combat, or within kGuardYd of a living member that has attackers. The rest are dropped, so
+// an idle off-tank far from the fight neither takes the pick-ups nor switches the guard's read on.
+inline void DropIdleDeadLeadOffTanks(Facts& f)
+{
+    std::vector<std::string> kept;
+    for (const std::string& name : f.raid.offTanksAlive)
+    {
+        bool keep = false;
+        for (std::size_t i = 0; i < f.members.size(); ++i)
+            if (f.members[i].name == name)
+                keep = FightMember(f.members[i]) && (f.members[i].inCombat || AttackedMembersNear(f.members, i) > 0);
+        if (keep)
+            kept.push_back(name);
+    }
+    f.raid.offTanksAlive = kept;
+}
+
 // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules: a boss step, or a boss of the plan engaged on any
 // step (RaidTrashFight's other side), never in a hold or an event. Once one, the fight stays one (Run::raidBossFight,
 // set by TickBody) though its boss turns unattackable for a phase (EngagedPlanBoss). Its guard is RaidGuardTick and its
@@ -12789,20 +12918,24 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
 }
 
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
-// AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight).
+// AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight). `raidTrashOffTanks`: a raid's trash fight whose off-tanks
+// pick up (RaidTrashFight with a living off-tank: GuardTarget's dead-lead branch).
 enum class GuardRead
 {
     None,       // nothing: no party guard without a living tank lead bot (as before the raid boss rules)
     Lead,       // the party guard's facts around the lead bot, a living tank (its stay, its own mob, the attackers)
-    RaidAnchor, // a raid's boss fight with the lead bot dead or no tank: only the raid's attackers (partyAttackers),
-                // read around a living anchor (the lead bot when alive, else an off-tank or any living bot), so
-                // RaidGuardTick sends an off-tank at the boss on a non-tank and at the adds
+    RaidAnchor, // the lead bot dead or no tank: only the raid's attackers (partyAttackers), read around a living
+                // anchor (the lead bot when alive, else an off-tank or any living bot). A boss fight's, so
+                // RaidGuardTick sends an off-tank at the boss on a non-tank and at the adds, or a raid trash
+                // fight's, so its off-tanks take the loose mobs the dead main tank left on the party
 };
-inline GuardRead GuardReadMode(bool leadAlive, bool leadIsTank, bool raidBoss)
+inline GuardRead GuardReadMode(bool leadAlive, bool leadIsTank, bool raidBoss, bool raidTrashOffTanks)
 {
     if (leadAlive && leadIsTank)
         return GuardRead::Lead;
-    return raidBoss ? GuardRead::RaidAnchor : GuardRead::None;
+    if (raidBoss)
+        return GuardRead::RaidAnchor;
+    return !leadAlive && raidTrashOffTanks ? GuardRead::RaidAnchor : GuardRead::None;
 }
 
 // The main tank (the lead bot, alive) holds a plan boss (Facts::leadHeldEntries, read in a raid's boss fight only).
@@ -12953,9 +13086,15 @@ inline const PlanStep* InHoldArea(const Run& r, const Facts& f)
 
 inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
 {
+    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands a
+    // loose mob to a living off-tank (GuardPick, and CheckGuard's off-tank round robin), so the mobs the main tank
+    // held do not stay on the healers (ZG walk 22 test2 r4 step 99: the Mad Voidwalkers went to nobody once the
+    // main tank died). Nobody's stand: no guard return, no engage.
+    if (!f.leadAlive)
+        return RaidTrashOffTanks(r, f) ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
     // Watching: fightOrders too, so a refill (guardOrders and engageOrders back
     // to 0) does not end the watch the earlier orders started.
-    if (!f.leadAlive || !f.leadIsTank ||
+    if (!f.leadIsTank ||
         !(f.leadStaying || r.guardOrders > 0 || r.fightOrders > 0 || r.engageGuid != 0 || r.focusGuid != 0 ||
             r.focusUnstayed) ||
         f.carrier.empty() || InEvent(r))

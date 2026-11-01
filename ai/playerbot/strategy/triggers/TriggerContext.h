@@ -323,8 +323,10 @@ namespace ai
             creators["leave boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsLeaveTrigger(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptTrigger(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstTrigger(ai); };
+            creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };
             creators["boss tactics front"] = [](PlayerbotAI* ai) { return new BossTacticsFrontTrigger(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastTrigger(ai); };
+            creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandTrigger(ai); };
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };

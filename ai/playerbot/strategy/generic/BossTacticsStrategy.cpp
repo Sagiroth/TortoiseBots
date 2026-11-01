@@ -17,11 +17,22 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A DPS bot on a boss entry a hold_kill row holds leaves it (the blocker is the kill): below the kill-first pick,
+    // which is where it switches to first, and above the generic assist rows the multiplier stands down meanwhile.
+    triggers.push_back(new TriggerNode(
+        "boss tactics hold kill",
+        NextAction::array(0, new NextAction("boss tactics hold kill", ACTION_HIGH + 2), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
         NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+    // A stand set applies (ai_boss_stand): the walk to the seat comes before every cast and heal, the way the
+    // reactive Deep Breath dodge does.
+    triggers.push_back(new TriggerNode(
+        "boss tactics stand",
+        NextAction::array(0, new NextAction("boss tactics stand", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics front",

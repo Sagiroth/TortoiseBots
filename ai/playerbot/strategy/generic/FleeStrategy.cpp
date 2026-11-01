@@ -10,8 +10,9 @@ using namespace ai;
 
 float FleeMultiplier::GetValue(Action* action)
 {
-    // Only the basic "flee" action is dampened; "runaway" / "flee to master" are untouched.
-    if (!action || action->getName() != "flee")
+    // Only the basic "flee" action (and its area-debuff twin) is dampened;
+    // "runaway" / "flee to master" are untouched.
+    if (!action || (action->getName() != "flee" && action->getName() != "flee from area"))
         return 1.0f;
 
     // Never let a flee interrupt a cast that is already underway: finishing the spell takes

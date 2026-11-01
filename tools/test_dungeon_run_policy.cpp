@@ -11947,6 +11947,128 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     CHECK(kStrandTries == 3 && kStrandWaits == 10);
 }
 
+// ZG walk 22 test2 r4 step 99 (F7): the strand rescue's once-a-step latch (Run::strandStep) held after the lead bot
+// was moved away again. The glue's mass summon put it back at the ZG entrance hill, 560 yd from the point it was
+// teleported to; the walk back that followed could not teleport it a second time (RescueAllowed false), so it gave
+// the point up and the lead bot ended stuck in the river. The latch re-arms, out of combat and in the same step,
+// when the lead bot stands farther than kStrandRearmYd from the point it was teleported to.
+static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f), Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f),
+        Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f), Step(PlanStepKind::Move, -422.4f, 106.7f, -172.9f),
+        Step(PlanStepKind::Move, -420.0f, 120.0f, -172.9f), Step(PlanStepKind::Rest)};
+    std::string const back = MoveOrder(-422.4f, 82.4f, -172.9f, false);
+    std::string const noSpot = "no-spot: no spot within 10 yd in the lead bot's sight has a floor, a clear line and a way on";
+    auto stranded = [&]()
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 1);
+        r.noPathSkips = {2, 3, 4};
+        r.walkBack = true;
+        r.walkBackIdx = 1;
+        r.walkBackStart = 1;
+        r.leadLastX = -448.0f;
+        r.leadLastY = 103.2f;
+        r.leadLastZ = -191.0f;
+        OrderRefused(r, "escape from -448.0 103.2 -191.0 toward -422.4 82.4 -172.9", noSpot);
+        CHECK(r.noSpotKnown);
+        r.strandIdx = 1;       // the point the rescue teleported the lead bot to (the walk back's own)
+        r.strandStep = r.step; // the teleport was used on this step: the lead bot stood at the point after it
+        return r;
+    };
+    // 760 yd from the point it was teleported to (step 2's point), out of combat; the hop there found no spot again.
+    Facts away = StrandFacts(-960.0f, 620.0f, -172.9f);
+    auto atAway = [](Run& x, float ax, float ay, float az)
+    {
+        x.leadLastX = ax;
+        x.leadLastY = ay;
+        x.leadLastZ = az;
+        x.noSpotKnown = true;
+        x.noSpotX = ax;
+        x.noSpotY = ay;
+        x.noSpotZ = az;
+    };
+    Run r = stranded();
+    atAway(r, -960.0f, 620.0f, -172.9f);
+    std::string const move = Tick(r, away); // the walk back resumes: the latch re-arms, then the point's own move
+    CHECK(move == back);
+    OrderRefused(r, move, kBareUnreachable);
+    CHECK(r.strandDue); // the rescue again, not 'on to the next'
+    std::string const order = Tick(r, away);
+    CHECK(order == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+    CHECK(r.note.find("teleporting it to the last reached point (step 2)") != std::string::npos);
+
+    // Inside kStrandRearmYd the latch holds: the lead bot is on its way back, not moved away.
+    Run near = stranded();
+    atAway(near, -470.0f, 90.0f, -172.9f); // ~48 yd from the point
+    Facts close = StrandFacts(-470.0f, 90.0f, -172.9f);
+    CHECK(Tick(near, close) == back);
+    OrderRefused(near, back, kBareUnreachable);
+    CHECK(!near.strandDue && near.walkBackIdx == 2);
+    CHECK(near.note.find(": on to the next") != std::string::npos);
+}
+
+// The re-arm is capped at kStrandRearmsPerStep a step: a glue that keeps putting the lead bot back at the instance
+// entrance (its own mass summons racing the run's recovery) could otherwise teleport it back again and again on one
+// step. Past the cap the latch holds, the point is refused as before and the walk back goes on ("on to the next");
+// a later step counts its own re-arms (Run::strandRearmStep).
+static void TestTheStrandRearmIsCappedPerStep()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f), Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f),
+        Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f), Step(PlanStepKind::Move, -422.4f, 106.7f, -172.9f),
+        Step(PlanStepKind::Move, -420.0f, 120.0f, -172.9f), Step(PlanStepKind::Rest)};
+    std::string const back = MoveOrder(-422.4f, 82.4f, -172.9f, false);
+    Run r = Start(&plan, 2);
+    NoteCheckpoint(r, 1);
+    r.noPathSkips = {2, 3, 4};
+    r.walkBack = true;
+    r.walkBackIdx = r.walkBackStart = 1;
+    Facts away = StrandFacts(-960.0f, 620.0f, -172.9f);
+    // Each attempt starts from the same state: the rescue's teleport was used (the lead bot stood at the point), the
+    // agent's mass summon moved it away again, 760 yd from the point, and the hop off where it stands found no spot
+    // again.
+    auto movedAway = [&]()
+    {
+        r.strandIdx = 1;
+        r.strandStep = r.step;
+        r.leadLastX = -960.0f;
+        r.leadLastY = 620.0f;
+        r.leadLastZ = -172.9f;
+        r.noSpotKnown = true;
+        r.noSpotX = -960.0f;
+        r.noSpotY = 620.0f;
+        r.noSpotZ = -172.9f;
+    };
+    for (std::uint32_t i = 0; i < kStrandRearmsPerStep; ++i)
+    {
+        movedAway();
+        std::string const move = Tick(r, away); // the walk back resumes: the latch re-arms, then the point's own move
+        CHECK(move == back);
+        OrderRefused(r, move, kBareUnreachable);
+        CHECK(r.strandDue); // the rescue again, not 'on to the next'
+        CHECK(Tick(r, away) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+        CHECK(r.strandRearms == i + 1);
+        r.strandOn = false; // the teleport settled and the lead bot stood at the point (the glue's own next tick)
+        r.strandMs = 0;
+    }
+    // The cap is spent: the next move-away does not re-arm, and the refused point is passed as before.
+    movedAway();
+    CHECK(Tick(r, away) == back);
+    OrderRefused(r, back, kBareUnreachable);
+    CHECK(!r.strandDue);
+    CHECK(r.walkBackIdx == 2);
+    CHECK(r.note.find(": on to the next") != std::string::npos);
+    CHECK(r.strandRearms == kStrandRearmsPerStep);
+    // The count is the step's own: the walk back at the point again on the next step re-arms again.
+    ++r.step;
+    r.walkBackIdx = r.strandIdx = 1;
+    r.strandStep = r.step;
+    RearmStrandIfLeadMovedAway(r, away);
+    CHECK(r.strandRearmStep == r.step && r.strandRearms == 1 && r.strandStep != r.step);
+}
+
 static void TestR22PullAndDirectStepsKeepTheirRefusals()
 {
     DungeonPlan plan = RfkS85Plan();
@@ -22206,12 +22328,99 @@ static void TestRaidBossBossOffANonTankWithTheLeadDead()
 // RaidGuardTick's dead-lead branch sees the boss on a non-tank. Outside one, nothing is read then (as before).
 static void TestRaidBossGuardReadModes()
 {
-    CHECK(GuardReadMode(true, true, false) == GuardRead::Lead);
-    CHECK(GuardReadMode(true, true, true) == GuardRead::Lead);
-    CHECK(GuardReadMode(false, false, false) == GuardRead::None);
-    CHECK(GuardReadMode(true, false, false) == GuardRead::None);
-    CHECK(GuardReadMode(false, false, true) == GuardRead::RaidAnchor);
-    CHECK(GuardReadMode(true, false, true) == GuardRead::RaidAnchor);
+    CHECK(GuardReadMode(true, true, false, false) == GuardRead::Lead);
+    CHECK(GuardReadMode(true, true, true, false) == GuardRead::Lead);
+    CHECK(GuardReadMode(false, false, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(true, false, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(false, false, true, false) == GuardRead::RaidAnchor);
+    CHECK(GuardReadMode(true, false, true, false) == GuardRead::RaidAnchor);
+}
+
+// F7: a raid's trash fight whose off-tanks pick up (RaidTrashOffTanks, GuardTarget's dead-lead branch) needs the
+// glue's read with the lead bot dead too: the mobs the main tank left on the healers are the off-tanks' to take off
+// them (ZG walk 22 test2 r4 step 99). A dead lead bot with no living off-tank, a living lead bot (the party guard's
+// own rules), and every other fight: nothing read, as before.
+static void TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead()
+{
+    CHECK(GuardReadMode(false, false, false, true) == GuardRead::RaidAnchor);  // the lead bot dead, an off-tank alive
+    CHECK(GuardReadMode(false, false, false, false) == GuardRead::None);       // ... and none: nothing to pick up
+    CHECK(GuardReadMode(true, false, false, true) == GuardRead::None);         // a living lead bot: unchanged
+    CHECK(GuardReadMode(false, false, true, false) == GuardRead::RaidAnchor);  // a raid's boss fight: unchanged
+}
+
+// F7 round 4: with the lead bot dead the guard's anchor is chosen from the fight, never first-in-list. A member at x
+// (Mem puts it on the x axis), in combat or not, with `attackers` units on it.
+static MemberFact FightMem(const std::string& name, float x, bool inCombat, std::uint32_t attackers)
+{
+    MemberFact m = Mem(name, x);
+    m.inCombat = inCombat;
+    m.attackers = attackers;
+    return m;
+}
+
+static Facts DeadLeadFightFacts()
+{
+    Facts f;
+    f.leadAlive = false;
+    f.raid.on = true;
+    f.raid.offTanksAlive = {"OffFar", "OffNear"};
+    return f;
+}
+
+static void TestDeadLeadAnchorIsTheOffTankInTheFight()
+{
+    Facts f = DeadLeadFightFacts();
+    // The first off-tank stands 200 yd off, idle; the second is in combat among two attacked healers.
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, true, 1), FightMem("Healy", 0, true, 2),
+        FightMem("Priesty", 20, true, 1)};
+    int pick = DeadLeadGuardAnchor(f);
+    CHECK(pick >= 0 && f.members[pick].name == "OffNear");
+    // Two off-tanks in combat: the one with more attacked members within kGuardYd.
+    f.members[0] = FightMem("OffFar", 200, true, 1);
+    f.members.push_back(FightMem("Far2", 210, true, 1));
+    f.members.push_back(FightMem("Far3", 205, true, 1));
+    f.members.push_back(FightMem("Far4", 195, true, 1));
+    pick = DeadLeadGuardAnchor(f);
+    CHECK(f.members[pick].name == "OffFar");
+}
+
+static void TestDeadLeadAnchorFallsToTheMemberWithAttackers()
+{
+    Facts f = DeadLeadFightFacts();
+    // No off-tank in combat: the member with attackers that has the most other attacked members near it.
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Lone", 100, true, 1),
+        FightMem("Healy", 0, true, 2), FightMem("Priesty", 20, true, 1), FightMem("Mager", 30, true, 1)};
+    int const pick = DeadLeadGuardAnchor(f);
+    CHECK(pick >= 0 && f.members[pick].name == "Healy");
+}
+
+static void TestDeadLeadAnchorNobodyFightingIsTheOldFallback()
+{
+    Facts f = DeadLeadFightFacts();
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Healy", 0, false, 0)};
+    CHECK(DeadLeadGuardAnchor(f) == -1);
+    // A member on another map is no part of the fight.
+    f.members.push_back(FightMem("Away", 1000, true, 3));
+    CHECK(DeadLeadGuardAnchor(f) == -1);
+}
+
+static void TestDeadLeadOffTanksMustBeInTheFight()
+{
+    Facts f = DeadLeadFightFacts();
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Healy", 0, true, 2)};
+    DropIdleDeadLeadOffTanks(f);
+    // The far idle one goes; the idle one within kGuardYd of an attacked healer stays.
+    CHECK(f.raid.offTanksAlive.size() == 1 && f.raid.offTanksAlive[0] == "OffNear");
+    // In combat anywhere keeps it.
+    Facts g = DeadLeadFightFacts();
+    g.members = {FightMem("OffFar", 200, true, 1), FightMem("OffNear", 300, false, 0), FightMem("Healy", 0, true, 2)};
+    DropIdleDeadLeadOffTanks(g);
+    CHECK(g.raid.offTanksAlive.size() == 1 && g.raid.offTanksAlive[0] == "OffFar");
+    // Nobody fighting: none is kept.
+    Facts h = DeadLeadFightFacts();
+    h.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0)};
+    DropIdleDeadLeadOffTanks(h);
+    CHECK(h.raid.offTanksAlive.empty());
 }
 
 // The facts as the glue reads them with the lead bot dead (GuardRead::RaidAnchor): leadAlive, leadIsTank and
@@ -25272,6 +25481,50 @@ static void TestRaidGuardWithoutAnOffTankSendsTheMainTank()
     CHECK(r.guardReturn);
 }
 
+// ZG walk 22 test2 r4 step 99 (F7): the run's main tank (the lead bot) died early in the trash fight and every off-tank
+// pick-up stopped (GuardTarget returned null on !f.leadAlive), so the Mad Voidwalkers stayed on the healers. A living
+// off-tank in a raid's trash fight still takes a loose mob with the lead bot dead; the main tank's stand is nobody's.
+static void TestRaidTrashOffTanksPickUpWithTheLeadDead()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.leadAlive = false;
+    f.leadIsTank = false;
+    f.leadStaying = false;
+    f.partyAttackers = {Hitter(41, 15146, 30, true)}; // a Mad Voidwalker on the healer
+    CHECK(Tick(r, f) == "attack 41 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 15146 off the healer (30.0 yd)");
+    CHECK(!r.guardReturn); // the dead main tank has no stand to walk back to
+    CHECK(r.guardOrders == 1);
+    // A second loose mob goes to the next off-tank; one an off-tank already holds is left with it.
+    f.partyAttackers = {Hitter(51, 15146, 32, true), TankHeld(41, 15146, 30)};
+    std::string next;
+    for (std::uint32_t ms = 0; ms < 10000 && next.empty(); ms += kTickMs)
+        next = Tick(r, f);
+    CHECK(next == "attack 51 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 15146 off the healer") != std::string::npos);
+
+    // A party run with the same loose mob and a dead lead bot: no off-tanks, nothing, as before.
+    DungeonPlan party;
+    Facts g = Party(0);
+    Run p = Start(&party, 0);
+    g.anyInCombat = true;
+    g.partyAttackers = {Hitter(41, 15146, 30, true)};
+    for (int i = 0; i < 5; ++i)
+        CHECK(Tick(p, g).empty());
+    // A raid trash fight with no living off-tank: nothing either.
+    DungeonPlan none;
+    Facts h = RaidTrashFacts(false);
+    Run q = StartRaidTrashFight(none, h);
+    h.leadAlive = false;
+    h.leadIsTank = false;
+    h.leadStaying = false;
+    h.partyAttackers = {Hitter(41, 15146, 30, true)};
+    for (int i = 0; i < 5; ++i)
+        CHECK(Tick(q, h).empty());
+}
+
 static void TestPartyGuardStillTakesAMobHeldByItsTank()
 {
     DungeonPlan plan;
@@ -26441,6 +26694,8 @@ int main()
     TestStandTicksAreNotFruitlessPulls();
     TestShotStandOnPath();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
+    TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
+    TestTheStrandRearmIsCappedPerStep();
     TestPullStandNeedsMoreRangeThanTheMargin();
     TestStandRequestIsReadOnce();
     TestStandWalkStuckOrdersFromHere();
@@ -26668,7 +26923,12 @@ int main()
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();
+    TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead();
     TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
+    TestDeadLeadAnchorIsTheOffTankInTheFight();
+    TestDeadLeadAnchorFallsToTheMemberWithAttackers();
+    TestDeadLeadAnchorNobodyFightingIsTheOldFallback();
+    TestDeadLeadOffTanksMustBeInTheFight();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();
@@ -26738,6 +26998,7 @@ int main()
     TestRaidGuardRoundRobinsTheOffTanks();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
+    TestRaidTrashOffTanksPickUpWithTheLeadDead();
     TestPartyGuardStillTakesAMobHeldByItsTank();
     TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait();
     TestRaidTrashFightGate();

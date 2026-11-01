@@ -37,11 +37,28 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This DPS bot's current target is a boss entry a hold_kill row holds (its blocker still lives).
+    class BossTacticsHoldKillTrigger : public Trigger
+    {
+    public:
+        BossTacticsHoldKillTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics hold kill", 1) {}
+        bool IsActive() override;
+    };
+
     // A creature in the fight casts a spell an avoid_cast row lists and this bot (not a tank) stands inside its radius.
     class BossTacticsAvoidCastTrigger : public Trigger
     {
     public:
         BossTacticsAvoidCastTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics avoid cast", 1) {}
+        bool IsActive() override;
+    };
+
+    // A stand set applies to this bot (ai_boss_stand: the boss is at an anchor casting the row's window spell)
+    // and the bot is not at its seat.
+    class BossTacticsStandTrigger : public Trigger
+    {
+    public:
+        BossTacticsStandTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics stand", 1) {}
         bool IsActive() override;
     };
 

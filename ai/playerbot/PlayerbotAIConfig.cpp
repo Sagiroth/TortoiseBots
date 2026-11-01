@@ -3,6 +3,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/AmmoStackPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossStandMgr.h"
 #include "playerbot/DungeonPlanMgr.h"
 #include "../../runtime/BotNames.h"
 #include "../../runtime/HireLevelPolicy.h"
@@ -1286,6 +1287,8 @@ bool PlayerbotAIConfig::Initialize()
     sRandomBotFacade.LoadNamedLocationCache();
     sLog.outString("Loading boss tactics.");
     ai::LoadBossTactics();
+    sLog.outString("Loading boss stand sets.");
+    ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");
     ai::LoadDungeonPlans();
     sRandomBotFacade.LoadBattleMastersCache();

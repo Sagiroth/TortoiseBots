@@ -39,6 +39,7 @@
 #include "IsFacingValue.h"
 #include "ItemCountValue.h"
 #include "SpellIdValue.h"
+#include "HoldKillBlockersValue.h"
 #include "ItemForSpellValue.h"
 #include "SpellCastUsefulValue.h"
 #include "LastSpellCastValue.h"
@@ -125,7 +126,7 @@ namespace ai
             creators["nearest game objects no los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
             creators["nearest damaging traps"] = [](PlayerbotAI* ai) { return new NearestDamagingTrapsValue(ai); };
             creators["nearest dynamic objects"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai); };
-            creators["nearest dynamic objects no los"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
+            creators["nearest dynamic objects no los"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai, kTrapScanRangeYd, LOS_IGNORE); };
             creators["closest game objects static los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, INTERACTION_DISTANCE, LOS_STATIC); };
             creators["nearest npcs"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai); };
             creators["nearest npcs no los"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai, sPlayerbotAIConfig.sightDistance, true); };
@@ -225,6 +226,8 @@ namespace ai
             creators["trinkets on use"] = [](PlayerbotAI* ai) { return new EquipedUsableTrinketValue(ai); };
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
+            creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };
+            creators["sole kill candidates"] = [](PlayerbotAI* ai) { return new SoleKillCandidatesValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };
             creators["spell cast useful"] = [](PlayerbotAI* ai) { return new SpellCastUsefulValue(ai); };
             creators["spell ready"] = [](PlayerbotAI* ai) { return new SpellReadyValue(ai); };
