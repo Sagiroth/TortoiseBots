@@ -822,4 +822,16 @@ const ighalFight = B.model(REAL, { entry: 62671, hp: 20, au: [] }, [], 0, 0);
 assert.strictEqual(ighalFight.phase, "fight");
 assert.strictEqual(ighalFight.abilities.find((a) => a.sid === 8423).inPhase, true);
 assert.strictEqual(ighalFight.abilities.find((a) => a.sid === 8734).inPhase, false);
+
+// ---- Gilneas City: the 50 percent transform is a real exclusive phase --------------------------------------
+const celia = (REAL.byEntry || REAL.bosses || REAL)["61263"];
+assert.deepStrictEqual(celia.phases.map((x) => x.rule), ["hp<50", "start"]);
+assert.strictEqual(B.phaseOf(celia, { hp: 49 }).phase, "dragonkin");
+assert.strictEqual(B.phaseOf(celia, { hp: 51 }).phase, "human");
+const celiaAt49 = B.model(REAL, { entry: 61263, hp: 49, au: [] }, [], 0, 0);
+assert.strictEqual(celiaAt49.abilities.find((a) => a.sid === 13021).inPhase, true, "Blast Wave is the dragonkin ability");
+assert.strictEqual(celiaAt49.abilities.find((a) => a.sid === 25309).inPhase, false, "Immolate is the human ability");
+const celiaAt51 = B.model(REAL, { entry: 61263, hp: 51, au: [] }, [], 0, 0);
+assert.strictEqual(celiaAt51.abilities.find((a) => a.sid === 13021).inPhase, false);
+assert.strictEqual(celiaAt51.abilities.find((a) => a.sid === 25309).inPhase, true);
 console.log("boss panel ok");
