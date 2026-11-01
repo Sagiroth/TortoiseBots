@@ -57,9 +57,7 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
         if (travelTarget)
         {
-            // TEMPORARY probe (pattern-4 churn follow-up).
-            travelTarget->NoteFreshTripDeath("ding-learn", TravelStatus::TRAVEL_STATUS_EXPIRED);
-             sTravelMgr.SetNullTravelTarget(travelTarget);
+            sTravelMgr.SetNullTravelTarget(travelTarget);
             travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             travelTarget->SetExpireIn(1000);
         }

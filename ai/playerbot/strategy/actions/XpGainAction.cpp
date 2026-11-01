@@ -131,9 +131,6 @@ bool XpGainAction::Execute(Event& event)
             kit.AddBandages();
         }
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
-        // TEMPORARY probe (pattern-4 churn follow-up).
-        if (travelTarget)
-            travelTarget->NoteFreshTripDeath("ding", TravelStatus::TRAVEL_STATUS_EXPIRED);
         sTravelMgr.SetNullTravelTarget(travelTarget);
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
         travelTarget->SetExpireIn(1000);

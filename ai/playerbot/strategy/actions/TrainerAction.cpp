@@ -267,9 +267,7 @@ bool TrainerAction::Execute(Event& event)
         if (!ai->HasActivePlayerMaster() && target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
             target->GetEntry() == (int32)creature->GetEntry())
         {
-            // TEMPORARY probe (pattern-4 churn follow-up).
-            target->NoteFreshTripDeath("service-trainer", TravelStatus::TRAVEL_STATUS_NONE);
-             sTravelMgr.SetNullTravelTarget(target);
+            sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
         }
     }

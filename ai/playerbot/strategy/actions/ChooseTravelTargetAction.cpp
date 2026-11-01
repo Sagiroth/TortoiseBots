@@ -13,6 +13,7 @@
 #include "playerbot/policy/travel/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/policy/travel/TravelRouteDangerPolicy.h"
+#include "playerbot/policy/rpg/WorkIdlePolicy.h"
 #include "playerbot/policy/rpg/RpgMixerPolicy.h"
 #include "../../policy/gear/VendorTripPolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
@@ -753,10 +754,6 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     }
 
     //Actually apply the new target to the travel target used by the bot.
-    // TEMPORARY probe (pattern-4 churn follow-up): a pick that lands seconds
-    // after the previous one names what it replaced.
-    if (oldTarget && oldTarget != newTarget && oldTarget->IsActive())
-        oldTarget->NoteFreshTripDeath("repick", TravelStatus::TRAVEL_STATUS_TRAVEL);
     oldTarget->CopyTarget(newTarget);
 
     // Decide-once flight plan (#426 item 5): evaluate fly-or-walk for the
@@ -918,6 +915,14 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     }
 
     oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_READY);
+
+    // A new journey starts its own WORK stay: the empty-stay anchor below
+    // belongs to the previous trip. Without a clear here a pick made while
+    // the old stay's anchor was armed hands the fresh trip an already-aged
+    // clock, and the workidle release fires seconds after arrival (live
+    // 2026-11-01: 112 of 202 workidle kills landed within 30 s of the pick,
+    // most of them GenericRpg/AH trips walking into a just-vacated stay).
+    ai->GetAiObjectContext()->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Set(time_t(0));
 
     // A genuinely new destination ends any stuck-keep streak (see UnstuckAction):
     // the streak counts consecutive resets without progress toward one spot,
@@ -1949,10 +1954,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     if (!conditionsStillActive)
         return false;
 
-    // TEMPORARY probe (pattern-4 churn follow-up): a re-point restarts the
-    // walk to a new point of the same destination.
-    target->NoteFreshTripDeath("refresh", TravelStatus::TRAVEL_STATUS_READY);
-     target->SetTarget(oldDestination, newPosition);
+    target->SetTarget(oldDestination, newPosition);
 
     target->SetStatus(TravelStatus::TRAVEL_STATUS_READY);
     target->IncRetry(false);
@@ -2004,9 +2006,7 @@ bool ResetTargetAction::Execute(Event& event)
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     setNewTarget(requester, &newTarget, oldTarget);
 
-    // TEMPORARY probe (pattern-4 churn follow-up).
-    oldTarget->NoteFreshTripDeath("reset", TravelStatus::TRAVEL_STATUS_COOLDOWN);
-     oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
+    oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
     // The cooldown counts as an active target, so it blocks every request.
     // A pool bot resets here when all its purposes are parked, and a full
     // minute on top of the park left it standing until the next minute
@@ -2307,9 +2307,6 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 isOrderTarget = true;
         if (!isOrderTarget)
         {
-            // TEMPORARY probe (pattern-4 churn follow-up): name the killer
-            // when a fresh leisure trip is preempted.
-            current->NoteFreshTripDeath("order-jump", TravelStatus::TRAVEL_STATUS_EXPIRED);
             sTravelMgr.SetNullTravelTarget(current);
             current->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             current->SetExpireIn(1000);

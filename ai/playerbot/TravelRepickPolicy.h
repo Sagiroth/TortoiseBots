@@ -192,22 +192,19 @@ namespace ai
         constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
         return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
     }
-    // TEMPORARY probe (pattern-4 churn follow-up): a travel target younger
-    // than the fresh window that goes to EXPIRED/COOLDOWN/NONE or is replaced
-    // logs one throttled row naming the killer, so the next realm cycle shows
-    // which call site ends fresh trips. Pure verdict so the standalone test
-    // covers it: at most one row per window per bot; only fresh trips count.
-    // Remove once pattern 4 has an owner. Window/throttle in whole seconds.
-    constexpr std::int64_t FRESH_TRIP_PROBE_AGE_SEC = 10;
-    constexpr std::int64_t FRESH_TRIP_PROBE_THROTTLE_SEC = 30;
-    inline bool FreshTripDeathProbeShouldLog(std::int64_t tripAgeSec, std::int64_t lastLogAgoSec,
-        bool hasLoggedBefore)
+    // Short-hop TRAVEL floor (pattern-4 churn follow-up, live 2026-11-01):
+    // the TRAVEL clock is 2x run time + 3 s, so a trip picked a few yards
+    // out budgets ~4 s - one move visit. When every visit fails dispatch
+    // (a complete navmesh path the spline still refuses: standing inside
+    // the arrival radius with a clipped route tail), the 6-fail drop never
+    // fires first and the trip times out ~8 s after the pick, then re-picks
+    // at once. The floor gives the drop budget time to engage instead; far
+    // trips keep their computed clock. Caller passes whole milliseconds.
+    constexpr std::int64_t TRAVEL_SHORT_HOP_FLOOR_MS = 30000;
+    inline std::int64_t TravelStatusTravelMsFloor(std::int64_t computedMs,
+        std::int64_t floorMs = TRAVEL_SHORT_HOP_FLOOR_MS)
     {
-        if (tripAgeSec < 0 || tripAgeSec >= FRESH_TRIP_PROBE_AGE_SEC)
-            return false;
-        if (!hasLoggedBefore)
-            return true;
-        return lastLogAgoSec < 0 || lastLogAgoSec >= FRESH_TRIP_PROBE_THROTTLE_SEC;
+        return computedMs >= floorMs ? computedMs : floorMs;
     }
 
     // destination point with no walkable navmesh polygon nearby can never be

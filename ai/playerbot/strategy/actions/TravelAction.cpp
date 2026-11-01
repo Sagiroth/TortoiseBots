@@ -94,9 +94,7 @@ bool TravelAction::Execute(Event& event)
                         time(0) + kQuestStallParkSec);
                     sPlayerbotAIConfig.logEvent(ai, "QuestObjectiveStalled",
                         quest->GetTitle(), std::to_string(questId));
-                    // TEMPORARY probe (pattern-4 churn follow-up).
-                    target->NoteFreshTripDeath("quest-stall", TravelStatus::TRAVEL_STATUS_NONE);
-                     sTravelMgr.SetNullTravelTarget(target);
+                    sTravelMgr.SetNullTravelTarget(target);
                     RESET_AI_VALUE(bool, "travel target active");
                     return true;
                 }
