@@ -12,6 +12,7 @@ import json
 import os
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -2003,6 +2004,8 @@ def _read_trash_casts(entries, core=CORE_DIR):
     if template.is_file():
         for row in _read_dump_table(template, "creature_template", CREATURE_AI_COLUMNS):
             entry = row.get("entry")
+            # A script that calls ScriptedAI::UpdateAI does run this list (ScriptedAI.cpp:82-83); the exclusion
+            # holds for the current scripted entries only.
             if entry in entries and row.get("spell_list_id") and not ai.get(entry, ("", ""))[1]:
                 lists.setdefault(row["spell_list_id"], set()).add(entry)
     table = base / "tw_world_creature_spells.sql"
@@ -2024,7 +2027,7 @@ def _read_trash_casts(entries, core=CORE_DIR):
         wanted = set()
         for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
             entry = row.get("creature_id")
-            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI":
+            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI" or ai[entry][1]:
                 continue
             for column in ("action1_script", "action2_script", "action3_script"):
                 if row.get(column):
@@ -2035,13 +2038,85 @@ def _read_trash_casts(entries, core=CORE_DIR):
                 by_script.setdefault(row["id"], []).append((row.get("datalong"), row.get("datalong2") or 0))
         for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
             entry = row.get("creature_id")
-            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI":
+            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI" or ai[entry][1]:
                 continue
             for column in ("action1_script", "action2_script", "action3_script"):
                 for spell, flags in by_script.get(row.get(column), ()):
                     if spell:
                         casts[(entry, spell)] = flags
     return casts
+
+
+TEMPLATE_SLOT_COLUMNS = {"entry", "spell_id1", "spell_id2", "spell_id3", "spell_id4"}
+CITE_WINDOW = 3
+
+
+def _read_template_slots(entries, core=CORE_DIR):
+    """{entry: {spell ids in its creature_template spell_id1-4 slots}}."""
+    template = core / "sql" / "base" / "tw_world_creature_template.sql"
+    found = {}
+    if template.is_file():
+        for row in _read_dump_table(template, "creature_template", TEMPLATE_SLOT_COLUMNS):
+            entry = row.get("entry")
+            if entry in entries:
+                found[entry] = {row.get("spell_id%d" % n) for n in (1, 2, 3, 4)} - {0, None}
+    return found
+
+
+_REGISTRATIONS = {}
+
+
+def _script_registration_files(script_name, core=CORE_DIR):
+    """Core-relative paths of the .cpp files under src/ that register `script_name` (`Name = "<script_name>"`)."""
+    key = (str(core), script_name)
+    if key not in _REGISTRATIONS:
+        out = subprocess.run(
+            ["grep", "-rlE", "--include=*.cpp", r'Name\s*=\s*"%s"' % re.escape(script_name), str(core / "src")],
+            capture_output=True, text=True, check=False,
+        ).stdout.split()
+        _REGISTRATIONS[key] = {str(Path(p).relative_to(core)) for p in out}
+    return _REGISTRATIONS[key]
+
+
+def _script_cite_problems(row, script_name, slots=(), core=CORE_DIR):
+    """Why the script citation of a scripted entry's ability row does not hold, [] when it does. Every cited
+    .cpp/.h part must exist with its lines in bounds; one must be in the file that registers `script_name` and hold
+    the row's spell id (or a constant that resolves to it) within CITE_WINDOW lines of the cited line. A generic
+    dispatcher script (generic_spell_ai) names no spell: its cast comes from the creature_template spell slot, so
+    the slot must hold the spell and the cited line must be where the script reads or casts it."""
+    spell = int(row["key"])
+    try:
+        parts = [c for c in boss_data.parse_source(row) if c[0] == "core" and re.search(r"\.(cpp|h)$", c[1])]
+    except boss_data.DataError as error:
+        return [str(error)]
+    if not parts:
+        return ["cites no .cpp/.h script line"]
+    registered = _script_registration_files(script_name, core)
+    if not registered:
+        return ["no src/ file registers script %r" % script_name]
+    problems, backed, in_registering_file = [], False, False
+    for _, path, start, end in parts:
+        file = core / path
+        if not file.is_file():
+            problems.append("%s does not exist" % path)
+            continue
+        lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+        if start < 1 or end > len(lines):
+            problems.append("%s:%d-%d is out of bounds (%d lines)" % (path, start, end, len(lines)))
+            continue
+        if path not in registered:
+            continue
+        in_registering_file = True
+        window = list(enumerate(lines, 1))[max(0, start - 1 - CITE_WINDOW):end + CITE_WINDOW]
+        if boss_data._has_id(window, spell, boss_data.constant_values(lines)):
+            backed = True
+        elif spell in slots and any(re.search(r"spells\[|spellId", text) for _, text in window):
+            backed = True
+    if not in_registering_file:
+        problems.append("no cited file registers script %r (it is in %s)" % (script_name, sorted(registered)))
+    elif not backed and not problems:
+        problems.append("the cited line holds no cast of spell %d (nor a constant for it)" % spell)
+    return problems
 
 
 def _shape_spell_ids(path):
@@ -3554,6 +3629,7 @@ class TrashSpellSourceTest(unittest.TestCase):
         cls.rows = boss_data.read_trash_rows(ROOT / "data" / "boss" / "trash_abilities.csv")
         cls.casts = _read_trash_casts({int(r["entry"]) for r in cls.rows})
         cls.ai = _read_creature_ai({int(r["entry"]) for r in cls.rows})
+        cls.slots = _read_template_slots({int(r["entry"]) for r in cls.rows})
 
     def source_problems(self, rows=None, casts=None):
         return source_spell_problems(
@@ -3577,18 +3653,45 @@ class TrashSpellSourceTest(unittest.TestCase):
     def test_a_scripted_entry_cites_its_script(self):
         """A creature a `script_name` gives an AI runs neither its creature_spells list nor its EventAI
         (CreatureAISelector.cpp:45-46), so its casts live in the script: every ability row of such an entry must
-        name the script line that makes it, not the world table the script overrides."""
+        cite the script line that makes it (the file exists, the line is in bounds, the line or one within three
+        holds the spell id or a constant for it, and the file registers the script), not the world table the
+        script overrides."""
         scripted = {entry for entry, (_, script) in self.ai.items() if script}
         self.assertTrue(scripted, "no trash entry has a script_name: check the core read")
         problems = [
-            "line %s (%s): %s ability %s has script_name %r, so its rows must cite the script line, not %r"
-            % (row["_line"], row["map"], row["entry"], row["key"],
-               self.ai[int(row["entry"])][1], row["source"])
+            "line %s (%s): %s ability %s, script %r: %s (source %r)"
+            % (row["_line"], row["map"], row["entry"], row["key"], self.ai[int(row["entry"])][1], why, row["source"])
             for row in self.rows
             if row["row"] == "ability" and int(row["entry"]) in scripted
-            and not any(re.search(r"\.(cpp|h):\d+", part) for part in row["source"].split(";"))
+            for why in _script_cite_problems(
+                row, self.ai[int(row["entry"])][1], self.slots.get(int(row["entry"]), ()))
         ]
         self.assertEqual([], problems)
+
+    def test_a_script_citation_that_does_not_hold_is_caught(self):
+        row = next(r for r in self.rows if r["row"] == "ability" and int(r["entry"]) == 14750
+                   and int(r["key"]) == 23511)
+        script = self.ai[14750][1]
+        self.assertEqual([], _script_cite_problems(row, script), "the real citation must pass")
+
+        def cited(source):
+            return _script_cite_problems(dict(row, source=source), script)
+
+        table = "sql/base/tw_world_spell_template.sql:18273"
+        jeklik = "src/scripts/dungeons/zulgurub/boss_jeklik.cpp"
+        # 23968 is not cast at boss_jeklik.cpp:509 (the line holds 23511)
+        wrong_spell = _script_cite_problems(
+            dict(row, key="23968", source="sql/base/tw_world_spell_template.sql:18651;%s:509" % jeklik), script)
+        self.assertTrue(wrong_spell and "holds no cast of spell 23968" in wrong_spell[0], wrong_spell)
+        # an unrelated .cpp that exists but does not register the script
+        unrelated = cited("%s;src/game/AI/GenericSpellAI.cpp:154" % table)
+        self.assertTrue(unrelated and "registers script" in unrelated[0], unrelated)
+        # a line past the end of the file
+        self.assertTrue(any("out of bounds" in p for p in cited("%s;%s:99999" % (table, jeklik))))
+        # a file that is not there
+        self.assertTrue(any("does not exist" in p for p in cited("%s;src/scripts/no_such_script.cpp:5" % table)))
+        # only the world table: no script line at all
+        self.assertTrue(cited(table))
 
     def test_an_ability_row_is_a_cast_the_running_ai_makes(self):
         """Every ability row's spell must be a cast the AI the core runs makes: a row whose spell only lives in a
