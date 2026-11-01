@@ -2709,8 +2709,8 @@
       "castMs": 0
     },
     "5568": {
-      "name": "Trample",
-      "castMs": 0
+      "castMs": 0,
+      "name": "Trample"
     },
     "6253": {
       "name": "Backhand",
@@ -2817,8 +2817,8 @@
       "castMs": 0
     },
     "8053": {
-      "name": "Flame Shock",
-      "castMs": 0
+      "castMs": 0,
+      "name": "Flame Shock"
     },
     "1106": {
       "name": "Shadow Bolt",
@@ -2833,16 +2833,16 @@
       "castMs": 0
     },
     "6742": {
-      "name": "Bloodlust",
-      "castMs": 0
+      "castMs": 0,
+      "name": "Bloodlust"
     },
     "8402": {
       "name": "Fireball",
       "castMs": 0
     },
     "22916": {
-      "name": "Uppercut",
-      "castMs": 0
+      "castMs": 0,
+      "name": "Uppercut"
     },
     "13323": {
       "name": "Polymorph",
@@ -3097,8 +3097,8 @@
       "castMs": 0
     },
     "9482": {
-      "name": "Amplify Flames",
-      "castMs": 0
+      "castMs": 0,
+      "name": "Amplify Flames"
     },
     "20545": {
       "name": "Lightning Shield",
@@ -3179,6 +3179,186 @@
     "57102": {
       "name": "Temporal Conflux",
       "castMs": 0
+    },
+    "3356": {
+      "castMs": 0,
+      "name": "Flame Lash"
+    },
+    "6268": {
+      "castMs": 0,
+      "name": "Rushing Charge"
+    },
+    "6533": {
+      "name": "Net",
+      "castMs": 0
+    },
+    "7964": {
+      "castMs": 0,
+      "name": "Smoke Bomb"
+    },
+    "8143": {
+      "castMs": 0,
+      "name": "Tremor Totem"
+    },
+    "8242": {
+      "castMs": 0,
+      "name": "Shield Slam"
+    },
+    "8292": {
+      "castMs": 0,
+      "name": "Chain Bolt"
+    },
+    "8374": {
+      "castMs": 0,
+      "name": "Arcing Smash"
+    },
+    "9143": {
+      "castMs": 0,
+      "name": "Bomb"
+    },
+    "9532": {
+      "castMs": 0,
+      "name": "Lightning Bolt"
+    },
+    "9874": {
+      "castMs": 0,
+      "name": "Self Destruct"
+    },
+    "9941": {
+      "castMs": 0,
+      "name": "Spell Reflection"
+    },
+    "10061": {
+      "castMs": 0,
+      "name": "Summon Obsidian Shard"
+    },
+    "10072": {
+      "castMs": 0,
+      "name": "Splintered Obsidian"
+    },
+    "10132": {
+      "castMs": 0,
+      "name": "Sand Storms"
+    },
+    "10252": {
+      "castMs": 0,
+      "name": "Awaken Earthen Guardians"
+    },
+    "10254": {
+      "castMs": 0,
+      "name": "Stone Dwarf Awaken Visual"
+    },
+    "10258": {
+      "castMs": 0,
+      "name": "Awaken Vault Warder"
+    },
+    "10260": {
+      "castMs": 0,
+      "name": "Reconstruct"
+    },
+    "11892": {
+      "castMs": 0,
+      "name": "Shrink"
+    },
+    "11969": {
+      "castMs": 0,
+      "name": "Fire Nova"
+    },
+    "12747": {
+      "castMs": 0,
+      "name": "Entangling Roots"
+    },
+    "14030": {
+      "name": "Hooked Net",
+      "castMs": 0
+    },
+    "14516": {
+      "castMs": 0,
+      "name": "Strike"
+    },
+    "15584": {
+      "castMs": 0,
+      "name": "Cleave"
+    },
+    "15593": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "15620": {
+      "castMs": 0,
+      "name": "Shoot"
+    },
+    "15667": {
+      "name": "Sinister Strike",
+      "castMs": 0
+    },
+    "15795": {
+      "name": "Throw",
+      "castMs": 0
+    },
+    "15801": {
+      "castMs": 0,
+      "name": "Lightning Bolt"
+    },
+    "15976": {
+      "castMs": 0,
+      "name": "Puncture"
+    },
+    "16006": {
+      "castMs": 0,
+      "name": "Chain Lightning"
+    },
+    "16100": {
+      "castMs": 0,
+      "name": "Shoot"
+    },
+    "18651": {
+      "name": "Multi-Shot",
+      "castMs": 0
+    },
+    "21390": {
+      "castMs": 0,
+      "name": "Multi-Shot"
+    },
+    "21655": {
+      "castMs": 0,
+      "name": "Blink"
+    },
+    "21687": {
+      "castMs": 0,
+      "name": "Toxic Volley"
+    },
+    "21807": {
+      "castMs": 0,
+      "name": "Wrath"
+    },
+    "21808": {
+      "castMs": 0,
+      "name": "Summon Shardlings"
+    },
+    "21832": {
+      "castMs": 0,
+      "name": "Boulder"
+    },
+    "21833": {
+      "castMs": 0,
+      "name": "Goblin Dragon Gun"
+    },
+    "21869": {
+      "castMs": 0,
+      "name": "Repulsive Gaze"
+    },
+    "21909": {
+      "castMs": 0,
+      "name": "Dust Field"
+    },
+    "21968": {
+      "castMs": 0,
+      "name": "Corrupt Forces of Nature"
+    },
+    "29419": {
+      "castMs": 0,
+      "name": "Flash Bomb"
     }
   },
   "creatures": {
@@ -4459,6 +4639,102 @@
     },
     "61575": {
       "name": "Epidamu"
+    },
+    "2748": {
+      "name": "Archaedas"
+    },
+    "4854": {
+      "name": "Grimlok"
+    },
+    "4857": {
+      "name": "Stone Keeper"
+    },
+    "5913": {
+      "name": "Tremor Totem"
+    },
+    "6906": {
+      "name": "Baelog"
+    },
+    "6907": {
+      "name": "Eric \"The Swift\""
+    },
+    "6908": {
+      "name": "Olaf"
+    },
+    "6910": {
+      "name": "Revelosh"
+    },
+    "7023": {
+      "name": "Obsidian Sentinel"
+    },
+    "7076": {
+      "name": "Earthen Guardian"
+    },
+    "7077": {
+      "name": "Earthen Hallshaper"
+    },
+    "7206": {
+      "name": "Ancient Stone Keeper"
+    },
+    "7209": {
+      "name": "Obsidian Shard"
+    },
+    "7226": {
+      "name": "Sand Storm"
+    },
+    "7228": {
+      "name": "Ironaya"
+    },
+    "7291": {
+      "name": "Galgann Firehammer"
+    },
+    "7309": {
+      "name": "Earthen Custodian"
+    },
+    "10120": {
+      "name": "Vault Warder"
+    },
+    "11783": {
+      "name": "Theradrim Shardling"
+    },
+    "12201": {
+      "name": "Princess Theradras"
+    },
+    "12203": {
+      "name": "Landslide"
+    },
+    "12225": {
+      "name": "Celebras the Cursed"
+    },
+    "12236": {
+      "name": "Lord Vyletongue"
+    },
+    "12237": {
+      "name": "Meshlok the Harvester"
+    },
+    "12258": {
+      "name": "Razorlash"
+    },
+    "13282": {
+      "name": "Noxxion"
+    },
+    "13456": {
+      "name": "Noxxion's Spawn"
+    },
+    "13596": {
+      "name": "Rotgrip"
+    },
+    "13601": {
+      "name": "Tinkerer Gizlock"
+    },
+    "13738": {
+      "name": "Veng"
+    },
+    "13739": {
+      "name": "Maraudos"
+    },
+    "13743": {
+      "name": "Corrupt Force of Nature"
     }
   }
 }

@@ -113,6 +113,7 @@
 - New: the boss panel knows the ten Blackrock Depths and seven Lower Blackrock Spire bosses: their abilities with cast windows and targets, the cones and areas they hit, every add each one brings, and a note where the fight has a trick the panel cannot show.
 - New: the boss panel now knows Zul'Farrak and Sunken Temple, all 15 bosses with their abilities, timers, adds and notes.
 - New: the boss panel now knows Stormwind Vault, Karazhan Crypt and the Black Morass, with each boss's abilities, timers, phases, adds and notes.
+- New: the boss panel now knows Uldaman and Maraudon: the Lost Dwarves, the four Stone Keepers, Archaedas and his stone minions, and the nine Maraudon bosses shared by both wings, with their abilities, timers, adds and notes.
 - New: the boss panel now knows Upper Blackrock Spire's bosses — Emberseer, Rend, Gyth with his own breaths and knock-away, the Beast, Drakkisath and Lord Valthalak — with their timers, phases and adds.
 - New: the boss panel now knows the bosses of Scholomance and of both wings of Stratholme, with their abilities, timers, phases, adds and the notes for what the panel cannot see.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
