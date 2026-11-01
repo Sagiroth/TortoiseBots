@@ -16,7 +16,7 @@ int main()
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
     }
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::BankDenied); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoBanker); ++i)
     {
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
@@ -31,6 +31,8 @@ int main()
     CHECK(StateForReason(OrderReason::NeedItems) == OrderState::Waiting);
     CHECK(std::string(ReasonToken(OrderReason::BankDenied)) == "bankdenied");
     CHECK(StateForReason(OrderReason::BankDenied) == OrderState::Working);
+    CHECK(std::string(ReasonToken(OrderReason::NoBanker)) == "nobanker");
+    CHECK(StateForReason(OrderReason::NoBanker) == OrderState::Working);
 
     for (uint8_t i = 0; i <= uint8_t(SupplyStep::Deliver); ++i)
     {

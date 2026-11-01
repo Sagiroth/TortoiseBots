@@ -3,6 +3,7 @@
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
+#include "GuildOrderNeedPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
 #include "GuildOrderSupplyPolicy.h"
 #include "GuildOrderSubOrderPolicy.h"
@@ -13,8 +14,10 @@
 #include "../ai/playerbot/GuildOrderSources.h"
 #include "../ai/playerbot/GuildOrderCraft.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
-#include "../runtime/BotManager.h"
+#include "../ai/playerbot/RandomBotFacade.h"
+#include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../runtime/AltBotService.h"
+#include "../runtime/BotManager.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/RandomBotAccountRegistry.h"
@@ -637,7 +640,8 @@ public:
         // no explicit reason clears it, so the addon never shows a stale
         // denial while the bot farms or buys.
         if (reason == OrderReason::None && step == record.supplyStep && record.supplyItemId == itemId &&
-            (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoSource))
+            (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoBanker ||
+                record.reason == OrderReason::NoSource))
             reason = record.reason;
         // The farm give-up verdict belongs to the farm leg: a sub-order is
         // normal progress, so the addon must not show it as a failure.
@@ -692,7 +696,12 @@ public:
         for (size_t i = 0; same && i < items.size(); ++i)
             same = record.needItems[i].itemId == items[i].itemId && record.needItems[i].count == items[i].count;
         if (same && record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems)
+        {
+            // The denial expired: the bank may have stocked since. A repeat
+            // park re-arms the ten-second lane instead of waiting forever.
+            record.needBankDenied = record.needBankDenied && bankDenied;
             return;
+        }
         record.needItems = items;
         record.state = OrderState::Waiting;
         record.reason = OrderReason::NeedItems;
@@ -901,6 +910,27 @@ public:
         auto it = m_orders.find(botGuidLow);
         if (it != m_orders.end())
             it->second.lastNeedBankCheckMs = nowMs;
+    }
+
+    // A parked need row re-checks the vendor/AH facts on the slow cadence
+    // (the policy header owns the interval); the ten-second bank lane above
+    // keeps its own clock.
+    bool ShouldCheckNeedLadder(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() ||
+            !(it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems))
+            return false;
+        return NeedLadderCheckDue(nowMs, it->second.lastNeedLadderCheckMs);
+    }
+
+    void MarkNeedLadderChecked(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.lastNeedLadderCheckMs = nowMs;
     }
 
     bool ShouldScanProgress(uint32_t botGuidLow, uint32_t nowMs)
@@ -1281,6 +1311,8 @@ public:
         bool bankChecked = false;    // a fresh bank look came with this tick
         bool needItemAvailable = false;
         bool needItemInBank = false;
+        bool needVendorReady = false; // a parked need item is vendor-unlimited and affordable now
+        bool needAhReady = false;     // a parked need item is newly listed on the AH
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -1321,11 +1353,18 @@ public:
         bool wasStocked = record.state == OrderState::Stocked;
 
         if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
-            in.needItemAvailable)
+            (in.needItemAvailable || in.needVendorReady || in.needAhReady))
         {
+            // A parked need row re-runs the ladder when its facts changed: a
+            // vendor-unlimited item the new rule buys, a fresh AH listing, or
+            // a restocked bank the denial flag had excluded. Bags stays the
+            // player-delivered lane; the map thread re-plans the leg below.
+            NeedResumeLeg leg = NeedResumeLegFor(in.needVendorReady, in.needItemInBank, in.needAhReady);
             record.state = OrderState::Working;
             record.reason = OrderReason::None;
-            record.supplyStep = in.needItemInBank ? SupplyStep::Bank : SupplyStep::Bags;
+            record.supplyStep = leg == NeedResumeLeg::Vendor ? SupplyStep::Farm :
+                (leg == NeedResumeLeg::Bank ? SupplyStep::Bank :
+                (leg == NeedResumeLeg::AuctionHouse ? SupplyStep::AuctionHouse : SupplyStep::Bags));
             record.needItems.clear();
             record.needWhispered = false;
             record.needBankDenied = false;
@@ -1646,6 +1685,7 @@ private:
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
         uint32_t lastNeedBankCheckMs = 0;
+        uint32_t lastNeedLadderCheckMs = 0;
         uint32_t lastProgressScanMs = 0;
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
@@ -1825,6 +1865,35 @@ uint32_t BankItemCount(uint32_t guildId, uint32_t itemId)
         return 0;
     Field* fields = result->Fetch();
     return fields ? fields[0].GetUInt32() : 0;
+}
+
+// A parked need item the vendor leg can buy now: a vendor sells it without
+// limit (template rows included, through the populated vendor sets) and the
+// bot holds one bundle's price. Offline bots never qualify: no purse to
+// read, and the vendor trip needs them online anyway.
+bool NeedVendorAffordable(Player* bot, bool online, NeedItem const& need)
+{
+    if (!online || !bot || !need.itemId || !need.count)
+        return false;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(need.itemId);
+    if (!proto || !::ai::ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(proto))
+        return false;
+    uint32_t buyCount = proto->BuyCount ? proto->BuyCount : 1;
+    uint32_t bundles = (need.count + buyCount - 1) / buyCount;
+    if (!bundles)
+        return false;
+    uint64_t price = uint64_t(proto->BuyPrice) * bundles;
+    return price > 0 && bot->GetMoney() >= price;
+}
+
+// A parked need item with a fresh AH listing: any buyout listing the mirror
+// holds. Price and affordability stay with the buy action; this only wakes
+// the row so the ladder re-tries the leg.
+bool NeedAhListed(uint32_t itemId)
+{
+    if (!itemId)
+        return false;
+    return !sRandomBotFacade.GetAhPrices(itemId).empty();
 }
 
 // Depth of the bot's branch: top-level orders count 1, each parent link adds
@@ -2563,6 +2632,30 @@ void Update(uint32_t diff)
                         in.needItemInBank = true;
                         break;
                     }
+            }
+            // A parked need row re-runs the ladder when its facts changed: a
+            // vendor-unlimited item the new rule buys, or a fresh AH listing.
+            // Same ten-minute cadence as the bank lane above (plus the first
+            // scan after the row parked), so the player hears no new whisper:
+            // Tick only clears the already-sent list on a resume.
+            if (!in.needItemAvailable && OrderStore::Instance().ShouldCheckNeedLadder(guidLow, now))
+            {
+                OrderStore::Instance().MarkNeedLadderChecked(guidLow, now);
+                for (NeedItem const& need : snapshot.needItems)
+                {
+                    if (!need.itemId || !need.count)
+                        continue;
+                    if (NeedVendorAffordable(bot, online, need))
+                    {
+                        in.needVendorReady = true;
+                        break;
+                    }
+                    if (!in.needVendorReady && NeedAhListed(need.itemId))
+                    {
+                        in.needAhReady = true;
+                        break;
+                    }
+                }
             }
         }
         else if (snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub &&
