@@ -190,6 +190,73 @@ assert.strictEqual(ghosts.length, 1, "a vanished boss keeps its panel");
 assert.strictEqual(ghosts[0].phaseAt.fight, undefined, "a ghost row adds no phase start");
 assert.strictEqual(run("BP.model(null, { entry: 1 }, [], 0, 0)"), null, "no table: no panel and no throw");
 
+// ---- one panel per boss: the panel merges an alias entry and same-entry copies, latched by the boss entry -----------
+const panelsSrc = grab("cmdBossPanels");
+assert.ok(panelsSrc.includes("panel.bossRows("), "the panel rows are one per boss");
+assert.ok(panelsSrc.includes("phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + b.entry"),
+  "the phase latch is keyed by the boss entry, not the row's");
+assert.ok(panelsSrc.includes("bossFor(table, x.entry) !== b"), "a copy is not an add of itself");
+assert.ok(panelsSrc.includes("copies: copies"), "the panel says how many copies are in view");
+const liveSrc = grab("cmdLiveBossPanels");
+assert.ok(/const b = .*bossFor\(cmdBossTable\(\), m\.entry\)/.test(liveSrc), "the live key is the resolved boss entry");
+assert.ok(liveSrc.includes("const key = b ? b.entry : m.entry;"), "the resolved entry is what present and the memory use");
+assert.ok(liveSrc.includes("present[key] = true") && liveSrc.includes("mem[key] ="), "present and the vanished memory share that key");
+const mobViewSrc = grab("cmdBossMobView");
+assert.ok(mobViewSrc.includes("(bind.combat ? 'live' : 'idle') + '|' + b.entry"), "the map's phase memory is keyed by the boss entry");
+ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [{
+  entry: 5001, name: "Two Forms", map: 309, aliases: [5002], abilities: [], phases: [], adds: [], notes: [] }] });
+vm.runInContext("var cmdBossSeen = {};", ctx);
+vm.runInContext([grab("cmdBossPanels"), grab("cmdLiveBossPanels"), grab("cmdBossMobView")].join("\n"), ctx);
+const aliasLive = run("cmdBossSeen['Alias'] = { '5001': { name: 'Two Forms', seenAt: 0 } };" +
+  " cmdLiveBossPanels({ commander: 'Alias', combat: { fight_ms: 10000 }, bots: [{ id: '1' }], mobs:" +
+  " [{ id: '5', entry: 5002, name: 'Two Forms', rank: 'b', reaction: 'h', victim: '1', hp: 60, au: [], uf: '' }] })");
+assert.strictEqual(aliasLive.length, 1, "the alias adds no second panel");
+assert.strictEqual(aliasLive[0].boss.entry, 5001);
+assert.ok(!aliasLive[0].flagWords.includes("not visible"), "the boss as 5002 marks 5001 present, so no not-visible panel");
+
+// A finished fight's replay: the two forms of Thekal are one unit (one panel, no x), an engaged count is the copies.
+ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [
+  { entry: 14599, name: "Thekal", map: 309, aliases: [14509], abilities: [], phases: [], adds: [], notes: [] },
+  { entry: 15263, name: "Skeram", map: 309, abilities: [], phases: [], adds: [], notes: [] },
+] });
+const replayPanels = run("(function () {" +
+  " var f = { id: 'F1', boss: 14599, boss_name: 'Thekal', start: 1000, dur_ms: 20000, log: []," +
+  "   engaged: [{ e: 14599, n: 'Thekal', c: 1 }, { e: 14509, n: 'Thekal', c: 1 }] };" +
+  " return cmdBossPanels({ commander: 'Replay', combat: { fight_ms: 20000 }, bots: [] }, f, [], f.log, 1000000, 1020000);" +
+  "})()");
+assert.strictEqual(replayPanels.length, 1, "Thekal's two forms are one replay panel: " + JSON.stringify(replayPanels.map((p) => p.boss.entry)));
+assert.strictEqual(replayPanels[0].copies, 1, "the two entries of one Thekal are not two copies");
+assert.ok(!ctx.BP.render(ctx.BOSS_TABLE, replayPanels[0], { open: true }).includes("\u00d7"), "one Thekal has no copy mark");
+const skeramPanels = run("(function () {" +
+  " var f = { id: 'F2', boss: 15263, boss_name: 'Skeram', start: 1000, dur_ms: 20000, log: []," +
+  "   engaged: [{ e: 15263, n: 'Skeram', c: 3 }] };" +
+  " return cmdBossPanels({ commander: 'Replay', combat: { fight_ms: 20000 }, bots: [] }, f, [], f.log, 1000000, 1020000);" +
+  "})()");
+assert.strictEqual(skeramPanels.length, 1, "one Skeram fight is one panel");
+assert.strictEqual(skeramPanels[0].copies, 3, "the engaged count is the replay's copies");
+assert.ok(ctx.BP.render(ctx.BOSS_TABLE, skeramPanels[0], { open: true }).includes("\u00d73"), "three images are marked");
+
+// The map's phase latch moves only from the row the panel follows: an image's lower hp must not rewrite the original's phase.
+ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [{
+  entry: 5003, name: "Copies", map: 309, abilities: [], adds: [], notes: [],
+  phases: [{ name: "low", rule: "hp<20", order: 1 }, { name: "fight", rule: "start", order: 2 }] }] });
+const copyRows = JSON.stringify([{ id: "5", entry: 5003, name: "Copies", rank: "b", hp: 60, au: [] },
+  { id: "9", entry: 5003, name: "Copies", rank: "b", hp: 10, au: [] }]);
+const latchFromImage = run("(function () {" +
+  " Object.keys(cmdBossPhase).forEach(function (k) { delete cmdBossPhase[k]; });" +
+  " var m = " + copyRows + ";" +
+  " cmdBossMobView({ commander: 'Copies', combat: { fight_ms: 1000 }, mobs: m }, m[1]);" +
+  " return cmdBossPhase['Copies|live|5003'] || null;" +
+  "})()");
+assert.strictEqual(latchFromImage, null, "an image's own hp does not move the shared latch");
+const latchFromOriginal = run("(function () {" +
+  " var m = " + copyRows + ";" +
+  " var v = cmdBossMobView({ commander: 'Copies', combat: { fight_ms: 1000 }, mobs: m }, m[0]);" +
+  " return [v.phase, cmdBossPhase['Copies|live|5003'] || null];" +
+  "})()");
+assert.deepStrictEqual(JSON.parse(JSON.stringify(latchFromOriginal)), ["fight", "fight"], "the original moves it");
+
+
 // ---- the hover box lists the same chips -------------------------------------------------------------------------------
 const botBox = ctx.UnitInfo.describeBot({ name: "Healbot", role: "healer", hp: 80, max_hp: 100, db: [{ id: 24328, n: "Corrupted Blood", st: 2, l: 8000, dt: "d" }], mc: 1, marked: "Threatening Gaze" }, {});
 const botRows = JSON.stringify(botBox.rows);

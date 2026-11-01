@@ -42,6 +42,8 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
                             b=order (1 = checked first); a `start` rule always
                             matches and must be the last one (the pull phase)
     add      key=creature   a=summon|linked|ward|totem|trigger   b=kill priority (0 none)
+    alias    key=creature entry  a..d empty  (the boss in another form: the same panel;
+                            one per entry: never a boss and never an add)
     note     a=text         a mechanic the dashboard cannot see
 
 `source` is one or more `path:line[-line]` citations separated by ';'. Script
@@ -103,7 +105,7 @@ DEFAULT_KB = Path(
 CSV_COLUMNS = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
 RAID_COLUMNS = ["key", "map_id", "name"]
 CODE_COLUMNS = ["map", "boss", "key", "need", "level", "name", "text", "source"]
-ROW_KINDS = {"ability", "phase", "add", "note"}
+ROW_KINDS = {"ability", "phase", "add", "alias", "note"}
 TARGETS = {"victim", "random", "self", "aoe", "ally"}
 ADD_ROLES = {"summon", "linked", "ward", "totem", "trigger"}
 NEEDS = (
@@ -714,6 +716,10 @@ def check_citations(row, citations, core, kb, cache):
         entry = int(row["key"])
         if not _has_id(flat, entry, consts):
             yield f"{_row_id(row)}: cited lines do not define creature {entry} (id or constant name)"
+    elif kind == "alias":
+        entry = int(row["key"])
+        if not _has_id(flat, entry, consts):
+            yield f"{_row_id(row)}: cited lines do not define creature {entry}"
 
 
 # --------------------------------------------------------------------------
@@ -755,6 +761,7 @@ def make_bosses(rows, names, raids=None):
                 "abilities": [],
                 "phases": [],
                 "adds": [],
+                "aliases": [],
                 "notes": [],
             }
             order.append(entry)
@@ -841,6 +848,14 @@ def make_bosses(rows, names, raids=None):
                 }
             )
 
+        elif kind == "alias":
+            alias_text = row["key"]
+            if not re.fullmatch(r"\d+", alias_text):
+                raise DataError(f"{_row_id(row)}: alias key must be a creature entry")
+            if row["a"] or row["b"] or row["c"] or row["d"]:
+                raise DataError(f"{_row_id(row)}: alias rows use only key")
+            boss["aliases"].append(int(alias_text))
+
         else:  # note
             if not row["a"]:
                 raise DataError(f"{_row_id(row)}: note text is empty")
@@ -849,6 +864,24 @@ def make_bosses(rows, names, raids=None):
             boss["notes"].append(row["a"])
 
     # Cross-row rules that need the whole boss table.
+    alias_owner = {}
+    add_owner = {}
+    for entry, boss in bosses.items():
+        for add_row in boss["adds"]:
+            add_owner.setdefault(add_row["entry"], entry)
+    for entry, boss in bosses.items():
+        seen_aliases = set()
+        for alias in boss["aliases"]:
+            if alias in seen_aliases:
+                raise DataError(f"boss {entry}: duplicate alias {alias}")
+            seen_aliases.add(alias)
+            if alias in bosses:
+                raise DataError(f"boss {entry}: alias {alias} is itself a boss")
+            if alias in add_owner:
+                raise DataError(f"boss {entry}: alias {alias} is an add of boss {add_owner[alias]}")
+            if alias in alias_owner and alias_owner[alias] != entry:
+                raise DataError(f"boss {entry}: alias {alias} already names boss {alias_owner[alias]}")
+            alias_owner[alias] = entry
     for entry, boss in bosses.items():
         ability_ids = set(ability_rows[entry])
         phases = sorted(boss["phases"], key=lambda p: p["order"])
@@ -1189,7 +1222,7 @@ def validate(args):
 
     if args.db:
         spell_ids = {int(r["key"]) for r in rows if r["row"] == "ability"}
-        creature_ids = {int(r["key"]) for r in rows if r["row"] == "add"}
+        creature_ids = {int(r["key"]) for r in rows if r["row"] in ("add", "alias")}
         ground_ids = {
             int(r["key"]) for r in rows if r["row"] == "ability" and "ground" in r["d"].split(";")
         }

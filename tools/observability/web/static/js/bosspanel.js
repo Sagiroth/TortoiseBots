@@ -140,6 +140,7 @@
       abilities: arr(first(row.abilities, row.spells, row.ability)).map(ability).filter(Boolean),
       phases: arr(first(row.phases, row.phaseRows, row.phase)).map(phase).filter(Boolean),
       adds: arr(first(row.adds, row.add)).map(add).filter(Boolean),
+      aliases: arr(row.aliases).map(num).filter((e) => e !== null),
       notes: arr(first(row.notes, row.note)).map(note).filter(Boolean),
     };
   }
@@ -166,6 +167,8 @@
     });
     const byEntry = {};
     bosses.forEach((b) => { if (!byEntry[b.entry]) byEntry[b.entry] = b; });
+    // An alias is the boss in another form (a mid-fight entry change); a real boss entry always wins over one.
+    bosses.forEach((b) => b.aliases.forEach((alias) => { if (!byEntry[alias]) byEntry[alias] = b; }));
     const bySpell = {};
     const bySpellAll = {};
     bosses.forEach((b) => b.abilities.forEach((a, i) => {
@@ -212,6 +215,39 @@
     const adds = table.addsByMap && table.addsByMap[mid];
     if (!adds || !adds[entry]) return mob.rank;
     return table.byEntry && table.byEntry[entry] ? mob.rank : "e";
+  }
+  // Guids are decimal strings of any length: compare the length first, then the digits, and a row with no guid last.
+  function guidLess(a, b) {
+    const x = a == null ? "" : String(a), y = b == null ? "" : String(b);
+    if (!x || !y) return !!x;
+    return x.length < y.length || (x.length === y.length && x < y);
+  }
+  // A row's units of the boss: an alias row is the same unit in another form and adds no copy; an id-less row (a finished
+  // fight's engaged entry) carries the report's own count; every row with a guid is one unit.
+  function unitsOf(m, b) {
+    if (num(m.entry) !== b.entry) return 0;
+    if (m.id != null && String(m.id) !== "") return 1;
+    const c = num(m.c);
+    return c !== null && c > 0 ? c : 1;
+  }
+  // The report rows as one row per table boss: an alias or a same-entry copy joins its boss; the row kept is the one with the
+  // lowest guid (the original spawn), and copies counts the units of the boss itself.
+  function bossRows(table, rows) {
+    const t = table === undefined ? cache : table;
+    if (!t) return [];
+    const byBoss = {}, out = [];
+    arr(rows).forEach((m) => {
+      const b = m ? bossFor(t, m.entry) : null;
+      if (!b) return;
+      let item = byBoss[b.entry];
+      if (!item) {
+        item = byBoss[b.entry] = { boss: b, row: m, copies: 0 };
+        out.push(item);
+      }
+      item.copies += unitsOf(m, b);
+      if (guidLess(m.id, item.row.id)) item.row = m;
+    });
+    return out;
   }
   function abilityBySpell(table, sid, casterEntry) {
     const t = table === undefined ? cache : table;
@@ -413,6 +449,7 @@
       adds: adds,
       notes: b.notes.slice(),
       hp: num(mob.hp),
+      copies: num(mob.copies) > 0 ? num(mob.copies) : 1,
       abilities: abilities,
       mark: markIds(t),
     };
@@ -520,8 +557,11 @@
     const covLink = o.coverage && b.mapKey
       ? '<a class="fd-boss-cov" href="#/coverage/' + e(encodeURIComponent(b.mapKey)) + "?boss=" + e(b.entry) + '">coverage</a>'
       : "";
+    const copies = panel.copies > 1
+      ? '<span class="fd-boss-copies" title="' + e(panel.copies + " in view; the panel follows the original") + '">×' + e(panel.copies) + "</span>"
+      : "";
     return '<details class="fd-boss-panel" data-entry="' + e(b.entry) + '"' + (o.open ? " open" : "") + ">"
-      + '<summary class="fd-boss-head"><span class="fd-boss-name">' + e(b.name) + "</span>" + (" " + bar) + phase
+      + '<summary class="fd-boss-head"><span class="fd-boss-name">' + e(b.name) + copies + "</span>" + (" " + bar) + phase
       + covLink
       + '<span class="fd-boss-seen">' + (inPhase.some(seen) ? "seen " + (inPhase.filter(seen).length) + "/" + inPhase.length : "") + "</span></summary>"
       + '<div class="fd-boss-body">'
@@ -547,8 +587,6 @@
     if (!t) return [];
     const byId = {};
     list.forEach((m) => { if (m && m.id != null) byId[String(m.id)] = m; });
-    const bossEntry = {};
-    t.bosses.forEach((b) => { bossEntry[b.entry] = b; });
     const out = [];
     list.forEach((m) => {
       if (!m || !m.rank && !m.entry) return;
@@ -556,12 +594,12 @@
       let boss = sum && byId[sum] ? byId[sum] : null;
       if (!boss && m.entry) {
         for (const b of t.bosses) {
-          if (b.adds.some((a) => a.entry === num(m.entry))) { boss = list.find((x) => x && num(x.entry) === b.entry); break; }
+          if (b.adds.some((a) => a.entry === num(m.entry))) { boss = list.find((x) => x && bossFor(t, x.entry) === b); break; }
         }
       }
       if (!boss || boss === m || !boss.entry) return;
       if (boss.rank !== "b") return;
-      const row = (bossEntry[num(boss.entry)] || { adds: [] }).adds.find((a) => a.entry === num(m.entry));
+      const row = (bossFor(t, boss.entry) || { adds: [] }).adds.find((a) => a.entry === num(m.entry));
       out.push({ from: m, to: boss, priority: row ? row.priority : 0, role: row ? row.role : "" });
     });
     return out;
@@ -581,7 +619,7 @@
   }
 
   const api = {
-    normalize, load, data, raw, bossFor, rankFor, abilityBySpell, phaseOf, markIds, hpTicks,
+    normalize, load, data, raw, bossFor, rankFor, bossRows, abilityBySpell, phaseOf, markIds, hpTicks,
     model, render, flagsText, addLinks, debuffColor, markedBy,
     FLAG_WORD, _esc: esc,
   };
