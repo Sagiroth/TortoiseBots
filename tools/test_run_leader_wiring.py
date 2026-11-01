@@ -672,9 +672,19 @@ class RunLeaderWiringTest(unittest.TestCase):
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("bool const standPull = pullStep && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step];", read)
         self.assertIn("float const patrolSeeYd = standPull ? kStandPullSeeYd : kPatrolSeeYd;", read)
-        self.assertIn("step->kind == ai::PlanStepKind::Pull && TortoiseBots::DungeonRun::StandPullPackInShot(f))\n"
+        self.assertIn("step->kind == ai::PlanStepKind::Pull &&\n"
+                      "        (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))\n"
                       "        ReadStandPatrols(lead, f);", read)
         self.assertLess(read.index("ReadPullStand(slot, lead, f);"), read.index("ReadStandPatrols(lead, f);"))
+        # A formation's walk is judged by its ORIGINAL leader: the promoted temporary leader of a waypoint formation
+        # walks the same path with its own default movement left IDLE (the core's OnMemberDied).
+        walk = body(COMMANDS, "bool RunWalksPatrol(Creature* creature)", "\n}\n")
+        self.assertIn("if (creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE)", walk)
+        self.assertIn("if (!group || !group->IsFormation())", walk)
+        self.assertIn("Creature* const leader = creature->GetMap()->GetCreature(group->GetLeaderGuid());", walk)
+        self.assertIn("if (!leader || !leader->IsAlive())", walk)
+        self.assertIn("Creature* const original = creature->GetMap()->GetCreature(group->GetOriginalLeaderGuid());", walk)
+        self.assertIn("return original && original->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;", walk)
         # The pack is its own formations (DungeonRun::ScopeStandPullFacts), scoped on the tick's facts right after the read,
         # with the corpses of its spawn-owned members.
         self.assertIn("ReadRunFacts(slot, lead, bots, facts, binding->raid);\n"
