@@ -505,6 +505,7 @@ bool OutNumberedTrigger::IsActive()
     // 30 s (Oct 2026 roster poll, 571 deaths). bot->GetAttackers() rather than
     // the "attackers" value, which also shares nearby players' targets.
     uint32 attackerCount = 0;
+    bool hopelessSingle = false;
     for (Unit* attacker : bot->GetAttackers())
     {
         Creature* creature = attacker ? attacker->ToCreature() : nullptr;
@@ -523,17 +524,23 @@ bool OutNumberedTrigger::IsActive()
             foePower += std::max(100 + 10 * dLevel, dLevel * 200) * healthMod;
             ++attackerCount;
         }
+        // A lone mob far above the bot is a lost fight however it started
+        // (revenge answers it uncapped): count it as outnumbered so the flee
+        // below fires instead of fighting to the death. Players excluded.
+        if (ai::IsHopelessSingleAttacker(false, creature->GetLevel(), botLevel))
+            hopelessSingle = true;
     }
 
-    // Outnumbered means more than one: a pool bot does not run from a single
-    // mob. Its flee cannot outpace the mob (median 0 yd covered, Oct 2026
-    // poll), so breaking off a one-on-one only stops the swings - the weights
-    // above made any mob two levels up "outnumber" a bot under 70% health.
+    // Outnumbered means more than one, or one hopeless one: a pool bot's flee
+    // cannot outpace a fair mob (median 0 yd covered, Oct 2026 poll), but
+    // against a +6 mob standing still to fight is certain death while running
+    // at least trades on the mob's leash and nearby guards. Breaking off a
+    // fair one-on-one still only stops the swings - the weights above made
+    // any mob two levels up "outnumber" a bot under 70% health.
     // The genuine near-death escape stays with the panic / critical health
     // triggers.
-    if (!foePower || attackerCount < 2)
+    if (!foePower || (attackerCount < 2 && !hopelessSingle))
         return false;
-
     for (auto & helper : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get())
     {
         Unit* player = ai->GetUnit(helper);
