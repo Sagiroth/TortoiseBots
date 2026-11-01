@@ -90,6 +90,15 @@ class RaidConfigWiringTest(unittest.TestCase):
         # With the lead bot dead the anchor the attackers are read around is one of the boss fight's off-tanks, then
         # one of the trash fight's, then any living bot on its map.
         anchor = body(code, "Player* RaidGuardAnchor(Player* lead,", "\n}\n")
+        # ... but first, with the lead bot dead, the member the fight is around (an off-tank in combat, else a member
+        # with attackers: DungeonRun::DeadLeadGuardAnchor), never the first off-tank in the list: an idle one far off
+        # hid the loose mobs. The first-in-list loops stay as the fallback when nobody fights.
+        self.assertIn("DeadLeadGuardAnchor(f)", anchor)
+        self.assertLess(anchor.index("DeadLeadGuardAnchor(f)"), anchor.index("f.raid.bossOffTanksAlive"))
+        # ... and the off-tanks enrolled with the lead bot dead are only those in the fight, dropped once the
+        # members are read and before the guard read asks whether any is alive.
+        self.assertIn("if (f.raid.on && !lead->IsAlive())\n        TortoiseBots::DungeonRun::DropIdleDeadLeadOffTanks(f);", code)
+        self.assertLess(code.index("DropIdleDeadLeadOffTanks(f);"), code.index("ReadGuardFacts(lead, bots, f,\n"))
         self.assertLess(anchor.index("f.raid.bossOffTanksAlive"), anchor.index("f.raid.offTanksAlive"))
         self.assertLess(anchor.index("f.raid.offTanksAlive"), anchor.rindex("for (Player* bot : bots)"))
 

@@ -22116,6 +22116,81 @@ static void TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead()
     CHECK(GuardReadMode(false, false, true, false) == GuardRead::RaidAnchor);  // a raid's boss fight: unchanged
 }
 
+// F7 round 4: with the lead bot dead the guard's anchor is chosen from the fight, never first-in-list. A member at x
+// (Mem puts it on the x axis), in combat or not, with `attackers` units on it.
+static MemberFact FightMem(const std::string& name, float x, bool inCombat, std::uint32_t attackers)
+{
+    MemberFact m = Mem(name, x);
+    m.inCombat = inCombat;
+    m.attackers = attackers;
+    return m;
+}
+
+static Facts DeadLeadFightFacts()
+{
+    Facts f;
+    f.leadAlive = false;
+    f.raid.on = true;
+    f.raid.offTanksAlive = {"OffFar", "OffNear"};
+    return f;
+}
+
+static void TestDeadLeadAnchorIsTheOffTankInTheFight()
+{
+    Facts f = DeadLeadFightFacts();
+    // The first off-tank stands 200 yd off, idle; the second is in combat among two attacked healers.
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, true, 1), FightMem("Healy", 0, true, 2),
+        FightMem("Priesty", 20, true, 1)};
+    int pick = DeadLeadGuardAnchor(f);
+    CHECK(pick >= 0 && f.members[pick].name == "OffNear");
+    // Two off-tanks in combat: the one with more attacked members within kGuardYd.
+    f.members[0] = FightMem("OffFar", 200, true, 1);
+    f.members.push_back(FightMem("Far2", 210, true, 1));
+    f.members.push_back(FightMem("Far3", 205, true, 1));
+    f.members.push_back(FightMem("Far4", 195, true, 1));
+    pick = DeadLeadGuardAnchor(f);
+    CHECK(f.members[pick].name == "OffFar");
+}
+
+static void TestDeadLeadAnchorFallsToTheMemberWithAttackers()
+{
+    Facts f = DeadLeadFightFacts();
+    // No off-tank in combat: the member with attackers that has the most other attacked members near it.
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Lone", 100, true, 1),
+        FightMem("Healy", 0, true, 2), FightMem("Priesty", 20, true, 1), FightMem("Mager", 30, true, 1)};
+    int const pick = DeadLeadGuardAnchor(f);
+    CHECK(pick >= 0 && f.members[pick].name == "Healy");
+}
+
+static void TestDeadLeadAnchorNobodyFightingIsTheOldFallback()
+{
+    Facts f = DeadLeadFightFacts();
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Healy", 0, false, 0)};
+    CHECK(DeadLeadGuardAnchor(f) == -1);
+    // A member on another map is no part of the fight.
+    f.members.push_back(FightMem("Away", 1000, true, 3));
+    CHECK(DeadLeadGuardAnchor(f) == -1);
+}
+
+static void TestDeadLeadOffTanksMustBeInTheFight()
+{
+    Facts f = DeadLeadFightFacts();
+    f.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0), FightMem("Healy", 0, true, 2)};
+    DropIdleDeadLeadOffTanks(f);
+    // The far idle one goes; the idle one within kGuardYd of an attacked healer stays.
+    CHECK(f.raid.offTanksAlive.size() == 1 && f.raid.offTanksAlive[0] == "OffNear");
+    // In combat anywhere keeps it.
+    Facts g = DeadLeadFightFacts();
+    g.members = {FightMem("OffFar", 200, true, 1), FightMem("OffNear", 300, false, 0), FightMem("Healy", 0, true, 2)};
+    DropIdleDeadLeadOffTanks(g);
+    CHECK(g.raid.offTanksAlive.size() == 1 && g.raid.offTanksAlive[0] == "OffFar");
+    // Nobody fighting: none is kept.
+    Facts h = DeadLeadFightFacts();
+    h.members = {FightMem("OffFar", 200, false, 0), FightMem("OffNear", 10, false, 0)};
+    DropIdleDeadLeadOffTanks(h);
+    CHECK(h.raid.offTanksAlive.empty());
+}
+
 // The facts as the glue reads them with the lead bot dead (GuardRead::RaidAnchor): leadAlive, leadIsTank and
 // leadStaying all false, the attackers' distance from the anchor. The boss on the healer 55 yd away (past kGuardYd,
 // inside kRaidBossGuardYd) goes to an off-tank at once.
@@ -26608,6 +26683,10 @@ int main()
     TestRaidBossGuardReadModes();
     TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead();
     TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
+    TestDeadLeadAnchorIsTheOffTankInTheFight();
+    TestDeadLeadAnchorFallsToTheMemberWithAttackers();
+    TestDeadLeadAnchorNobodyFightingIsTheOldFallback();
+    TestDeadLeadOffTanksMustBeInTheFight();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();

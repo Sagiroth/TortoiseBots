@@ -12715,6 +12715,90 @@ inline bool RaidTrashOffTanks(const Run& r, const Facts& f)
     return RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty();
 }
 
+// With the lead bot dead the raid's fight is wherever its members are, so the guard's anchor (the glue's
+// RaidGuardAnchor) and the off-tanks that count are chosen from the fight itself, never first-in-list: an idle
+// off-tank far off hid the loose mobs (Codex round 2). Facts::members holds the living ones; a member on another map
+// (yd 1000) or outside the plan's map is no part of the fight.
+constexpr float kMemberOtherMapYd = 1000.0f; // MemberFact::yd of a bot on another map
+inline bool FightMember(const MemberFact& m)
+{
+    return m.yd < kMemberOtherMapYd && !m.offPlanMap;
+}
+
+// How many of the other fight members that have attackers stand within kGuardYd of members[i].
+inline std::uint32_t AttackedMembersNear(const std::vector<MemberFact>& members, std::size_t i)
+{
+    std::uint32_t n = 0;
+    for (std::size_t j = 0; j < members.size(); ++j)
+    {
+        if (j == i || !FightMember(members[j]) || members[j].attackers == 0)
+            continue;
+        const float dx = members[j].x - members[i].x, dy = members[j].y - members[i].y, dz = members[j].z - members[i].z;
+        if (dx * dx + dy * dy + dz * dz <= kGuardYd * kGuardYd)
+            ++n;
+    }
+    return n;
+}
+
+// The member the guard reads the raid's attackers around while the lead bot is dead: (1) an off-tank (RaidFacts::
+// offTanksAlive or bossOffTanksAlive) in combat, the one with the most attacked members within kGuardYd; else (2) the
+// member with attackers that has the most other attacked members within kGuardYd; else -1 (nobody fights: the glue's
+// old fallback). A tie goes to the first in the list. The index into Facts::members.
+inline int DeadLeadGuardAnchor(const Facts& f)
+{
+    int best = -1;
+    std::uint32_t bestN = 0;
+    for (std::size_t i = 0; i < f.members.size(); ++i)
+    {
+        const MemberFact& m = f.members[i];
+        bool offTank = false;
+        for (const std::string& n : f.raid.offTanksAlive)
+            offTank = offTank || n == m.name;
+        for (const std::string& n : f.raid.bossOffTanksAlive)
+            offTank = offTank || n == m.name;
+        if (!FightMember(m) || !offTank || !m.inCombat)
+            continue;
+        const std::uint32_t n = AttackedMembersNear(f.members, i);
+        if (best < 0 || n > bestN)
+        {
+            best = static_cast<int>(i);
+            bestN = n;
+        }
+    }
+    if (best >= 0)
+        return best;
+    for (std::size_t i = 0; i < f.members.size(); ++i)
+    {
+        if (!FightMember(f.members[i]) || f.members[i].attackers == 0)
+            continue;
+        const std::uint32_t n = AttackedMembersNear(f.members, i);
+        if (best < 0 || n > bestN)
+        {
+            best = static_cast<int>(i);
+            bestN = n;
+        }
+    }
+    return best;
+}
+
+// With the lead bot dead the trash fight's off-tanks (RaidFacts::offTanksAlive, read raid-wide on its map) are only
+// those in the fight: in combat, or within kGuardYd of a living member that has attackers. The rest are dropped, so
+// an idle off-tank far from the fight neither takes the pick-ups nor switches the guard's read on.
+inline void DropIdleDeadLeadOffTanks(Facts& f)
+{
+    std::vector<std::string> kept;
+    for (const std::string& name : f.raid.offTanksAlive)
+    {
+        bool keep = false;
+        for (std::size_t i = 0; i < f.members.size(); ++i)
+            if (f.members[i].name == name)
+                keep = FightMember(f.members[i]) && (f.members[i].inCombat || AttackedMembersNear(f.members, i) > 0);
+        if (keep)
+            kept.push_back(name);
+    }
+    f.raid.offTanksAlive = kept;
+}
+
 // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules: a boss step, or a boss of the plan engaged on any
 // step (RaidTrashFight's other side), never in a hold or an event. Once one, the fight stays one (Run::raidBossFight,
 // set by TickBody) though its boss turns unattackable for a phase (EngagedPlanBoss). Its guard is RaidGuardTick and its

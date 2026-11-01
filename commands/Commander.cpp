@@ -8022,12 +8022,19 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
 }
 
 // Whose distance, attack rules and friendliness a raid fight's attackers are read by (ReadGuardFacts,
-// AddPlayerAttackers): the lead bot, or with it dead its first living off-tank in range (the boss fight's, else the
-// trash fight's), else any living bot on its map. Null when none is.
+// AddPlayerAttackers): the lead bot, or with it dead the member the fight is around (DungeonRun::DeadLeadGuardAnchor:
+// an off-tank in combat, else a member with attackers), else the old fallback: its first living off-tank in range (the
+// boss fight's, else the trash fight's), else any living bot on its map. Null when none is.
 Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
 {
     if (lead->IsAlive())
         return lead;
+    int const fighting = TortoiseBots::DungeonRun::DeadLeadGuardAnchor(f);
+    if (fighting >= 0)
+        for (Player* bot : bots)
+            if (bot->GetName() == f.members[fighting].name && bot->IsAlive() && bot->IsInWorld() &&
+                bot->GetMap() == lead->GetMap())
+                return bot;
     for (std::string const& name : f.raid.bossOffTanksAlive)
         for (Player* bot : bots)
             if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
@@ -9143,6 +9150,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 raidManas.push_back(mana);
         }
     }
+    // With the lead bot dead the off-tanks above are raid-wide on its map: keep those in the fight (in combat, or within
+    // kGuardYd of a member with attackers), so an idle one far off does not anchor the guard's read
+    // (DungeonRun::DropIdleDeadLeadOffTanks).
+    if (f.raid.on && !lead->IsAlive())
+        TortoiseBots::DungeonRun::DropIdleDeadLeadOffTanks(f);
     if (f.raid.on)
     {
         f.minHealthPct = TortoiseBots::RaidLayout::RestFloor(raidHealths, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
