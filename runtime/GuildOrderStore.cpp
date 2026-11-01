@@ -1283,7 +1283,8 @@ public:
                 }
                 else if (SupplyFarmGivesUp(record.type == OrderType::Craft &&
                     record.supplyStep == SupplyStep::Farm && record.supplyItemId &&
-                    record.reason != OrderReason::NoSource, record.workedNoGainSec))
+                    record.reason != OrderReason::NoSource, record.workedNoGainSec,
+                    true))
                 {
                     // The reagent farm gives up; the ladder takes over with a
                     // fresh watchdog for the sub-order or need list.
