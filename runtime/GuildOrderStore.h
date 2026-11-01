@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <vector>
+#include <unordered_set>
 
 class Player;
 struct ItemPrototype;
@@ -42,6 +42,20 @@ std::vector<OrderRecord> All();
 // a parent removes its whole branch; children keep what they gathered (the
 // bank deposit path stands alone per order).
 bool Cancel(uint32_t botGuidLow);
+// True when the item is reserved for the bot's unfinished order: the order
+// item, the current supply item, or (craft orders) a known-recipe reagent
+// from the stored protected set. A set lookup under the lock, no spell-map
+// walk, safe on any thread (the world-thread market service included).
+// A cancelled (parked refund stub) or finished order protects nothing, and a
+// guild mismatch protects nothing either.
+bool IsOrderProtectedItem(Player* bot, uint32_t itemId);
+// Recompute the bot's stored protected set when its keys changed (order or
+// supply item, craft flag). Call only on the bot's own map thread, where its
+// spell map is safe to read (the supply-ladder refresh and the item-usage
+// gate do this); the world thread never touches the spell map. No-op when
+// the stored keys already match, and clears the set for cancelled, finished
+// or absent orders. Only the finished set crosses the lock.
+void RefreshOrderProtectedSet(Player* bot);
 // A sub-order was placed or is already running: the giver becomes the
 // parent bot, the row goes live to the root giver. Called from a bot's
 // map-thread action; only the lock is touched there, the world thread does

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace TortoiseBots
@@ -274,7 +275,25 @@ struct OrderRecord
     uint64_t updatedAt = 0;
 };
 
+// Protected item ids for the running order: the order item, the current
+// supply-leg item, and (craft orders) the whole reagent tree through recipes
+// the bot knows. Memory only (never persisted: recomputed from the bot's
+// known recipes after a restart); guarded by the store mutex. Every consumer
+// (sell, AH post, destroy, disenchant, equip, give, trade, mail, use/eat/
+// drink/potion) only asks the store whether an item id is protected: a set
+// lookup, no spell-map walk, no tree walk, no per-item recompute. A cancelled
+// (parked refund stub) or finished order protects nothing.
+struct OrderProtectedSet
+{
+    std::unordered_set<uint32_t> items;
+    uint32_t orderItemId = 0; // order item the set was computed for
+    uint32_t supplyItemId = 0; // supply item the set was computed for
+    bool orderIsCraft = false; // craft flag the set was computed for
+    bool valid = false; // the set matches the keys above
+};
+
 // Source kinds, as listed in TBM:ORDER_ITEM <sources>.
+
 enum SourceFlag : uint8_t
 {
     SourceDrop  = 1 << 0,

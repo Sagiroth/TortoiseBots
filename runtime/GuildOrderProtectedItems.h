@@ -68,23 +68,5 @@ inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
     return true;
 }
 
-// True when the candidate item is reserved for the bot's unfinished order.
-template <typename ReagentsFor>
-inline bool OrderProtectsItem(uint32_t orderItemId, bool orderFinished,
-    bool orderIsCraft, uint32_t supplyItemId, uint32_t candidateItemId,
-    ReagentsFor reagentsFor)
-{
-    if (orderFinished || orderItemId == 0 || candidateItemId == 0)
-        return false;
-    if (candidateItemId == orderItemId || candidateItemId == supplyItemId)
-        return true;
-    if (!orderIsCraft)
-        return false;
-    std::unordered_set<uint32_t> kept;
-    CollectOrderProtectedItems(orderItemId, orderFinished, orderIsCraft,
-        supplyItemId, reagentsFor, kept);
-    return kept.count(candidateItemId) != 0;
-}
-
 } // namespace GuildOrders
 } // namespace TortoiseBots

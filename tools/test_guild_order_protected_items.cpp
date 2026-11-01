@@ -33,8 +33,6 @@ std::vector<uint32_t> KnownReagents(uint32_t itemId)
     return it == kRecipes.end() ? std::vector<uint32_t>{} : it->second;
 }
 
-std::vector<uint32_t> NoReagents(uint32_t) { return {}; }
-
 }
 
 int main()
@@ -86,14 +84,6 @@ int main()
     CHECK(!CollectOrderProtectedItems(7189, true, true, 0, KnownReagents, kept));
     CHECK(kept.empty());
     CHECK(!CollectOrderProtectedItems(0, false, true, 0, KnownReagents, kept));
-
-    // Predicate: order, supply, nested reagent hit; unrelated misses.
-    CHECK(OrderProtectsItem(7189, false, true, 3858, 7189, KnownReagents));
-    CHECK(OrderProtectsItem(7189, false, true, 3858, 3858, KnownReagents));
-    CHECK(OrderProtectsItem(7189, false, true, 0, 3860, KnownReagents));
-    CHECK(!OrderProtectsItem(7189, false, true, 0, 4542, KnownReagents));
-    CHECK(!OrderProtectsItem(7189, false, true, 0, 3860, NoReagents));
-    CHECK(!OrderProtectsItem(7189, true, true, 0, 7189, KnownReagents));
 
     if (failures == 0)
         std::printf("test_guild_order_protected_items ok\n");
