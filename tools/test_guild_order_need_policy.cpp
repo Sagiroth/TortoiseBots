@@ -75,6 +75,20 @@ int main()
     CHECK(PartialNeedVerdictFor(false, false, true) == PartialNeedVerdict::Park);
     CHECK(PartialNeedVerdictFor(false, false, false) == PartialNeedVerdict::Supply);
 
+    // The clock pauses only for a parent with no leg of its own waiting on an
+    // unfinished child: a done child (nothing left to wait for) does not, and
+    // an own leg keeps every clock (the farm give-up and the zone move too).
+    CHECK(PauseOrderClocks(SupplyStep::None, 1));
+    CHECK(PauseOrderClocks(SupplyStep::None, 3));
+    CHECK(!PauseOrderClocks(SupplyStep::None, 0));
+    CHECK(!PauseOrderClocks(SupplyStep::None, -1));
+    CHECK(!PauseOrderClocks(SupplyStep::Farm, 1));
+    CHECK(!PauseOrderClocks(SupplyStep::Bank, 2));
+    CHECK(!PauseOrderClocks(SupplyStep::AuctionHouse, 1));
+    CHECK(!PauseOrderClocks(SupplyStep::Craft, 1));
+    CHECK(!PauseOrderClocks(SupplyStep::Sub, 1));
+    CHECK(!PauseOrderClocks(SupplyStep::Need, 1));
+
     // The whisper fires as soon as a list exists, once per list.
     CHECK(NeedWhisperDue(OrderState::Working, OrderReason::None, true, false));
     CHECK(NeedWhisperDue(OrderState::Waiting, OrderReason::NeedItems, true, false));

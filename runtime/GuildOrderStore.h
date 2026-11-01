@@ -114,8 +114,10 @@ void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bank
 // Replace the list with the player's items the whole-tree walk still names
 // (empty clears it), but only while the stored list still equals `expected`:
 // the walk pruned a snapshot, and a merge or clear in between must win.
-// State and reason never change here: the ladder decides when to park.
-void ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+// Returns whether the write landed; a false leaves the caller's copy stale,
+// so it re-reads the row. State and reason never change here: the ladder
+// decides when to park.
+bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
     std::vector<NeedItem> const& items);
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
 void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);

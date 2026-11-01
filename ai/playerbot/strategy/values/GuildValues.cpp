@@ -495,10 +495,17 @@ SupplyStep MailReturnStep(Player* bot, OrderRecord const& order, SupplyCandidate
 void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot)
 {
+    // The walk counts the output the bot still owes, the same shortage the
+    // prune uses: delivered plus what is already in bags or mail, not the raw
+    // order amount less delivered (which double-counts what is already held).
+    SupplySnapshot local;
+    SupplySnapshot& snap = snapshot ? *snapshot : local;
+    uint32_t outputHave = order.delivered + SnapshotBags(ai, snap, order.itemId) +
+        SnapshotMail(bot, snap, order.itemId);
+    uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
     uint32_t count = candidate.count;
     std::vector<NeedItem> missing;
-    CollectMissingReagents(ai, bot, order.itemId,
-        order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+    CollectMissingReagents(ai, bot, order.itemId, outputMissing, missing, &snap);
     for (NeedItem const& need : missing)
         if (need.itemId == candidate.itemId && need.count > count)
             count = need.count;
@@ -659,9 +666,12 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         {
             // The store only takes the prune while its list still equals the
             // copy the prune started from: a merge or a clear in between wins
-            // and the next refresh re-prunes the live list.
-            TortoiseBots::GuildOrders::ReplaceNeedItems(order.botGuidLow, current.needItems, pruned);
-            current.needItems = pruned;
+            // and the write does not land. Then the working copy is stale, so
+            // re-read the live list and let the next refresh re-prune it.
+            if (TortoiseBots::GuildOrders::ReplaceNeedItems(order.botGuidLow, current.needItems, pruned))
+                current.needItems = pruned;
+            else if (std::optional<OrderRecord> live = TortoiseBots::GuildOrders::Find(order.botGuidLow))
+                current.needItems = live->needItems;
         }
     }
 

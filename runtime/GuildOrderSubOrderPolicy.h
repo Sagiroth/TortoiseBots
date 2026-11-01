@@ -18,6 +18,10 @@ namespace GuildOrders
 inline constexpr uint32_t kSubOrderDefaultDepth = 3;
 // Busy-only queued requests retry on this interval, not every world tick.
 inline constexpr uint32_t kSubOrderRetryMs = 45000;
+// A queued request older than this stops pausing the parent's clocks: the
+// placement never landed (no free bot for a stale item), and a request that
+// never becomes a running row must not hide a stalled order forever.
+inline constexpr uint32_t kQueuedSubOrderStaleMs = 30 * 60 * 1000;
 // Planner evaluations per PlaceSubOrders tick: each SubOrderCandidateUsable
 // call may walk the source index, so a tick with many due requests shares
 // the budget and requeues the rest on the retry timer instead of stalling
