@@ -5,6 +5,7 @@
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "runtime/policy/provision/NearbyServicePolicy.h"
+#include "runtime/policy/ah/AhBuyerPolicy.h"
 #include "playerbot/policy/gear/VendorTripPolicy.h"
 
 
