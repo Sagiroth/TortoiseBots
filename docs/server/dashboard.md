@@ -206,7 +206,7 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/server-info`: Server version metadata, active rates, and configuration status.
 - `GET /api/v1/anomalies/totals`: Cumulative session totals for anomalies and action loops.
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
-- `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history.
+- `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history. Each fight (live or finished) carries `boss_phase` and `boss_phase_entry`: the fight's boss phase (1 + the entry changes the module saw of his unit) and the entry he reads now, so the Fights panel and the debugger show `phase N (entry E)` after the boss name when N > 1 - a boss a script changes mid-fight keeps being the boss, e.g. Zul'Gurub's Thekal 14599 turning into 14509.
 - `GET /api/v1/combat/history/days?commander=`, `GET /api/v1/combat/history?commander=&day=`, `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's days, one day's fights, and the same pack across runs.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).

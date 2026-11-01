@@ -65,6 +65,7 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- The run leader follows a boss by his guid's entry: a boss a script changes mid-fight (Zul'Gurub's Thekal turning from 14599 into 14509) is still his step's boss - his own corpse is *boss down* at once with the note *boss down: he died as 14509*, his changed form is pulled and counted as seen alive, the instance search names the form he was found in (*is alive (as 14509) at ...*), and a boss fought on an earlier step whose corpse lies near the lead bot counts as down at his own step. Before, the step waited 60 s at his spot and paused *boss 14599 not found* with the kill already done.
 - New boss tactic kind `avoid_cast`: bots other than the tank the caster is on walk out of a listed self-centred blast while it is cast (first row: Zul'Gurub's Gurubashi Bat Rider, Unstable Concoction), and each walk-out writes a `BossTacticsAvoidCast` row to `bot_events.csv`.
 - Zul'Gurub leg 0 uses patrol-timed stand pulls and kills the Gurubashi Bat Rider first (walks 1-13).
 - A run leader pull row with the stand_pull flag (8192) now waits at its stand for a patrolling pack to come into the tank's shot while no other patrol is near, and sees the pack's patrol up to 60 yd out instead of calling it cleared.
@@ -109,6 +110,7 @@
 - Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
 
 ### Dashboard
+- The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
 - Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.
 - New: the boss panel and the raid coverage card know the Scarlet Monastery bosses: all four wings of map 189, their abilities, Whitemane's pause and resurrection (her spell list returns after the revive) and the rare elites Ironspine, Azshir and the Fallen Champion.
 - Fixed: Ragnaros, Ouro and Viscidus show "submerged"/"split" on the boss panel while they are invisible instead of their fight phase, and Jin'do's add list no longer shows a Sacrificed Troll he never summons.
