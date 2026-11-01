@@ -17,16 +17,20 @@ struct SupplyOptions
     bool subAttempted = false;
 };
 // The item the bot actually farms for its Working order: the supply leg's
-// item while the ladder walks bank/AH/farm/bags, 0 on any other leg. A craft
-// order short on a vendor-only reagent travels for nothing (the reagent is
-// bought, never farmed), so it maps to 0 like a finished leg.
+// item while the ladder walks bank/AH/farm/bags, 0 on any other leg. A
+// vendor-unlimited item travels for nothing (it is bought, never farmed),
+// so it maps to 0 like a finished leg.
 inline uint32_t SupplyFarmItemFor(SupplyStep step, uint32_t supplyItemId, OrderType type,
     OrderReason reason, bool supplyItemVendorUnlimited)
 {
+    (void)type;
     if (step != SupplyStep::Bank && step != SupplyStep::AuctionHouse && step != SupplyStep::Farm &&
         step != SupplyStep::Bags)
         return 0;
-    if (type == OrderType::Craft && supplyItemVendorUnlimited && reason != OrderReason::NoSource)
+    // A vendor-unlimited item is bought, never farmed: the vendor leg runs
+    // on Farm for craft reagents and farm-order items alike, so the wild
+    // farm plan never walks for it unless the leg gave up on it.
+    if (supplyItemVendorUnlimited && reason != OrderReason::NoSource)
         return 0;
     return supplyItemId;
 }

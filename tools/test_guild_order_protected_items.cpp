@@ -69,6 +69,18 @@ int main()
     CHECK(!kept.count(3860));
     CHECK(!kept.count(3858));
 
+    // A vendor-unlimited reagent is protected but not expanded: the bot
+    // buys the tube instead of making it, so the mithril chain below it
+    // stays out of the bags while the tube itself stays in.
+    kept.clear();
+    auto vendorTube = [](uint32_t itemId) { return itemId == 10559; };
+    CHECK(CollectOrderProtectedItems(7189, false, true, 0, KnownReagents, vendorTube, kept));
+    CHECK(kept.count(7189));
+    CHECK(kept.count(10559));
+    CHECK(kept.count(4234));
+    CHECK(!kept.count(3860));
+    CHECK(!kept.count(3858));
+
     // Farm/buy orders protect the order and supply items only.
     kept.clear();
     CHECK(CollectOrderProtectedItems(2592, false, false, 2592, KnownReagents, kept));

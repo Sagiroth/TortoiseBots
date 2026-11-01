@@ -139,9 +139,11 @@ static bool IsGuildOrderTravelName(std::string const& name)
 }
 // An order-leg search came back empty or fully rejected: count it and move
 // the ladder down once the streak hits the farm-zone limit, so no service
-// leg (mailbox, bank, auctioneer, vendor) parks the order forever. Returns
-// true when the leg changed and the new leg must travel at once. The farm
-// leg keeps its zone move; focus has no ladder exit and only parks.
+// leg (mailbox, bank, auctioneer) parks the order forever. Returns true
+// when the leg changed and the new leg must travel at once. The farm leg
+// keeps its zone move, the vendor leg keeps retrying (a vendor-unlimited
+// reagent is bought, never farmed or delegated); focus has no ladder exit
+// and only parks.
 static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey)
 {
     using namespace TortoiseBots::GuildOrders;
@@ -196,13 +198,10 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         return true;
     }
     if (record->supplyStep == SupplyStep::Farm && purposeKey == "order vendor")
-    {
-        if (!record->supplyItemId || !atLimit(SupplyStep::Farm, record->supplyItemId))
-            return false;
-        SetSupply(bot->GetGUIDLow(), SupplyStep::Farm, record->supplyItemId,
-            record->supplyCount, SupplyStep::None, OrderReason::NoSource);
-        return true;
-    }
+        // The vendor trip found no reachable vendor: keep the leg and let
+        // travel re-search. A vendor-unlimited reagent is bought, never
+        // farmed or delegated, so ending in NoSource would park the order.
+        return false;
     if (record->supplyStep == SupplyStep::Farm && purposeKey == "guild order" && !bankerSearch)
     {
         // Three consecutive rejected or empty searches in one zone move the

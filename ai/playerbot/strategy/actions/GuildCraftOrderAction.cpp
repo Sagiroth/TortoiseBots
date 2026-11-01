@@ -190,11 +190,16 @@ bool GuildCraftOrderAction::Execute(Event& event)
             return false;
         }
 
+        // The vendor leg below buys this reagent; the craft step only makes
+        // room for it. An autonomous alt never travels to buy: it cannot
+        // reach a vendor, so the player gets the need list. No gold means
+        // the same, never a farm trip or a sub-order for a vendor item.
         if (autonomous)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: autonomous bot cannot buy reagent " + std::to_string(reagentId), "debug travel");
             if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+                TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
+                    { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
             return false;
         }
 
@@ -205,7 +210,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot afford reagent " + std::to_string(reagentId), "debug travel");
             if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+                TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
+                    { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
             return false;
         }
 
