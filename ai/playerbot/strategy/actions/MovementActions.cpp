@@ -2861,7 +2861,24 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
 
     WorldPosition const botPos(bot);
     float const startDistance = sServerFacade.getDistance2d(bot, target);
-    float const away = target->GetAngle(bot);
+    // R3 (fair-fight losses): flee from the attackers' pack, not from one
+    // mob. A bot between two attackers that ran from the current target
+    // alone could step toward the second one (median 0 yd gained, Oct 2026
+    // poll). The centroid of the live attackers is the pack's middle; the
+    // single-target heading stays when there is no pack (solo target).
+    float away;
+    {
+        std::vector<Unit*> liveAttackers;
+        for (Unit* attacker : bot->GetAttackers())
+            if (attacker && sServerFacade.IsAlive(attacker) && attacker->GetMapId() == bot->GetMapId())
+                liveAttackers.push_back(attacker);
+        ai::FleePackPoint pack = ai::PoolFleePackCentroid(liveAttackers,
+            [](Unit* unit, float& x, float& y) { x = unit->GetPositionX(); y = unit->GetPositionY(); return true; });
+        if (pack.valid && liveAttackers.size() > 1)
+            away = std::atan2(bot->GetPositionY() - pack.y, bot->GetPositionX() - pack.x);
+        else
+            away = target->GetAngle(bot);
+    }
 
     // Unpulled hostile mobs one step could wake: one cached "possible
     // targets" read, filtered once, not a scan per candidate.

@@ -56,4 +56,40 @@ namespace ai
     {
         return mobToBot < aggroRadius + kPoolFleeAggroMargin + stepLength;
     }
+
+    // Pack centroid for the R3 outnumbered flee: the average position of the
+    // live attackers, so the flee step runs from their pack, not from one
+    // mob. A bot between two mobs must not "flee" toward the second one;
+    // the centroid of a split pack sits between them and the fan-out finds
+    // the gap. Count 0 (or no live attacker) means "no pack": the caller
+    // keeps the single-target heading.
+    struct FleePackPoint
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        bool valid = false;
+    };
+
+    template <typename AttackerList, typename PosFn>
+    inline FleePackPoint PoolFleePackCentroid(AttackerList const& attackers, PosFn posOf)
+    {
+        FleePackPoint out;
+        float sx = 0.0f, sy = 0.0f;
+        int n = 0;
+        for (auto const& attacker : attackers)
+        {
+            float x = 0.0f, y = 0.0f;
+            if (!posOf(attacker, x, y))
+                continue;
+            sx += x;
+            sy += y;
+            ++n;
+        }
+        if (n == 0)
+            return out;
+        out.x = sx / n;
+        out.y = sy / n;
+        out.valid = true;
+        return out;
+    }
 }

@@ -514,6 +514,17 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
             ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
         if (highestNear != 0 && ai::PointDangerous((int)highestNear, bot->GetLevel()))
             continue;
+        // Elite camps: skip a mob camped next to a same-band-or-above
+        // rank-1 elite for a solo masterless pool bot (fair-fight losses).
+        // Groups and real-player-mastered bots keep today's behaviour.
+        if (ai::EliteCampDangerApplies(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
+            ai->HasRealPlayerMaster(), bot->GetGroup() != nullptr))
+        {
+            uint32 const highestEliteNear = mobPos.GetHighestHostileEliteLevelNear(
+                ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
+            if (highestEliteNear != 0 && ai::EliteCampDangerous(true, (int)highestEliteNear, bot->GetLevel()))
+                continue;
+        }
 
         if (!WorldPosition(bot).canPathTo(WorldPosition(unit), bot))
             continue;

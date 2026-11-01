@@ -14,6 +14,7 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/policy/pull/PullFiringPolicy.h"
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
+#include "playerbot/policy/combat/EvadeChasePolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
@@ -96,10 +97,35 @@ namespace ai
         }
 
         virtual bool Execute(Event& event) override
-		{
+        {
             Unit* target = GetTarget();
             if (target)
             {
+                // R2 (fair-fight losses): never take the first step after a
+                // mob that is evading or flagged unreachable — it is walking
+                // home invulnerable, and following drags the fight back into
+                // its camp (EvadeProbe homedist p90 99 yd). The 15 s give-up
+                // below stays the wedge backstop.
+                if (target->IsCreature())
+                {
+                    Creature* creature = static_cast<Creature*>(target);
+                    if (ai::ShouldNotChaseEvader(creature->IsInEvadeMode(),
+                        creature->IsEvadeBecauseTargetNotReachable()))
+                    {
+                        float homeX, homeY, homeZ, homeO;
+                        creature->GetRespawnCoord(homeX, homeY, homeZ, &homeO);
+                        float combatStartX, combatStartY, combatStartZ;
+                        creature->GetCombatStartPosition(combatStartX, combatStartY, combatStartZ);
+                        ai::EvadeChaseState state;
+                        state.evading = creature->IsInEvadeMode();
+                        state.unreachable = creature->IsEvadeBecauseTargetNotReachable();
+                        state.homeDistanceYd = creature->GetDistance(homeX, homeY, homeZ);
+                        state.combatStartDistanceYd = creature->GetDistance(combatStartX, combatStartY, combatStartZ);
+                        if (ai::ShouldDropDraggedTarget(state))
+                            DropAttackTarget();
+                        return false;
+                    }
+                }
                 UpdateMovementState();
 
                 // Ignore movement if too far

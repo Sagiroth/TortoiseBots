@@ -56,4 +56,23 @@ namespace ai
         int const threshold = (int)botLevel + (int)PullGrindLevelCap(botLevel, false) + 1;
         return highestHostileLevelMax >= (threshold < 4 ? 4 : threshold);
     }
+
+    // Elite camps: a rank-1 Turtle custom at the bot's own level deals
+    // 2.5-4x a vanilla normal's DPS (fair-fight losses: 31% of fair deaths
+    // by rank-1 killers at median 68% killer HP), so the level margin alone
+    // never bars the camp. A same-band-or-above elite spawn within the
+    // danger radius bars the point the way an over-cap normal does. Groups
+    // and bots with a real player master keep today's behaviour (their
+    // players decide); the callers pass masterlessRandom and in-group down.
+    // inGroup covers hired-companion groups: the pool's can-fight-elite
+    // value is group-gated the same way.
+    inline bool EliteCampDangerApplies(bool masterlessRandom, bool hasRealPlayerMaster, bool inGroup)
+    {
+        return masterlessRandom && !hasRealPlayerMaster && !inGroup;
+    }
+
+    inline bool EliteCampDangerous(bool eliteSpawnNear, int eliteLevelMax, std::uint32_t botLevel)
+    {
+        return eliteSpawnNear && eliteLevelMax >= (int)botLevel - 2;
+    }
 }

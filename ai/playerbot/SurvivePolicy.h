@@ -214,6 +214,16 @@ namespace ai
         return isHybridSelfHealer && !inGroup && hasMana && manaPct >= lowManaPct;
     }
 
+    // Outnumbered flee line (OutNumberedTrigger, R3 fair-fight losses):
+    // cloth (mage/priest/warlock) starts weighing the disengage at 85%
+    // instead of the 70% medium line — the second attacker's burst lands
+    // on cloth mitigation, so waiting for 70% leaves nothing to spend on
+    // the way out. Everyone else keeps the configured medium line.
+    inline std::uint32_t OutnumberedFleeHealthLine(bool isClothCaster, std::uint32_t mediumHealth)
+    {
+        return isClothCaster ? 85 : mediumHealth;
+    }
+
     // Death telemetry: the deaths.csv 'adds' loop used to count victim-
     // filtered "all targets" entries, but SetDeathState drains the attacker
     // set and clears victim pointers before OnDeath runs, so it was
