@@ -669,12 +669,15 @@ bool HasGuildTravelOrderValue::Calculate()
     // too full to lift the mail. The take gate refuses above 95, so the leg
     // would walk to a mailbox it cannot use; it yields to the vendor trip
     // instead and runs again after the sale.
-    if (!OrderStillNeedsWork(bot, order))
+    bool const mailLeg = current->supplyStep == SupplyStep::Bags && ai::OrderMailboxItems(bot,
+        TortoiseBots::GuildOrders::SupplyMailItemId(current->supplyStep,
+            current->supplyItemId, current->itemId)) > 0;
+    // The mailbox counts toward the amount, but delivery needs the items in
+    // the bags: a farm or buy order whose last items wait in the mail still
+    // walks to the mailbox (live: a sub-order sat 90 min on 4/2 in the mail).
+    if (!mailLeg && !OrderStillNeedsWork(bot, order))
         return false;
-    if (TortoiseBots::GuildOrders::OrderMailYieldsToVendor(AI_VALUE(uint8, "bag space"),
-        current->supplyStep == SupplyStep::Bags && ai::OrderMailboxItems(bot,
-            TortoiseBots::GuildOrders::SupplyMailItemId(current->supplyStep,
-                current->supplyItemId, current->itemId)) > 0) &&
+    if (TortoiseBots::GuildOrders::OrderMailYieldsToVendor(AI_VALUE(uint8, "bag space"), mailLeg) &&
         AI_VALUE(bool, "can sell"))
         return false;
     return true;
