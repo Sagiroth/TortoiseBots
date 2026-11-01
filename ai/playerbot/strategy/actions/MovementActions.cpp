@@ -3265,7 +3265,7 @@ bool FleeAction::Execute(Event& event)
     return Flee(AI_VALUE(Unit*, "current target"));
 }
 
-bool FleeAction::isUseful()
+bool FleeFromAreaAction::isUseful()
 {
     if (!MovementAction::isUseful())
         return false;
@@ -3282,7 +3282,9 @@ bool FleeAction::isUseful()
     }
     // A tank that holds its boss does not run off it: fleeing drops the
     // threat and drags the fight onto the casters. The step-out (avoid aoe)
-    // is the tank's way out of a ground effect.
+    // is the tank's way out of a ground effect. Only this fallback row skips a
+    // tank; the shared "flee" action (panic, outnumbered, critical health,
+    // range control) keeps its own rules.
     Unit* target = AI_VALUE(Unit*, "current target");
     return !(PlayerbotAI::IsTank(bot) && target && target->GetVictim() == bot);
 }

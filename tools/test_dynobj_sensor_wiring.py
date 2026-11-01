@@ -22,12 +22,15 @@ tools/test_avoid_aoe_policy.cpp):
  - the proactive step-out sensor and the melee hold see creature-cast clouds
    only (open world / PvP against players is unchanged); the hold has no tank
    exemption, so a tank whose boss stays in the cloud does not walk back in;
- - the flee action is skipped while a hostile cloud covers the bot: the strafe
-   owns that case and a plain flee ignores the landing filter;
+ - the fallback flee of the "has area debuff" row is its own action ("flee from
+   area"): only it is skipped while a hostile cloud covers the bot (the strafe
+   owns that case and a plain flee ignores the landing filter) and for a tank
+   that holds its boss; the shared "flee" action has no such clause, so panic,
+   outnumbered, critical-health and range-control flees still work for a tank;
  - the "aoe threat nearby" trigger gets a proactive dynobj centre test, so the
    step fires before the cloud's first tick;
- - the reactive "has area debuff" -> flee row sits below the strafe, so the
-   step-out wins the reaction pick.
+ - the reactive "has area debuff" -> "flee from area" row sits below the strafe,
+   so the step-out wins the reaction pick.
 
 Run: python3 -m unittest tools/test_dynobj_sensor_wiring.py
 """
@@ -37,6 +40,9 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STRATEGY = ROOT / "ai/playerbot/strategy"
 MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
+MOVEMENT_H = (STRATEGY / "actions/MovementActions.h").read_text()
+ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
+FLEE_STRATEGY = (STRATEGY / "generic/FleeStrategy.cpp").read_text()
 ACTIONS = (STRATEGY / "actions/BossTacticsActions.cpp").read_text()
 COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
 TRIGGERS = (STRATEGY / "triggers/GenericTriggers.cpp").read_text()
@@ -116,10 +122,32 @@ class DynObjHazardWiring(unittest.TestCase):
         self.assertIn("CollectDamagingDynObjHazards(ai, bot, clouds, true)", fn)
         self.assertIn("InsideAoeHazard(circle, bot->GetPositionX()", fn)
 
-    def test_the_flee_is_skipped_under_a_hostile_cloud(self):
-        fn = body(MOVEMENT, "bool FleeAction::isUseful()")
+    def test_the_area_flee_is_skipped_under_a_hostile_cloud(self):
+        fn = body(MOVEMENT, "bool FleeFromAreaAction::isUseful()")
         self.assertIn("CollectDamagingDynObjHazards(ai, bot, clouds, true)", fn)
         self.assertIn("InsideAoeHazard(cloud, bot->GetPositionX()", fn)
+
+    def test_the_area_flee_skips_an_active_tank(self):
+        fn = body(MOVEMENT, "bool FleeFromAreaAction::isUseful()")
+        self.assertIn("PlayerbotAI::IsTank(bot) && target && target->GetVictim() == bot", fn)
+
+    def test_the_shared_flee_has_no_tank_or_cloud_clause(self):
+        # The shared "flee" serves panic, outnumbered, critical health and range
+        # control: it must stay as before this branch, with no isUseful override.
+        self.assertNotIn("FleeAction::isUseful", MOVEMENT)
+        i = MOVEMENT_H.index("class FleeAction : public MovementAction")
+        decl = MOVEMENT_H[i:MOVEMENT_H.index("};", i)]
+        self.assertNotIn("isUseful", decl)
+
+    def test_the_area_flee_is_a_flee_action_registered_live(self):
+        i = MOVEMENT_H.index("class FleeFromAreaAction")
+        decl = MOVEMENT_H[i:MOVEMENT_H.index("};", i)]
+        self.assertIn("public FleeAction", decl)
+        self.assertIn('"flee from area"', decl)
+        self.assertIn("virtual bool isUseful() override;", decl)
+        self.assertIn('creators["flee from area"] = [](PlayerbotAI* ai) { return new FleeFromAreaAction(ai); };', ACTION_CONTEXT)
+        # The flee dampener keeps covering the area flee it used to dampen.
+        self.assertIn('"flee from area"', FLEE_STRATEGY)
 
     def test_the_trigger_steps_out_proactively(self):
         fn = body(TRIGGERS, "bool AoeThreatNearbyTrigger::IsActive()")
@@ -143,6 +171,12 @@ class DynObjHoldWiring(unittest.TestCase):
 
 
 class FleeRowWiring(unittest.TestCase):
+    def test_the_area_row_names_the_area_flee(self):
+        i = COMBAT_STRATEGY.rindex('"has area debuff"')
+        row = COMBAT_STRATEGY[i:i + 200]
+        self.assertIn('new NextAction("flee from area"', row)
+        self.assertNotIn('new NextAction("flee",', row)
+
     def test_the_flee_row_sits_below_the_strafe(self):
         i = COMBAT_STRATEGY.rindex('"has area debuff"')
         row = COMBAT_STRATEGY[i:i + 200]

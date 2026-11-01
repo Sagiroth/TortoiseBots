@@ -77,11 +77,11 @@ void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5), NULL)));
     // Reactive fallback: once the debuff actually lands, run out. Below the
     // strafe above, so a usable step-out wins the pick; a tank skips it in
-    // FleeAction::isUseful (fleeing a live boss drops threat and drags the
+    // FleeFromAreaAction::isUseful (fleeing a live boss drops threat and drags the
     // fight onto the casters).
     triggers.push_back(new TriggerNode(
         "has area debuff",
-        NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 4), NULL)));
+        NextAction::array(0, new NextAction("flee from area", ACTION_EMERGENCY + 4), NULL)));
 }
 
 void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
