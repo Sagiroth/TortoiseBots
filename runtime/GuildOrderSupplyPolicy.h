@@ -58,20 +58,6 @@ inline uint32_t SupplyMailItemId(SupplyStep step, uint32_t supplyItemId, uint32_
     return (step == SupplyStep::Bags && supplyItemId) ? supplyItemId : orderItemId;
 }
 
-// The targeted take fits only the order item (stack merge included), so a
-// bag full of unsellable stock still lifts it: the leg never yields to the
-// vendor trip. Kept as a no-op for its callers: a full bag can no longer
-// strand the take, and a nothing-fits take parks the leg in the take-mail
-// action instead of looping the mailbox.
-inline constexpr uint8_t kMailTakeBagYieldPercent = 95;
-
-inline bool OrderMailYieldsToVendor(uint8_t bagSpacePercent, bool mailWaiting)
-{
-    (void)bagSpacePercent;
-    (void)mailWaiting;
-    return false;
-}
-
 // Consecutive empty or rejected travel searches for one supply leg. A new
 // leg (or item) restarts the count; a landed search clears it in the store.
 struct SupplySearchStreak

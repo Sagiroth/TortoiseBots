@@ -71,12 +71,4 @@ int main()
     CHECK(GuildGoldShortfall(300, 300, 100, 200) == 0);
     CHECK(GuildGoldShortfall(500, 300, 100, 50) == 50);
 
-    // The targeted take fits only the order item, so a full bag never yields
-    // the mail leg to the vendor trip: a nothing-fits take parks the leg
-    // instead of looping the mailbox.
-    CHECK(!OrderMailYieldsToVendor(95, true));
-    CHECK(!OrderMailYieldsToVendor(100, true));
-    CHECK(!OrderMailYieldsToVendor(94, true));
-    CHECK(!OrderMailYieldsToVendor(100, false));
-    CHECK(!OrderMailYieldsToVendor(0, false));
 }
