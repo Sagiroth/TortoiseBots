@@ -1252,6 +1252,11 @@ void BotManager::OnPlayerLogin(::Player* player)
         tools.AddTools();
         if (player->GetLevel() >= 18)
             tools.InitMounts();
+        // A bot that already had its profession never re-enters InitAllSkills
+        // above, so the specialization gate is checked here on every login.
+        tools.EnsureSpecializations();
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            tools.LearnSpecializationRecipes();
         // Issue #401 backstop for the live pool: free bots created before the
         // starter set get it on login, not only at creation. Hired companions
         // and owned alts are never touched: their kit is the player's business
