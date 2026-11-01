@@ -123,6 +123,7 @@
 - New: the boss panel now knows Blackfathom Deeps, Razorfen Kraul, Razorfen Downs and Wailing Caverns — 35 boss entries including the summoned and event bosses — with their abilities, timers, phases and adds.
 - New: the boss panel now knows Upper Blackrock Spire's bosses — Emberseer, Rend, Gyth with his own breaths and knock-away, the Beast, Drakkisath and Lord Valthalak — with their timers, phases and adds.
 - New: the boss panel now knows the bosses of Scholomance and of both wings of Stratholme, with their abilities, timers, phases, adds and the notes for what the panel cannot see.
+- New: the boss panel now knows Hateforge Quarry (five bosses plus Broody and Har'gesh's Faceless Terrors) and Stormwrought Ruins (eleven bosses plus Mergothid and the Remains of the Innocent): their abilities, timers, phases, cones and areas, adds and notes.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
 - The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
 - Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.

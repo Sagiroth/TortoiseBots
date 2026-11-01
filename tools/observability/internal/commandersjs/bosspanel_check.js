@@ -798,4 +798,28 @@ const cobrahnSerpent = B.model(REAL, { entry: 3669, hp: 20, au: [{ id: 7965 }] }
 assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 17330).inPhase, true, "Poison shows in serpent form");
 assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 8040).inPhase, false, "the druid form's kit is hidden");
 assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 7965).inPhase, true, "the transform marker always shows");
+
+// ---- Hateforge/Stormwrought: Har'gesh's immunity channel (aura 12380) hides the three casts while the adds live;
+// ---- Ighal'for's 48 s channel (aura 8734) does the same until the release.
+const hargesh = (REAL.byEntry || REAL.bosses || REAL)["60737"];
+assert.deepStrictEqual(hargesh.phases.map((x) => x.rule), ["aura=12380", "start"]);
+const hargeshAdds = B.model(REAL, { entry: 60737, hp: 100, au: [{ id: 12380 }] }, [], 0, 0);
+assert.strictEqual(hargeshAdds.phase, "adds");
+assert.strictEqual(hargeshAdds.abilities.find((a) => a.sid === 12739).inPhase, false, "Shadow Bolt waits for the fight");
+assert.strictEqual(hargeshAdds.abilities.find((a) => a.sid === 12380).inPhase, true, "the channel is the adds phase");
+const hargeshFight = B.model(REAL, { entry: 60737, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(hargeshFight.phase, "fight");
+assert.strictEqual(hargeshFight.abilities.find((a) => a.sid === 12739).inPhase, true);
+assert.strictEqual(hargeshFight.abilities.find((a) => a.sid === 12380).inPhase, false);
+
+const ighal = (REAL.byEntry || REAL.bosses || REAL)["62671"];
+assert.deepStrictEqual(ighal.phases.map((x) => x.rule), ["aura=8734", "start"]);
+const ighalChannel = B.model(REAL, { entry: 62671, hp: 20, au: [{ id: 8734 }] }, [], 0, 0);
+assert.strictEqual(ighalChannel.phase, "channel");
+assert.strictEqual(ighalChannel.abilities.find((a) => a.sid === 8423).inPhase, false, "Flamestrike waits for the release");
+assert.strictEqual(ighalChannel.abilities.find((a) => a.sid === 8734).inPhase, true, "the channel is the channel phase");
+const ighalFight = B.model(REAL, { entry: 62671, hp: 20, au: [] }, [], 0, 0);
+assert.strictEqual(ighalFight.phase, "fight");
+assert.strictEqual(ighalFight.abilities.find((a) => a.sid === 8423).inPhase, true);
+assert.strictEqual(ighalFight.abilities.find((a) => a.sid === 8734).inPhase, false);
 console.log("boss panel ok");

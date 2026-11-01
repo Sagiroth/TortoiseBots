@@ -167,7 +167,9 @@ relative to the core checkout (`--core-dir`, default `$TORTOISE_CORE_DIR` or
 `~/tortoise-wow`); a `data/` path is relative to this repository. A timer or spell id must appear inside one of the cited
 ranges; a constant name (`SPELL_X`) counts when its definition in the same file
 holds the id. A value `N` is also accepted as `N//1000` on a line using
-`IN_MILLISECONDS`. Knowledge-base notes use `kb:<file>#<heading-slug>` under
+`IN_MILLISECONDS`. A `+` lists derived timer lines: `path:22+68` accepts a timer
+equal to the sum of the numbers on those lines, each holding exactly one number
+(a spawn timer plus its detonate delay). Knowledge-base notes use `kb:<file>#<heading-slug>` under
 `--kb-dir` (default `$TURTLE_KB_DIR` or `~/TortoiseBots-audit/turtle-kb`).
 
 CI has no core checkout and no KB: `check` prints `core source check skipped` /

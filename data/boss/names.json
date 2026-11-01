@@ -2717,8 +2717,7 @@
       "castMs": 0
     },
     "7713": {
-      "name": "Wailing Dead",
-      "castMs": 0
+      "name": "Wailing Dead"
     },
     "8379": {
       "name": "Disarm",
@@ -2797,8 +2796,7 @@
       "castMs": 0
     },
     "22574": {
-      "name": "Dark Strike",
-      "castMs": 0
+      "name": "Dark Strike"
     },
     "28873": {
       "name": "Lich Slap",
@@ -3085,8 +3083,7 @@
       "castMs": 0
     },
     "11433": {
-      "name": "Death & Decay",
-      "castMs": 0
+      "name": "Death & Decay"
     },
     "28412": {
       "name": "Death Coil",
@@ -3833,8 +3830,7 @@
       "castMs": 0
     },
     "8734": {
-      "name": "Blackfathom Channeling",
-      "castMs": 0
+      "name": "Blackfathom Channeling"
     },
     "28447": {
       "name": "Shadow Burst",
@@ -3859,6 +3855,117 @@
     "21055": {
       "name": "Crush Armor",
       "castMs": 0
+    },
+    "3393": {
+      "name": "Consume Flesh"
+    },
+    "5703": {
+      "name": "Stunning Strike"
+    },
+    "6789": {
+      "name": "Death Coil"
+    },
+    "6907": {
+      "name": "Diseased Slime"
+    },
+    "8406": {
+      "name": "Frostbolt"
+    },
+    "8423": {
+      "name": "Flamestrike"
+    },
+    "9573": {
+      "name": "Flame Breath"
+    },
+    "10159": {
+      "name": "Cone of Cold"
+    },
+    "11660": {
+      "name": "Shadow Bolt"
+    },
+    "11668": {
+      "name": "Immolate"
+    },
+    "11712": {
+      "name": "Curse of Agony"
+    },
+    "11829": {
+      "name": "Flamestrike"
+    },
+    "12380": {
+      "name": "Shadow Channeling"
+    },
+    "13375": {
+      "name": "Fireball"
+    },
+    "15859": {
+      "name": "Dominate Mind"
+    },
+    "17631": {
+      "name": "Wail of Souls"
+    },
+    "18270": {
+      "name": "Dark Plague"
+    },
+    "20299": {
+      "name": "Forked Lightning"
+    },
+    "21070": {
+      "name": "Noxious Cloud"
+    },
+    "21971": {
+      "name": "Poison Bolt"
+    },
+    "27579": {
+      "name": "Demoralizing Shout"
+    },
+    "27580": {
+      "name": "Mortal Strike"
+    },
+    "27641": {
+      "name": "Fear"
+    },
+    "27646": {
+      "name": "Shadow Bolt Volley"
+    },
+    "28438": {
+      "name": "Knockback"
+    },
+    "30093": {
+      "name": "Blizzard"
+    },
+    "44041": {
+      "name": "Tail Slap"
+    },
+    "44042": {
+      "name": "Primordial Regeneration"
+    },
+    "44043": {
+      "name": "Call of the Primordial"
+    },
+    "44048": {
+      "name": "Volatile Fungus"
+    },
+    "44050": {
+      "name": "Decaying Mold"
+    },
+    "44051": {
+      "name": "Dark Seduction"
+    },
+    "44052": {
+      "name": "Drazare's Embrace"
+    },
+    "44053": {
+      "name": "Drazare's Embrace"
+    },
+    "44100": {
+      "name": "Summon Theodorus Elemental"
+    },
+    "47386": {
+      "name": "Mind Flay"
+    },
+    "52422": {
+      "name": "Lightning Strike"
     }
   },
   "creatures": {
@@ -5457,6 +5564,78 @@
     },
     "61968": {
       "name": "Zandara Windhoof"
+    },
+    "60715": {
+      "name": "'Broody'"
+    },
+    "60734": {
+      "name": "Hatereaver Annihilator"
+    },
+    "60735": {
+      "name": "High Foreman Bargul Blackhammer"
+    },
+    "60736": {
+      "name": "Engineer Figgles"
+    },
+    "60737": {
+      "name": "Har'gesh Doomcaller"
+    },
+    "60738": {
+      "name": "Faceless Terror"
+    },
+    "60829": {
+      "name": "Corrosis"
+    },
+    "62547": {
+      "name": "Dagar the Glutton"
+    },
+    "62548": {
+      "name": "Oronok Torn-Heart"
+    },
+    "62549": {
+      "name": "Duke Balor the IV"
+    },
+    "62550": {
+      "name": "Deathlord Tidebane"
+    },
+    "62551": {
+      "name": "Chieftain Stormsong"
+    },
+    "62552": {
+      "name": "Librarian Theodorus"
+    },
+    "62652": {
+      "name": "Subjugator Halthas Shadecrest"
+    },
+    "62661": {
+      "name": "Eldermaw the Primordial"
+    },
+    "62664": {
+      "name": "Mycellakos"
+    },
+    "62665": {
+      "name": "Lady Drazare"
+    },
+    "62670": {
+      "name": "Remains of the Innocent"
+    },
+    "62671": {
+      "name": "Ighal'for"
+    },
+    "62672": {
+      "name": "Rifttorn Nether Imp"
+    },
+    "62673": {
+      "name": "Mergothid"
+    },
+    "62674": {
+      "name": "Eldermaw Crocolisk"
+    },
+    "62675": {
+      "name": "Growth of Mycellekos"
+    },
+    "62742": {
+      "name": "Enraged Sea Elemental"
     }
   }
 }
