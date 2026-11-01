@@ -45,6 +45,15 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     return c;
 }
 
+static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat)
+{
+    SoleCandidate c;
+    c.guid = guid;
+    c.hpPct = hpPct;
+    c.inCombat = inCombat;
+    return c;
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -66,9 +75,12 @@ int main()
     CHECK(ParseBossTacticKind("avoid_cast") == BossTacticKind::AvoidCast);
     CHECK(ParseBossTacticKind("tank_hold") == BossTacticKind::TankHold);
     CHECK(ParseBossTacticKind("hold_kill") == BossTacticKind::HoldKill);
+    CHECK(ParseBossTacticKind("one_at_a_time") == BossTacticKind::OneAtATime);
     CHECK(ParseBossTacticKind("Interrupt") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("Hold_Kill") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("Tank_Hold") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("One_At_A_Time") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("one-at-a-time") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("dispel") == BossTacticKind::None);
 
@@ -105,6 +117,7 @@ int main()
         CHECK(!table.Add(Row(70, 7228, BossTacticKind::Behind, 0, 8374, 0, 0.0f)));    // behind without a radius
         CHECK(!table.Add(Row(70, 7228, BossTacticKind::Behind, 0, 8374, 0, -3.0f)));
         CHECK(!table.Add(Row(309, 15111, BossTacticKind::HoldKill)));                  // hold_kill without a blocker
+        CHECK(!table.Add(Row(309, 15111, BossTacticKind::OneAtATime, 15146)));         // one_at_a_time with a target
         CHECK(table.Size() == 0);
         table.Seal();
         CHECK(!table.HasMap(70));  // an empty sealed table has no map: the tactics stay off
@@ -252,6 +265,44 @@ int main()
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
         CHECK(PickNearestUnheld(active, { Cand(15146, 5.0f, false) }, countOf(15146, 0)) == -1);
+    }
+
+    // "a Mad Servant that is not the sole pick is held with no Voidwalker alive": a one_at_a_time row paces an entry by
+    // itself, without any blocker. The pick is the lowest health among the units of the entry that fight, the lowest
+    // guid on a tie, so every bot picks the same one; every other unit of the entry waits, whether it fights yet or
+    // not. No unit of the entry fighting means no pick, so nothing is held.
+    {
+        const std::vector<SoleCandidate> servants = { Sole(0x1002, 100, true), Sole(0x1003, 100, false),
+                                                      Sole(0x1004, 73, true) };
+        CHECK(PickSoleKill(servants) == 2);                       // the wounded one
+        CHECK(!OneAtATimeHolds(0x1004, 0x1004));                  // the pick is never held
+        CHECK(OneAtATimeHolds(0x1004, 0x1002));                   // another Servant that fights waits
+        CHECK(OneAtATimeHolds(0x1004, 0x1003));                   // a Servant nobody has hit yet waits too
+        CHECK(!OneAtATimeHolds(0, 0x1002));                       // no pick: nobody is paced
+        CHECK(PickSoleKill({}) == -1);
+        CHECK(PickSoleKill({ Sole(0x1002, 100, false) }) == -1);  // out of combat: never the pick
+        // Tie on health: the lowest guid is the pick.
+        const std::vector<SoleCandidate> tied = { Sole(0x2002, 100, true), Sole(0x2001, 100, true) };
+        CHECK(PickSoleKill(tied) == 1);
+        CHECK(!OneAtATimeHolds(0x2001, 0x2001));
+        CHECK(OneAtATimeHolds(0x2001, 0x2002));
+        // A wounded unit nobody fights does not take the pick from one that fights.
+        const std::vector<SoleCandidate> waiting = { Sole(0x3001, 100, true), Sole(0x3002, 1, false) };
+        CHECK(PickSoleKill(waiting) == 0);
+        CHECK(OneAtATimeHolds(0x3001, 0x3002));
+
+        // The row is about its own boss_entry (like a tank_hold row) and needs no blocker: a hold_kill row of the same
+        // entry stays a rule of its own.
+        CHECK(TacticSubjectEntry(Row(309, 15111, BossTacticKind::OneAtATime)) == 15111);
+        BossTacticTable table;
+        CHECK(table.Add(Row(309, 15111, BossTacticKind::OneAtATime)));
+        CHECK(!table.Add(Row(309, 15111, BossTacticKind::OneAtATime)));           // same key
+        CHECK(!table.Add(Row(309, 15111, BossTacticKind::OneAtATime, 15146)));    // a target_entry is refused
+        CHECK(table.Add(Row(309, 15111, BossTacticKind::HoldKill, 15146)));
+        table.Seal();
+        const std::vector<BossTacticRow>* stored = table.Rows(309, 15111);
+        CHECK(stored && stored->size() == 2);
+        CHECK((*stored)[0].kind == BossTacticKind::OneAtATime);
     }
 
     // A blocker counts towards a hold_kill budget only while it fights, or when it can never fight at all (the

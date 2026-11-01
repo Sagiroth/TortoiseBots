@@ -46,6 +46,11 @@ TANK_TARGET = (STRATEGY / "values/TankTargetValue.cpp").read_text()
 BLOCKERS = (STRATEGY / "values/HoldKillBlockersValue.cpp").read_text()
 BLOCKERS_H = (STRATEGY / "values/HoldKillBlockersValue.h").read_text()
 VALUE_CONTEXT = (STRATEGY / "values/ValueContext.h").read_text()
+FOCUS = (STRATEGY / "generic/FocusStrategy.cpp").read_text()
+AREA_SPELL_H = (STRATEGY / "actions/EnemyAreaSpell.h").read_text()
+AOE_OFF = (ROOT / "ai/playerbot/policy/combat/AoeOffPolicy.h").read_text()
+POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -344,7 +349,12 @@ class HoldKillWiring(unittest.TestCase):
         # Every reader builds its count from that one reader, none counts on its own.
         for text in (ACTIONS, DPS_TARGET):
             self.assertNotIn("CountNear", text)
-        self.assertEqual(ACTIONS.count("HoldKillBlockers(ai, entry)"), 3)
+        self.assertIn("HoldKillBlockers(ai, entry)", ACTIONS)
+        # The readers added with one_at_a_time follow the same rule: the sole pick takes the fight's cached attacker
+        # list, and nothing but HoldKillBlockersValue.cpp searches the grid.
+        for name in ("HoldReason HeldSubjectNear(", "bool HeldUnitNear(",
+                     "std::uint64_t ai::SoleKillGuid("):
+            self.assertNotIn("GetCreatureListWithEntryInGrid", body(ACTIONS, name))
         self.assertEqual(DPS_TARGET.count("HoldKillBlockers(ai, entry)"), 1)
 
     def test_the_count_counts_only_fighting_or_unselectable_blockers(self):
@@ -449,6 +459,154 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
         self.assertIn('HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
         self.assertIn("BossTacticKind::TankHold", fn)
         self.assertIn("ai->IsTank(victimPlayer)", fn)
+
+
+class OneAtATimeWiring(unittest.TestCase):
+    """ZG walk 22 (F1): the hold_kill rows alone cannot stop the first burst. At most 3-4 Mad Servants of a wave are
+    engaged, but they are engaged before the first dies, so `KillHeld` is false for everyone, the free DPS split over
+    2-3 of them (dps tournament, the group tank's victim, AoE) and the first death lands 11-17 s in with the others at
+    18-75 %.
+
+    one_at_a_time (map 309, Mad Servant 15111) sends every DPS to one Servant: the pick is the lowest-health living
+    unit of the entry that fights, the lowest guid on a tie, computed from the fight's cached attacker list on every
+    bot, so they converge without a vote. The rules live in ai/playerbot/BossTacticsPolicy.h (PickSoleKill,
+    OneAtATimeHolds) and are unit-tested in tools/test_boss_tactics_policy.cpp; these pins only prove the live code
+    calls them.
+    """
+
+    def test_the_kind_the_loader_rule_and_the_shared_pick(self):
+        self.assertIn("OneAtATime = 7,", POLICY)
+        self.assertIn('if (text == "one_at_a_time")', POLICY)
+        self.assertIn("return BossTacticKind::OneAtATime;", POLICY)
+        # The row is about its own boss_entry (like a tank_hold row): a target_entry is refused.
+        self.assertIn("if (row.kind == BossTacticKind::OneAtATime && row.targetEntry != 0)", POLICY)
+        self.assertIn("struct SoleCandidate", POLICY)
+        self.assertIn("inline int PickSoleKill(const std::vector<SoleCandidate>& c)", POLICY)
+        self.assertIn("inline bool OneAtATimeHolds(std::uint64_t solePick, std::uint64_t guid)", POLICY)
+        # Named and covered by the policy test.
+        self.assertIn("a Mad Servant that is not the sole pick is held with no Voidwalker alive", POLICY_TEST)
+        self.assertIn("PickSoleKill(", POLICY_TEST)
+        self.assertIn("OneAtATimeHolds(", POLICY_TEST)
+
+    def test_the_sole_pick_reads_the_cached_attacker_list_on_both_sides(self):
+        # One pick rule, two readers: the dps target choice and the hold multiplier. Both hand the fight's cached
+        # attacker list to ai::SoleKillGuid; neither runs a grid search of its own.
+        helper = body(ACTIONS, "std::uint64_t ai::SoleKillGuid(")
+        self.assertIn("candidate.guid = unit->GetObjectGuid().GetRawValue()", helper)
+        self.assertIn("candidate.hpPct = static_cast<int>(unit->GetHealthPercent())", helper)
+        self.assertIn("candidate.inCombat = unit->IsInCombat()", helper)
+        self.assertIn("PickSoleKill(candidates)", helper)
+        self.assertNotIn("GetCreatureListWithEntryInGrid", helper)
+        paced = body(DPS_TARGET, "std::uint64_t PacedPick(", "\n    }\n")
+        self.assertIn('GetValue<std::list<ObjectGuid>>("attackers")', paced)
+        self.assertIn("SoleKillGuid(units, entry)", paced)
+        fn = body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")
+        self.assertIn("pacedRow", fn)
+        self.assertIn("BossTacticKind::OneAtATime", fn)
+        self.assertIn("OneAtATimeHolds(PacedPick(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue())", fn)
+        # An explicit attack order lifts the hold_kill exemption (the dps pickers keep it), never the pacing.
+        self.assertLess(fn.index("OneAtATimeHolds(PacedPick("), fn.index("if (ordered)"))
+        # The multiplier's held test reads the pick off the fight it already scanned, not off a second list.
+        subject = body(ACTIONS, "HoldReason HeldSubjectNear(")
+        self.assertIn("OneAtATimeHolds(SoleKillGuid(fight.units, row->bossEntry), "
+                      "unit->GetObjectGuid().GetRawValue())", subject)
+
+
+class HeldSubjectVetoWiring(unittest.TestCase):
+    """ZG walk 22 (F1): what kept killing the held Mad Servants while the Voidwalkers were up was damage the hold never
+    covered — class AoE and grenades on a Voidwalker standing inside the pile (40 grenades, 15 Rain of Fire, 8
+    Multi-Shot in one fight), the DoTs the "attacker without aura" rows put on every other Servant (they tick on after
+    the hold), and every focus-ordered bot, which the free-DPS gate exempts.
+    """
+
+    def test_the_area_clause_is_not_behind_the_free_dps_gate(self):
+        fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        # Every non-tank, non-healer bot, an explicit order included: the gate is the role, not IsFreeDps.
+        self.assertIn("IsBattleDps(bot)", fn)
+        self.assertIn("IsAreaDamageAction(ai, action)", fn)
+        self.assertIn("dynamic_cast<CastRangedDebuffSpellOnAttackerAction*>(action)", fn)
+        # The area would land on the action's target, or on the bot itself (a self-centred blast, a sapper charge).
+        self.assertIn("HeldSubjectNear(action->GetTarget(), fight, countNear, &subject)", fn)
+        self.assertIn("HeldSubjectNear(bot, fight, countNear, &subject)", fn)
+        # The clause sits above the free-DPS gates: the ordered bot never reaches them.
+        self.assertLess(fn.index("HeldSubjectNear(action->GetTarget()"), fn.index("const bool freeDps = IsFreeDps(ai, bot);"))
+
+    def test_the_area_detection_is_the_mark_the_name_set_and_the_spell(self):
+        helper = body(ACTIONS, "bool IsAreaDamageAction(")
+        self.assertIn("ActionThreatType::ACTION_THREAT_AOE", helper)
+        self.assertIn("IsAreaSpellAction(action->GetName())", helper)
+        self.assertIn('AI_VALUE2(uint32, "spell id", cast->GetName())', helper)
+        self.assertIn("IsEnemyAreaSpell(sServerFacade.LookupSpellInfo(spellId))", helper)
+        # The thrown consumables come from the shared name set: goblin sapper, throw grenade, oil of immolation.
+        self.assertIn("inline bool IsAreaSpellAction(const std::string& actionName)", AOE_OFF)
+        self.assertIn('"goblin sapper", "throw grenade"', AOE_OFF)
+
+    def test_is_enemy_area_spell_is_shared_with_the_focus_veto(self):
+        # The spell-shape test moved out of FocusStrategy.cpp's anonymous namespace: one predicate, two vetoes.
+        self.assertIn("inline bool IsEnemyAreaSpell(SpellEntry const* spellInfo)", AREA_SPELL_H)
+        self.assertIn("TARGET_ENUM_UNITS_ENEMY_AOE_AT_SRC_LOC", AREA_SPELL_H)
+        self.assertIn("EffectChainTarget[i] > 1", AREA_SPELL_H)
+        self.assertNotIn("bool IsEnemyAreaSpell(", FOCUS)
+        self.assertIn('#include "playerbot/strategy/actions/EnemyAreaSpell.h"', FOCUS)
+        self.assertIn("IsEnemyAreaSpell(sServerFacade.LookupSpellInfo(spellId))", FOCUS)
+        self.assertIn('#include "EnemyAreaSpell.h"', ACTIONS)
+
+    def test_the_held_test_is_one_helper_for_both_clauses(self):
+        # The DoT row casts on "attacker without aura", which is not the bot's target: the veto reads the unit the cast
+        # would land on through the action's own target value, and the held test is the one helper both clauses call.
+        subject = body(ACTIONS, "HoldReason HeldSubjectNear(")
+        self.assertIn("KillHeld(fight.rows, row->bossEntry, countNear)", subject)
+        self.assertIn("kHoldKillAoeNearYd", subject)
+        self.assertIn("return sole ? HoldReason::Sole : HoldReason::Budget;", subject)
+        near = body(ACTIONS, "bool HeldUnitNear(")
+        self.assertIn("HeldSubjectNear(around, fight, countNear, nullptr)", near)
+        isa = body(ACTIONS, "bool IsBattleDps(")
+        self.assertIn("!PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot)", isa)
+        free = body(ACTIONS, "bool IsFreeDps(", "\n}\n")
+        self.assertIn("if (!IsBattleDps(bot))", free)
+
+
+class HoldKillIsLogged(unittest.TestCase):
+    """F2 (ZG walk 22): the hold ran in walk 22 but nothing proved it. bot_events.csv had 6 800 rows and zero hold /
+    kill-first / pickup rows, because the code logs none. One row per decision, rate-limited to one per bot per 5 s,
+    gated by bot_events.csv in AiPlayerbot.AllowedLogFiles like the avoid_cast row.
+    """
+
+    def test_the_action_logs_its_pick(self):
+        fn = body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")
+        self.assertIn("LogHoldKillPick(ai, bot, fight, held,", fn)
+        # Every exit that is a decision logs: the kill_first pick, the nearest unheld creature, the stop.
+        self.assertEqual(fn.count("LogHoldKillPick("), 3)
+        pick = body(ACTIONS, "void LogHoldKillPick(")
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", info1, info2);', pick)
+        self.assertIn('"held=%u:%u,hp=%u"', pick)
+        self.assertIn('"blockers="', pick)
+        self.assertIn('info2 += "none";', pick)
+        self.assertIn('info2 += ",to=" + std::to_string(destination->GetEntry())', pick)
+        self.assertIn('info2 += ",to=stop";', pick)
+
+    def test_every_multiplier_zero_logs_its_veto(self):
+        fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertEqual(fn.count("LogHoldKillVeto("), 5)
+        self.assertIn('const char* const veto = dpsAssist || tankAssist ? "assist" : aoe ? "aoe" '
+                      ': attackerDebuff ? "dot" : "area";', fn)
+        self.assertIn('held == HoldReason::Sole ? "sole" : veto', fn)
+        veto = body(ACTIONS, "void LogHoldKillVeto(")
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);', veto)
+        self.assertIn('"held=%u:%u,hp=%u"', veto)
+        self.assertIn('"held=none"', veto)
+
+    def test_one_row_per_bot_per_five_seconds(self):
+        due = body(ACTIONS, "bool HoldKillLogDue(")
+        self.assertIn('hasLog("bot_events.csv")', due)
+        self.assertIn("nowMs - last < kHoldKillLogGapMs", due)
+        self.assertIn("constexpr uint32 kHoldKillLogGapMs = 5000;", ACTIONS)
+        # The throttle comes before any string is built.
+        for name in ("void LogHoldKillPick(", "void LogHoldKillVeto("):
+            fn = body(ACTIONS, name)
+            self.assertLess(fn.index("HoldKillLogDue("), fn.index("snprintf("))
+            if name.startswith("void LogHoldKillPick"):
+                self.assertLess(fn.index("HoldKillLogDue("), fn.index('std::string info2 = "blockers="'))
 
 
 class TankTakesTheLooseVoidwalker(unittest.TestCase):

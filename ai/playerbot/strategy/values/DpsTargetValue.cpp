@@ -73,9 +73,25 @@ namespace
     }
 
 
+    // The one living unit of a one_at_a_time entry the fight kills next (BossTacticsActions' SoleKillGuid over the
+    // BossTacticsPolicy pick): the lowest health among the units that fight, the lowest guid on a tie, from the cached
+    // "attackers" list, so every bot picks the same one and the pacing costs no grid search.
+    std::uint64_t PacedPick(PlayerbotAI* ai, std::uint32_t entry)
+    {
+        std::vector<Unit*> units;
+        for (const ObjectGuid& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && unit->GetEntry() == entry)
+                units.push_back(unit);
+        }
+        return SoleKillGuid(units, entry);
+    }
+
     // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives
-    // (KillHeld). Opt-in like the tank pickup (IsTankHoldPickup): only a bot that runs "boss tactics" in combat holds.
-    // Cheapest check first: the candidate's rows (a map without hold_kill rows, which is every map but ZG, returns on the
+    // (KillHeld), and a one_at_a_time row of its entry holds every unit that is not the pick. Opt-in like the tank pickup
+    // (IsTankHoldPickup): only a bot that runs "boss tactics" in combat holds.
+    // Cheapest check first: the candidate's rows (a map without such rows, which is every map but ZG, returns on the
     // first lookup), then the strategy, then the role gate the hold-kill action uses (IsFreeDps: a tank or a healer keeps
     // its own pick, an explicit attack order wins). The blocker count is the "hold kill blockers" value, one grid search
     // per bot and entry per second, never a search of its own inside a candidate loop.
@@ -92,18 +108,26 @@ namespace
         ActiveBossRows active;
         active.reserve(rows->size());
         bool holdRow = false;
+        bool pacedRow = false;
         for (const BossTacticRow& row : *rows)
         {
             active.push_back(&row);
             holdRow = holdRow || row.kind == BossTacticKind::HoldKill;
+            pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
         }
-        if (!holdRow)
+        if (!holdRow && !pacedRow)
             return false;
         if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
             return false;
         if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
             return false;
-        if (!ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty())
+        AiObjectContext* context = ai->GetAiObjectContext();
+        const bool ordered = !context->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+        // one_at_a_time: an explicit order does not lift it, so a focus-ordered bot is not the fourth on the same
+        // Servant either. The pick itself stays attackable (it is what everyone is sent to).
+        if (pacedRow && OneAtATimeHolds(PacedPick(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue()))
+            return true;
+        if (ordered)
             return false;
         const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
         return DpsLeavesAlone(true, active, unit->GetEntry(), countNear);

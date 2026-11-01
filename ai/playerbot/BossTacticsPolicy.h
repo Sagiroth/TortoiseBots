@@ -41,6 +41,7 @@ namespace ai
         AvoidCast = 4,  // non-tank bots leave `param` yd around the caster while it casts `spell_id`
         TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
         HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
+        OneAtATime = 7, // all DPS kill one living unit of `boss_entry` at a time: the lowest health, the lowest guid on a tie
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -57,6 +58,8 @@ namespace ai
             return BossTacticKind::TankHold;
         if (text == "hold_kill")
             return BossTacticKind::HoldKill;
+        if (text == "one_at_a_time")
+            return BossTacticKind::OneAtATime;
         return BossTacticKind::None;
     }
 
@@ -102,6 +105,10 @@ namespace ai
             // The same for a hold_kill row: its boss_entry is the entry the DPS leave alone and its target_entry the
             // blocker that holds them off, so a row without a blocker could never hold anything.
             if (row.kind == BossTacticKind::HoldKill && row.targetEntry == 0)
+                return false;
+            // A one_at_a_time row is keyed by the entry it paces, its own boss_entry (like a tank_hold row): a
+            // target_entry would leave the row's entry and the paced entry disagreeing.
+            if (row.kind == BossTacticKind::OneAtATime && row.targetEntry != 0)
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -506,6 +513,39 @@ namespace ai
                                const std::function<std::uint32_t(std::uint32_t)>& countNear)
     {
         return freeDpsBot && KillHeld(rows, entry, countNear);
+    }
+
+    // A live unit of the paced entry, as the one_at_a_time pick sees it: health first, guid as the tie-break, and
+    // whether it fights at all. Every bot builds the same list from its fight (the cached attacker list), so the pick
+    // needs no vote and no new state.
+    struct SoleCandidate
+    {
+        std::uint64_t guid = 0;
+        int hpPct = 100;
+        bool inCombat = false;
+    };
+
+    // Index of the one unit the whole fight kills next, or -1 when none of the entry fights yet: the lowest health
+    // among the candidates that are in combat, the lowest guid on a tie.
+    inline int PickSoleKill(const std::vector<SoleCandidate>& c)
+    {
+        int best = -1;
+        for (std::size_t i = 0; i < c.size(); ++i)
+        {
+            if (!c[i].inCombat)
+                continue;
+            if (best < 0 || c[i].hpPct < c[best].hpPct || (c[i].hpPct == c[best].hpPct && c[i].guid < c[best].guid))
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // Whether a unit of a one_at_a_time entry is one every bot leaves alone right now: the fight has a sole pick and it
+    // is another unit. No pick (nobody of the entry fights yet) means nothing is paced: the first unit engaged becomes
+    // the pick and every bot converges on it, fighting or not.
+    inline bool OneAtATimeHolds(std::uint64_t solePick, std::uint64_t guid)
+    {
+        return solePick != 0 && solePick != guid;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

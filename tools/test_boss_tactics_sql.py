@@ -18,7 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -105,6 +105,9 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "avoid_cast":
                 self.assertGreater(int(spell), 0, where)
                 self.assertGreater(float(param), 0.0, where)
+            if kind == "one_at_a_time":
+                self.assertEqual(int(target), 0, where)
+                self.assertEqual(int(spell), 0, where)
 
     def test_primary_keys_are_unique(self):
         # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
@@ -239,6 +242,31 @@ class BossTacticsSql(unittest.TestCase):
         live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
         self.assertIn((309, 15146, "tank_hold", 0, 0), live)
         self.assertFalse([key for key in live if key[2] == "tank_hold" and key[1] == 14750])
+
+    def test_one_at_a_time_paces_the_mad_servants(self):
+        # ZG walk 22: even with both hold_kill rows in, 3-4 Mad Servants of one wave were already engaged when the
+        # first died, and the free DPS split over 2-3 of them. one_at_a_time (map 309, Servant 15111) sends every DPS
+        # to the same Servant: the lowest health, the lowest guid on a tie.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
+        self.assertIn((309, 15111, "one_at_a_time", 0, 0), live)
+
+        # The migration that writes it DELETEs the (309, 15111) key first and re-inserts the interrupt row and both
+        # hold_kill rows from 20261101050000 byte-identical, the shape test_dungeon_plan_sql.py requires of a
+        # re-INSERTed key.
+        path = os.path.join(ROOT, "data/sql/world/20261101070000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the one_at_a_time migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        delete = text.index("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (15111);")
+        self.assertLess(delete, text.index("INSERT INTO `ai_boss_tactic`"))
+        with open(os.path.join(ROOT, "data/sql/world/20261101050000_world.sql"), encoding="utf-8") as handle:
+            earlier = handle.read()
+        kept = [line for line in earlier.splitlines() if line.startswith("(309, 15111,")]
+        self.assertEqual(len(kept), 3)
+        for line in kept:
+            self.assertIn(line.rstrip(",;") + ",", text,
+                          "a Mad Servant row did not go back in unchanged")
+        self.assertIn("(309, 15111, 'one_at_a_time', 0, 0, 0, 0, '", text)
 
 
 def _sql_statements(text):
