@@ -254,7 +254,7 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
     MasterPlayer* owner = GetMailOwner(bot);
     if (!bot || !owner)
         return 0;
-    ObjectGuid mailbox = FindMailbox(ai);
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
     if (mailbox.IsEmpty())
         return 0;
     uint32_t taken = 0;
@@ -289,7 +289,12 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
         taken += count;
         Mail* current = owner->GetMail(mail->messageID);
         if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
-            RemoveMail(bot, mail->messageID, mailbox);
+        {
+            WorldPacket delPacket;
+            delPacket << mailbox;
+            delPacket << mail->messageID;
+            bot->GetSession()->HandleMailDelete(delPacket);
+        }
     }
     return taken;
 }
