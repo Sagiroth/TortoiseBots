@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
 #include "BossTacticsActions.h"
@@ -72,6 +74,12 @@ bool IsAreaDamageAction(PlayerbotAI* ai, Action* action)
 {
     if (!action)
         return false;
+    // Heals and the melee sibling of the attacker debuff carry ACTION_THREAT_AOE (GenericSpellActions.h) but hit no
+    // area: the same early returns FocusMultiplier makes before it reads the mark.
+    if (dynamic_cast<CastHealingSpellAction*>(action) != nullptr)
+        return false;
+    if (dynamic_cast<CastMeleeDebuffSpellOnAttackerAction*>(action) != nullptr)
+        return false;
     if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_AOE)
         return true;
     if (IsAreaSpellAction(action->GetName()))
@@ -80,7 +88,7 @@ bool IsAreaDamageAction(PlayerbotAI* ai, Action* action)
     if (!cast)
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
-    const uint32 spellId = AI_VALUE2(uint32, "spell id", cast->GetName());
+    const uint32 spellId = AI_VALUE2(uint32, "spell id", cast->GetSpellName());
     return IsEnemyAreaSpell(sServerFacade.LookupSpellInfo(spellId));
 }
 
@@ -93,29 +101,34 @@ enum class HoldReason
     Sole,
 };
 
-// The held subject within kHoldKillAoeNearYd of `around` (the action's target, or the bot itself), the unit itself and
-// why it is held: an area cast that lands there would take it as well, and one area cast that kills several held Mad
-// Servants together spawns their Voidwalkers together. Read from the fight's cached attacker list (a held Mad Servant
-// fights, so it is on it): never a grid search of its own.
-HoldReason HeldSubjectNear(Unit* around, const BossTacticsFight& fight,
-                           const std::function<std::uint32_t(std::uint32_t)>& countNear, Unit** subject)
+// The held subject within `maxDistance` of `around` (the action's target, or the bot itself), the unit itself and why
+// it is held: an area cast that lands there would take it as well, and one area cast that kills several held Mad
+// Servants together spawns their Voidwalkers together. The distance is kHoldKillAoeNearYd for the area clause and
+// unbounded for the attacker debuff, whose target is held by itself. Every held subject is a unit of the fight the
+// caller scanned, so the pick of a one_at_a_time row is computed once per row, not once per unit.
+HoldReason HeldSubjectWithin(Unit* around, const BossTacticsFight& fight,
+                             const std::function<std::uint32_t(std::uint32_t)>& countNear, float maxDistance,
+                             Unit** subject)
 {
     if (subject)
         *subject = nullptr;
+    if (!around)
+        return HoldReason::None;
     for (const BossTacticRow* row : fight.rows)
     {
         if (row->kind != BossTacticKind::HoldKill && row->kind != BossTacticKind::OneAtATime)
             continue;
-        if (!around)
-            return HoldReason::None;
+        const bool budget = row->kind == BossTacticKind::HoldKill && KillHeld(fight.rows, row->bossEntry, countNear);
+        if (row->kind == BossTacticKind::HoldKill && !budget)
+            continue;
+        const std::uint64_t solePick =
+            row->kind == BossTacticKind::OneAtATime ? SoleKillGuid(ai, row->bossEntry) : 0;
         for (Unit* unit : fight.units)
         {
-            if (unit->GetEntry() != row->bossEntry || !unit->IsAlive() ||
-                around->GetDistance(unit) > kHoldKillAoeNearYd)
+            if (unit->GetEntry() != row->bossEntry || !unit->IsAlive() || around->GetDistance(unit) > maxDistance)
                 continue;
-            const bool budget = row->kind == BossTacticKind::HoldKill && KillHeld(fight.rows, row->bossEntry, countNear);
             const bool sole = row->kind == BossTacticKind::OneAtATime &&
-                OneAtATimeHolds(SoleKillGuid(fight.units, row->bossEntry), unit->GetObjectGuid().GetRawValue());
+                OneAtATimeHolds(solePick, unit->GetObjectGuid().GetRawValue());
             if (!budget && !sole)
                 continue;
             if (subject)
@@ -124,6 +137,21 @@ HoldReason HeldSubjectNear(Unit* around, const BossTacticsFight& fight,
         }
     }
     return HoldReason::None;
+}
+
+// The held subject within the area radius of `around`.
+HoldReason HeldSubjectNear(Unit* around, const BossTacticsFight& fight,
+                           const std::function<std::uint32_t(std::uint32_t)>& countNear, Unit** subject)
+{
+    return HeldSubjectWithin(around, fight, countNear, kHoldKillAoeNearYd, subject);
+}
+
+// The held subject at `around` itself, whatever the distance: the attacker debuff casts on this very unit, so its DoT
+// ticks on it after the hold.
+HoldReason HeldSubjectAt(Unit* around, const BossTacticsFight& fight,
+                         const std::function<std::uint32_t(std::uint32_t)>& countNear, Unit** subject)
+{
+    return HeldSubjectWithin(around, fight, countNear, std::numeric_limits<float>::max(), subject);
 }
 
 // The same question for the clauses that only need to know whether the pile is covered.
@@ -135,19 +163,24 @@ bool HeldUnitNear(Unit* around, const BossTacticsFight& fight,
 
 // One bot_events.csv row per hold decision, at most one per bot per kHoldKillLogGapMs: the multiplier runs on every
 // action of every tick and the action on every tick a blocker lives, while the walk that reads the rows needs the
-// decision, not the repetition. A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hunter
-// telemetry and the avoid_cast row; the throttle is checked before any string is built.
+// decision, not the repetition. The buckets are per bot AND kind: a bot whose hold-kill action fires every tick must
+// not swallow its own veto rows (the two answer different questions). A no-op unless bot_events.csv is in
+// AiPlayerbot.AllowedLogFiles, like the hunter telemetry and the avoid_cast row; the throttle is checked before any
+// string is built.
 constexpr uint32 kHoldKillLogGapMs = 5000;
 std::mutex g_holdKillLogMutex;
 std::unordered_map<uint64, uint32> g_holdKillLog;
 
-bool HoldKillLogDue(Player* bot)
+bool HoldKillLogDue(Player* bot, const char* kind)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return false;
     const uint32 nowMs = WorldTimer::getMSTime();
+    // The key mixes the bot guid with the kind: two kinds of the same bot never share a slot.
+    const uint64 guid = bot->GetObjectGuid().GetRawValue();
+    const uint64 key = guid ^ (std::hash<std::string>()(kind) * 0x9E3779B97F4A7C15ull);
     std::lock_guard<std::mutex> lock(g_holdKillLogMutex);
-    uint32& last = g_holdKillLog[bot->GetObjectGuid().GetRawValue()];
+    uint32& last = g_holdKillLog[key];
     if (last != 0 && nowMs - last < kHoldKillLogGapMs)
         return false;
     last = nowMs;
@@ -161,7 +194,7 @@ bool HoldKillLogDue(Player* bot)
 void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* held, Unit* destination,
                      const std::function<std::uint32_t(std::uint32_t)>& countNear)
 {
-    if (!HoldKillLogDue(bot))
+    if (!HoldKillLogDue(bot, "action"))
         return;
     char info1[64];
     snprintf(info1, sizeof(info1), "held=%u:%u,hp=%u", held->GetEntry(), held->GetGUIDLow(),
@@ -192,7 +225,7 @@ void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight
 //   info2 = "held=<entry>:<guid low>,hp=<pct>" or "held=none"
 void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subject)
 {
-    if (!HoldKillLogDue(bot))
+    if (!HoldKillLogDue(bot, "veto"))
         return;
     char info2[64];
     if (subject)
@@ -214,23 +247,18 @@ std::uint32_t ai::HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry)
     return AI_VALUE2(uint32, "hold kill blockers", static_cast<int32>(entry));
 }
 
-// The one living unit of a one_at_a_time entry the fight kills next, from the cached attacker list the caller already
-// holds: the lowest health among the units that fight, the lowest guid on a tie (PickSoleKill). Every bot reads the
-// same fight, so they converge without a vote and without new state; 0 when nobody of the entry fights yet.
-std::uint64_t ai::SoleKillGuid(const std::vector<Unit*>& units, std::uint32_t entry)
+// The one living unit of a one_at_a_time entry the fight kills next: the lowest health among the units of the entry
+// that fight, the lowest guid on a tie (PickSoleKill). The candidates come from the "sole kill candidates" value, one
+// cached grid search per bot and entry: the whole fight's units of the entry, never the bot's own "attackers" list,
+// which "focus rti targets" collapses to the raid mark. Every bot reads the same set, so they converge without a vote
+// and without new state; 0 when nobody of the entry fights yet.
+std::uint64_t ai::SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry)
 {
-    std::vector<SoleCandidate> candidates;
-    candidates.reserve(units.size());
-    for (Unit* unit : units)
-    {
-        if (unit->GetEntry() != entry)
-            continue;
-        SoleCandidate candidate;
-        candidate.guid = unit->GetObjectGuid().GetRawValue();
-        candidate.hpPct = static_cast<int>(unit->GetHealthPercent());
-        candidate.inCombat = unit->IsInCombat();
-        candidates.push_back(candidate);
-    }
+    if (!ai || !entry)
+        return 0;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::vector<SoleCandidate> candidates =
+        AI_VALUE2(std::vector<SoleCandidate>, "sole kill candidates", static_cast<int32>(entry));
     const int pick = PickSoleKill(candidates);
     return pick < 0 ? 0 : candidates[pick].guid;
 }
@@ -504,24 +532,45 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     const bool dpsAssist = dynamic_cast<DpsAssistAction*>(action) != nullptr;
     const bool tankAssist = dynamic_cast<TankAssistAction*>(action) != nullptr;
     const bool aoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;
-    const bool area = IsAreaDamageAction(ai, action);
     const bool attackerDebuff = dynamic_cast<CastRangedDebuffSpellOnAttackerAction*>(action) != nullptr;
-    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff)
+    const bool other = !dpsAssist && !tankAssist && !aoe && !attackerDebuff;
+    if (other && !GetBossTactics().HasMap(bot->GetMapId()))
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    // The area test (a dynamic_cast and a spell lookup) only runs for a map that has a hold_kill or one_at_a_time row
+    // in the fight: on any other map, and for any other action class, the clause below is dead weight.
+    bool holdsRows = false;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
+        {
+            holdsRows = true;
+            break;
+        }
+    }
+    const bool area = holdsRows && IsAreaDamageAction(ai, action);
+    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff)
+        return 1.0f;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // The log row's veto kind: the action class that was stood down, replaced by "sole" wherever the one_at_a_time
     // pick rather than a hold_kill budget is what holds the subject (the two need different fixes).
-    const char* const veto = dpsAssist || tankAssist ? "assist" : aoe ? "aoe" : attackerDebuff ? "dot" : "area";
+    const char* const veto = dpsAssist || tankAssist ? "assist"
+        : aoe ? "aoe"
+        : attackerDebuff ? "dot"
+        : dynamic_cast<CastHealingSpellAction*>(action) ? "heal" : "area";
     // A held subject is left alone by every bot that is not a tank or a healer, an explicit attack order included: the
     // bot stands in the same pile, its area cast or grenade would take the held Mad Servants with it, and a DoT on a
-    // held Servant ticks on after the hold. Ahead of the free-DPS gates, which such a bot does not reach.
+    // held Servant ticks on after the hold. Ahead of the free-DPS gates, which such a bot does not reach. The area
+    // clause lands on the action's target or on the bot itself (a self-centred blast, a sapper charge); the attacker
+    // debuff casts on its "attacker without aura" target, held by itself.
     if (IsBattleDps(bot) && (area || attackerDebuff))
     {
         Unit* subject = nullptr;
-        HoldReason held = HeldSubjectNear(action->GetTarget(), fight, countNear, &subject);
-        if (held == HoldReason::None)
+        HoldReason held = attackerDebuff
+            ? HeldSubjectAt(action->GetTarget(), fight, countNear, &subject)
+            : HeldSubjectNear(action->GetTarget(), fight, countNear, &subject);
+        if (held == HoldReason::None && area)
             held = HeldSubjectNear(bot, fight, countNear, &subject);
         if (held != HoldReason::None)
         {
@@ -529,6 +578,11 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
             return 0.0f;
         }
     }
+    // Nothing but the three target-choosing actions goes further: a heal, an area cast or a DoT has no kill_first
+    // clause to answer, and none of them may fall through to the hold_kill clause below (the area and the debuff are
+    // already settled above; a heal is never held at all).
+    if (!dpsAssist && !tankAssist && !aoe)
+        return 1.0f;
     // hold_kill: a free DPS bot (IsFreeDps, the gate HeldDpsTarget uses: no tank, no healer, no explicit attack order)
     // leaves a held boss entry alone (the row's blocker is the kill). The assist rows are stood down on the target they
     // would send the bot to — the dps target for the assist, the dps aoe target for the AoE — as well as on the current

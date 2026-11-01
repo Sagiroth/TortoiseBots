@@ -34,10 +34,10 @@ namespace ai
     std::uint32_t HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry);
 
     // The guid of the one living unit of `entry` the fight kills next (0 when nobody of that entry fights yet): the
-    // lowest health among the units that fight, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill). `units` is
-    // the caller's cached attacker list, so the sole pick of a one_at_a_time row costs no grid search and every bot
-    // reads the same data.
-    std::uint64_t SoleKillGuid(const std::vector<Unit*>& units, std::uint32_t entry);
+    // lowest health among the units that fight, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill). The
+    // candidates come from the "sole kill candidates" value (one cached grid search per bot and entry, the fight's own
+    // units of the entry, never the bot's "attackers" list, which "focus rti targets" collapses to the raid mark).
+    std::uint64_t SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry);
 
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan

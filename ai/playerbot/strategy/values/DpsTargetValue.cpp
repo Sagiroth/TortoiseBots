@@ -73,19 +73,25 @@ namespace
     }
 
 
-    // The one living unit of a one_at_a_time entry the fight kills next (BossTacticsActions' SoleKillGuid over the
-    // BossTacticsPolicy pick): the lowest health among the units that fight, the lowest guid on a tie, from the cached
-    // "attackers" list, so every bot picks the same one and the pacing costs no grid search.
-    std::uint64_t PacedPick(PlayerbotAI* ai, std::uint32_t entry)
+    // Whether an explicit attack order on `unit` is a one_at_a_time non-pick: the unit's entry has a one_at_a_time row
+    // and the unit is not the sole pick of the fight. The ordered bot must then fall through to the normal pick, which
+    // sends it to the sole pick (HeldDpsTarget drops the non-pick), so a focus order cannot leave a bot on a Servant
+    // the whole fight is not killing. Only this case: every other explicit order is returned unchanged, tanks and
+    // healers included.
+    bool OrderedOneAtATimeNonPick(PlayerbotAI* ai, Player* bot, Unit* unit)
     {
-        std::vector<Unit*> units;
-        for (const ObjectGuid& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->IsAlive() && unit->GetEntry() == entry)
-                units.push_back(unit);
-        }
-        return SoleKillGuid(units, entry);
+        if (!ai || !bot || !unit)
+            return false;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return false;
+        const BossTacticTable& table = GetBossTactics();
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        bool pacedRow = false;
+        for (const BossTacticRow& row : *rows)
+            pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
+        return pacedRow && OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue());
     }
 
     // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives
@@ -125,7 +131,7 @@ namespace
         const bool ordered = !context->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
         // one_at_a_time: an explicit order does not lift it, so a focus-ordered bot is not the fourth on the same
         // Servant either. The pick itself stays attackable (it is what everyone is sent to).
-        if (pacedRow && OneAtATimeHolds(PacedPick(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue()))
+        if (pacedRow && OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue()))
             return true;
         if (ordered)
             return false;
@@ -464,9 +470,10 @@ namespace
 
 Unit* DpsTargetValue::Calculate()
 {
-    // Explicit orders and raid marks remain ahead of tank assistance.
+    // Explicit orders and raid marks remain ahead of tank assistance. A one_at_a_time non-pick is the one exception:
+    // the ordered bot falls through to the normal pick, which converges on the sole pick with everyone else.
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return explicitTarget;
+        return OrderedOneAtATimeNonPick(ai, bot, explicitTarget) ? Calculate() : explicitTarget;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner
     // (a raid mark on another corner would walk it back into the mark).
@@ -546,7 +553,7 @@ protected:
 Unit* DpsAoeTargetValue::Calculate()
 {
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return explicitTarget;
+        return OrderedOneAtATimeNonPick(ai, bot, explicitTarget) ? Calculate() : explicitTarget;
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
