@@ -2,10 +2,7 @@
 #include "playerbot/ServerFacade.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "values/ItemUsageValue.h"
-#include "../../runtime/GuildOrderConsumablePolicy.h"
-#include "../../runtime/GuildOrderProtectedItems.h"
 #include "../../runtime/GuildOrderStore.h"
-#include "../GuildOrderCraft.h"
 
 char * strstri (const char* str1, const char* str2);
 
@@ -14,26 +11,14 @@ namespace ai
     // True when the item is reserved for the bot's unfinished guild order and
     // must never be consumed (eaten, drunk, bandaged, potion): the order item
     // itself, the current supply item, or a craft-order reagent through the
-    // bot's known recipes. Mirrors the ITEM_USAGE_GUILD_TASK gate in
+    // bot's known recipes. A set lookup in the store, safe on any thread
+    // (the world-thread market service posts through here), and it always
+    // protects the live order and supply items even before the map-thread
+    // refresh recomputed the set. Mirrors the ITEM_USAGE_GUILD_TASK gate in
     // ItemUsageValue so the eat/drink/potion pickers agree with it.
     inline bool GuildOrderConsumesItem(Player* bot, uint32 itemId)
     {
-        if (!bot || !itemId || !bot->GetGuildId())
-            return false;
-        std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
-            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-        if (!order || order->guildId != bot->GetGuildId())
-            return false;
-        auto reagentsFor = [bot](uint32 parent) { return KnownReagentsFor(bot, parent); };
-        if (!TortoiseBots::GuildOrders::OrderProtectsItem(order->itemId,
-            TortoiseBots::GuildOrders::IsFinished(order->state),
-            order->type == TortoiseBots::GuildOrders::OrderType::Craft,
-            order->supplyItemId, itemId, reagentsFor))
-            return false;
-        bool isReagent = itemId != order->itemId && itemId != order->supplyItemId;
-        return TortoiseBots::GuildOrders::ConsumableReservedForOrder(order->itemId,
-            TortoiseBots::GuildOrders::IsFinished(order->state),
-            order->type == TortoiseBots::GuildOrders::OrderType::Craft, itemId, isReagent);
+        return TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId);
     }
     class IterateItemsVisitor
     {

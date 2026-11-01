@@ -430,6 +430,10 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
 {
     if (!ai || !bot || order.state != TortoiseBots::GuildOrders::OrderState::Working)
         return;
+    // The set turns over with the order or supply item, on this map thread
+    // (the spell map is safe to read here). Runs at most once per tick: the
+    // store no-ops when the keys already match.
+    TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
     uint32_t nowMs = WorldTimer::getMSTime();
     if (!SupplyRefreshDue(order.botGuidLow, nowMs))
         return;
@@ -654,8 +658,17 @@ bool HasGuildTravelOrderValue::Calculate()
          current->supplyStep != SupplyStep::Farm && current->supplyStep != SupplyStep::Bags))
         return false;
     // A craft order short on a farmable reagent travels like a farm order.
-    // The refreshed record already names the supply item, so this never
-    // re-reads the farm-item value (and its second ladder refresh).
+    // The refreshed record already names the supply item, so the check below
+    // never re-reads the farm-item value (and its second ladder refresh).
+    bool const craftMailLeg = current->supplyStep == SupplyStep::Bags && ai::OrderMailboxItems(bot,
+        TortoiseBots::GuildOrders::SupplyMailItemId(current->supplyStep,
+            current->supplyItemId, current->itemId)) > 0;
+    // A full bag blocks the take: the bot cannot lift the waiting mail until
+    // it sells down, so the leg yields to the vendor trip instead of walking
+    // to a mailbox it cannot use. Same rule as farm and buy orders below.
+    if (craftMailLeg && TortoiseBots::GuildOrders::OrderMailYieldsToVendor(AI_VALUE(uint8, "bag space"), true) &&
+        AI_VALUE(bool, "can sell"))
+        return false;
     if (order.IsCraftOrder())
         return SupplyFarmItemFor(current->supplyStep, current->supplyItemId, current->type, current->reason,
             current->supplyItemId != 0 && IsUnlimitedVendorItem(current->supplyItemId)) != 0;

@@ -6,6 +6,7 @@
 #include "GuildOrderSourcesPolicy.h"
 #include "GuildOrderSupplyPolicy.h"
 #include "GuildOrderSubOrderPolicy.h"
+#include "GuildOrderProtectedItems.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -41,6 +42,8 @@
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace TortoiseBots
 {
@@ -197,6 +200,90 @@ public:
         if (it == m_orders.end())
             return std::nullopt;
         return it->second.record;
+    }
+    // True when the item is reserved for the bot's unfinished order: the
+    // live order and supply items always, plus the stored reagent set when
+    // its keys still name the live row. A set lookup under the lock, safe
+    // on any thread; cancelled or finished rows protect nothing.
+    bool IsProtectedItem(Player* bot, uint32_t itemId)
+    {
+        if (!bot || !itemId || !bot->GetGuildId())
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(bot->GetGUIDLow());
+        if (it == m_orders.end())
+            return false;
+        Stored& stored = it->second;
+        OrderRecord const& record = stored.record;
+        if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+            return false;
+        if (itemId == record.itemId || itemId == record.supplyItemId)
+            return true;
+        OrderProtectedSet const& kept = stored.kept;
+        if (!kept.valid || kept.orderItemId != record.itemId ||
+            kept.supplyItemId != record.supplyItemId ||
+            kept.orderIsCraft != (record.type == OrderType::Craft))
+            return false;
+        return kept.items.count(itemId) != 0;
+    }
+
+    // Recompute the stored set on the bot's own map thread (the spell map
+    // is safe to read there). Snapshots the keys under the lock, walks the
+    // tree outside it, then swaps in the finished set under the lock with
+    // a key re-check. No-op when the keys already match; clears the set
+    // for cancelled, finished or absent rows.
+    void RefreshProtectedSet(Player* bot)
+    {
+        if (!bot || !bot->GetGuildId())
+            return;
+        uint32_t botGuidLow = bot->GetGUIDLow();
+        uint32_t orderItemId = 0;
+        uint32_t supplyItemId = 0;
+        bool orderIsCraft = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_orders.find(botGuidLow);
+            if (it == m_orders.end())
+                return;
+            OrderRecord const& record = it->second.record;
+            if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+            {
+                it->second.kept = OrderProtectedSet{};
+                return;
+            }
+            if (it->second.kept.valid && it->second.kept.orderItemId == record.itemId &&
+                it->second.kept.supplyItemId == record.supplyItemId &&
+                it->second.kept.orderIsCraft == (record.type == OrderType::Craft))
+                return;
+            orderItemId = record.itemId;
+            supplyItemId = record.supplyItemId;
+            orderIsCraft = record.type == OrderType::Craft;
+        }
+        if (!orderItemId)
+            return;
+        auto reagentsFor = [bot](uint32_t parent) { return ::ai::KnownReagentsFor(bot, parent); };
+        std::unordered_set<uint32_t> kept;
+        CollectOrderProtectedItems(orderItemId, false, orderIsCraft, supplyItemId, reagentsFor, kept);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_orders.find(botGuidLow);
+            if (it == m_orders.end())
+                return;
+            OrderRecord const& record = it->second.record;
+            if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+            {
+                it->second.kept = OrderProtectedSet{};
+                return;
+            }
+            if (record.itemId != orderItemId || record.supplyItemId != supplyItemId ||
+                (record.type == OrderType::Craft) != orderIsCraft)
+                return;
+            it->second.kept.items = std::move(kept);
+            it->second.kept.orderItemId = orderItemId;
+            it->second.kept.supplyItemId = supplyItemId;
+            it->second.kept.orderIsCraft = orderIsCraft;
+            it->second.kept.valid = true;
+        }
     }
 
     std::vector<OrderRecord> ListForGuild(uint32_t guildId)
@@ -1471,6 +1558,7 @@ private:
         uint32_t lastFarmCount = 0;
         bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
         SupplySearchStreak supplySearch; // empty service-leg searches for the current leg
+        OrderProtectedSet kept; // protected item ids for the row's keys (recomputed on the bot's map thread)
         bool sawOnline = false;
         bool reportSeen = false;
         OrderState reportState = OrderState::Working;
@@ -1991,6 +2079,16 @@ std::vector<OrderRecord> ListForGuild(uint32_t guildId)
 std::vector<OrderRecord> All()
 {
     return OrderStore::Instance().All();
+}
+
+bool IsOrderProtectedItem(Player* bot, uint32_t itemId)
+{
+    return OrderStore::Instance().IsProtectedItem(bot, itemId);
+}
+
+void RefreshOrderProtectedSet(Player* bot)
+{
+    OrderStore::Instance().RefreshProtectedSet(bot);
 }
 
 bool Give(OrderRecord record)
