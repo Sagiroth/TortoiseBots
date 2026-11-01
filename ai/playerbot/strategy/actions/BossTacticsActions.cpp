@@ -345,6 +345,16 @@ float TrapHoldMultiplier::GetValue(Action* action)
         target->GetPositionZ(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), stopRange);
     std::vector<AoeHazardCircle> hazards;
     CollectDamagingTrapHazardsAt(ai, bot, endpoint.x, endpoint.y, endpoint.z, hazards);
+    // A hostile ground cloud holds a reach or chase the same way: the melee
+    // wait at the cloud's edge while the tank drags the boss out. Not for the
+    // tank itself, which must follow its boss (a threat reset, or the drag out
+    // of the cloud) rather than be held off it.
+    if (!(PlayerbotAI::IsTank(bot) && target->GetVictim() == bot))
+    {
+        std::vector<AoeHazardCircle> dynObjHazards;
+        CollectDamagingDynObjHazardsAt(ai, bot, endpoint.x, endpoint.y, endpoint.z, dynObjHazards);
+        hazards.insert(hazards.end(), dynObjHazards.begin(), dynObjHazards.end());
+    }
     return HazardsHoldMove(false, false, true, endpoint.x, endpoint.y, endpoint.z, hazards) ? 0.0f : 1.0f;
 }
 

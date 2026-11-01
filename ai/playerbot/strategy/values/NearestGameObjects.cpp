@@ -27,17 +27,17 @@ bool GameObjectsInObjectRangeCheck::operator()(GameObject* u)
     return false;
 }
 
-class AnyDynamicObjectInObjectRangeCheck
+// Dynamic objects within `range` of a unit. WorldObjectListSearcher calls the
+// check for every container type (player, creature, corpse, game object,
+// dynamic object), so it takes a WorldObject* and filters by type id.
+class DynamicObjectsInRangeCheck
 {
 public:
-    AnyDynamicObjectInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
+    DynamicObjectsInRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
     WorldObject const& GetFocusObject() const { return *i_obj; }
-    bool operator()(DynamicObject* u)
+    bool operator()(WorldObject* u)
     {
-        if (u && i_obj->IsWithinDistInMap(u, i_range))
-            return true;
-
-        return false;
+        return u && u->GetTypeId() == TYPEID_DYNAMICOBJECT && u->IsInWorld() && i_obj->IsWithinDistInMap(u, i_range);
     }
 
 private:
@@ -92,17 +92,15 @@ std::list<ObjectGuid> NearestGameObjects::Calculate()
 
 std::list<ObjectGuid> NearestDynamicObjects::Calculate()
 {
-    std::list<DynamicObject*> targets;
-
-    // Penqle has no DynamicObjectListSearcher grid template — dynamic objects
-    // are not iterated via grid searchers in this codebase. Leave the list
-    // empty; the bot strategy degrades gracefully (returns empty list) until
-    // a host hook lands.
+    std::list<WorldObject*> targets;
+    DynamicObjectsInRangeCheck u_check(bot, range);
+    WorldObjectListSearcher<DynamicObjectsInRangeCheck> searcher(targets, u_check);
+    Cell::VisitAllObjects((const WorldObject*)bot, searcher, range);
 
     std::list<ObjectGuid> result;
-    for (std::list<DynamicObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
+    for (std::list<WorldObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
     {
-        DynamicObject* go = *tIter;
+        DynamicObject* go = static_cast<DynamicObject*>(*tIter);
 
         switch (lineOfSight)
         {
@@ -210,6 +208,51 @@ private:
     uint32 mapId;
     float x, y, z, range;
 };
+
+// A dynamic object that marks a hazard (hostile caster, non-positive effect,
+// within the dodge cap): appended to `out` as a centre/radius circle.
+void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out)
+{
+    if (!dyn || !dyn->IsInWorld())
+        return;
+    SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
+    if (!spellProto)
+        return;
+    bool const positive = spellProto->IsPositiveEffect(dyn->GetEffIndex());
+    WorldObject* caster = dyn->GetCaster();
+    bool const casterFriendly = caster && sServerFacade.IsFriendlyTo(caster, bot);
+    float const radius = dyn->GetRadius();
+    if (!DynObjIsHostileHazard(positive, casterFriendly, radius))
+        return;
+    AoeHazardCircle hazard;
+    hazard.x = dyn->GetPositionX();
+    hazard.y = dyn->GetPositionY();
+    hazard.z = dyn->GetPositionZ();
+    hazard.radius = radius;
+    out.push_back(hazard);
+}
+
+// Dynamic objects within `range` of a map point (one bounded visit; the grid
+// is never loaded per bot tick).
+class DynObjsNearPointCheck
+{
+public:
+    DynObjsNearPointCheck(uint32 mapId, float x, float y, float z, float range)
+        : mapId(mapId), x(x), y(y), z(z), range(range) {}
+    bool operator()(WorldObject* u)
+    {
+        if (!u || u->GetTypeId() != TYPEID_DYNAMICOBJECT || u->GetMapId() != mapId || !u->IsInWorld())
+            return false;
+        float const dx = u->GetPositionX() - x;
+        float const dy = u->GetPositionY() - y;
+        float const dz = u->GetPositionZ() - z;
+        return dx * dx + dy * dy + dz * dz <= range * range;
+    }
+
+private:
+    uint32 mapId;
+    float x, y, z, range;
+};
 }
 
 void ai::CollectDamagingTrapHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out)
@@ -279,6 +322,47 @@ void ai::CollectDamagingTrapHazardsAt(PlayerbotAI* ai, Player* bot, float x, flo
         hazard.radius = radius;
         out.push_back(hazard);
     }
+}
+
+void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
+        PushDynObjHazard(bot, map->GetDynamicObject(guid), out);
+}
+
+void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
+    std::vector<AoeHazardCircle>& out)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    float const dx = bot->GetPositionX() - x;
+    float const dy = bot->GetPositionY() - y;
+    float const dz = bot->GetPositionZ() - z;
+    // Same rule as the trap search: the cached list covers a point in the
+    // bot's neighbourhood, a farther destination gets its own bounded query.
+    float const cachedYd = kTrapScanRangeYd - kTrapDestMarginYd;
+    if (dx * dx + dy * dy + dz * dz <= cachedYd * cachedYd)
+    {
+        CollectDamagingDynObjHazards(ai, bot, out);
+        return;
+    }
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+    std::list<WorldObject*> targets;
+    DynObjsNearPointCheck u_check(bot->GetMapId(), x, y, z, kTrapScanRangeYd);
+    WorldObjectListSearcher<DynObjsNearPointCheck> searcher(targets, u_check);
+    Cell::VisitAllObjects(x, y, map, searcher, kTrapScanRangeYd, true);
+    for (WorldObject* wo : targets)
+        PushDynObjHazard(bot, static_cast<DynamicObject*>(wo), out);
 }
 
 std::list<ObjectGuid> NearestDamagingTrapsValue::Calculate()

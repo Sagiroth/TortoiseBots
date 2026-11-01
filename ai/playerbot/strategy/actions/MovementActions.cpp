@@ -3265,6 +3265,17 @@ bool FleeAction::Execute(Event& event)
     return Flee(AI_VALUE(Unit*, "current target"));
 }
 
+bool FleeAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    // A tank that holds its boss does not run off it: fleeing drops the
+    // threat and drags the fight onto the casters. The step-out (avoid aoe)
+    // is the tank's way out of a ground effect.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !(PlayerbotAI::IsTank(bot) && target && target->GetVictim() == bot);
+}
+
 bool AvoidAoeAction::isUseful()
 {
     if (!MovementAction::isUseful())
@@ -3336,29 +3347,18 @@ void AvoidAoeAction::RecallPetFromHazard(float radius, const WorldPosition& cent
 
 bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter)
 {
-    if (!AI_VALUE2(bool, "has area debuff", "self target"))
-        return false;
-    // The value checks "self target"; re-scan the cached dynobj list for
-    // the aura actually affecting the bot to recover its radius.
-    std::list<ObjectGuid> const& dynobjs = AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los");
-    for (ObjectGuid const& guid : dynobjs)
+    // Proactive: a hostile ground cloud (Poison Cloud, Blizzard, Rain of Fire,
+    // Consecration) whose circle covers the bot starts the step as soon as the
+    // cloud appears, before its first 1 s tick lands. The old "has area debuff"
+    // gate only saw the cloud after the aura was already on the bot.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds);
+    for (AoeHazardCircle const& circle : clouds)
     {
-        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
-        if (!dyn || !dyn->IsInWorld())
-            continue;
-        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
-        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
-            continue;
-        if (!dyn->IsAffecting(bot))
-            continue;
-        float radius = dyn->GetRadius();
-        if (!IsAvoidableAoeRadius(radius))
-            continue;
-        AoeHazardCircle const circle{dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ(), radius};
         if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
             continue;
-        outRadius = radius;
-        outCenter = WorldPosition(dyn->GetMapId(), dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ());
+        outRadius = circle.radius;
+        outCenter = WorldPosition(bot->GetMapId(), circle.x, circle.y, circle.z);
         return true;
     }
     return false;
@@ -3465,7 +3465,6 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
 bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float radius)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
-    float const step = AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
     // Ordered offsets (policy): strafes off the target first, straight
     // lines after; straight landings must stay in the combat band.
     float offsets[5] = {};
@@ -3475,6 +3474,16 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     if (target && target->GetVictim() == bot &&
         !target->HasAuraType(SPELL_AURA_MOD_ROOT) && !target->HasAuraType(SPELL_AURA_MOD_STUN))
         tanking = true;
+    // A tank whose own target stands inside the circle must drag the boss out,
+    // not only itself: a plain escape step drops the boss at melee reach, i.e.
+    // still inside the old cloud with the melee around it. The drag step clears
+    // the circle plus both reaches.
+    AoeHazardCircle const hazardCircle{hazardCenter.getX(), hazardCenter.getY(), hazardCenter.getZ(), radius};
+    bool const dragTargetOut = tanking && target &&
+        InsideAoeHazard(hazardCircle, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+    float const step = dragTargetOut
+        ? TankDragStep(radius, target->GetCombatReach(), bot->GetCombatReach())
+        : AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
     if (!target)
     {
         // Donor shape: with no target a single away-from-hazard candidate.
@@ -3522,26 +3531,14 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
         }
     }
     // Damaging circles: every trap the value lists (the one being left
-    // included, so a strafe never stays inside it) and every damaging dynamic
-    // object. A landing in any of them is the next fire.
+    // included, so a strafe never stays inside it) and every hostile ground
+    // cloud. A landing in any of them is the next fire; a friendly caster's or
+    // a positive dynamic object is not a hazard.
     std::vector<AoeHazardCircle> damagingHazards;
     CollectDamagingTrapHazards(ai, bot, damagingHazards);
-    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
-    {
-        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
-        if (!dyn || !dyn->IsInWorld())
-            continue;
-        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
-        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
-            continue;
-        AoeHazardCircle hazard;
-        hazard.x = dyn->GetPositionX();
-        hazard.y = dyn->GetPositionY();
-        hazard.z = dyn->GetPositionZ();
-        hazard.radius = dyn->GetRadius();
-        if (hazard.radius > 0.0f)
-            damagingHazards.push_back(hazard);
-    }
+    std::vector<AoeHazardCircle> dynObjHazards;
+    CollectDamagingDynObjHazards(ai, bot, dynObjHazards);
+    damagingHazards.insert(damagingHazards.end(), dynObjHazards.begin(), dynObjHazards.end());
     // Candidate point for a heading: `stepYd` from the bot, on the ground.
     auto candidateAt = [&](int i, float stepYd)
     {
@@ -3593,9 +3590,16 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             }
             // The landing must leave the circle being stepped out of (the
             // same centre-to-centre test the sensor used), or the next tick
-            // steps out again. Traps and dynobjs are also in
+            // steps out again. A tank drag must take the boss's whole body
+            // out too, not only the bot. Traps and dynobjs are also in
             // damagingHazards below; a spin hazard only lives here.
-            if (cand.distance(hazardCenter) <= radius)
+            if (dragTargetOut)
+            {
+                if (!TankLandingDragsTargetOut(cand.distance(hazardCenter), radius,
+                        target->GetCombatReach(), bot->GetCombatReach()))
+                    continue;
+            }
+            else if (cand.distance(hazardCenter) <= radius)
                 continue;
             bool inOtherKeepout = false;
             for (OtherKeepout const& other : otherKeepouts)

@@ -161,6 +161,15 @@ namespace ai
         return radius > 0.0f && radius <= kMaxAoeAvoidRadiusYd;
     }
 
+    // A dynamic object that marks a hazard: a non-positive spell effect from a
+    // caster that is not a friend of the bot, within the dodge cap. A friendly
+    // mage's Blizzard or warlock's Rain of Fire marks no hazard, so it never
+    // refuses a landing or a hold.
+    inline bool DynObjIsHostileHazard(bool positiveEffect, bool casterFriendly, float radius)
+    {
+        return !positiveEffect && !casterFriendly && IsAvoidableAoeRadius(radius);
+    }
+
     // A periodic-trigger aura whose triggered spell hurts around the caster
     // marks a hazard — but not the same one for every unit (#971 review):
     // school damage keeps the old rule (invisible NOT_SELECTABLE emitters
@@ -246,5 +255,24 @@ namespace ai
     {
         float step = radius + 1.0f;
         return step < fleeDistance ? step : fleeDistance;
+    }
+
+    // A tank that steps out of a ground effect drops the boss at melee reach:
+    // the boss keeps standing in the circle it landed in and the melee follow
+    // it back. The drag step clears the circle plus the target's reach plus
+    // the bot's reach, so the boss ends up outside it; the widened search's
+    // last-resort ring is the ceiling.
+    inline float TankDragStep(float radius, float targetReach, float botReach)
+    {
+        float const step = radius + targetReach + botReach + 1.5f;
+        float const cap = kAoeFallbackStepYd + 8.0f;
+        return step < cap ? step : cap;
+    }
+
+    // The landing test for the drag: the landing point clears the hazard by
+    // the same reaches and a margin, so the boss it drags stops outside.
+    inline bool TankLandingDragsTargetOut(float landingToCentre, float radius, float targetReach, float botReach)
+    {
+        return landingToCentre >= radius + targetReach + botReach + 0.5f;
     }
 } // namespace ai

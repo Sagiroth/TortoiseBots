@@ -18,6 +18,7 @@ using ai::AoeHazardCircle;
 using ai::AoeLanding;
 using ai::AoePoint;
 using ai::ChooseClearAoeLanding;
+using ai::DynObjIsHostileHazard;
 using ai::HazardsHoldMove;
 using ai::IsAvoidableAoeRadius;
 using ai::kAoeAtSourceTargetA;
@@ -36,6 +37,8 @@ using ai::RangedAoeCandidates;
 using ai::RangedAoeLandingInRange;
 using ai::TrapHazardRadius;
 using ai::TriggerSpellMarksSpinHazard;
+using ai::TankDragStep;
+using ai::TankLandingDragsTargetOut;
 
 int main()
 {
@@ -222,6 +225,32 @@ int main()
     CHECK(kAoeFallbackStepYd == 12.0f);
     CHECK(kAoeFallbackWideStepYd == 20.0f);
     CHECK(kTrapScanRangeYd == 30.0f);
+
+    // Tank drag (Venoxis P2: Poison Cloud 23861 is an 8 yd persistent-area
+    // circle dropped under the boss): the step must take the boss, and the
+    // melee around it, out of the cloud - the tank alone stepping to melee
+    // reach only saves itself while the boss keeps standing in it. The step
+    // is radius + both reaches + a margin, capped at the widened search's
+    // ring plus 8 yd; the landing must clear the same sum by the margin.
+    CHECK(TankDragStep(8.0f, 3.0f, 1.5f) == 14.0f);
+    CHECK(TankDragStep(8.0f, 3.0f, 1.5f) <= kAoeFallbackStepYd + 8.0f);
+    CHECK(TankDragStep(15.0f, 10.0f, 3.0f) == kAoeFallbackStepYd + 8.0f);
+    CHECK(!TankLandingDragsTargetOut(9.0f, 8.0f, 3.0f, 1.5f));
+    CHECK(!TankLandingDragsTargetOut(12.0f, 8.0f, 3.0f, 1.5f));
+    CHECK(TankLandingDragsTargetOut(13.0f, 8.0f, 3.0f, 1.5f));
+    CHECK(TankLandingDragsTargetOut(14.0f, 8.0f, 3.0f, 1.5f));
+    std::cout << "  [PASS] tank drag step takes the boss out of the cloud\n";
+
+    // Only a hostile, non-positive circle is a hazard: a friendly mage's
+    // Blizzard or a warlock's Rain of Fire must never refuse a landing, a
+    // positive ground effect is no danger, and the dodge cap still gates the
+    // circle (a 30 yd pool is not stepped out of).
+    CHECK(!DynObjIsHostileHazard(false, true, 8.0f));   // friendly caster
+    CHECK(!DynObjIsHostileHazard(true, false, 8.0f));   // positive effect
+    CHECK(DynObjIsHostileHazard(false, false, 8.0f));   // hostile cloud
+    CHECK(!DynObjIsHostileHazard(false, false, 30.0f)); // past the dodge cap
+    CHECK(!DynObjIsHostileHazard(false, false, 0.0f));  // no radius
+    std::cout << "  [PASS] friendly or positive ground effects are no hazard\n";
 
     std::cout << "All avoid-aoe policy tests passed.\n";
     return 0;
