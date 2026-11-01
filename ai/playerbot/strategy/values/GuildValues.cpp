@@ -348,6 +348,11 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     // house leg could only walk to a city and back.
     bool const auctionUnaffordable = bot->GetMoney() == 0 &&
         TortoiseBots::GuildOrders::BranchGoldCapRemaining(order.botGuidLow) == 0;
+    // A reagent any vendor sells without limit is bought there: the bank and
+    // auction legs never travel for it (SupplyFarmItemFor maps it to 0), so
+    // routing it through them parked the order for good.
+    if (IsUnlimitedVendorItem(candidate.itemId) && verdict.CanFarm())
+        return SupplyStep::Farm;
     if (sameItem)
     {
         // A delivered sub-order put the item in the guild bank: fetch it
