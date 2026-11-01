@@ -66,9 +66,12 @@ namespace ai
     // players decide); the callers pass masterlessRandom and in-group down.
     // inGroup covers hired-companion groups: the pool's can-fight-elite
     // value is group-gated the same way.
-    inline bool EliteCampDangerApplies(bool masterlessRandom, bool hasRealPlayerMaster, bool inGroup)
+    inline bool EliteCampDangerApplies(bool masterlessRandom, bool hasRealPlayerMaster, bool inGroup, std::uint32_t botLevel)
     {
-        return masterlessRandom && !hasRealPlayerMaster && !inGroup;
+        // Floor at level 4 like the normal gate: start-zone points near an
+        // elite spawn would otherwise lose every destination for a level-1
+        // bot the way pre-floor #418 did.
+        return masterlessRandom && !hasRealPlayerMaster && !inGroup && botLevel >= 4;
     }
 
     inline bool EliteCampDangerous(bool eliteSpawnNear, int eliteLevelMax, std::uint32_t botLevel)

@@ -1,8 +1,10 @@
 #pragma once
 
-// Pure rules for R2 (fair-fight losses): do not chase a mob that is
-// evading/returning home, and drop a target dragged past the leash instead
-// of running after it into its camp.
+// Pure rules for R2 (fair-fight losses): do not chase a mob that is evading
+// home, and drop an evading target dragged past the leash instead of
+// running after it into its camp. A mob the core merely flags unreachable
+// is still damaging: it keeps the order and falls through to the movement
+// and the 15 s give-up, which already treats it as cannot-be-reached.
 //
 // Live pool (EvadeProbe detail rows, 00:00-06:00): evade=1 in 69% of
 // samples, 638 rows with the bot IN combat against an evading mob that
@@ -40,23 +42,28 @@ namespace ai
         float combatStartDistanceYd = 0.0f; // target-to-combat-start, like the probe's csdist
     };
 
-    // Do not start/keep chasing: the mob is evading, or the core flags it
-    // unreachable. Both already feed TargetCannotBeReached for the give-up;
-    // this is the per-tick movement verdict so the bot never takes the
-    // first step after it, instead of chasing for 15 s and then giving up.
-    inline bool ShouldNotChaseEvader(bool evading, bool unreachable)
+    // Do not start/keep chasing an evading mob: it is walking home
+    // invulnerable, and the first step after it drags the fight toward its
+    // camp. A mob the core merely flags unreachable is still damaging, so
+    // the caller keeps the order and falls through to the movement and the
+    // 15 s give-up below (which already treats it as cannot-be-reached);
+    // holding the target there left the bot standing in combat without a
+    // swing. Evade already feeds TargetCannotBeReached for the give-up.
+    inline bool ShouldNotChaseEvader(bool evading)
     {
-        return evading || unreachable;
+        return evading;
     }
 
-    // Drop the order: the evading/unreachable target is already past the
-    // home leash (or the fight drifted that far from where it started).
-    // Dropping lets CombatEnd fire and the non-combat engine re-pick at
-    // full resources, instead of standing an evader back to full HP and
-    // re-aggroing it next to its camp.
+    // Drop the order: the evading target is already past the home leash (or
+    // the fight drifted that far from where it started). Evade-only: a mob
+    // the core merely flags unreachable is still damaging, so it keeps the
+    // order and the reach falls through to the movement and the 15 s
+    // give-up. Dropping lets CombatEnd fire and the non-combat engine
+    // re-pick at full resources, instead of standing an evader back to full
+    // HP and re-aggroing it next to its camp.
     inline bool ShouldDropDraggedTarget(EvadeChaseState const& state)
     {
-        if (!state.evading && !state.unreachable)
+        if (!state.evading)
             return false;
         return state.homeDistanceYd > kEvadeChaseHomeLeashYd ||
             state.combatStartDistanceYd > kEvadeChaseHomeLeashYd;

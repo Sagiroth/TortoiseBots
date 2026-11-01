@@ -57,6 +57,22 @@ namespace ai
         return mobToBot < aggroRadius + kPoolFleeAggroMargin + stepLength;
     }
 
+    // Cap for the per-tick live-attacker scratch in FleeStepAway: attacker
+    // counts are tiny and this runs every flee tick, so a fixed stack array
+    // replaces the heap vector.
+    constexpr int kPoolFleeMaxPackAttackers = 8;
+
+    // Non-owning prefix over a filled stack array, so the centroid helper
+    // keeps its range interface without a heap vector.
+    template <typename T>
+    struct FleeAttackerPrefix
+    {
+        T* data = nullptr;
+        int count = 0;
+        T const* begin() const { return data; }
+        T const* end() const { return data + count; }
+    };
+
     // Pack centroid for the R3 outnumbered flee: the average position of the
     // live attackers, so the flee step runs from their pack, not from one
     // mob. A bot between two mobs must not "flee" toward the second one;
@@ -69,7 +85,6 @@ namespace ai
         float y = 0.0f;
         bool valid = false;
     };
-
     template <typename AttackerList, typename PosFn>
     inline FleePackPoint PoolFleePackCentroid(AttackerList const& attackers, PosFn posOf)
     {

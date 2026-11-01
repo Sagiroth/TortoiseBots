@@ -3154,7 +3154,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         // bars the point for a solo masterless pool bot (fair-fight losses:
         // 31% of fair deaths by rank-1 killers at 2.5-4x vanilla DPS).
         // Groups and real-player-mastered bots keep today's behaviour.
-        if (ai::EliteCampDangerApplies(info.IsMasterlessRandom(), info.HasRealPlayerMaster(), info.IsInGroup() || info.IsInRaid()))
+        if (ai::EliteCampDangerApplies(info.IsMasterlessRandom(), info.HasRealPlayerMaster(), info.IsInGroup() || info.IsInRaid(), info.GetLevel()))
         {
             uint32 const highestEliteNear = position.GetHighestHostileEliteLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
             if (highestEliteNear != 0 && ai::EliteCampDangerous(true, (int)highestEliteNear, info.GetLevel()))

@@ -373,6 +373,28 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             newdistance =+ GetTargetingPlayerCount(unit) * 5;
         }
 
+        // Elite camps: same data-only gate as the idle fallback below — a
+        // mob standing next to a same-band-or-above elite is skipped for a
+        // solo masterless pool bot before it becomes the best candidate
+        // (the elite social-aggros into the "fair" fight). Candidate-gated
+        // like the fallback (only a mob nearer than the current best pays
+        // the index query); groups and real-player-mastered bots keep
+        // today's behaviour. Self-defence (the attackers loop above) still
+        // answers anything already fighting the bot.
+        if ((!result || newdistance < distance) &&
+            ai::EliteCampDangerApplies(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
+                ai->HasRealPlayerMaster(), bot->GetGroup() != nullptr, bot->GetLevel()))
+        {
+            WorldPosition mobPos(unit);
+            uint32 const highestEliteNear = mobPos.GetHighestHostileEliteLevelNear(
+                ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
+            if (highestEliteNear != 0 && ai::EliteCampDangerous(true, (int)highestEliteNear, bot->GetLevel()))
+            {
+                logGrind(unit, "ignored (elite camp).");
+                continue;
+            }
+        }
+
         if (group)
         {
             Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
@@ -518,7 +540,7 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
         // rank-1 elite for a solo masterless pool bot (fair-fight losses).
         // Groups and real-player-mastered bots keep today's behaviour.
         if (ai::EliteCampDangerApplies(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
-            ai->HasRealPlayerMaster(), bot->GetGroup() != nullptr))
+            ai->HasRealPlayerMaster(), bot->GetGroup() != nullptr, bot->GetLevel()))
         {
             uint32 const highestEliteNear = mobPos.GetHighestHostileEliteLevelNear(
                 ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());

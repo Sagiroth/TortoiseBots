@@ -2868,25 +2868,40 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
     // single-target heading stays when there is no pack (solo target).
     float away;
     {
-        std::vector<Unit*> liveAttackers;
+        // Fixed stack scratch: attacker counts are tiny and this runs every
+        // flee tick, so no heap vector. Total live attackers is counted
+        // separately because the centroid only sees the capped prefix.
+        Unit* liveAttackers[kPoolFleeMaxPackAttackers];
+        int liveCount = 0;
+        int totalLive = 0;
         for (Unit* attacker : bot->GetAttackers())
-            if (attacker && sServerFacade.IsAlive(attacker) && attacker->GetMapId() == bot->GetMapId())
-                liveAttackers.push_back(attacker);
-        ai::FleePackPoint pack = ai::PoolFleePackCentroid(liveAttackers,
+        {
+            if (!attacker || !sServerFacade.IsAlive(attacker) || attacker->GetMapId() != bot->GetMapId())
+                continue;
+            ++totalLive;
+            if (liveCount < kPoolFleeMaxPackAttackers)
+                liveAttackers[liveCount++] = attacker;
+        }
+        ai::FleePackPoint pack = ai::PoolFleePackCentroid(
+            ai::FleeAttackerPrefix<Unit*>{ liveAttackers, liveCount },
             [](Unit* unit, float& x, float& y) { x = unit->GetPositionX(); y = unit->GetPositionY(); return true; });
-        if (pack.valid && liveAttackers.size() > 1)
+        if (pack.valid && totalLive > 1)
             away = std::atan2(bot->GetPositionY() - pack.y, bot->GetPositionX() - pack.x);
         else
             away = target->GetAngle(bot);
     }
 
     // Unpulled hostile mobs one step could wake: one cached "possible
-    // targets" read, filtered once, not a scan per candidate.
+    // targets" read, filtered once, not a scan per candidate. Fixed stack
+    // scratch like the pack above: this runs every flee tick.
     struct Sleeper { Unit* unit; float radius; float toBot; };
-    std::vector<Sleeper> sleepers;
+    Sleeper sleepers[kPoolFleeMaxPackAttackers];
+    int sleeperCount = 0;
     std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     for (ObjectGuid const& guid : possibleTargets)
     {
+        if (sleeperCount >= kPoolFleeMaxPackAttackers)
+            break;
         Unit* unit = ai->GetUnit(guid);
         if (!unit || unit == target || !sServerFacade.IsAlive(unit) || unit->IsInCombat())
             continue;
@@ -2897,7 +2912,7 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
         float const toBot = sServerFacade.getDistance2d(unit, bot);
         if (radius <= 0.0f || !PoolFleeMobInReach(toBot, radius, distance))
             continue;
-        sleepers.push_back({ unit, radius, toBot });
+        sleepers[sleeperCount++] = { unit, radius, toBot };
     }
 
     float offsets[kPoolFleeHeadingCount];
@@ -2916,8 +2931,9 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
             continue;
 
         bool wakesMob = false;
-        for (Sleeper const& sleeper : sleepers)
+        for (int s = 0; s < sleeperCount; ++s)
         {
+            Sleeper const& sleeper = sleepers[s];
             if (PoolFleeLandingWakesMob(sServerFacade.getDistance2d(sleeper.unit, cand.getX(), cand.getY()),
                 sleeper.toBot, sleeper.radius))
             {

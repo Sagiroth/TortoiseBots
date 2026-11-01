@@ -71,10 +71,15 @@ int main()
     // below does not. Groups and real-player-mastered bots keep today's
     // behaviour, whatever the camp.
     {
-        CHECK(EliteCampDangerApplies(true, false, false));
-        CHECK(!EliteCampDangerApplies(false, false, false));
-        CHECK(!EliteCampDangerApplies(true, true, false));
-        CHECK(!EliteCampDangerApplies(true, false, true));
+        CHECK(EliteCampDangerApplies(true, false, false, 31));
+        CHECK(!EliteCampDangerApplies(false, false, false, 31));
+        CHECK(!EliteCampDangerApplies(true, true, false, 31));
+        CHECK(!EliteCampDangerApplies(true, false, true, 31));
+        // Floor at level 4 like the normal gate: start-zone bots keep
+        // destinations near an elite spawn the way pre-floor #418 did.
+        CHECK(!EliteCampDangerApplies(true, false, false, 1));
+        CHECK(!EliteCampDangerApplies(true, false, false, 3));
+        CHECK(EliteCampDangerApplies(true, false, false, 4));
         CHECK(EliteCampDangerous(true, 30, 31));
         CHECK(EliteCampDangerous(true, 33, 31));
         CHECK(EliteCampDangerous(true, 29, 31));

@@ -89,6 +89,23 @@ int main()
         CHECK(std::fabs(pair.x + 5.0f) < 1e-5f && std::fabs(pair.y - 3.0f) < 1e-5f);
         std::cout << "  [PASS] pack centroid averages live attackers only\n";
     }
+    // Same centroid over the flee tick's fixed stack scratch: a prefix over
+    // a filled array (no per-tick heap vector) averages the same live pack.
+    {
+        struct StackMob { float x, y; bool live; };
+        auto stackPosOf = [](StackMob const& mob, float& x, float& y) {
+            if (!mob.live)
+                return false;
+            x = mob.x;
+            y = mob.y;
+            return true;
+        };
+        StackMob pack[ai::kPoolFleeMaxPackAttackers] = { { -10.0f, 0.0f, true }, { 10.0f, 0.0f, true } };
+        FleePackPoint middle = PoolFleePackCentroid(ai::FleeAttackerPrefix<StackMob>{ pack, 2 }, stackPosOf);
+        CHECK(middle.valid);
+        CHECK(std::fabs(middle.x) < 1e-6f && std::fabs(middle.y) < 1e-6f);
+        std::cout << "  [PASS] pack centroid runs on stack scratch\n";
+    }
 
     std::cout << "All pool flee policy tests passed.\n";
     return 0;

@@ -56,8 +56,8 @@ class WandFallbackWiringTest(unittest.TestCase):
             self.assertRegex(fn, r'"%s unaffordable",\s*NextAction::array\(0, new NextAction\(%s' % (spell, fallback))
         trig = (STRATEGY / "mage/MageTriggers.cpp").read_text()
         self.assertIn("return NukeUnaffordable(true, bot->GetPower(POWER_MANA), cost);", trig)
-        stop = body(trig, "bool WandBlocksNukeTrigger::IsActive()")
-        self.assertIn("state.manaShortRowActive = ManaShortForNuke(ai, bot, SpecFillerNuke(ai));", stop)
+        self.assertIn("ManaShortForNuke(ai, bot, filler) &&", trig)
+        self.assertIn('ManaShortForNuke(ai, bot, "frostbolt")', trig)
 
     def test_raid_aggro_row_needs_raid_group(self):
         for text, cls in ((MAGE, "MageRaidStrategy"), (WARLOCK, "WarlockRaidStrategy")):

@@ -19,12 +19,12 @@ int main()
 {
     std::cout << "Starting TortoiseBots evade-chase gate tests...\n";
 
-    // Never chase: evading or unreachable, either one alone is enough.
-    CHECK(ShouldNotChaseEvader(true, false));
-    CHECK(ShouldNotChaseEvader(false, true));
-    CHECK(ShouldNotChaseEvader(true, true));
-    CHECK(!ShouldNotChaseEvader(false, false));
-    std::cout << "  [PASS] evading or unreachable targets are not chased\n";
+    // Never chase an evader: it is walking home invulnerable. A mob the
+    // core merely flags unreachable is still damaging, so the reach keeps
+    // the order and falls through to the movement and the give-up.
+    CHECK(ShouldNotChaseEvader(true));
+    CHECK(!ShouldNotChaseEvader(false));
+    std::cout << "  [PASS] evading targets are not chased\n";
 
     // Drop only past the leash: a brief evade flicker at the pull keeps
     // the order, a dragged fight does not.
@@ -40,11 +40,14 @@ int main()
         draggedHome.homeDistanceYd = kEvadeChaseHomeLeashYd + 1.0f;
         CHECK(ShouldDropDraggedTarget(draggedHome));
 
+        // Unreachable-only past the leash keeps the order: the mob is still
+        // damaging, and dropping it left the bot standing in combat without
+        // a swing. The 15 s give-up below is its backstop.
         EvadeChaseState draggedStart;
         draggedStart.unreachable = true;
         draggedStart.homeDistanceYd = 5.0f;
         draggedStart.combatStartDistanceYd = kEvadeChaseHomeLeashYd + 10.0f;
-        CHECK(ShouldDropDraggedTarget(draggedStart));
+        CHECK(!ShouldDropDraggedTarget(draggedStart));
 
         // At exactly the leash: still held, strictly-past drops.
         EvadeChaseState edge;
