@@ -7,6 +7,7 @@
 #include "BudgetValues.h"
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
+#include "playerbot/policy/gear/VendorTripPolicy.h"
 #include "playerbot/FollowUrgencyPolicy.h"
 
 
@@ -145,8 +146,10 @@ namespace ai
     //Yes while that target is merely parked at its destination (arrived,
     //working it, or in cooldown) and no while a journey is in flight; and only
     //for the Vendor purpose, so other request actions keep the old churn guard.
-    //The travel request action and the travel multiplier both ask this, so they
-    //cannot disagree.
+    //Not while the held target is already a vendor trip: the errand is
+    //underway and a re-request only re-picks the same vendor and restarts the
+    //walk (travel churn). The travel request action and the travel multiplier
+    //both ask this, so they cannot disagree.
     bool VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier);
 
     //A vendor errand that found nothing vendor-usable cannot be finished by

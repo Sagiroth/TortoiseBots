@@ -1303,7 +1303,12 @@ void TravelTarget::SetStatus(TravelStatus status) {
         statusTime = HOUR *  1000;
         break;
     case TravelStatus::TRAVEL_STATUS_TRAVEL:
-        statusTime = GetMaxTravelTime() * 2 + sPlayerbotAIConfig.maxWaitForMove;
+        // Short-hop floor (TravelStatusTravelMsFloor): a trip picked a few
+        // yards out used to budget ~4 s - one move visit - so failing
+        // dispatch timed it out before the 6-fail drop could engage. Far
+        // trips keep their computed clock.
+        statusTime = (uint32)ai::TravelStatusTravelMsFloor(
+            (std::int64_t)GetMaxTravelTime() * 2 + sPlayerbotAIConfig.maxWaitForMove);
         break;
     case TravelStatus::TRAVEL_STATUS_WORK:
         statusTime = tDestination->GetExpireDelay();
@@ -1484,6 +1489,14 @@ void TravelTarget::CheckStatus()
             }
 
             ai->TellDebug(ai->GetMaster(), "The target is starting to work because the destination has been reached.", "debug travel");
+            // A new WORK stay starts its own empty-stay clock: the anchor below
+            // belongs to the previous trip. Without a clear here a trip that
+            // arrives while the old stay's anchor is armed inherits an
+            // already-aged clock and the workidle release fires seconds later
+            // (live 2026-11-01: most sub-30 s workidle kills were GenericRpg/AH
+            // trips arriving into a just-vacated stay). Pure key in
+            // WorkIdlePolicy.h; the caller only clears it.
+            ai->GetAiObjectContext()->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Set(time_t(0));
             SetStatus(TravelStatus::TRAVEL_STATUS_WORK);
             return;
         }
