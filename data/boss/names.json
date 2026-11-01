@@ -3205,8 +3205,8 @@
       "name": "Shield Slam"
     },
     "8292": {
-      "castMs": 0,
-      "name": "Chain Bolt"
+      "name": "Chain Bolt",
+      "castMs": 0
     },
     "8374": {
       "castMs": 0,
@@ -3217,8 +3217,8 @@
       "name": "Bomb"
     },
     "9532": {
-      "castMs": 0,
-      "name": "Lightning Bolt"
+      "name": "Lightning Bolt",
+      "castMs": 0
     },
     "9874": {
       "castMs": 0,
@@ -3622,6 +3622,242 @@
     },
     "27639": {
       "name": "Call Pet",
+      "castMs": 0
+    },
+    "246": {
+      "name": "Slow",
+      "castMs": 0
+    },
+    "865": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "8435": {
+      "name": "Forked Lightning",
+      "castMs": 0
+    },
+    "6660": {
+      "name": "Shoot",
+      "castMs": 0
+    },
+    "15587": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "3490": {
+      "name": "Frenzied Rage",
+      "castMs": 0
+    },
+    "18807": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
+    "5484": {
+      "name": "Howl of Terror",
+      "castMs": 0
+    },
+    "51187": {
+      "name": "Targeted Arcane Channeling",
+      "castMs": 0
+    },
+    "6192": {
+      "name": "Battle Shout",
+      "castMs": 0
+    },
+    "8286": {
+      "name": "Summon Boar Spirit",
+      "castMs": 0
+    },
+    "9128": {
+      "name": "Battle Shout",
+      "castMs": 0
+    },
+    "8285": {
+      "name": "Rampage",
+      "castMs": 0
+    },
+    "6077": {
+      "name": "Renew",
+      "castMs": 0
+    },
+    "8361": {
+      "name": "Purity",
+      "castMs": 0
+    },
+    "8270": {
+      "name": "Summon Earth Rumbler",
+      "castMs": 0
+    },
+    "14900": {
+      "name": "Chain Heal",
+      "castMs": 0
+    },
+    "7165": {
+      "name": "Battle Stance",
+      "castMs": 0
+    },
+    "15548": {
+      "name": "Thunderclap",
+      "castMs": 0
+    },
+    "8555": {
+      "name": "Left for Dead",
+      "castMs": 0
+    },
+    "8358": {
+      "name": "Mana Spike",
+      "castMs": 0
+    },
+    "15716": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "8272": {
+      "name": "Mind Tremor",
+      "castMs": 0
+    },
+    "25311": {
+      "name": "Corruption",
+      "castMs": 0
+    },
+    "21748": {
+      "name": "Thorn Volley",
+      "castMs": 0
+    },
+    "14907": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "15043": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "2484": {
+      "name": "Earthbind Totem",
+      "castMs": 0
+    },
+    "8259": {
+      "name": "Whirling Barrage",
+      "castMs": 0
+    },
+    "12255": {
+      "name": "Curse of Tuten'kash",
+      "castMs": 0
+    },
+    "12946": {
+      "name": "Putrid Stench",
+      "castMs": 0
+    },
+    "12470": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "12466": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "12795": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "15530": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "15531": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "13009": {
+      "name": "Amnennar's Wrath",
+      "castMs": 0
+    },
+    "12642": {
+      "name": "Summon Frost Spectres",
+      "castMs": 0
+    },
+    "11445": {
+      "name": "Bone Armor",
+      "castMs": 0
+    },
+    "8105": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "8040": {
+      "name": "Druid's Slumber",
+      "castMs": 0
+    },
+    "5187": {
+      "name": "Healing Touch",
+      "castMs": 0
+    },
+    "700": {
+      "name": "Sleep",
+      "castMs": 0
+    },
+    "8147": {
+      "name": "Thunderclap",
+      "castMs": 0
+    },
+    "6778": {
+      "name": "Healing Touch",
+      "castMs": 0
+    },
+    "6254": {
+      "name": "Chained Bolt",
+      "castMs": 0
+    },
+    "8142": {
+      "name": "Grasping Vines",
+      "castMs": 0
+    },
+    "7967": {
+      "name": "Naralex's Nightmare",
+      "castMs": 0
+    },
+    "8150": {
+      "name": "Thundercrack",
+      "castMs": 0
+    },
+    "7965": {
+      "name": "Cobrahn Serpent Form",
+      "castMs": 0
+    },
+    "13236": {
+      "name": "Nature Channeling",
+      "castMs": 0
+    },
+    "17330": {
+      "name": "Poison",
+      "castMs": 0
+    },
+    "8734": {
+      "name": "Blackfathom Channeling",
+      "castMs": 0
+    },
+    "28447": {
+      "name": "Shadow Burst",
+      "castMs": 0
+    },
+    "6982": {
+      "name": "Gust of Wind",
+      "castMs": 0
+    },
+    "12167": {
+      "name": "Lightning Bolt",
+      "castMs": 0
+    },
+    "12550": {
+      "name": "Lightning Shield",
+      "castMs": 0
+    },
+    "15659": {
+      "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "21055": {
+      "name": "Crush Armor",
       "castMs": 0
     }
   },
@@ -5101,6 +5337,126 @@
     },
     "16098": {
       "name": "Empyrean"
+    },
+    "4887": {
+      "name": "Ghamoo-ra"
+    },
+    "4831": {
+      "name": "Lady Sarevess"
+    },
+    "6243": {
+      "name": "Gelihast"
+    },
+    "62530": {
+      "name": "Velthelaxx the Defiler"
+    },
+    "4830": {
+      "name": "Old Serra'kis"
+    },
+    "4832": {
+      "name": "Twilight Lord Kelris"
+    },
+    "4829": {
+      "name": "Aku'mai"
+    },
+    "12876": {
+      "name": "Baron Aquanis"
+    },
+    "6168": {
+      "name": "Roogug"
+    },
+    "4424": {
+      "name": "Aggem Thorncurse"
+    },
+    "4428": {
+      "name": "Death Speaker Jargba"
+    },
+    "4420": {
+      "name": "Overlord Ramtusk"
+    },
+    "62503": {
+      "name": "Rotthorn"
+    },
+    "4422": {
+      "name": "Agathelos the Raging"
+    },
+    "4421": {
+      "name": "Charlga Razorflank"
+    },
+    "7357": {
+      "name": "Mordresh Fire Eye"
+    },
+    "8567": {
+      "name": "Glutton"
+    },
+    "62679": {
+      "name": "Death Prophet Rakameg"
+    },
+    "7358": {
+      "name": "Amnennar the Coldbringer"
+    },
+    "7355": {
+      "name": "Tuten'kash"
+    },
+    "7356": {
+      "name": "Plaguemaw the Rotting"
+    },
+    "7354": {
+      "name": "Ragglesnout"
+    },
+    "14686": {
+      "name": "Lady Falther'ess"
+    },
+    "3669": {
+      "name": "Lord Cobrahn"
+    },
+    "3670": {
+      "name": "Lord Pythas"
+    },
+    "3671": {
+      "name": "Lady Anacondra"
+    },
+    "3673": {
+      "name": "Lord Serpentis"
+    },
+    "3674": {
+      "name": "Skum"
+    },
+    "5775": {
+      "name": "Verdan the Everliving"
+    },
+    "3654": {
+      "name": "Mutanus the Devourer"
+    },
+    "4528": {
+      "name": "Stone Rumbler"
+    },
+    "6021": {
+      "name": "Boar Spirit"
+    },
+    "8585": {
+      "name": "Frost Spectre"
+    },
+    "4625": {
+      "name": "Death's Head Ward Keeper"
+    },
+    "2630": {
+      "name": "Earthbind Totem"
+    },
+    "3653": {
+      "name": "Kresh"
+    },
+    "4842": {
+      "name": "Earthcaller Halmgar"
+    },
+    "12902": {
+      "name": "Lorgus Jett"
+    },
+    "61965": {
+      "name": "Vangros"
+    },
+    "61968": {
+      "name": "Zandara Windhoof"
     }
   }
 }

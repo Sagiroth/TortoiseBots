@@ -862,16 +862,16 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 264)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1118)
+        self.assertEqual(len(doc["bosses"]), 299)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1201)
 
 
-        self.assertEqual(len(doc["bosses"]), 264)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1118)
+        self.assertEqual(len(doc["bosses"]), 299)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1201)
 
 
-        self.assertEqual(len(doc["bosses"]), 264)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1118)
+        self.assertEqual(len(doc["bosses"]), 299)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1201)
 
     def test_committed_anchored_timers(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -4022,6 +4022,220 @@ class DungeonDireMaulValueTest(unittest.TestCase):
         # The only two-list boss: Isalien's EventAI and list both run.
         self.assertEqual([a["sid"] for a in bosses[16097]["abilities"]],
                          [12024, 27636, 27637, 14443, 27639])
+
+
+class DungeonBarrensValueTest(unittest.TestCase):
+    """Pins every BFD, RFK, RFD and WC row read off the core sources.
+
+    The fixture is written from the scripts, EventAI, creature_spells and
+    spell_template rows, not generated from the CSV. EventAI timers are ms and
+    stay in the columns; creature_spells stores seconds, so those rows keep 0
+    and carry the cadence in a note.
+    """
+
+    ABILITIES = {
+        (4887, 5568): ('0', '0', '0', 't=aoe;ok=heal'),
+        (4831, 246): ('0', '0', '0', 't=random;aura'),
+        (4831, 865): ('0', '0', '0', 't=aoe;aura'),
+        (4831, 8435): ('0', '0', '0', 't=victim;cone;int;ok.interrupt=nokick'),
+        (4831, 6660): ('0', '0', '0', 't=victim;ok=tank'),
+        (6243, 12024): ('0', '15500', '25300', 't=victim;aura;ok.dispel=nodispel'),
+        (62530, 18807): ('1000', '16000', '19000', 't=victim;aura;int;ok.dispel=nodispel'),
+        (62530, 5484): ('0', '0', '0', 't=aoe;aura;int;hp50'),
+        (62530, 8269): ('0', '0', '0', 't=self;self;hp20;ok.purge=nopurge'),
+        (4832, 15587): ('0', '0', '0', 't=victim;int'),
+        (4832, 8399): ('0', '15000', '20000', 't=aoe;aura;int'),
+        (4829, 3815): ('0', '0', '0', 't=aoe;aura'),
+        (4829, 3490): ('15000', '20000', '20000', 't=self;self;ok.purge=nopurge'),
+        (12876, 14907): ('0', '0', '0', 't=aoe;aura'),
+        (12876, 15043): ('0', '0', '0', 't=victim;aura;int'),
+        (12902, 12167): ('0', '0', '0', 't=victim;int'),
+        (12902, 12550): ('0', '0', '0', 't=self;self'),
+        (6168, 9532): ('0', '0', '0', 't=victim;int'),
+        (6168, 8270): ('0', '0', '0', 't=self;summon=4528'),
+        (4842, 2484): ('0', '0', '0', 't=self;summon=2630'),
+        (4842, 9532): ('0', '0', '0', 't=victim;int'),
+        (4842, 8270): ('0', '0', '0', 't=self;summon=4528'),
+        (4424, 6192): ('0', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (4424, 8286): ('0', '0', '0', 't=self;summon=6021;int;ok.interrupt=nokick'),
+        (4424, 14900): ('0', '13000', '18000', 't=ally;int'),
+        (4428, 14515): ('0', '0', '0', 't=random;aura;int;ok.interrupt=nokick'),
+        (4428, 9613): ('0', '0', '0', 't=victim;int'),
+        (4420, 9128): ('0', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (4420, 7165): ('0', '0', '0', 't=self;self;ok=script'),
+        (4420, 15548): ('0', '8000', '14000', 't=aoe;aura'),
+        (62503, 7102): ('0', '0', '0', 't=victim;aura'),
+        (62503, 8272): ('0', '0', '0', 't=random;aura;int;ok.interrupt=nokick'),
+        (62503, 25311): ('0', '0', '0', 't=victim;aura;int'),
+        (62503, 21748): ('0', '0', '0', 't=aoe;aura;ok.dispel=nodispel'),
+        (4422, 8285): ('0', '0', '0', 't=aoe;aura;ok.dispel=nodispel'),
+        (4422, 8260): ('0', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (4422, 8555): ('0', '21000', '35000', 't=random;ok=heal'),
+        (4422, 8269): ('0', '0', '0', 't=self;self;hp60;ok.purge=nopurge'),
+        (4421, 6077): ('0', '0', '0', 't=ally;ok=script'),
+        (4421, 8361): ('0', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (4421, 8292): ('0', '0', '0', 't=victim;int;ok.interrupt=nokick'),
+        (4421, 8358): ('0', '0', '0', 't=self;ok=script'),
+        (7357, 12470): ('0', '0', '0', 't=aoe;ok=heal'),
+        (7357, 12466): ('0', '0', '0', 't=victim;int'),
+        (8567, 12795): ('0', '0', '0', 't=self;self;hp50;ok.purge=nopurge'),
+        (62679, 22417): ('0', '0', '0', 't=self;self'),
+        (62679, 28447): ('0', '0', '0', 't=aoe;ok=heal'),
+        (7358, 15530): ('0', '0', '0', 't=victim;aura;int'),
+        (7358, 15531): ('0', '0', '0', 't=aoe;aura'),
+        (7358, 13009): ('0', '0', '0', 't=victim;ok=tank'),
+        (7358, 12642): ('0', '0', '0', 't=self;summon=8585;hp66'),
+        (7355, 12252): ('0', '0', '0', 't=aoe;cone;aura;ok.dispel=nodispel'),
+        (7355, 12255): ('0', '0', '0', 't=aoe;aura'),
+        (7356, 12946): ('0', '0', '0', 't=aoe;aura'),
+        (14686, 8105): ('8000', '8000', '8000', 't=victim;int'),
+        (7354, 12039): ('0', '0', '0', 't=ally;int'),
+        (7354, 7645): ('0', '0', '0', 't=random;aura;int'),
+        (7354, 11639): ('0', '0', '0', 't=random;aura'),
+        (7354, 12471): ('0', '0', '0', 't=victim;int'),
+        (3671, 8148): ('0', '0', '0', 't=self;self;ok.purge=nopurge'),
+        (3671, 5187): ('0', '0', '0', 't=ally;int'),
+        (3671, 700): ('0', '0', '0', 't=random;aura;int'),
+        (3671, 9532): ('0', '0', '0', 't=victim;int'),
+        (3669, 8040): ('0', '0', '0', 't=random;aura;int;p=druid'),
+        (3669, 9532): ('0', '0', '0', 't=victim;int;p=druid'),
+        (3669, 7965): ('0', '0', '0', 't=self;self;hp30;ok=phase'),
+        (3669, 17330): ('0', '0', '0', 't=victim;aura;p=serpent'),
+        (3670, 5187): ('0', '0', '0', 't=ally;int'),
+        (3670, 700): ('0', '0', '0', 't=random;aura;int'),
+        (3670, 8147): ('0', '0', '0', 't=aoe;aura'),
+        (3670, 9532): ('0', '0', '0', 't=victim;int'),
+        (3674, 6254): ('0', '4000', '7000', 't=victim;int'),
+        (3673, 6778): ('0', '0', '0', 't=ally;int'),
+        (3673, 700): ('0', '0', '0', 't=random;aura;int'),
+        (3673, 9532): ('0', '0', '0', 't=victim;int'),
+        (5775, 8142): ('0', '13000', '16000', 't=aoe;aura;int;ok.interrupt=nokick'),
+        (3654, 7967): ('0', '0', '0', 't=random;aura;int'),
+        (3654, 7399): ('0', '0', '0', 't=random;aura'),
+        (3654, 8150): ('0', '0', '0', 't=aoe;aura'),
+        (61968, 15659): ('0', '0', '0', 't=victim;int'),
+        (61968, 6982): ('0', '0', '0', 't=aoe;aura;int'),
+        (61965, 21055): ('0', '0', '0', 't=victim;aura'),
+        (61965, 18670): ('0', '0', '0', 't=victim;ok=tank'),
+    }
+
+    ADDS = {
+        6168: [(4528, "summon", 0)],
+        4842: [(2630, "totem", 1), (4528, "summon", 0)],
+        4424: [(6021, "summon", 0)],
+        4422: [(4625, "linked", 1)],
+        7358: [(8585, "summon", 0)],
+    }
+
+    ENTRY_SETS = {
+        "blackfathom_deeps": {4829, 4830, 4831, 4832, 4887, 6243, 12902, 12876, 62530},
+        "razorfen_kraul": {4420, 4421, 4422, 4424, 4428, 4842, 6168, 62503},
+        "razorfen_downs": {7354, 7355, 7356, 7357, 7358, 8567, 14686, 62679},
+        "wailing_caverns": {3653, 3654, 3669, 3670, 3671, 3673, 3674, 5775, 61965, 61968},
+    }
+
+    MAPS = ("blackfathom_deeps", "razorfen_kraul", "razorfen_downs", "wailing_caverns")
+
+    def rows(self):
+        return [r for r in boss_data.read_rows(boss_data.DEFAULT_CSV) if r["map"] in self.MAPS]
+
+    def test_every_expected_boss_has_a_block(self):
+        got = {map_key: set() for map_key in self.MAPS}
+        for row in self.rows():
+            got[row["map"]].add(int(row["boss"]))
+        self.assertEqual(got, self.ENTRY_SETS)
+
+    def test_abilities_match_source(self):
+        got = {}
+        for row in self.rows():
+            if row["row"] == "ability":
+                got[(int(row["boss"]), int(row["key"]))] = (
+                    row["a"], row["b"], row["c"], row["d"]
+                )
+        self.assertEqual(got, self.ABILITIES)
+
+    def test_adds_and_cobrahn_phase_rule(self):
+        adds = {}
+        phases = []
+        for row in self.rows():
+            if row["row"] == "add":
+                adds.setdefault(int(row["boss"]), []).append(
+                    (int(row["key"]), row["a"], int(row["b"]))
+                )
+            elif row["row"] == "phase":
+                phases.append((int(row["boss"]), row["key"], row["a"], int(row["b"])))
+        self.assertEqual(adds, self.ADDS)
+        self.assertEqual(
+            phases,
+            [(3669, "serpent", "aura=7965", 1), (3669, "druid", "start", 2)],
+        )
+
+    def test_kick_and_area_choices(self):
+        rows = {
+            (int(r["boss"]), int(r["key"])): r
+            for r in self.rows() if r["row"] == "ability"
+        }
+        # A cast-time spell the core cannot stop says so instead of dropping int.
+        for boss, sid in ((4831, 8435), (4428, 14515), (4424, 8286),
+                          (62503, 8272), (5775, 8142), (4421, 8292)):
+            self.assertIn("int", rows[(boss, sid)]["d"])
+            self.assertIn("ok.interrupt=nokick", rows[(boss, sid)]["d"])
+        # Instants never carry int, even when the spell has interrupt bits.
+        for boss, sid in ((4831, 865), (4420, 15548), (7355, 12252),
+                          (7358, 15531), (6243, 12024), (62503, 21748)):
+            self.assertNotIn("int", rows[(boss, sid)]["d"])
+        # EventAI range timers are the repeat window; the first cast is immediate.
+        self.assertEqual((rows[(6243, 12024)]["a"], rows[(6243, 12024)]["b"]), ("0", "15500"))
+        self.assertEqual((rows[(3674, 6254)]["b"], rows[(3674, 6254)]["c"]), ("4000", "7000"))
+        # creature_spells stores seconds, so those rows have no column timers.
+        self.assertEqual((rows[(4831, 246)]["b"], rows[(4831, 246)]["c"]), ("0", "0"))
+        self.assertEqual((rows[(62503, 7102)]["b"], rows[(62503, 7102)]["c"]), ("0", "0"))
+        # Script timers are literals.
+        self.assertEqual((rows[(62530, 18807)]["a"], rows[(62530, 18807)]["b"]), ("1000", "16000"))
+
+    @unittest.skipUnless(CORE_SPELL_SQL.is_file(), "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL)
+    def test_every_cast_time_ability_carries_int(self):
+        spells = _read_spells()
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            sid = int(row["key"])
+            if sid == 3815:
+                # creature_spells 48290 casts it with CF_TRIGGERED (castFlags 34),
+                # so the core never plays its castingTimeIndex and it is not a kick.
+                continue
+            spell = spells[sid]
+            if spell["castingTimeIndex"] <= 1:
+                continue
+            flags = boss_data.parse_flags(row["d"])
+            self.assertTrue(
+                flags["int"],
+                "line %s: spell %s has castingTimeIndex %s but no int"
+                % (row["_line"], sid, spell["castingTimeIndex"]),
+            )
+            if not _kickable(spell):
+                self.assertEqual(
+                    flags["okNeeds"].get("interrupt"),
+                    "nokick",
+                    "line %s: spell %s cannot be kicked and does not say nokick"
+                    % (row["_line"], sid),
+                )
+
+    def test_notes_carry_the_creature_spell_cadence(self):
+        notes = {}
+        for row in self.rows():
+            if row["row"] == "note":
+                notes.setdefault(int(row["boss"]), []).append(row["a"])
+        self.assertIn("5-8 s", " ".join(notes[4887]))
+        self.assertIn("31-34 s", " ".join(notes[62503]))
+        self.assertIn("120 degree cone", " ".join(notes[4831]))
+        self.assertIn("At 30 percent", " ".join(notes[3669]))
+        # Old Serra'kis has no abilities: the note is the block.
+        self.assertNotIn(4830, {int(r["boss"]) for r in self.rows() if r["row"] == "ability"})
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
 
 
 class UbrsValueTest(unittest.TestCase):
