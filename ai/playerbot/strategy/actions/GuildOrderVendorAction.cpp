@@ -25,6 +25,10 @@ bool GuildOrderVendorAction::isUseful()
     if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
         return false;
 
+    uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
+    if (!reagentId)
+        return false;
+
     std::list<ObjectGuid> vendors = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (ObjectGuid vendorguid : vendors)
     {
