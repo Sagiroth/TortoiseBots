@@ -2728,7 +2728,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             if (TortoiseBots::GuildOrders::SearchZoneMovesExhaustPlan(record->searchZoneMoves, plan.zones.size()))
             {
                 sPlayerbotAIConfig.logEvent(ai, "GuildOrderFarmGiveUp", std::to_string(itemId),
-                    std::to_string(record->searchZoneMoves) + "/" + std::to_string(plan.zones.size()));
+                    std::to_string(record->searchZoneMoves) + "/" +
+                    std::to_string(TortoiseBots::GuildOrders::kSearchZoneMovesExhaustPlan));
                 if (record->supplyItemId && itemId == record->supplyItemId)
                     TortoiseBots::GuildOrders::SetSupply(bot->GetGUIDLow(), TortoiseBots::GuildOrders::SupplyStep::Farm,
                         record->supplyItemId, record->supplyCount, TortoiseBots::GuildOrders::SupplyStep::None,

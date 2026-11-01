@@ -37,6 +37,11 @@ class GuildOrderScanThrottleTest(unittest.TestCase):
         self.assertIn("ShouldScanProgress", update)
         self.assertIn("MarkProgressScanned", update)
 
+    def test_give_up_forces_fresh_scan(self):
+        update = STORE[STORE.index("void Update(uint32_t diff)"):]
+        self.assertIn("IsOrderTimeout(snapshot.workedTotalSec", update)
+        self.assertIn("IsOrderNoProgress(snapshot.workedNoGainSec)", update)
+
 
 if __name__ == "__main__":
     unittest.main()

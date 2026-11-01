@@ -1370,7 +1370,8 @@ public:
                 }
                 else if (SupplyFarmGivesUp(record.type == OrderType::Craft &&
                     record.supplyStep == SupplyStep::Farm && record.supplyItemId &&
-                    record.reason != OrderReason::NoSource, record.workedNoGainSec))
+                    record.reason != OrderReason::NoSource, record.workedNoGainSec,
+                    true))
                 {
                     // The reagent farm gives up; the ladder takes over with a
                     // fresh watchdog for the sub-order or need list.
@@ -2416,6 +2417,20 @@ void Update(uint32_t diff)
         bool stateEdge = snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub;
         bool scanDue = active && (stateEdge ||
             OrderStore::Instance().ShouldScanProgress(guidLow, now));
+        // A deliver-first verdict below ends the order on stale zeros when
+        // the cadence scan is not due this pass: the worked clocks kept
+        // ticking below while bags and mailbox were last read up to one
+        // cadence ago, so a sale or mailbox take in between reads as
+        // nothing held. Force one fresh scan at the moment the timeout or
+        // no-progress clock trips, before Tick decides deliver-first or
+        // cant, so partial stacks reach the bank instead of stranding.
+        if (active && !scanDue && snapshot.state == OrderState::Working &&
+            (IsOrderTimeout(snapshot.workedTotalSec, snapshot.hours) ||
+                IsOrderNoProgress(snapshot.workedNoGainSec)))
+        {
+            OrderStore::Instance().MarkProgressScanned(guidLow, now);
+            scanDue = true;
+        }
         if (scanDue)
             OrderStore::Instance().MarkProgressScanned(guidLow, now);
         OrderStore::TickIn in;

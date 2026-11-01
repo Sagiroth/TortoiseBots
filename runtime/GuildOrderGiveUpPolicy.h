@@ -7,6 +7,7 @@
 // and free of core/database types on purpose: the thresholds are exercised
 // standalone in tools/test_guild_order_giveup_policy.cpp. The order store
 // feeds this function plain counters it already keeps per order.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -66,12 +67,16 @@ inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, 
 inline constexpr uint32_t kSearchFailZoneMove = 3;
 inline constexpr uint32_t kOrderLegParkSeconds = 15;
 
-// Failed searches moved the farm leg through every zone of the plan without
-// one landed pick: the bot cannot farm the item itself, so the ladder moves
-// on (sub-order or need list) instead of cycling the same zones forever.
+// Failed searches moved the farm leg through this many zones without one
+// landed pick: the leg cannot reach its spots, so the ladder moves on
+// (sub-order or need list). The whole plan, capped: a 30-zone plan would
+// otherwise cost ~1.5 h of empty searches before giving up.
+inline constexpr uint32_t kSearchZoneMovesExhaustPlan = 8;
+
 inline bool SearchZoneMovesExhaustPlan(uint32_t zoneMoves, size_t planZones)
 {
-    return zoneMoves > 0 && zoneMoves >= (planZones > 0 ? planZones : 1);
+    size_t const limit = std::min<size_t>(planZones > 0 ? planZones : 1, kSearchZoneMovesExhaustPlan);
+    return zoneMoves > 0 && zoneMoves >= limit;
 }
 
 // Whether the failed-search count moves the zone. Counts only consecutive
@@ -134,13 +139,20 @@ inline bool IsOrderNoProgress(uint32_t workedNoGainSec)
 }
 
 // A craft order farming a reagent hands it down the ladder (sub-order, then
-// the need list) after an hour worked without one: the whole-order watchdog
-// above would otherwise end the order before the farm zones are exhausted.
+// the need list) after this long worked without one: the whole-order
+// watchdog above would otherwise end the order before the farm zones are
+// exhausted. The hand-off below always exists (a sub-order attempt, then the
+// need list), so the short limit is the live one; the full hour only runs
+// when the caller passes no hand-off.
 inline constexpr uint32_t kSupplyFarmNoGainSeconds = 3600;
+inline constexpr uint32_t kSupplyFarmNoGainWithFallbackSeconds = 20 * 60;
 
-inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec)
+inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool hasHandOff = true)
 {
-    return craftFarmLeg && workedNoGainSec >= kSupplyFarmNoGainSeconds;
+    if (!craftFarmLeg)
+        return false;
+    uint32_t limit = hasHandOff ? kSupplyFarmNoGainWithFallbackSeconds : kSupplyFarmNoGainSeconds;
+    return workedNoGainSec >= limit;
 }
 
 // Reported progress never drops: offline (or not yet re-seen) bots keep
