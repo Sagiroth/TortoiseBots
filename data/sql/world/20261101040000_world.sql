@@ -23,4 +23,4 @@
 
 DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 15146 AND `kind` = 'tank_hold' AND `target_entry` = 0 AND `spell_id` = 0;
 INSERT INTO `ai_boss_tactic` (`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment`) VALUES
-(309, 15146, 'tank_hold', 0, 0, 0, 0, 'Mad Voidwalker: a tank may hold it in melee while Consuming Shadows 24614 is on a non-tank, so Shadow Shock 24616 never fires');
+(309, 15146, 'tank_hold', 0, 0, 0, 0, 'Mad Voidwalker: a tank may hold it in melee while Consuming Shadows 24614 is on a non-tank; once the tank has it within 6 yd it channels instead of casting Shadow Shock 24616');
