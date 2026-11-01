@@ -99,6 +99,7 @@ public:
     // rolls the class pair and teaches it when the bot is at/above the gate
     // and holds no primary; never touches a bot that already has one. Public
     // so the level-up spell hook can grant it on ding.
+    void EnsurePrimaryProfessions();
     // Profession specializations (runtime/ProfessionSpecializationPolicy.h):
     // idempotent direct grant of the quest-chain specialization spells the
     // bot qualifies for (skill at/above the quest gate), gated on
