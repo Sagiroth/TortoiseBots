@@ -24,6 +24,7 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel
+.bot order <BotName> steps
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
 .bot order reassign <SubOrderBot> <NewBot>
@@ -37,6 +38,7 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 - **Guild gold cap:** add `gold=<copper>` after the other options to limit how much guild bank money this order may use on auction house purchases. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
 - **Search:** shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none. Every word of the query must match somewhere in the name in any order, and the best name matches come first. `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; the big kinds (drop, other) and a search without a kind need at least 3 characters of text. Each row shows the item's kind and drop rate, so a rare drop that may take many hours is visible before you order.
 - **The search needs the bot online;** giving an order does not. An order on an offline bot is kept and runs when it comes back online. Craft orders are the exception: the bot's recipes can only be checked while it is online, so a craft order on an offline bot is refused (`norecipe`).
+- **Step history:** `.bot order <BotName> steps` lists the order's last 16 steps with their age (the same steps the status shows), read-only and memory only, so it starts empty after a restart, a new order or a reassign.
 
 ## Who may give orders
 

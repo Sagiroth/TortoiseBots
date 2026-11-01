@@ -232,6 +232,18 @@ public:
             return std::nullopt;
         return it->second.record;
     }
+    // The addon timeline: a copy of the row's step history under the lock, or
+    // nullopt for no order or a cancelled stub.
+    std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return std::nullopt;
+        if (it->second.record.cancelled)
+            return std::nullopt;
+        return it->second.steps;
+    }
     // True when the item is reserved for the bot's unfinished order: the
     // live order and supply items always, plus the stored reagent set, even
     // a stale one until the map thread recomputes it: over-protecting for a
@@ -1651,6 +1663,11 @@ public:
             (record.state == OrderState::Stocked && in.bankChecked ?
                 (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
 
+        // One timeline entry per change of state, reason, leg or leg item.
+        if (OrderStepDiffers(stored.steps, record.state, record.reason, record.supplyStep, record.supplyItemId))
+            NoteOrderStep(stored.steps, OrderStepEntry{ static_cast<uint64_t>(std::time(nullptr)),
+                record.state, record.reason, record.supplyStep, record.supplyItemId });
+
         std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
                             stored.reportReason != record.reason || stored.reportStep != record.supplyStep ||
@@ -1704,6 +1721,7 @@ private:
         uint32_t lastProgressScanMs = 0;
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
+        OrderStepHistory steps; // memory only: the addon's step timeline
     };
 
     // A zone move advances to the next zone of the plan (the wrap-around is
@@ -2228,6 +2246,11 @@ bool IsAvailable()
 std::optional<OrderRecord> Find(uint32_t botGuidLow)
 {
     return OrderStore::Instance().Find(botGuidLow);
+}
+
+std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().FindStepHistory(botGuidLow);
 }
 
 bool IsOrderableItem(ItemPrototype const* proto)

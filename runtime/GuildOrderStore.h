@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderStepHistoryPolicy.h"
 
 #include <cstdint>
 #include <optional>
@@ -190,6 +191,10 @@ uint32_t Progress(Player* bot, OrderRecord const& order);
 // World thread only. The caller passes the reported have count, which never
 // drops (offline bots report max(delivered, last reported)).
 std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have);
+
+// Step history of the bot's running or finished order (memory only, bounded);
+// nullopt for no order or a cancelled stub.
+std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow);
 
 // Live updates and startup. World thread only.
 void Initialize();
