@@ -430,6 +430,54 @@ static bool VendorWithinNearbyServiceRange(PlayerbotAI* ai)
 //cheat no longer hides what the bot eats). The ten-minute park after a fruitless
 //errand is read here too: the old request ignored it and re-armed on the very
 //next tick.
+
+//Slot counts the BagSpaceValue way (StatsValues.cpp): backpack 16 slots plus
+//each equipped plain container bag. Used by the order-stock valve below to
+//decide whether a vendor sale actually relieves the bags.
+static void CountBagSlots(Player* bot, uint32& used, uint32& total)
+{
+    used = 0;
+    total = 16;
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; slot++)
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            used++;
+    }
+
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag const* pBag = (Bag const*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (pBag)
+        {
+            ItemPrototype const* pBagProto = pBag->GetProto();
+            if (pBagProto && pBagProto->Class == ITEM_CLASS_CONTAINER && pBagProto->SubClass == ITEM_SUBCLASS_CONTAINER)
+            {
+                total += pBag->GetBagSize();
+                uint32 const free = pBag->GetFreeSlots();
+                used += pBag->GetBagSize() > free ? pBag->GetBagSize() - free : 0;
+            }
+        }
+    }
+}
+
+//One sellable stock slot per held vendor-usage item a vendor actually buys
+//(the same test as CanSellValue above): a stack is one slot, not its count.
+static uint32 SellableVendorSlots(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 sellable = 0;
+
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    {
+        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+
+        if (proto && proto->SellPrice > 0)
+            sellable++;
+    }
+
+    return sellable;
+}
+
 bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -449,6 +497,18 @@ bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
 
     if (!AI_VALUE(bool, "can sell"))
         return false;
+
+    // Bags held full by a running guild order: walk only for a sale that
+    // relieves them, or every looted grey sends the bot to town again.
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (order && !order->cancelled && !TortoiseBots::GuildOrders::IsFinished(order->state))
+    {
+        uint32 used = 0, total = 0;
+        CountBagSlots(bot, used, total);
+        if (!BagPressureSaleRelievesBags(used, total, SellableVendorSlots(ai), NEARBY_SERVICE_BAG_PRESSURE))
+            return false;
+    }
 
     return !VendorWithinNearbyServiceRange(ai);
 }

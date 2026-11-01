@@ -36,6 +36,10 @@ Bank table reads are hints: the core commits saves through the async delay queue
 
 A craft order with several missing components delegates them in parallel: the ladder picks the first missing component with no running or queued sub-order for it (`CoveredSubOrderItems`, pure pick `NextUncoveredSubOrderItem` in `GuildOrderSubOrderPolicy.h`), requests it without parking the parent row, and moves on to the next uncovered component on the next refresh, so several sub-orders run at the same time. Each delivered sub-order deposits into the guild bank like a normal order; the parent collects each delivery through its bank leg (`CollectableSubOrderItems` preferred first, `SubOrderDelivered` hand-over once per delivery) and crafts when everything is there. A Sub row for one component never blocks the others: while it waits, the parent keeps supplying (or delegating) the rest. The `TBM:ORDER` line keeps one step field, so it shows the component the parent itself works on while sub-orders show as their own rows.
 
+## Vendor trips with full bags
+
+A bot whose bags are held full by its order walks to a vendor only for a sale that frees a bag row or gets it under the 85 % line.
+
 ## Bot rank and bank access
 
 Every bot in a guild with at least one real player member holds the guild's bot rank so all bots share one rank the master can open bank tabs to. All-bot pool guilds are out of scope: they keep their own ranks (including a bot guild master, which is never moved), nobody gives orders there, and their bots keep managing themselves. The whole feature is an on/off switch (`AiPlayerbot.GuildOrderBotRank`, default on); when it is off the server applies no ranks and `TBM:ORDER_ACCESS` carries no rank information (`-|-|-|-|0|0`).
