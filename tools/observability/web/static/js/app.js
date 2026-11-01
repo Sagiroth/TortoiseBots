@@ -8270,12 +8270,17 @@
 
   // The rail's "Show all fights" box, kept per viewer. Off (the default) folds clean trash and lists the current run plus the
   // last two hours; on lists all of today's fights as cards, as the rail did before.
+  // A blocked storage (a private window, cleared site data) keeps the choice in memory for this page.
+  let fdShowAllMem = null;
+
   function fdShowAllGet() {
+    if (fdShowAllMem !== null) return fdShowAllMem;
     try { return !!(window.localStorage && window.localStorage.getItem(FD_SHOWALL_KEY) === '1'); } catch (e) { return false; }
   }
 
   function fdShowAllSet(on) {
-    try { if (window.localStorage) window.localStorage.setItem(FD_SHOWALL_KEY, on ? '1' : '0'); } catch (e) { /* kept for this page only */ }
+    fdShowAllMem = !!on;
+    try { if (window.localStorage) window.localStorage.setItem(FD_SHOWALL_KEY, on ? '1' : '0'); } catch (e) { /* kept in memory only */ }
   }
 
   // Where Tonight's window starts (game-server unix seconds): the bound run's start or two hours ago, whichever is earlier,
@@ -8363,6 +8368,9 @@
     const before = last ? numOr0(last.start) + ',' + last.key : String(fd.winSince || Math.floor(Date.now() / 1000));
     older.loading = true;
     older.failed = false;
+    // The window start freezes with the first older page: a window that kept sliding would leave a gap between the older pages and
+    // its new start (fdLoad keeps asking since= this start for the rest of the night).
+    if (!older.since) older.since = fd.winSince || 0;
     let more = false;
     fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&before=' + encodeURIComponent(before)
       + '&limit=' + FD_OLDER_PAGE)
@@ -8382,7 +8390,7 @@
 
   // The older pages belong to the night they were asked on: another night (or Tonight again) starts with none.
   function fdOlderState(fd) {
-    if (!fd.older || fd.older.day !== fd.day) fd.older = { day: fd.day, rows: [], loading: false, more: true, done: false, failed: false };
+    if (!fd.older || fd.older.day !== fd.day) fd.older = { day: fd.day, rows: [], loading: false, more: true, done: false, failed: false, since: 0 };
     return fd.older;
   }
 
@@ -8496,6 +8504,9 @@
 
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
+    // "Show all fights" (the viewer's box) lists every fight as a card; a read-only history card has no run of its own and no
+    // "Load older" row, so it always lists the whole day unfolded. The render reads this same flag.
+    fd.showAll = fdShowAllGet() || !!bind.history;
     // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
     // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
     const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
@@ -8557,9 +8568,8 @@
     const today = fdTodayDay(Date.now());
     if (!today) { cmdRaidFights(bind, gotList); return; }
     // "Show all fights" lists the whole of today (the old rail); otherwise the window: the current run plus the last two hours.
-    // A read-only history card has no run of its own and no "Load older" row: it lists the whole day, as before.
-    fd.showAll = fdShowAllGet() || !!bind.history;
-    fd.winSince = fd.showAll ? 0 : fdWindowStart(bind, Date.now());
+    const older = fd.older && fd.older.day === fd.day ? fd.older : null;
+    fd.winSince = fd.showAll ? 0 : older && older.since ? older.since : fdWindowStart(bind, Date.now());
     let live = null, hist = null, left = 2;
     // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
     const both = () => { if (--left) return; gotList(live || hist ? fdTonightRows(fd, bind.commander) : null); };
@@ -8686,7 +8696,7 @@
     // asked: 0, no row is fetched up front: a card without its detail says what its summary says.
     const cards = FightDebug.railCards(list, fd.details, layout,
       { failed: fd.failed, loadingKey: fd.loadingKey, asked: 0, retry: FD_DETAIL_TRIES, sel: fd.sel });
-    const showAll = fdShowAllGet();
+    const showAll = fd.showAll != null ? !!fd.showAll : fdShowAllGet() || !!bind.history;
     const older = fdOlderState(fd);
     fdRailPatch(card.querySelector('.fd-rail'), fdRailParts(cards, live, fd.sel, fd.day, {
       showAll, open: fd.foldOpen || (fd.foldOpen = {}),
@@ -8694,7 +8704,8 @@
       older: !fd.day && !bind.history ? { more: older.more, loading: older.loading, failed: older.failed, n: older.rows.length } : null,
     }));
     const allBox = card.querySelector('[data-fd-showall]');
-    if (allBox && allBox.checked !== showAll) allBox.checked = showAll;
+    const boxOn = fdShowAllGet();
+    if (allBox && allBox.checked !== boxOn) allBox.checked = boxOn;
     fdDayPaint(card, fd);
 
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
@@ -8784,9 +8795,9 @@
     const frames = FightDebug.raidFrames(bind);
     const bots = (bind && bind.bots) || [];
     const cards = FightDebug.railCards(rows, details || {}, layout || null, null);
-    // A loaded fight is judged by its checks, the rest by their summaries (a wipe or a death needs a look).
-    const judged = cards.filter(c => c.verdict || c.sum);
-    const need = judged.filter(c => (c.verdict || c.sum) === 'fail').length;
+    // Counted by the summaries alone (a wipe or a death needs a look), so the number does not change as details are opened.
+    const judged = cards.filter(c => c.sum);
+    const need = judged.filter(c => c.sum === 'fail').length;
     const run = bind && bind.run;
     const step = run && numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
     const ot = layout && Array.isArray(layout.ot) ? layout.ot.filter(Boolean) : [];
@@ -9177,33 +9188,54 @@
   function fdRailPatch(nav, parts, make) {
     if (!nav) return 0;
     const build = make || (html => { const t = document.createElement('template'); t.innerHTML = html; return t.content.firstElementChild; });
+    const list = parts || [];
+    const want = {};
+    list.forEach(p => { want[p.k] = true; });
+    // Gone, duplicate and unkeyed nodes leave first, so the ordering pass below moves only the nodes that are out of order (a
+    // removed head must not make every later card, the focused one among them, move up one place).
     const have = {};
-    Array.from(nav.children).forEach(n => { const k = n.dataset && n.dataset.fdK; if (k != null && !have[k]) have[k] = n; else n.remove(); });
+    let changed = 0;
+    Array.from(nav.children).forEach(n => {
+      const k = n.dataset && n.dataset.fdK;
+      if (k != null && !have[k] && want[k]) { have[k] = n; return; }
+      n.remove();
+      changed++;
+    });
     const act = document.activeElement;
     // The next element after n (the fake DOM the checks use has no nextElementSibling).
     const next = n => (n.nextElementSibling !== undefined ? n.nextElementSibling
       : Array.from(nav.children)[Array.from(nav.children).indexOf(n) + 1] || null);
-    let changed = 0, ref = nav.firstElementChild !== undefined ? nav.firstElementChild : (nav.children[0] || null);
-    (parts || []).forEach(p => {
+    // moveBefore keeps a moved node's focus and state where the browser has it; insertBefore elsewhere.
+    const move = (n, r) => {
+      if (typeof nav.moveBefore === 'function') { try { nav.moveBefore(n, r); return; } catch (e) { /* fall back below */ } }
+      nav.insertBefore(n, r);
+    };
+    let ref = nav.firstElementChild !== undefined ? nav.firstElementChild : (nav.children[0] || null);
+    list.forEach(p => {
       let node = have[p.k];
-      delete have[p.k];
-      if (!node || node._fdHtml !== p.html) {
+      if (node && node._fdHtml === p.html) {
+        if (node !== ref) move(node, ref);
+      } else {
         const fresh = build(p.html);
         if (!fresh) return;
         fresh._fdHtml = p.html;
-        const hadFocus = !!(node && act && node.contains && node.contains(act));
-        if (node) node.remove();
-        node = fresh;
         changed++;
-        nav.insertBefore(node, ref);
-        if (hadFocus && node.focus) node.focus({ preventScroll: true });
-      } else if (node !== ref) nav.insertBefore(node, ref);
+        if (node) {
+          // Replaced where it stands: the old node never leaves a hole the next insert would have to aim at.
+          const hadFocus = !!(act && node.contains && node.contains(act));
+          nav.replaceChild(fresh, node);
+          if (ref === node) ref = fresh;
+          if (fresh !== ref) move(fresh, ref);
+          if (hadFocus && fresh.focus) fresh.focus({ preventScroll: true });
+        } else nav.insertBefore(fresh, ref);
+        node = fresh;
+      }
       ref = next(node);
     });
-    Object.keys(have).forEach(k => { have[k].remove(); changed++; });
     nav._h = null; // the rail is no longer painted by setHtml
     return changed;
   }
+
 
   // The check's key value, in the prototype's words: the debuff's uptime is said against the fight, the Sunder rate per 10 s,
   // and the non-tank's share against all damage taken. The value itself is emphasised rather than muted.

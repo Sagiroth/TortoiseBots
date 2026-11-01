@@ -34,7 +34,8 @@ vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
   grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"),
-  grab("fdShowAllGet"), grab("fdWindowStart"),
+  grab("fdShowAllGet"), grab("fdWindowStart"), grab("fdOlderState"),
+  "var fdShowAllMem = null;",
   grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"), grabConst("FD_WINDOW_S"), grabConst("FD_SHOWALL_KEY"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
@@ -217,6 +218,42 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   assert.strictEqual(run("fdWindowStart({ bound_at: 0 }, 10000 * 1000)"), 10000 - 7200 - ((10000 - 7200) % 60));
   assert.strictEqual(run("fdWindowStart({ bound_at: 1000 }, 10000 * 1000)"), 960, "a run bound earlier keeps its whole run");
   assert.strictEqual(run("fdWindowStart({ bound_at: 9000 }, 10000 * 1000)"), 2760, "a run bound later still shows two hours");
+
+  // ---- 2e. the window freezes once an older page is loaded: nothing falls between the older rows and the window ----------
+  run("cmdFd = {}; cmdFightsCache = {}; cmdFightsPending = {}");
+  const sinceAsked = [];
+  const winRows = {};
+  ctx.fdWinFights = (fd, bind, since, cb) => { sinceAsked.push(since); fd.hist["win:" + since] = { list: winRows[since] || [], at: clock }; if (cb) cb(fd.hist["win:" + since].list); };
+  ctx.cmdRaidFights = (bind, cb) => cb([]);
+  ctx.fetch = () => Promise.resolve({ days: [] });
+  run("fdPage.open = 'W'");
+  const fdWz = run("fdState('W')");
+  const nowA = 20000; // the window starts two hours earlier, on a minute
+  clock = nowA * 1000;
+  const sA = run("fdWindowStart({}, nowMs)", { nowMs: clock });
+  // The rows of the day, one a minute: the window holds those from sA on, the older page those before it.
+  const all = Array.from({ length: 200 }, (_, i) => ({ key: "r" + i, start: sA - 3000 + i * 60, dur: 30000 })).reverse();
+  winRows[sA] = all.filter((r) => r.start >= sA);
+  run("fdLoad(card, bind)", { card, bind: { commander: "W" } });
+  await settle();
+  assert.strictEqual(fdWz.winSince, sA);
+  // The reader loads an older page, then ten minutes pass.
+  run("fdOlderState(fd)", { fd: fdWz });
+  fdWz.older.since = sA; // what fdOlderLoad records on its first page
+  fdWz.older.rows = all.filter((r) => r.start < sA);
+  clock = (nowA + 600) * 1000;
+  run("fdLoad(card, bind)", { card, bind: { commander: "W" } });
+  await settle();
+  assert.strictEqual(fdWz.winSince, sA, "the window start stays where the older pages end");
+  assert.strictEqual(sinceAsked[sinceAsked.length - 1], sA, "and the window list keeps asking since= that start");
+  const shown = run("fdTonightRows(fd, 'W').map((r) => r.key)", { fd: fdWz });
+  assert.strictEqual(shown.length, all.length, "no row is missing between the older pages and the window: " + shown.length);
+  // Without an older page the window slides on.
+  const fdSl = run("fdState('S')");
+  run("fdPage.open = 'S'");
+  run("fdLoad(card, bind)", { card, bind: { commander: "S" } });
+  await settle();
+  assert.strictEqual(fdSl.winSince, run("fdWindowStart({}, nowMs)", { nowMs: clock }), "a window with no older page follows the clock");
 
   // A fight of another commander's binding has no kept positions on this card: it is read like a past night, never this
   // card's track.

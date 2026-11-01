@@ -741,14 +741,18 @@
     return best;
   }
 
-  // A card the rail always shows in full: a boss, a wipe, any death, the running fight. The rest (clean trash) folds.
+  // A card the rail always shows in full: a boss, a wipe, any death, the running fight, and any fight that is not clean (a rule
+  // the daemon fired, or a loaded detail whose checks warn or fail). Only clean trash folds.
   function railFull(c) {
-    return !!(c && (c.boss || c.wipe || c.deaths > 0 || c.live));
+    return !!(c && (c.boss || c.wipe || c.deaths > 0 || c.live || c.sum === "warn" || c.sum === "fail"
+      || c.verdict === "warn" || c.verdict === "fail"));
   }
 
   // The rail in reading order (oldest first): full cards, and runs of two or more clean trash fights folded into one line per
-  // leg and run. cards are railCards' output (newest first). opts: {showAll, open: {foldId: true|false}, sel}. A fold's id is its
-  // oldest fight's key, so it stays the same while new trash joins it; the fold holding the selected fight opens by itself.
+  // leg and run. cards are railCards' output (newest first). opts: {showAll, open: {foldId: true|false}, sel}. A fold's id is
+  // "fold:" + its run + leg + its NEWEST fight's key; when a new pull joins (or the oldest scrolls out of the window) the id
+  // changes, and the reader's open or close carries over from the fold id naming one of this fold's fights. The fold holding
+  // the selected fight opens by itself.
   // Items: {kind: "card", card} or {kind: "fold", id, cards (oldest first), open, leg, n, durMs}.
   function railItems(cards, opts) {
     const o = opts && typeof opts === "object" ? opts : {};
@@ -758,13 +762,21 @@
     let run = [];
     const flush = () => {
       if (run.length >= 2) {
-        const id = "fold:" + run[0].key;
+        const base = "fold:" + run[0].group + "|" + run[0].leg + "|";
+        const id = base + run[run.length - 1].key;
         const hasSel = o.sel != null && run.some((c) => c.key === o.sel);
+        let forced = o.open && typeof o.open[id] === "boolean" ? o.open[id] : undefined;
+        if (forced === undefined && o.open) {
+          for (let i = run.length - 2; i >= 0 && forced === undefined; i--) {
+            const v = o.open[base + run[i].key];
+            if (typeof v === "boolean") forced = v;
+          }
+        }
         out.push({
           kind: "fold", id, cards: run, leg: run[0].leg || "", n: run.length,
           durMs: run.reduce((t, c) => t + (c.durMs || 0), 0),
           // The reader's own open or close wins; untouched, the fold holding the picked fight is open.
-          open: o.open && typeof o.open[id] === "boolean" ? o.open[id] : hasSel,
+          open: forced !== undefined ? forced : hasSel,
         });
       } else run.forEach((card) => out.push({ kind: "card", card }));
       run = [];

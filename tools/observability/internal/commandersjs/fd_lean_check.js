@@ -29,9 +29,10 @@ vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, {
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdRailPatch"),
   grab("fdShowAllGet"), grab("fdShowAllSet"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"), grab("fdRunModel"),
-  grab("fdRunHtml"), grab("fdRunPct"), grab("fdRunT"), grab("fdRunClock"), grab("fdOlderState"),
+  grab("fdRunHtml"), grab("fdRunPct"), grab("fdRunT"), grab("fdRunClock"), grab("fdOlderState"), grab("fdHeaderHtml"),
   grabConst("FD_SHOWALL_KEY"), grabConst("FD_WINDOW_S"),
   "var cmdFightsCache = {};",
+  "var fdShowAllMem = null;",
   "var cmdClock = (s) => String(s);",
   "var FightHistory = undefined;",
 ].join("\n"), ctx, { filename: "app.js lean" });
@@ -56,33 +57,50 @@ const cards = F.railCards(ROWS, {}, null, { asked: 0 });
 // ---- folding ---------------------------------------------------------------------------------------------------------------
 const items = F.railItems(cards, { showAll: false, open: {}, sel: null });
 const shape = items.map((it) => (it.kind === "fold" ? "fold" + it.n + ":" + it.leg : it.card.key));
-deq(shape, ["fold3:1", "d3", "fold3:1", "boss", "fold2:2"],
-  "clean trash folds per leg between the cards that matter (a fired rule alone does not make a card): " + JSON.stringify(shape));
-assert.strictEqual(items[0].id, "fold:t0", "a fold's id is its oldest fight's key, so it stays put while trash joins it");
+deq(shape, ["fold3:1", "d3", "t4", "fold2:1", "boss", "fold2:2"],
+  "only clean trash folds: a fight with a fired rule (t4) is not clean and stays a card: " + JSON.stringify(shape));
+const DAY = "1970-01-02|7";
+deq(items.filter((it) => it.kind === "fold").map((it) => it.id), ["fold:" + DAY + "|1|t2", "fold:" + DAY + "|1|t6", "fold:" + DAY + "|2|t9"],
+  "a fold's id is its run, its leg and its NEWEST fight's key");
 assert.ok(items.every((it) => it.kind === "card" || !it.open), "folds start closed");
 assert.ok(F.railFull({ wipe: true }) && F.railFull({ deaths: 1 }) && F.railFull({ boss: true }) && F.railFull({ live: true }) && !F.railFull({ deaths: 0 }),
   "bosses, wipes, deaths and the running fight are always cards");
+assert.ok(F.railFull({ sum: "warn" }) && F.railFull({ sum: "ok", verdict: "warn" }) && F.railFull({ sum: "ok", verdict: "fail" }) && !F.railFull({ sum: "ok", verdict: "ok" }),
+  "a fired rule or an opened fight whose checks warn or fail is not clean");
+// A clean-by-summary fight whose loaded detail fails its checks leaves the fold.
+const detCards = F.railCards(ROWS, { t1: { fight: { bots: [], deaths: [] }, warnings: [] } }, null, { asked: 0 });
+detCards.find((c) => c.key === "t1").verdict = "fail";
+deq(F.railItems(detCards, {}).slice(0, 3).map((it) => it.kind === "fold" ? "fold" : it.card.key), ["t0", "t1", "t2"],
+  "t1's failed checks make it a card, leaving t0 and t2 alone (a fold needs two)");
 // A single clean fight between two cards stays a card (a fold of one would hide nothing).
 deq(F.railItems(F.railCards([row("a", 2, { deaths: 1 }), row("b", 1), row("c", 0, { deaths: 1 })], {}, null, { asked: 0 }), {}).map((it) => it.kind),
   ["card", "card", "card"]);
 // Another run (session) starts a new fold.
 const twoRuns = F.railCards([row("s2b", 3, { session: 8 }), row("s2a", 2, { session: 8 }), row("s1b", 1), row("s1a", 0)], {}, null, { asked: 0 });
-deq(F.railItems(twoRuns, {}).map((it) => it.id), ["fold:s1a", "fold:s2a"], "one fold per run");
+deq(F.railItems(twoRuns, {}).map((it) => it.id), ["fold:" + DAY + "|1|s1b", "fold:1970-01-02|8|1|s2b"], "one fold per run");
 
 // Opened in place: the fold line stays, its cards follow it; the selected fight's fold opens by itself, an explicit close wins.
-const opened = F.railItems(cards, { open: { "fold:t4": true } });
-assert.strictEqual(opened[2].open, true);
+const midId = "fold:" + DAY + "|1|t6", firstId = "fold:" + DAY + "|1|t2";
+const opened = F.railItems(cards, { open: { [midId]: true } });
+assert.strictEqual(opened[3].open, true);
 const selItems = F.railItems(cards, { open: {}, sel: "t1" });
 assert.strictEqual(selItems[0].open, true, "the fold holding the picked fight opens");
-assert.strictEqual(F.railItems(cards, { open: { "fold:t0": false }, sel: "t1" })[0].open, false, "the reader can close it again");
+assert.strictEqual(F.railItems(cards, { open: { [firstId]: false }, sel: "t1" })[0].open, false, "the reader can close it again");
+// A new pull joins an open fold: its id moves to the new newest key, and the reader's choice carries over.
+const before = F.railItems(F.railCards([row("t1", 1), row("t0", 0)], {}, null, { asked: 0 }), {});
+assert.strictEqual(before[0].id, "fold:" + DAY + "|1|t1");
+const grown = F.railItems(F.railCards([row("t2", 2), row("t1", 1), row("t0", 0)], {}, null, { asked: 0 }), { open: { [before[0].id]: true } });
+assert.strictEqual(grown[0].id, firstId, "the id follows the newest fight");
+assert.strictEqual(grown[0].open, true, "an open fold stays open when a pull joins it");
 
-const parts = run("fdRailParts(cards, null, null, '', opts)", { cards, opts: { showAll: false, open: { "fold:t4": true }, older: null } });
-deq(parts.map((p) => p.k), ["fold%3At0", "f:d3", "fold%3At4", "f:t4", "f:t5", "f:t6", "f:boss", "fold%3At8"],
+const parts = run("fdRailParts(cards, null, null, '', opts)", { cards, opts: { showAll: false, open: { [midId]: true }, older: null } });
+const enc = encodeURIComponent;
+deq(parts.map((p) => p.k), [enc(firstId), "f:d3", "f:t4", enc(midId), "f:t5", "f:t6", "f:boss", enc("fold:" + DAY + "|2|t9")],
   "parts in reading order, an open fold followed by its cards: " + JSON.stringify(parts.map((p) => p.k)));
 const foldHtml = parts[0].html;
 assert.ok(foldHtml.includes(">Leg 1 · 3 trash pulls, 0 deaths<"), "the fold line says how many clean pulls: " + foldHtml);
-assert.ok(foldHtml.includes('aria-expanded="false"') && foldHtml.includes('data-fd-fold="fold%3At0"'), "a closed fold is a button that opens");
-assert.ok(parts[2].html.includes('aria-expanded="true"') && parts[3].html.includes("fd-infold"), "an open fold's cards sit under it");
+assert.ok(foldHtml.includes('aria-expanded="false"') && foldHtml.includes(`data-fd-fold="${enc(firstId)}"`), "a closed fold is a button that opens");
+assert.ok(parts[3].html.includes('aria-expanded="true"') && parts[4].html.includes("fd-infold"), "an open fold's cards sit under it");
 parts.forEach((p) => assert.ok(p.html.includes(`data-fd-k="${p.k}"`), "every part carries its key on its root: " + p.k));
 
 // ---- show all fights: every fight a card, the choice kept per viewer, a broken storage survived ---------------------------
@@ -98,6 +116,12 @@ assert.strictEqual(run("fdShowAllGet()"), false);
 ctx.window.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
 assert.strictEqual(run("fdShowAllGet()"), false, "a blocked storage reads as off");
 assert.doesNotThrow(() => run("fdShowAllSet(true)"), "a blocked storage does not break the toggle");
+assert.strictEqual(run("fdShowAllGet()"), true, "the box stays ticked for this page when the storage is blocked");
+run("fdShowAllMem = null; fdShowAllSet(false)");
+assert.strictEqual(run("fdShowAllGet()"), false);
+// The render reads the card's own flag: a history card never folds, whatever the box says.
+assert.ok(src.includes("fd.showAll = fdShowAllGet() || !!bind.history;") && src.includes("const showAll = fd.showAll != null ? !!fd.showAll : fdShowAllGet() || !!bind.history;"),
+  "the render folds by fd.showAll, which a history card always sets");
 assert.ok(src.includes('<input type="checkbox" data-fd-showall> Show all fights'), "the rail offers the box");
 assert.ok(/matches\('\[data-fd-showall\]'\)\) \{\s*\n[^\n]*\n\s*fdShowAllSet\(!!e\.target\.checked\);/.test(src), "the box saves the choice");
 assert.ok(/if \(fd\.showAll\) fdDayFights\(fd, bind, today, /.test(src) && /else fdWinFights\(fd, bind, fd\.winSince, /.test(src),
@@ -118,6 +142,8 @@ const done = run("fdRailParts([], null, null, '', opts)", { opts: { older: { mor
 assert.ok(done[0].html.includes("No older fights stored") && done[0].html.includes("disabled") && done[0].html.includes("50 loaded"));
 assert.ok(/'&before=' \+ encodeURIComponent\(before\)\s*\n\s*\+ '&limit=' \+ FD_OLDER_PAGE/.test(src), "older pages ask the cursor and the page size");
 assert.ok(src.includes("r.headers.get('X-More') === '1'"), "the daemon's X-More decides whether another page exists");
+assert.ok(src.includes("if (!older.since) older.since = fd.winSince || 0;") && src.includes("older && older.since ? older.since : fdWindowStart(bind, Date.now())"),
+  "the first older page freezes the window start, and Tonight keeps asking since= it (driven in fightdebug_state_check.js)");
 
 // ---- Tonight's window -------------------------------------------------------------------------------------------------
 const live = [row("L", 20, { live: true }), row("m2", 15), row("m1", 1)];
@@ -138,13 +164,24 @@ assert.ok(/if \(list\) Object\.keys\(fd\.hist\)\.forEach\(k => \{ if \(k\.indexO
   "an older window's list is dropped once the new one is in (fd.hist does not grow by a list a minute)");
 
 // ---- keyed redraws ------------------------------------------------------------------------------------------------------
+// A fake rail that behaves like the browser where it matters: insertBefore throws on a reference that is not its child, and
+// every move of an existing node is counted.
 function el(k, html) {
   return { dataset: { fdK: k }, _fdHtml: undefined, html, parent: null, contains(n) { return n === this; }, focus(o) { focused.push([k, o]); },
     remove() { if (this.parent) { this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; } } };
 }
-const focused = [];
+const focused = [], moved = [];
 const nav = { children: [], firstChild: null,
-  insertBefore(n, ref) { if (n.parent) n.remove(); n.parent = this; const i = ref ? this.children.indexOf(ref) : -1; if (i < 0) this.children.push(n); else this.children.splice(i, 0, n); return n; } };
+  insertBefore(n, ref) {
+    if (ref && ref.parent !== this) throw new Error("NotFoundError: the reference is not a child of this node");
+    if (n.parent === this) moved.push(n.dataset.fdK);
+    if (n.parent) n.remove();
+    n.parent = this; const i = ref ? this.children.indexOf(ref) : -1; if (i < 0) this.children.push(n); else this.children.splice(i, 0, n); return n;
+  },
+  replaceChild(n, old) {
+    if (old.parent !== this) throw new Error("NotFoundError: not a child");
+    const i = this.children.indexOf(old); old.parent = null; if (n.parent) n.remove(); n.parent = this; this.children.splice(i, 1, n); return old;
+  } };
 let built = 0;
 const make = (html) => { built++; const k = /data-fd-k="([^"]*)"/.exec(html)[1]; return el(k, html); };
 ctx.document = { activeElement: null };
@@ -164,7 +201,7 @@ const p2 = run("fdRailParts(cards, null, null, '', opts)", { cards: F.railCards(
 built = 0;
 const changed = paint(p2);
 deq(nav.children.map((n) => n.dataset.fdK), p2.map((p) => p.k), "the order follows the parts");
-assert.ok(nav.children.slice(0, 4).every((n, i) => n === nodes1[i]), "the cards above the change keep their nodes");
+assert.ok(nav.children.slice(0, 5).every((n, i) => n === nodes1[i]), "the cards above the change keep their nodes");
 assert.ok(changed <= 4 && built <= 3, "only the changed parts are rebuilt: " + changed + " changes, " + built + " built");
 // Focus: a rebuilt card that had the keyboard hands it to its new node without scrolling.
 const target = nav.children.find((n) => n.dataset.fdK === "f:t8");
@@ -174,11 +211,43 @@ paint(p3);
 deq(focused.map((f) => f[0]), ["f:t8"], "focus follows the rebuilt card");
 assert.strictEqual(focused[0][1].preventScroll, true);
 ctx.document.activeElement = null;
+// Regression: the part at the current position (the head, which is also the insert reference) is replaced. The old code removed
+// it and then inserted before the detached reference, which a browser refuses with NotFoundError.
+const p4 = p3.map((p, i) => (i === 0 ? { k: p.k, html: p.html.replace("3 trash pulls", "3 trash pulls ") } : p));
+assert.doesNotThrow(() => paint(p4), "replacing the node at the current position does not aim at a detached reference");
+deq(nav.children.map((n) => n.dataset.fdK), p4.map((p) => p.k), "and the order holds");
+const p5 = p4.map((p, i) => (i === 2 ? { k: p.k, html: p.html + " " } : p));
+assert.doesNotThrow(() => paint(p5), "a replacement in the middle too");
+deq(nav.children.map((n) => n.dataset.fdK), p5.map((p) => p.k));
+// The head part goes while the keyboard is on a later card: that card is not moved (nor re-inserted), nothing else moves either.
+const keep = nav.children[3];
+ctx.document.activeElement = keep;
+moved.length = 0;
+paint(p5.slice(1));
+deq(moved, [], "removing the head moves no other node: " + JSON.stringify(moved));
+assert.strictEqual(keep.parent, nav, "the focused card is still in the rail");
+deq(nav.children.map((n) => n.dataset.fdK), p5.slice(1).map((p) => p.k));
+ctx.document.activeElement = null;
 // Gone parts are removed.
-paint(p3.slice(0, 2));
-deq(nav.children.map((n) => n.dataset.fdK), p3.slice(0, 2).map((p) => p.k));
+paint(p5.slice(1, 3));
+deq(nav.children.map((n) => n.dataset.fdK), p5.slice(1, 3).map((p) => p.k));
+// A real reorder moves only the out-of-order node.
+moved.length = 0;
+const two = p5.slice(1, 3);
+paint([two[1], two[0]]);
+deq(nav.children.map((n) => n.dataset.fdK), [two[1].k, two[0].k]);
+assert.strictEqual(moved.length, 1, "one move for a swap of two");
+assert.ok(/typeof nav\.moveBefore === 'function'/.test(src), "moveBefore is used where the browser has it");
 assert.ok(/fdRailPatch\(card\.querySelector\('\.fd-rail'\), fdRailParts\(cards, live, fd\.sel, fd\.day, \{/.test(src), "the card paints the rail by key");
 assert.ok(!/fdSet\(card\.querySelector\('\.fd-rail'\)/.test(src), "the rail is no longer swapped whole");
+
+// ---- the header's "need a look" counts summaries, so opening a fight never changes it ------------------------------------
+const headRows = [row("w", 2, { outcome: "wipe", deaths: 3 }), row("c1", 1), row("c2", 0)];
+const head0 = run("fdHeaderHtml(bind, rows, {}, null, '')", { bind: { bots: [] }, rows: headRows });
+assert.ok(head0.includes("1 of 3 fights need a look"), head0);
+const failDet = { c1: { fight: { bots: [], deaths: [{ name: "x", t_ms: 1, hits: [] }], dur_ms: 1000 }, warnings: [{ rule: "r", level: "red", bot: "x", text: "t" }] } };
+const head1 = run("fdHeaderHtml(bind, rows, det, null, '')", { bind: { bots: [] }, rows: headRows, det: failDet });
+assert.ok(head1.includes("1 of 3 fights need a look"), "an opened fight's checks do not change the count: " + head1);
 
 // ---- detail on demand (the loader itself is driven in fightdebug_state_check.js) ------------------------------------------
 assert.ok(!/FD_DETAIL_MAX/.test(src), "no newest-50 detail walk is left");
