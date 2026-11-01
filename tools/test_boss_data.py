@@ -3852,7 +3852,6 @@ class TrashSpellSourceTest(unittest.TestCase):
             )
         self.assertEqual([], problems)
 
-
     def test_a_triggered_cast_is_no_interrupt(self):
         rows = [dict(r) for r in self.rows]
         for row in rows:
