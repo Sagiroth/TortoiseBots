@@ -1,4 +1,5 @@
 
+#include "playerbot/GuildOrderCraft.h"
 #include "playerbot/playerbot.h"
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
@@ -7,6 +8,7 @@
 #include "MountValues.h"
 #include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "BudgetValues.h"
+#include "runtime/GuildOrderProtectedItems.h"
 #include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/ServerFacade.h"
@@ -115,9 +117,12 @@ ItemUsage ItemUsageValue::Calculate()
     if (!proto)
         return ItemUsage::ITEM_USAGE_NONE;
 
-    // `.bot order` first: the bot keeps ordered items and, for craft orders,
-    // the reagents - it must not sell, auction or use them while the order
-    // runs. Above FORCE so an explicit keep/equip order cannot re-route them.
+    // `.bot order` first: the bot keeps the order item, the current supply
+    // item, and (craft orders) the whole reagent tree through recipes it
+    // knows - it must not sell, auction or use them while the order runs.
+    // Above FORCE so an explicit keep/equip order cannot re-route them. The
+    // set is cached per order (bot guid + item + type + supply item): the
+    // tree walk runs once per order change, not once per item tick.
     if (bot->GetGuildId())
     {
         std::optional<TortoiseBots::GuildOrders::OrderRecord> orderStored =
@@ -125,22 +130,35 @@ ItemUsage ItemUsageValue::Calculate()
         if (orderStored && orderStored->guildId == bot->GetGuildId() &&
             !TortoiseBots::GuildOrders::IsFinished(orderStored->state))
         {
-            if (orderStored->itemId == itemId)
-                return ItemUsage::ITEM_USAGE_GUILD_TASK;
-            if (orderStored->type == TortoiseBots::GuildOrders::OrderType::Craft)
+            struct OrderKeepCache
             {
-                ItemPrototype const* orderProto = sObjectMgr.GetItemPrototype(orderStored->itemId);
-                if (orderProto)
-                {
-                    std::vector<std::pair<uint32, uint32>> reagents =
-                        GetAllReagentItemIdsForCraftingItem(orderProto);
-                    for (const auto& [reagentId, reagentCount] : reagents)
-                    {
-                        if (reagentId == itemId)
-                            return ItemUsage::ITEM_USAGE_GUILD_TASK;
-                    }
-                }
+                uint32_t botGuid = 0;
+                uint32_t itemId = 0;
+                TortoiseBots::GuildOrders::OrderType type = TortoiseBots::GuildOrders::OrderType::Farm;
+                uint32_t supplyItemId = 0;
+                std::unordered_set<uint32_t> kept;
+                bool valid = false;
+            };
+            static thread_local OrderKeepCache cache;
+            uint32_t botGuidLow = bot->GetGUIDLow();
+            bool sameOrder = cache.valid && cache.botGuid == botGuidLow &&
+                cache.itemId == orderStored->itemId && cache.type == orderStored->type &&
+                cache.supplyItemId == orderStored->supplyItemId;
+            if (!sameOrder)
+            {
+                cache.botGuid = botGuidLow;
+                cache.itemId = orderStored->itemId;
+                cache.type = orderStored->type;
+                cache.supplyItemId = orderStored->supplyItemId;
+                cache.kept.clear();
+                auto reagentsFor = [bot](uint32 parent) { return ai::KnownReagentsFor(bot, parent); };
+                TortoiseBots::GuildOrders::CollectOrderProtectedItems(orderStored->itemId, false,
+                    orderStored->type == TortoiseBots::GuildOrders::OrderType::Craft,
+                    orderStored->supplyItemId, reagentsFor, cache.kept);
+                cache.valid = true;
             }
+            if (cache.kept.count(itemId))
+                return ItemUsage::ITEM_USAGE_GUILD_TASK;
         }
     }
 

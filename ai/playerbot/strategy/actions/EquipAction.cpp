@@ -1,4 +1,5 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
 #include "EquipAction.h"
 
@@ -275,10 +276,13 @@ void EquipAction::EquipItemToSlot(Player* requester, Item* item, uint8 targetSlo
     args["%item"] = chat->formatItem(item);
     ai->TellPlayer(requester, BOT_TEXT2("equip_command", args), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 }
-
 void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool silent)
 {
     Player* bot = ai->GetBot();
+    // Never equip order stock: the order item and its reagent tree stay in
+    // the bags until the order (or its branch) finishes.
+    if (bot && bot->GetGuildId() && GuildOrderConsumesItem(bot, item ? item->GetProto()->ItemId : 0))
+        return;
     AiObjectContext* context = ai->GetAiObjectContext();
 
     uint8 bagIndex = item->GetBagSlot();

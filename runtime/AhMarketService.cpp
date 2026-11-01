@@ -13,7 +13,7 @@
 #include "../ai/playerbot/RandomItemMgr.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "PlayerbotAIStorage.h"
-#include "../ai/playerbot/strategy/values/ItemUsageValue.h"
+#include "../ai/playerbot/strategy/ItemVisitors.h"
 #include "../ai/playerbot/strategy/values/BudgetValues.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/GuidPosition.h"
@@ -385,12 +385,10 @@ AhMarketService::PostResult AhMarketService::TryPostForBot(Player* bot, bool all
 
         ItemPrototype const* proto = item->GetProto();
 
-        // Re-verify usage via actual weight/pricing API (not just cached list).
-        std::string qualifier = ai::ItemQualifier(item).GetQualifier();
-        // Reset cached usage to ensure fresh weight/equip check.
-        ai->GetAiObjectContext()->GetValue<ai::ItemUsage>("item usage", qualifier)->Reset();
-        ai::ItemUsage usage = ai->GetAiObjectContext()->GetValue<ai::ItemUsage>("item usage", qualifier)->Get();
-        if (usage != ai::ItemUsage::ITEM_USAGE_AH)
+        // The order keep set bypasses usage lists: never hand over the order
+        // item, the supply item or a known-recipe reagent.
+        if (bot->GetGuildId() &&
+            ai::GuildOrderConsumesItem(bot, proto ? proto->ItemId : 0))
             continue;
 
         // Verify actual pricing API says AH is better than vendor.

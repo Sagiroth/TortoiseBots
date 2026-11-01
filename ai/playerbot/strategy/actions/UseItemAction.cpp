@@ -1,4 +1,5 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
 #include "UseItemAction.h"
 #include "UseItemNamePolicy.h"
@@ -1195,6 +1196,10 @@ bool UseItemIdAction::isPossible()
 
 bool UseItemIdAction::isUseful()
 {
+    // Never use order stock: the order item, the supply item, or any reagent
+    // of a craft order's known-recipe tree (e.g. rocket boots used as boots).
+    if (bot->GetGuildId() && GuildOrderConsumesItem(bot, GetItemId()))
+        return false;
     if (!getQualifier().empty() && (getMultiQualifierStr(getQualifier(), 0, ",").find_first_not_of("0123456789") != std::string::npos))
     {
         sLog.outError("UseItemIdAction::isUseful with qualifier %s, should be number.", getQualifier().c_str());
