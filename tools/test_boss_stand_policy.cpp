@@ -964,10 +964,10 @@ int main()
     }
 
     // Late joiners are seated jointly: two free seats on one side, at x = 0 and x = 60, and two newcomers, the lower
-    // id at x = 30 (30 yd from either seat) and the higher id standing on the x = 0 seat. Seated one after another in
-    // id order the lower id bot takes the x = 0 seat (the first of two equally cheap ones) and leaves the higher id
-    // bot the x = 60 seat, 60 yd away, past kBossStandReach; seated together the bot on the seat keeps it and the
-    // other walks 30 yd, both within reach.
+    // id at x = 28 (28 yd from the x = 0 seat, 32 from the x = 60 one) and the higher id standing on the x = 0 seat.
+    // Seated one after another in id order the lower id bot takes the nearer x = 0 seat and leaves the higher id bot
+    // the x = 60 seat, 60 yd away, past kBossStandReach; seated together the bot on the seat keeps it and the other
+    // walks 32 yd, both within reach.
     {
         BossStandRow near = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0, 1);
         near.releaseAnchor = 2;
@@ -979,19 +979,19 @@ int main()
         const StandLane lane = StandLaneOf(rows, rows[0]);
         CHECK(lane.valid);
         bool tie = false;
-        CHECK(StandSideOf(points, lane, { 1, 30.0f, 32.0f }, tie) == 0 && !tie);
+        CHECK(StandSideOf(points, lane, { 1, 28.0f, 32.0f }, tie) == 0 && !tie);
         CHECK(StandSideOf(points, lane, { 2, 0.0f, 32.0f }, tie) == 0 && !tie);
 
         std::vector<StandSeat> plan = PlanStandSeats(points, std::vector<StandBot>(), lane);
         CHECK(plan.empty());
-        const std::vector<StandBot> late = { { 1, 30.0f, 32.0f }, { 2, 0.0f, 32.0f } };
+        const std::vector<StandBot> late = { { 1, 28.0f, 32.0f }, { 2, 0.0f, 32.0f } };
         CHECK(ExtendStandPlan(plan, points, late, lane));
         CHECK(plan.size() == 2);
         for (const StandSeat& seat : plan)
             CHECK(seat.valid);
         CHECK(plan[0].id == 1 && std::fabs(plan[0].x - 60.0f) < 0.001f && std::fabs(plan[0].y - 32.0f) < 0.001f);
         CHECK(plan[1].id == 2 && std::fabs(plan[1].x) < 0.001f && std::fabs(plan[1].y - 32.0f) < 0.001f);
-        CHECK(Dist(30.0f, 32.0f, plan[0].x, plan[0].y) <= kBossStandReach);
+        CHECK(Dist(28.0f, 32.0f, plan[0].x, plan[0].y) <= kBossStandReach);
         CHECK(Dist(0.0f, 32.0f, plan[1].x, plan[1].y) <= kBossStandReach);
     }
 
