@@ -3749,15 +3749,6 @@ class TrashValueTest(unittest.TestCase):
 # the spell stops being kickable, so the list cannot rot.
 TRASH_INT_OMISSIONS = {}
 
-# Entries whose cast sources predate the script-source rule: a `script_name` gives these mobs an AI that runs neither
-# their creature_spells list nor their EventAI, so their ability rows should cite the script (or the generic AI) that
-# makes the cast. They are the first batch's rows, out of this round's scope; the value is the reason, and each entry
-# fails the test once it stops reproducing, so the list cannot rot and a later pass can clear it.
-TRASH_SCRIPT_SOURCE_OMISSIONS = {
-    11368: "first batch: generic_spell_ai casts its creature_template slot 24023, not the cited EventAI",
-    14750: "first batch: npc_guru_bat_rider casts from the script, not the cited EventAI/creature_spells",
-}
-
 
 @unittest.skipUnless(
     CORE_SPELL_SQL.is_file(),
