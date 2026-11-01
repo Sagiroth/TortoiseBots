@@ -1771,6 +1771,9 @@ SPELL_MOD_COLUMNS = {
     "Id", "Attributes", "AttributesEx", "CastingTimeIndex", "InterruptFlags",
     "ChannelInterruptFlags",
 }
+SPELL_EFFECT_MOD_COLUMNS = {
+    "Id", "EffectIndex", "EffectImplicitTargetA", "EffectImplicitTargetB", "EffectRadiusIndex",
+}
 
 # SpellDefines.h: SPELL_PREVENTION_TYPE_SILENCE (130), SPELL_INTERRUPT_FLAG_DAMAGE
 # (439), CHANNEL_FLAG_INTERRUPT (449), SPELL_ATTR_EX_CHANNELED_1/_2 (767, 771).
@@ -1967,6 +1970,21 @@ def _read_spells(core=CORE_DIR):
                 value = row.get(column, -1)
                 if value != -1:
                     spell[field] = value
+    # spell_effect_mod overlays the template's per-effect fields (the game's own "effect_mod before template"
+    # order): a non -1 override wins, index 0 is effect 1.
+    effect_mod = core / "sql" / "base" / "tw_world_spell_effect_mod.sql"
+    if effect_mod.is_file():
+        for row in _read_dump_table(effect_mod, "spell_effect_mod", SPELL_EFFECT_MOD_COLUMNS):
+            spell = spells.get(row.get("Id"))
+            index = row.get("EffectIndex")
+            if spell is None or index not in (0, 1, 2):
+                continue
+            for column, field in (("EffectImplicitTargetA", "effectImplicitTargetA"),
+                                  ("EffectImplicitTargetB", "effectImplicitTargetB"),
+                                  ("EffectRadiusIndex", "effectRadiusIndex")):
+                value = row.get(column, -1)
+                if value != -1:
+                    spell["%s%d" % (field, index + 1)] = value
     return spells
 
 
@@ -3472,7 +3490,7 @@ TRASH_ABILITY_VALUES = {
     (10476, 17234): (False, "victim", False, False, False, 0),
     # The phase-2 batch. spell_template lines, then creature_spells:127 or creature_ai_scripts:58; the Stormwind Vault
     # pair is custom content, added by sql/database_updates/world/20260510092659_world.sql:12425-12426.
-    # 20014/9611: 25778's 22/15 target pair is set by spell_effect_mod.sql:58 (Anubisath KB), and its radius index is 0
+    # 20014/9611: 25778's 22/15 target pair is restated by spell_effect_mod.sql:58 (Anubisath KB), and its radius index is 0
     # (the core falls back to the spell's max range), so it carries no r=.
     (60597, 25778): (False, "aoe", True, False, False, 0),
     (60597, 12169): (False, "self", False, False, False, 0),
@@ -3505,8 +3523,9 @@ TRASH_ABILITY_VALUES = {
     # 12163/13906
     (11475, 15802): (True, "victim", False, False, False, 0),
     (11475, 17831): (False, "aoe", True, False, False, 5),
-    # 11737/17752/17751: 22939 summons the Mana Bursts (14397) on death
-    (11484, 15230): (True, "victim", False, False, False, 0),
+    # 10605/17752/17751: the Three are the npc_residual_montruosity script's casts (instance_dire_maul.cpp:809 Arcane
+    # Bolt, :818 Arcane Blast, :752 Summon Mana Bursts on death: 22939 summons the Mana Bursts, 14397)
+    (11484, 13748): (True, "victim", False, False, False, 0),
     (11484, 22940): (False, "aoe", True, False, False, 10),
     (11484, 22939): (False, "", False, False, False, 0),
     # 12483
@@ -3521,8 +3540,7 @@ TRASH_ABILITY_VALUES = {
     (5273, 9613): (True, "victim", False, False, False, 0),
     (5273, 12151): (False, "", False, False, False, 0),
     (5273, 12040): (False, "self", False, False, False, 0),
-    # 1693 (the Acolyte's Heal is a creature_template slot spell, not in its creature_spells list)/7001
-    (4809, 2055): (True, "ally", False, False, False, 0),
+    # 7001: Renew is the Acolyte's EventAI cast (480901/480902); Heal 2055 is only a creature_template slot
     (4809, 8362): (True, "ally", False, False, False, 0),
     # 7014
     (4810, 8374): (False, "victim", False, False, True, 0),
@@ -3541,8 +3559,6 @@ TRASH_ABILITY_VALUES = {
     (4814, 15039): (False, "victim", False, False, False, 0),
     (4814, 12548): (False, "victim", False, False, False, 0),
     (4814, 11824): (False, "victim", False, False, False, 0),
-    # 769
-    (6047, 865): (False, "aoe", True, False, False, 10),
 }
 
 # The mob rows, from creature_template.sql:118 and the run notes quoted in the CSV's own note rows.
@@ -3577,7 +3593,6 @@ TRASH_MOB_VALUES = {
     4812: ("Twilight Loreseeker", "blackfathom_deeps", 1, ["cc", "runner"], 1),
     4813: ("Twilight Shadowmage", "blackfathom_deeps", 3, ["caster", "mc", "summoner"], 3),
     4814: ("Twilight Elementalist", "blackfathom_deeps", 2, ["caster", "runner"], 1),
-    6047: ("Aqua Guardian", "blackfathom_deeps", 2, ["aoe"], 2),
 }
 
 
@@ -3660,17 +3675,29 @@ class TrashValueTest(unittest.TestCase):
             self.assertIn(want[5], yards, "%s %s r=%s, spell radii %s" % (entry, spell, want[5], yards))
 
     def test_a_caster_centred_area_carries_a_radius(self):
-        # A caster-centred area carries the radius its spell draws. A spell with no radius index at all (Knock Away
-        # 25778, an Anubisath-style knockback whose targets spell_effect_mod sets to 22/15) has no area to draw: the
-        # core falls back to the spell's own max range for a 0 index, and the table holds no yardage for that.
+        # A caster-centred area carries the radius its spell draws. A spell whose every radius index is 0 (Knock Away
+        # 25778, an Anubisath-style knockback whose targets spell_effect_mod restates to 22/15) has no area to draw:
+        # the core falls back to the spell's own max range for a 0 index, and the table holds no yardage for that. A
+        # non-zero index, though, must be one TRASH_RADIUS_YARDS knows (the test fails otherwise, so a new index is
+        # added rather than silently dropped).
         found = set()
         for row in self.rows:
             if row["row"] != "ability":
                 continue
             spell = self.spells[int(row["key"])]
             pair = (spell.get("effectImplicitTargetA1"), spell.get("effectImplicitTargetB1"))
-            if pair not in CASTER_CENTRED_TARGETS or not _spell_radii_yards(spell):
+            if pair not in CASTER_CENTRED_TARGETS:
                 continue
+            indexes = [spell.get("effectRadiusIndex%d" % n, 0) for n in (1, 2, 3)]
+            if not any(indexes):
+                continue
+            for index in indexes:
+                if index:
+                    self.assertIn(
+                        index, TRASH_RADIUS_YARDS,
+                        "%s %s has radius index %s with no yards in TRASH_RADIUS_YARDS"
+                        % (row["entry"], row["key"], index),
+                    )
             key = (int(row["entry"]), int(row["key"]))
             found.add(key)
             self.assertTrue(
@@ -3679,7 +3706,7 @@ class TrashValueTest(unittest.TestCase):
         self.assertEqual(
             {(15146, 24616), (14750, 5115), (14750, 23511), (14750, 24024), (10499, 17631),
              (10477, 14887), (10477, 12020), (60596, 15253), (5649, 11898), (11472, 16838),
-             (11472, 22743), (11475, 17831), (11484, 22940), (6047, 865)},
+             (11472, 22743), (11475, 17831), (11484, 22940)},
             found,
         )
 
@@ -3700,7 +3727,7 @@ class TrashValueTest(unittest.TestCase):
         self.assertEqual(
             {15111, 15146, 11368, 14750, 10470, 10471, 10499, 10469, 10477, 10476,
              60597, 60596, 5648, 5650, 7246, 7247, 5649, 11471, 11472, 11475, 11484,
-             5263, 5271, 5273, 4809, 4810, 4811, 4812, 4813, 4814, 6047},
+             5263, 5271, 5273, 4809, 4810, 4811, 4812, 4813, 4814},
             set(self.mobs))
         self.assertEqual(
             [{"key": "zulgurub", "mapId": 309}, {"key": "scholomance", "mapId": 289},
@@ -3721,6 +3748,15 @@ class TrashValueTest(unittest.TestCase):
 # value is the reason. There is none today; an entry here is a decision, not an oversight, and it fails the test once
 # the spell stops being kickable, so the list cannot rot.
 TRASH_INT_OMISSIONS = {}
+
+# Entries whose cast sources predate the script-source rule: a `script_name` gives these mobs an AI that runs neither
+# their creature_spells list nor their EventAI, so their ability rows should cite the script (or the generic AI) that
+# makes the cast. They are the first batch's rows, out of this round's scope; the value is the reason, and each entry
+# fails the test once it stops reproducing, so the list cannot rot and a later pass can clear it.
+TRASH_SCRIPT_SOURCE_OMISSIONS = {
+    11368: "first batch: generic_spell_ai casts its creature_template slot 24023, not the cited EventAI",
+    14750: "first batch: npc_guru_bat_rider casts from the script, not the cited EventAI/creature_spells",
+}
 
 
 @unittest.skipUnless(
@@ -3824,6 +3860,7 @@ class TrashSpellSourceTest(unittest.TestCase):
                    "" if entry not in scripted else "; its script cites no script line")
             )
         self.assertEqual([], problems)
+
 
     def test_a_triggered_cast_is_no_interrupt(self):
         rows = [dict(r) for r in self.rows]

@@ -91,10 +91,10 @@ dire_maul,11475,ability,15802,0,0,0,t=victim;int,sql/base/tw_world_spell_templat
 dire_maul,11475,ability,17831,0,0,0,t=aoe;aura;r=5,sql/base/tw_world_spell_template.sql:13906;sql/base/tw_world_creature_ai_scripts.sql:58
 dire_maul,11475,note,,"Shrink is a kickable cast that shrinks a bot and cuts its stats; Call of the Grave is an instant 5 yd disease pulse every 15-20 s.",,,,
 dire_maul,11484,mob,,3,caster;aoe;summoner,3,,sql/base/tw_world_creature_template.sql:118
-dire_maul,11484,ability,15230,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:11737;sql/base/tw_world_creature_spells.sql:127
-dire_maul,11484,ability,22940,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:17752;sql/base/tw_world_creature_spells.sql:127
-dire_maul,11484,ability,22939,0,0,0,summon=14397,sql/base/tw_world_spell_template.sql:17751;sql/base/tw_world_creature_ai_scripts.sql:58
-dire_maul,11484,note,,"Immol'thar hall: about 9 wipes, two of them at steps 441/442 and stopping a run there. Arcane Blast is an instant 10 yd knockback no kick stops, and on death it summons Mana Bursts (14397).",,,,
+dire_maul,11484,ability,13748,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:10605;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:729;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:809
+dire_maul,11484,ability,22940,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:17752;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:818
+dire_maul,11484,ability,22939,0,0,0,summon=14397,sql/base/tw_world_spell_template.sql:17751;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:752
+dire_maul,11484,note,,"Immol'thar hall: about 9 wipes, two of them at steps 441/442 and stopping a run there. Arcane Bolt is kickable, Arcane Blast is an instant 10 yd knockback no kick stops every 3.8-5.2 s, and on death it summons Mana Bursts (14397).",,,,
 sunken_temple,5263,mob,,2,caster,1,,sql/base/tw_world_creature_template.sql:117
 sunken_temple,5263,ability,16186,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12483;sql/base/tw_world_creature_spells.sql:127
 sunken_temple,5263,note,,"Jammal'an corridor (steps 897-915): about 11 wipes. Its Fevered Plague is a disease DoT on the tank.",,,,
@@ -111,16 +111,15 @@ sunken_temple,5273,ability,12151,0,0,0,summon=8324,sql/base/tw_world_spell_templ
 sunken_temple,5273,ability,12040,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:9493;sql/base/tw_world_creature_ai_scripts.sql:58
 sunken_temple,5273,note,,"Both heals are kickable, so the High Priest dies first; it summons an Atal'ai Skeleton (8324), shields itself below 30% hp and runs at 15% hp.",,,,
 blackfathom_deeps,4809,mob,,3,healer;runner,3,,sql/base/tw_world_creature_template.sql:117
-blackfathom_deeps,4809,ability,2055,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:1693;sql/base/tw_world_creature_template.sql:117
 blackfathom_deeps,4809,ability,8362,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:7001;sql/base/tw_world_creature_ai_scripts.sql:58
-blackfathom_deeps,4809,note,,"Kelris platform and hall (steps 554-584): about 6 wipes and 3 runs stopped. Both heals are kickable, so the Acolyte dies first; it runs at 15% hp.",,,,
+blackfathom_deeps,4809,note,,"Kelris platform and hall (steps 554-584): about 6 wipes and 3 runs stopped. Its Renew is kickable, so the Acolyte dies first; it runs at 15% hp.",,,,
 blackfathom_deeps,4810,mob,,2,aoe;runner,2,,sql/base/tw_world_creature_template.sql:117
 blackfathom_deeps,4810,ability,8374,0,0,0,t=victim;cone,sql/base/tw_world_spell_template.sql:7014;sql/base/tw_world_creature_spells.sql:127
 blackfathom_deeps,4810,note,,"Arcing Smash is a frontal cone on everything in front of it; the Reaver runs at 15% hp.",,,,
 blackfathom_deeps,4811,mob,,2,caster;summoner;runner,2,,sql/base/tw_world_creature_template.sql:117
 blackfathom_deeps,4811,ability,9672,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:7829;sql/base/tw_world_creature_spells.sql:127
 blackfathom_deeps,4811,ability,8372,0,0,0,summon=6047,sql/base/tw_world_spell_template.sql:7012;sql/base/tw_world_creature_ai_scripts.sql:58
-blackfathom_deeps,4811,note,,"Summons an Aqua Guardian (6047) as it spawns; Frostbolt is kickable and it runs at 15% hp.",,,,
+blackfathom_deeps,4811,note,,"Summons an Aqua Guardian as it spawns; Frostbolt is kickable and it runs at 15% hp.",,,,
 blackfathom_deeps,4812,mob,,1,cc;runner,1,,sql/base/tw_world_creature_template.sql:117
 blackfathom_deeps,4812,ability,18972,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:14829;sql/base/tw_world_creature_spells.sql:127
 blackfathom_deeps,4812,ability,8365,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:7004;sql/base/tw_world_creature_ai_scripts.sql:58
@@ -136,6 +135,3 @@ blackfathom_deeps,4814,ability,15039,0,0,0,t=victim;aura,sql/base/tw_world_spell
 blackfathom_deeps,4814,ability,12548,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:9810;sql/base/tw_world_creature_spells.sql:127
 blackfathom_deeps,4814,ability,11824,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:9405;sql/base/tw_world_creature_spells.sql:127
 blackfathom_deeps,4814,note,,"Every shock it casts is instant, so no kick stops any of them; four damage schools on the same pull. It runs at 15% hp.",,,,
-blackfathom_deeps,6047,mob,,2,aoe,2,,sql/base/tw_world_creature_template.sql:118
-blackfathom_deeps,6047,ability,865,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:769;sql/base/tw_world_creature_ai_scripts.sql:58
-blackfathom_deeps,6047,note,,"Summoned by the Aquamancer; Frost Nova roots the group inside the casters' area spells every 14-18 s.",,,,
