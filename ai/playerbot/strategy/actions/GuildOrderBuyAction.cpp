@@ -252,8 +252,11 @@ bool GuildOrderTakeMailAction::isUseful()
         return false;
     uint32_t itemId = TortoiseBots::GuildOrders::SupplyMailItemId(stored->supplyStep,
         stored->supplyItemId, stored->itemId);
-    if (!itemId || !OrderMailboxItems(bot, itemId) || AI_VALUE(uint8, "bag space") > 95)
+    if (!itemId || !OrderMailboxItems(bot, itemId))
         return false;
+    // No percent gate here on purpose: the take below fits only the order
+    // item (stack merge included), so a bag full of unsellable stock still
+    // lifts it. The broad take's two-free-slot rule would refuse forever.
     // Only at the mailbox, not while walking past one: the core refuses the
     // take past interact range, and a refused take still costs a server
     // round trip every tick of the walk. FindMailbox scans sight range
@@ -272,17 +275,22 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
         return false;
     uint32_t itemId = TortoiseBots::GuildOrders::SupplyMailItemId(stored->supplyStep,
         stored->supplyItemId, stored->itemId);
-    uint32_t before = itemId ? ai->GetInventoryItemsCountWithId(itemId) : 0;
-    Event take("rpg action", "take");
-    bool result = ai->DoSpecificAction("mail", take, true);
-    if (itemId)
+    if (!itemId)
+        return false;
+    uint32_t before = ai->GetInventoryItemsCountWithId(itemId);
+    uint32_t taken = TakeOrderMail(ai, itemId);
+    bool result = taken > 0;
+    if (taken)
     {
-        uint32_t after = ai->GetInventoryItemsCountWithId(itemId);
-        if (after > before)
-        {
-            NoteSupplyGain(bot->GetGUIDLow(), itemId, after - before);
-            NoteSupplyProgress(bot->GetGUIDLow());
-        }
+        NoteSupplyGain(bot->GetGUIDLow(), itemId, taken);
+        NoteSupplyProgress(bot->GetGUIDLow());
+    }
+    else if (ai->GetInventoryItemsCountWithId(itemId) > before)
+    {
+        uint32_t gained = ai->GetInventoryItemsCountWithId(itemId) - before;
+        NoteSupplyGain(bot->GetGUIDLow(), itemId, gained);
+        NoteSupplyProgress(bot->GetGUIDLow());
+        result = true;
     }
     if (!OrderMailboxItems(bot, itemId))
     {
@@ -290,6 +298,13 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
         SupplyStep next = stored->supplyReturnStep;
         SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : itemId, 0,
             SupplyStep::None, stored->reason);
+    }
+    else if (!result)
+    {
+        // The order item is still waiting but nothing more fits: park the
+        // mailbox leg so the ladder (and the vendor loop behind it) can move
+        // on instead of walking back to a mailbox it cannot empty.
+        NoteMailEmpty(bot->GetGUIDLow(), itemId);
     }
     return result;
 }
