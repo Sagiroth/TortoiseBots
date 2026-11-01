@@ -29,7 +29,7 @@ vm.createContext(ctx);
 ["commanders.js", "unitinfo.js", "fightreplay.js", "bosspanel.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
-vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
+vm.runInContext([grab("esc"), grab("cmdTrashWord"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
   grab("cmdMobSvg"), grab("cmdBossPoint"), grab("cmdLegendHtml"), grab("cmdBossTable"), grab("cmdApplyBossRanks"),
   grab("cmdBossTableLoaded"), grab("fdReplayBind")].join("\n"), ctx);
 

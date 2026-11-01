@@ -41,7 +41,7 @@ ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [
   { entry: 11382, name: "Mandokir", map: 309, abilities: [{ spell: 24314, name: "Threatening Gaze", first: 33000, repeatMin: 0, repeatMax: 0, flags: "aura;mark" }],
     phases: [], adds: [], notes: [] },
 ] });
-vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
+vm.runInContext([grab("esc"), grab("cmdTrashWord"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
   grab("cmdMobSvg"), grab("fdFramesHtml"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("bossBotMarks")].join("\n")
   + "\nvar cmdBossTable = () => ctxBossTable(); var BossPanel = BP;", ctx);
 ctx.ctxBossTable = () => ctx.BOSS_TABLE;
@@ -163,7 +163,8 @@ assert.ok(css.includes(".cmd-map .mob.ghost") && css.includes(".cmd-map .mcring"
 
 // ---- the card carries the panel in both views and loads the table script ---------------------------------------------
 assert.ok(src.includes('<section class="fd-bosses"'), "the card has the boss panel slot");
-assert.ok(src.includes("cmdPaintBosses(card, cmdLiveBossPanels(bind))"), "Live paints the engaged bosses");
+assert.ok(src.includes("cmdPaintBosses(card, cmdLiveBossPanels(bind), cmdTrashBlockHtml(bind))"),
+  "Live paints the engaged bosses, or the trash list when no boss is engaged");
 assert.ok(src.includes("cmdPaintBosses(card, selLive ? cmdLiveBossPanels(bind) : fight ? cmdFightBossPanels(bind, fight) : [])"), "the debugger paints the live or finished fight's bosses");
 assert.ok(src.includes("BossPanel.load()"), "the page loads the committed table once");
 

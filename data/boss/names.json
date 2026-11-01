@@ -52,6 +52,10 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "5115": {
+      "name": "Battle Command",
+      "castMs": 0
+    },
     "6524": {
       "name": "Ground Tremor",
       "castMs": 0
@@ -172,6 +176,10 @@
       "name": "Fire Nova Totem",
       "castMs": 0
     },
+    "11443": {
+      "name": "Cripple",
+      "castMs": 0
+    },
     "11639": {
       "name": "Shadow Word: Pain",
       "castMs": 0
@@ -230,6 +238,10 @@
     },
     "11990": {
       "name": "Rain of Fire",
+      "castMs": 0
+    },
+    "12020": {
+      "name": "Call of the Grave",
       "castMs": 0
     },
     "12039": {
@@ -368,6 +380,18 @@
       "name": "Burning Spirit",
       "castMs": 0
     },
+    "14887": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "15043": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "15244": {
+      "name": "Cone of Cold",
+      "castMs": 0
+    },
     "15245": {
       "name": "Shadow Bolt Volley",
       "castMs": 0
@@ -390,6 +414,10 @@
     },
     "15496": {
       "name": "Cleave",
+      "castMs": 0
+    },
+    "15499": {
+      "name": "Frost Shock",
       "castMs": 0
     },
     "15506": {
@@ -524,6 +552,10 @@
       "name": "Stun Bomb",
       "castMs": 0
     },
+    "16592": {
+      "name": "Shadowform",
+      "castMs": 0
+    },
     "16636": {
       "name": "Berserker Charge",
       "castMs": 0
@@ -556,8 +588,20 @@
       "name": "Hover",
       "castMs": 0
     },
+    "17151": {
+      "name": "Shadow Barrier",
+      "castMs": 0
+    },
+    "17165": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
     "17172": {
       "name": "Hex",
+      "castMs": 0
+    },
+    "17234": {
+      "name": "Shadow Shock",
       "castMs": 0
     },
     "17492": {
@@ -566,6 +610,26 @@
     },
     "17547": {
       "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "17613": {
+      "name": "Dark Mending",
+      "castMs": 0
+    },
+    "17615": {
+      "name": "Mana Burn",
+      "castMs": 0
+    },
+    "17616": {
+      "name": "Corpse Explosion",
+      "castMs": 0
+    },
+    "17630": {
+      "name": "Mana Burn",
+      "castMs": 0
+    },
+    "17631": {
+      "name": "Wail of Souls",
       "castMs": 0
     },
     "18106": {
@@ -1136,8 +1200,20 @@
       "name": "Jeklik Transform",
       "castMs": 0
     },
+    "23968": {
+      "name": "Throw Liquid Fire",
+      "castMs": 0
+    },
     "23979": {
       "name": "Holy Wrath",
+      "castMs": 0
+    },
+    "24023": {
+      "name": "Charge",
+      "castMs": 0
+    },
+    "24024": {
+      "name": "Unstable Concoction",
       "castMs": 0
     },
     "24084": {
@@ -1258,6 +1334,26 @@
     },
     "24573": {
       "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "24611": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "24612": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
+    "24614": {
+      "name": "Consuming Shadows",
+      "castMs": 0
+    },
+    "24616": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "24621": {
+      "name": "Portal of Madness",
       "castMs": 0
     },
     "24673": {
@@ -4720,6 +4816,24 @@
     "10430": {
       "name": "The Beast"
     },
+    "10469": {
+      "name": "Scholomance Adept"
+    },
+    "10470": {
+      "name": "Scholomance Neophyte"
+    },
+    "10471": {
+      "name": "Scholomance Acolyte"
+    },
+    "10476": {
+      "name": "Scholomance Necrolyte"
+    },
+    "10477": {
+      "name": "Scholomance Necromancer"
+    },
+    "10499": {
+      "name": "Spectral Researcher"
+    },
     "10596": {
       "name": "Mother Smolderweb"
     },
@@ -4903,6 +5017,9 @@
     "14668": {
       "name": "Corrupted Infernal"
     },
+    "14750": {
+      "name": "Gurubashi Bat Rider"
+    },
     "14826": {
       "name": "Sacrificed Troll"
     },
@@ -4933,11 +5050,20 @@
     "15101": {
       "name": "Zulian Prowler"
     },
+    "15111": {
+      "name": "Mad Servant"
+    },
     "15112": {
       "name": "Brain Wash Totem"
     },
     "15117": {
       "name": "Chained Spirit"
+    },
+    "15141": {
+      "name": "Portal of Madness"
+    },
+    "15146": {
+      "name": "Mad Voidwalker"
     },
     "15263": {
       "name": "The Prophet Skeram"
