@@ -14,6 +14,7 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/policy/pull/PullFiringPolicy.h"
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
+#include "playerbot/policy/combat/EvadeChasePolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
@@ -96,7 +97,7 @@ namespace ai
         }
 
         virtual bool Execute(Event& event) override
-		{
+        {
             Unit* target = GetTarget();
             if (target)
             {
@@ -135,6 +136,36 @@ namespace ai
                         stoodTarget = target->getObjectGuid();
                     }
                     lastExecuteMs = nowMs;
+                }
+
+                // R2 (fair-fight losses): never take the first step after a
+                // mob that is evading — it is walking home invulnerable, and
+                // following drags the fight back into its camp (EvadeProbe
+                // homedist p90 99 yd). The stand-still clock above already
+                // ran, so the 10 s no-move backstop keeps ticking; the 15 s
+                // no-headway give-up below stays the wedge backstop. A mob
+                // the core merely flags unreachable is still damaging, so it
+                // keeps the order and falls through to the movement and the
+                // give-up: dropping it left the bot standing in combat
+                // without a swing while "has attackers" held it there.
+                if (target->IsCreature())
+                {
+                    Creature* creature = static_cast<Creature*>(target);
+                    if (ai::ShouldNotChaseEvader(creature->IsInEvadeMode()))
+                    {
+                        float homeX, homeY, homeZ, homeO;
+                        creature->GetRespawnCoord(homeX, homeY, homeZ, &homeO);
+                        float combatStartX, combatStartY, combatStartZ;
+                        creature->GetCombatStartPosition(combatStartX, combatStartY, combatStartZ);
+                        ai::EvadeChaseState state;
+                        state.evading = true;
+                        state.unreachable = creature->IsEvadeBecauseTargetNotReachable();
+                        state.homeDistanceYd = creature->GetDistance2d(homeX, homeY);
+                        state.combatStartDistanceYd = creature->GetDistance2d(combatStartX, combatStartY);
+                        if (ai::ShouldDropDraggedTarget(state))
+                            DropAttackTarget();
+                        return false;
+                    }
                 }
 
                 if (range > 0.0f)

@@ -481,7 +481,17 @@ bool OutNumberedTrigger::IsActive()
     // there is still enough left to get away. PanicTrigger covers the genuine
     // near-death case separately, and it is deliberately narrower (critical
     // health *and* no mana). Tunable via AiPlayerbot.MediumHealth.
-    if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.mediumHealth)
+    //
+    // R3 (fair-fight losses): cloth (mage/priest/warlock) takes the second
+    // attacker's burst at full cloth mitigation, so a two-on-one that a
+    // plate wearer rides to 70% kills the cloth set first — the fair-fight
+    // death rate is 2-3.6x plate's. Cloth starts weighing the disengage at
+    // 85%: still swinging above it, running with 85% of the bar to spend on
+    // the way out. Everyone else keeps the 70% line.
+    uint8 const outnumberedHealthLine = ai::OutnumberedFleeHealthLine(
+        bot->GetClass() == CLASS_MAGE || bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_WARLOCK,
+        sPlayerbotAIConfig.mediumHealth);
+    if (AI_VALUE2(uint8, "health", "self target") >= outnumberedHealthLine)
         return false;
 
     int32 botLevel = bot->GetLevel();
