@@ -32,4 +32,17 @@ inline bool HunterFeignDeathAllowed(const std::vector<uint32_t>& othersPerAttack
     return true;
 }
 
+// Raid groups (warrior-hunter-raid fix 3): medium threat (60 %) on a
+// tank-held mob is not a feign. Feign only when a mob is on the hunter
+// (non-empty attacker set) or threat is near-max (>= 90 %). Dungeon
+// behaviour is the old rule above, unchanged.
+inline bool HunterFeignDeathRaidAllowed(bool inRaidGroup, const std::vector<uint32_t>& othersPerAttacker, uint8_t threatPct)
+{
+    if (!inRaidGroup)
+        return HunterFeignDeathAllowed(othersPerAttacker);
+    if (!othersPerAttacker.empty())
+        return HunterFeignDeathAllowed(othersPerAttacker);
+    return threatPct >= 90;
+}
+
 } // namespace TortoiseBots
