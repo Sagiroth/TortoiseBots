@@ -319,7 +319,7 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     }
     // Else the nearest creature this bot may attack, by the same candidate rules the kill_first pick applies
     // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds.
-    const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
+    const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     std::vector<TacticCandidate> candidates;
     candidates.reserve(fight.units.size());
     for (Unit* unit : fight.units)
@@ -353,7 +353,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
-    const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
+    const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // hold_kill: a free DPS bot (IsFreeDps, the gate HeldDpsTarget uses: no tank, no healer, no explicit attack order)
     // leaves a held boss entry alone (the row's blocker is the kill). The assist rows are stood down on the target they
     // would send the bot to — the dps target for the assist, the dps aoe target for the AoE — as well as on the current
