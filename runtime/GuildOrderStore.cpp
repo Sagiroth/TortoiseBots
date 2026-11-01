@@ -1281,6 +1281,17 @@ public:
                     MarkDirtyLocked(stored);
                     out.legChanged = true;
                 }
+                else if (SupplyFarmGivesUp(record.type == OrderType::Craft &&
+                    record.supplyStep == SupplyStep::Farm && record.supplyItemId &&
+                    record.reason != OrderReason::NoSource, record.workedNoGainSec))
+                {
+                    // The reagent farm gives up; the ladder takes over with a
+                    // fresh watchdog for the sub-order or need list.
+                    record.reason = OrderReason::NoSource;
+                    record.workedNoGainSec = 0;
+                    MarkDirtyLocked(stored);
+                    out.legChanged = true;
+                }
                 else if (IsOrderNoProgress(record.workedNoGainSec))
                 {
                     // Same deliver-first end as the timeout: the bot brings

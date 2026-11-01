@@ -133,6 +133,16 @@ inline bool IsOrderNoProgress(uint32_t workedNoGainSec)
     return workedNoGainSec >= kNoGainWorkedSeconds;
 }
 
+// A craft order farming a reagent hands it down the ladder (sub-order, then
+// the need list) after an hour worked without one: the whole-order watchdog
+// above would otherwise end the order before the farm zones are exhausted.
+inline constexpr uint32_t kSupplyFarmNoGainSeconds = 3600;
+
+inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec)
+{
+    return craftFarmLeg && workedNoGainSec >= kSupplyFarmNoGainSeconds;
+}
+
 // Reported progress never drops: offline (or not yet re-seen) bots keep
 // max(delivered, last reported).
 inline uint32_t ReportedHave(uint32_t delivered, uint32_t bagCount, bool botOnline, uint32_t reportedHave)

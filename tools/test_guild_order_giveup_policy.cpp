@@ -52,6 +52,12 @@ int main()
     CHECK(SearchFailsMoveZone(3));
     CHECK(SearchFailsMoveZone(4));
 
+    // A craft reagent farm hands off after an hour without a new reagent.
+    CHECK(kSupplyFarmNoGainSeconds == 3600);
+    CHECK(!SupplyFarmGivesUp(true, 3599));
+    CHECK(SupplyFarmGivesUp(true, 3600));
+    CHECK(!SupplyFarmGivesUp(false, 7200));
+
     // Search-forced zone moves through the whole plan end self-farming.
     CHECK(!SearchZoneMovesExhaustPlan(0, 1));
     CHECK(SearchZoneMovesExhaustPlan(1, 1));
