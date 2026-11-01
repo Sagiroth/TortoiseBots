@@ -120,3 +120,21 @@ func TestTrashDataRouteServed(t *testing.T) {
 		}
 	}
 }
+
+// TestFightsListQueryWired guards the live fights list's optional paging and filters (combat.ListQuery): parsed from the
+// request, a bad param answered 400, applied to the store's list, and a cut page marked with X-More.
+func TestFightsListQueryWired(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"lq, err := combat.ParseListQuery(r.URL.Query())",
+		"rows, more := lq.Apply(combatStore.List(r.URL.Query().Get(\"commander\")))",
+		"w.Header().Set(\"X-More\", \"1\")",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("main.go does not contain %q", want)
+		}
+	}
+}

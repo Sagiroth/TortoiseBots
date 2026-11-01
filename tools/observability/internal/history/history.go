@@ -423,6 +423,20 @@ func (s *Store) List(commander, day string) []Row {
 	return out
 }
 
+// ListAll returns all of a commander's stored fights across days, newest first (the paged list without a day).
+func (s *Store) ListAll(commander string) []Row {
+	s.mu.RLock()
+	out := make([]Row, 0, 64)
+	for i := range s.rows {
+		if s.rows[i].Commander == commander {
+			out = append(out, s.rows[i])
+		}
+	}
+	s.mu.RUnlock()
+	sortRows(out)
+	return out
+}
+
 // Pack returns the fights of one pack key, newest first; all widens it to every commander. limit is clamped to 50.
 func (s *Store) Pack(packKey, commander string, all bool, limit int) []Row {
 	if limit <= 0 || limit > 50 {
@@ -607,20 +621,37 @@ func DaysHandler(s *Store) http.HandlerFunc {
 	}
 }
 
-// ListHandler serves GET /api/v1/combat/history?commander=&day=, newest first.
+// ListHandler serves GET /api/v1/combat/history?commander=&day=, newest first. The optional combat.ListQuery params
+// (limit, before, since, boss, deaths, outcome) page and filter it; with since or before the day may be left out, and the
+// list then spans every stored day. A page cut by limit answers the header X-More: 1.
 func ListHandler(s *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		lq, err := combat.ParseListQuery(q)
+		if err != nil {
+			bad(w, err.Error())
+			return
+		}
 		day := q.Get("day")
-		if !validDay(day) {
+		if !validDay(day) && !(day == "" && lq.Spans()) {
 			bad(w, "bad day")
 			return
 		}
 		out := []combat.FightSummary{}
 		if s != nil {
-			for _, row := range s.List(q.Get("commander"), day) {
+			var rows []Row
+			if day != "" {
+				rows = s.List(q.Get("commander"), day)
+			} else {
+				rows = s.ListAll(q.Get("commander"))
+			}
+			for _, row := range rows {
 				out = append(out, row.Summary())
 			}
+		}
+		out, more := lq.Apply(out)
+		if more {
+			w.Header().Set("X-More", "1")
 		}
 		writeJSON(w, out)
 	}

@@ -686,8 +686,20 @@ func main() {
 	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
 	// commander, newest first; each fight carries the v1 warnings with it.
+	// The optional combat.ListQuery params (limit, before, since, boss, deaths, outcome) page and filter the list; without
+	// them it answers as it always did. A page cut by limit answers the header X-More: 1.
 	mux.HandleFunc("/api/v1/combat/fights", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		rows := combatStore.List(r.URL.Query().Get("commander"))
+		lq, err := combat.ParseListQuery(r.URL.Query())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"` + err.Error() + `"}`))
+			return
+		}
+		rows, more := lq.Apply(combatStore.List(r.URL.Query().Get("commander")))
+		if more {
+			w.Header().Set("X-More", "1")
+		}
 		if historyStore != nil {
 			for i := range rows {
 				if row, ok := historyStore.Lookup(rows[i].Key); ok {

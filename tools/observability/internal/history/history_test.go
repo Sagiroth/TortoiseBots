@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -992,5 +993,72 @@ func TestFightLogRoundTrips(t *testing.T) {
 		if string(got.Log[i]) != string(f.Log[i]) {
 			t.Fatalf("log[%d] = %s, want %s", i, got.Log[i], f.Log[i])
 		}
+	}
+}
+
+// TestHistoryListPaging pins the list's optional params: limit with the X-More header, the before cursor and since without a
+// day (the paged list spans days), and the boss/deaths/outcome filters. Without them the answer is the old one.
+func TestHistoryListPaging(t *testing.T) {
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: t.TempDir(), Now: clock.Now})
+	trash := func(id string, start int64, deaths int, outcome string) combat.Fight {
+		f := mkFight(id, "Glacienne", start)
+		f.Boss, f.BossName, f.Outcome = 0, "", outcome
+		for i := 0; i < deaths; i++ {
+			f.Deaths = append(f.Deaths, combat.FightDeath{Name: "Tank", TMs: 100})
+		}
+		return f
+	}
+	day0 := t0.Unix() - 7200  // 2026-10-28
+	prev := t0.Unix() - 86400 // 2026-10-27
+	for _, it := range []combat.Fight{
+		trash("p1", prev, 0, "kill"),
+		trash("a1", day0, 0, "kill"),
+		trash("a2", day0+100, 2, "kill"),
+		trash("a3", day0+200, 5, "wipe"),
+		mkFight("a4", "Glacienne", day0+300), // Onyxia, a kill
+	} {
+		deliver(t, s, clock, Item{Session: 1, Fight: it, At: clock.Now()})
+	}
+	do := func(target string) (int, string, []combat.FightSummary, string) {
+		rec := httptest.NewRecorder()
+		ListHandler(s)(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		var rows []combat.FightSummary
+		_ = json.Unmarshal(rec.Body.Bytes(), &rows)
+		return rec.Code, rec.Body.String(), rows, rec.Header().Get("X-More")
+	}
+	ids := func(rows []combat.FightSummary) string {
+		out := ""
+		for _, r := range rows {
+			out += r.ID + " "
+		}
+		return strings.TrimSpace(out)
+	}
+	base := "/api/v1/combat/history?commander=Glacienne"
+	cases := []struct {
+		q, want, more string
+	}{
+		{"&day=2026-10-28", "a4 a3 a2 a1", ""},
+		{"&day=2026-10-28&limit=2", "a4 a3", "1"},
+		{"&day=2026-10-28&boss=1", "a4", ""},
+		{"&day=2026-10-28&deaths=1", "a3 a2", ""},
+		{"&day=2026-10-28&outcome=wipe", "a3", ""},
+		// No day with a cursor: the page crosses into the day before.
+		{"&before=" + strconv.FormatInt(day0+100, 10) + "&limit=5", "a1 p1", ""},
+		{"&before=" + strconv.FormatInt(day0+300, 10) + "&limit=1", "a3", "1"},
+		{"&since=" + strconv.FormatInt(day0+100, 10), "a4 a3 a2", ""},
+	}
+	for _, c := range cases {
+		code, body, rows, more := do(base + c.q)
+		if code != 200 || ids(rows) != c.want || more != c.more {
+			t.Errorf("%s: %d %q more=%q (%s), want %q more=%q", c.q, code, ids(rows), more, body, c.want, c.more)
+		}
+	}
+	// The day is still mandatory without since/before, and a bad param is a 400.
+	if code, _, _, _ := do(base + "&limit=5"); code != 400 {
+		t.Errorf("limit without a day or cursor: %d, want 400", code)
+	}
+	if code, body, _, _ := do(base + "&day=2026-10-28&limit=0"); code != 400 || !strings.Contains(body, "bad limit") {
+		t.Errorf("limit=0: %d %s", code, body)
 	}
 }
