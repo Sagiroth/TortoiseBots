@@ -24,8 +24,8 @@ vm.runInContext(fs.readFileSync(histPath, "utf8"), ctx, { filename: "fighthistor
 assert.ok(ctx.FightHistory && typeof ctx.FightHistory.dayOptions === "function", "fighthistory.js loads as the global FightHistory");
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.railCards === "function", "fightdebug.js loads as the global FightDebug");
-vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml"),
-  grab("numOr0"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows")].join("\n"), ctx,
+vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml"),
+  grab("numOr0"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList")].join("\n"), ctx,
   { filename: "app.js" });
 ctx.cmdFightsCache = {};
 

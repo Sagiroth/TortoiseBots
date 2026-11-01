@@ -208,6 +208,7 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
 - `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history.
 - `GET /api/v1/combat/history/days?commander=`, `GET /api/v1/combat/history?commander=&day=`, `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's days, one day's fights, and the same pack across runs.
+- Both fight lists (`/combat/fights` and `/combat/history`) take optional paging and filter params; without them they answer as before. `limit=N` (at most 500) cuts the list, put in start-descending then key-ascending order first, and answers the header `X-More: 1` when rows were left out (a `since` or `before` without `limit` is capped at 500 the same way); `before=<start>[,<key>]` lists only older fights (pass the last row's `start,key` to get the next page); `since=<start>` only fights from that unix second on; `boss=1`, `deaths=1` and `outcome=kill,wipe` filter. With `since` or `before` the history list may leave out `day` and then spans every stored day. A bad param is a 400.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
 - `WS /api/v1/stream`: Real-time WebSocket event feed streaming live bot updates to connected clients.
@@ -215,6 +216,18 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 Activity counters are periodically saved to `activity-state.json` so statistics persist across daemon restarts.
 
 The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits, within ten seconds: a world-database lookup still running at that point is abandoned, and the log names the fights it left unwritten. A line that cannot be written whole is cut back off the file, and when even that fails the night continues in `<YYYY-MM-DD>-1.jsonl`.
+
+### The fights rail (Fight debugger)
+
+The Fight debugger's rail on a Commanders card lists the fights of Tonight (or a chosen night), oldest first:
+
+- **Default view:** boss fights, wipes, fights with any death and fights that are not clean (a rule the daemon fired, or an opened fight whose checks warn or fail) are full cards; two or more clean trash fights in a row (same leg and run) fold into one line such as "Leg 2 · 12 trash pulls, 0 deaths", which opens in place. The fold that holds the selected fight opens by itself; a fold the reader opened stays open when a new pull joins it.
+- **Show all fights:** the box over the rail lists every fight of the night as a card, as the rail did before. The choice is kept per viewer in this browser (for the page only where the browser blocks storage). A read-only history card never folds.
+- **Paging:** Tonight shows the bound run plus the last 2 hours (the list's `since`); **Load older fights** at the top asks the history for the next 50 before the oldest row shown, across days. Once an older page is loaded the window start stops sliding for that night, so no fight falls between the pages and the window. With Show all fights on, Tonight is the whole of today again.
+- **Pack labels:** "Pack N" counts inside the fight's day and run over the rows the rail holds. For an earlier run that the 2-hour window cuts, the numbers count from the window's first fight and shift as the window slides; Load older or Show all fights gives the run's own numbers.
+- **Details on demand:** a fight's detail (`/combat/fight/<key>`, 4-35 KB) is fetched only when it is opened (a click, a pack row, the URL, or the debugger's own pick of the worst fight by its summary: a wipe, then deaths, then fired rules), and kept in a per-commander cache. Cards without a detail show their summary's word (wipe, deaths, check or no deaths, in italics); the full checks, damage numbers, engaged mob name and the per-death marks come when the fight is opened. The run strip marks a fight's deaths with one counted mark until it is opened. The header's "N of M fights need a look" counts by summary (a wipe or a death), so opening fights never changes it.
+- **Redraws:** the rail repaints by key every 2 s; only the cards whose summary changed are rebuilt.
+- **Live events** sit at the top of the right column, beside the map and above the Tanks table; between 761 and 1180 px wide they go under the map, and on a phone they stack under the map above the role tables.
 
 <details>
 <summary>Agent maps API details</summary>

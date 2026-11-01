@@ -30,7 +30,7 @@ const ctx = { console, Date: { now: () => clock }, encodeURIComponent, decodeURI
 vm.createContext(ctx);
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("fdHistCmdLoad"), grab("cmdHistoryBind"), grab("fdHistoryListHtml"), grab("fdOverviewHtml"),
-  grab("fdEmptyNote"), grab("fdDayFights"), "var FD_HIST_MS = 10000;",
+  grab("fdEmptyNote"), grab("fdDayFights"), grab("fdHistFetch"), "var FD_HIST_MS = 10000;",
   grabLine("fdHistCmd"), grabLine("fdHistRow"), grabLine("FD_HISTCMD_MS"), grabLine("FD_EMPTY"), grabLine("fdHistNamed"),
   "var state = { commanders: { list: [] } };",
   "var fdPage = { open: null };",

@@ -7693,7 +7693,8 @@
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
-        <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
@@ -7735,7 +7736,6 @@
           <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
           <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
-        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
       </div>`;
     bindCmdMap(card, key);
     // The debugger-only page hides the page-level "Refresh every" row, so the card header carries the same picker (one saved setting).
@@ -7766,11 +7766,24 @@
     // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
     // sections and its map (the death marks and the ring follow the pick).
     card.addEventListener('click', e => {
-      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready], [data-fd-open]');
+      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready], [data-fd-open], [data-fd-fold], [data-fd-older]');
       if (!t) return;
       const fd = cmdFd[key];
       if (!fd) return;
       if (!card.classList.contains('fd-on')) return;
+      if (t.dataset.fdFold != null) {
+        // A folded run of clean trash opens or closes in place (a fold holding the picked fight starts open).
+        const id = fdDecodeKey(t.dataset.fdFold);
+        fd.foldOpen = fd.foldOpen || {};
+        fd.foldOpen[id] = t.getAttribute('aria-expanded') !== 'true';
+        fdRender(key);
+        return;
+      }
+      if (t.dataset.fdOlder != null) {
+        const bind = cmdFindBind(key);
+        if (bind) { fdOlderLoad(card, bind); fdRender(key); }
+        return;
+      }
       if (t.dataset.fdOpen != null) {
         // The pack table's time: that fight, on its own night.
         fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(t.dataset.fdDay || '', Date.now()) : (t.dataset.fdDay || '');
@@ -7834,6 +7847,14 @@
     card.addEventListener('change', e => {
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on')) return;
+      if (e.target && e.target.matches && e.target.matches('[data-fd-showall]')) {
+        // "Show all fights": every fight of today as a card (the old rail), or the folded two-hour window. Kept per viewer.
+        fdShowAllSet(!!e.target.checked);
+        const bind = cmdFindBind(key);
+        if (bind) fdLoad(card, bind);
+        fdRender(key);
+        return;
+      }
       const box = e.target && e.target.matches && e.target.matches('[data-fd-packall]');
       if (box) {
         fd.packAll = !!e.target.checked;
@@ -8115,13 +8136,18 @@
     }).catch(() => { card.dataset.fightState = 'idle'; });
   }
 
-  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the foot of the centre column), but a card
-  // first drawn on the Live page had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into
-  // the body. On the Live page it stays under the fights panel, as before.
+  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the top of the right column, above
+  // the Tanks table and beside the map), placed just before the roles so the reading order matches; a card first drawn on the Live page
+  // had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into the body. On the Live page it
+  // stays under the fights panel, as before.
   function cmdPlaceLiveStrip(card, debug) {
     const live = card.querySelector('.cmd-live'), body = card.querySelector('.cmd-body');
     if (!live || !body) return;
-    if (debug) { if (live.parentElement !== body) body.appendChild(live); }
+    if (debug) {
+      const roles = body.querySelector('.fd-roles');
+      if (roles && roles.parentElement === body) { if (live.parentElement !== body || live.nextElementSibling !== roles) body.insertBefore(live, roles); }
+      else if (live.parentElement !== body) body.appendChild(live);
+    }
     else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
   }
   // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
@@ -8150,8 +8176,12 @@
   // ---- Fight debugger (the Commanders card's second mode) ------------------
   // FightDebug (web/static/js/fightdebug.js) does the arithmetic; this turns its plain data into the card's markup. The mode
   // is per commander and remembered per browser; with nothing saved a raid opens on the debugger and a party on Live.
-  const FD_DETAIL_MAX = 50;   // the newest fights whose details are fetched (the daemon keeps at most 50 per commander)
+  // A fight's detail (/combat/fight/<key>, 4-35 KB) is fetched only for the fight the reader opens (or the debugger's own pick):
+  // the rail, the run strip, the pick and the pack numbers all work from the list summaries.
   const FD_DETAIL_CACHE = 120; // finished fights kept per commander (one never changes)
+  const FD_WINDOW_S = 7200;   // Tonight's rail: the current run plus the last 2 hours; "Load older" pages back from there
+  const FD_OLDER_PAGE = 50;   // fights per "Load older" page
+  const FD_SHOWALL_KEY = 'tbdash.fdShowAll'; // the rail's "Show all fights" box, per viewer (this browser)
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
@@ -8229,12 +8259,37 @@
     fd.failed[key] = f;
   }
 
+  // Only the picked fight's detail is fetched (the reader's click, a pack row, the URL, or the debugger's own pick of the worst
+  // summary): no other row is asked for. A live fight has no bot rows (it is drawn from its events until COMBAT_FIGHT arrives).
   function fdDetailRow(fd) {
-    // The picked fight is asked for by key even when it is older than the fetched window (a pack row, or a day's
-    // older fight): its detail is what the debugger shows.
-    if (fd.sel && fd.sel !== 'live' && !fd.details[fd.sel] && !fdDetailFailed(fd, fd.sel)) return { key: fd.sel };
-    // A live fight has no bot rows (it is drawn from its events until COMBAT_FIGHT arrives).
-    return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !r.live && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
+    if (!fd.sel || fd.sel === 'live' || fd.details[fd.sel] || fdDetailFailed(fd, fd.sel)) return null;
+    const row = (fd.list || []).find(r => r && r.key === fd.sel);
+    if (row && row.live) return null;
+    return { key: fd.sel };
+  }
+
+  // The rail's "Show all fights" box, kept per viewer. Off (the default) folds clean trash and lists the current run plus the
+  // last two hours; on lists all of today's fights as cards, as the rail did before.
+  // A blocked storage (a private window, cleared site data) keeps the choice in memory for this page.
+  let fdShowAllMem = null;
+
+  function fdShowAllGet() {
+    if (fdShowAllMem !== null) return fdShowAllMem;
+    try { return !!(window.localStorage && window.localStorage.getItem(FD_SHOWALL_KEY) === '1'); } catch (e) { return false; }
+  }
+
+  function fdShowAllSet(on) {
+    fdShowAllMem = !!on;
+    try { if (window.localStorage) window.localStorage.setItem(FD_SHOWALL_KEY, on ? '1' : '0'); } catch (e) { /* kept in memory only */ }
+  }
+
+  // Where Tonight's window starts (game-server unix seconds): the bound run's start or two hours ago, whichever is earlier,
+  // rounded down to the minute so the window's list request repeats the same URL for a minute.
+  function fdWindowStart(bind, nowMs) {
+    let since = Math.floor(numOr0(nowMs) / 1000) - FD_WINDOW_S;
+    const bound = numOr0(bind && bind.bound_at);
+    if (bound > 0 && bound < since) since = bound;
+    return Math.max(1, since - (since % 60));
   }
 
   // The stored nights for the picker: one request per card per 5 min, kept on the card. A chosen night the daemon no longer
@@ -8260,18 +8315,83 @@
   function fdDayFights(fd, bind, day, cb) {
     // The day is always a real YYYY-MM-DD (the chosen night, or today for Tonight): the daemon answers an empty day with 400.
     if (!day) { if (cb) cb(null); return; }
-    const c = fd.hist[day];
+    fdHistFetch(fd, bind, day, '&day=' + encodeURIComponent(day), cb);
+  }
+
+  // Tonight's window: the stored fights since fdWindowStart (the list's since param spans midnight), cached as 'win:<since>'.
+  function fdWinFights(fd, bind, since, cb) {
+    // The window moves every minute: once the new window's list is in, an older window's list is dropped, not kept beside it
+    // (until then the rail keeps drawing the older one, see fdWinList).
+    fdHistFetch(fd, bind, 'win:' + since, '&since=' + encodeURIComponent(since), list => {
+      if (list) Object.keys(fd.hist).forEach(k => { if (k.indexOf('win:') === 0 && k !== 'win:' + since && !fd.histPending[k]) delete fd.hist[k]; });
+      if (cb) cb(list);
+    });
+  }
+
+  // The window's stored list: the current window's, else the newest older window's while the new one is on its way.
+  function fdWinList(fd) {
+    const c = fd.hist['win:' + fd.winSince];
+    if (c) return c.list;
+    let best = null, bestS = -1;
+    Object.keys(fd.hist).forEach(k => {
+      const sv = k.indexOf('win:') === 0 ? Number(k.slice(4)) : -1;
+      if (sv > bestS && fd.hist[k]) { bestS = sv; best = fd.hist[k].list; }
+    });
+    return best;
+  }
+
+  // One stored-fights list per cache key, held for the shared fights window; callers asking while it is in flight share it.
+  function fdHistFetch(fd, bind, ck, qs, cb) {
+    const c = fd.hist[ck];
     if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
-    if (fd.histPending[day]) { if (cb) fd.histPending[day].push(cb); return; }
-    const cbs = fd.histPending[day] = cb ? [cb] : [];
+    if (fd.histPending[ck]) { if (cb) fd.histPending[ck].push(cb); return; }
+    const cbs = fd.histPending[ck] = cb ? [cb] : [];
     const done = rows => {
       const list = Array.isArray(rows) ? rows : (c ? c.list : null);
-      fd.hist[day] = { list, at: Date.now() };
-      delete fd.histPending[day];
+      fd.hist[ck] = { list, at: Date.now() };
+      delete fd.histPending[ck];
       cbs.forEach(f => { try { f(list); } catch (e) { /* a drawing error must not strand the queue */ } });
     };
-    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&day=' + encodeURIComponent(day))
+    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + qs)
       .then(jsonOrThrow).then(done).catch(() => done(null));
+  }
+
+  // "Load older": one page of stored fights before the oldest row the rail shows (the list's before cursor: start and key, so a
+  // shared second neither repeats nor drops a row). The page spans days; X-More says whether another page exists.
+  function fdOlderLoad(card, bind) {
+    const fd = fdState(bind.commander);
+    const older = fdOlderState(fd);
+    if (older.loading) return;
+    const rows = (fd.list || []).filter(r => r && r.key && !r.live && numOr0(r.start) > 0);
+    const last = rows.length ? rows.reduce((a, r) => (numOr0(r.start) < numOr0(a.start)
+      || (numOr0(r.start) === numOr0(a.start) && String(r.key) > String(a.key)) ? r : a)) : null;
+    const before = last ? numOr0(last.start) + ',' + last.key : String(fd.winSince || Math.floor(Date.now() / 1000));
+    older.loading = true;
+    older.failed = false;
+    // The window start freezes with the first older page: a window that kept sliding would leave a gap between the older pages and
+    // its new start (fdLoad keeps asking since= this start for the rest of the night).
+    if (!older.since) older.since = fd.winSince || 0;
+    let more = false;
+    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&before=' + encodeURIComponent(before)
+      + '&limit=' + FD_OLDER_PAGE)
+      .then(r => { more = !!(r && r.headers && r.headers.get && r.headers.get('X-More') === '1'); return jsonOrThrow(r); })
+      .then(list => {
+        const got = Array.isArray(list) ? list : [];
+        older.rows = fdMergeRows(older.rows, got);
+        older.more = more && got.length > 0;
+        older.done = !older.more;
+      })
+      .catch(() => { older.failed = true; })
+      .then(() => {
+        older.loading = false;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      });
+  }
+
+  // The older pages belong to the night they were asked on: another night (or Tonight again) starts with none.
+  function fdOlderState(fd) {
+    if (!fd.older || fd.older.day !== fd.day) fd.older = { day: fd.day, rows: [], loading: false, more: true, done: false, failed: false, since: 0 };
+    return fd.older;
   }
 
   // One row per fight: the live list first (a fight that just ended keeps its detail and its kept positions), then the day's
@@ -8292,11 +8412,19 @@
 
   // Tonight's rail: today's stored fights and the live list, one row per fight. The day selector's count is that same day's
   // stored count, so the two never tell different stories again.
+  // With the window on (fd.winSince set, "Show all fights" off) it is the current run plus the last two hours: the window's
+  // stored list, the live rows inside it, and any older pages the reader loaded.
   function fdTonightRows(fd, key) {
+    const live = cmdFightsCache[key] && cmdFightsCache[key].list;
+    const older = fd.older && fd.older.day === fd.day ? fd.older.rows : null;
+    if (fd.winSince && !fd.showAll) {
+      const from = (older || []).reduce((m, r) => Math.min(m, numOr0(r && r.start) || m), fd.winSince);
+      const inWin = (Array.isArray(live) ? live : []).filter(r => r && (r.live || numOr0(r.start) >= from));
+      return fdMergeRows(fdMergeRows(inWin, fdWinList(fd)), older);
+    }
     const day = fdTodayDay(Date.now());
     const hist = day && fd.hist[day] ? fd.hist[day].list : null;
-    const live = cmdFightsCache[key] && cmdFightsCache[key].list;
-    return fdMergeRows(live, hist);
+    return older && older.length ? fdMergeRows(fdMergeRows(live, hist), older) : fdMergeRows(live, hist);
   }
 
   // The pack the selected fight belongs to, once per pack per minute; the box widens the table to every commander.
@@ -8376,6 +8504,9 @@
 
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
+    // "Show all fights" (the viewer's box) lists every fight as a card; a read-only history card has no run of its own and no
+    // "Load older" row, so it always lists the whole day unfolded. The render reads this same flag.
+    fd.showAll = fdShowAllGet() || !!bind.history;
     // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
     // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
     const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
@@ -8436,11 +8567,15 @@
     if (fd.day) { fdDayFights(fd, bind, fd.day, gotList); return; }
     const today = fdTodayDay(Date.now());
     if (!today) { cmdRaidFights(bind, gotList); return; }
+    // "Show all fights" lists the whole of today (the old rail); otherwise the window: the current run plus the last two hours.
+    const older = fd.older && fd.older.day === fd.day ? fd.older : null;
+    fd.winSince = fd.showAll ? 0 : older && older.since ? older.since : fdWindowStart(bind, Date.now());
     let live = null, hist = null, left = 2;
     // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
-    const both = () => { if (--left) return; gotList(live || hist ? fdMergeRows(live, hist) : null); };
+    const both = () => { if (--left) return; gotList(live || hist ? fdTonightRows(fd, bind.commander) : null); };
     cmdRaidFights(bind, l => { live = l; both(); });
-    fdDayFights(fd, bind, today, l => { hist = l; both(); });
+    if (fd.showAll) fdDayFights(fd, bind, today, l => { hist = l; both(); });
+    else fdWinFights(fd, bind, fd.winSince, l => { hist = l; both(); });
   }
 
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
@@ -8450,7 +8585,8 @@
     const before = fd.sel;
     if (fd.sel === 'live' && !live) { fd.sel = null; fd.userSel = false; }
     if (!fd.userSel) {
-      const worst = FightDebug.worstIndex(details, layout);
+      // The worst fight by its summary (a wipe, then deaths, then fired rules): the details are no longer all loaded.
+      const worst = FightDebug.worstSummaryIndex(list);
       fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
     }
     // A pick the page made itself keeps the URL's fight segment current without adding a history entry per redraw.
@@ -8557,9 +8693,19 @@
     fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot, ready));
     fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
     fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
+    // asked: 0, no row is fetched up front: a card without its detail says what its summary says.
     const cards = FightDebug.railCards(list, fd.details, layout,
-      { failed: fd.failed, loadingKey: fd.loadingKey, asked: FD_DETAIL_MAX, retry: FD_DETAIL_TRIES, sel: fd.sel });
-    fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel, fd.day));
+      { failed: fd.failed, loadingKey: fd.loadingKey, asked: 0, retry: FD_DETAIL_TRIES, sel: fd.sel });
+    const showAll = fd.showAll != null ? !!fd.showAll : fdShowAllGet() || !!bind.history;
+    const older = fdOlderState(fd);
+    fdRailPatch(card.querySelector('.fd-rail'), fdRailParts(cards, live, fd.sel, fd.day, {
+      showAll, open: fd.foldOpen || (fd.foldOpen = {}),
+      // Paging back: Tonight's window, and the history card's chosen night, have older stored fights before them.
+      older: !fd.day && !bind.history ? { more: older.more, loading: older.loading, failed: older.failed, n: older.rows.length } : null,
+    }));
+    const allBox = card.querySelector('[data-fd-showall]');
+    const boxOn = fdShowAllGet();
+    if (allBox && allBox.checked !== boxOn) allBox.checked = boxOn;
     fdDayPaint(card, fd);
 
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
@@ -8649,8 +8795,9 @@
     const frames = FightDebug.raidFrames(bind);
     const bots = (bind && bind.bots) || [];
     const cards = FightDebug.railCards(rows, details || {}, layout || null, null);
-    const judged = cards.filter(c => c.verdict);
-    const need = judged.filter(c => c.verdict === 'fail').length;
+    // Counted by the summaries alone (a wipe or a death needs a look), so the number does not change as details are opened.
+    const judged = cards.filter(c => c.sum);
+    const need = judged.filter(c => c.sum === 'fail').length;
     const run = bind && bind.run;
     const step = run && numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
     const ot = layout && Array.isArray(layout.ot) ? layout.ot.filter(Boolean) : [];
@@ -8727,6 +8874,12 @@
         const tS = s + numOr0(d.t_ms) / 1000;
         if (tS >= t0 && tS <= t1) deaths.push({ key: r.key, i: j, tS, name: d.name || '', killer: d.killer || '' });
       });
+      // A fight whose detail is not loaded has only its summary's death count: one mark mid-fight carries the count (the
+      // detail, once the fight is opened, puts each death at its own time with its name).
+      if (!fight && numOr0(r.deaths) > 0) {
+        const tS = s + numOr0(r.dur) / 2000;
+        if (tS >= t0 && tS <= t1) deaths.push({ key: r.key, i: -1, tS, name: '', killer: '', n: numOr0(r.deaths) });
+      }
       if (e > cur) cur = e;
     });
     if (t1 > cur) segs.push({ kind: 'walk', fromS: cur, toS: t1 });
@@ -8763,7 +8916,8 @@
       html += `<button type="button" class="fd-rtfight${boss ? ' boss' : ''}${on ? ' on' : ''}" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" data-fd-rtfight="${esc(encodeURIComponent(sg.key))}" title="${esc(sg.label + (boss ? ' · ' + (sg.name || 'boss') : '') + ' · ' + Math.round(len / 1000) + ' s')}" aria-pressed="${on ? 'true' : 'false'}"><span>${esc(text)}</span></button>`;
     });
     run.deaths.forEach(d => {
-      html += `<span class="fd-rtdeath" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(d.name + ' died at ' + cmdClock(d.tS))}">✕</span>`;
+      const tip = d.n ? d.n + (d.n === 1 ? ' death' : ' deaths') + ' in this fight (open it for who and when)' : d.name + ' died at ' + cmdClock(d.tS);
+      html += `<span class="fd-rtdeath${d.n ? ' sum' : ''}" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(tip)}">✕${d.n > 1 ? `<sub>${d.n}</sub>` : ''}</span>`;
     });
     html += `<i class="fd-rtcur" style="left:${fdRunPct(run, run.t0 + t / 1000).toFixed(2)}%"></i>`;
     return html;
@@ -8960,34 +9114,128 @@
     }).join('');
   }
 
-  function fdRailHtml(cards, live, sel, day) {
-    let html = '';
+  // The rail as one string (the checks read it); the card paints the same parts through fdRailPatch.
+  function fdRailHtml(cards, live, sel, day, opts) {
+    return fdRailParts(cards, live, sel, day, opts).map(p => p.html).join('');
+  }
+
+  // The rail's parts in reading order, each {k, html} with one root element: the live card, a "Load older" row, then the
+  // fights oldest first (Pack 1 on top). Without opts every fight is a card (the old rail); the debugger passes opts: showAll,
+  // open (the folds the reader opened or closed), older ({more, loading, failed, n} or null for no paging).
+  function fdRailParts(cards, live, sel, day, opts) {
+    const parts = [];
     // The live card is Tonight's: a past night lists only its stored fights.
     if (live && !day) {
       const t = Math.round((live.fightMs || 0) / 1000), on = sel === 'live';
-      html += `<button type="button" class="fd-fight v-live${on ? ' on' : ''}" data-fd-fight="live" aria-pressed="${on ? 'true' : 'false'}">`
+      parts.push({ k: 'live', html: `<button type="button" class="fd-fight v-live${on ? ' on' : ''}" data-fd-k="live" data-fd-fight="live" aria-pressed="${on ? 'true' : 'false'}">`
         + `<span class="fd-fl">Live</span>`
         + `<span class="fd-fs">Now · ${Math.floor(t / 60)}:${('0' + (t % 60)).slice(-2)} · ${FightDebug.fmtInt(Math.round(live.dps || 0))} dps</span>`
-        + `<span class="fd-fd">${live.alive} alive · ${live.active} acting</span></button>`;
+        + `<span class="fd-fd">${live.alive} alive · ${live.active} acting</span></button>` });
     }
-    // The daemon lists fights newest first; the rail reads oldest first, Pack 1 on top, under the live card.
-    return html + (cards || []).slice().reverse().map(c => {
-      const v = c.verdict;
-      // No verdict yet: say why the card has none instead of loading for ever (a detail that failed twice, or a row the page
-      // never asked about).
-      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
-        : c.detail === 'failed' ? 'details not available' : c.detail === 'unasked' ? 'details not loaded' : 'loading';
-      const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
-      return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
-        + `<span class="fd-fl">${esc(c.label)}</span>`
-        + `<span class="fd-fv">${c.live ? 'live' : word}</span>`
-        + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
-        + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
-        + `<span class="fd-fd"><span>step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span>`
-        + (c.dmg != null ? `<span class="fd-fdmg">${FightDebug.fmtInt(c.dmg)} dmg</span>` : '')
-        + '</span></button>';
-    }).join('');
+    const o = opts || null;
+    const older = o && o.older;
+    if (older) {
+      const word = older.loading ? 'Loading older fights…' : older.failed ? 'Older fights did not load: try again'
+        : older.more ? 'Load older fights' : 'No older fights stored';
+      parts.push({ k: 'older', html: `<button type="button" class="fd-older" data-fd-k="older" data-fd-older${older.loading || !older.more ? ' disabled' : ''}>`
+        + `${esc(word)}${older.n ? ` <span class="fd-oldn">${older.n} loaded</span>` : ''}</button>` });
+    }
+    // The daemon lists fights newest first; railItems gives them oldest first, clean trash folded unless showAll.
+    const items = o ? FightDebug.railItems(cards, { showAll: !!o.showAll, open: o.open || {}, sel })
+      : (cards || []).slice().reverse().map(card => ({ kind: 'card', card }));
+    items.forEach(it => {
+      // The keys are percent-encoded, as the data-fd-k attribute holds them (a fight key may carry any byte).
+      if (it.kind === 'card') { parts.push({ k: 'f:' + encodeURIComponent(it.card.key), html: fdRailCardHtml(it.card, sel) }); return; }
+      parts.push({ k: encodeURIComponent(it.id), html: fdRailFoldHtml(it) });
+      if (it.open) it.cards.forEach(c => parts.push({ k: 'f:' + encodeURIComponent(c.key), html: fdRailCardHtml(c, sel, true) }));
+    });
+    return parts;
   }
+
+  // One folded run of clean trash: "Leg 2 · 12 trash pulls, 0 deaths", opened and closed in place.
+  function fdRailFoldHtml(it) {
+    const mins = Math.round((it.durMs || 0) / 1000);
+    const text = (it.leg ? 'Leg ' + String(it.leg).replace(/_/g, ' ') + ' · ' : '') + it.n + ' trash pulls, 0 deaths';
+    return `<button type="button" class="fd-fold${it.open ? ' open' : ''}" data-fd-k="${esc(encodeURIComponent(it.id))}" data-fd-fold="${esc(encodeURIComponent(it.id))}" aria-expanded="${it.open ? 'true' : 'false'}">`
+      + `<span class="fd-foldt">${esc(text)}</span>`
+      + `<span class="fd-folds">${Math.floor(mins / 60)}:${('0' + (mins % 60)).slice(-2)} fighting · ${it.open ? 'hide' : 'show'}</span></button>`;
+  }
+
+  function fdRailCardHtml(c, sel, inFold) {
+    const v = c.verdict;
+    // No detail: the card says what its summary says (the detail loads when the fight is opened); a detail that failed twice
+    // says so, one being fetched says loading.
+    const sv = !v && c.detail === 'unasked' ? c.sum : null;
+    const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
+      : c.detail === 'failed' ? 'details not available' : c.detail === 'loading' ? 'loading'
+        : sv === 'fail' ? (c.wipe ? 'wipe' : 'deaths') : sv === 'warn' ? 'check' : sv === 'ok' ? 'no deaths' : 'details not loaded';
+    const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
+    const cls = v || (sv ? sv + ' v-sum' : 'load');
+    const tip = sv ? ' title="From the fight\'s summary: open it for the full checks"' : '';
+    return `<button type="button" class="fd-fight v-${cls}${inFold ? ' fd-infold' : ''}" data-fd-k="${esc('f:' + encodeURIComponent(c.key))}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
+      + `<span class="fd-fl">${esc(c.label)}</span>`
+      + `<span class="fd-fv"${tip}>${c.live ? 'live' : word}</span>`
+      + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
+      + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
+      + `<span class="fd-fd"><span>step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span>`
+      + (c.dmg != null ? `<span class="fd-fdmg">${FightDebug.fmtInt(c.dmg)} dmg</span>` : '')
+      + '</span></button>';
+  }
+
+  // Paints the rail by key: a part whose html did not change keeps its node (and its focus and hover), a changed one is replaced
+  // alone, new ones are inserted in order and gone ones removed. The 2 s redraw thus touches only the cards whose summary moved.
+  // make(html) builds one node from a part's html (the default parses it with a template).
+  function fdRailPatch(nav, parts, make) {
+    if (!nav) return 0;
+    const build = make || (html => { const t = document.createElement('template'); t.innerHTML = html; return t.content.firstElementChild; });
+    const list = parts || [];
+    const want = {};
+    list.forEach(p => { want[p.k] = true; });
+    // Gone, duplicate and unkeyed nodes leave first, so the ordering pass below moves only the nodes that are out of order (a
+    // removed head must not make every later card, the focused one among them, move up one place).
+    const have = {};
+    let changed = 0;
+    Array.from(nav.children).forEach(n => {
+      const k = n.dataset && n.dataset.fdK;
+      if (k != null && !have[k] && want[k]) { have[k] = n; return; }
+      n.remove();
+      changed++;
+    });
+    const act = document.activeElement;
+    // The next element after n (the fake DOM the checks use has no nextElementSibling).
+    const next = n => (n.nextElementSibling !== undefined ? n.nextElementSibling
+      : Array.from(nav.children)[Array.from(nav.children).indexOf(n) + 1] || null);
+    // moveBefore keeps a moved node's focus and state where the browser has it; insertBefore elsewhere.
+    const move = (n, r) => {
+      if (typeof nav.moveBefore === 'function') { try { nav.moveBefore(n, r); return; } catch (e) { /* fall back below */ } }
+      nav.insertBefore(n, r);
+    };
+    let ref = nav.firstElementChild !== undefined ? nav.firstElementChild : (nav.children[0] || null);
+    list.forEach(p => {
+      let node = have[p.k];
+      if (node && node._fdHtml === p.html) {
+        if (node !== ref) move(node, ref);
+      } else {
+        const fresh = build(p.html);
+        if (!fresh) return;
+        fresh._fdHtml = p.html;
+        changed++;
+        if (node) {
+          // Replaced where it stands: the old node never leaves a hole the next insert would have to aim at.
+          const hadFocus = !!(act && node.contains && node.contains(act));
+          nav.replaceChild(fresh, node);
+          if (ref === node) ref = fresh;
+          if (fresh !== ref) move(fresh, ref);
+          if (hadFocus && fresh.focus) fresh.focus({ preventScroll: true });
+        } else nav.insertBefore(fresh, ref);
+        node = fresh;
+      }
+      ref = next(node);
+    });
+    nav._h = null; // the rail is no longer painted by setHtml
+    return changed;
+  }
+
 
   // The check's key value, in the prototype's words: the debuff's uptime is said against the fight, the Sunder rate per 10 s,
   // and the non-tank's share against all damage taken. The value itself is emphasised rather than muted.

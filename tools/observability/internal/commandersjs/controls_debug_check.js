@@ -21,9 +21,9 @@ assert.deepStrictEqual(areas, [
   '"frames frames frames"',
   '"controls controls controls"',
   '"bosses bosses bosses"',
+  '"rail centre live"',
   '"rail centre roles"',
-  '"rail live roles"',
-  '"rail . roles"',
+  '"rail centre roles"',
 ], "the controls row sits under the raid frames, above the fight sections");
 const rowsDecl = body[1].match(/grid-template-rows:\s*([^;]*);/);
 assert.ok(rowsDecl, "the body states its rows");

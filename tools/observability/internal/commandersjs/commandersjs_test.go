@@ -102,6 +102,13 @@ func TestFightDebugState(t *testing.T) {
 	runCheck(t, "fightdebug_state_check.js", "../../web/static/js/app.js")
 }
 
+// TestFDLeanJS runs fd_lean_check.js: the lean fight rail (details only for the opened fight, clean trash folded per leg and run,
+// the per-viewer "Show all fights" box, Tonight's two-hour window with "Load older", the keyed rail repaint, the run strip's
+// summary death marks).
+func TestFDLeanJS(t *testing.T) {
+	runCheck(t, "fd_lean_check.js", "../../web/static/js/app.js")
+}
+
 // TestFDMatchUI runs fd_match_check.js: the debugger's header like the approved prototype (its own title and chips, the
 // refresh picker, the short map legend, the raid frames' dead and mana counts) while Live mode keeps every dropped element.
 func TestFDMatchUI(t *testing.T) {
