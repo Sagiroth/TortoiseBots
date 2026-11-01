@@ -110,6 +110,8 @@ bool NukeUnaffordableTrigger::IsActive()
 
 bool AnyMageArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("ice armor", target) &&
            !ai->HasAura("frost armor", target) &&
@@ -118,12 +120,16 @@ bool AnyMageArmorTrigger::IsActive()
 
 bool MageArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("mage armor", target);
 }
 
 bool IceArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("ice armor", target) &&
            !ai->HasAura("frost armor", target);

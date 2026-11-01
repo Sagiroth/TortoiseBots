@@ -14,6 +14,8 @@
 #include "playerbot/strategy/values/TargetValue.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/strategy/values/MountValues.h"
+#include "playerbot/MountDismountPolicy.h"
 #include "Database/DBCStores.h"
 #include "BotActionLog.h"
 
@@ -380,6 +382,29 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    // A mounted travelling bot must not start an out-of-combat cast the core
+    // would strip its mount for: without this every trigger family that does
+    // not route through BuffTrigger (class armor rows, cure/dispel rows,
+    // weapon-imbue upkeep, conjure/create rows, racials, sprint) queues a
+    // doomed attempt every tick and CheckCanCastSpell refuses each one with
+    // SPELL_FAILED_NOT_MOUNTED. Combat casts are untouched (the combat
+    // engine owns that decision); mount spells and ride-safe spells pass at
+    // cast time. Cheapest gate first: two O(1) flags and one bool value.
+    if (bot && !bot->IsInCombat() && (bot->IsMounted() || bot->GetMountID()))
+    {
+        AiObjectContext* mountContext = ai ? ai->GetAiObjectContext() : nullptr;
+        if (mountContext && !ai::MountedTravelCastAllowed(false, mountContext->GetValue<bool>("travel target traveling")->Get()))
+        {
+            if (SpellEntry const* mountInfo = sServerFacade.LookupSpellInfo(spellId))
+            {
+                if (!(mountInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_MOUNTED) && !MountValue::IsMountSpell(spellId))
+                    return false;
+            }
+            else if (spellId)
+                return false;
+        }
+    }
+
     if(!AI_VALUE2(bool, "spell cast useful", spellName))
         return false;
 

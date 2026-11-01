@@ -248,6 +248,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            if (ai::BuffTriggerMountGated(bot, ai))
+                return false;
             if (!sServerFacade.IsSpellReady(bot, 2983))
             {
                 return false;

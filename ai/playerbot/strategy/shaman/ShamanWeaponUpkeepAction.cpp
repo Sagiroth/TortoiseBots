@@ -3,6 +3,7 @@
 #include "ShamanActions.h"
 #include "playerbot/policy/class/ShamanImbuePolicy.h"
 #include "playerbot/AiFactory.h"
+#include "playerbot/MountDismountPolicy.h"
 
 using namespace ai;
 
@@ -44,6 +45,17 @@ bool CastShamanWeaponUpkeepAction::isUseful()
     bool const knownFrostbrand = ai->HasSpell("frostbrand weapon");
     bool const knownRockbiter = ai->HasSpell("rockbiter weapon");
     bool const imbueKnown = knownWindfury || knownFlametongue || knownFrostbrand || knownRockbiter;
+
+    // A mounted travelling bot must not queue the imbue at all: the inner
+    // cast would refuse with SPELL_FAILED_NOT_MOUNTED every tick. Combat
+    // casts keep flowing (the combat engine owns that decision); the gate
+    // mirrors CheckCanCastSpell via MountedTravelCastAllowed.
+    if (bot && !bot->IsInCombat() && (bot->IsMounted() || bot->GetMountID()))
+    {
+        AiObjectContext* upkeepContext = ai ? ai->GetAiObjectContext() : nullptr;
+        if (upkeepContext && !ai::MountedTravelCastAllowed(false, upkeepContext->GetValue<bool>("travel target traveling")->Get()))
+            return false;
+    }
 
     // Every one of these is a guaranteed FAILED cast below (PlayerbotAI::CastSpell
     // logs the gate and returns false with no retry delay on the upkeep path),

@@ -224,7 +224,12 @@ namespace ai
     public:
         WarlockConjuredItemTrigger(PlayerbotAI* ai, std::string item) : ItemCountTrigger(ai, item, 1) {}
 
-        virtual bool IsActive() override { return ItemCountTrigger::IsActive(); }
+        virtual bool IsActive() override
+        {
+            if (ai::BuffTriggerMountGated(bot, ai))
+                return false;
+            return ItemCountTrigger::IsActive();
+        }
     };
 
     class HasSpellstoneTrigger : public WarlockConjuredItemTrigger
