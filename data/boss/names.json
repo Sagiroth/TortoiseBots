@@ -2491,6 +2491,302 @@
     "58117": {
       "name": "Emerald Dream Welcome",
       "castMs": 0
+    },
+    "4962": {
+      "name": "Encasing Webs",
+      "castMs": 0
+    },
+    "6016": {
+      "name": "Pierce Armor",
+      "castMs": 0
+    },
+    "6215": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "8245": {
+      "name": "Corrosive Acid",
+      "castMs": 0
+    },
+    "8398": {
+      "name": "Frostbolt Volley",
+      "castMs": 0
+    },
+    "9889": {
+      "name": "Healing Touch",
+      "castMs": 0
+    },
+    "10917": {
+      "name": "Flash Heal",
+      "castMs": 0
+    },
+    "10929": {
+      "name": "Renew",
+      "castMs": 0
+    },
+    "11672": {
+      "name": "Corruption",
+      "castMs": 0
+    },
+    "12038": {
+      "name": "Dark Plague",
+      "castMs": 0
+    },
+    "12098": {
+      "name": "Sleep",
+      "castMs": 0
+    },
+    "15487": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "15570": {
+      "name": "Immolate",
+      "castMs": 0
+    },
+    "16046": {
+      "name": "Blast Wave",
+      "castMs": 0
+    },
+    "16509": {
+      "name": "Rend",
+      "castMs": 0
+    },
+    "16565": {
+      "name": "Banshee Wail",
+      "castMs": 0
+    },
+    "16727": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "16791": {
+      "name": "Furious Anger",
+      "castMs": 0
+    },
+    "16793": {
+      "name": "Draining Blow",
+      "castMs": 0
+    },
+    "16867": {
+      "name": "Banshee Curse",
+      "castMs": 0
+    },
+    "16869": {
+      "name": "Ice Tomb",
+      "castMs": 0
+    },
+    "17228": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "17238": {
+      "name": "Drain Life",
+      "castMs": 0
+    },
+    "17243": {
+      "name": "Drain Mana",
+      "castMs": 0
+    },
+    "17244": {
+      "name": "Possess",
+      "castMs": 0
+    },
+    "17274": {
+      "name": "Pyroblast",
+      "castMs": 0
+    },
+    "17281": {
+      "name": "Crusader Strike",
+      "castMs": 0
+    },
+    "17284": {
+      "name": "Holy Strike",
+      "castMs": 0
+    },
+    "17286": {
+      "name": "Crusader's Hammer",
+      "castMs": 0
+    },
+    "17287": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "17288": {
+      "name": "Balnazzar Transform",
+      "castMs": 0
+    },
+    "17293": {
+      "name": "Burning Winds",
+      "castMs": 1000
+    },
+    "17366": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "17399": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "17405": {
+      "name": "Domination",
+      "castMs": 0
+    },
+    "17473": {
+      "name": "Raise Dead",
+      "castMs": 0
+    },
+    "17503": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "17695": {
+      "name": "Defiling Aura",
+      "castMs": 0
+    },
+    "17820": {
+      "name": "Veil of Shadow",
+      "castMs": 0
+    },
+    "17831": {
+      "name": "Call of the Grave",
+      "castMs": 0
+    },
+    "18099": {
+      "name": "Chill Nova",
+      "castMs": 0
+    },
+    "18100": {
+      "name": "Frost Armor",
+      "castMs": 0
+    },
+    "18103": {
+      "name": "Backhand",
+      "castMs": 0
+    },
+    "18151": {
+      "name": "Noxious Catalyst",
+      "castMs": 0
+    },
+    "18327": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "18399": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
+    "18671": {
+      "name": "Curse of Agony",
+      "castMs": 0
+    },
+    "18763": {
+      "name": "Freeze",
+      "castMs": 0
+    },
+    "19643": {
+      "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "20463": {
+      "name": "Shoot",
+      "castMs": 0
+    },
+    "20603": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "21369": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "24928": {
+      "name": "Volatile Infection",
+      "castMs": 0
+    },
+    "26070": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "5568": {
+      "name": "Trample",
+      "castMs": 0
+    },
+    "6253": {
+      "name": "Backhand",
+      "castMs": 0
+    },
+    "7713": {
+      "name": "Wailing Dead",
+      "castMs": 0
+    },
+    "8379": {
+      "name": "Disarm",
+      "castMs": 0
+    },
+    "8552": {
+      "name": "Curse of Weakness",
+      "castMs": 0
+    },
+    "12096": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "12889": {
+      "name": "Curse of Tongues",
+      "castMs": 0
+    },
+    "14515": {
+      "name": "Dominate Mind",
+      "castMs": 0
+    },
+    "15790": {
+      "name": "Arcane Missiles",
+      "castMs": 0
+    },
+    "16799": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "17307": {
+      "name": "Knockout",
+      "castMs": 0
+    },
+    "17470": {
+      "name": "Ravenous Claw",
+      "castMs": 0
+    },
+    "17950": {
+      "name": "Shadow Portal",
+      "castMs": 0
+    },
+    "18144": {
+      "name": "Swoop",
+      "castMs": 0
+    },
+    "18702": {
+      "name": "Curse of the Darkmaster",
+      "castMs": 0
+    },
+    "20735": {
+      "name": "Multi-Shot",
+      "castMs": 0
+    },
+    "22417": {
+      "name": "Shadow Shield",
+      "castMs": 0
+    },
+    "27688": {
+      "name": "Bone Shield",
+      "castMs": 0
+    },
+    "27690": {
+      "name": "Summon Bone Minion",
+      "castMs": 0
+    },
+    "27696": {
+      "name": "Summon Bone Mage",
+      "castMs": 0
     }
   },
   "creatures": {
@@ -3507,6 +3803,141 @@
     },
     "533002": {
       "name": "Plague Cloud"
+    },
+    "10390": {
+      "name": "Skeletal Guardian"
+    },
+    "10391": {
+      "name": "Skeletal Berserker"
+    },
+    "10394": {
+      "name": "Black Guard Sentry"
+    },
+    "10432": {
+      "name": "Vectus"
+    },
+    "10433": {
+      "name": "Marduk Blackpool"
+    },
+    "10435": {
+      "name": "Magistrate Barthilas"
+    },
+    "10436": {
+      "name": "Baroness Anastari"
+    },
+    "10437": {
+      "name": "Nerub'enkan"
+    },
+    "10438": {
+      "name": "Maleki the Pallid"
+    },
+    "10440": {
+      "name": "Baron Rivendare"
+    },
+    "10475": {
+      "name": "Scholomance Student"
+    },
+    "10502": {
+      "name": "Lady Illucia Barov"
+    },
+    "10503": {
+      "name": "Jandice Barov"
+    },
+    "10504": {
+      "name": "Lord Alexei Barov"
+    },
+    "10505": {
+      "name": "Instructor Malicia"
+    },
+    "10507": {
+      "name": "The Ravenian"
+    },
+    "10508": {
+      "name": "Ras Frostwhisper"
+    },
+    "10577": {
+      "name": "Crypt Scarab"
+    },
+    "10811": {
+      "name": "Archivist Galford"
+    },
+    "10812": {
+      "name": "Grand Crusader Dathrohan"
+    },
+    "10813": {
+      "name": "Balnazzar"
+    },
+    "10876": {
+      "name": "Undead Scarab"
+    },
+    "10901": {
+      "name": "Lorekeeper Polkelt"
+    },
+    "10997": {
+      "name": "Cannon Master Willey"
+    },
+    "11054": {
+      "name": "Crimson Rifleman"
+    },
+    "11197": {
+      "name": "Mindless Skeleton"
+    },
+    "11261": {
+      "name": "Doctor Theolen Krastinov"
+    },
+    "11439": {
+      "name": "Illusion of Jandice Barov"
+    },
+    "11622": {
+      "name": "Rattlegore"
+    },
+    "1853": {
+      "name": "Darkmaster Gandling"
+    },
+    "10506": {
+      "name": "Kirtonos the Herald"
+    },
+    "16118": {
+      "name": "Kormok"
+    },
+    "14695": {
+      "name": "Lord Blackwood"
+    },
+    "10439": {
+      "name": "Ramstein the Gorger"
+    },
+    "11143": {
+      "name": "Postmaster Malown"
+    },
+    "10808": {
+      "name": "Timmy the Cruel"
+    },
+    "14684": {
+      "name": "Balzaphon"
+    },
+    "30000": {
+      "name": "Risen Guard"
+    },
+    "30001": {
+      "name": "Risen Guard"
+    },
+    "30002": {
+      "name": "Risen Guard"
+    },
+    "30003": {
+      "name": "Risen Guard"
+    },
+    "30004": {
+      "name": "Risen Guard"
+    },
+    "30005": {
+      "name": "Risen Guard"
+    },
+    "16119": {
+      "name": "Bone Minion"
+    },
+    "16120": {
+      "name": "Bone Mage"
     }
   }
 }
