@@ -1,8 +1,17 @@
 
 #include "playerbot/playerbot.h"
 #include "DungeonStrategy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
+
+// Multipliers are per engine, and every bot's combat engine carries this strategy: the trap hold
+// lives here so an uncommanded bot's hold on a reach, a follow or a stay spot is not boss-tactics
+// only. The avoid-aoe strategy carries its own copy for the engines it runs on; no engine gets both.
+void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new TrapHoldMultiplier(ai));
+}
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {

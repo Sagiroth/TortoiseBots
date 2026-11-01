@@ -14,6 +14,7 @@
 ### Classes & Combat
 - Hunters fire Multi-Shot only when the splash around their target catches a second fighting enemy, and never into a crowd-controlled mob standing beside it, so the shot now scales with the pack instead of firing on cooldown.
 - Hunters use Freezing Trap again as crowd control in dungeon runs without assigned marks: they trap an extra attacker that is not the group's kill target, and only once they know Feign Death.
+- Fixed: bots no longer stand and die in ground fire — they step out of the circle the fire actually burns, never land in a second fire right beside it, and stop walking back into one they just left.
 - Fixed: a stealthed rogue no longer stays held after the pull while the rest of the party fights.
 - Fixed: restoration druids fall through to *Rejuvenation* on a hurt ally *Healing Touch* would waste mana on, blanket idle *Rejuvenation* on hurt allies missing it instead of throwing grenades, and save raid *Faerie Fire* for bosses while holding 80% mana.
 - In a run leader's pull, the held DPS open once every mob near the tank is on it (join delay at the earliest, 10 s after the tank is back at the latest), or at once when a mob hits them or the tank drops under 60 %.
