@@ -59,11 +59,14 @@ int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
 
-    // Kind text: exactly the three lowercase spellings the table holds.
+    // Kind text: exactly the lowercase spellings the table holds.
     CHECK(ParseBossTacticKind("interrupt") == BossTacticKind::Interrupt);
     CHECK(ParseBossTacticKind("kill_first") == BossTacticKind::KillFirst);
     CHECK(ParseBossTacticKind("behind") == BossTacticKind::Behind);
+    CHECK(ParseBossTacticKind("avoid_cast") == BossTacticKind::AvoidCast);
+    CHECK(ParseBossTacticKind("tank_hold") == BossTacticKind::TankHold);
     CHECK(ParseBossTacticKind("Interrupt") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("Tank_Hold") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("dispel") == BossTacticKind::None);
 
@@ -312,17 +315,41 @@ int main()
         CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100, 100u));
     }
 
-    // Who holds a caster: a tank stays in when the caster is on it or on a non-tank, so it can take or keep it.
+    // Who holds a caster: a tank stays in when the caster is on it, or — only for a caster whose entry has a
+    // tank_hold row — when the caster is on a non-tank and this tank's own current target is the caster. The second
+    // case is per caster and per tank: without the row, or from another tank, every tank leaves like anyone else.
     {
-        CHECK(HoldsCaster(true, true, false));    // the tank holding the caster
-        CHECK(HoldsCaster(true, false, true));    // tank holds a caster on a healer
-        CHECK(!HoldsCaster(true, false, false));  // an off-tank, or a tank before the caster picked anyone
-        CHECK(!HoldsCaster(false, true, false));  // a healer the caster is on
-        CHECK(!HoldsCaster(false, false, false));
-        CHECK(!HoldsCaster(false, true, true));
-        CHECK(!HoldsCaster(false, false, true));
-        CHECK(!MustLeaveCast(HoldsCaster(true, false, true), 13.0f, 2.0f));   // the tank walks in, not out
-        CHECK(MustLeaveCast(HoldsCaster(false, false, true), 13.0f, 2.0f));   // the healer still leaves
+        CHECK(HoldsCaster(true, false, true, true, true));    // a tank on a tank_hold caster that is on a healer holds
+        CHECK(!HoldsCaster(true, false, true, true, false));  // same tank, a caster without the row: walks out (Bat Rider)
+        CHECK(!HoldsCaster(true, false, true, false, true));  // the row, but this tank's target is elsewhere: walks out
+        CHECK(HoldsCaster(true, true, false, false, false));  // the tank the caster is on holds it, row or not
+        CHECK(HoldsCaster(true, true, false, true, false));   // ...and targeting it makes no difference
+        CHECK(!HoldsCaster(true, false, false, true, true));  // the caster is on nobody: the row keeps nobody in
+        CHECK(!HoldsCaster(false, false, true, true, true));  // a non-tank never holds, row and target or not
+        CHECK(!HoldsCaster(false, true, false, false, false));
+        CHECK(!MustLeaveCast(HoldsCaster(true, false, true, true, true), 13.0f, 2.0f));   // the tank walks in, not out
+        CHECK(MustLeaveCast(HoldsCaster(true, false, true, true, false), 13.0f, 2.0f));   // no row: the tank leaves too
+        CHECK(MustLeaveCast(HoldsCaster(false, false, true, true, true), 13.0f, 2.0f));   // the healer still leaves
+    }
+
+    // The tank_hold lookup: the row is keyed by the caster's entry (target_entry 0 -> the boss entry itself), so the
+    // loader takes it, and an avoid_cast row is not a tank_hold.
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Row(309, 15146, BossTacticKind::TankHold)));
+        CHECK(!table.Add(Row(309, 15146, BossTacticKind::TankHold)));   // same key
+        table.Seal();
+        CHECK(table.Rows(309, 15146) != nullptr);
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 15146, BossTacticKind::TankHold),
+            Row(309, 15146, BossTacticKind::AvoidCast, 0, 24614, 0, 8.0f),
+        };
+        const ActiveBossRows active = Active(rows);
+        CHECK(HasTankHold(active, 15146));
+        CHECK(!HasTankHold(active, 14750));   // the Bat Rider has no such row
+        const std::vector<BossTacticRow> onlyAvoid = { Row(309, 15146, BossTacticKind::AvoidCast, 0, 24614, 0, 8.0f) };
+        CHECK(!HasTankHold(Active(onlyAvoid), 15146));   // an avoid_cast row is not a tank_hold
+        CHECK(!HasTankHold(ActiveBossRows(), 15146));
     }
 
     // The avoid_cast map flag: only a map with an avoid_cast row, and only after the seal.

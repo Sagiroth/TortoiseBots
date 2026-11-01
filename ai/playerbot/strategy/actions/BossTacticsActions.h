@@ -53,9 +53,10 @@ namespace ai
     // The radius `unit` must be kept at right now (its current cast is listed), or 0.
     float CastDangerOf(const BossTacticsFight& fight, Unit* unit);
 
-    // The listed casts in progress as zones, leaving out those of the casters `bot` holds (a tank the caster is on);
-    // `bot` null: all of them.
-    std::vector<CastDangerZone> CastDangerZones(const BossTacticsFight& fight, Player* bot);
+    // The listed casts in progress as zones, leaving out those of the casters `bot` holds (a tank the caster is on,
+    // or — for a tank_hold caster — a tank whose own target is that caster while it is on a non-tank); `bot` null:
+    // all of them.
+    std::vector<CastDangerZone> CastDangerZones(PlayerbotAI* ai, const BossTacticsFight& fight, Player* bot);
 
     // The nearest listed cast this bot stands inside and has to leave (never a tank), or no caster.
     BossCastDanger FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);

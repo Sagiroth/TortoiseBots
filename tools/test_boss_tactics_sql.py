@@ -18,7 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind", "avoid_cast"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -188,6 +188,15 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 15146, "interrupt", 0, 24614), live)
         self.assertNotIn((309, 15111, "interrupt", 0, 24611), live)
         self.assertFalse([key for key in live if key[:2] == (309, 15146) and key[2] == "kill_first"])
+
+    def test_voidwalker_tank_hold_row(self):
+        # A tank_hold row (20261101040000_world.sql) is opt-in per caster: it means "a tank may stay in this caster's
+        # avoid_cast blast while the caster is on a non-tank", so the tank can pick the Mad Voidwalker 15146 up and
+        # hold it in melee. Without it a tank only holds a caster that is on the tank itself. The Gurubashi Bat Rider
+        # 14750 gets none: its Unstable Concoction blast kills whoever stands in it, so no tank may hold it.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
+        self.assertIn((309, 15146, "tank_hold", 0, 0), live)
+        self.assertFalse([key for key in live if key[2] == "tank_hold" and key[1] == 14750])
 
 
 def _sql_statements(text):

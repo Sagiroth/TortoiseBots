@@ -7,6 +7,7 @@
 #include "playerbot/FourHorsemenRotationPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/MainTankPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
@@ -130,9 +131,16 @@ public:
         if (GetIntervalLevel(newUnit) != GetIntervalLevel(oldUnit))
             return GetIntervalLevel(newUnit) > GetIntervalLevel(oldUnit);
 
-        // Loose adds: nearest first so the pickup is quick.
+        // Loose adds: the one a tank_hold row lists and that is on a non-tank goes first (a ZG Mad
+        // Voidwalker shocks the raid while a non-tank holds it); below that, nearest first so the
+        // pickup is quick.
         if (GetIntervalLevel(newUnit) == 2)
+        {
+            const bool newPickup = IsTankHoldPickup(newUnit);
+            if (newPickup != IsTankHoldPickup(oldUnit))
+                return newPickup;
             return bot->GetDistance(newUnit) < bot->GetDistance(oldUnit);
+        }
 
         // Among mobs the tank already holds, stay on the current one; lowest
         // threat only orders the others, so two held mobs never ping-pong.
@@ -145,7 +153,7 @@ public:
         return newThreat < oldThreat;
     }
 
-    // 2 = the tank holds nothing here (loose add: pick up first, nearest).
+    // 2 = the tank holds nothing here (loose add: a tank_hold caster on a non-tank first, then nearest).
     // 1 = held and in melee reach (finish it). 0 = held but out of reach.
     int GetIntervalLevel(Unit* unit)
     {
@@ -183,6 +191,32 @@ public:
         if (Player* victimPlayer = dynamic_cast<Player*>(victim))
             return ai->IsTank(victimPlayer);
         return false;
+    }
+
+    // A loose add a tank_hold row lists (its own entry is the caster of a listed avoid_cast
+    // blast, docs/play/boss-tactics.md) and that is on a non-tank player: the tank takes it
+    // before the nearest add. A ZG Mad Voidwalker held by a non-tank channels, then shocks the
+    // whole raid (15 yd, ~1000-1200 shadow) once its target walks away; a tank on it stops both.
+    // Only the free loose-add choice reads this: the explicit attack target and the main-tank
+    // stickiness above are decided before IsBetter's loose-add branch runs.
+    bool IsTankHoldPickup(Unit* unit)
+    {
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(unit->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        bool listed = false;
+        for (const BossTacticRow& row : *rows)
+        {
+            if (row.kind == BossTacticKind::TankHold)
+            {
+                listed = true;
+                break;
+            }
+        }
+        if (!listed)
+            return false;
+        Player* victimPlayer = unit->GetVictim() ? dynamic_cast<Player*>(unit->GetVictim()) : nullptr;
+        return victimPlayer && !ai->IsTank(victimPlayer);
     }
 };
 

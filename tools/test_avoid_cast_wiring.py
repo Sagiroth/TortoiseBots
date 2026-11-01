@@ -68,15 +68,37 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("ListedCastRadius(fight.rows, unit->GetEntry(), genericId, channeledId)", danger)
         fn = body(ACTIONS, "BossCastDanger ai::FindBossCastDanger(")
         self.assertIn("CastDangerOf(fight, unit)", fn)
-        self.assertIn("MustLeaveCast(BotHoldsCaster(bot, unit)", fn)
+        self.assertIn("MustLeaveCast(BotHoldsCaster(ai, bot, unit, fight.rows)", fn)
 
     def test_only_the_tank_holding_the_caster_stays(self):
         helper = body(ACTIONS, "bool BotHoldsCaster(")
+        # The victim-to-player facts, the bot's own current target, and the caster's tank_hold row: all filled here.
         self.assertIn("const bool casterIsOnNonTank = victim && victim != bot", helper)
-        self.assertIn("HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank)", helper)
+        self.assertIn("victim->GetTypeId() == TYPEID_PLAYER", helper)
+        self.assertIn('AI_VALUE(Unit*, "current target") == caster', helper)
+        self.assertIn("HasTankHold(active, caster->GetEntry())", helper)
+        self.assertIn(
+            "HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow)",
+            helper)
         # The held casters' blasts are left out of the zones the hold and the walk-out read.
         zones = body(ACTIONS, "std::vector<CastDangerZone> ai::CastDangerZones(")
-        self.assertIn("BotHoldsCaster(bot, unit)", zones)
+        self.assertIn("BotHoldsCaster(ai, bot, unit, fight.rows)", zones)
+
+    def test_loose_add_prefers_a_tank_hold_caster_on_a_non_tank(self):
+        # A tank holding nothing takes a caster a tank_hold row lists, that is on a non-tank, before the nearest
+        # loose add (TankTargetValue.cpp): that is what makes it pick the Mad Voidwalker up at all.
+        tank = (STRATEGY / "values/TankTargetValue.cpp").read_text()
+        pickup = tank[tank.index("bool IsTankHoldPickup(Unit* unit)"):]
+        pickup = pickup[:pickup.index("\n    }")]
+        self.assertIn("GetBossTactics().Rows(unit->GetMapId(), unit->GetEntry())", pickup)
+        self.assertIn("row.kind == BossTacticKind::TankHold", pickup)
+        self.assertIn("dynamic_cast<Player*>(unit->GetVictim())", pickup)
+        self.assertIn("!ai->IsTank(victimPlayer)", pickup)
+        # The preference runs in the loose-add branch, before the nearest tie-break.
+        loose = tank[tank.index("// Loose adds: the one a tank_hold row lists"):]
+        loose = loose[:loose.index("return bot->GetDistance(newUnit) < bot->GetDistance(oldUnit)")]
+        self.assertIn("IsTankHoldPickup(newUnit)", loose)
+        self.assertIn("IsTankHoldPickup(oldUnit)", loose)
 
     def test_action_walks_to_a_policy_point_outside_every_cast(self):
         spots = body(ACTIONS, "int AvoidCastSpots(")

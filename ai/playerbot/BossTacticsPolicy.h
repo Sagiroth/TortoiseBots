@@ -38,6 +38,7 @@ namespace ai
         KillFirst = 2,  // DPS bots kill `target_entry` before anything else; lowest `priority` first
         Behind = 3,     // non-tank bots stay out of the boss's front within `param` yd (frontal cleave)
         AvoidCast = 4,  // non-tank bots leave `param` yd around the caster while it casts `spell_id`
+        TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -50,6 +51,8 @@ namespace ai
             return BossTacticKind::Behind;
         if (text == "avoid_cast")
             return BossTacticKind::AvoidCast;
+        if (text == "tank_hold")
+            return BossTacticKind::TankHold;
         return BossTacticKind::None;
     }
 
@@ -190,13 +193,30 @@ namespace ai
                         AvoidCastRadius(active, casterEntry, channeledSpellId));
     }
 
-    // Whether a bot holds a caster, so stays in its blast: a tank stays in (no walk-out, no cast hold) when the
-    // caster is on it or on a non-tank, so the tank can take or keep it. Walk 20's Voidwalkers on healers shocked
-    // the raid when the tanks walked out too. A caster on nobody keeps nobody in, and a non-tank leaves like
-    // anyone else.
-    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank)
+    // Whether a tank_hold row lists a creature of `casterEntry`: this caster's avoid_cast blast may be held by a tank
+    // while the caster is on a non-tank (the row means "a tank may stay in this caster's blast", see HoldsCaster). The
+    // subject is the row's target_entry, or its boss_entry when that is 0, so the row is keyed by the caster's entry.
+    inline bool HasTankHold(const ActiveBossRows& active, std::uint32_t casterEntry)
     {
-        return botIsTank && (casterIsOnBot || casterIsOnNonTank);
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::TankHold && TacticSubjectEntry(*row) == casterEntry)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a bot holds a caster, so stays in its blast (no walk-out, no cast hold). A tank holds when the caster
+    // is on it. It also holds — only for a caster whose entry has a tank_hold row — when the caster is on a non-tank
+    // AND this tank's own current target is the caster, so that one tank can take it. Walk 20's Voidwalkers on
+    // healers shocked the raid when the tanks walked out too, but holding every tank in every blast walked tanks into
+    // blasts that kill them (the Gurubashi Bat Rider's 10 yd explosion, where nothing is gained by staying); so the
+    // second case is opt-in per caster and, within that, only the tank already on the caster (every other tank leaves
+    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds.
+    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank, bool botTargetsCaster,
+                            bool casterTankHoldRow)
+    {
+        return botIsTank && (casterIsOnBot || (casterTankHoldRow && casterIsOnNonTank && botTargetsCaster));
     }
 
     // Whether a bot `distance` yd from such a caster has to leave (see HoldsCaster).

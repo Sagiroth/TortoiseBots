@@ -173,26 +173,32 @@ float CenterDistance(Unit* caster, float x, float y, float z)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// A tank stays in the blast when the caster is on it or on a non-tank, so it can take or keep it
-// (BossTacticsPolicy.h HoldsCaster). A non-player victim (a pet, a totem) is not counted: this file has no
-// victim-to-player idiom to own one, only the player form below.
-bool BotHoldsCaster(Player* bot, Unit* caster)
+// A tank holds the caster's blast when the caster is on it, or — only for a caster whose entry has a tank_hold row —
+// when the caster is on a non-tank and this tank's own current target is the caster, so it can take it
+// (BossTacticsPolicy.h HoldsCaster). Every other tank leaves like anyone else, or the rule would walk tanks into
+// blasts that kill them (the Gurubashi Bat Rider). A non-player victim (a pet, a totem) is not counted: this file has
+// no victim-to-player idiom to own one, only the player form below.
+bool BotHoldsCaster(PlayerbotAI* ai, Player* bot, Unit* caster, const ActiveBossRows& active)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     Unit* victim = caster->GetVictim();
     const bool casterIsOnBot = victim == bot;
     const bool casterIsOnNonTank = victim && victim != bot && victim->GetTypeId() == TYPEID_PLAYER &&
         !PlayerbotAI::IsTank(static_cast<Player*>(victim));
-    return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank);
+    // The same value the rest of this file reads for the bot's target (BossTacticsKillFirstAction, the hold multiplier).
+    const bool botTargetsCaster = AI_VALUE(Unit*, "current target") == caster;
+    const bool casterTankHoldRow = HasTankHold(active, caster->GetEntry());
+    return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow);
 }
 }
 
-std::vector<CastDangerZone> ai::CastDangerZones(const BossTacticsFight& fight, Player* bot)
+std::vector<CastDangerZone> ai::CastDangerZones(PlayerbotAI* ai, const BossTacticsFight& fight, Player* bot)
 {
     std::vector<CastDangerZone> zones;
     for (Unit* unit : fight.units)
     {
         const float radius = CastDangerOf(fight, unit);
-        if (radius <= 0.0f || (bot && BotHoldsCaster(bot, unit)))
+        if (radius <= 0.0f || (bot && BotHoldsCaster(ai, bot, unit, fight.rows)))
             continue;
         CastDangerZone zone;
         zone.x = unit->GetPositionX();
@@ -206,7 +212,6 @@ std::vector<CastDangerZone> ai::CastDangerZones(const BossTacticsFight& fight, P
 
 BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
-    (void)ai;
     BossCastDanger danger;
     if (fight.rows.empty())
         return danger;
@@ -217,7 +222,7 @@ BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTa
         if (radius <= 0.0f)
             continue;
         const float distance = CenterDistance(unit, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
-        if (!MustLeaveCast(BotHoldsCaster(bot, unit), radius, distance))
+        if (!MustLeaveCast(BotHoldsCaster(ai, bot, unit, fight.rows), radius, distance))
             continue;
         if (!danger.caster || distance < nearest)
         {
@@ -278,7 +283,7 @@ float BossTacticsCastHoldMultiplier::GetValue(Action* action)
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     if (fight.rows.empty())
         return 1.0f;
-    const std::vector<CastDangerZone> zones = CastDangerZones(fight, bot);
+    const std::vector<CastDangerZone> zones = CastDangerZones(ai, fight, bot);
     if (zones.empty())
         return 1.0f;
     // A stay walks the bot back to its spot: held while that spot lies in a blast.
@@ -366,7 +371,7 @@ bool BossTacticsAvoidCastAction::isPossible()
     if (!danger.caster)
         return false;
     AvoidCastSpot spots[kAvoidCastPoints];
-    return AvoidCastSpots(bot, danger.caster, danger.radius, CastDangerZones(fight, bot), spots) > 0;
+    return AvoidCastSpots(bot, danger.caster, danger.radius, CastDangerZones(ai, fight, bot), spots) > 0;
 }
 
 namespace
@@ -424,7 +429,7 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     const float distBefore = logIt ? CenterDistance(caster, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ())
                                    : 0.0f;
     AvoidCastSpot spots[kAvoidCastPoints];
-    const int count = AvoidCastSpots(bot, caster, danger.radius, CastDangerZones(fight, bot), spots);
+    const int count = AvoidCastSpots(bot, caster, danger.radius, CastDangerZones(ai, fight, bot), spots);
     bool stopped = false;
     float destDistance = -1.0f;
     AvoidCastWalk walk = AvoidCastWalk::None;
