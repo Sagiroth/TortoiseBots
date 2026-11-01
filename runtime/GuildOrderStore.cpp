@@ -930,7 +930,17 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
         if (it != m_orders.end())
+        {
             it->second.lastNeedLadderCheckMs = nowMs;
+            ++it->second.needLadderChecks;
+        }
+    }
+
+    uint32_t NeedLadderChecks(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        return it == m_orders.end() ? 0 : it->second.needLadderChecks;
     }
 
     bool ShouldScanProgress(uint32_t botGuidLow, uint32_t nowMs)
@@ -1313,6 +1323,7 @@ public:
         bool needItemInBank = false;
         bool needVendorReady = false; // a parked need item is vendor-unlimited and affordable now
         bool needAhReady = false;     // a parked need item is newly listed on the AH
+        bool needRetryLadder = false; // a long-parked need row re-runs the whole ladder
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -1353,18 +1364,21 @@ public:
         bool wasStocked = record.state == OrderState::Stocked;
 
         if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
-            (in.needItemAvailable || in.needVendorReady || in.needAhReady))
+            (in.needItemAvailable || in.needVendorReady || in.needAhReady || in.needRetryLadder))
         {
             // A parked need row re-runs the ladder when its facts changed: a
             // vendor-unlimited item the new rule buys, a fresh AH listing, or
             // a restocked bank the denial flag had excluded. Bags stays the
             // player-delivered lane; the map thread re-plans the leg below.
-            NeedResumeLeg leg = NeedResumeLegFor(in.needVendorReady, in.needItemInBank, in.needAhReady);
+            NeedResumeLeg leg = NeedResumeLegFor(in.needVendorReady, in.needItemInBank, in.needAhReady,
+                in.needRetryLadder);
             record.state = OrderState::Working;
             record.reason = OrderReason::None;
             record.supplyStep = leg == NeedResumeLeg::Vendor ? SupplyStep::Farm :
                 (leg == NeedResumeLeg::Bank ? SupplyStep::Bank :
-                (leg == NeedResumeLeg::AuctionHouse ? SupplyStep::AuctionHouse : SupplyStep::Bags));
+                (leg == NeedResumeLeg::AuctionHouse ? SupplyStep::AuctionHouse :
+                (leg == NeedResumeLeg::Ladder ? SupplyStep::None : SupplyStep::Bags)));
+            stored.needLadderChecks = 0;
             record.needItems.clear();
             record.needWhispered = false;
             record.needBankDenied = false;
@@ -1686,6 +1700,7 @@ private:
         uint32_t reportMs = 0;
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
+        uint32_t needLadderChecks = 0; // slow checks since the row last parked
         uint32_t lastProgressScanMs = 0;
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
@@ -2656,6 +2671,9 @@ void Update(uint32_t diff)
                         break;
                     }
                 }
+                if (!in.needVendorReady && !in.needAhReady &&
+                    NeedFullRetryDue(OrderStore::Instance().NeedLadderChecks(guidLow)))
+                    in.needRetryLadder = true;
             }
         }
         else if (snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub &&

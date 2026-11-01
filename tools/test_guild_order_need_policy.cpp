@@ -20,6 +20,14 @@ int main()
     CHECK(NeedResumeLegFor(false, true, true) == NeedResumeLeg::Bank);
     CHECK(NeedResumeLegFor(false, false, true) == NeedResumeLeg::AuctionHouse);
     CHECK(NeedResumeLegFor(false, false, false) == NeedResumeLeg::None);
+    // A long park re-runs the whole ladder, after the cheaper legs.
+    CHECK(NeedResumeLegFor(false, false, false, true) == NeedResumeLeg::Ladder);
+    CHECK(NeedResumeLegFor(false, true, false, true) == NeedResumeLeg::Bank);
+    CHECK(!NeedFullRetryDue(0));
+    CHECK(!NeedFullRetryDue(1));
+    CHECK(!NeedFullRetryDue(2));
+    CHECK(NeedFullRetryDue(3));
+    CHECK(NeedFullRetryDue(6));
 
     if (failures == 0)
         std::printf("guild order need policy: all tests passed\n");

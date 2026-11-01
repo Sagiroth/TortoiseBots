@@ -27,12 +27,24 @@ inline bool NeedLadderCheckDue(uint32_t nowMs, uint32_t lastCheckMs)
     return nowMs - lastCheckMs >= kNeedLadderCheckMs;
 }
 
+// Every third slow check with nothing ready re-runs the whole ladder: a
+// farm or sub-order source may have appeared since the park (a fix deployed,
+// a skill gained, a new guild member), and the store cannot plan farms. A
+// ladder that still finds nothing parks the same list again, which does not
+// whisper twice.
+inline constexpr uint32_t kNeedFullRetryEveryChecks = 3;
+
+inline bool NeedFullRetryDue(uint32_t ladderChecks)
+{
+    return ladderChecks > 0 && ladderChecks % kNeedFullRetryEveryChecks == 0;
+}
+
 // Where a parked need item resumes once its facts changed: the vendor leg
 // buys a vendor-unlimited item, the bank leg fetches a restocked bank, the
 // AH leg re-tries a newly listed item.
-enum class NeedResumeLeg : uint8_t { None, Vendor, Bank, AuctionHouse };
+enum class NeedResumeLeg : uint8_t { None, Vendor, Bank, AuctionHouse, Ladder };
 
-inline NeedResumeLeg NeedResumeLegFor(bool vendorReady, bool bankReady, bool ahReady)
+inline NeedResumeLeg NeedResumeLegFor(bool vendorReady, bool bankReady, bool ahReady, bool retryLadder = false)
 {
     if (vendorReady)
         return NeedResumeLeg::Vendor;
@@ -40,6 +52,8 @@ inline NeedResumeLeg NeedResumeLegFor(bool vendorReady, bool bankReady, bool ahR
         return NeedResumeLeg::Bank;
     if (ahReady)
         return NeedResumeLeg::AuctionHouse;
+    if (retryLadder)
+        return NeedResumeLeg::Ladder;
     return NeedResumeLeg::None;
 }
 
