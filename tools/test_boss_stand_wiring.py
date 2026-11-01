@@ -244,7 +244,7 @@ class BossStandWiring(unittest.TestCase):
     def test_the_stand_wins_over_the_caster_reach(self):
         fn = body(REACH, "class ReachSpellAction", end="\n    };\n")
         stand = fn.index("FindBossStand(ai, bot).valid")
-        walk = fn.index("MoveUnderAirborneTarget(target, AirTargetReachDistance(range))")
+        walk = fn.index("return ReachTargetAction::MoveIntoRange(target, distance);")
         self.assertLess(stand, walk)
         self.assertIn("if (FindBossStand(ai, bot).valid)\n                return false;", fn)
 
