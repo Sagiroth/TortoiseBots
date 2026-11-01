@@ -250,6 +250,8 @@ constexpr std::uint32_t kStrandSettleMs = 2000;   // the stranded lead bot's tel
 constexpr std::uint32_t kStrandTries = 3;         // ... failed teleports (refused, or the lead bot not there after it) a step
 constexpr std::uint32_t kStrandWaits = 10;        // ... "wait" answers a step, then a pause
 constexpr std::uint32_t kStrandSummonWaitMs = 120000; // ... a bot left behind in a fight is waited for this long, then a pause
+constexpr float kStrandRearmYd = 100.0f;          // ... a lead bot moved this far from the point it was teleported to
+                                                  //     arms the rescue again (RearmStrandIfLeadMovedAway)
 constexpr std::uint32_t kEscapeSettleMs = 2000;   // the hop is over once the lead bot stands still this long ...
 constexpr std::uint32_t kEscapeCapMs = 6000;      // ... or after this long
 constexpr float kEscapeMovedYd = 2.0f;            // the glue refuses the hop when the lead bot moved this far since the read
@@ -5833,6 +5835,23 @@ inline void RearmRescueAfterDeath(Run& r)
     r.strandStep = static_cast<std::size_t>(-1);
 }
 
+// The once-a-step latch is not re-armed by a lead bot that was moved away after its rescue's teleport: the glue's own
+// mass summon (the agent's `.go xyz`/`.summon` sequence racing the run's own wipe recovery) put the lead bot back at
+// the instance entrance, 560 yd from the point it was teleported to, and the walk back that followed could not
+// teleport it a second time (RescueAllowed false): it gave the point up and the lead bot ended stuck in the river
+// (ZG walk 22 test2 r4 step 99). Out of combat, in the same step, a lead bot farther than kStrandRearmYd from the
+// point it was teleported to (the walk back still at that point: the lead bot was not walked back there) arms the
+// latch again, and the walk back's rescue may teleport once more; the step's failed tries and waits stay counted.
+inline void RearmStrandIfLeadMovedAway(Run& r, const Facts& f)
+{
+    if (r.strandStep != r.step || r.strandOn || r.strandDue || !r.walkBack || !r.plan ||
+        r.walkBackIdx != r.strandIdx || r.strandIdx >= r.plan->steps.size() || f.anyInCombat)
+        return;
+    const PlanStep& p = r.plan->steps[r.strandIdx];
+    if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z) > kStrandRearmYd)
+        r.strandStep = static_cast<std::size_t>(-1);
+}
+
 // A failed teleport of the stranded lead bot (refused, or the lead bot not at the
 // point after it): due again on the next tick, kStrandTries times a step; then the
 // walk back goes on as before (the point is passed when refused again) — or as the replay when the failed teleport
@@ -9674,6 +9693,7 @@ inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& orde
 {
     if (!r.walkBack)
         return false;
+    RearmStrandIfLeadMovedAway(r, f);
     if (r.walkBackIdx < r.step && FallenFirst(r, f))
         return true;
     if (StrandedTeleportTick(r, f, dt, order))
@@ -12856,9 +12876,15 @@ inline const PlanStep* InHoldArea(const Run& r, const Facts& f)
 
 inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
 {
+    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands a
+    // loose mob to a living off-tank (GuardPick, and CheckGuard's off-tank round robin), so the mobs the main tank
+    // held do not stay on the healers (ZG walk 22 test2 r4 step 99: the Mad Voidwalkers went to nobody once the
+    // main tank died). Nobody's stand: no guard return, no engage.
+    if (!f.leadAlive)
+        return RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
     // Watching: fightOrders too, so a refill (guardOrders and engageOrders back
     // to 0) does not end the watch the earlier orders started.
-    if (!f.leadAlive || !f.leadIsTank ||
+    if (!f.leadIsTank ||
         !(f.leadStaying || r.guardOrders > 0 || r.fightOrders > 0 || r.engageGuid != 0 || r.focusGuid != 0 ||
             r.focusUnstayed) ||
         f.carrier.empty() || InEvent(r))

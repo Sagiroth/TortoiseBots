@@ -11947,6 +11947,68 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     CHECK(kStrandTries == 3 && kStrandWaits == 10);
 }
 
+// ZG walk 22 test2 r4 step 99 (F7): the strand rescue's once-a-step latch (Run::strandStep) held after the lead bot
+// was moved away again. The glue's mass summon put it back at the ZG entrance hill, 560 yd from the point it was
+// teleported to; the walk back that followed could not teleport it a second time (RescueAllowed false), so it gave
+// the point up and the lead bot ended stuck in the river. The latch re-arms, out of combat and in the same step,
+// when the lead bot stands farther than kStrandRearmYd from the point it was teleported to.
+static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f), Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f),
+        Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f), Step(PlanStepKind::Move, -422.4f, 106.7f, -172.9f),
+        Step(PlanStepKind::Move, -420.0f, 120.0f, -172.9f), Step(PlanStepKind::Rest)};
+    std::string const back = MoveOrder(-422.4f, 82.4f, -172.9f, false);
+    std::string const noSpot = "no-spot: no spot within 10 yd in the lead bot's sight has a floor, a clear line and a way on";
+    auto stranded = [&]()
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 1);
+        r.noPathSkips = {2, 3, 4};
+        r.walkBack = true;
+        r.walkBackIdx = 1;
+        r.walkBackStart = 1;
+        r.leadLastX = -448.0f;
+        r.leadLastY = 103.2f;
+        r.leadLastZ = -191.0f;
+        OrderRefused(r, "escape from -448.0 103.2 -191.0 toward -422.4 82.4 -172.9", noSpot);
+        CHECK(r.noSpotKnown);
+        r.strandIdx = 1;       // the point the rescue teleported the lead bot to (the walk back's own)
+        r.strandStep = r.step; // the teleport was used on this step: the lead bot stood at the point after it
+        return r;
+    };
+    // 760 yd from the point it was teleported to (step 2's point), out of combat; the hop there found no spot again.
+    Facts away = StrandFacts(-960.0f, 620.0f, -172.9f);
+    auto atAway = [](Run& x, float ax, float ay, float az)
+    {
+        x.leadLastX = ax;
+        x.leadLastY = ay;
+        x.leadLastZ = az;
+        x.noSpotKnown = true;
+        x.noSpotX = ax;
+        x.noSpotY = ay;
+        x.noSpotZ = az;
+    };
+    Run r = stranded();
+    atAway(r, -960.0f, 620.0f, -172.9f);
+    std::string const move = Tick(r, away); // the walk back resumes: the latch re-arms, then the point's own move
+    CHECK(move == back);
+    OrderRefused(r, move, kBareUnreachable);
+    CHECK(r.strandDue); // the rescue again, not 'on to the next'
+    std::string const order = Tick(r, away);
+    CHECK(order == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+    CHECK(r.note.find("teleporting it to the last reached point (step 2)") != std::string::npos);
+
+    // Inside kStrandRearmYd the latch holds: the lead bot is on its way back, not moved away.
+    Run near = stranded();
+    atAway(near, -470.0f, 90.0f, -172.9f); // ~48 yd from the point
+    Facts close = StrandFacts(-470.0f, 90.0f, -172.9f);
+    CHECK(Tick(near, close) == back);
+    OrderRefused(near, back, kBareUnreachable);
+    CHECK(!near.strandDue && near.walkBackIdx == 2);
+    CHECK(near.note.find(": on to the next") != std::string::npos);
+}
+
 static void TestR22PullAndDirectStepsKeepTheirRefusals()
 {
     DungeonPlan plan = RfkS85Plan();
@@ -25040,6 +25102,50 @@ static void TestRaidGuardWithoutAnOffTankSendsTheMainTank()
     CHECK(r.guardReturn);
 }
 
+// ZG walk 22 test2 r4 step 99 (F7): the run's main tank (the lead bot) died early in the trash fight and every off-tank
+// pick-up stopped (GuardTarget returned null on !f.leadAlive), so the Mad Voidwalkers stayed on the healers. A living
+// off-tank in a raid's trash fight still takes a loose mob with the lead bot dead; the main tank's stand is nobody's.
+static void TestRaidTrashOffTanksPickUpWithTheLeadDead()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.leadAlive = false;
+    f.leadIsTank = false;
+    f.leadStaying = false;
+    f.partyAttackers = {Hitter(41, 15146, 30, true)}; // a Mad Voidwalker on the healer
+    CHECK(Tick(r, f) == "attack 41 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 15146 off the healer (30.0 yd)");
+    CHECK(!r.guardReturn); // the dead main tank has no stand to walk back to
+    CHECK(r.guardOrders == 1);
+    // A second loose mob goes to the next off-tank; one an off-tank already holds is left with it.
+    f.partyAttackers = {Hitter(51, 15146, 32, true), TankHeld(41, 15146, 30)};
+    std::string next;
+    for (std::uint32_t ms = 0; ms < 10000 && next.empty(); ms += kTickMs)
+        next = Tick(r, f);
+    CHECK(next == "attack 51 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 15146 off the healer") != std::string::npos);
+
+    // A party run with the same loose mob and a dead lead bot: no off-tanks, nothing, as before.
+    DungeonPlan party;
+    Facts g = Party(0);
+    Run p = Start(&party, 0);
+    g.anyInCombat = true;
+    g.partyAttackers = {Hitter(41, 15146, 30, true)};
+    for (int i = 0; i < 5; ++i)
+        CHECK(Tick(p, g).empty());
+    // A raid trash fight with no living off-tank: nothing either.
+    DungeonPlan none;
+    Facts h = RaidTrashFacts(false);
+    Run q = StartRaidTrashFight(none, h);
+    h.leadAlive = false;
+    h.leadIsTank = false;
+    h.leadStaying = false;
+    h.partyAttackers = {Hitter(41, 15146, 30, true)};
+    for (int i = 0; i < 5; ++i)
+        CHECK(Tick(q, h).empty());
+}
+
 static void TestPartyGuardStillTakesAMobHeldByItsTank()
 {
     DungeonPlan plan;
@@ -26209,6 +26315,7 @@ int main()
     TestStandTicksAreNotFruitlessPulls();
     TestShotStandOnPath();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
+    TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestPullStandNeedsMoreRangeThanTheMargin();
     TestStandRequestIsReadOnce();
     TestStandWalkStuckOrdersFromHere();
@@ -26496,6 +26603,7 @@ int main()
     TestRaidGuardRoundRobinsTheOffTanks();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
+    TestRaidTrashOffTanksPickUpWithTheLeadDead();
     TestPartyGuardStillTakesAMobHeldByItsTank();
     TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait();
     TestRaidTrashFightGate();
