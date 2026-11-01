@@ -202,9 +202,11 @@ public:
         return it->second.record;
     }
     // True when the item is reserved for the bot's unfinished order: the
-    // live order and supply items always, plus the stored reagent set when
-    // its keys still name the live row. A set lookup under the lock, safe
-    // on any thread; cancelled or finished rows protect nothing.
+    // live order and supply items always, plus the stored reagent set, even
+    // a stale one until the map thread recomputes it: over-protecting for a
+    // tick is harmless, a gap would let the world-thread AH list a reagent.
+    // A set lookup under the lock, safe on any thread; cancelled or finished
+    // rows protect nothing.
     bool IsProtectedItem(Player* bot, uint32_t itemId)
     {
         if (!bot || !itemId || !bot->GetGuildId())
@@ -220,9 +222,7 @@ public:
         if (itemId == record.itemId || itemId == record.supplyItemId)
             return true;
         OrderProtectedSet const& kept = stored.kept;
-        if (!kept.valid || kept.orderItemId != record.itemId ||
-            kept.supplyItemId != record.supplyItemId ||
-            kept.orderIsCraft != (record.type == OrderType::Craft))
+        if (!kept.valid)
             return false;
         return kept.items.count(itemId) != 0;
     }
