@@ -42,12 +42,6 @@ class GuildOrderVendorValveWiringTest(unittest.TestCase):
     def test_valve_uses_pressure_constant(self):
         self.assertIn("NEARBY_SERVICE_BAG_PRESSURE", valve_slice())
 
-    def test_full_bag_trip_is_rate_limited(self):
-        # Codex round 2: full -> sell one -> loot one grey -> full must not loop.
-        body = valve_slice()
-        self.assertIn('"order full-bag vendor trip"', body)
-        self.assertIn("30 * MINUTE", body)
-
     def test_sellable_slots_counts_slots(self):
         body = helper_body()
         self.assertIn("SellPrice", body)

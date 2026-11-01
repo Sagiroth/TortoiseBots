@@ -506,18 +506,8 @@ bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
     {
         uint32 used = 0, total = 0;
         CountBagSlots(bot, used, total);
-        uint32 const sellable = SellableVendorSlots(ai);
-        if (!BagPressureSaleRelievesBags(used, total, sellable, NEARBY_SERVICE_BAG_PRESSURE))
+        if (!BagPressureSaleRelievesBags(used, total, SellableVendorSlots(ai), NEARBY_SERVICE_BAG_PRESSURE))
             return false;
-        // The completely-full exception frees only a slot or two: at most one such
-        // trip per 30 min, or full -> sell one -> loot one grey -> full loops.
-        if (used >= total && !BagPressureSaleRelievesBags(used - 1, total, sellable, NEARBY_SERVICE_BAG_PRESSURE))
-        {
-            std::string const key = "order full-bag vendor trip";
-            if (AI_VALUE2(time_t, "manual time", key) > time(0))
-                return false;
-            SET_AI_VALUE2(time_t, "manual time", key, time(0) + 30 * MINUTE);
-        }
     }
 
     return !VendorWithinNearbyServiceRange(ai);
