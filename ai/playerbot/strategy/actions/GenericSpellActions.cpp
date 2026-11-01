@@ -6,6 +6,9 @@
 #include "playerbot/WandPolicy.h"
 #include "../../../../runtime/TotemSpellPolicy.h"
 #include "../../../../runtime/SpellSchoolImmunePolicy.h"
+    // Follow-first (owner report 2026-11-01): cast-time upkeep buffs stand
+    // down while the bot should be catching up to its moving master.
+#include "playerbot/FollowUrgencyPolicy.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
@@ -601,6 +604,23 @@ bool CastBuffSpellAction::isUseful()
 
         if (!HasManaForBuff())
             return false;
+
+        // Follow-first: a cast-time upkeep buff stops the bot, so while the
+        // bot should be catching up to its moving master the buff stands
+        // down and the follow row owns the tick. Instant buffs still fire
+        // (cast on the run, movement untouched); combat rows are untouched.
+        Player* master = ai->GetMaster();
+        if (master && master->IsMoving() && bot->GetGroup() &&
+            (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+        {
+            SpellEntry const* buffInfo = sServerFacade.LookupSpellInfo(GetSpellID());
+            bool const needsStandStill = !buffInfo || GetSpellCastTime(buffInfo, bot) > 0 ||
+                (IsChanneledSpell(buffInfo) && GetSpellDuration(buffInfo) > 0);
+            if (needsStandStill &&
+                ai::FollowOverridesDowntime(sServerFacade.getDistance2d(bot, master), ai->GetRange("follow")))
+                return false;
+        }
     }
 
     return CastAuraSpellAction::isUseful();

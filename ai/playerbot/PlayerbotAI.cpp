@@ -49,6 +49,9 @@
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/MountDismountPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
+    // Follow-first (owner report 2026-11-01): seated bots stand when the
+    // master pulls away, instead of finishing the meal.
+#include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
@@ -535,6 +538,20 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
             aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
             aiObjectContext->GetValue<bool>("has attackers")->Reset();
+            ResetAIInternalUpdateDelay();
+        }
+
+        // Follow-first: a seated bot whose master walks out of follow range
+        // stands at once instead of finishing the meal. Same shape as the
+        // combat wake-up above: cheap checks first, fires once (standing
+        // drops the aura), the follow row owns the next tick.
+        if (aiInternalUpdateDelay > 0 && !isWaiting && bot->IsSittingDown() &&
+            HasSeatedAura(bot) && master && master->IsInWorld() && master->IsMoving() &&
+            (HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
+            ai::FollowOverridesDowntime(sServerFacade.getDistance2d(bot, master), GetRange("follow")))
+        {
+            bot->SetStandState(UNIT_STAND_STATE_STAND);
             ResetAIInternalUpdateDelay();
         }
     }

@@ -1,11 +1,13 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
+#include "playerbot/FollowUrgencyPolicy.h"
 
 
 namespace ai
@@ -305,10 +307,19 @@ namespace ai
                 ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 return true;
 
-            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
+            // Follow-first: past the follow leash (or the station dead zone
+            // for a tight leash) with the master on the move, no new drink
+            // starts - the catch-up follow (ACTION_HIGH) owns the tick
+            // instead.
+            if (!master->IsMoving())
                 return true;
 
-            if (!master->IsMoving())
+            float const botToMaster = sServerFacade.getDistance2d(bot, master);
+            float const followRange = ai->GetRange("follow");
+            if (ai::FollowOverridesDowntime(botToMaster, followRange))
+                return false;
+
+            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;
@@ -354,10 +365,17 @@ namespace ai
                 ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 return true;
 
-            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
+            // Follow-first, same as drink above: no new meal starts while
+            // the bot should be catching up to its moving master.
+            if (!master->IsMoving())
                 return true;
 
-            if (!master->IsMoving())
+            float const botToMaster = sServerFacade.getDistance2d(bot, master);
+            float const followRange = ai->GetRange("follow");
+            if (ai::FollowOverridesDowntime(botToMaster, followRange))
+                return false;
+
+            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;
