@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstddef>
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -226,6 +226,18 @@ namespace ai
     inline bool IsHopelessSingleAttacker(bool attackerIsPlayer, int attackerLevel, int botLevel)
     {
         return !attackerIsPlayer && attackerLevel >= botLevel + 6;
+    }
+
+    // Outnumbered flee line (OutNumberedTrigger, R3 fair-fight losses):
+    // cloth (mage/priest/warlock) starts weighing the disengage at 85%
+    // instead of the 70% medium line — the second attacker's burst lands
+    // on cloth mitigation, so waiting for 70% leaves nothing to spend on
+    // the way out. Everyone else keeps the configured medium line.
+    inline std::uint32_t OutnumberedFleeHealthLine(bool isClothCaster, std::uint32_t mediumHealth)
+    {
+        // Clamp at the cloth line: a custom medium above 85 would otherwise
+        // make cloth flee later than everyone else (inverted).
+        return isClothCaster ? std::max(mediumHealth, 85u) : mediumHealth;
     }
 
     // Death telemetry: the deaths.csv 'adds' loop used to count victim-

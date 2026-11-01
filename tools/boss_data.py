@@ -33,17 +33,27 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
                               hp<N>        one-shot below N percent health
                               ok=<reason>  the whole ability needs no answer
                               ok.<need>=<reason>  that one need needs no answer
+                              dur=<ms>     the ability lasts this long; the repeat
+                                           window counts from its end
+                              from=<phase> the first timer counts from when the boss
+                                           first entered that phase this fight
+                                           (needs a timer; must be a phase row)
     phase    key=name       a=rule: hp<N | aura=<spell id> | flag=<letter> | start
                             b=order (1 = checked first); a `start` rule always
                             matches and must be the last one (the pull phase)
     add      key=creature   a=summon|linked|ward|totem|trigger   b=kill priority (0 none)
+    alias    key=creature entry  a..d empty  (the boss in another form: the same panel;
+                            one per entry: never a boss and never an add)
     note     a=text         a mechanic the dashboard cannot see
 
-`source` is one or more `path:line[-line]` citations separated by ';'. Script
-paths are relative to the core checkout (--core-dir, default $TORTOISE_CORE_DIR
-or ~/tortoise-wow); a path starting `data/` is relative to this repository (its
-SQL migrations are not in the core). A knowledge-base citation is `kb:<file>#<heading-slug>` under
---kb-dir (default $TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
+`source` is one or more `path:line[-line]` citations separated by ';'. A `+` lists
+derived timer lines (`path:22+68`): an ability timer may equal the sum of the
+numbers on those lines, each holding exactly one number (a spawn timer plus its
+detonate delay). Script paths are relative to the core checkout (--core-dir,
+default $TORTOISE_CORE_DIR or ~/tortoise-wow); a path starting `data/` is
+relative to this repository (its SQL migrations are not in the core). A
+knowledge-base citation is `kb:<file>#<heading-slug>` under --kb-dir (default
+$TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
 
 `ok` reasons are a closed list (see data/boss/README.md): tank, heal, phase,
 script, and the DB-verified nokick/nodispel/nopurge, which are only valid on
@@ -53,9 +63,18 @@ data/boss/raids.csv maps every map slug to its map id (the JSON `maps[]`), and
 data/boss/code_answers.csv lists the answers that live in C++ rather than in a
 world table (the JSON `codeAnswers[]`).
 
+The trash table (data/boss/trash_abilities.csv) is the same idea for the elites
+that wipe runs: columns map,entry,row,key,a,b,c,d,source, one `mob` row per
+creature entry (a=danger 1-3, b=roles, c=kill hint 0-3), then its `ability` rows
+(key=spell id, a/b/c must be 0, d=the boss flags plus `r=<yards>` for a
+caster-centred radius) and `note` rows (a=text, source may be empty: run
+evidence has no file to cite). `build` writes the minified
+tools/observability/web/data/trash_abilities.json for the page; a mob entry that
+is a boss of the boss table is an error, an entry that is a boss's add is not.
+
 Checks:
     1. Every ability row cites the line that defines its spell (id or constant)
-       and every timer value; phase hp/aura/flag rules and add entries likewise.
+       and every timer value (or the sum of its `+` derived timer lines); phase hp/aura/flag rules and add entries likewise.
        A value of N is also accepted as N//1000 on a line using IN_MILLISECONDS.
     2. Ability spell ids, summon= entries and add entries are unique per boss;
        every summon= entry has an add row; every p= phase exists; every map slug
@@ -87,6 +106,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CSV = ROOT / "data" / "boss" / "boss_abilities.csv"
 DEFAULT_JSON = ROOT / "tools" / "observability" / "web" / "data" / "boss_abilities.json"
+DEFAULT_TRASH_CSV = ROOT / "data" / "boss" / "trash_abilities.csv"
+DEFAULT_TRASH_JSON = (
+    ROOT / "tools" / "observability" / "web" / "data" / "trash_abilities.json"
+)
 DEFAULT_NAMES = ROOT / "data" / "boss" / "names.json"
 DEFAULT_RAIDS = ROOT / "data" / "boss" / "raids.csv"
 DEFAULT_CODE_ANSWERS = ROOT / "data" / "boss" / "code_answers.csv"
@@ -96,11 +119,17 @@ DEFAULT_KB = Path(
 )
 
 CSV_COLUMNS = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
+TRASH_COLUMNS = ["map", "entry", "row", "key", "a", "b", "c", "d", "source"]
 RAID_COLUMNS = ["key", "map_id", "name"]
 CODE_COLUMNS = ["map", "boss", "key", "need", "level", "name", "text", "source"]
-ROW_KINDS = {"ability", "phase", "add", "note"}
+ROW_KINDS = {"ability", "phase", "add", "alias", "note"}
 TARGETS = {"victim", "random", "self", "aoe", "ally"}
 ADD_ROLES = {"summon", "linked", "ward", "totem", "trigger"}
+TRASH_ROW_KINDS = {"mob", "ability", "note"}
+TRASH_ROLES = ("healer", "caster", "summoner", "aoe", "fear", "cc", "runner", "patrol", "mc")
+TRASH_DANGER_RANGE = (1, 3)
+TRASH_KILL_RANGE = (0, 3)
+TRASH_RADIUS_RANGE = (1, 60)
 NEEDS = (
     "interrupt",
     "kill",
@@ -121,13 +150,16 @@ ANSWER_FLAGS = ("ground", "aura", "self", "cone", "tail", "mark", "int")
 FLAG_LETTERS = {
     "n": "UNIT_FLAG_NOT_SELECTABLE",
     "i": "UNIT_FLAG_IMMUNE_TO_PLAYER",
+    "v": "VISIBILITY_OFF",  # the page sets v on a boss the reports left out; SetVisibility(VISIBILITY_OFF) is what drops it
     "h": None,  # flying/hovering state, no script literal to check
     "d": None,  # stand state dead (feign)
     "e": None,  # evading
 }
 PHASE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 MAP_RE = re.compile(r"^[a-z0-9_]+$")
-CITATION_RE = re.compile(r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?$")
+CITATION_RE = re.compile(
+    r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?(?:\+(?P<sums>\d+(?:\+\d+)*))?$"
+)
 CONST_RE = re.compile(
     r"#define\s+([A-Z][A-Z0-9_]{2,})\s+(\d+)\b"
     r"|([A-Z][A-Z0-9_]{2,})\s*(?:=\s*|\{\s*)(\d+)\b"
@@ -142,34 +174,41 @@ class DataError(Exception):
 # CSV
 
 
-def read_rows(path):
+def read_rows(path, columns=None):
     """Return CSV rows as dicts; every structural problem raises DataError."""
+    columns = columns or CSV_COLUMNS
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
         try:
             header = next(reader)
         except StopIteration:
             raise DataError(f"{path}: empty file")
-        if header != CSV_COLUMNS:
+        if header != columns:
             raise DataError(
-                f"{path}: header must be {','.join(CSV_COLUMNS)}, got {','.join(header)}"
+                f"{path}: header must be {','.join(columns)}, got {','.join(header)}"
             )
         rows = []
         for lineno, fields in enumerate(reader, start=2):
             if not fields or all(not f.strip() for f in fields):
                 continue
-            if len(fields) != len(CSV_COLUMNS):
+            if len(fields) != len(columns):
                 raise DataError(
-                    f"{path}:{lineno}: {len(fields)} fields, expected {len(CSV_COLUMNS)}"
+                    f"{path}:{lineno}: {len(fields)} fields, expected {len(columns)}"
                 )
-            row = {k: v.strip() for k, v in zip(CSV_COLUMNS, fields)}
+            row = {k: v.strip() for k, v in zip(columns, fields)}
             row["_line"] = lineno
             rows.append(row)
     return rows
 
 
+def read_trash_rows(path):
+    """The trash CSV: map,entry,row,key,a,b,c,d,source, one `mob` row per entry."""
+    return read_rows(path, TRASH_COLUMNS)
+
+
 def _row_id(row):
-    return f"line {row['_line']} ({row['row']} {row['key'] or row['boss']})"
+    owner = row["key"] or row.get("boss") or row.get("entry") or ""
+    return f"line {row['_line']} ({row['row']} {owner})"
 
 def read_raids(path):
     """Return the raid rows as dicts {key, mapId, name}; every problem raises DataError."""
@@ -376,7 +415,9 @@ def _int_field(row, name, *, minimum=0):
     return value
 
 
-def parse_flags(text):
+def parse_flags(text, allow_radius=False):
+    """The `;`-joined ability flags. `allow_radius` accepts `r=<yards>`, which only the trash table uses: the boss JSON
+    is committed and shared with other branches, so a new key in every boss ability would be noise there."""
     flags = {
         "phase": "",
         "target": "",
@@ -391,7 +432,11 @@ def parse_flags(text):
         "hp": 0,
         "ok": "",
         "okNeeds": {},
+        "dur": 0,
+        "from": "",
     }
+    if allow_radius:
+        flags["radius"] = None  # None = the row carries no `r=`; a radius of 0 yards is refused
     seen = set()
     if not text:
         return flags
@@ -433,6 +478,25 @@ def parse_flags(text):
             if not re.fullmatch(r"\d+", value) or not 1 <= int(value) <= 99:
                 raise DataError(f"bad hp flag {token!r} in {text!r}")
             flags["hp"] = int(value)
+        elif token.startswith("dur="):
+            value = token[4:]
+            if not re.fullmatch(r"\d+", value) or int(value) < 1:
+                raise DataError(f"bad dur {value!r} in {text!r}")
+            if flags["dur"]:
+                raise DataError(f"duplicate dur flag in {text!r}")
+            flags["dur"] = int(value)
+        elif token.startswith("from="):
+            name = token[5:]
+            if not PHASE_NAME_RE.match(name):
+                raise DataError(f"bad from phase {name!r} in {text!r}")
+            if flags["from"]:
+                raise DataError(f"duplicate from flag in {text!r}")
+            flags["from"] = name
+        elif allow_radius and token.startswith("r="):
+            value = token[2:]
+            if not re.fullmatch(r"\d+", value):
+                raise DataError(f"bad radius flag {token!r} in {text!r}")
+            flags["radius"] = int(value)
         else:
             raise DataError(f"unknown flag {token!r} in {text!r}")
     _check_ok(flags, text)
@@ -462,12 +526,12 @@ def derived_needs(flags):
 
 
 def spells_with_ok(rows, need, reason):
-    """Spell ids whose row marks one need `ok.<need>=<reason>`."""
+    """Spell ids whose row marks one need `ok.<need>=<reason>`. The rows may be trash rows, whose flags carry `r=`."""
     return {
         int(row["key"])
         for row in rows
         if row["row"] == "ability"
-        and parse_flags(row["d"])["okNeeds"].get(need) == reason
+        and parse_flags(row["d"], allow_radius=True)["okNeeds"].get(need) == reason
     }
 
 
@@ -564,7 +628,7 @@ def constant_values(lines):
 
 
 def parse_source(row):
-    """Return a list of (kind, path, start, end) citations; 'kind' is 'core' or 'kb'."""
+    """Return (kind, path, start, end, derived) citations; 'kind' is 'core' or 'kb'."""
     text = row["source"]
     if not text:
         raise DataError(f"{_row_id(row)}: empty source")
@@ -580,16 +644,20 @@ def parse_source(row):
             name, anchor = rest.split("#", 1)
             if not name or not anchor:
                 raise DataError(f"{_row_id(row)}: bad kb citation {part!r}")
-            citations.append(("kb", name, anchor, 0))
+            citations.append(("kb", name, anchor, 0, ()))
             continue
         match = CITATION_RE.match(part)
         if not match:
-            raise DataError(f"{_row_id(row)}: bad citation {part!r}; expected path:line[-line]")
+            raise DataError(
+                f"{_row_id(row)}: bad citation {part!r}; expected path:line[-line][+line...]"
+            )
         start = int(match.group("start"))
         end = int(match.group("end") or start)
         if end < start:
             raise DataError(f"{_row_id(row)}: citation range {part!r} is reversed")
-        citations.append(("core", match.group("path"), start, end))
+        sums = [int(n) for n in (match.group("sums") or "").split("+") if n]
+        derived = tuple([start, *sums]) if sums else ()
+        citations.append(("core", match.group("path"), start, end, derived))
     return citations
 
 
@@ -607,11 +675,18 @@ def heading_slugs(text):
 
 def _has_number(lines, number):
     token = re.compile(rf"(?<!\d){number}(?!\d)")
+    product = re.compile(r"(?<![\w.])\d+(?:\s*\*\s*\d+)+(?![\w.])")
     for _, text in lines:
         if token.search(text):
             return True
         if number % 1000 == 0 and "IN_MILLISECONDS" in text:
             if re.search(rf"(?<!\d){number // 1000}(?!\d)", text):
+                return True
+        for match in product.finditer(text):
+            value = 1
+            for factor in re.split(r"\s*\*\s*", match.group(0)):
+                value *= int(factor)
+            if value == number:
                 return True
     return False
 
@@ -630,7 +705,8 @@ def _has_id(lines, ident, consts):
 def check_citations(row, citations, core, kb, cache):
     """Yield error messages for one row's citations."""
     resolved = []  # (os path, [(lineno, text)])
-    for kind, path, start, end in citations:
+    derived_sums = []  # (sum, label) for `path:22+68` citations
+    for kind, path, start, end, derived in citations:
         if kind == "kb":
             if not kb.is_dir():
                 continue
@@ -650,6 +726,24 @@ def check_citations(row, citations, core, kb, cache):
             yield f"{_row_id(row)}: {path}:{start}-{end} is past end of file ({len(lines)})"
             continue
         resolved.append((core_path, list(enumerate(lines[start - 1 : end], start=start))))
+        if derived:
+            numbers = []
+            for line_no in derived:
+                if line_no > len(lines):
+                    yield f"{_row_id(row)}: {path}:{line_no} is past end of file ({len(lines)})"
+                    numbers = []
+                    break
+                found = re.findall(r"(?<!\d)\d+(?!\d)", lines[line_no - 1])
+                if len(found) != 1:
+                    yield (
+                        f"{_row_id(row)}: {path}:{line_no} is a derived timer line, so it must "
+                        f"hold exactly one number"
+                    )
+                    numbers = []
+                    break
+                numbers.append(int(found[0]))
+            if numbers:
+                derived_sums.append((sum(numbers), path))
 
     if not resolved:
         return
@@ -666,8 +760,13 @@ def check_citations(row, citations, core, kb, cache):
             yield f"{_row_id(row)}: cited lines do not define spell {sid} (id or constant name)"
         for field in ("a", "b", "c"):
             value = int(row[field])
-            if value and not _has_number(flat, value):
+            if value and not (
+                _has_number(flat, value) or any(value == total for total, _ in derived_sums)
+            ):
                 yield f"{_row_id(row)}: cited lines do not contain {field}={value}"
+        flags = parse_flags(row["d"], allow_radius=True)
+        if flags["dur"] and not _has_number(flat, flags["dur"]):
+            yield f"{_row_id(row)}: cited lines do not contain dur={flags['dur']}"
     elif kind == "phase":
         rule = parse_phase_rule(row["a"])
         if rule["kind"] == "hp" and not _has_number(flat, rule["hp"]):
@@ -682,16 +781,36 @@ def check_citations(row, citations, core, kb, cache):
         entry = int(row["key"])
         if not _has_id(flat, entry, consts):
             yield f"{_row_id(row)}: cited lines do not define creature {entry} (id or constant name)"
+    elif kind == "alias":
+        entry = int(row["key"])
+        if not _has_id(flat, entry, consts):
+            yield f"{_row_id(row)}: cited lines do not define creature {entry}"
+    elif kind == "mob":
+        entry = int(row["entry"])
+        if not _has_id(flat, entry, consts):
+            yield f"{_row_id(row)}: cited lines do not define creature {entry} (id or constant name)"
 
 
 # --------------------------------------------------------------------------
 # Model
 
 
-def make_bosses(rows, names, raids=None):
-    """Validate rows and return (maps, bosses, abilities_by_boss, phase_names)."""
+def trash_map_keys(path=None):
+    """The map slugs the trash table uses; a raids.csv row is allowed to have no boss when only the trash uses it."""
+    try:
+        rows = read_trash_rows(path or DEFAULT_TRASH_CSV)
+    except (OSError, DataError):
+        return set()
+    return {row["map"] for row in rows if row["row"] == "mob"}
+
+
+def make_bosses(rows, names, raids=None, extra_maps=()):
+    """Validate rows and return (maps, bosses). `extra_maps` are the map keys the trash table uses
+    (`trash_map_keys()`), so a raids.csv row is allowed to have no boss of its own; the caller passes them, so a
+    boss build never reads the trash CSV behind its back."""
     if raids is None:
         raids = read_raids(DEFAULT_RAIDS)
+    extra_maps = set(extra_maps)
     bosses = {}
     order = []
     maps = []
@@ -723,6 +842,7 @@ def make_bosses(rows, names, raids=None):
                 "abilities": [],
                 "phases": [],
                 "adds": [],
+                "aliases": [],
                 "notes": [],
             }
             order.append(entry)
@@ -750,7 +870,11 @@ def make_bosses(rows, names, raids=None):
                 raise DataError(f"{_row_id(row)}: c set but b empty")
             if rep_min > rep_max:
                 raise DataError(f"{_row_id(row)}: b={rep_min} > c={rep_max}")
-            flags = parse_flags(row["d"])
+            flags = parse_flags(row["d"], allow_radius=True)
+            if flags["from"] and not first:
+                raise DataError(f"{_row_id(row)}: from= needs a first timer (a > 0)")
+            if flags["dur"] and not rep_max:
+                raise DataError(f"{_row_id(row)}: dur= needs a repeat window (c > 0)")
             ability = {
                 "sid": sid,
                 "name": spell_name[sid]["name"],
@@ -760,6 +884,10 @@ def make_bosses(rows, names, raids=None):
                 "c": rep_max,
                 **flags,
             }
+            if not ability["dur"]:
+                del ability["dur"]
+            if not ability["from"]:
+                del ability["from"]
             boss["abilities"].append(ability)
             ability_rows[entry][sid] = ability
 
@@ -801,6 +929,14 @@ def make_bosses(rows, names, raids=None):
                 }
             )
 
+        elif kind == "alias":
+            alias_text = row["key"]
+            if not re.fullmatch(r"\d+", alias_text):
+                raise DataError(f"{_row_id(row)}: alias key must be a creature entry")
+            if row["a"] or row["b"] or row["c"] or row["d"]:
+                raise DataError(f"{_row_id(row)}: alias rows use only key")
+            boss["aliases"].append(int(alias_text))
+
         else:  # note
             if not row["a"]:
                 raise DataError(f"{_row_id(row)}: note text is empty")
@@ -809,6 +945,24 @@ def make_bosses(rows, names, raids=None):
             boss["notes"].append(row["a"])
 
     # Cross-row rules that need the whole boss table.
+    alias_owner = {}
+    add_owner = {}
+    for entry, boss in bosses.items():
+        for add_row in boss["adds"]:
+            add_owner.setdefault(add_row["entry"], entry)
+    for entry, boss in bosses.items():
+        seen_aliases = set()
+        for alias in boss["aliases"]:
+            if alias in seen_aliases:
+                raise DataError(f"boss {entry}: duplicate alias {alias}")
+            seen_aliases.add(alias)
+            if alias in bosses:
+                raise DataError(f"boss {entry}: alias {alias} is itself a boss")
+            if alias in add_owner:
+                raise DataError(f"boss {entry}: alias {alias} is an add of boss {add_owner[alias]}")
+            if alias in alias_owner and alias_owner[alias] != entry:
+                raise DataError(f"boss {entry}: alias {alias} already names boss {alias_owner[alias]}")
+            alias_owner[alias] = entry
     for entry, boss in bosses.items():
         ability_ids = set(ability_rows[entry])
         phases = sorted(boss["phases"], key=lambda p: p["order"])
@@ -828,6 +982,8 @@ def make_bosses(rows, names, raids=None):
                     f"boss {entry}: ability {ability['sid']} names phase {ability['phase']!r} "
                     "with no phase row"
                 )
+            if ability.get("from") and ability["from"] not in phase_names[entry]:
+                raise DataError(f"from={ability['from']} is not a phase of boss {entry}")
             if ability["summon"]:
                 if not any(a["entry"] == ability["summon"] for a in boss["adds"]):
                     raise DataError(
@@ -863,7 +1019,7 @@ def make_bosses(rows, names, raids=None):
         if key not in by_key:
             raise DataError(f"map {key!r} has no row in raids.csv")
     for raid in raids:
-        if raid["key"] not in maps:
+        if raid["key"] not in maps and raid["key"] not in extra_maps:
             raise DataError(f"raids.csv row {raid['key']!r} has no boss in the CSV")
     map_doc = [
         {
@@ -877,8 +1033,8 @@ def make_bosses(rows, names, raids=None):
     return map_doc, bosses
 
 
-def build_document(rows, names, raids=None, code_answers=None, root=None):
-    map_doc, bosses = make_bosses(rows, names, raids)
+def build_document(rows, names, raids=None, code_answers=None, root=None, extra_maps=()):
+    map_doc, bosses = make_bosses(rows, names, raids, extra_maps)
     if code_answers is None:
         code_answers = read_code_answers(DEFAULT_CODE_ANSWERS)
     errors = list(check_code_answers(code_answers, map_doc, bosses, root or ROOT))
@@ -900,6 +1056,197 @@ def build_document(rows, names, raids=None, code_answers=None, root=None):
 
 def dump_json(doc):
     return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+
+# --------------------------------------------------------------------------
+# Trash
+
+
+def boss_entry_sets(rows):
+    """(boss entries, add entries) of the boss CSV, for the trash table's shared-entry rule."""
+    bosses = {int(r["boss"]) for r in rows if r["row"]}
+    adds = {int(r["key"]) for r in rows if r["row"] == "add"}
+    adds |= {
+        int(token[7:])
+        for r in rows
+        if r["row"] == "ability"
+        for token in r["d"].split(";")
+        if token.startswith("summon=")
+    }
+    return bosses, adds
+
+
+def _trash_roles(row):
+    text = row["b"]
+    if not text:
+        raise DataError(f"{_row_id(row)}: a mob row needs at least one role")
+    roles = []
+    for role in text.split(";"):
+        role = role.strip()
+        if role not in TRASH_ROLES:
+            raise DataError(
+                f"{_row_id(row)}: role {role!r} is not one of {', '.join(TRASH_ROLES)}"
+            )
+        if role in roles:
+            raise DataError(f"{_row_id(row)}: duplicate role {role!r}")
+        roles.append(role)
+    return roles
+
+
+def make_trash(rows, names, raids=None, boss_entries=()):
+    """Validate the trash rows and return (maps, mobs); mobs keeps the CSV order."""
+    if raids is None:
+        raids = read_raids(DEFAULT_RAIDS)
+    raid_keys = {raid["key"]: raid for raid in raids}
+    boss_entries = set(boss_entries)
+    spell_name = {int(k): v for k, v in names["spells"].items()}
+    creature_name = {int(k): v for k, v in names["creatures"].items()}
+
+    maps = []
+    mobs = {}
+    current = None
+    for row in rows:
+        kind = row["row"]
+        if kind not in TRASH_ROW_KINDS:
+            raise DataError(f"{_row_id(row)}: unknown trash row kind {kind!r}")
+        if not MAP_RE.match(row["map"]):
+            raise DataError(f"{_row_id(row)}: bad map slug {row['map']!r}")
+        if row["map"] not in raid_keys:
+            raise DataError(f"{_row_id(row)}: map {row['map']!r} has no row in raids.csv")
+        if not re.fullmatch(r"\d+", row["entry"]):
+            raise DataError(
+                f"{_row_id(row)}: entry must be a creature entry, got {row['entry']!r}"
+            )
+        entry = int(row["entry"])
+
+        if kind == "mob":
+            if row["key"]:
+                raise DataError(f"{_row_id(row)}: a mob row has no key")
+            if entry in boss_entries:
+                raise DataError(
+                    f"{_row_id(row)}: entry {entry} is a boss of the boss table, so it is no trash"
+                )
+            danger = _int_field(row, "a", minimum=1)
+            if danger > TRASH_DANGER_RANGE[1]:
+                raise DataError(
+                    f"{_row_id(row)}: danger {danger} is outside "
+                    f"{TRASH_DANGER_RANGE[0]}-{TRASH_DANGER_RANGE[1]}"
+                )
+            roles = _trash_roles(row)
+            kill = _int_field(row, "c") if row["c"] else 0
+            if kill > TRASH_KILL_RANGE[1]:
+                raise DataError(
+                    f"{_row_id(row)}: kill {kill} is outside "
+                    f"{TRASH_KILL_RANGE[0]}-{TRASH_KILL_RANGE[1]}"
+                )
+            if row["d"]:
+                raise DataError(f"{_row_id(row)}: a mob row uses only a, b and c")
+            if not row["source"]:
+                raise DataError(f"{_row_id(row)}: empty source")
+            if entry not in creature_name or not creature_name[entry].get("name"):
+                raise DataError(f"{_row_id(row)}: no creature name for {entry} in names.json")
+            if entry in mobs:
+                seen = mobs[entry]
+                same = (
+                    seen["map"] == row["map"]
+                    and seen["danger"] == danger
+                    and seen["roles"] == roles
+                    and seen["kill"] == kill
+                )
+                if not same:
+                    raise DataError(
+                        f"{_row_id(row)}: entry {entry} already has a mob row on map "
+                        f"{seen['map']!r}"
+                    )
+                current = entry  # the row is a repeat of its own mob row: its abilities may follow
+                continue
+            if row["map"] not in maps:
+                maps.append(row["map"])
+            mobs[entry] = {
+                "entry": entry,
+                "name": creature_name[entry]["name"],
+                "map": row["map"],
+                "danger": danger,
+                "roles": roles,
+                "kill": kill,
+                "abilities": [],
+                "notes": [],
+            }
+            current = entry
+            continue
+
+        if current is None or entry != current:
+            raise DataError(f"{_row_id(row)}: a {kind} row must follow its mob row")
+
+        if kind == "ability":
+            if not re.fullmatch(r"\d+", row["key"]):
+                raise DataError(f"{_row_id(row)}: ability key must be a spell id")
+            sid = int(row["key"])
+            for column in ("a", "b", "c"):
+                if row[column] and row[column] != "0":
+                    raise DataError(
+                        f"{_row_id(row)}: {column}={row[column]} is a timer; trash cadences go in the note"
+                    )
+            if not row["source"]:
+                raise DataError(f"{_row_id(row)}: empty source")
+            if sid not in spell_name or not spell_name[sid].get("name"):
+                raise DataError(f"{_row_id(row)}: no spell name for {sid} in names.json")
+            if any(a["sid"] == sid for a in mobs[entry]["abilities"]):
+                raise DataError(f"{_row_id(row)}: duplicate ability {sid} for entry {entry}")
+            flags = parse_flags(row["d"], allow_radius=True)
+            radius = flags["radius"]
+            if radius is not None and not TRASH_RADIUS_RANGE[0] <= radius <= TRASH_RADIUS_RANGE[1]:
+                raise DataError(
+                    f"{_row_id(row)}: r={radius} is outside "
+                    f"{TRASH_RADIUS_RANGE[0]}-{TRASH_RADIUS_RANGE[1]} yards"
+                )
+            if flags["summon"]:
+                summoned = flags["summon"]
+                if summoned not in creature_name or not creature_name[summoned].get("name"):
+                    raise DataError(
+                        f"{_row_id(row)}: no creature name for summon {summoned} in names.json"
+                    )
+            mobs[entry]["abilities"].append(
+                {
+                    "sid": sid,
+                    "name": spell_name[sid]["name"],
+                    "int": flags["int"],
+                    "t": flags["target"],
+                    "aoe": flags["target"] == "aoe",
+                    "ground": flags["ground"],
+                    "cone": flags["cone"],
+                    "r": radius or 0,
+                    "ok": flags["ok"],
+                }
+            )
+            continue
+
+        # note: prose about the runs; the audit repo is not a checkout CI has, so it carries no citation
+        if row["key"]:
+            raise DataError(f"{_row_id(row)}: a note row has no key")
+        if not row["a"]:
+            raise DataError(f"{_row_id(row)}: note text is empty")
+        if row["b"] or row["c"] or row["d"]:
+            raise DataError(f"{_row_id(row)}: a note row uses only a and source")
+        mobs[entry]["notes"].append(row["a"])
+
+    map_doc = [{"key": m, "mapId": raid_keys[m]["mapId"]} for m in maps]
+    return map_doc, mobs
+
+
+def build_trash_document(rows, names, raids=None, boss_entries=()):
+    map_doc, mobs = make_trash(rows, names, raids, boss_entries)
+    return {
+        "version": 1,
+        "note": "Generated by tools/boss_data.py build from data/boss/trash_abilities.csv; do not edit.",
+        "maps": map_doc,
+        "mobs": {str(entry): mob for entry, mob in mobs.items()},
+    }
+
+
+def dump_trash_json(doc):
+    """Minified: the trash file ships to every page load, the boss file does not."""
+    return json.dumps(doc, separators=(",", ":"), ensure_ascii=False) + "\n"
 
 
 # --------------------------------------------------------------------------
@@ -1014,7 +1361,7 @@ def cone_spells_without_cone_target(connect, spell_ids):
     return sorted(sid for sid in spell_ids if 24 not in rows.get(sid, ()))
 
 
-def refresh_names(connect, rows, names):
+def refresh_names(connect, rows, names, trash_rows=None):
     """Fill missing names (and spell cast ms) from the world DB."""
     spell_ids = {int(r["key"]) for r in rows if r["row"] == "ability"}
     creature_ids = {int(r["boss"]) for r in rows if r["row"]}
@@ -1022,6 +1369,14 @@ def refresh_names(connect, rows, names):
     creature_ids |= {
         int(t[7:]) for r in rows if r["row"] == "ability" for t in r["d"].split(";") if t.startswith("summon=")
     }
+    for r in trash_rows or ():
+        if r["row"] == "mob":
+            creature_ids.add(int(r["entry"]))
+        elif r["row"] == "ability":
+            spell_ids.add(int(r["key"]))
+            creature_ids |= {
+                int(t[7:]) for t in r["d"].split(";") if t.startswith("summon=")
+            }
     conn = connect()
     try:
         cur = conn.cursor()
@@ -1055,6 +1410,8 @@ def refresh_names(connect, rows, names):
 def add_common(parser):
     parser.add_argument("--csv", default=str(DEFAULT_CSV))
     parser.add_argument("--json", default=str(DEFAULT_JSON))
+    parser.add_argument("--trash-csv", default=str(DEFAULT_TRASH_CSV))
+    parser.add_argument("--trash-json", default=str(DEFAULT_TRASH_JSON))
     parser.add_argument("--names", default=str(DEFAULT_NAMES))
     parser.add_argument("--raids", default=str(DEFAULT_RAIDS))
     parser.add_argument("--code-answers", default=str(DEFAULT_CODE_ANSWERS))
@@ -1073,32 +1430,43 @@ def add_db(parser):
 
 def cmd_build(args):
     rows = read_rows(Path(args.csv))
+    trash_rows = read_trash_rows(Path(args.trash_csv))
     names = read_names(Path(args.names))
     if args.db:
-        names = refresh_names(db_connect(args), rows, names)
+        names = refresh_names(db_connect(args), rows, names, trash_rows)
         with open(args.names, "w", encoding="utf-8") as f:
             f.write(json.dumps(names, indent=2, sort_keys=True) + "\n")
+    raids = read_raids(Path(args.raids))
+    bosses, _ = boss_entry_sets(rows)
+    trash_doc = build_trash_document(trash_rows, names, raids, bosses)
     doc = build_document(
         rows,
         names,
-        read_raids(Path(args.raids)),
+        raids,
         read_code_answers(Path(args.code_answers)),
         args.repo_root,
+        extra_maps=[m["key"] for m in trash_doc["maps"]],
     )
     with open(args.json, "w", encoding="utf-8") as f:
         f.write(dump_json(doc))
+    with open(args.trash_json, "w", encoding="utf-8") as f:
+        f.write(dump_trash_json(trash_doc))
     print(f"wrote {args.json}: {len(doc['bosses'])} bosses")
+    print(f"wrote {args.trash_json}: {len(trash_doc['mobs'])} trash mobs")
     return 0
 
 
 def validate(args):
-    """Return (errors, notes) for the CSV, committed JSON and DB."""
+    """Return (errors, notes) for the CSVs, the committed JSONs and the DB."""
     errors = []
     notes = []
     csv_path = Path(args.csv)
-    races = None
     try:
         rows = read_rows(csv_path)
+    except DataError as exc:
+        return [str(exc)], notes
+    try:
+        trash_rows = read_trash_rows(Path(args.trash_csv))
     except DataError as exc:
         return [str(exc)], notes
     try:
@@ -1110,8 +1478,20 @@ def validate(args):
         code_answers = read_code_answers(Path(args.code_answers))
     except DataError as exc:
         return [str(exc)], notes
+    bosses, _ = boss_entry_sets(rows)
     try:
-        doc = build_document(rows, names, raids, code_answers, args.repo_root)
+        trash_doc = build_trash_document(trash_rows, names, raids, bosses)
+    except DataError as exc:
+        return [str(exc)], notes
+    try:
+        doc = build_document(
+            rows,
+            names,
+            raids,
+            code_answers,
+            args.repo_root,
+            extra_maps=[m["key"] for m in trash_doc["maps"]],
+        )
     except DataError as exc:
         return [str(exc)], notes
 
@@ -1122,7 +1502,12 @@ def validate(args):
     if not kb.is_dir():
         notes.append(f"kb check skipped ({kb} not found)")
     cache = {}
-    for row in rows:
+    for row in rows + trash_rows:
+        if not row["source"]:
+            if row["row"] == "note" and "entry" in row:
+                continue  # only a trash note row may go without one: run evidence has no file to cite
+            errors.append(f"{_row_id(row)}: empty source")
+            continue
         try:
             citations = parse_source(row)
         except DataError as exc:
@@ -1134,29 +1519,35 @@ def validate(args):
             errors.append(message)
 
     if not errors:
-        try:
-            committed = Path(args.json).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            errors.append(f"committed JSON not found: {args.json}; run build")
-        else:
-            if committed != dump_json(doc):
-                errors.append(
-                    f"{args.json} differs from a fresh build of {args.csv}; run "
-                    "tools/boss_data.py build"
-                )
+        for path, fresh, csv in (
+            (args.json, dump_json(doc), args.csv),
+            (args.trash_json, dump_trash_json(trash_doc), args.trash_csv),
+        ):
+            try:
+                committed = Path(path).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                errors.append(f"committed JSON not found: {path}; run build")
+            else:
+                if committed != fresh:
+                    errors.append(
+                        f"{path} differs from a fresh build of {csv}; run "
+                        "tools/boss_data.py build"
+                    )
 
     if args.db:
-        spell_ids = {int(r["key"]) for r in rows if r["row"] == "ability"}
-        creature_ids = {int(r["key"]) for r in rows if r["row"] == "add"}
+        both = rows + trash_rows
+        spell_ids = {int(r["key"]) for r in both if r["row"] == "ability"}
+        creature_ids = {int(r["key"]) for r in rows if r["row"] in ("add", "alias")}
+        creature_ids |= {int(r["entry"]) for r in trash_rows if r["row"] == "mob"}
         ground_ids = {
-            int(r["key"]) for r in rows if r["row"] == "ability" and "ground" in r["d"].split(";")
+            int(r["key"]) for r in both if r["row"] == "ability" and "ground" in r["d"].split(";")
         }
         cone_ids = {
-            int(r["key"]) for r in rows if r["row"] == "ability" and "cone" in r["d"].split(";")
+            int(r["key"]) for r in both if r["row"] == "ability" and "cone" in r["d"].split(";")
         }
-        nokick_ids = spells_with_ok(rows, "interrupt", "nokick")
-        nodispel_ids = spells_with_ok(rows, "dispel", "nodispel")
-        nopurge_ids = spells_with_ok(rows, "purge", "nopurge")
+        nokick_ids = spells_with_ok(both, "interrupt", "nokick")
+        nodispel_ids = spells_with_ok(both, "dispel", "nodispel")
+        nopurge_ids = spells_with_ok(both, "purge", "nopurge")
         try:
             connect = lambda: db_connect(args)
             missing_spells, missing_creatures = missing_rows(connect, spell_ids, creature_ids)
@@ -1210,6 +1601,10 @@ def cmd_check(args):
     bosses = {int(r["boss"]) for r in rows}
     abilities = sum(1 for r in rows if r["row"] == "ability")
     print(f"boss data ok: {len(bosses)} bosses, {abilities} abilities")
+    trash_rows = read_trash_rows(Path(args.trash_csv))
+    mobs = {int(r["entry"]) for r in trash_rows if r["row"] == "mob"}
+    trash_abilities = sum(1 for r in trash_rows if r["row"] == "ability")
+    print(f"trash data ok: {len(mobs)} mobs, {trash_abilities} abilities")
     return 0
 
 
@@ -1241,6 +1636,8 @@ def main(argv=None):
     coverage.add_argument("--all", action="store_true", help="print every line, not only the gaps")
     coverage.add_argument("--json", action="store_true", help="print the machine form")
     coverage.add_argument("--csv", default=str(DEFAULT_CSV))
+    coverage.add_argument("--trash-csv", default=str(DEFAULT_TRASH_CSV),
+                          help="its maps are accepted without a boss (a trash-only raid)")
     coverage.add_argument("--names", default=str(DEFAULT_NAMES))
     coverage.add_argument("--raids", default=str(DEFAULT_RAIDS))
     coverage.add_argument("--code-answers", default=str(DEFAULT_CODE_ANSWERS))

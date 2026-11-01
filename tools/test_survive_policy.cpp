@@ -21,6 +21,7 @@ using ai::ShouldDrinkAtManaPct;
 using ai::ShouldFleeAtCriticalHealth;
 using ai::ShouldGrantPoolFlee;
 using ai::ShouldIgnoreHardHostile;
+using ai::OutnumberedFleeHealthLine;
 using ai::ShouldSeedDrink;
 using ai::ShouldSelfHealerHoldGround;
 using ai::DeathAttackerEntry;
@@ -139,6 +140,17 @@ int main()
     CHECK(!ShouldSelfHealerHoldGround(true, false, false, 0, 15));
     CHECK(!ShouldSelfHealerHoldGround(true, true, true, 100, 15));
     CHECK(!ShouldSelfHealerHoldGround(false, false, true, 100, 15));
+
+    // Cloth flee line (R3 fair-fight losses): mage/priest/warlock weigh the
+    // disengage from 85%, everyone else keeps the configured medium line
+    // (custom tunables flow through, no hardcoded 70/85 in callers; a
+    // custom medium above 85 binds cloth too, never later than the line).
+    CHECK(OutnumberedFleeHealthLine(true, 70) == 85);
+    CHECK(OutnumberedFleeHealthLine(false, 70) == 70);
+    CHECK(OutnumberedFleeHealthLine(true, 60) == 85);
+    CHECK(OutnumberedFleeHealthLine(false, 60) == 60);
+    CHECK(OutnumberedFleeHealthLine(true, 95) == 95);
+    CHECK(OutnumberedFleeHealthLine(false, 95) == 95);
 
     // Rest refusal reasons (#916): the first gate that held, in order.
     {

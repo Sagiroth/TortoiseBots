@@ -291,6 +291,13 @@ func TestBossUIJS(t *testing.T) {
 	runCheck(t, "bossui_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
 }
 
+// TestTrashJS runs trash_check.js: the trash abilities module (web/static/js/trash.js) — the KICK/AoE cast word, the entry and
+// spell lookups, the one-line hint and the "Dangerous here" block — and, with app.js, the page pieces it drives: the word
+// before an elite's cast, the danger-3 map glyph and the Live card's block.
+func TestTrashJS(t *testing.T) {
+	runCheck(t, "trash_check.js", "../../web/static/js/trash.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
+}
+
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
 // rates that may move the dots, the error fallback and the one-draw-per-frame scheduler: 60 fps for the focused map, 15 for
 // the other visible maps, none for a hidden one, at most 8 glide-only draws per frame round robin).

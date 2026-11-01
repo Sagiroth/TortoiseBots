@@ -780,6 +780,12 @@ public:
 
     bool talentsInPublicNote;
     bool professionsGrowWithLevel;
+    // Profession specializations (runtime/ProfessionSpecializationPolicy.h):
+    // 0 off, 1 one branch per bot (guid parity, fixed forever), 2 all
+    // branches of each qualified profession. Default 2: the core enforces
+    // no exclusivity between branches (no chain req, no unlearn, no
+    // trainer/skill gating), so both known together is safe.
+    int botProfessionSpecializations = 2;
     bool nonGmFreeSummon;
 
     BotSelfBotLevel selfBotLevel;

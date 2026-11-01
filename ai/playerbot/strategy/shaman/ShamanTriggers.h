@@ -46,6 +46,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            if (ai::BuffTriggerMountGated(bot, ai))
+                return false;
             // Out-of-combat mana refund (mod-playerbots parity SHM-5):
             // recall only when the bot and no group member is fighting.
             // The unit-combat flags above lag the engine flip (a new pull

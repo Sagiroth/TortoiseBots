@@ -1,11 +1,14 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
+#include "playerbot/policy/gear/VendorTripPolicy.h"
+#include "playerbot/FollowUrgencyPolicy.h"
 
 
 namespace ai
@@ -143,8 +146,10 @@ namespace ai
     //Yes while that target is merely parked at its destination (arrived,
     //working it, or in cooldown) and no while a journey is in flight; and only
     //for the Vendor purpose, so other request actions keep the old churn guard.
-    //The travel request action and the travel multiplier both ask this, so they
-    //cannot disagree.
+    //Not while the held target is already a vendor trip: the errand is
+    //underway and a re-request only re-picks the same vendor and restarts the
+    //walk (travel churn). The travel request action and the travel multiplier
+    //both ask this, so they cannot disagree.
     bool VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier);
 
     //A vendor errand that found nothing vendor-usable cannot be finished by
@@ -305,10 +310,19 @@ namespace ai
                 ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 return true;
 
-            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
+            // Follow-first: past the follow leash (or the station dead zone
+            // for a tight leash) with the master on the move, no new drink
+            // starts - the catch-up follow (ACTION_HIGH) owns the tick
+            // instead.
+            if (!master->IsMoving())
                 return true;
 
-            if (!master->IsMoving())
+            float const botToMaster = sServerFacade.getDistance2d(bot, master);
+            float const followRange = ai->GetRange("follow");
+            if (ai::FollowOverridesDowntime(botToMaster, followRange))
+                return false;
+
+            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;
@@ -354,10 +368,17 @@ namespace ai
                 ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 return true;
 
-            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
+            // Follow-first, same as drink above: no new meal starts while
+            // the bot should be catching up to its moving master.
+            if (!master->IsMoving())
                 return true;
 
-            if (!master->IsMoving())
+            float const botToMaster = sServerFacade.getDistance2d(bot, master);
+            float const followRange = ai->GetRange("follow");
+            if (ai::FollowOverridesDowntime(botToMaster, followRange))
+                return false;
+
+            if (!bot->IsWithinDist(master, sPlayerbotAIConfig.EatDrinkMaxDistance))
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;

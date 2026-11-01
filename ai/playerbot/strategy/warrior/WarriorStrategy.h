@@ -112,6 +112,7 @@ namespace ai
     protected:
         virtual void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
         virtual void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        static void InitNonCombatSharedTriggers(std::list<TriggerNode*>& triggers);
     };
 
     class WarriorBuffPvpStrategy : public BuffPvpStrategy

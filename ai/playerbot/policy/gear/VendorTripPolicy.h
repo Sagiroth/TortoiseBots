@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <ctime>
 
 // Pure policy for the "one vendor journey at a time" rule (issue #399): a
@@ -19,6 +20,24 @@ namespace ai
     // How long a picked vendor trip suppresses new vendor requests. Matches
     // the trainer window and the fruitless-errand parks (10 * MINUTE).
     constexpr time_t VENDOR_TRIP_REPICK_WINDOW = 10 * 60;
+
+     // A picked vendor trip is its own answer: the errand is already underway
+     // (picked, walking, working it or cooling down), so a bag-pressure
+     // re-request for the same purpose only re-picks the same vendor and
+     // restarts the walk - live pool, vendor re-picks every 3-5 s while the
+     // bot stood or drifted with no move between picks (issue travel churn).
+     // Still true while the trip cools down after an inactive destination:
+     // the cooldown ends on its own and the next search refuses the dead
+     // destination, so it walks a different vendor instead of this one again.
+     // Pure so the standalone test never links the server: the caller passes
+     // the held target's already-read (hasDestination, purposeId) pair.
+     // Vendor purpose id, mirrored from TravelDestinationPurpose::Vendor so
+     // this header stays core-free (static_assert in the .cpp keeps it true).
+     constexpr uint32_t VENDOR_TRIP_PURPOSE_ID = 512;
+     inline bool VendorTripAlreadyUnderway(bool heldHasDestination, uint32_t heldPurposeId)
+     {
+         return heldHasDestination && heldPurposeId == VENDOR_TRIP_PURPOSE_ID;
+     }
 
     // True while `tripSince` (manual time "vendor trip since", 0 = no trip
     // picked yet) is inside the window at `now`.

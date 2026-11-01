@@ -40,6 +40,19 @@ int main()
     CHECK(!ShouldBattleShout(9));    // below the rage cost
     CHECK(!ShouldBattleShout(0));
     std::cout << "  [PASS] battle shout gates on rage\n";
+    // Rend is a 10-rage builder that must not eat the main strike's bar:
+    // with Mortal Strike/Bloodthirst learned, only re-apply Rend when the
+    // 30-rage main strike stays affordable afterwards.
+    CHECK(!ShouldRendForDps(true, 39));
+    CHECK(ShouldRendForDps(true, 40));
+    CHECK(ShouldRendForDps(true, 100));
+    CHECK(!ShouldRendForDps(true, 0));
+    // Without a main strike the old unconditional row stands.
+    CHECK(ShouldRendForDps(false, 0));
+    CHECK(ShouldRendForDps(false, 10));
+    CHECK(WARRIOR_REND_RAGE_COST == 10);
+    CHECK(WARRIOR_MAIN_STRIKE_RAGE_COST == 30);
+    std::cout << "  [PASS] rend holds the main strike's rage pool\n";
     // Mocking Blow: the second taunt when Taunt is down and the mob left.
     CHECK(ShouldMockingBlow(true, true, false, true, true, 10));
     CHECK(ShouldMockingBlow(true, true, false, true, true, 100));
@@ -59,12 +72,17 @@ int main()
     CHECK(RageAfterStanceSwap(false, 30, 1) == 5);
     CHECK(RageAfterStanceSwap(false, 30, 2) == 10);
     CHECK(RageAfterStanceSwap(false, 30, 3) == 15);
+    CHECK(RageAfterStanceSwap(false, 30, 4) == 20);
+    CHECK(RageAfterStanceSwap(false, 30, 5) == 25);
     CHECK(RageAfterStanceSwap(false, 4, 3) == 4);    // less than the cap: all kept
     CHECK(TacticalMasteryRank(false, false, false) == 0);
     CHECK(TacticalMasteryRank(true, false, false) == 1);
     CHECK(TacticalMasteryRank(false, true, false) == 2);
     CHECK(TacticalMasteryRank(false, false, true) == 3);
     CHECK(TacticalMasteryRank(true, true, true) == 3); // idempotent on train
+    CHECK(TacticalMasteryRank(false, false, false, true, false) == 4);
+    CHECK(TacticalMasteryRank(false, false, false, false, true) == 5);
+    CHECK(TacticalMasteryRank(true, true, true, true, true) == 5);
     // End to end: rage 30 with no TM is 0 after the swap -> no Mocking Blow;
     // with TM 2 the 10 kept pay for it.
     CHECK(!ShouldMockingBlow(true, true, false, true, true, RageAfterStanceSwap(false, 30, 0)));
@@ -77,11 +95,12 @@ int main()
     CHECK(WARRIOR_BATTLE_SHOUT_RAGE_COST == 10);
     CHECK(WARRIOR_BLOODRAGE_RAGE_FLOOR == 20);
     CHECK(WARRIOR_MOCKING_BLOW_RAGE_COST == 10);
-    // Talent.dbc talent 128, 3 ranks (Stance Mastery 12678 is a different
-    // talent; 12679 does not exist).
+    // Talent.dbc talent 128, 5 ranks (12295 / 12676 / 12677 / 12678 / 12679).
     CHECK(WARRIOR_TACTICAL_MASTERY_RANK_1 == 12295);
     CHECK(WARRIOR_TACTICAL_MASTERY_RANK_2 == 12676);
     CHECK(WARRIOR_TACTICAL_MASTERY_RANK_3 == 12677);
+    CHECK(WARRIOR_TACTICAL_MASTERY_RANK_4 == 12678);
+    CHECK(WARRIOR_TACTICAL_MASTERY_RANK_5 == 12679);
     CHECK(WARRIOR_TACTICAL_MASTERY_KEPT_PER_RANK == 5);
     std::cout << "  [PASS] cost constants pinned\n";
 

@@ -20,6 +20,7 @@
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/TravelRouteCachePolicy.h"
 #include "playerbot/AvoidAoePolicy.h"
+#include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/PoolFleePolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
@@ -2861,15 +2862,47 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
 
     WorldPosition const botPos(bot);
     float const startDistance = sServerFacade.getDistance2d(bot, target);
-    float const away = target->GetAngle(bot);
+    // R3 (fair-fight losses): flee from the attackers' pack, not from one
+    // mob. A bot between two attackers that ran from the current target
+    // alone could step toward the second one (median 0 yd gained, Oct 2026
+    // poll). The centroid of the live attackers is the pack's middle; the
+    // single-target heading stays when there is no pack (solo target).
+    float away;
+    {
+        // Fixed stack scratch: attacker counts are tiny and this runs every
+        // flee tick, so no heap vector. Total live attackers is counted
+        // separately because the centroid only sees the capped prefix.
+        Unit* liveAttackers[kPoolFleeMaxPackAttackers];
+        int liveCount = 0;
+        int totalLive = 0;
+        for (Unit* attacker : bot->GetAttackers())
+        {
+            if (!attacker || !sServerFacade.IsAlive(attacker) || attacker->GetMapId() != bot->GetMapId())
+                continue;
+            ++totalLive;
+            if (liveCount < kPoolFleeMaxPackAttackers)
+                liveAttackers[liveCount++] = attacker;
+        }
+        ai::FleePackPoint pack = ai::PoolFleePackCentroid(
+            ai::FleeAttackerPrefix<Unit*>{ liveAttackers, liveCount },
+            [](Unit* unit, float& x, float& y) { x = unit->GetPositionX(); y = unit->GetPositionY(); return true; });
+        if (pack.valid && totalLive > 1)
+            away = std::atan2(bot->GetPositionY() - pack.y, bot->GetPositionX() - pack.x);
+        else
+            away = target->GetAngle(bot);
+    }
 
     // Unpulled hostile mobs one step could wake: one cached "possible
-    // targets" read, filtered once, not a scan per candidate.
+    // targets" read, filtered once, not a scan per candidate. Fixed stack
+    // scratch like the pack above: this runs every flee tick.
     struct Sleeper { Unit* unit; float radius; float toBot; };
-    std::vector<Sleeper> sleepers;
+    Sleeper sleepers[kPoolFleeMaxPackAttackers];
+    int sleeperCount = 0;
     std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     for (ObjectGuid const& guid : possibleTargets)
     {
+        if (sleeperCount >= kPoolFleeMaxPackAttackers)
+            break;
         Unit* unit = ai->GetUnit(guid);
         if (!unit || unit == target || !sServerFacade.IsAlive(unit) || unit->IsInCombat())
             continue;
@@ -2880,7 +2913,7 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
         float const toBot = sServerFacade.getDistance2d(unit, bot);
         if (radius <= 0.0f || !PoolFleeMobInReach(toBot, radius, distance))
             continue;
-        sleepers.push_back({ unit, radius, toBot });
+        sleepers[sleeperCount++] = { unit, radius, toBot };
     }
 
     float offsets[kPoolFleeHeadingCount];
@@ -2899,8 +2932,9 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
             continue;
 
         bool wakesMob = false;
-        for (Sleeper const& sleeper : sleepers)
+        for (int s = 0; s < sleeperCount; ++s)
         {
+            Sleeper const& sleeper = sleepers[s];
             if (PoolFleeLandingWakesMob(sServerFacade.getDistance2d(sleeper.unit, cand.getX(), cand.getY()),
                 sleeper.toBot, sleeper.radius))
             {
@@ -3353,7 +3387,8 @@ bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& ou
         float radius = dyn->GetRadius();
         if (!IsAvoidableAoeRadius(radius))
             continue;
-        if (bot->GetDistance(dyn) > radius)
+        AoeHazardCircle const circle{dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ(), radius};
+        if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
             continue;
         outRadius = radius;
         outCenter = WorldPosition(dyn->GetMapId(), dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ());
@@ -3373,12 +3408,13 @@ bool AvoidAoeAction::AvoidDamagingTrap(float& outRadius, WorldPosition& outCente
         GameObjectInfo const* goInfo = go->GetGOInfo();
         if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
             continue;
-        // 1.12 trap GOs carry an activation radius (no diameter field);
-        // same shape as the environmental-trap react radius nearby.
-        float radius = (float)goInfo->trap.radius + go->GetCombatReach();
+        // The trap spell's own circle when it is an AoE at the source, the
+        // GO's activation radius (1.12 traps carry no diameter) otherwise.
+        float radius = DamagingTrapHazardRadius(go);
         if (!IsAvoidableAoeRadius(radius))
             continue;
-        if (bot->GetDistance(go) > radius)
+        AoeHazardCircle const circle{go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), radius};
+        if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
             continue;
         outRadius = radius;
         outCenter = WorldPosition(go->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
@@ -3447,7 +3483,8 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
                 float radius = radiusEntry ? radiusEntry->Radius : 0.0f;
                 if (!IsAvoidableAoeRadius(radius))
                     continue;
-                if (bot->GetDistance(unit) > radius)
+                AoeHazardCircle const circle{unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), radius};
+                if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
                     continue;
                 outRadius = radius;
                 outCenter = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
@@ -3517,9 +3554,43 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             otherKeepouts.push_back({ WorldPosition(unit), row });
         }
     }
-    for (int pass = 0; pass < 2; ++pass)
+    // Damaging circles: every trap the value lists (the one being left
+    // included, so a strafe never stays inside it) and every damaging dynamic
+    // object. A landing in any of them is the next fire.
+    std::vector<AoeHazardCircle> damagingHazards;
+    CollectDamagingTrapHazards(ai, bot, damagingHazards);
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
     {
-        bool const vetoSecondPass = (pass == 1);
+        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
+        if (!dyn || !dyn->IsInWorld())
+            continue;
+        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
+        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
+            continue;
+        AoeHazardCircle hazard;
+        hazard.x = dyn->GetPositionX();
+        hazard.y = dyn->GetPositionY();
+        hazard.z = dyn->GetPositionZ();
+        hazard.radius = dyn->GetRadius();
+        if (hazard.radius > 0.0f)
+            damagingHazards.push_back(hazard);
+    }
+    // Candidate point for a heading: `stepYd` from the bot, on the ground.
+    auto candidateAt = [&](int i, float stepYd)
+    {
+        bool const hazardAnchored = (i == count - 1) && count > 3;
+        float const heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
+        WorldPosition cand = botPos + WorldPosition(0, stepYd * cos(heading), stepYd * sin(heading), 1.0f);
+        cand.setZ(cand.GetHeight());
+        return cand;
+    };
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        // First pass keeps the failed-heading veto; the retries drop it. The
+        // third pass steps past a fire wider than the flee-distance escape
+        // step, which is what the veto and the circles refused before.
+        bool const relaxed = (pass != 0);
+        float const stepYd = pass == 2 ? kAoeFallbackStepYd : step;
         for (int i = 0; i < count; ++i)
         {
             // Last slot anchors away-from-hazard; the rest anchor the target.
@@ -3527,12 +3598,9 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             // 2, ranged toward/away/hazard slots): strafes and tank-fallback
             // escapes never band-reject, so a tank can always leave a zone
             // wider than the cast band.
-            bool const hazardAnchored = (i == count - 1) && count > 3;
-            float heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
             bool strict = melee ? (i == 2)
-                : (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
-            WorldPosition cand = botPos + WorldPosition(0, step * cos(heading), step * sin(heading), 1.0f);
-            cand.setZ(cand.GetHeight());
+                : (offsets[i] == 0.0f || offsets[i] > 3.14f || (i == count - 1 && count > 3));
+            WorldPosition cand = candidateAt(i, stepYd);
             if (target && strict)
             {
                 // Reach-relative (donor shape: raw target reach, not the
@@ -3550,26 +3618,32 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
                 else if (!RangedAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
                     continue;
             }
-            if (!vetoSecondPass)
+            if (!relaxed)
             {
                 float checkHeading = botPos.GetAngleTo(cand);
                 if (!lastMove.fleeFailures.IsHeadingFree(checkHeading, nowMs))
                     continue;
             }
-            // Keep-out step-out: the landing must clear the keep-out circle
-            // (centre measure), or the next tick steps out again.
-            if (!keepoutSource.IsEmpty() && cand.distance(hazardCenter) <= radius)
+            // The landing must leave the circle being stepped out of (the
+            // same centre-to-centre test the sensor used), or the next tick
+            // steps out again. Traps and dynobjs are also in
+            // damagingHazards below; a spin hazard only lives here.
+            if (cand.distance(hazardCenter) <= radius)
                 continue;
             bool inOtherKeepout = false;
             for (OtherKeepout const& other : otherKeepouts)
             {
-                if (cand.distance(other.centre) <= CreatureAuraLandingClearance(*other.row, vetoSecondPass))
+                if (cand.distance(other.centre) <= CreatureAuraLandingClearance(*other.row, relaxed))
                 {
                     inOtherKeepout = true;
                     break;
                 }
             }
             if (inOtherKeepout)
+                continue;
+            // Trap/dynobj circle: a landing inside one is no safer than the
+            // hazard being left (Jeklik's bats drop one fire after another).
+            if (LandingInsideHazard(damagingHazards, cand.getX(), cand.getY(), cand.getZ()))
                 continue;
             WorldPosition out = cand;
             if (!bot->IsWithinLOS(out.getX(), out.getY(), out.getZ() + bot->GetCollisionHeight()))
@@ -3623,6 +3697,45 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             botPos.canPathTo(away, bot) &&
             MoveTo(bot->GetMapId(), away.getX(), away.getY(), away.getZ(), false, IsReaction(), false, true))
             return true;
+    }
+    // Every ordered landing stands in fire: widen the search before giving up.
+    // Sixteen headings all round the bot at three step lengths, nearest first,
+    // then the same pick as before with one rule changed - a landing must clear
+    // every damaging circle, not only the one it leaves. No such point: stay
+    // where the bot is and let the next tick's sensor try again; stepping into
+    // the next fire is worse than standing in this one.
+    {
+        float headings[kAoeFallbackHeadings] = {};
+        AoeFallbackHeadings(headings);
+        std::vector<AoeLanding> landings;
+        float const steps[3] = { step, kAoeFallbackStepYd, kAoeFallbackWideStepYd };
+        for (float stepYd : steps)
+        {
+            for (int i = 0; i < kAoeFallbackHeadings; ++i)
+            {
+                WorldPosition cand = botPos +
+                    WorldPosition(0, stepYd * cos(headings[i]), stepYd * sin(headings[i]), 1.0f);
+                cand.setZ(cand.GetHeight());
+                if (!bot->IsWithinLOS(cand.getX(), cand.getY(), cand.getZ() + bot->GetCollisionHeight()))
+                    continue;
+                if (!botPos.canPathTo(cand, bot))
+                    continue;
+                landings.push_back(AoeLanding{ cand.getX(), cand.getY(), cand.getZ() });
+            }
+        }
+        AoeHazardCircle const current{ hazardCenter.getX(), hazardCenter.getY(), hazardCenter.getZ(), radius };
+        int const pick = ChooseClearAoeLanding(damagingHazards, current, landings.data(), (int)landings.size());
+        if (pick >= 0)
+        {
+            AoeLanding const& out = landings[pick];
+            if (MoveTo(bot->GetMapId(), out.x, out.y, out.z, false, IsReaction(), false, true))
+            {
+                lastMove.fleeFailures.BeginAttempt(target ? target->GetObjectGuid().GetRawValue() : 0,
+                    bot->GetMapId(), botPos.GetAngleTo(WorldPosition(bot->GetMapId(), out.x, out.y, out.z)),
+                    target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+                return true;
+            }
+        }
     }
     return false;
 }

@@ -98,8 +98,13 @@ bool WandBlocksNukeTrigger::IsActive()
         WandSpellProbe::Blocked,
         nukeThreatVetoed};
     // Too little mana for the spec's filler: the "<filler> unaffordable"
-    // row wands on purpose (a cheaper Frostbolt probe must not stop it).
-    state.manaShortRowActive = ManaShortForNuke(ai, bot, SpecFillerNuke(ai));
+    // row wands on purpose. Arcane/fire fall back to Frostbolt before the
+    // wand, so the wand is only owned while both the filler and Frostbolt
+    // are unaffordable; frost's filler is Frostbolt already, so the extra
+    // probe changes nothing there.
+    std::string const filler = SpecFillerNuke(ai);
+    state.manaShortRowActive = ManaShortForNuke(ai, bot, filler) &&
+        (filler == "frostbolt" || ManaShortForNuke(ai, bot, "frostbolt"));
     return ShouldStopWandToCast(state);
 }
 
@@ -110,6 +115,8 @@ bool NukeUnaffordableTrigger::IsActive()
 
 bool AnyMageArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("ice armor", target) &&
            !ai->HasAura("frost armor", target) &&
@@ -118,12 +125,16 @@ bool AnyMageArmorTrigger::IsActive()
 
 bool MageArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("mage armor", target);
 }
 
 bool IceArmorTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     return !ai->HasAura("ice armor", target) &&
            !ai->HasAura("frost armor", target);

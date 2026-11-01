@@ -52,6 +52,8 @@
       else if (k === "ground") flags.ground = true;
       else if (k === "mark") flags.mark = true;
       else if (k === "int") flags.interruptible = true;
+      else if (k === "dur") flags.dur = num(v) || 0;
+      else if (k === "from") flags.from = v;
     });
     // The converter's JSON names one field per flag instead of a flags string; those fields win when both name a flag.
     const fieldPhase = str(row.phase).trim();
@@ -67,6 +69,10 @@
     if (fieldSummon) flags.summon = fieldSummon;
     const fieldHp = num(row.hp);
     if (fieldHp) flags.hpBelow = fieldHp;
+    const fieldDur = num(row.dur);
+    if (fieldDur > 0) flags.dur = fieldDur;
+    const fieldFrom = str(row.from).trim();
+    if (fieldFrom) flags.from = fieldFrom;
     return {
       sid: spell,
       name: str(first(row.name, row.n, row.spellName, row.spell_name, "spell " + spell)),
@@ -134,6 +140,7 @@
       abilities: arr(first(row.abilities, row.spells, row.ability)).map(ability).filter(Boolean),
       phases: arr(first(row.phases, row.phaseRows, row.phase)).map(phase).filter(Boolean),
       adds: arr(first(row.adds, row.add)).map(add).filter(Boolean),
+      aliases: arr(row.aliases).map(num).filter((e) => e !== null),
       notes: arr(first(row.notes, row.note)).map(note).filter(Boolean),
     };
   }
@@ -150,11 +157,31 @@
       else rows = Object.keys(data).map((k) => (data[k] && typeof data[k] === "object" && num(data[k].entry) === null ? Object.assign({ entry: k }, data[k]) : data[k]));
     }
     const bosses = rows.map(boss).filter(Boolean).sort((a, b) => (a.map || 0) - (b.map || 0) || (a.order - b.order) || a.entry - b.entry);
+    // The document's maps name each map once; a boss row carries the slug, the map the report sends is the number.
+    const mapIdByKey = {};
+    if (data && typeof data === "object" && Array.isArray(data.maps)) {
+      data.maps.forEach((m) => { if (m && m.key != null && num(m.mapId) !== null) mapIdByKey[str(m.key)] = num(m.mapId); });
+    }
+    bosses.forEach((b) => {
+      b.mapId = typeof b.map === "number" ? b.map : (b.mapKey && mapIdByKey[b.mapKey] != null ? mapIdByKey[b.mapKey] : null);
+    });
     const byEntry = {};
     bosses.forEach((b) => { if (!byEntry[b.entry]) byEntry[b.entry] = b; });
+    // An alias is the boss in another form (a mid-fight entry change); a real boss entry always wins over one.
+    bosses.forEach((b) => b.aliases.forEach((alias) => { if (!byEntry[alias]) byEntry[alias] = b; }));
     const bySpell = {};
-    bosses.forEach((b) => b.abilities.forEach((a, i) => { if (!(a.sid in bySpell)) bySpell[a.sid] = { boss: b, ability: a, index: i }; }));
-    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell };
+    const bySpellAll = {};
+    bosses.forEach((b) => b.abilities.forEach((a, i) => {
+      const slot = { boss: b, ability: a, index: i };
+      if (!(a.sid in bySpell)) bySpell[a.sid] = slot;
+      (bySpellAll[a.sid] = bySpellAll[a.sid] || []).push(slot);
+    }));
+    const addsByMap = {};
+    bosses.forEach((b) => b.adds.forEach((a) => {
+      if (b.mapId === null) return;
+      (addsByMap[b.mapId] || (addsByMap[b.mapId] = {}))[a.entry] = true;
+    }));
+    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell, bySpellAll: bySpellAll, addsByMap: addsByMap };
   }
 
   let cache = null, loading = null, loaded = null, rawDoc = null;
@@ -179,10 +206,60 @@
     const e = num(entry);
     return e === null ? null : t.byEntry[e] || null;
   }
-  function abilityBySpell(table, sid) {
+  // The rank the map should draw: a boss-rank (b) unit the table lists only as an add of a boss on this map is an elite.
+  function rankFor(table, mapId, mob) {
+    if (!mob) return "";
+    if (mob.rank !== "b" || !table) return mob.rank;
+    const mid = num(mapId), entry = num(mob.entry);
+    if (mid === null || entry === null) return mob.rank;
+    const adds = table.addsByMap && table.addsByMap[mid];
+    if (!adds || !adds[entry]) return mob.rank;
+    return table.byEntry && table.byEntry[entry] ? mob.rank : "e";
+  }
+  // Guids are decimal strings of any length: compare the length first, then the digits, and a row with no guid last.
+  function guidLess(a, b) {
+    const x = a == null ? "" : String(a), y = b == null ? "" : String(b);
+    if (!x || !y) return !!x;
+    return x.length < y.length || (x.length === y.length && x < y);
+  }
+  // A row's units of the boss: an alias row is the same unit in another form and adds no copy; an id-less row (a finished
+  // fight's engaged entry) carries the report's own count; every row with a guid is one unit.
+  function unitsOf(m, b) {
+    if (num(m.entry) !== b.entry) return 0;
+    if (m.id != null && String(m.id) !== "") return 1;
+    const c = num(m.c);
+    return c !== null && c > 0 ? c : 1;
+  }
+  // The report rows as one row per table boss: an alias or a same-entry copy joins its boss; the row kept is the one with the
+  // lowest guid (the original spawn), and copies counts the units of the boss itself.
+  function bossRows(table, rows) {
+    const t = table === undefined ? cache : table;
+    if (!t) return [];
+    const byBoss = {}, out = [];
+    arr(rows).forEach((m) => {
+      const b = m ? bossFor(t, m.entry) : null;
+      if (!b) return;
+      let item = byBoss[b.entry];
+      if (!item) {
+        item = byBoss[b.entry] = { boss: b, row: m, copies: 0 };
+        out.push(item);
+      }
+      item.copies += unitsOf(m, b);
+      if (guidLess(m.id, item.row.id)) item.row = m;
+    });
+    return out;
+  }
+  function abilityBySpell(table, sid, casterEntry) {
     const t = table === undefined ? cache : table;
     const s = num(sid);
-    return t && s !== null ? t.bySpell[s] || null : null;
+    if (!t || s === null) return null;
+    const e = num(casterEntry);
+    const slots = t.bySpellAll ? t.bySpellAll[s] : null;
+    if (e !== null && slots && slots.length > 1) {
+      const hit = slots.find((slot) => slot.boss.entry === e);
+      if (hit) return hit;
+    }
+    return t.bySpell[s] || null;
   }
   // ---- phases ----------------------------------------------------------------------------------------------------------
 
@@ -260,33 +337,53 @@
       t: num(first(e.t, e.t_ms, e.tMs)),
       tg: str(first(e.tg, e.targetGuid, e.target_guid)),
       tn: str(first(e.tn, e.targetName, e.target_name)),
+      e: num(e.e),
       n: str(e.n),
       by: str(e.by),
       m: str(e.m),
     }));
   }
 
-  function model(table, mob, events, fightStartMs, nowMs, priorPhase) {
+  // opts carries what the caller remembers between reports of one fight: priorPhase (the phase this fight last showed) and
+  // phaseAt (the phase-start map, only while it belongs to the same fight).
+  function model(table, mob, events, fightStartMs, nowMs, opts) {
     const t = table === undefined ? cache : table;
     if (!t || !mob) return null;
     const b = bossFor(t, mob.entry);
     if (!b) return null;
+    const priorPhase = opts ? opts.priorPhase : null;
     const evs = eventList(events);
     const start = num(fightStartMs) || 0, now = num(nowMs) == null ? start : num(nowMs);
     const elapsed = Math.max(0, now - start);
     const ph = phaseOf(b, mob, priorPhase);
-    const seenAt = {};
+    const countsFor = (e, sid) => {
+      if (e.sid !== sid) return false;
+      if (e.sid === null || e.t === null) return false;
+      if (e.k !== "cast" && e.k !== "ab" && e.k !== "da" && e.k !== "dr") return false;
+      const slots = t.bySpellAll ? t.bySpellAll[sid] : null;
+      if (!slots || slots.length <= 1) return true;
+      return e.e === null || e.e === b.entry || !slots.some((s) => s.boss.entry === e.e);
+    };
+    // The first fight-relative moment each phase was seen. A caller that keeps the map across reports gets the phase's
+    // start; the first report that showed the phase records it, so a from= window starts up to one report late. A ghost
+    // row (a boss the reports no longer carry) says nothing about the phase and records no start.
+    let phaseTimes = opts && opts.phaseAt && typeof opts.phaseAt === "object" ? opts.phaseAt : null;
+    if (phaseTimes && !mob.ghost && ph.phase && !Object.prototype.hasOwnProperty.call(phaseTimes, ph.phase)) {
+      phaseTimes = Object.assign({}, phaseTimes);
+      phaseTimes[ph.phase] = elapsed;
+    }
+    const seenAt = {}, castAt = {};
     evs.forEach((e) => {
-      if (e.sid === null || e.t === null) return;
-      if (e.k !== "cast" && e.k !== "ab" && e.k !== "da" && e.k !== "dr") return;
+      if (!countsFor(e, e.sid)) return;
       if (!(e.sid in seenAt) || e.t > seenAt[e.sid]) seenAt[e.sid] = e.t;
+      if (e.k === "cast" && (!(e.sid in castAt) || e.t > castAt[e.sid])) castAt[e.sid] = e.t;
     });
     const currentSid = num(mob.cid);
     const left = num(mob.cleft);
     const total = num(mob.ctot);
     const targetName = str(first(mob.ctn, mob.ctargetName, mob.castTargetName, mob.ctarget, ""));
     let lastCast = null;
-    evs.forEach((e) => { if (e.k === "cast" && (lastCast === null || e.t > lastCast.t)) lastCast = e; });
+    evs.forEach((e) => { if (e.k === "cast" && countsFor(e, e.sid) && (lastCast === null || e.t > lastCast.t)) lastCast = e; });
 
     const abilities = b.abilities.map((a, i) => {
       const seenAtMs = a.sid in seenAt ? seenAt[a.sid] : null;
@@ -301,7 +398,17 @@
       let next = null;
       if (!flags.hpBelow) {
         if (seen) {
-          if (a.repeatMax > 0) next = { lo: at + a.repeatMin, hi: at + a.repeatMax, at: elapsed };
+          if (a.repeatMax > 0) {
+            // A dur= row's aura ends with the cast, so the window counts from the latest cast; a later ab/da/dr
+            // sighting is a fade or refresh, not a new cast. Without any cast event the sighting is the best anchor.
+            const dur = flags.dur || 0;
+            const anchor = dur && a.sid in castAt ? castAt[a.sid] : at;
+            next = { lo: anchor + dur + a.repeatMin, hi: anchor + dur + a.repeatMax, at: elapsed };
+          }
+        } else if (flags.from) {
+          next = phaseTimes && Object.prototype.hasOwnProperty.call(phaseTimes, flags.from) && a.first > 0
+            ? { lo: phaseTimes[flags.from] + a.first, hi: phaseTimes[flags.from] + a.first, at: elapsed }
+            : null;
         } else if (a.first > 0) next = { lo: a.first, hi: a.first, at: elapsed };
       }
       let casting = null;
@@ -335,12 +442,14 @@
       boss: { entry: b.entry, name: b.name, map: b.map, mapKey: b.mapKey, order: b.order },
       phase: ph.phase,
       phaseLatched: !!ph.latched,
+      phaseAt: phaseTimes,
       auras: auraList(mob),
       flags: str(mob.uf),
       flagWords: flagText(mob.uf),
       adds: adds,
       notes: b.notes.slice(),
       hp: num(mob.hp),
+      copies: num(mob.copies) > 0 ? num(mob.copies) : 1,
       abilities: abilities,
       mark: markIds(t),
     };
@@ -448,8 +557,11 @@
     const covLink = o.coverage && b.mapKey
       ? '<a class="fd-boss-cov" href="#/coverage/' + e(encodeURIComponent(b.mapKey)) + "?boss=" + e(b.entry) + '">coverage</a>'
       : "";
+    const copies = panel.copies > 1
+      ? '<span class="fd-boss-copies" title="' + e(panel.copies + " in view; the panel follows the original") + '">×' + e(panel.copies) + "</span>"
+      : "";
     return '<details class="fd-boss-panel" data-entry="' + e(b.entry) + '"' + (o.open ? " open" : "") + ">"
-      + '<summary class="fd-boss-head"><span class="fd-boss-name">' + e(b.name) + "</span>" + (" " + bar) + phase
+      + '<summary class="fd-boss-head"><span class="fd-boss-name">' + e(b.name) + copies + "</span>" + (" " + bar) + phase
       + covLink
       + '<span class="fd-boss-seen">' + (inPhase.some(seen) ? "seen " + (inPhase.filter(seen).length) + "/" + inPhase.length : "") + "</span></summary>"
       + '<div class="fd-boss-body">'
@@ -475,8 +587,6 @@
     if (!t) return [];
     const byId = {};
     list.forEach((m) => { if (m && m.id != null) byId[String(m.id)] = m; });
-    const bossEntry = {};
-    t.bosses.forEach((b) => { bossEntry[b.entry] = b; });
     const out = [];
     list.forEach((m) => {
       if (!m || !m.rank && !m.entry) return;
@@ -484,12 +594,12 @@
       let boss = sum && byId[sum] ? byId[sum] : null;
       if (!boss && m.entry) {
         for (const b of t.bosses) {
-          if (b.adds.some((a) => a.entry === num(m.entry))) { boss = list.find((x) => x && num(x.entry) === b.entry); break; }
+          if (b.adds.some((a) => a.entry === num(m.entry))) { boss = list.find((x) => x && bossFor(t, x.entry) === b); break; }
         }
       }
       if (!boss || boss === m || !boss.entry) return;
       if (boss.rank !== "b") return;
-      const row = (bossEntry[num(boss.entry)] || { adds: [] }).adds.find((a) => a.entry === num(m.entry));
+      const row = (bossFor(t, boss.entry) || { adds: [] }).adds.find((a) => a.entry === num(m.entry));
       out.push({ from: m, to: boss, priority: row ? row.priority : 0, role: row ? row.role : "" });
     });
     return out;
@@ -509,7 +619,7 @@
   }
 
   const api = {
-    normalize, load, data, raw, bossFor, abilityBySpell, phaseOf, markIds, hpTicks,
+    normalize, load, data, raw, bossFor, rankFor, bossRows, abilityBySpell, phaseOf, markIds, hpTicks,
     model, render, flagsText, addLinks, debuffColor, markedBy,
     FLAG_WORD, _esc: esc,
   };

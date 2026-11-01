@@ -45,6 +45,7 @@
 #include "../ai/playerbot/strategy/actions/EquipAction.h"
 #include "../ai/playerbot/strategy/actions/UnequipAction.h"
 #include "../ai/playerbot/strategy/actions/SellAction.h"
+#include "../ai/playerbot/strategy/actions/UseItemAction.h"
 #include "../ai/playerbot/policy/gear/SellRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotFactory.h"
@@ -1249,8 +1250,7 @@ bool HandleAction(ChatHandler* handler, char const* args)
                 ai::RestRefusalInput in;
                 in.alive = bot->IsAlive();
                 in.inCombat = bot->IsInCombat();
-                in.groupFighting = aiContext->GetValue<bool>("has attackers")->Get() ||
-                    ai->IsGroupMemberNearInCombat();
+                in.groupFighting = GroupIsFighting(ai);
                 in.usesMana = bot->GetPowerType() == POWER_MANA;
                 in.manaPct = in.usesMana && bot->GetMaxPower(POWER_MANA)
                     ? bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA) : 100;

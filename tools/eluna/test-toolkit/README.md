@@ -84,7 +84,7 @@ need a server; a live check is still the final proof.
 `enter`, `leave`, `kill` (player killed creature), `pdeath` (creature killed
 player), `pcombat`/`pleave`, `pcast` (player cast, at Spell::cast), and from a 1 s
 poll of creatures within 45 yd of up to 5 players: `c_combat` (on/off, victim),
-`c_cast` (spell id, target), `c_chan` (start/stop, target), `c_death`. Rate cap 50
+`c_cast` (spell id; target is always null, a spell in flight is not read), `c_chan` (start/stop, target), `c_death`. Rate cap 50
 lines/s per instance (a `dropped` line counts the rest). Casts shorter than the
 poll period can be missed by `c_cast`; channels are caught.
 

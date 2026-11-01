@@ -481,7 +481,17 @@ bool OutNumberedTrigger::IsActive()
     // there is still enough left to get away. PanicTrigger covers the genuine
     // near-death case separately, and it is deliberately narrower (critical
     // health *and* no mana). Tunable via AiPlayerbot.MediumHealth.
-    if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.mediumHealth)
+    //
+    // R3 (fair-fight losses): cloth (mage/priest/warlock) takes the second
+    // attacker's burst at full cloth mitigation, so a two-on-one that a
+    // plate wearer rides to 70% kills the cloth set first — the fair-fight
+    // death rate is 2-3.6x plate's. Cloth starts weighing the disengage at
+    // 85%: still swinging above it, running with 85% of the bar to spend on
+    // the way out. Everyone else keeps the 70% line.
+    uint8 const outnumberedHealthLine = ai::OutnumberedFleeHealthLine(
+        bot->GetClass() == CLASS_MAGE || bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_WARLOCK,
+        sPlayerbotAIConfig.mediumHealth);
+    if (AI_VALUE2(uint8, "health", "self target") >= outnumberedHealthLine)
         return false;
 
     int32 botLevel = bot->GetLevel();
@@ -549,6 +559,24 @@ bool OutNumberedTrigger::IsActive()
     return friendPower < foePower;
 }
 
+bool ai::BuffTriggerMountGated(Player* bot, PlayerbotAI* ai)
+{
+    // A mounted bot must not queue an out-of-combat buff the core would
+    // strip its mount for: without this the trigger stays active every
+    // tick while mounted and CheckCanCastSpell refuses each attempt with
+    // SPELL_FAILED_NOT_MOUNTED (~78k refusals / 474 bots on 2026-11-01,
+    // one pair every ~4-5 s for whole trips). Combat casts keep firing
+    // (the combat engine owns that decision); travel forms and the other
+    // ride-safe lines keep theirs (cast gate still decides ride-safety,
+    // this only stops the trigger queueing a doomed attempt).
+    if (!bot || bot->IsInCombat())
+        return false;
+    if (!bot->IsMounted() && !bot->GetMountID())
+        return false;
+    AiObjectContext* context = ai ? ai->GetAiObjectContext() : nullptr;
+    return context && context->GetValue<bool>("travel target traveling")->Get();
+}
+
 bool BuffTrigger::IsActive()
 {
     // Cheap gates first (perf): the old order ran GetTarget (a "self target"
@@ -564,6 +592,9 @@ bool BuffTrigger::IsActive()
     // hawk on level 1-2 bots). No donor equivalent; native hardening for a
     // pool that starts at level 1 (donor bots are max-level, never affected).
     if (!ai->HasSpell(spell))
+        return false;
+
+    if (ai::BuffTriggerMountGated(bot, ai))
         return false;
 
     // Issue #T7: another bot is already casting this spell on the target (or, for
@@ -615,6 +646,8 @@ bool BuffTrigger::IsActive()
 
 bool MyBuffTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     if (!ai->HasSpell(spell))
         return false;
@@ -1582,7 +1615,7 @@ bool AoeThreatNearbyTrigger::IsActive()
         }
     }
     // Any one sensor firing is enough; each read is value-cached (dynobj
-    // aura check, 15yd trap scan, 15yd trigger scan).
+    // aura check, 30yd trap scan, 15yd trigger scan).
     if (AI_VALUE2(bool, "has area debuff", "self target"))
         return true;
     if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())

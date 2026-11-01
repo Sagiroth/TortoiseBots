@@ -56,6 +56,9 @@ int main()
     CHECK(!ShouldStartHeal(HealerManaState{60, 30, 15, HealManaEfficiency::LOW, false, 50, 70, 40}));
     // ...and fires again once the healer recovers.
     CHECK(ShouldStartHeal(HealerManaState{60, 40, 15, HealManaEfficiency::LOW, false, 50, 70, 40}));
+    // Holy Light on the 50-70 % band is MEDIUM: it starts even with a large
+    // estimate on low healer mana (only LOW spells wait for the reserve).
+    CHECK(ShouldStartHeal(HealerManaState{60, 20, 50, HealManaEfficiency::MEDIUM, false, 50, 70, 40}));
     // LOW spell on a comfortable target is vetoed regardless of mana.
     CHECK(!ShouldStartHeal(HealerManaState{80, 90, 15, HealManaEfficiency::LOW, false, 50, 70, 40}));
 

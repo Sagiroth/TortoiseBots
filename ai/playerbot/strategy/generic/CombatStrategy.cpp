@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
 using namespace ai;
@@ -68,7 +69,7 @@ void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // which the old "has area debuff" row could see), so the bot steps out
     // BEFORE the debuff lands. The strafe self-gates via isUseful (bot
     // actually inside the hazard radius). Flee is deliberately NOT listed
-    // here: the sensors scan 15yd while radii are often 5-8yd, so mere
+    // here: the sensors scan 15-30yd while radii are often 5-8yd, so mere
     // proximity would full-flee, and a useful-but-unlandable strafe would
     // win the reaction pick every tick and starve the fallback.
     triggers.push_back(new TriggerNode(
@@ -88,6 +89,11 @@ void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 void AvoidAoeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new AvoidAoeStrategyMultiplier(ai));
+    // The trap hold belongs to AoE avoidance, not to the boss tactics that first carried it: every bot
+    // has this strategy, so the hold is not gated behind an encounter. Multipliers are per engine, so
+    // the combat engine - which runs the reach, the follow and the stay - carries its own copy on the
+    // always-on dungeon strategy; no engine ever gets both.
+    multipliers.push_back(new TrapHoldMultiplier(ai));
 }
 
 void AvoidAoeStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
