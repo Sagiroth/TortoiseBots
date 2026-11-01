@@ -8898,16 +8898,25 @@ uint64 RunFormationOf(Creature* creature)
     return creature->GetObjectGuid().GetRawValue();
 }
 
-// A creature walks a patrol: its own default movement is WAYPOINT, or it is a formation member whose living leader's is.
+// A creature walks a patrol: its own default movement is WAYPOINT, or it is a formation member whose walk its leader
+// drives. The walk is judged by the formation's ORIGINAL leader: CreatureGroup::OnMemberDied (the core) promotes the
+// first living member to temporary leader and drives it with MoveWaypointAsDefault, which leaves the promoted
+// leader's own default movement IDLE, so judging by the current leader would call a live patrol static after its
+// waypoint leader died (the temp leader and its followers read IDLE). Dead creatures stay in the map until they
+// respawn, so the original leader is still found. The current leader (the creature itself or a promoted one) must be
+// alive: its death stops the walk.
 bool RunWalksPatrol(Creature* creature)
 {
     if (creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE)
         return true;
-    if (CreatureGroup* group = creature->GetCreatureGroup())
-        if (group->IsFormation() && group->GetLeaderGuid() != creature->GetObjectGuid())
-            if (Creature* leader = creature->GetMap()->GetCreature(group->GetLeaderGuid()))
-                return leader->IsAlive() && leader->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
-    return false;
+    CreatureGroup* const group = creature->GetCreatureGroup();
+    if (!group || !group->IsFormation())
+        return false;
+    Creature* const leader = creature->GetMap()->GetCreature(group->GetLeaderGuid());
+    if (!leader || !leader->IsAlive())
+        return false;
+    Creature* const original = creature->GetMap()->GetCreature(group->GetOriginalLeaderGuid());
+    return original && original->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
 }
 
 // A stand-pull pull row's other patrols (DungeonRun::Facts::standPatrols, PatrolStandPullGate): living hostile
@@ -9821,9 +9830,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     ReadTimeSinkWays(slot, lead, f);
     ReadPullStand(slot, lead, f);
     // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
-    // the pack in the tank's shot), not on every tick of the wait.
+    // the pack in the tank's shot), not on every tick of the wait. A row that left a unit of the pack to the plain pull
+    // (Run::standPullStatic) reads them too: its plain pull still needs the clearance.
     if (!f.anyInCombat && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step] &&
-        step->kind == ai::PlanStepKind::Pull && TortoiseBots::DungeonRun::StandPullPackInShot(f))
+        step->kind == ai::PlanStepKind::Pull &&
+        (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))
         ReadStandPatrols(lead, f);
     ReadRunNeedFacts(slot, lead, f);
 }

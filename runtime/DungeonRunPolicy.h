@@ -1394,6 +1394,10 @@ struct Run
     std::size_t standPullStep = static_cast<std::size_t>(-1);
     std::uint32_t standPullMs = 0;
     std::uint64_t standPullShotGuid = 0;
+    // A stand-pull pull row: units of the pack the gate judged unable to come to the stand (UnitFact::patrols false and
+    // out of the tank's shot when first seen): never waited for nor picked by PatrolStandPullGate again this step, left
+    // to the plain pull (ResetStep clears it).
+    std::unordered_set<std::uint64_t> standPullStatic;
     // A stand-pull pull row's own formations (ScopeStandPullFacts), kept for the step once seen: a formation whose
     // member spawned in the radius stays the pack's after that member died (standPullOwnStep: the step they are for).
     std::unordered_set<std::uint64_t> standPullOwn;
@@ -2384,6 +2388,7 @@ inline void ResetStep(Run& r)
         r.standPullMs = 0;
     }
     r.standPullShotGuid = 0;
+    r.standPullStatic.clear();
     r.hpWatch.clear();
     ClearFightProgress(r);
     r.patrolWaitMs = 0;
@@ -10452,6 +10457,13 @@ inline float StandPullClearYd(const PlanStep& s)
 // (StandPullClearYd) of the lead bot. The pick: one in shot first, then the plan's kill_first rank, then the nearest.
 // Out of combat only, with a ranged pull (otherwise the row pulls as before), and until the wait has run
 // kStandPullWaitMs (cumulative per step): then the run pauses once, and after a resume the row pulls as before.
+// A unit of the pack that walks no patrol (UnitFact::patrols) and is out of the tank's shot when first judged cannot
+// come to the stand: one tick names it (`not waiting for units that walk no patrol ...`), then it is left to the plain
+// pull for the step (Run::standPullStatic; ZG walk 19 step 33: the static Bat Rider 49141 6.6 yd inside the radius held
+// the row 600 s and the run paused). It is judged only from the stand: off it, the walk back comes first, and the unit
+// is judged at the stand. A row that left such units to the plain pull still gets the clearance: another patrol near
+// the lead bot or along the way to any of them the plain pull could still choose holds the row on the same wait (its
+// plain pull would walk the party through the patrol's lane).
 // It times the run leader's own pull only: a patrol that walks into the stand while the party waits fights as before,
 // so the plan must put the stand out of every other lane's aggro reach for the gate to matter.
 // Returns the unit the pull may go out on (standPullShotGuid set); null with `held` true when this tick waits,
@@ -10468,6 +10480,10 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
         return nullptr;
     float const inShot = f.leadShotYd - kStandPullMarginYd;
     auto inShotOf = [&](const UnitFact& u) { return u.losLead && u.distLead <= inShot; };
+    // The party's spot against the stand: a unit is judged unable to come only from the stand (off it, the walk back
+    // brings the party there first and the unit is judged there), and the clearance is read at the stand.
+    float const fromStand = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z);
+    float const clearYd = StandPullClearYd(s);
     const UnitFact* pick = nullptr;
     auto consider = [&](const UnitFact& u)
     {
@@ -10495,22 +10511,140 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
         if (u.distLead < pick->distLead)
             pick = &u;
     };
-    for (const UnitFact& u : f.units)
+    // The other patrol that holds this pull: another formation's unit within the clearance (clearYd) of the lead bot
+    // on the lead bot's floor, or within kStandPullPathClearYd of the way `pull` runs to the lead bot. `path`: the
+    // second distance (-1: the pull's position not read, or the unit on another floor of the way). Null: nothing holds.
+    auto otherPatrol = [&](const UnitFact& pull, float& path)
+    {
+        // How far (2D) a unit stands from the line `pull` runs along to the lead bot; -1 for a pull whose position was
+        // not read, or a unit on another floor of the way (its z off the way's, more than the residue band).
+        auto pathYd = [&](const UnitFact& u)
+        {
+            if (pull.x == 0.0f && pull.y == 0.0f)
+                return -1.0f;
+            float const ax = pull.x, ay = pull.y, bx = f.leadX, by = f.leadY;
+            float const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+            float t = len2 > 0.0f ? ((u.x - ax) * dx + (u.y - ay) * dy) / len2 : 0.0f;
+            t = std::max(0.0f, std::min(1.0f, t));
+            float const wayZ = pull.z + t * (f.leadZ - pull.z);
+            if (std::fabs(u.z - wayZ) > kPackResidueZYd)
+                return -1.0f;
+            return std::hypot(u.x - (ax + t * dx), u.y - (ay + t * dy));
+        };
+        const UnitFact* other = nullptr;
+        path = -1.0f;
+        for (const UnitFact& u : f.standPatrols)
+        {
+            if (!u.hostile || u.guid == pull.guid || r.passed.count(u.guid))
+                continue;
+            if (pull.formation && u.formation == pull.formation)
+                continue; // its own formation comes with it anyway
+            float const py = pathYd(u);
+            bool const nearPath = py >= 0.0f && py <= kStandPullPathClearYd;
+            // Near the lead bot only on the lead bot's floor: the stand and the pull row may sit at other heights.
+            bool const nearLead = u.distLead <= clearYd && std::fabs(u.z - f.leadZ) <= kPackResidueZYd;
+            if (!nearLead && !nearPath)
+                continue;
+            if (!other || u.distLead < other->distLead)
+            {
+                other = &u;
+                path = py;
+            }
+        }
+        return other;
+    };
+    std::string staticList; // units first judged unable to come this tick (the one-tick note)
+    auto judge = [&](const UnitFact& u)
+    {
+        if (!Pullable(r, u) || r.standPullStatic.count(u.guid))
+            return;
+        // From the stand only: off it, `consider` as before, so the walk back brings the party to the stand and the
+        // unit is judged there. The set only grows within a step (ResetStep clears it on a step change, a resume or a
+        // wipe), so the one-tick hold below is enough: a unit in it is never judged again this step.
+        if (fromStand <= kHoldReturnYd && !u.patrols && !inShotOf(u))
+        {
+            r.standPullStatic.insert(u.guid);
+            if (!staticList.empty())
+                staticList += ", ";
+            staticList += std::to_string(u.entry) + " " + GuidArg(u.guid) + " " + Num(u.distLead) + " yd";
+            return;
+        }
         consider(u);
+    };
+    for (const UnitFact& u : f.units)
+        judge(u);
     // The residue band too (units of the pack just outside the radius) when they patrol, or stand in shot: otherwise
     // PackResidueTick pulls a patrolling one as a plain pull (a residue unit pulled from the stand walked the party off
-    // to a firing stand into the formations' ring). Static residue out of shot is left to PackResidueTick as before
-    // (it never comes to the stand).
+    // to a firing stand into the formations' ring). Static residue out of shot is left to PackResidueTick like any
+    // static unit (Run::standPullStatic).
     for (const UnitFact& u : f.packResidue)
-        if (PackResidueOpenUnit(r, f, u) && (u.patrols || inShotOf(u)))
-            consider(u);
+        if (PackResidueOpenUnit(r, f, u))
+            judge(u);
     for (const UnitFact& u : f.patrollers)
         if (PatrollerToWaitFor(r, f, u))
-            consider(u);
-    if (!pick)
+            judge(u);
+    if (!staticList.empty())
+    {
+        held = true;
+        r.standPullShotGuid = 0; // the pull never went out
+        r.stepIdleMs = dt > r.stepIdleMs ? 0 : r.stepIdleMs - dt;
+        r.note = "patrol pull: not waiting for units that walk no patrol and stand out of the " + Num(inShot) +
+            " yd shot (" + staticList + "): the step pulls them as a plain pull";
         return nullptr;
+    }
+    if (!pick)
+    {
+        // The units the row left to the plain pull (Run::standPullStatic): the plain pull still goes out past the same
+        // clearance a pull gets, so another patrol near the lead bot or along the way to any of them holds the row on
+        // the same 600 s (then the usual pause, never a new forever-hold). Every one of them the plain pull could still
+        // choose is checked, not the first listed one: its own PickPackPull and kill order need not take that one, and a
+        // unit no longer pullable (or a patroller the row no longer waits for) is no part of the pull at all (a
+        // never-pullable unit must not hold the row for the 600 s). The first of them with another patrol in the way
+        // stands in for the pick (the way the pull runs).
+        float otherPathYd = -1.0f;
+        const UnitFact* other = nullptr;
+        if (fromStand <= kHoldReturnYd)
+            for (const std::vector<UnitFact>* list : {&f.units, &f.packResidue, &f.patrollers})
+            {
+                for (const UnitFact& u : *list)
+                {
+                    if (!r.standPullStatic.count(u.guid) || !Pullable(r, u))
+                        continue;
+                    if (list == &f.patrollers && !PatrollerToWaitFor(r, f, u))
+                        continue;
+                    other = otherPatrol(u, otherPathYd);
+                    if (other)
+                        break;
+                }
+                if (other)
+                    break;
+            }
+        if (!other)
+            return nullptr;
+        held = true;
+        r.standPullShotGuid = 0; // the pull never went out
+        r.standPullMs += dt;
+        if (r.standPullMs >= kStandPullWaitMs)
+        {
+            Pause(r, "patrol pull: the units that walk no patrol could not be pulled with no other patrol within " +
+                Num(clearYd) + " yd in " + std::to_string(kStandPullWaitMs / 1000) +
+                " s: pull them, then .bot run resume (the step then pulls as a plain pull), or .bot run skip");
+            return nullptr;
+        }
+        r.stepIdleMs = dt > r.stepIdleMs ? 0 : r.stepIdleMs - dt; // the wait is the step's work, not idling
+        if (!PartyGathered(f) && !r.gatherWaived && r.phase != Phase::Gather)
+        {
+            EnterPhase(r, Phase::Gather);
+            SendGather(r, f, order); // the party forms up at the stand while it waits
+        }
+        r.note = "patrol pull: waiting for " + std::to_string(other->entry) + " " + GuidArg(other->guid) +
+            " of another patrol, " + Num(other->distLead) + " yd from the lead bot" +
+            (otherPathYd >= 0.0f ? " and " + Num(otherPathYd) + " yd from the pull's way" : std::string()) +
+            ", to walk off before the units that walk no patrol are pulled (clear at " + Num(clearYd) + " yd, " +
+            Num(kStandPullPathClearYd) + " yd from the way)";
+        return nullptr;
+    }
     held = true;
-    float const fromStand = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z);
     if (fromStand > kHoldReturnYd)
     {
         r.standPullShotGuid = 0;
@@ -10518,45 +10652,8 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
             r.note = "back to the stand for the patrol pull of " + std::to_string(pick->entry);
         return nullptr;
     }
-    float const clearYd = StandPullClearYd(s);
-    // How far (2D) a unit stands from the pick and the line the pick runs along to the lead bot (-1: the pick's
-    // position not read).
-    bool const pickRead = pick->x != 0.0f || pick->y != 0.0f;
-    // A unit on another floor of the way (its z off the way's z at its closest point, more than the residue band) is
-    // not near it: -1 like an unread pick.
-    auto pathYd = [&](const UnitFact& u)
-    {
-        if (!pickRead)
-            return -1.0f;
-        float const ax = pick->x, ay = pick->y, bx = f.leadX, by = f.leadY;
-        float const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-        float t = len2 > 0.0f ? ((u.x - ax) * dx + (u.y - ay) * dy) / len2 : 0.0f;
-        t = std::max(0.0f, std::min(1.0f, t));
-        float const wayZ = pick->z + t * (f.leadZ - pick->z);
-        if (std::fabs(u.z - wayZ) > kPackResidueZYd)
-            return -1.0f;
-        return std::hypot(u.x - (ax + t * dx), u.y - (ay + t * dy));
-    };
-    const UnitFact* other = nullptr;
     float otherPathYd = -1.0f;
-    for (const UnitFact& u : f.standPatrols)
-    {
-        if (!u.hostile || u.guid == pick->guid || r.passed.count(u.guid))
-            continue;
-        if (pick->formation && u.formation == pick->formation)
-            continue; // its own formation comes with it anyway
-        float const py = pathYd(u);
-        bool const nearPath = py >= 0.0f && py <= kStandPullPathClearYd;
-        // Near the lead bot only on the lead bot's floor: the stand and the pull row may sit at other heights.
-        bool const nearLead = u.distLead <= clearYd && std::fabs(u.z - f.leadZ) <= kPackResidueZYd;
-        if (!nearLead && !nearPath)
-            continue;
-        if (!other || u.distLead < other->distLead)
-        {
-            other = &u;
-            otherPathYd = py;
-        }
-    }
+    const UnitFact* const other = otherPatrol(*pick, otherPathYd);
     if (inShotOf(*pick) && !other)
     {
         held = false;
