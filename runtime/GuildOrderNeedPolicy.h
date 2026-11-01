@@ -91,6 +91,103 @@ inline void MergeNeedItem(std::vector<NeedItem>& need, uint32_t itemId, uint32_t
     need.push_back(NeedItem{ itemId, count });
 }
 
+// The persisted token back to entries ("id:count", ';'-separated, written by
+// NeedItemsToken); anything unparsable is dropped.
+inline std::vector<NeedItem> ParseNeedItems(std::string const& token)
+{
+    std::vector<NeedItem> out;
+    size_t start = 0;
+    while (start < token.size())
+    {
+        size_t end = token.find(';', start);
+        std::string entry = token.substr(start,
+            end == std::string::npos ? std::string::npos : end - start);
+        size_t colon = entry.find(':');
+        if (colon != std::string::npos)
+        {
+            try
+            {
+                unsigned long itemId = std::stoul(entry.substr(0, colon));
+                unsigned long count = std::stoul(entry.substr(colon + 1));
+                if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
+                    out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
+            }
+            catch (...)
+            {
+            }
+        }
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return out;
+}
+
+// Same entries, same order, same counts: the compare-and-set the prune's
+// write-back needs.
+inline bool NeedItemsEqual(std::vector<NeedItem> const& a, std::vector<NeedItem> const& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].itemId != b[i].itemId || a[i].count != b[i].count)
+            return false;
+    return true;
+}
+
+// The player hears about a list once per fact: an item id the last whisper
+// never named, or one whose count grew above what it said. A rebuild that
+// only repeats or shrinks the whispered list (a lane hit, a full retry, a
+// sibling sub-order failure, an item delivered) stays silent.
+inline bool NeedListNeedsWhisper(std::string const& lastToken, std::vector<NeedItem> const& now)
+{
+    std::vector<NeedItem> whispered = ParseNeedItems(lastToken);
+    for (NeedItem const& item : now)
+    {
+        if (!item.itemId || !item.count)
+            continue;
+        uint32_t toldCount = 0;
+        for (NeedItem const& was : whispered)
+            if (was.itemId == item.itemId && was.count > toldCount)
+                toldCount = was.count;
+        if (item.count > toldCount)
+            return true;
+    }
+    return false;
+}
+
+// What the player has been told so far: the last token's entries kept, every
+// entry of `now` merged in at the larger count. A list rebuilt one item at a
+// time grows this the same way the sends did, so the next rebuild never
+// re-whispers.
+inline std::string NeedWhisperTokenUnion(std::string const& lastToken, std::vector<NeedItem> const& now)
+{
+    std::vector<NeedItem> spoken = ParseNeedItems(lastToken);
+    for (NeedItem const& item : now)
+        MergeNeedItem(spoken, item.itemId, item.count);
+    return NeedItemsToken(spoken);
+}
+
+// A dead-end reason belongs to the leg that produced it, not to the row: a
+// working row that takes an item on its need list turns to another item, and
+// the stale verdict must not follow it. NoSource would drop the next
+// candidate's vendor and farm legs, BankDenied or NoBanker its bank leg.
+inline OrderReason ResetDeadEndReasonOnWorking(OrderReason reason)
+{
+    if (reason == OrderReason::NoSource || reason == OrderReason::BankDenied ||
+        reason == OrderReason::NoBanker)
+        return OrderReason::None;
+    return reason;
+}
+
+// A lane hit or a failed sibling clears the need list; the current supply leg
+// is unrelated work and survives, unless it sources one of the items now on
+// the list (that leg would just re-request a dead end).
+inline bool KeepLegOnNeedClear(uint32_t supplyItemId, std::vector<NeedItem> const& needItems)
+{
+    return supplyItemId != 0 && !NeedListHas(needItems, supplyItemId);
+}
+
 // The whole-tree walk's count is the live shortage (the player brought part of
 // it, or the bot got it some other way): an entry the walk no longer names
 // leaves the list, an entry still named keeps the list's order but the walk's

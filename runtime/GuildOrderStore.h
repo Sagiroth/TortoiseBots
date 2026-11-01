@@ -108,12 +108,15 @@ void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t c
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
 // Put one item on the need list without parking: a craft order keeps working
 // while the player owes it something. A working row drops its supply leg so
-// the ladder re-plans around the item; the parked state and reason stay.
-void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// the ladder re-plans around the item, clears any dead-end reason the leg
+// left behind, and records whether the guild bank refused this order.
+void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied = false);
 // Replace the list with the player's items the whole-tree walk still names
-// (empty clears it). State and reason never change here: the ladder decides
-// when to park.
-void ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items);
+// (empty clears it), but only while the stored list still equals `expected`:
+// the walk pruned a snapshot, and a merge or clear in between must win.
+// State and reason never change here: the ladder decides when to park.
+void ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+    std::vector<NeedItem> const& items);
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
 void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
 // Guild gold still spendable anywhere on the order's branch: the smallest

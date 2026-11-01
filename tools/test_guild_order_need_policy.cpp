@@ -114,6 +114,52 @@ int main()
     fold = FoldMaterials(blockMissing, 2);
     CHECK(fold.outcome == MaterialOutcome::Missing && fold.index == 1);
 
+    // The whisper covers a list once: a new item id or a higher count than
+    // the last whispered token is news, everything else stays silent.
+    CHECK(NeedListNeedsWhisper("-", std::vector<NeedItem>{ { 2319, 4 } }));
+    CHECK(NeedListNeedsWhisper("", std::vector<NeedItem>{ { 2319, 4 } }));
+    CHECK(!NeedListNeedsWhisper("2319:4", std::vector<NeedItem>{ { 2319, 4 } }));
+    CHECK(NeedListNeedsWhisper("2319:4", std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } }));
+    CHECK(NeedListNeedsWhisper("2319:4;2320:2", std::vector<NeedItem>{ { 2319, 6 } }));
+    CHECK(!NeedListNeedsWhisper("2319:4;2320:2", std::vector<NeedItem>{ { 2319, 4 } }));
+    CHECK(!NeedListNeedsWhisper("2319:4;2320:2", std::vector<NeedItem>{ { 2320, 1 }, { 2319, 2 } }));
+    CHECK(NeedListNeedsWhisper("2319:4", std::vector<NeedItem>{ { 2320, 2 }, { 2319, 2 } }));
+    CHECK(!NeedListNeedsWhisper("2319:4", std::vector<NeedItem>{}));
+    // A list rebuilt one item at a time grows the token the same way the
+    // sends did, so the rebuild never whispers a second time.
+    std::string whispered = NeedWhisperTokenUnion("-", std::vector<NeedItem>{ { 2319, 4 } });
+    CHECK(whispered == "2319:4");
+    whispered = NeedWhisperTokenUnion(whispered, std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } });
+    CHECK(whispered == "2319:4;2320:2");
+    CHECK(!NeedListNeedsWhisper(whispered, std::vector<NeedItem>{ { 2319, 4 } }));
+    CHECK(!NeedListNeedsWhisper(whispered, std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } }));
+    CHECK(NeedListNeedsWhisper(whispered, std::vector<NeedItem>{ { 2320, 3 } }));
+    whispered = NeedWhisperTokenUnion(whispered, std::vector<NeedItem>{ { 2320, 3 } });
+    CHECK(whispered == "2319:4;2320:3");
+
+    // A dead-end verdict does not survive the leg that produced it.
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoSource) == OrderReason::None);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::BankDenied) == OrderReason::None);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoBanker) == OrderReason::None);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoRecipe) == OrderReason::NoRecipe);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::None) == OrderReason::None);
+
+    // A cleared need list keeps the leg on some other item, resets it when
+    // the leg sources a listed item (or there is no leg at all).
+    CHECK(KeepLegOnNeedClear(2319, std::vector<NeedItem>{ { 2320, 1 } }));
+    CHECK(!KeepLegOnNeedClear(2319, std::vector<NeedItem>{ { 2319, 1 } }));
+    CHECK(!KeepLegOnNeedClear(0, std::vector<NeedItem>{ { 2319, 1 } }));
+    CHECK(KeepLegOnNeedClear(2319, std::vector<NeedItem>{}));
+
+    // Compare-and-set needs the exact list, entries and counts.
+    CHECK(NeedItemsEqual(std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } },
+        std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } }));
+    CHECK(NeedItemsEqual(std::vector<NeedItem>{}, std::vector<NeedItem>{}));
+    CHECK(!NeedItemsEqual(std::vector<NeedItem>{ { 2319, 4 } },
+        std::vector<NeedItem>{ { 2319, 4 }, { 2320, 2 } }));
+    CHECK(!NeedItemsEqual(std::vector<NeedItem>{ { 2319, 4 } }, std::vector<NeedItem>{ { 2319, 5 } }));
+    CHECK(!NeedItemsEqual(std::vector<NeedItem>{ { 2319, 4 } }, std::vector<NeedItem>{ { 2320, 4 } }));
+
     if (failures == 0)
         std::printf("guild order need policy: all tests passed\n");
     return failures != 0;

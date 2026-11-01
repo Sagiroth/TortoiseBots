@@ -41,6 +41,7 @@ using TortoiseBots::GuildOrders::MaterialOutcome;
 using TortoiseBots::GuildOrders::FoldMaterials;
 using TortoiseBots::GuildOrders::NeedListHas;
 using TortoiseBots::GuildOrders::PruneNeedItems;
+using TortoiseBots::GuildOrders::NeedItemsEqual;
 using TortoiseBots::GuildOrders::PartialNeedVerdict;
 using TortoiseBots::GuildOrders::PartialNeedVerdictFor;
 
@@ -488,6 +489,23 @@ SupplyStep MailReturnStep(Player* bot, OrderRecord const& order, SupplyCandidate
     return ChooseSourceStep(bot, order, candidate, snapshot, farmable);
 }
 
+// One craft need entry: the whole-tree shortage, not the count of the ladder
+// branch that named this reagent (siblings sharing a base reagent each carry
+// their own shortfall), so the player is asked once for the total.
+void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot)
+{
+    uint32_t count = candidate.count;
+    std::vector<NeedItem> missing;
+    CollectMissingReagents(ai, bot, order.itemId,
+        order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+    for (NeedItem const& need : missing)
+        if (need.itemId == candidate.itemId && need.count > count)
+            count = need.count;
+    TortoiseBots::GuildOrders::AddNeedItem(order.botGuidLow, candidate.itemId, count,
+        order.reason == OrderReason::BankDenied);
+}
+
 void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplyStep step, SupplyStep returnStep = SupplyStep::None, SupplySnapshot* snapshot = nullptr)
 {
@@ -504,7 +522,7 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
         // instead of parking the whole order.
         if (order.type == OrderType::Craft)
         {
-            TortoiseBots::GuildOrders::AddNeedItem(order.botGuidLow, candidate.itemId, candidate.count);
+            AddCraftNeedItem(ai, bot, order, candidate, snapshot);
             return;
         }
         std::vector<NeedItem> missing;
@@ -519,7 +537,7 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
     {
         if (order.type == OrderType::Craft)
         {
-            TortoiseBots::GuildOrders::AddNeedItem(order.botGuidLow, candidate.itemId, candidate.count);
+            AddCraftNeedItem(ai, bot, order, candidate, snapshot);
             return;
         }
         std::vector<NeedItem> missing;
@@ -637,13 +655,12 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         CollectMissingReagents(ai, bot, order.itemId, outputMissing, stillMissing, &snapshot);
         std::vector<NeedItem> pruned = current.needItems;
         PruneNeedItems(pruned, stillMissing);
-        bool changed = pruned.size() != current.needItems.size();
-        for (size_t i = 0; !changed && i < pruned.size(); ++i)
-            changed = pruned[i].itemId != current.needItems[i].itemId ||
-                pruned[i].count != current.needItems[i].count;
-        if (changed)
+        if (!NeedItemsEqual(pruned, current.needItems))
         {
-            TortoiseBots::GuildOrders::ReplaceNeedItems(order.botGuidLow, pruned);
+            // The store only takes the prune while its list still equals the
+            // copy the prune started from: a merge or a clear in between wins
+            // and the next refresh re-prunes the live list.
+            TortoiseBots::GuildOrders::ReplaceNeedItems(order.botGuidLow, current.needItems, pruned);
             current.needItems = pruned;
         }
     }
