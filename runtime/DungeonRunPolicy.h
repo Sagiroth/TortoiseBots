@@ -1394,6 +1394,10 @@ struct Run
     std::size_t standPullStep = static_cast<std::size_t>(-1);
     std::uint32_t standPullMs = 0;
     std::uint64_t standPullShotGuid = 0;
+    // A stand-pull pull row: units of the pack the gate judged unable to come to the stand (UnitFact::patrols false and
+    // out of the tank's shot when first seen): never waited for nor picked by PatrolStandPullGate again this step, left
+    // to the plain pull (ResetStep clears it).
+    std::unordered_set<std::uint64_t> standPullStatic;
     // A stand-pull pull row's own formations (ScopeStandPullFacts), kept for the step once seen: a formation whose
     // member spawned in the radius stays the pack's after that member died (standPullOwnStep: the step they are for).
     std::unordered_set<std::uint64_t> standPullOwn;
@@ -2384,6 +2388,7 @@ inline void ResetStep(Run& r)
         r.standPullMs = 0;
     }
     r.standPullShotGuid = 0;
+    r.standPullStatic.clear();
     r.hpWatch.clear();
     ClearFightProgress(r);
     r.patrolWaitMs = 0;
@@ -10452,6 +10457,10 @@ inline float StandPullClearYd(const PlanStep& s)
 // (StandPullClearYd) of the lead bot. The pick: one in shot first, then the plan's kill_first rank, then the nearest.
 // Out of combat only, with a ranged pull (otherwise the row pulls as before), and until the wait has run
 // kStandPullWaitMs (cumulative per step): then the run pauses once, and after a resume the row pulls as before.
+// A unit of the pack that walks no patrol (UnitFact::patrols) and is out of the tank's shot when first judged cannot
+// come to the stand: one tick names it (`not waiting for units that walk no patrol ...`), then it is left to the plain
+// pull for the step (Run::standPullStatic; ZG walk 19 step 33: the static Bat Rider 49141 6.6 yd inside the radius held
+// the row 600 s and the run paused).
 // It times the run leader's own pull only: a patrol that walks into the stand while the party waits fights as before,
 // so the plan must put the stand out of every other lane's aggro reach for the gate to matter.
 // Returns the unit the pull may go out on (standPullShotGuid set); null with `held` true when this tick waits,
@@ -10495,18 +10504,42 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
         if (u.distLead < pick->distLead)
             pick = &u;
     };
-    for (const UnitFact& u : f.units)
+    std::string staticList; // units first judged unable to come this tick (the one-tick note)
+    auto judge = [&](const UnitFact& u)
+    {
+        if (!Pullable(r, u) || r.standPullStatic.count(u.guid))
+            return;
+        if (!u.patrols && !inShotOf(u))
+        {
+            r.standPullStatic.insert(u.guid);
+            if (!staticList.empty())
+                staticList += ", ";
+            staticList += std::to_string(u.entry) + " " + GuidArg(u.guid) + " " + Num(u.distLead) + " yd";
+            return;
+        }
         consider(u);
+    };
+    for (const UnitFact& u : f.units)
+        judge(u);
     // The residue band too (units of the pack just outside the radius) when they patrol, or stand in shot: otherwise
     // PackResidueTick pulls a patrolling one as a plain pull (a residue unit pulled from the stand walked the party off
-    // to a firing stand into the formations' ring). Static residue out of shot is left to PackResidueTick as before
-    // (it never comes to the stand).
+    // to a firing stand into the formations' ring). Static residue out of shot is left to PackResidueTick like any
+    // static unit (Run::standPullStatic).
     for (const UnitFact& u : f.packResidue)
-        if (PackResidueOpenUnit(r, f, u) && (u.patrols || inShotOf(u)))
-            consider(u);
+        if (PackResidueOpenUnit(r, f, u))
+            judge(u);
     for (const UnitFact& u : f.patrollers)
         if (PatrollerToWaitFor(r, f, u))
-            consider(u);
+            judge(u);
+    if (!staticList.empty())
+    {
+        held = true;
+        r.standPullShotGuid = 0; // the pull never went out
+        r.stepIdleMs = dt > r.stepIdleMs ? 0 : r.stepIdleMs - dt;
+        r.note = "patrol pull: not waiting for units that walk no patrol and stand out of the " + Num(inShot) +
+            " yd shot (" + staticList + "): the step pulls them as a plain pull";
+        return nullptr;
+    }
     if (!pick)
         return nullptr;
     held = true;
