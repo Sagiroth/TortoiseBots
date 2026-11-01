@@ -89,7 +89,9 @@ Shadows' pulse) through the client's SpellRadius.dbc. There are no timer
 columns: trash casts come from `creature_spells` or EventAI, whose delays are
 seconds in a one-line dump, so the cadence belongs in the note. A `note` row may
 leave `source` empty, because run evidence (wipe counts, step numbers) has no
-file in the core to cite; the mob's own row cites `creature_template`.
+file in the core to cite; the mob's own row cites `creature_template`, or the
+migration under `sql/database_updates/world/` that adds a custom creature (the
+Stormwind Vault pair, 60596/60597).
 
 `check` fails on a danger or kill outside its range, a role outside the closed
 set, a non-zero timer column, an `r=` outside 1-60, a second `mob` row for the

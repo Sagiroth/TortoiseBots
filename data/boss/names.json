@@ -36,12 +36,20 @@
       "name": "Explode Bug",
       "castMs": 0
     },
+    "865": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
     "1121": {
       "name": "Entangle",
       "castMs": 0
     },
     "1834": {
       "name": "Gathering Speed",
+      "castMs": 0
+    },
+    "2055": {
+      "name": "Heal",
       "castMs": 0
     },
     "3391": {
@@ -64,6 +72,10 @@
       "name": "Terrifying Screech",
       "castMs": 0
     },
+    "7154": {
+      "name": "Dark Offering",
+      "castMs": 0
+    },
     "7155": {
       "name": "CreatureSpecial",
       "castMs": 0
@@ -84,6 +96,10 @@
       "name": "Heal Brother",
       "castMs": 0
     },
+    "7645": {
+      "name": "Dominate Mind",
+      "castMs": 0
+    },
     "8195": {
       "name": "Teleport",
       "castMs": 0
@@ -92,12 +108,28 @@
       "name": "Devotion Aura",
       "castMs": 0
     },
+    "8264": {
+      "name": "Lava Spout Totem",
+      "castMs": 0
+    },
     "8269": {
       "name": "Enrage",
       "castMs": 0
     },
     "8362": {
       "name": "Renew",
+      "castMs": 0
+    },
+    "8365": {
+      "name": "Enlarge",
+      "castMs": 0
+    },
+    "8372": {
+      "name": "Summon Aqua Guardian",
+      "castMs": 0
+    },
+    "8374": {
+      "name": "Arcing Smash",
       "castMs": 0
     },
     "8376": {
@@ -110,6 +142,10 @@
     },
     "9613": {
       "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "9672": {
+      "name": "Frostbolt",
       "castMs": 0
     },
     "9734": {
@@ -146,6 +182,10 @@
     },
     "10966": {
       "name": "Uppercut",
+      "castMs": 0
+    },
+    "11016": {
+      "name": "Soul Bite",
       "castMs": 0
     },
     "11020": {
@@ -188,8 +228,16 @@
       "name": "Renew",
       "castMs": 0
     },
+    "11641": {
+      "name": "Hex",
+      "castMs": 0
+    },
     "11642": {
       "name": "Heal",
+      "castMs": 0
+    },
+    "11824": {
+      "name": "Shock",
       "castMs": 0
     },
     "11836": {
@@ -210,6 +258,10 @@
     },
     "11895": {
       "name": "Healing Wave of Antu'sul",
+      "castMs": 0
+    },
+    "11898": {
+      "name": "Blood Leech",
       "castMs": 0
     },
     "11899": {
@@ -252,8 +304,24 @@
       "name": "Shadow Shield",
       "castMs": 0
     },
+    "12095": {
+      "name": "Summon Atal'ai Deathwalker's Spirit",
+      "castMs": 0
+    },
+    "12096": {
+      "name": "Fear",
+      "castMs": 0
+    },
     "12097": {
       "name": "Pierce Armor",
+      "castMs": 0
+    },
+    "12151": {
+      "name": "Summon Atal'ai Skeleton",
+      "castMs": 0
+    },
+    "12169": {
+      "name": "Shield Block",
       "castMs": 0
     },
     "12170": {
@@ -292,12 +360,20 @@
       "name": "Gouge",
       "castMs": 0
     },
+    "12548": {
+      "name": "Frost Shock",
+      "castMs": 0
+    },
     "12739": {
       "name": "Shadow Bolt",
       "castMs": 0
     },
     "12741": {
       "name": "Curse of Weakness",
+      "castMs": 0
+    },
+    "12746": {
+      "name": "Summon Voidwalker",
       "castMs": 0
     },
     "12882": {
@@ -326,6 +402,10 @@
     },
     "13704": {
       "name": "Psychic Scream",
+      "castMs": 0
+    },
+    "13728": {
+      "name": "Earth Shock",
       "castMs": 0
     },
     "13730": {
@@ -384,8 +464,16 @@
       "name": "Shadow Bolt Volley",
       "castMs": 0
     },
+    "15039": {
+      "name": "Flame Shock",
+      "castMs": 0
+    },
     "15043": {
       "name": "Frostbolt",
+      "castMs": 0
+    },
+    "15230": {
+      "name": "Arcane Bolt",
       "castMs": 0
     },
     "15244": {
@@ -394,6 +482,10 @@
     },
     "15245": {
       "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "15253": {
+      "name": "Arcane Explosion",
       "castMs": 0
     },
     "15284": {
@@ -484,6 +576,10 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "15802": {
+      "name": "Shrink",
+      "castMs": 0
+    },
     "15847": {
       "name": "Tail Sweep",
       "castMs": 0
@@ -514,6 +610,10 @@
     },
     "16171": {
       "name": "Empower Will",
+      "castMs": 0
+    },
+    "16186": {
+      "name": "Fevered Plague",
       "castMs": 0
     },
     "16245": {
@@ -576,8 +676,16 @@
       "name": "Rage",
       "castMs": 0
     },
+    "16799": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
     "16805": {
       "name": "Conflagration",
+      "castMs": 0
+    },
+    "16838": {
+      "name": "Banshee Shriek",
       "castMs": 0
     },
     "16856": {
@@ -632,6 +740,18 @@
       "name": "Wail of Souls",
       "castMs": 0
     },
+    "17831": {
+      "name": "Call of the Grave",
+      "castMs": 0
+    },
+    "17843": {
+      "name": "Flash Heal",
+      "castMs": 0
+    },
+    "18100": {
+      "name": "Frost Armor",
+      "castMs": 0
+    },
     "18106": {
       "name": "Rend",
       "castMs": 0
@@ -666,6 +786,10 @@
     },
     "18943": {
       "name": "Double Attack",
+      "castMs": 0
+    },
+    "18972": {
+      "name": "Slow",
       "castMs": 0
     },
     "19128": {
@@ -888,6 +1012,14 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "20720": {
+      "name": "Arcane Bolt",
+      "castMs": 0
+    },
+    "20798": {
+      "name": "Demon Skin",
+      "castMs": 0
+    },
     "21049": {
       "name": "Bloodlust",
       "castMs": 0
@@ -976,12 +1108,28 @@
       "name": "Veil of Shadow",
       "castMs": 0
     },
+    "22743": {
+      "name": "Ribbon of Souls",
+      "castMs": 0
+    },
+    "22744": {
+      "name": "Chains of Ice",
+      "castMs": 0
+    },
     "22859": {
       "name": "Mortal Cleave",
       "castMs": 0
     },
     "22911": {
       "name": "Charge",
+      "castMs": 0
+    },
+    "22939": {
+      "name": "Summon Mana Bursts",
+      "castMs": 0
+    },
+    "22940": {
+      "name": "Arcane Blast",
       "castMs": 0
     },
     "22992": {
@@ -1446,6 +1594,10 @@
     },
     "25749": {
       "name": "Stinger Spray",
+      "castMs": 0
+    },
+    "25778": {
+      "name": "Knock Away",
       "castMs": 0
     },
     "25786": {
@@ -2593,6 +2745,24 @@
     "2139": {
       "name": "Loktanag the Vile"
     },
+    "4809": {
+      "name": "Twilight Acolyte"
+    },
+    "4810": {
+      "name": "Twilight Reaver"
+    },
+    "4811": {
+      "name": "Twilight Aquamancer"
+    },
+    "4812": {
+      "name": "Twilight Loreseeker"
+    },
+    "4813": {
+      "name": "Twilight Shadowmage"
+    },
+    "4814": {
+      "name": "Twilight Elementalist"
+    },
     "5263": {
       "name": "Mummified Atal'ai"
     },
@@ -2610,6 +2780,15 @@
     },
     "5283": {
       "name": "Nightmare Wanderer"
+    },
+    "5648": {
+      "name": "Sandfury Shadowcaster"
+    },
+    "5649": {
+      "name": "Sandfury Blood Drinker"
+    },
+    "5650": {
+      "name": "Sandfury Witch Doctor"
     },
     "5709": {
       "name": "Shade of Eranikus"
@@ -2632,8 +2811,20 @@
     "5722": {
       "name": "Hazzas"
     },
+    "6017": {
+      "name": "Lava Spout Totem"
+    },
+    "6047": {
+      "name": "Aqua Guardian"
+    },
     "6066": {
       "name": "Earthgrab Totem"
+    },
+    "7246": {
+      "name": "Sandfury Shadowhunter"
+    },
+    "7247": {
+      "name": "Sandfury Soul Eater"
     },
     "7267": {
       "name": "Chief Ukorz Sandscalp"
@@ -2713,8 +2904,14 @@
     "8179": {
       "name": "Greater Healing Ward"
     },
+    "8317": {
+      "name": "Atal'ai Deathwalker's Spirit"
+    },
     "8319": {
       "name": "Nightmare Whelp"
+    },
+    "8324": {
+      "name": "Atal'ai Skeleton"
     },
     "8580": {
       "name": "Atal'alarion"
@@ -2742,6 +2939,9 @@
     },
     "8983": {
       "name": "Golem Lord Argelmach"
+    },
+    "8996": {
+      "name": "Voidwalker Minion"
     },
     "9016": {
       "name": "Bael'Gar"
@@ -2872,6 +3072,18 @@
     "11382": {
       "name": "Bloodlord Mandokir"
     },
+    "11471": {
+      "name": "Eldreth Apparition"
+    },
+    "11472": {
+      "name": "Eldreth Spirit"
+    },
+    "11475": {
+      "name": "Eldreth Phantasm"
+    },
+    "11484": {
+      "name": "Residual Monstrosity"
+    },
     "11502": {
       "name": "Ragnaros"
     },
@@ -2988,6 +3200,9 @@
     },
     "14302": {
       "name": "Chromatic Drakonid"
+    },
+    "14397": {
+      "name": "Mana Burst"
     },
     "14453": {
       "name": "Orb of Domination"
@@ -3504,6 +3719,12 @@
     },
     "59999": {
       "name": "Blood Raven"
+    },
+    "60596": {
+      "name": "Runic Construct"
+    },
+    "60597": {
+      "name": "Maddened Vault Guard"
     },
     "60699": {
       "name": "Dreamform of Kronn"
