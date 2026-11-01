@@ -18,6 +18,11 @@ namespace ai
         void RemoveMail(Player* bot, uint32 id, ObjectGuid mailbox);
     };
 
+    // Takes one order item id from waiting mail, fitting that single item
+    // instead of demanding free slots for the whole mailbox. Returns how
+    // many items left the mail for the bags. Implemented in MailAction.cpp;
+    // the take-mail order action owns the call.
+    uint32_t TakeOrderMail(PlayerbotAI* ai, uint32_t itemId);
 
     class MailAction : public ChatCommandAction
     {
