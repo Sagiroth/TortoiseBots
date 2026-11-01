@@ -123,6 +123,7 @@
 - New: boss data for Dire Maul's three wings (map 429, one key): the East, North and West bosses and the event-only units — Pusillin, Ferra, Isalien, Tsu'zee, Pimgib, Lord Hel'nurath, Xorothian Dreadsteed and Revanchion — with their abilities, timers, Alzzin's three forms, every add, and a note where the panel cannot see the mechanic.
 - New: the boss panel now knows Blackfathom Deeps, Razorfen Kraul, Razorfen Downs and Wailing Caverns — 35 boss entries including the summoned and event bosses — with their abilities, timers, phases and adds.
 - New: the boss panel now knows Frostmane Hollow, Crescent Grove, Windhorn Canyon, Dragonmaw Retreat and Gilneas City, with their bosses, abilities, timers, phases, adds and notes.
+- New: the boss panel now knows five early dungeons — Ragefire Chasm, the Deadmines, the Stockade, Shadowfang Keep and Gnomeregan — with 38 boss entries, their abilities, timers, phases, adds and notes.
 - New: the boss panel now knows Upper Blackrock Spire's bosses — Emberseer, Rend, Gyth with his own breaths and knock-away, the Beast, Drakkisath and Lord Valthalak — with their timers, phases and adds.
 - New: the boss panel now knows the bosses of Scholomance and of both wings of Stratholme, with their abilities, timers, phases, adds and the notes for what the panel cannot see.
 - New: the boss panel now knows Hateforge Quarry (five bosses plus Broody and Har'gesh's Faceless Terrors) and Stormwrought Ruins (eleven bosses plus Mergothid and the Remains of the Innocent): their abilities, timers, phases, cones and areas, adds and notes.

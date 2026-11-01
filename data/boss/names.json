@@ -2831,8 +2831,8 @@
       "castMs": 0
     },
     "6742": {
-      "castMs": 0,
-      "name": "Bloodlust"
+      "name": "Bloodlust",
+      "castMs": 0
     },
     "8402": {
       "name": "Fireball",
@@ -3190,24 +3190,24 @@
       "castMs": 0
     },
     "7964": {
-      "castMs": 0,
-      "name": "Smoke Bomb"
+      "name": "Smoke Bomb",
+      "castMs": 0
     },
     "8143": {
       "castMs": 0,
       "name": "Tremor Totem"
     },
     "8242": {
-      "castMs": 0,
-      "name": "Shield Slam"
+      "name": "Shield Slam",
+      "castMs": 0
     },
     "8292": {
       "name": "Chain Bolt",
       "castMs": 0
     },
     "8374": {
-      "castMs": 0,
-      "name": "Arcing Smash"
+      "name": "Arcing Smash",
+      "castMs": 0
     },
     "9143": {
       "castMs": 0,
@@ -3274,8 +3274,8 @@
       "castMs": 0
     },
     "15584": {
-      "castMs": 0,
-      "name": "Cleave"
+      "name": "Cleave",
+      "castMs": 0
     },
     "15593": {
       "name": "War Stomp",
@@ -3322,8 +3322,8 @@
       "name": "Blink"
     },
     "21687": {
-      "castMs": 0,
-      "name": "Toxic Volley"
+      "name": "Toxic Volley",
+      "castMs": 0
     },
     "21807": {
       "castMs": 0,
@@ -4260,6 +4260,222 @@
     },
     "8005": {
       "name": "Healing Wave",
+      "castMs": 0
+    },
+    "184": {
+      "name": "Fire Shield II",
+      "castMs": 0
+    },
+    "421": {
+      "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "498": {
+      "name": "Divine Protection",
+      "castMs": 0
+    },
+    "674": {
+      "name": "Dual Wield",
+      "castMs": 0
+    },
+    "744": {
+      "name": "Poison",
+      "castMs": 0
+    },
+    "1026": {
+      "name": "Holy Light",
+      "castMs": 0
+    },
+    "3603": {
+      "name": "Distracting Pain",
+      "castMs": 0
+    },
+    "5141": {
+      "name": "Eject Sneed",
+      "castMs": 0
+    },
+    "5174": {
+      "name": "Cookie's Cooking",
+      "castMs": 0
+    },
+    "5200": {
+      "name": "VanCleef's Allies",
+      "castMs": 0
+    },
+    "5208": {
+      "name": "Poisoned Harpoon",
+      "castMs": 0
+    },
+    "5213": {
+      "name": "Molten Metal",
+      "castMs": 0
+    },
+    "6226": {
+      "name": "Drain Mana",
+      "castMs": 0
+    },
+    "6304": {
+      "name": "Rhahk'Zor Slam",
+      "castMs": 0
+    },
+    "6306": {
+      "name": "Acid Splash",
+      "castMs": 0
+    },
+    "6432": {
+      "name": "Smite Stomp",
+      "castMs": 0
+    },
+    "6435": {
+      "name": "Smite Slam",
+      "castMs": 0
+    },
+    "6713": {
+      "name": "Disarm",
+      "castMs": 0
+    },
+    "7068": {
+      "name": "Veil of Shadow",
+      "castMs": 0
+    },
+    "7125": {
+      "name": "Toxic Saliva",
+      "castMs": 0
+    },
+    "7136": {
+      "name": "Shadow Port",
+      "castMs": 0
+    },
+    "7164": {
+      "name": "Defensive Stance",
+      "castMs": 0
+    },
+    "7295": {
+      "name": "Soul Drain",
+      "castMs": 0
+    },
+    "7481": {
+      "name": "Howling Rage",
+      "castMs": 0
+    },
+    "7483": {
+      "name": "Howling Rage",
+      "castMs": 0
+    },
+    "7484": {
+      "name": "Howling Rage",
+      "castMs": 0
+    },
+    "7485": {
+      "name": "Butcher Drain",
+      "castMs": 0
+    },
+    "7487": {
+      "name": "Call Bleak Worg",
+      "castMs": 0
+    },
+    "7488": {
+      "name": "Call Slavering Worg",
+      "castMs": 0
+    },
+    "7489": {
+      "name": "Call Lupine Horror",
+      "castMs": 0
+    },
+    "7586": {
+      "name": "Shadow Port",
+      "castMs": 0
+    },
+    "7587": {
+      "name": "Shadow Port",
+      "castMs": 0
+    },
+    "7588": {
+      "name": "Void Bolt",
+      "castMs": 0
+    },
+    "7621": {
+      "name": "Arugal's Curse",
+      "castMs": 0
+    },
+    "7803": {
+      "name": "Thundershock",
+      "castMs": 0
+    },
+    "8599": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "9053": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "9080": {
+      "name": "Hamstring",
+      "castMs": 0
+    },
+    "10870": {
+      "name": "Summon Burning Servant",
+      "castMs": 0
+    },
+    "11082": {
+      "name": "Megavolt",
+      "castMs": 0
+    },
+    "11085": {
+      "name": "Chain Bolt",
+      "castMs": 0
+    },
+    "11511": {
+      "name": "Activate Bomb A",
+      "castMs": 0
+    },
+    "11795": {
+      "name": "Activate Bomb B",
+      "castMs": 0
+    },
+    "11970": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "11976": {
+      "name": "Strike",
+      "castMs": 0
+    },
+    "12544": {
+      "name": "Frost Armor",
+      "castMs": 0
+    },
+    "13298": {
+      "name": "Poison",
+      "castMs": 0
+    },
+    "14873": {
+      "name": "Sinister Strike",
+      "castMs": 0
+    },
+    "16508": {
+      "name": "Intimidating Roar",
+      "castMs": 0
+    },
+    "17745": {
+      "name": "Diseased Spit",
+      "castMs": 0
+    },
+    "18072": {
+      "name": "Uppercut",
+      "castMs": 0
+    },
+    "18267": {
+      "name": "Curse of Weakness",
+      "castMs": 0
+    },
+    "20554": {
+      "name": "Berserking",
+      "castMs": 0
+    },
+    "20800": {
+      "name": "Immolate",
       "castMs": 0
     }
   },
@@ -6060,6 +6276,165 @@
     },
     "63132": {
       "name": "Handler Oboka"
+    },
+    "636": {
+      "name": "Defias Blackguard"
+    },
+    "639": {
+      "name": "Edwin VanCleef"
+    },
+    "642": {
+      "name": "Sneed's Shredder"
+    },
+    "643": {
+      "name": "Sneed"
+    },
+    "644": {
+      "name": "Rhahk'Zor"
+    },
+    "645": {
+      "name": "Cookie"
+    },
+    "646": {
+      "name": "Mr. Smite"
+    },
+    "647": {
+      "name": "Captain Greenskin"
+    },
+    "657": {
+      "name": "Defias Pirate"
+    },
+    "1663": {
+      "name": "Dextren Ward"
+    },
+    "1666": {
+      "name": "Kam Deepfury"
+    },
+    "1696": {
+      "name": "Targorr the Dread"
+    },
+    "1716": {
+      "name": "Bazil Thredd"
+    },
+    "1717": {
+      "name": "Hamhock"
+    },
+    "1720": {
+      "name": "Bruegal Ironknuckle"
+    },
+    "1725": {
+      "name": "Defias Watchman"
+    },
+    "1732": {
+      "name": "Defias Squallshaper"
+    },
+    "1763": {
+      "name": "Gilnid"
+    },
+    "3586": {
+      "name": "Miner Johnson"
+    },
+    "3854": {
+      "name": "Shadowfang Wolfguard"
+    },
+    "3861": {
+      "name": "Bleak Worg"
+    },
+    "3862": {
+      "name": "Slavering Worg"
+    },
+    "3863": {
+      "name": "Lupine Horror"
+    },
+    "3872": {
+      "name": "Deathsworn Captain"
+    },
+    "3875": {
+      "name": "Haunted Servitor"
+    },
+    "3877": {
+      "name": "Wailing Guardsman"
+    },
+    "3886": {
+      "name": "Razorclaw the Butcher"
+    },
+    "3887": {
+      "name": "Baron Silverlaine"
+    },
+    "3914": {
+      "name": "Rethilgore"
+    },
+    "3927": {
+      "name": "Wolf Master Nandos"
+    },
+    "4274": {
+      "name": "Fenrus the Devourer"
+    },
+    "4275": {
+      "name": "Archmage Arugal"
+    },
+    "4278": {
+      "name": "Commander Springvale"
+    },
+    "4279": {
+      "name": "Odo the Blindwatcher"
+    },
+    "4627": {
+      "name": "Arugal's Voidwalker"
+    },
+    "6215": {
+      "name": "Chomper"
+    },
+    "6228": {
+      "name": "Dark Iron Ambassador"
+    },
+    "6229": {
+      "name": "Crowd Pummeler 9-60"
+    },
+    "6235": {
+      "name": "Electrocutioner 6000"
+    },
+    "7079": {
+      "name": "Viscous Fallout"
+    },
+    "7361": {
+      "name": "Grubbis"
+    },
+    "7738": {
+      "name": "Burning Servant"
+    },
+    "7800": {
+      "name": "Mekgineer Thermaplugg"
+    },
+    "7915": {
+      "name": "Walking Bomb"
+    },
+    "11517": {
+      "name": "Oggleflint"
+    },
+    "11518": {
+      "name": "Jergosh the Invoker"
+    },
+    "11519": {
+      "name": "Bazzalan"
+    },
+    "11520": {
+      "name": "Taragaman the Hungerer"
+    },
+    "14682": {
+      "name": "Sever"
+    },
+    "61961": {
+      "name": "Jared Voss"
+    },
+    "61963": {
+      "name": "Masterpiece Harvester"
+    },
+    "61969": {
+      "name": "Prelate Ironmane"
+    },
+    "61970": {
+      "name": "Spectral Cleric"
     }
   }
 }

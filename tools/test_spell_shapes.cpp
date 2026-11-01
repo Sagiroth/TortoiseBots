@@ -74,7 +74,8 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 26, "the committed table has every row");
+    Check(table.size() == 27, "the committed table has every row");
+    Check(table.size() == 27, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -143,6 +144,10 @@ void TestKnownShapes()
     Check(stormsong && forked->kind == Kind::Cone && forked->angle == 120 && Near(forked->length, 30.0f)
             && forked->width == 0.0f,
         "Stormsong's Forked Lightning is a cast-time target-24 cone of 30 yd (spellVisual 944, default front 120)");
+    Shape const* megavolt = For(11082);
+    Check(megavolt && megavolt->kind == Kind::Cone && megavolt->angle == 120 && Near(megavolt->length, 30.0f)
+            && megavolt->width == 0.0f,
+        "Electrocutioner 6000's Megavolt is a cast-time target-24 cone of 30 yd (radius 10, default front 120)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,

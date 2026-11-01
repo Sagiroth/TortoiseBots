@@ -862,16 +862,16 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 355)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1353)
+        self.assertEqual(len(doc["bosses"]), 393)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
 
 
-        self.assertEqual(len(doc["bosses"]), 355)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1353)
+        self.assertEqual(len(doc["bosses"]), 393)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
 
 
-        self.assertEqual(len(doc["bosses"]), 355)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1353)
+        self.assertEqual(len(doc["bosses"]), 393)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
 
     def test_committed_anchored_timers(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -1283,8 +1283,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 355)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1353)
+        self.assertEqual(len(doc["bosses"]), 393)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
 
 
     def test_every_panel_name_is_present(self):
@@ -4891,6 +4891,259 @@ class DungeonCustomEarlyValueTest(unittest.TestCase):
                                    17142):
                 self.assertEqual((row["a"], row["b"], row["c"]), ("0", "0", "0"),
                                  row["_line"])
+
+
+# ---- Early alliance dungeons (Ragefire Chasm 389, Deadmines 36, Stockade 34, Shadowfang Keep 33, Gnomeregan 90) --
+# Read off the core scripts, EventAI rows, creature_spells lists and spell_template, not off the CSV: every ability
+# with its timers, target and flags, every phase rule and every add. creature_spells stores seconds on one SQL line,
+# so those rows keep 0 in the timers and their cadence is in the notes; EventAI and script timers are raw ms.
+DUNGEON_EARLY_ABILITIES = {
+    (639, 3391): (0, 0, 0, "victim", "", {"tank"}),
+    (639, 5200): (0, 0, 0, "self", "", {"hp50", "summon=636"}),
+    (642, 7399): (0, 0, 0, "victim", "", {"aura"}),
+    (642, 3603): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
+    (642, 5141): (0, 0, 0, "self", "", {"summon=643"}),
+    (643, 6713): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
+    (644, 6304): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
+    (645, 6306): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel", "int", "interrupt-nokick"}),
+    (645, 5174): (0, 0, 0, "self", "", {"int", "interrupt-nokick"}),
+    (646, 6432): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel", "hp66"}),
+    (646, 3391): (0, 1500, 4000, "victim", "axed", {"tank"}),
+    (646, 6435): (0, 11000, 11000, "victim", "hammer", {"aura", "dispel-nodispel"}),
+    (647, 5208): (0, 0, 0, "random", "", {"aura", "int"}),
+    (647, 15584): (0, 0, 0, "victim", "", {"tank"}),
+    (1663, 19134): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel"}),
+    (1663, 11976): (0, 0, 0, "victim", "", {"tank"}),
+    (1663, 7165): (0, 0, 0, "self", "", {"purge-nopurge", "self"}),
+    (1666, 7164): (0, 0, 0, "self", "", {"purge-nopurge", "self"}),
+    (1666, 8242): (0, 9300, 24600, "victim", "", {"aura", "dispel-nodispel"}),
+    (1696, 3391): (0, 0, 0, "victim", "", {"tank"}),
+    (1696, 674): (0, 0, 0, "self", "", {"script"}),
+    (1696, 8599): (0, 0, 0, "self", "", {"hp30", "purge-nopurge", "self"}),
+    (1716, 7964): (0, 0, 0, "aoe", "", {"aura"}),
+    (1716, 9128): (0, 0, 0, "self", "", {"self"}),
+    (1716, 674): (0, 0, 0, "self", "", {"script"}),
+    (1717, 6742): (0, 0, 0, "self", "", {"self"}),
+    (1717, 421): (0, 0, 0, "victim", "", {"int"}),
+    (1763, 5213): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel", "int", "interrupt-nokick"}),
+    (3586, 12097): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
+    (3872, 15584): (0, 0, 0, "victim", "", {"tank"}),
+    (3872, 9080): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
+    (3872, 7165): (0, 0, 0, "self", "", {"purge-nopurge", "self"}),
+    (3886, 7485): (0, 2800, 9700, "victim", "", {"tank"}),
+    (3887, 7068): (0, 0, 0, "victim", "", {"aura", "int"}),
+    (3914, 7295): (0, 0, 0, "victim", "", {"aura", "int"}),
+    (3927, 7487): (0, 0, 0, "self", "", {"hp75", "int", "interrupt-nokick", "summon=3861"}),
+    (3927, 7488): (0, 0, 0, "self", "", {"hp50", "int", "interrupt-nokick", "summon=3862"}),
+    (3927, 7489): (0, 0, 0, "self", "", {"hp25", "int", "interrupt-nokick", "summon=3863"}),
+    (4274, 7125): (0, 0, 0, "random", "", {"aura", "int"}),
+    (4275, 7621): (0, 0, 0, "random", "", {"aura"}),
+    (4275, 7803): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel"}),
+    (4275, 7588): (0, 0, 0, "victim", "", {"int"}),
+    (4275, 7136): (0, 0, 0, "self", "", {"int", "interrupt-nokick"}),
+    (4275, 7586): (0, 0, 0, "self", "", {"int", "interrupt-nokick"}),
+    (4275, 7587): (0, 0, 0, "self", "", {"int", "interrupt-nokick"}),
+    (4278, 1026): (0, 0, 0, "ally", "", {"int"}),
+    (4278, 498): (0, 0, 0, "self", "", {"hp25", "purge-nopurge", "self"}),
+    (4279, 7481): (0, 0, 0, "self", "", {"hp85", "self", "int", "interrupt-nokick", "purge-nopurge"}),
+    (4279, 7483): (0, 0, 0, "self", "", {"hp50", "self", "int", "interrupt-nokick", "purge-nopurge"}),
+    (4279, 7484): (0, 0, 0, "self", "", {"hp25", "self", "int", "interrupt-nokick", "purge-nopurge"}),
+    (6228, 9053): (0, 0, 0, "victim", "", {"int"}),
+    (6228, 184): (0, 0, 0, "ally", "", {"int"}),
+    (6228, 10870): (0, 0, 0, "self", "", {"summon=7738"}),
+    (6228, 12544): (0, 0, 0, "self", "", {"self"}),
+    (6229, 10887): (0, 17200, 33400, "aoe", "", {"heal"}),
+    (6229, 5568): (0, 0, 0, "aoe", "", {"heal"}),
+    (6229, 8374): (0, 0, 0, "aoe", "", {"cone"}),
+    (6235, 11082): (0, 14500, 27400, "aoe", "", {"cone", "int", "interrupt-nokick"}),
+    (6235, 15605): (0, 0, 0, "random", "", {"heal"}),
+    (6235, 11085): (0, 0, 0, "random", "", {"int", "interrupt-nokick"}),
+    (7079, 21687): (0, 0, 0, "aoe", "", {"aura"}),
+    (7800, 10101): (0, 0, 0, "victim", "fight", {"tank"}),
+    (7800, 11130): (0, 0, 0, "aoe", "below", {"heal"}),
+    (7800, 11511): (0, 0, 0, "self", "fight", {"script"}),
+    (7800, 11795): (0, 0, 0, "self", "below", {"script"}),
+    (11517, 15584): (0, 0, 0, "victim", "", {"tank"}),
+    (11518, 20800): (0, 0, 0, "random", "", {"aura", "int"}),
+    (11518, 18267): (0, 0, 0, "victim", "", {"aura"}),
+    (11519, 14873): (0, 4900, 15700, "victim", "", {"tank"}),
+    (11519, 744): (0, 10200, 15000, "victim", "", {"aura"}),
+    (11520, 18072): (0, 0, 0, "victim", "", {"tank"}),
+    (11520, 11970): (0, 0, 0, "aoe", "", {"heal"}),
+    (14682, 16508): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel"}),
+    (14682, 17745): (0, 0, 0, "victim", "", {"aura", "int"}),
+    (14682, 20554): (0, 0, 0, "self", "", {"hp30", "script"}),
+    (61961, 3815): (0, 0, 0, "aoe", "", {"aura", "int"}),
+    (61961, 13298): (0, 0, 0, "random", "", {"aura"}),
+    (61961, 13884): (0, 0, 0, "random", "", {"aura"}),
+    (61961, 7357): (0, 0, 0, "random", "", {"aura"}),
+    (61969, 11711): (0, 0, 0, "random", "", {"aura"}),
+    (61969, 6060): (0, 0, 0, "victim", "", {"int"}),
+    (61969, 6226): (0, 0, 0, "random", "", {"aura", "int"}),
+}
+
+DUNGEON_EARLY_PHASES = {
+    646: [("hammer", "hp", 33, 1), ("axed", "hp", 66, 2), ("sword", "start", None, 3)],
+    7800: [("below", "hp", 50, 1), ("fight", "start", None, 2)],
+}
+
+DUNGEON_EARLY_ADDS = {
+    639: [(636, "summon", 1)],
+    642: [(643, "summon", 1)],
+    644: [(1725, "linked", 1)],
+    646: [(636, "linked", 1)],
+    647: [(657, "linked", 1), (1732, "linked", 0)],
+    3887: [(3854, "linked", 1)],
+    3927: [(3861, "summon", 1), (3862, "summon", 1), (3863, "summon", 1)],
+    4274: [(4275, "trigger", 0), (4627, "summon", 1)],
+    4278: [(3854, "linked", 1), (3875, "linked", 1), (3877, "linked", 1)],
+    6228: [(7738, "summon", 1)],
+    7361: [(6215, "linked", 1)],
+    7800: [(7915, "summon", 1)],
+    61969: [(61970, "linked", 1)],
+}
+
+DUNGEON_EARLY_BOSSES = {
+    "ragefire_chasm": (11517, 11518, 11519, 11520),
+    "deadmines": (639, 642, 643, 644, 645, 646, 647, 1763, 3586, 61961, 61963),
+    "stormwind_stockade": (1663, 1666, 1696, 1716, 1717, 1720),
+    "shadowfang_keep": (3872, 3886, 3887, 3914, 3927, 4274, 4275, 4278, 4279, 14682, 61969),
+    "gnomeregan": (6228, 6229, 6235, 7079, 7361, 7800),
+}
+
+
+class DungeonEarlyValueTest(unittest.TestCase):
+    """Every value the panel draws for the five early dungeons, pinned to the core source."""
+
+    MAPS = ("ragefire_chasm", "deadmines", "stormwind_stockade", "shadowfang_keep", "gnomeregan")
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.rows = rows
+        cls.doc = boss_data.build_document(rows, names)
+        cls.by_boss = cls.doc["bosses"]
+
+    def test_boss_entry_sets(self):
+        # A missing boss has to fail: the plan's list is the floor, the review found whole bosses missing before.
+        for key, expected in DUNGEON_EARLY_BOSSES.items():
+            got = tuple(sorted(
+                int(entry) for entry, boss in self.by_boss.items() if boss["map"] == key
+            ))
+            self.assertEqual(got, expected, key)
+
+    def test_ability_values(self):
+        seen = set()
+        for key, (a, b, c, target, phase, flags) in DUNGEON_EARLY_ABILITIES.items():
+            boss, sid = key
+            abilities = {x["sid"]: x for x in self.by_boss[str(boss)]["abilities"]}
+            self.assertIn(sid, abilities, "boss %d lost spell %d" % (boss, sid))
+            ability = abilities[sid]
+            self.assertEqual((ability["a"], ability["b"], ability["c"]), (a, b, c), key)
+            self.assertEqual(ability["target"], target, key)
+            self.assertEqual(ability["phase"], phase, key)
+            self.assertEqual(ability["castMs"], 0, key)
+            self.assertEqual(_flag_set(ability), flags, key)
+            seen.add(key)
+        built = {
+            (int(entry), ability["sid"])
+            for entry, boss in self.by_boss.items()
+            for ability in boss["abilities"]
+            if boss["map"] in self.MAPS
+        }
+        self.assertEqual(built, seen, "the five maps carry exactly the pinned abilities")
+
+    def test_phase_rules(self):
+        for entry, expected in DUNGEON_EARLY_PHASES.items():
+            got = [
+                (phase["name"], phase["rule"]["kind"], phase["rule"].get("hp"), phase["order"])
+                for phase in self.by_boss[str(entry)]["phases"]
+            ]
+            self.assertEqual(got, expected, entry)
+
+    def test_adds(self):
+        for entry, expected in DUNGEON_EARLY_ADDS.items():
+            got = [(a["entry"], a["role"], a["priority"]) for a in self.by_boss[str(entry)]["adds"]]
+            self.assertEqual(got, expected, entry)
+
+    def test_every_ability_is_classified(self):
+        # The coverage rule shows a needless row as "classify: the table does not say what it needs"; every row here
+        # carries a need flag or an ok= reason.
+        need_flags = ("int", "summon", "cone", "tail", "ground", "mark", "aura", "self")
+        for entry, boss in self.by_boss.items():
+            if boss["map"] not in self.MAPS:
+                continue
+            for ability in boss["abilities"]:
+                classified = ability["ok"] or any(ability[name] for name in need_flags)
+                self.assertTrue(classified, (boss["name"], ability["sid"], ability["name"]))
+
+    def test_creature_spell_timers_stay_zero(self):
+        # The dump stores seconds and the core compares them against milliseconds, so the columns cannot carry them.
+        for row in self.rows:
+            if row["map"] not in self.MAPS or row["row"] != "ability":
+                continue
+            if "tw_world_creature_spells.sql" not in row["source"]:
+                continue
+            self.assertEqual((row["a"], row["b"], row["c"]), ("0", "0", "0"),
+                             "line %s (boss %s, spell %s)" % (row["_line"], row["boss"], row["key"]))
+
+    def test_script_and_eventai_timers_reach_the_columns(self):
+        abilities = {
+            (int(row["boss"]), int(row["key"])): row
+            for row in self.rows
+            if row["map"] in self.MAPS and row["row"] == "ability"
+        }
+        # EventAI type 9 (range) has no initial delay: first when the band is met, then the repeat window.
+        self.assertEqual((abilities[(11519, 14873)]["a"], abilities[(11519, 14873)]["b"],
+                          abilities[(11519, 14873)]["c"]), ("0", "4900", "15700"))
+        self.assertEqual((abilities[(1666, 8242)]["b"], abilities[(1666, 8242)]["c"]),
+                         ("9300", "24600"))
+        self.assertEqual((abilities[(6235, 11082)]["b"], abilities[(6235, 11082)]["c"]),
+                         ("14500", "27400"))
+        # A script timer is a literal in the C++ file; a timer that only runs in one phase starts there.
+        self.assertEqual((abilities[(646, 3391)]["a"], abilities[(646, 3391)]["b"],
+                          abilities[(646, 3391)]["c"]), ("0", "1500", "4000"))
+        self.assertEqual((abilities[(646, 6435)]["b"], abilities[(646, 6435)]["c"]),
+                         ("11000", "11000"))
+
+    def test_phase_order_folds_the_right_abilities(self):
+        # The panel is exclusive: the lower threshold must be checked first or a 33 % hammer phase would be hidden.
+        smite = self.by_boss["646"]
+        self.assertEqual([(p["name"], p["order"]) for p in smite["phases"]],
+                         [("hammer", 1), ("axed", 2), ("sword", 3)])
+        self.assertEqual({a["sid"]: a["phase"] for a in smite["abilities"]},
+                         {6432: "", 3391: "axed", 6435: "hammer"})
+        thermaplugg = self.by_boss["7800"]
+        self.assertEqual({a["sid"]: a["phase"] for a in thermaplugg["abilities"]},
+                         {10101: "fight", 11130: "below", 11511: "fight", 11795: "below"})
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class DungeonEarlyKickTest(unittest.TestCase):
+    """Kick flags by the core rule: a generic cast needs preventionType 1, the damage interrupt flag and a cast time
+    above 1; a channel needs the channel interrupt flag; an instant never carries int (it fills no cast slot)."""
+
+    def test_kickable_casts_carry_int_and_int_casts_are_kickable(self):
+        spells = _read_spells()
+        rows = [r for r in boss_data.read_rows(boss_data.DEFAULT_CSV)
+                if r["map"] in DungeonEarlyValueTest.MAPS and r["row"] == "ability"]
+        for row in rows:
+            sid = int(row["key"])
+            spell = spells.get(sid)
+            self.assertIsNotNone(spell, "no spell_template row for %d" % sid)
+            flags = boss_data.parse_flags(row["d"])
+            channeled = bool(spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED)
+            kickable = _kickable(spell) and (channeled or spell["castingTimeIndex"] > 1)
+            where = "line %s (boss %s, spell %d)" % (row["_line"], row["boss"], sid)
+            if kickable:
+                self.assertTrue(flags["int"], "kickable but no int: " + where)
+            nokick = flags["okNeeds"].get("interrupt") == "nokick"
+            if flags["int"] and not nokick:
+                self.assertTrue(kickable, "int but the core cannot kick it: " + where)
 
 
 class UbrsValueTest(unittest.TestCase):
