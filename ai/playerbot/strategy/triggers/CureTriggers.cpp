@@ -8,6 +8,8 @@ using namespace ai;
 
 bool NeedCureTrigger::IsActive()
 {
+	if (ai::BuffTriggerMountGated(bot, ai))
+		return false;
 	Unit* target = GetTarget();
 	return target && ai->HasAuraToDispel(target, dispelType);
 }

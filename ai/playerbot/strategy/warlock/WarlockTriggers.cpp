@@ -15,6 +15,8 @@ using namespace ai;
 
 bool DemonArmorTrigger::IsActive()
 {
+	if (ai::BuffTriggerMountGated(bot, ai))
+		return false;
 	if (!ai->HasSpell("demon skin") && !ai->HasSpell("demon armor"))
 		return false;
 

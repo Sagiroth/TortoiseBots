@@ -1431,6 +1431,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            if (ai::BuffTriggerMountGated(bot, ai))
+                return false;
             uint32 disMask = GetDispellMask(DISPEL_DISEASE);
             uint32 poisMask = GetDispellMask(DISPEL_POISON);
             uint32 bleedType = 1 << (MECHANIC_BLEED - 1);
