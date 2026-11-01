@@ -333,6 +333,10 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     FarmableVerdict localVerdict(bot, order, candidate);
     FarmableVerdict& verdict = farmable ? *farmable : localVerdict;
+    // No gold of its own and none it may take from the guild: the auction
+    // house leg could only walk to a city and back.
+    bool const auctionUnaffordable = bot->GetMoney() == 0 &&
+        TortoiseBots::GuildOrders::BranchGoldCapRemaining(order.botGuidLow) == 0;
     if (sameItem)
     {
         // A delivered sub-order put the item in the guild bank: fetch it
@@ -363,8 +367,8 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         options.bankAttempted = bankSkipped || current == SupplyStep::AuctionHouse ||
             current == SupplyStep::Farm || current == SupplyStep::Craft ||
             current == SupplyStep::Sub || current == SupplyStep::Need;
-        options.auctionHouseAttempted = current == SupplyStep::Farm || current == SupplyStep::Craft ||
-            current == SupplyStep::Sub || current == SupplyStep::Need;
+        options.auctionHouseAttempted = auctionUnaffordable || current == SupplyStep::Farm ||
+            current == SupplyStep::Craft || current == SupplyStep::Sub || current == SupplyStep::Need;
         options.selfCanCraft = candidate.craft;
         options.selfCanFarm = verdict.CanFarm();
         options.subAttempted = current == SupplyStep::Need;
@@ -373,7 +377,7 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     SupplyOptions options;
     options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped;
     options.bankAttempted = bankSkipped;
-    options.auctionHouseAttempted = false;
+    options.auctionHouseAttempted = auctionUnaffordable;
     options.selfCanCraft = candidate.craft;
     options.selfCanFarm = verdict.CanFarm();
     options.subAttempted = false;
