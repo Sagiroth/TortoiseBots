@@ -12,6 +12,12 @@
 
 namespace ai
 {
+    // True while an out-of-combat buff trigger must stay quiet on a mounted
+    // travelling bot (GenericTriggers.cpp). Central gate for BuffTrigger and
+    // its subclasses: the trigger never queues a cast the CheckCanCastSpell
+    // mounted-travel gate would refuse with SPELL_FAILED_NOT_MOUNTED.
+    bool BuffTriggerMountGated(Player* bot, PlayerbotAI* ai);
+
 	class StatAvailable : public Trigger
 	{
 	public:

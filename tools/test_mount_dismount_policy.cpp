@@ -42,11 +42,16 @@ static void TestRealFightDismounts()
 }
 
 // (2) Out-of-combat casts wait while mounted and travelling; combat,
-// and non-travelling bots, keep today's behavior. Gate lives in
-// CheckCanCastSpell (Unit spell-id overload), which every bot cast funnels
-// through on the resolved spell id - blessing actions override
-// isUseful/isPossible without calling the base and resolve their spell
-// dynamically, so an isUseful gate misses them.
+// and non-travelling bots, keep today's behavior. The gate lives in two
+// places with the same condition: CheckCanCastSpell (Unit spell-id
+// overload), which every bot cast funnels through on the resolved spell id,
+// and the buff trigger gate ai::BuffTriggerMountGated, which keeps the
+// trigger from queueing a cast the cast gate would refuse with
+// SPELL_FAILED_NOT_MOUNTED (~78k refusals / 474 bots on 2026-11-01).
+// Blessing actions override isUseful/isPossible without calling the base
+// and resolve their spell dynamically, which is why the first gate had to
+// move to cast time; the trigger gate covers the queueing side for the
+// whole BuffTrigger family.
 static void TestMountedTravelDefersCasts()
 {
     CHECK(!ai::MountedTravelCastAllowed(false, true));

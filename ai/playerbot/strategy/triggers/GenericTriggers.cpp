@@ -542,6 +542,24 @@ bool OutNumberedTrigger::IsActive()
     return friendPower < foePower;
 }
 
+bool ai::BuffTriggerMountGated(Player* bot, PlayerbotAI* ai)
+{
+    // A mounted bot must not queue an out-of-combat buff the core would
+    // strip its mount for: without this the trigger stays active every
+    // tick while mounted and CheckCanCastSpell refuses each attempt with
+    // SPELL_FAILED_NOT_MOUNTED (~78k refusals / 474 bots on 2026-11-01,
+    // one pair every ~4-5 s for whole trips). Combat casts keep firing
+    // (the combat engine owns that decision); travel forms and the other
+    // ride-safe lines keep theirs (cast gate still decides ride-safety,
+    // this only stops the trigger queueing a doomed attempt).
+    if (!bot || bot->IsInCombat())
+        return false;
+    if (!bot->IsMounted() && !bot->GetMountID())
+        return false;
+    AiObjectContext* context = ai ? ai->GetAiObjectContext() : nullptr;
+    return context && context->GetValue<bool>("travel target traveling")->Get();
+}
+
 bool BuffTrigger::IsActive()
 {
     // Cheap gates first (perf): the old order ran GetTarget (a "self target"
@@ -557,6 +575,9 @@ bool BuffTrigger::IsActive()
     // hawk on level 1-2 bots). No donor equivalent; native hardening for a
     // pool that starts at level 1 (donor bots are max-level, never affected).
     if (!ai->HasSpell(spell))
+        return false;
+
+    if (ai::BuffTriggerMountGated(bot, ai))
         return false;
 
     // Issue #T7: another bot is already casting this spell on the target (or, for
@@ -608,6 +629,8 @@ bool BuffTrigger::IsActive()
 
 bool MyBuffTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     if (!ai->HasSpell(spell))
         return false;
