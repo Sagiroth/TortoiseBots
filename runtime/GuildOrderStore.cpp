@@ -1068,6 +1068,57 @@ public:
                     out.push_back(guid);
         return out;
     }
+    // One parent, several sub-orders at once: every item with a running row
+    // or a queued (still unplaced) request directly below the parent is
+    // covered, so the ladder asks for the next uncovered one. Handed-over
+    // finished rows stop covering: the delivery is already collected, and a
+    // later shortage runs the ladder again instead of delegating twice.
+    std::vector<uint32_t> CoveredSubOrderItems(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<uint32_t> out;
+        if (m_orders.find(botGuidLow) == m_orders.end())
+            return out;
+        for (auto const& [guid, stored] : m_orders)
+        {
+            OrderRecord const& row = stored.record;
+            if (row.parentBotGuidLow != botGuidLow || row.cancelled || !row.itemId)
+                continue;
+            if (IsFinished(row.state))
+            {
+                // A failed sub-order lands on the parent's need list and a
+                // cancelled one is gone: only finished rows whose delivery
+                // still waits for the hand-over block a new request.
+                if ((row.state == OrderState::Done || row.state == OrderState::Stocked) && !row.handedOver)
+                    out.push_back(row.itemId);
+                continue;
+            }
+            out.push_back(row.itemId);
+        }
+        for (auto const& [key, queued] : m_queued)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId)
+                out.push_back(key.itemId);
+        return out;
+    }
+    // Finished direct sub-orders whose delivery still waits for the
+    // hand-over: the ladder fetches these through the bank leg first so a
+    // delivered sibling is collected instead of skipped as covered.
+    std::vector<uint32_t> CollectableSubOrderItems(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<uint32_t> out;
+        if (m_orders.find(botGuidLow) == m_orders.end())
+            return out;
+        for (auto const& [guid, stored] : m_orders)
+        {
+            OrderRecord const& row = stored.record;
+            if (row.parentBotGuidLow != botGuidLow || row.cancelled || !row.itemId || row.handedOver)
+                continue;
+            if ((row.state == OrderState::Done || row.state == OrderState::Stocked))
+                out.push_back(row.itemId);
+        }
+        return out;
+    }
 
     void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     {
@@ -2208,6 +2259,16 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
 std::vector<uint32_t> BranchBots(uint32_t botGuidLow)
 {
     return OrderStore::Instance().BranchBots(botGuidLow);
+}
+
+std::vector<uint32_t> CoveredSubOrderItems(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().CoveredSubOrderItems(botGuidLow);
+}
+
+std::vector<uint32_t> CollectableSubOrderItems(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().CollectableSubOrderItems(botGuidLow);
 }
 
 void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)

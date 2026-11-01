@@ -8,7 +8,6 @@
 // ranks and gates them.
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace TortoiseBots
 {
@@ -98,6 +97,36 @@ inline bool SubOrderLoopFree(uint32_t itemId, uint32_t const* branchItems, size_
             return false;
     return true;
 }
+
+// Parallel sub-orders: the parent delegates one component per ladder
+// refresh and supplies the rest itself, so several sub-orders run at the
+// same time. The next component is the first missing one with no running
+// sub-order (or queued request) for it in the branch. Index-based so the
+// caller keeps the missing count next to the id; missingCount itself means
+// every component is covered and the parent waits on its deliveries.
+inline size_t NextUncoveredSubOrderItem(uint32_t const* missingItems, size_t missingCount,
+    uint32_t const* coveredItems, size_t coveredCount)
+{
+    if (!missingItems)
+        return missingCount;
+    for (size_t i = 0; i < missingCount; ++i)
+    {
+        if (!missingItems[i])
+            continue;
+        bool covered = false;
+        if (coveredItems)
+            for (size_t j = 0; j < coveredCount; ++j)
+                if (coveredItems[j] == missingItems[i])
+                {
+                    covered = true;
+                    break;
+                }
+        if (!covered)
+            return i;
+    }
+    return missingCount;
+}
+
 
 // Rank the free candidates: gatherers beat makers, makers beat farmers, and the first listed of
 // equal kind wins so the pick is stable across retries.

@@ -125,12 +125,23 @@ int main()
         CHECK(!queuedOut);
         CHECK(ClassifySubOrderPick(picked, 2, queuedOut) == SubOrderPick::Take);
     }
+    // Parallel pick: first missing item with no running or queued cover.
     {
-        bool queuedOut = false;
-        CHECK(PickSubOrderCandidate(nullptr, 0, queuedOut) == 0);
-        CHECK(!queuedOut);
-        CHECK(ClassifySubOrderPick(0, 0, false) == SubOrderPick::None);
+        uint32_t missing[] = { 100, 200, 300 };
+        CHECK(NextUncoveredSubOrderItem(missing, 3, nullptr, 0) == 0);
+        uint32_t coveredNone[] = { 400 };
+        CHECK(NextUncoveredSubOrderItem(missing, 3, coveredNone, 1) == 0);
+        uint32_t coveredFirst[] = { 100 };
+        CHECK(NextUncoveredSubOrderItem(missing, 3, coveredFirst, 1) == 1);
+        uint32_t coveredAll[] = { 100, 200, 300 };
+        CHECK(NextUncoveredSubOrderItem(missing, 3, coveredAll, 3) == 3);
+        uint32_t coveredMiddle[] = { 200 };
+        CHECK(NextUncoveredSubOrderItem(missing, 3, coveredMiddle, 1) == 0);
+        uint32_t missingSkip[] = { 0, 200 };
+        CHECK(NextUncoveredSubOrderItem(missingSkip, 2, nullptr, 0) == 1);
+        CHECK(NextUncoveredSubOrderItem(nullptr, 0, coveredAll, 3) == 0);
     }
+
 
     if (failures == 0)
         std::printf("guild order sub-order policy: all tests passed\n");
