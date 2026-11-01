@@ -161,13 +161,16 @@ namespace ai
         return radius > 0.0f && radius <= kMaxAoeAvoidRadiusYd;
     }
 
-    // A dynamic object that marks a hazard: a non-positive spell effect from a
-    // caster that is not a friend of the bot, within the dodge cap. A friendly
-    // mage's Blizzard or warlock's Rain of Fire marks no hazard, so it never
-    // refuses a landing or a hold.
-    inline bool DynObjIsHostileHazard(bool positiveEffect, bool casterFriendly, float radius)
+    // A dynamic object that marks a hazard: a non-positive spell effect within
+    // the dodge cap, from a caster that is not a friend of the bot. The
+    // friendly exemption applies to a player-controlled caster only (a player,
+    // its pet or its charm): a friendly mage's Blizzard marks no hazard, but a
+    // trigger NPC's damaging cloud hurts everyone, so a creature's cloud is a
+    // hazard whatever its faction.
+    inline bool DynObjIsHostileHazard(bool positiveEffect, bool casterPlayerControlled, bool casterFriendly,
+        float radius)
     {
-        return !positiveEffect && !casterFriendly && IsAvoidableAoeRadius(radius);
+        return !positiveEffect && IsAvoidableAoeRadius(radius) && !(casterPlayerControlled && casterFriendly);
     }
 
     // A periodic-trigger aura whose triggered spell hurts around the caster
@@ -257,22 +260,39 @@ namespace ai
         return step < fleeDistance ? step : fleeDistance;
     }
 
+    // The landing test for the drag: the landing point clears the hazard by the
+    // circle plus both reaches and a margin, so the boss the tank drags stops
+    // outside it.
+    inline float TankDragNeedYd(float radius, float targetReach, float botReach)
+    {
+        return radius + targetReach + botReach + 0.5f;
+    }
+
+    inline bool TankLandingDragsTargetOut(float landingToCentre, float radius, float targetReach, float botReach)
+    {
+        return landingToCentre >= TankDragNeedYd(radius, targetReach, botReach);
+    }
+
+    // The drag step's ceiling: a landing this far from the cloud's centre can
+    // no longer be checked against the next cloud (the hazard scan reaches this
+    // far), so it is the sensor's own reach. The cap must never fall below
+    // TankDragNeedYd or the drag pass could never satisfy the landing test and
+    // would silently degrade to the bot-only escape; TankDragFitsCap is the
+    // caller's gate for the geometries where it does.
+    constexpr float kMaxTankDragStepYd = kTrapScanRangeYd;
+
+    inline bool TankDragFitsCap(float radius, float targetReach, float botReach)
+    {
+        return TankDragNeedYd(radius, targetReach, botReach) <= kMaxTankDragStepYd;
+    }
+
     // A tank that steps out of a ground effect drops the boss at melee reach:
     // the boss keeps standing in the circle it landed in and the melee follow
-    // it back. The drag step clears the circle plus the target's reach plus
-    // the bot's reach, so the boss ends up outside it; the widened search's
-    // last-resort ring is the ceiling.
+    // it back. The drag step clears the circle plus the target's reach plus the
+    // bot's reach, so the boss ends up outside it.
     inline float TankDragStep(float radius, float targetReach, float botReach)
     {
         float const step = radius + targetReach + botReach + 1.5f;
-        float const cap = kAoeFallbackStepYd + 8.0f;
-        return step < cap ? step : cap;
-    }
-
-    // The landing test for the drag: the landing point clears the hazard by
-    // the same reaches and a margin, so the boss it drags stops outside.
-    inline bool TankLandingDragsTargetOut(float landingToCentre, float radius, float targetReach, float botReach)
-    {
-        return landingToCentre >= radius + targetReach + botReach + 0.5f;
+        return step < kMaxTankDragStepYd ? step : kMaxTankDragStepYd;
     }
 } // namespace ai

@@ -9,14 +9,23 @@ These pins only prove the live code is wired to the rules in
 ai/playerbot/AvoidAoePolicy.h (their behaviour is tested in
 tools/test_avoid_aoe_policy.cpp):
 
- - the dynobj scan visits the grid: MaNGOS::WorldObjectListSearcher visits the
-   DynamicObject container, and the check filters TYPEID_DYNAMICOBJECT because
-   the searcher calls it for every container type;
+ - the dynobj scan visits the grid container only (dynamic objects live nowhere
+   else), and the check filters TYPEID_DYNAMICOBJECT because the searcher calls
+   it for every container type;
  - the "no los" value is registered with the hazard scan range (30 yd), not the
    60 yd sight distance;
  - step-out landing hazards come only from hostile, non-positive circles, so a
-   friendly mage's Blizzard never refuses a landing;
- - the melee hold sees those clouds at a reach/chase endpoint too;
+   friendly mage's Blizzard never refuses a landing, and the dynobj circles are
+   merged into the landing list the strafe actually checks;
+ - the tank drag uses the policy step and its landing test, and the caller skips
+   the drag when the cap is below the landing test's need;
+ - the proactive step-out sensor and the melee hold see creature-cast clouds
+   only (open world / PvP against players is unchanged); the hold has no tank
+   exemption, so a tank whose boss stays in the cloud does not walk back in;
+ - the flee action is skipped while a hostile cloud covers the bot: the strafe
+   owns that case and a plain flee ignores the landing filter;
+ - the "aoe threat nearby" trigger gets a proactive dynobj centre test, so the
+   step fires before the cloud's first tick;
  - the reactive "has area debuff" -> flee row sits below the strafe, so the
    step-out wins the reaction pick.
 
@@ -30,6 +39,7 @@ STRATEGY = ROOT / "ai/playerbot/strategy"
 MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
 ACTIONS = (STRATEGY / "actions/BossTacticsActions.cpp").read_text()
 COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
+TRIGGERS = (STRATEGY / "triggers/GenericTriggers.cpp").read_text()
 VALUES = (STRATEGY / "values/NearestGameObjects.cpp").read_text()
 VALUE_CONTEXT = (STRATEGY / "values/ValueContext.h").read_text()
 
@@ -43,7 +53,10 @@ class DynObjScanWiring(unittest.TestCase):
     def test_the_dynobj_scan_visits_the_grid(self):
         fn = body(VALUES, "std::list<ObjectGuid> NearestDynamicObjects::Calculate()")
         self.assertIn("WorldObjectListSearcher", fn)
-        self.assertIn("Cell::VisitAllObjects", fn)
+        # A dynamic object lives only in the grid container; the world
+        # containers (players, creatures, corpses) never hold one.
+        self.assertIn("Cell::VisitGridObjects(", fn)
+        self.assertNotIn("Cell::VisitAllObjects(", fn)
         self.assertNotIn("Leave the list", fn)
         self.assertNotIn("Penqle has no", fn)
         # WorldObjectListSearcher calls the check for every container type
@@ -60,6 +73,11 @@ class DynObjScanWiring(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertIn("kTrapScanRangeYd", rows[0])
 
+    def test_the_far_point_dynobj_query_visits_the_grid(self):
+        fn = body(VALUES, "void ai::CollectDamagingDynObjHazardsAt(")
+        self.assertIn("Cell::VisitGridObjects(", fn)
+        self.assertNotIn("Cell::VisitAllObjects(", fn)
+
 
 class DynObjHazardWiring(unittest.TestCase):
     def test_landing_hazards_skip_friendly_casters(self):
@@ -67,19 +85,61 @@ class DynObjHazardWiring(unittest.TestCase):
         self.assertIn("CollectDamagingDynObjHazards(ai, bot", fn)
         # A circle is built only for a hostile, non-positive caster, and both
         # collectors (cached list, far-point query) share the same filter, so a
-        # friendly mage's Blizzard never refuses a landing.
+        # friendly mage's Blizzard never refuses a landing. The friendly
+        # exemption is decided against a player-controlled caster.
         push = body(VALUES, "void PushDynObjHazard(")
         self.assertIn("IsFriendlyTo", push)
         self.assertIn("DynObjIsHostileHazard", push)
+        self.assertIn("GetCharmerOrOwnerPlayerOrPlayerItself", push)
         for caller in ("void ai::CollectDamagingDynObjHazards(",
                        "void ai::CollectDamagingDynObjHazardsAt("):
             self.assertIn("PushDynObjHazard(", body(VALUES, caller))
+
+    def test_the_landing_list_merges_the_dynobj_circles(self):
+        fn = body(MOVEMENT, "bool AvoidAoeAction::StrafeToSafety(")
+        self.assertIn(
+            "damagingHazards.insert(damagingHazards.end(), dynObjHazards.begin(), dynObjHazards.end())", fn)
+        check = "if (LandingInsideHazard(damagingHazards, cand.getX(), cand.getY(), cand.getZ()))"
+        # Merged before any landing is checked against it.
+        self.assertLess(fn.index("damagingHazards.insert("), fn.index(check))
+
+    def test_the_tank_drag_uses_the_policy(self):
+        fn = body(MOVEMENT, "bool AvoidAoeAction::StrafeToSafety(")
+        self.assertIn("TankDragStep(", fn)
+        self.assertIn("TankLandingDragsTargetOut(", fn)
+        # The drag is skipped, not attempted with an unsatisfiable step, when
+        # the cap is below what the landing test needs.
+        self.assertIn("TankDragFitsCap(", fn)
+
+    def test_the_proactive_step_is_creature_clouds_only(self):
+        fn = body(MOVEMENT, "bool AvoidAoeAction::AvoidAuraWithDynamicObj(")
+        self.assertIn("CollectDamagingDynObjHazards(ai, bot, clouds, true)", fn)
+        self.assertIn("InsideAoeHazard(circle, bot->GetPositionX()", fn)
+
+    def test_the_flee_is_skipped_under_a_hostile_cloud(self):
+        fn = body(MOVEMENT, "bool FleeAction::isUseful()")
+        self.assertIn("CollectDamagingDynObjHazards(ai, bot, clouds, true)", fn)
+        self.assertIn("InsideAoeHazard(cloud, bot->GetPositionX()", fn)
+
+    def test_the_trigger_steps_out_proactively(self):
+        fn = body(TRIGGERS, "bool AoeThreatNearbyTrigger::IsActive()")
+        # The step fires as the cloud forms, on the centre test, not only once
+        # the aura has landed ("has area debuff").
+        self.assertIn("CollectDamagingDynObjHazards(ai, bot, clouds, true)", fn)
+        self.assertIn("InsideAoeHazard(cloud, bot->GetPositionX()", fn)
 
 
 class DynObjHoldWiring(unittest.TestCase):
     def test_the_hold_sees_dynobjs(self):
         fn = body(ACTIONS, "float TrapHoldMultiplier::GetValue(")
         self.assertIn("CollectDamagingDynObjHazardsAt(", fn)
+
+    def test_the_hold_has_no_tank_exemption_for_clouds(self):
+        fn = body(ACTIONS, "float TrapHoldMultiplier::GetValue(")
+        # A tank whose boss stays in the cloud must be held at the edge too: it
+        # is the drag, not a walk back in, that gets the boss out.
+        self.assertNotIn("PlayerbotAI::IsTank(bot) && target->GetVictim() == bot", fn)
+        self.assertIn("CollectDamagingDynObjHazardsAt(ai, bot, endpoint.x, endpoint.y, endpoint.z, dynObjHazards, true)", fn)
 
 
 class FleeRowWiring(unittest.TestCase):

@@ -95,7 +95,9 @@ std::list<ObjectGuid> NearestDynamicObjects::Calculate()
     std::list<WorldObject*> targets;
     DynamicObjectsInRangeCheck u_check(bot, range);
     WorldObjectListSearcher<DynamicObjectsInRangeCheck> searcher(targets, u_check);
-    Cell::VisitAllObjects((const WorldObject*)bot, searcher, range);
+    // A dynamic object lives only in the grid container; the world containers
+    // (players, creatures, corpses) never hold one, so visit the grid only.
+    Cell::VisitGridObjects((const WorldObject*)bot, searcher, range);
 
     std::list<ObjectGuid> result;
     for (std::list<WorldObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
@@ -209,9 +211,13 @@ private:
     float x, y, z, range;
 };
 
-// A dynamic object that marks a hazard (hostile caster, non-positive effect,
-// within the dodge cap): appended to `out` as a centre/radius circle.
-void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out)
+// A dynamic object that marks a hazard (non-positive effect, within the dodge
+// cap, caster not a friend when it is player-controlled): appended to `out` as
+// a centre/radius circle. With `creatureCastersOnly`, a player-controlled
+// caster's cloud (a player, its pet or its charm) is skipped: the proactive
+// step-out and the melee hold serve PvE ground effects, the open world and PvP
+// against players are unchanged.
+void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out, bool creatureCastersOnly)
 {
     if (!dyn || !dyn->IsInWorld())
         return;
@@ -220,9 +226,13 @@ void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCirc
         return;
     bool const positive = spellProto->IsPositiveEffect(dyn->GetEffIndex());
     WorldObject* caster = dyn->GetCaster();
+    Unit* casterUnit = caster ? caster->ToUnit() : nullptr;
+    bool const casterPlayerControlled = casterUnit && casterUnit->GetCharmerOrOwnerPlayerOrPlayerItself() != nullptr;
+    if (creatureCastersOnly && casterPlayerControlled)
+        return;
     bool const casterFriendly = caster && sServerFacade.IsFriendlyTo(caster, bot);
     float const radius = dyn->GetRadius();
-    if (!DynObjIsHostileHazard(positive, casterFriendly, radius))
+    if (!DynObjIsHostileHazard(positive, casterPlayerControlled, casterFriendly, radius))
         return;
     AoeHazardCircle hazard;
     hazard.x = dyn->GetPositionX();
@@ -324,7 +334,8 @@ void ai::CollectDamagingTrapHazardsAt(PlayerbotAI* ai, Player* bot, float x, flo
     }
 }
 
-void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out)
+void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out,
+    bool creatureCastersOnly)
 {
     out.clear();
     if (!ai || !bot)
@@ -334,11 +345,11 @@ void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<
         return;
     AiObjectContext* context = ai->GetAiObjectContext();
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
-        PushDynObjHazard(bot, map->GetDynamicObject(guid), out);
+        PushDynObjHazard(bot, map->GetDynamicObject(guid), out, creatureCastersOnly);
 }
 
 void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
-    std::vector<AoeHazardCircle>& out)
+    std::vector<AoeHazardCircle>& out, bool creatureCastersOnly)
 {
     out.clear();
     if (!ai || !bot)
@@ -351,7 +362,7 @@ void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, f
     float const cachedYd = kTrapScanRangeYd - kTrapDestMarginYd;
     if (dx * dx + dy * dy + dz * dz <= cachedYd * cachedYd)
     {
-        CollectDamagingDynObjHazards(ai, bot, out);
+        CollectDamagingDynObjHazards(ai, bot, out, creatureCastersOnly);
         return;
     }
     Map* map = bot->GetMap();
@@ -360,9 +371,9 @@ void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, f
     std::list<WorldObject*> targets;
     DynObjsNearPointCheck u_check(bot->GetMapId(), x, y, z, kTrapScanRangeYd);
     WorldObjectListSearcher<DynObjsNearPointCheck> searcher(targets, u_check);
-    Cell::VisitAllObjects(x, y, map, searcher, kTrapScanRangeYd, true);
+    Cell::VisitGridObjects(x, y, map, searcher, kTrapScanRangeYd, true);
     for (WorldObject* wo : targets)
-        PushDynObjHazard(bot, static_cast<DynamicObject*>(wo), out);
+        PushDynObjHazard(bot, static_cast<DynamicObject*>(wo), out, creatureCastersOnly);
 }
 
 std::list<ObjectGuid> NearestDamagingTrapsValue::Calculate()

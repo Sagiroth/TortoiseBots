@@ -82,15 +82,20 @@ namespace ai
 
     // Every listed hostile ground cloud around the bot as a hazard circle: a
     // persistent-area-aura dynamic object (Poison Cloud, Blizzard, Rain of
-    // Fire, Consecration). A friendly caster's or a positive effect's circle is
-    // skipped, so it never refuses a landing or a hold.
-    void CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out);
+    // Fire, Consecration). A positive effect's circle is skipped, and so is a
+    // player-controlled caster's friendly circle (a group mage's Blizzard),
+    // while a creature's damaging cloud stays a hazard whatever its faction.
+    // With `creatureCastersOnly` a player-controlled caster is skipped
+    // altogether: the step-out and the hold leave the open world and PvP
+    // against players unchanged.
+    void CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out,
+        bool creatureCastersOnly = false);
 
     // The hostile dynamic objects that can reach a destination point: the
     // cached list for a point in the bot's neighbourhood, one bounded query
     // around the point itself for a destination beyond it.
     void CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
-        std::vector<AoeHazardCircle>& out);
+        std::vector<AoeHazardCircle>& out, bool creatureCastersOnly = false);
 
     class NearestDynamicObjects : public ObjectGuidListCalculatedValue
     {

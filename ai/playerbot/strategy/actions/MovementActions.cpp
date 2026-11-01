@@ -3269,6 +3269,17 @@ bool FleeAction::isUseful()
 {
     if (!MovementAction::isUseful())
         return false;
+    // The step-out (avoid aoe) owns a hostile ground cloud over the bot: a
+    // plain flee runs in one straight line and ignores the landing filter, so
+    // it can carry the bot into the next cloud. Creature-cast clouds only, the
+    // same sensor the step-out uses.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
+    for (AoeHazardCircle const& cloud : clouds)
+    {
+        if (InsideAoeHazard(cloud, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return false;
+    }
     // A tank that holds its boss does not run off it: fleeing drops the
     // threat and drags the fight onto the casters. The step-out (avoid aoe)
     // is the tank's way out of a ground effect.
@@ -3351,8 +3362,10 @@ bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& ou
     // Consecration) whose circle covers the bot starts the step as soon as the
     // cloud appears, before its first 1 s tick lands. The old "has area debuff"
     // gate only saw the cloud after the aura was already on the bot.
+    // Creature-cast clouds only: a player's (or a pet's) ground effect is left
+    // to the normal engines, so the open world and PvP stay unchanged.
     std::vector<AoeHazardCircle> clouds;
-    CollectDamagingDynObjHazards(ai, bot, clouds);
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
     for (AoeHazardCircle const& circle : clouds)
     {
         if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
@@ -3479,7 +3492,11 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     // still inside the old cloud with the melee around it. The drag step clears
     // the circle plus both reaches.
     AoeHazardCircle const hazardCircle{hazardCenter.getX(), hazardCenter.getY(), hazardCenter.getZ(), radius};
+    // Only when the drag step can reach past the landing test's need: a cloud
+    // wider than the drag cap would refuse every drag landing, so the tank
+    // falls back to the bot-only escape instead of the cap step.
     bool const dragTargetOut = tanking && target &&
+        TankDragFitsCap(radius, target->GetCombatReach(), bot->GetCombatReach()) &&
         InsideAoeHazard(hazardCircle, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
     float const step = dragTargetOut
         ? TankDragStep(radius, target->GetCombatReach(), bot->GetCombatReach())
