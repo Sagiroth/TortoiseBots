@@ -1590,21 +1590,22 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                         if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
-                    // Off-mesh grind and gather points (night2 movestuck:
-                    // 103 of 119 grind move-failures probed NOPATH from a
-                    // median 2328 yd; night2 gatherfrozen: 51 of 65 mining
-                    // fails the same way): the gates above never ask the
-                    // navmesh whether the point itself can be stood on, so
-                    // a spawn inside rock or off the meshed area is picked,
-                    // fails six walks and is re-picked. One nearest-poly
-                    // query on the candidate that passed every other gate
-                    // - usually the winner - never a full A*. Fishing
-                    // stays out: its spots are water by design.
+                    // Off-mesh points (night2 movestuck: 103 of 119 grind
+                    // move-failures probed NOPATH from a median 2328 yd;
+                    // night2 gatherfrozen: 51 of 65 mining fails the same
+                    // way; churn pool: vendor/fishing/rpg/quest trips picked
+                    // into the same unwalkable spots failed and dropped within
+                    // seconds, one purpose after another): the gates above
+                    // never ask the navmesh whether the point itself can be
+                    // stood on, so a spawn inside rock or off the meshed area
+                    // is picked, fails six walks and is re-picked. One
+                    // nearest-poly query on the candidate that passed every
+                    // other gate - usually the winner - never a full A*.
+                    // Fishing stays out: its spots are water by design
+                    // (TravelMeshSieveApplies, pure and unit-tested).
                     TravelDestinationPurpose const pointPurpose = destination->GetPurpose();
-                    bool const sieveApplies = pointPurpose == TravelDestinationPurpose::Grind ||
-                        pointPurpose == TravelDestinationPurpose::GatherMining ||
-                        pointPurpose == TravelDestinationPurpose::GatherHerbalism ||
-                        pointPurpose == TravelDestinationPurpose::SpellFocus;
+                    bool const sieveApplies = ai::TravelMeshSieveApplies((uint32)pointPurpose,
+                        (uint32)TravelDestinationPurpose::GatherFishing);
                     if (sieveApplies && !DestinationPointOnMesh(bot, position))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - off the navmesh", "debug travel");
@@ -2145,6 +2146,14 @@ bool RequestTravelTargetAction::isUseful() {
             (getQualifier() != "guild order" || AI_VALUE(bool, "has guild travel order") ||
              AI_VALUE(bool, "has guild order delivery")))
         {
+            // ...unless its search just failed: the purpose park below is set
+            // when the order search comes back empty, and murdering the
+            // leisure trip to fail the same search again restarts the walk
+            // every minute for nothing (travel churn: a bot whose order
+            // destination stays inactive never lets a leisure trip walk).
+            // The park check below runs after this block, so read it here.
+            if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + getQualifier()) > time(0))
+                return false;
             TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
             if (current)
             {

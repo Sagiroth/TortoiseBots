@@ -26,6 +26,7 @@ using ai::GIVER_REPICK_PARK_AFTER;
 using ai::TRAVEL_STARVED_PARKED_PURPOSES;
 using ai::TravelSearchesStarved;
 using ai::TravelStarvedParkKeys;
+using ai::TravelMeshSieveApplies;
 using ai::HandInTripProgressed;
 using ai::HAND_IN_PROGRESS_STEP_YD;
 
@@ -225,6 +226,21 @@ int main()
         CHECK(HAND_IN_PROGRESS_STEP_YD == 5.0f);
     }
     std::cout << "  [PASS] hand-in progress resets on a 5 yd new best only\n";
+
+    // Mesh sieve scope: every walkable purpose takes it, fishing stays out
+    // (water by design). Purpose ids mirror TravelDestinationPurpose
+    // (Vendor 512, GatherFishing 131072, Grind 4096, quest giver/taker live
+    // under other bits).
+    {
+        constexpr uint32_t fishing = 131072;
+        CHECK(!TravelMeshSieveApplies(fishing, fishing));
+        CHECK(TravelMeshSieveApplies(512, fishing));
+        CHECK(TravelMeshSieveApplies(4096, fishing));
+        CHECK(TravelMeshSieveApplies(256, fishing));
+        CHECK(TravelMeshSieveApplies(1024, fishing));
+        CHECK(TravelMeshSieveApplies(64, fishing));
+    }
+    std::cout << "  [PASS] mesh sieve covers every purpose but fishing\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;

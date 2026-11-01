@@ -192,7 +192,18 @@ namespace ai
         constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
         return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
     }
-    // A grind destination whose walk keeps failing is given up like a wedged
+    // Off-mesh sieve scope (night2 movestuck/gatherfrozen follow-up): a
+    // destination point with no walkable navmesh polygon nearby can never be
+    // walked to, so the pick only fails six walks and is re-picked. Every
+    // purpose with a walkable point takes the sieve; fishing stays out (its
+    // spots are water by design - the probe keeps water too, this only says
+    // the pick gate must not refuse them). The caller passes the numeric
+    // purpose ids so this stays core-free.
+    inline bool TravelMeshSieveApplies(uint32_t purposeId, uint32_t fishingPurposeId)
+    {
+        return purposeId != fishingPurposeId;
+    }
+
     // combat target (ReachTargetActions.h): the creature kind goes on the
     // same "unreachable entries" blacklist, so the grind gate
     // (GrindTravelDestination::IsActive) stops offering it for a while and
