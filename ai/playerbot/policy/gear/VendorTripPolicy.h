@@ -54,6 +54,9 @@ namespace ai
         uint8_t pressurePercent)
     {
         if (!totalSlots) return true;
+        // Completely full bags loot nothing more, so a smaller sale can never
+        // grow into the threshold: any sellable slot is worth the trip then.
+        if (usedSlots >= totalSlots && sellableSlots > 0) return true;
         if (sellableSlots >= ORDER_BAG_PRESSURE_MIN_SELL_SLOTS) return true;
         uint32_t const freed = sellableSlots < usedSlots ? sellableSlots : usedSlots;
         return (usedSlots - freed) * 100u < uint32_t(pressurePercent) * totalSlots;
