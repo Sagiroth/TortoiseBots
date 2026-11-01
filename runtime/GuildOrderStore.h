@@ -60,6 +60,17 @@ void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t cou
 bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type);
 // Bot guids of a branch (the bot itself plus every sub-order below it).
 std::vector<uint32_t> BranchBots(uint32_t botGuidLow);
+// Items already delegated to direct sub-orders (running rows and still
+// queued requests): the craft ladder skips these when picking the next
+// missing component, so one component never gets two sub-orders and the
+// parent works or delegates the rest instead. Finished rows count while
+// their delivery waits for the hand-over; handed-over ones do not, so a
+// later shortage runs the ladder again. Best effort under one lock hold.
+std::vector<uint32_t> CoveredSubOrderItems(uint32_t botGuidLow);
+// Direct sub-order deliveries waiting for the hand-over (finished rows the
+// parent has not collected yet): the craft ladder prefers these over
+// covered items so a delivered sibling gets fetched instead of skipped.
+std::vector<uint32_t> CollectableSubOrderItems(uint32_t botGuidLow);
 // Durable module bots only for sub-order work: pool-account or claimed,
 // never autonomous alts or hires. Same-guild membership is checked live at
 // each call site (member rows plus GetGuildId()). World thread only.

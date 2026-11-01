@@ -9,6 +9,7 @@
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderSubOrderPolicy.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include "runtime/GuildOrderRefundPolicy.h"
 #include "runtime/AltBotService.h"
@@ -339,8 +340,11 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         if (current == SupplyStep::Sub && !bankSkipped && sPlayerbotAIConfig.guildOrderBankWithdraw &&
             TortoiseBots::GuildOrders::SubOrderDelivered(order.botGuidLow, candidate.itemId))
             return SupplyStep::Bank;
-        if (current == SupplyStep::AuctionHouse || current == SupplyStep::Sub || current == SupplyStep::Need)
-            return current;
+        // The choice below never parks on a Sub row for another item: the
+        // candidate here is already the next uncovered one, so a parked row
+        // for a delegated component yields to supplying (or delegating) this
+        if (current == SupplyStep::Sub)
+            current = SupplyStep::None;
         if (current == SupplyStep::Craft && candidate.craft)
             return current;
         if (current == SupplyStep::Bags && SnapshotMail(bot, snap, candidate.itemId) > 0)
@@ -511,13 +515,71 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         return;
     }
 
-    SupplyCandidate candidate;
+    // The first missing component the recipe walk names, then the first one
+    // still needing work: delivered sub-orders are collected first (their
+    // items sit in the guild bank), running or queued ones are covered (a
+    // sibling sub-order fetches each), so the parent supplies or delegates
+    // the rest instead of re-requesting the same item. Two cheap store
+    // reads per refresh while a sub-order could be running; the pure pick
+    // itself plans nothing.
+    SupplyCandidate firstMissing;
     std::vector<uint32_t> path;
-    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, candidate, &order, &snapshot))
+    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, firstMissing, &order, &snapshot))
     {
         TortoiseBots::GuildOrders::SetState(order.botGuidLow,
             TortoiseBots::GuildOrders::OrderState::Cant, OrderReason::NoRecipe);
         return;
+    }
+    SupplyCandidate candidate = firstMissing;
+    if (!firstMissing.craft)
+    {
+        // Only while a sub-order could be running: two cheap store reads,
+        // no planner. The reagent walk below repeats the walk above, so it
+        // runs only when there is something to skip or collect.
+        std::vector<uint32_t> collectable =
+            TortoiseBots::GuildOrders::CollectableSubOrderItems(order.botGuidLow);
+        std::vector<uint32_t> covered =
+            TortoiseBots::GuildOrders::CoveredSubOrderItems(order.botGuidLow);
+        if (!collectable.empty() || !covered.empty())
+        {
+            std::vector<NeedItem> missingNow;
+            CollectMissingReagents(ai, bot, order.itemId, outputMissing, missingNow, &snapshot);
+            if (!missingNow.empty())
+            {
+                std::vector<uint32_t> missingIds;
+                missingIds.reserve(missingNow.size());
+                for (NeedItem const& need : missingNow)
+                    missingIds.push_back(need.itemId);
+                // Delivered siblings first: a finished sub-order's items sit
+                // in the guild bank, so the parent fetches those through the
+                // bank leg before supplying or delegating the rest.
+                bool collected = false;
+                if (!collectable.empty())
+                    for (NeedItem const& need : missingNow)
+                    {
+                        for (uint32_t ready : collectable)
+                            if (ready && ready == need.itemId)
+                            {
+                                candidate = { need.itemId, need.count, false };
+                                collected = true;
+                                break;
+                            }
+                        if (collected)
+                            break;
+                    }
+                if (!collected)
+                {
+                    size_t next = TortoiseBots::GuildOrders::NextUncoveredSubOrderItem(missingIds.data(),
+                        missingIds.size(), covered.data(), covered.size());
+                    // Every component covered: keep the row and wait for the
+                    // deliveries instead of farming a delegated item twice.
+                    // The collectable path above fetches each one as it lands.
+                    if (next >= missingNow.size())
+                        return;
+                    candidate = { missingNow[next].itemId, missingNow[next].count, false };
+                }
+            }
+        }
     }
     if (candidate.craft)
     {
