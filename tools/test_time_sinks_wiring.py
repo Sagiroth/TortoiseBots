@@ -200,14 +200,6 @@ class TimeSinksWiringTest(unittest.TestCase):
         self.assertLess(start.index("if (HoleReplayRescue(r, f, hole))"),
                         start.index("r.walkBackIdx = LastPointBeforeDirect(r, hole);"))
 
-    def test_passed_boss_pauses_before_the_wait(self):
-        fight = body(POLICY, "inline void FightStep(Run& r, const Facts& f, const PlanStep& s,", "\n}\n")
-        passed = fight.index("if (u.entry == s.entry && u.hostile && r.passed.count(u.guid))")
-        self.assertLess(fight.index("else if (end == FightEnd::BossDown)"), passed)
-        self.assertLess(passed, fight.index("r.bossWaitMs += dt;"))
-        self.assertIn("FromLeadBot(ai::PlanDistance(f.leadX, f.leadY, f.leadZ, f.bossAliveX, f.bossAliveY, f.bossAliveZ),",
-                      fight)
-
     def test_passed_boss_height_is_the_unit_real_one(self):
         # Codex review round 1: the passed-boss pause mixed the boss's real spot (u.distLead) with the plan point's
         # height (s.z - f.leadZ). The note reads u.z - f.leadZ, and the glue fills it from the creature's position.

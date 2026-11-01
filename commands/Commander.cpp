@@ -67,6 +67,7 @@
 #include "../runtime/BossWindowSignal.h"
 #include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
+#include "../host/CreatureForm.h" // ScriptChangedFrom: the entry a script changed a creature away from
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/CombatMonitorPolicy.h"
@@ -7835,6 +7836,8 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = other->GetObjectGuid().GetRawValue();
         fact.entry = other->GetEntry();
+        if (Creature* asCreature = other->ToCreature())
+            fact.formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(asCreature);
         fact.distLead = other->GetMap() == lead->GetMap() ? lead->GetDistance(other) : 1000.0f;
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
@@ -8411,6 +8414,37 @@ std::vector<std::vector<int>> CreatureSpawnGameEvents(std::vector<uint32> const&
     return events;
 }
 
+// The boss step's own spawn: the spawn row nearest to the step's point (the instance search's rule, shared with the
+// step's read), and the creature it stands for by guid, whatever entry that creature reads now (a script may have
+// changed it away from the row's).
+uint32 OwnBossSpawnLow(uint32 mapId, ai::PlanStep const& step)
+{
+    uint32 own = 0;
+    float ownYd = 0.0f;
+    for (uint32 low : BossSpawnLowGuids(mapId, step.entry))
+        if (CreatureData const* data = sObjectMgr.GetCreatureData(low))
+        {
+            float const yd = ai::PlanDistance(data->position.x, data->position.y, data->position.z,
+                step.x, step.y, step.z);
+            if (!own || yd < ownYd)
+            {
+                own = low;
+                ownYd = yd;
+            }
+        }
+    return own;
+}
+
+Creature* OwnBossSpawnCreature(Player* lead, ai::PlanStep const& step)
+{
+    Map* map = lead->GetMap();
+    if (!map)
+        return nullptr;
+    uint32 const own = OwnBossSpawnLow(lead->GetMapId(), step);
+    CreatureData const* data = own ? sObjectMgr.GetCreatureData(own) : nullptr;
+    return data ? map->GetCreature(data->GetObjectGuid(own)) : nullptr;
+}
+
 // A boss step's instance search (DungeonRun::Facts::bossSearch*), on the tick after the policy asked for it
 // (Run::bossSearchWanted, once per kBossSearchMs window): every spawn of the boss's entry on the lead bot's map,
 // looked up by guid in that map (no grid or world scan), wherever it stands. Alive: one lives (where); dead: one
@@ -8427,18 +8461,7 @@ void ReadBossInInstance(ai::PlanStep const& step, Player* lead, TortoiseBots::Du
     std::vector<uint32> const& spawns = BossSpawnLowGuids(lead->GetMapId(), step.entry);
     f.bossSearchNoSpawn = spawns.empty();
     // The step's own spawn: the spawn row nearest to the step's point.
-    uint32 own = 0;
-    float ownYd = 0.0f;
-    for (uint32 low : spawns)
-        if (CreatureData const* data = sObjectMgr.GetCreatureData(low))
-        {
-            float const yd = ai::PlanDistance(data->position.x, data->position.y, data->position.z, step.x, step.y, step.z);
-            if (!own || yd < ownYd)
-            {
-                own = low;
-                ownYd = yd;
-            }
-        }
+    uint32 own = OwnBossSpawnLow(lead->GetMapId(), step);
     float corpseFromSpot = 0.0f;
     for (uint32 low : spawns)
     {
@@ -8453,13 +8476,16 @@ void ReadBossInInstance(ai::PlanStep const& step, Player* lead, TortoiseBots::Du
             f.bossSearchUnloaded = true;
             continue;
         }
-        if (!creature || creature->GetEntry() != step.entry)
+        // A script may have changed his entry away from the row's (the guid keeps the spawn's): he is still the boss.
+        if (!creature || (creature->GetEntry() != step.entry &&
+                          TortoiseBots::DungeonRun::ScriptChangedFrom(creature) != step.entry))
             continue;
         if (creature->IsAlive())
         {
             if (!f.bossSearchAlive)
             {
                 f.bossSearchAlive = true;
+                f.bossSearchAliveEntry = creature->GetEntry();
                 f.bossAliveX = creature->GetPositionX();
                 f.bossAliveY = creature->GetPositionY();
                 f.bossAliveZ = creature->GetPositionZ();
@@ -9294,6 +9320,27 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 entries.push_back(step->entry);
             float const range = std::min(toPoint + step->radius, 2.0f * kSeeYd);
             float bossCorpseFromSpot = 0.0f;
+            // The step's own spawn, looked up by guid whatever entry it reads now: the entries above never list a
+            // boss a script changed (Thekal's 14599 -> 14509), so his own corpse would go unseen and his step would
+            // wait for him. Dead: boss down at once, wherever he lies, and the corpse fields below are his. Alive
+            // under a changed entry: the entry it reads now joins the read, so he is listed with the rest.
+            if (step->kind == ai::PlanStepKind::Boss)
+                if (Creature* own = OwnBossSpawnCreature(lead, *step))
+                {
+                    if (!own->IsAlive())
+                    {
+                        f.bossOwnDead = true;
+                        f.bossOwnDeadEntry = own->GetEntry();
+                        f.bossCorpseGuid = own->GetObjectGuid().GetRawValue();
+                        f.bossCorpseX = own->GetPositionX();
+                        f.bossCorpseY = own->GetPositionY();
+                        f.bossCorpseZ = own->GetPositionZ();
+                        bossCorpseFromSpot = DistanceTo(own, step->x, step->y, step->z);
+                    }
+                    else if (TortoiseBots::DungeonRun::ScriptChangedFrom(own) == step->entry &&
+                        std::find(entries.begin(), entries.end(), own->GetEntry()) == entries.end())
+                        entries.push_back(own->GetEntry());
+                }
             // A pull step's read (DungeonRun::ClassifyPullRead): the policy decides the radius, the residue band,
             // spawn ownership and the waypoint followers; the glue only measures. The grid search reaches as far as
             // a spawn-owned patroller may be listed, and only while the gate is on.
@@ -9341,14 +9388,19 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 // The boss's own entry is looked for farther: his corpse may lie
                 // where a pullback dragged him (DungeonRun::Facts::bossDeadNearSpot).
-                bool const bossEntry = step->kind == ai::PlanStepKind::Boss && entry == step->entry;
+                bool const bossRange = step->kind == ai::PlanStepKind::Boss && entry == step->entry;
                 std::list<Creature*> found;
                 lead->GetCreatureListWithEntryInGrid(found, entry,
-                    bossEntry ? std::min(toPoint + step->radius + kSeeYd, 2.0f * kSeeYd)
+                    bossRange ? std::min(toPoint + step->radius + kSeeYd, 2.0f * kSeeYd)
                               : pullStep ? packRange : range);
                 for (Creature* creature : found)
                 {
                     float const fromPoint = DistanceTo(creature, step->x, step->y, step->z);
+                    // The step's boss, whatever entry he reads now (DungeonRun::IsStepBoss): the corpse and the loot
+                    // mark below are his, and the unit carries the entry a script changed him away from.
+                    uint32 const formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
+                    bool const bossEntry = step->kind == ai::PlanStepKind::Boss &&
+                        (creature->GetEntry() == step->entry || formOf == step->entry);
                     if (!creature->IsAlive())
                     {
                         // "Boss down" needs his corpse in sight, not just his absence (a patrol).
@@ -9439,6 +9491,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     UnitFact unit;
                     unit.guid = creature->GetObjectGuid().GetRawValue();
                     unit.entry = creature->GetEntry();
+                    unit.formOf = formOf;
                     unit.distLead = lead->GetDistance(creature);
                     unit.z = creature->GetPositionZ(); // the passed-boss pause reads the unit's real height off it
                     // Hostile or neutral may be pulled; only a friendly one is left alone.
@@ -13619,18 +13672,34 @@ static void SampleBoundFights(uint32 diff)
         // The boss from data: world-boss rank, an instance-bind flag, or a plan
         // boss step of the lead's map (the boss list's rule), most health first.
         std::vector<BoundFight::BossCandidate> candidates;
+        // The fight's boss entry: a creature a script changed the entry of is picked (and named) under it, and the
+        // unit that reads it now tells the fight its phase (NoteBossForm, one change at a time).
+        uint32 const bossEntry = CombatMonitorService::Instance().BossEntry(binding->groupId);
         for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(binding->groupId))
         {
             BoundFight::BossCandidate c;
             c.entry = u.entry;
             c.guid = u.guid;
             c.name = u.name;
-            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(u.entry))
+            uint32 formOf = 0;
+            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
+            {
+                c.maxHealth = unit->GetMaxHealth();
+                if (Creature* creature = unit->ToCreature())
+                    formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
+            }
+            if (formOf)
+            {
+                c.entry = formOf;
+                if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(formOf))
+                    c.name = info->name;
+                if (formOf == bossEntry)
+                    CombatMonitorService::Instance().NoteBossForm(binding->groupId, u.entry);
+            }
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(c.entry))
                 c.boss = info->rank == CREATURE_ELITE_WORLDBOSS ||
                     (info->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND);
-            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), u.entry);
-            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
-                c.maxHealth = unit->GetMaxHealth();
+            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), c.entry);
             candidates.push_back(std::move(c));
         }
         int const picked = BoundFight::PickBoss(candidates);

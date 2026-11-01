@@ -182,6 +182,31 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     it->second.NoteBoss(entry, name);
 }
 
+// The entry the fight's boss unit reads now (the sampler, every tick): a script
+// changed the entry away from the boss's, so the fight gains a phase.
+void CombatMonitorService::NoteBossForm(uint32_t groupId, uint32_t entry)
+{
+    if (!Enabled() || groupId == 0 || entry == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    it->second.NoteBossForm(entry);
+}
+
+// The open fight's boss entry: 0 when no fight or no boss is set. The sampler
+// reads it to follow the boss unit's entry changes (the fight's boss stays the
+// entry it was picked under).
+uint32_t CombatMonitorService::BossEntry(uint32_t groupId) const
+{
+    if (!Enabled() || groupId == 0)
+        return 0;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    return it == m_books.end() ? 0 : it->second.Context().bossEntry;
+}
+
 // The sampler's lead stayed away past its grace: the open fight is kept, with
 // outcome unfinished unless it was a wipe or the boss already fell.
 void CombatMonitorService::CloseUnfinished(uint32_t groupId, uint32_t nowMs)
@@ -378,7 +403,7 @@ void CombatMonitorService::OnEnterCombat(uint32_t memberGuidLow)
 }
 
 void CombatMonitorService::OnDeath(uint32_t victimGuidLow, uint32_t killerOwnerGuidLow, char const* killer, float x,
-                                   float y, float z, uint32_t enemyEntryDied)
+                                   float y, float z, uint32_t enemyEntryDied, uint32_t enemyFormOf)
 {
     if (m_memberCount.load(std::memory_order_relaxed) == 0)
         return;
@@ -414,7 +439,7 @@ void CombatMonitorService::OnDeath(uint32_t victimGuidLow, uint32_t killerOwnerG
     auto const book = m_books.find(group);
     if (book == m_books.end())
         return;
-    book->second.NoteBossDied(enemyEntryDied);
+    book->second.NoteBossDied(enemyEntryDied, enemyFormOf);
 }
 
 void CombatMonitorService::TakePayloads(std::vector<std::string>& out, int protocolVersion, uint64_t session,
