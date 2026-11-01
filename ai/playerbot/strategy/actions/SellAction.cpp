@@ -212,7 +212,13 @@ bool SellAction::Sell(Player* requester, Item* item)
             std::unordered_set<uint32_t> kept;
             TortoiseBots::GuildOrders::CollectOrderProtectedItems(order->itemId, false,
                 order->type == TortoiseBots::GuildOrders::OrderType::Craft, order->supplyItemId,
-                [owner](uint32_t parent) { return ai::KnownReagentsFor(owner, parent); }, kept);
+                [owner](uint32_t parent) { return ai::KnownReagentsFor(owner, parent); },
+                [](uint32_t vendorItemId)
+                {
+                    ItemPrototype const* vendorProto = sObjectMgr.GetItemPrototype(vendorItemId);
+                    return vendorProto && ItemUsageValue::IsItemSoldByAnyVendor(vendorProto) &&
+                        !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(vendorProto);
+                }, kept);
             if (kept.count(itemId))
             {
                 sPlayerbotAIConfig.logEvent(ai, "OrderKeepMiss", item->GetProto()->Name1, std::to_string(itemId));

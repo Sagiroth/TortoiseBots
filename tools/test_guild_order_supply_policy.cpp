@@ -41,11 +41,14 @@ int main()
     CHECK(SupplyFarmItemFor(SupplyStep::None, 123, OrderType::Farm, OrderReason::None, false) == 0);
     CHECK(SupplyFarmItemFor(SupplyStep::Deliver, 123, OrderType::Farm, OrderReason::None, false) == 0);
     CHECK(SupplyFarmItemFor(SupplyStep::Sub, 123, OrderType::Craft, OrderReason::None, false) == 0);
-    CHECK(SupplyFarmItemFor(SupplyStep::Need, 123, OrderType::Craft, OrderReason::None, false) == 0);
+    // A vendor-only reagent (bought, never farmed) travels for nothing
+    // unless the leg gave up on it: the vendor leg runs on Farm for any
+    // order type, never the wild farm plan.
     CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Craft, OrderReason::None, true) == 0);
     CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Craft, OrderReason::NoSource, true) == 123);
     CHECK(SupplyFarmItemFor(SupplyStep::Farm, 0, OrderType::Farm, OrderReason::None, false) == 0);
-    // The streak counts one leg: a repeat fails up, anything else restarts.
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Farm, OrderReason::None, true) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Farm, OrderReason::NoSource, true) == 123);
     SupplySearchStreak streak;
     streak = NextSupplySearchStreak(streak, SupplyStep::Bags, 7);
     CHECK(streak.fails == 1);

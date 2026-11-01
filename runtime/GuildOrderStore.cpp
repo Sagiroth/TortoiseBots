@@ -65,6 +65,34 @@ inline bool ProgressScanDue(uint32_t nowMs, uint32_t lastScanMs)
     return nowMs - lastScanMs >= kProgressReportMs;
 }
 
+// True when an npc_vendor row sells the item with no stock limit. Template
+// rows are skipped: they need the creature's vendor_id, which the store
+// never reads; the AI-side checks (ChooseSourceStep, vendor action) cover
+// the template case, so the store only guards the direct rows.
+inline bool VendorSellsUnlimited(uint32_t itemId)
+{
+    if (!itemId)
+        return false;
+    // Item ids an npc_vendor row sells with no stock limit, built once per
+    // process (startup scan of the vendor stock, one pass). The ladder never
+    // delegates these to a sub-order: the crafter buys them at a vendor.
+    static std::unordered_set<uint32_t> const items = []()
+    {
+        std::unordered_set<uint32_t> out;
+        for (uint32_t entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+        {
+            VendorItemData const* vendorItems = sObjectMgr.GetNpcVendorItemList(entry);
+            if (!vendorItems)
+                continue;
+            for (VendorItem const* vendorItem : vendorItems->m_items)
+                if (vendorItem && vendorItem->item && vendorItem->maxcount == 0)
+                    out.insert(vendorItem->item);
+        }
+        return out;
+    }();
+    return items.count(itemId) != 0;
+}
+
 // Worked seconds live in memory; the database sees them at most this often.
 inline constexpr uint32_t kWorkedFlushMs = 60000;
 inline constexpr uint32_t kNeedBankCheckMs = 10000;
@@ -263,7 +291,8 @@ public:
             return;
         auto reagentsFor = [bot](uint32_t parent) { return ::ai::KnownReagentsFor(bot, parent); };
         std::unordered_set<uint32_t> kept;
-        CollectOrderProtectedItems(orderItemId, false, orderIsCraft, supplyItemId, reagentsFor, kept);
+        CollectOrderProtectedItems(orderItemId, false, orderIsCraft, supplyItemId, reagentsFor,
+            [](uint32_t itemId) { return VendorSellsUnlimited(itemId); }, kept);
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto it = m_orders.find(botGuidLow);
@@ -2184,6 +2213,12 @@ bool SubOrderDelivered(uint32_t parentBotGuidLow, uint32_t itemId)
 bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
 {
     if (!sPlayerbotAIConfig.guildOrderSubOrders || !itemId || !count)
+        return false;
+    // A reagent any vendor sells without limit is bought by the crafter,
+    // never delegated: the placer reports failure so the ladder falls back
+    // to the need list. npc_vendor rows only (per-entry stock); a template
+    // row would need the creature's vendor_id, which the store never reads.
+    if (VendorSellsUnlimited(itemId))
         return false;
     std::optional<OrderRecord> parent = Find(parentBotGuidLow);
     if (!parent)

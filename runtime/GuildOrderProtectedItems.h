@@ -5,9 +5,10 @@
 //
 // Header-only and free of core/database types on purpose: exercised
 // standalone in tools/test_guild_order_protected_items.cpp. Callers feed it
-// the stored order fields plus one callback resolving an item's direct
-// reagents; the AI side feeds bot-known recipes (spell map create effects),
-// never the global static map.
+// the stored order fields, one callback resolving an item's direct
+// reagents, and one reporting vendor-unlimited items (bought, never
+// expanded further); the AI side feeds bot-known recipes (spell map create
+// effects) and its vendor cache, never the global static map.
 #pragma once
 
 #include <cstddef>
@@ -27,10 +28,10 @@ inline constexpr std::size_t kOrderProtectedTreeDepth = 8;
 // current supply item, and every reagent reachable through known recipes
 // (craft orders). Farm/buy orders protect the order and supply items only.
 // Returns false when the order reserves nothing (finished or no item).
-template <typename ReagentsFor>
+template <typename ReagentsFor, typename VendorUnlimited>
 inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
     bool orderIsCraft, uint32_t supplyItemId, ReagentsFor reagentsFor,
-    std::unordered_set<uint32_t>& out)
+    VendorUnlimited vendorUnlimited, std::unordered_set<uint32_t>& out)
 {
     out.clear();
     if (orderFinished || orderItemId == 0)
@@ -41,8 +42,11 @@ inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
     if (!orderIsCraft)
         return true;
     // Breadth-first through the bot's known recipes, so ore -> bar -> tube
-    // chains all stay in the bags. Unknown branches stop: a reagent the bot
-    // cannot make is a farm/buy leg item, protected only as supply item.
+    // chains all stay in the bags. Bought reagents still expand: the walk
+    // only follows recipes the bot knows, and a vendor-sold reagent the bot
+    // also crafts from (or its siblings) must stay covered the same way.
+    // Unknown branches stop: a reagent the bot cannot make is a farm/buy
+    // leg item, protected only as supply item.
     std::vector<uint32_t> frontier;
     frontier.push_back(orderItemId);
     std::unordered_set<uint32_t> expanded;
@@ -59,6 +63,8 @@ inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
                     continue;
                 if (!out.insert(reagent).second)
                     continue;
+                if (vendorUnlimited(reagent))
+                    continue;
                 if (expanded.insert(reagent).second)
                     next.push_back(reagent);
             }
@@ -66,6 +72,17 @@ inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
         frontier.swap(next);
     }
     return true;
+}
+
+// Same walk without a vendor callback: vendor-unlimited reagents are plain
+// tree members (the store's version; the AI side passes its vendor cache).
+template <typename ReagentsFor>
+inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
+    bool orderIsCraft, uint32_t supplyItemId, ReagentsFor reagentsFor,
+    std::unordered_set<uint32_t>& out)
+{
+    return CollectOrderProtectedItems(orderItemId, orderFinished, orderIsCraft,
+        supplyItemId, reagentsFor, [](uint32_t) { return false; }, out);
 }
 
 } // namespace GuildOrders

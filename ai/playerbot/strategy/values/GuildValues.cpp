@@ -348,11 +348,19 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     // house leg could only walk to a city and back.
     bool const auctionUnaffordable = bot->GetMoney() == 0 &&
         TortoiseBots::GuildOrders::BranchGoldCapRemaining(order.botGuidLow) == 0;
-    // A reagent any vendor sells without limit is bought there: the bank and
-    // auction legs never travel for it (SupplyFarmItemFor maps it to 0), so
-    // routing it through them parked the order for good.
-    if (IsUnlimitedVendorItem(candidate.itemId) && verdict.CanFarm())
+    // A reagent any vendor sells without limit is bought there, never
+    // farmed and never delegated: the bank and auction legs never travel
+    // for it (SupplyFarmItemFor maps it to 0), so routing it through them
+    // parked the order for good. The farm verdict stays out of it: it
+    // rates wild sources, while the vendor leg buys from a vendor.
+    if (IsUnlimitedVendorItem(candidate.itemId))
+    {
+        // The vendor leg itself gave up (no vendor in reach, or the buy
+        // never moved): the player gets the need list, never a sub-order.
+        if (sameItem && current == SupplyStep::Farm && order.reason == OrderReason::NoSource)
+            return SupplyStep::Need;
         return SupplyStep::Farm;
+    }
     if (sameItem)
     {
         // A delivered sub-order put the item in the guild bank: fetch it
@@ -782,7 +790,9 @@ bool HasGuildTravelOrderValue::Calculate()
 uint32 GuildOrderVendorReagentValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsCraftOrder())
+    // Craft reagents and farm-order items alike: anything a vendor sells
+    // without limit is bought, never farmed.
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
         return 0;
 
     std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
@@ -795,6 +805,9 @@ uint32 GuildOrderVendorReagentValue::Calculate()
     record = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!record || record->supplyStep != SupplyStep::Farm || !record->supplyItemId ||
         record->reason == OrderReason::NoSource || !IsUnlimitedVendorItem(record->supplyItemId))
+        return 0;
+    // A farm order buys its own item; a craft order buys the supply reagent.
+    if (order.type == GuildOrderType::Farm && record->supplyItemId != record->itemId)
         return 0;
     return record->supplyItemId;
 }

@@ -20,11 +20,9 @@ bool GuildOrderVendorAction::isUseful()
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsCraftOrder())
-        return false;
-
-    uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
-    if (!reagentId)
+    // Craft reagents and farm-order items alike: anything a vendor sells
+    // without limit is bought, never farmed.
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
         return false;
 
     std::list<ObjectGuid> vendors = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
@@ -54,7 +52,7 @@ bool GuildOrderVendorAction::Execute(Event& event)
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsCraftOrder())
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
         return false;
 
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
@@ -99,8 +97,10 @@ bool GuildOrderVendorAction::Execute(Event& event)
         uint32 bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(shortfall, buyCount);
         if (uint64_t(bundles) * price > money)
         {
-            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
-                shortfall, SupplyStep::None, OrderReason::NoSource);
+            // No gold for even one bundle: the player gets the need list.
+            // A vendor item is never delegated, so this skips the ladder.
+            TortoiseBots::GuildOrders::SetNeedItems(botGuidLow,
+                { TortoiseBots::GuildOrders::NeedItem{ reagentId, shortfall } }, false);
             return false;
         }
 
@@ -109,10 +109,10 @@ bool GuildOrderVendorAction::Execute(Event& event)
         if (room == 0)
         {
             // One full-bags rule: nothing more fits, so deliver what is
-            // held or fail stuck - never idle at the vendor.
+            // held or fail stuck - never idle at the vendor. A farm order
             TortoiseBots::CraftOrderPolicy::FullBagsDecision fullBags =
                 TortoiseBots::CraftOrderPolicy::DecideFullBags(false, 0,
-                    ai->GetInventoryItemsCountWithId(itemId));
+                    ai->GetInventoryItemsCountWithId(order.IsCraftOrder() ? itemId : reagentId));
             if (record)
             {
                 if (fullBags == TortoiseBots::CraftOrderPolicy::FullBagsDecision::Deliver)
@@ -135,17 +135,13 @@ bool GuildOrderVendorAction::Execute(Event& event)
             uint32 after = ai->GetInventoryItemsCountWithId(reagentId);
             if (after <= before)
                 break;
-            bought += after - before;
         }
 
-        // A buy that moves nothing with room and bundles fails the order:
-        // retrying the same vendor tick after tick never pays.
+        // A buy that moves nothing with room and bundles is transient (wrong
+        // vendor nearby, out of reach): keep the leg so the next travel
+        // search retries it instead of ending in NoSource.
         if (bought == 0 && bundles > 0 && room > 0)
-        {
-            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
-                shortfall, SupplyStep::None, OrderReason::NoSource);
             return false;
-        }
 
         RESET_AI_VALUE(uint32, "guild order vendor reagent");
         if (bought > 0)
@@ -157,7 +153,7 @@ bool GuildOrderVendorAction::Execute(Event& event)
             shortfall > bought ? shortfall - bought : 0, SupplyStep::None);
     }
 
-    TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
-        shortfall, SupplyStep::None, OrderReason::NoSource);
+    // No vendor in reach sells the reagent: keep the leg so travel
+    // re-searches instead of ending in NoSource.
     return false;
 }
