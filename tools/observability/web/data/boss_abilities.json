@@ -434,8 +434,7 @@
         16097,
         11467,
         14349,
-        14322,
-        11484
+        14322
       ]
     },
     {
@@ -32450,99 +32449,11 @@
         "The north wing's drunk ogre vendor and quest giver (gossip, quest giver, vendor): he only fights if a player attacks him. His EventAI timers 1432207-1432218 are the out-of-combat drink, sleep and dance loop; in combat the spell list 143220 runs: Whirlwind 15577 first 2-6 s then every 7-10 s, Booze Spit 22833 first 7-12 s then every 15-22 s (a 20 yd cone), War Stomp 16740 first 12-15 s then every 12-16 s. Below 30 percent EventAI 1432204 casts Enrage 8269 and below 15 percent 1432205 casts Drunken Rage 22835, each once."
       ]
     },
-    "11484": {
-      "entry": 11484,
-      "name": "Residual Monstrosity",
-      "map": "dire_maul",
-      "order": 264,
-      "abilities": [
-        {
-          "sid": 13748,
-          "name": "Arcane Bolt",
-          "castMs": 0,
-          "a": 0,
-          "b": 2400,
-          "c": 3800,
-          "phase": "",
-          "target": "victim",
-          "aura": false,
-          "self": false,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": true,
-          "summon": 0,
-          "hp": 0,
-          "ok": "",
-          "okNeeds": {},
-          "radius": null
-        },
-        {
-          "sid": 22940,
-          "name": "Arcane Blast",
-          "castMs": 0,
-          "a": 0,
-          "b": 3800,
-          "c": 5200,
-          "phase": "",
-          "target": "aoe",
-          "aura": false,
-          "self": false,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": false,
-          "summon": 0,
-          "hp": 0,
-          "ok": "heal",
-          "okNeeds": {},
-          "radius": null
-        },
-        {
-          "sid": 22939,
-          "name": "Summon Mana Bursts",
-          "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "",
-          "target": "self",
-          "aura": false,
-          "self": false,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": false,
-          "summon": 14397,
-          "hp": 0,
-          "ok": "",
-          "okNeeds": {},
-          "radius": null
-        }
-      ],
-      "phases": [],
-      "adds": [
-        {
-          "entry": 14397,
-          "name": "Mana Burst",
-          "role": "summon",
-          "priority": 0
-        }
-      ],
-      "aliases": [],
-      "notes": [
-        "There are 18 Residual Monstrosities on the pylons of the west wing. They are trash packs, not a boss, but a pack pulled together wipes a run, and the panel looks units up by entry, so this one block names their fight: Arcane Bolt first within 0.4 s then every 2.4-3.8 s; Arcane Blast first 1-2.5 s then every 3.8-5.2 s, a knockback around the caster; each death summons Mana Bursts 14397.",
-        "The C++ script runs and the EventAI summon-on-death row 1148403 plus the list 114840 are not used. Out of combat they compare their distance to the nearest pack member and change walk speed, so some of the 18 run at 1.00, 1.79 or 2.20. Their deaths count toward the crystal event; the panel cannot show which of the 18 died or that a crystal opened."
-      ]
-    },
     "4887": {
       "entry": 4887,
       "name": "Ghamoo-ra",
       "map": "blackfathom_deeps",
-      "order": 265,
+      "order": 264,
       "abilities": [
         {
           "sid": 5568,
@@ -32578,7 +32489,7 @@
       "entry": 4831,
       "name": "Lady Sarevess",
       "map": "blackfathom_deeps",
-      "order": 266,
+      "order": 265,
       "abilities": [
         {
           "sid": 246,
@@ -32682,7 +32593,7 @@
       "entry": 6243,
       "name": "Gelihast",
       "map": "blackfathom_deeps",
-      "order": 267,
+      "order": 266,
       "abilities": [
         {
           "sid": 12024,
@@ -32720,7 +32631,7 @@
       "entry": 62530,
       "name": "Velthelaxx the Defiler",
       "map": "blackfathom_deeps",
-      "order": 268,
+      "order": 267,
       "abilities": [
         {
           "sid": 18807,
@@ -32805,7 +32716,7 @@
       "entry": 4830,
       "name": "Old Serra'kis",
       "map": "blackfathom_deeps",
-      "order": 269,
+      "order": 268,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -32818,7 +32729,7 @@
       "entry": 4832,
       "name": "Twilight Lord Kelris",
       "map": "blackfathom_deeps",
-      "order": 270,
+      "order": 269,
       "abilities": [
         {
           "sid": 15587,
@@ -32877,7 +32788,7 @@
       "entry": 4829,
       "name": "Aku'mai",
       "map": "blackfathom_deeps",
-      "order": 271,
+      "order": 270,
       "abilities": [
         {
           "sid": 3815,
@@ -32938,7 +32849,7 @@
       "entry": 12876,
       "name": "Baron Aquanis",
       "map": "blackfathom_deeps",
-      "order": 272,
+      "order": 271,
       "abilities": [
         {
           "sid": 14907,
@@ -32996,7 +32907,7 @@
       "entry": 12902,
       "name": "Lorgus Jett",
       "map": "blackfathom_deeps",
-      "order": 273,
+      "order": 272,
       "abilities": [
         {
           "sid": 12167,
@@ -33054,7 +32965,7 @@
       "entry": 6168,
       "name": "Roogug",
       "map": "razorfen_kraul",
-      "order": 274,
+      "order": 273,
       "abilities": [
         {
           "sid": 9532,
@@ -33119,7 +33030,7 @@
       "entry": 4424,
       "name": "Aggem Thorncurse",
       "map": "razorfen_kraul",
-      "order": 275,
+      "order": 274,
       "abilities": [
         {
           "sid": 6192,
@@ -33210,7 +33121,7 @@
       "entry": 4428,
       "name": "Death Speaker Jargba",
       "map": "razorfen_kraul",
-      "order": 276,
+      "order": 275,
       "abilities": [
         {
           "sid": 14515,
@@ -33270,7 +33181,7 @@
       "entry": 4420,
       "name": "Overlord Ramtusk",
       "map": "razorfen_kraul",
-      "order": 277,
+      "order": 276,
       "abilities": [
         {
           "sid": 9128,
@@ -33352,7 +33263,7 @@
       "entry": 62503,
       "name": "Rotthorn",
       "map": "razorfen_kraul",
-      "order": 278,
+      "order": 277,
       "abilities": [
         {
           "sid": 7102,
@@ -33458,7 +33369,7 @@
       "entry": 4422,
       "name": "Agathelos the Raging",
       "map": "razorfen_kraul",
-      "order": 279,
+      "order": 278,
       "abilities": [
         {
           "sid": 8285,
@@ -33574,7 +33485,7 @@
       "entry": 4421,
       "name": "Charlga Razorflank",
       "map": "razorfen_kraul",
-      "order": 280,
+      "order": 279,
       "abilities": [
         {
           "sid": 6077,
@@ -33680,7 +33591,7 @@
       "entry": 4842,
       "name": "Earthcaller Halmgar",
       "map": "razorfen_kraul",
-      "order": 281,
+      "order": 280,
       "abilities": [
         {
           "sid": 2484,
@@ -33773,7 +33684,7 @@
       "entry": 7357,
       "name": "Mordresh Fire Eye",
       "map": "razorfen_downs",
-      "order": 282,
+      "order": 281,
       "abilities": [
         {
           "sid": 12470,
@@ -33831,7 +33742,7 @@
       "entry": 8567,
       "name": "Glutton",
       "map": "razorfen_downs",
-      "order": 283,
+      "order": 282,
       "abilities": [
         {
           "sid": 12795,
@@ -33869,7 +33780,7 @@
       "entry": 62679,
       "name": "Death Prophet Rakameg",
       "map": "razorfen_downs",
-      "order": 284,
+      "order": 283,
       "abilities": [
         {
           "sid": 22417,
@@ -33927,7 +33838,7 @@
       "entry": 7358,
       "name": "Amnennar the Coldbringer",
       "map": "razorfen_downs",
-      "order": 285,
+      "order": 284,
       "abilities": [
         {
           "sid": 15530,
@@ -34036,7 +33947,7 @@
       "entry": 7355,
       "name": "Tuten'kash",
       "map": "razorfen_downs",
-      "order": 286,
+      "order": 285,
       "abilities": [
         {
           "sid": 12252,
@@ -34096,7 +34007,7 @@
       "entry": 7356,
       "name": "Plaguemaw the Rotting",
       "map": "razorfen_downs",
-      "order": 287,
+      "order": 286,
       "abilities": [
         {
           "sid": 12946,
@@ -34132,7 +34043,7 @@
       "entry": 14686,
       "name": "Lady Falther'ess",
       "map": "razorfen_downs",
-      "order": 288,
+      "order": 287,
       "abilities": [
         {
           "sid": 8105,
@@ -34168,7 +34079,7 @@
       "entry": 7354,
       "name": "Ragglesnout",
       "map": "razorfen_downs",
-      "order": 289,
+      "order": 288,
       "abilities": [
         {
           "sid": 12039,
@@ -34270,7 +34181,7 @@
       "entry": 3671,
       "name": "Lady Anacondra",
       "map": "wailing_caverns",
-      "order": 290,
+      "order": 289,
       "abilities": [
         {
           "sid": 8148,
@@ -34374,7 +34285,7 @@
       "entry": 3669,
       "name": "Lord Cobrahn",
       "map": "wailing_caverns",
-      "order": 291,
+      "order": 290,
       "abilities": [
         {
           "sid": 8040,
@@ -34492,7 +34403,7 @@
       "entry": 3670,
       "name": "Lord Pythas",
       "map": "wailing_caverns",
-      "order": 292,
+      "order": 291,
       "abilities": [
         {
           "sid": 5187,
@@ -34594,7 +34505,7 @@
       "entry": 3674,
       "name": "Skum",
       "map": "wailing_caverns",
-      "order": 293,
+      "order": 292,
       "abilities": [
         {
           "sid": 6254,
@@ -34630,7 +34541,7 @@
       "entry": 3673,
       "name": "Lord Serpentis",
       "map": "wailing_caverns",
-      "order": 294,
+      "order": 293,
       "abilities": [
         {
           "sid": 6778,
@@ -34710,7 +34621,7 @@
       "entry": 5775,
       "name": "Verdan the Everliving",
       "map": "wailing_caverns",
-      "order": 295,
+      "order": 294,
       "abilities": [
         {
           "sid": 8142,
@@ -34748,7 +34659,7 @@
       "entry": 3654,
       "name": "Mutanus the Devourer",
       "map": "wailing_caverns",
-      "order": 296,
+      "order": 295,
       "abilities": [
         {
           "sid": 7967,
@@ -34829,7 +34740,7 @@
       "entry": 3653,
       "name": "Kresh",
       "map": "wailing_caverns",
-      "order": 297,
+      "order": 296,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -34842,7 +34753,7 @@
       "entry": 61968,
       "name": "Zandara Windhoof",
       "map": "wailing_caverns",
-      "order": 298,
+      "order": 297,
       "abilities": [
         {
           "sid": 15659,
@@ -34900,7 +34811,7 @@
       "entry": 61965,
       "name": "Vangros",
       "map": "wailing_caverns",
-      "order": 299,
+      "order": 298,
       "abilities": [
         {
           "sid": 21055,
@@ -34958,7 +34869,7 @@
       "entry": 60735,
       "name": "High Foreman Bargul Blackhammer",
       "map": "hateforge_quarry",
-      "order": 300,
+      "order": 299,
       "abilities": [
         {
           "sid": 5703,
@@ -35045,7 +34956,7 @@
       "entry": 60736,
       "name": "Engineer Figgles",
       "map": "hateforge_quarry",
-      "order": 301,
+      "order": 300,
       "abilities": [
         {
           "sid": 24111,
@@ -35082,7 +34993,7 @@
       "entry": 60734,
       "name": "Hatereaver Annihilator",
       "map": "hateforge_quarry",
-      "order": 302,
+      "order": 301,
       "abilities": [
         {
           "sid": 28438,
@@ -35165,7 +35076,7 @@
       "entry": 60737,
       "name": "Har'gesh Doomcaller",
       "map": "hateforge_quarry",
-      "order": 303,
+      "order": 302,
       "abilities": [
         {
           "sid": 11668,
@@ -35313,7 +35224,7 @@
       "entry": 60738,
       "name": "Faceless Terror",
       "map": "hateforge_quarry",
-      "order": 304,
+      "order": 303,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -35326,7 +35237,7 @@
       "entry": 60829,
       "name": "Corrosis",
       "map": "hateforge_quarry",
-      "order": 305,
+      "order": 304,
       "abilities": [
         {
           "sid": 24099,
@@ -35384,7 +35295,7 @@
       "entry": 62547,
       "name": "Dagar the Glutton",
       "map": "stormwrought_ruins",
-      "order": 306,
+      "order": 305,
       "abilities": [
         {
           "sid": 3393,
@@ -35420,7 +35331,7 @@
       "entry": 62548,
       "name": "Oronok Torn-Heart",
       "map": "stormwrought_ruins",
-      "order": 307,
+      "order": 306,
       "abilities": [
         {
           "sid": 10101,
@@ -35500,7 +35411,7 @@
       "entry": 62552,
       "name": "Librarian Theodorus",
       "map": "stormwrought_ruins",
-      "order": 308,
+      "order": 307,
       "abilities": [
         {
           "sid": 10159,
@@ -35609,7 +35520,7 @@
       "entry": 62549,
       "name": "Duke Balor the IV",
       "map": "stormwrought_ruins",
-      "order": 309,
+      "order": 308,
       "abilities": [
         {
           "sid": 47386,
@@ -35715,7 +35626,7 @@
       "entry": 62551,
       "name": "Chieftain Stormsong",
       "map": "stormwrought_ruins",
-      "order": 310,
+      "order": 309,
       "abilities": [
         {
           "sid": 20299,
@@ -35801,7 +35712,7 @@
       "entry": 62550,
       "name": "Deathlord Tidebane",
       "map": "stormwrought_ruins",
-      "order": 311,
+      "order": 310,
       "abilities": [
         {
           "sid": 11990,
@@ -35881,7 +35792,7 @@
       "entry": 62652,
       "name": "Subjugator Halthas Shadecrest",
       "map": "stormwrought_ruins",
-      "order": 312,
+      "order": 311,
       "abilities": [
         {
           "sid": 15859,
@@ -35963,7 +35874,7 @@
       "entry": 62664,
       "name": "Mycellakos",
       "map": "stormwrought_ruins",
-      "order": 313,
+      "order": 312,
       "abilities": [
         {
           "sid": 44048,
@@ -36029,7 +35940,7 @@
       "entry": 62661,
       "name": "Eldermaw the Primordial",
       "map": "stormwrought_ruins",
-      "order": 314,
+      "order": 313,
       "abilities": [
         {
           "sid": 44041,
@@ -36118,7 +36029,7 @@
       "entry": 62665,
       "name": "Lady Drazare",
       "map": "stormwrought_ruins",
-      "order": 315,
+      "order": 314,
       "abilities": [
         {
           "sid": 44051,
@@ -36198,7 +36109,7 @@
       "entry": 62671,
       "name": "Ighal'for",
       "map": "stormwrought_ruins",
-      "order": 316,
+      "order": 315,
       "abilities": [
         {
           "sid": 6789,
@@ -36330,7 +36241,7 @@
       "entry": 62673,
       "name": "Mergothid",
       "map": "stormwrought_ruins",
-      "order": 317,
+      "order": 316,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -36343,7 +36254,7 @@
       "entry": 62670,
       "name": "Remains of the Innocent",
       "map": "stormwrought_ruins",
-      "order": 318,
+      "order": 317,
       "abilities": [
         {
           "sid": 21070,
@@ -36401,7 +36312,7 @@
       "entry": 60715,
       "name": "'Broody'",
       "map": "hateforge_quarry",
-      "order": 319,
+      "order": 318,
       "abilities": [
         {
           "sid": 9573,
@@ -36459,7 +36370,7 @@
       "entry": 63131,
       "name": "Battlemaster Ubukaz",
       "map": "frostmane_hollow",
-      "order": 320,
+      "order": 319,
       "abilities": [
         {
           "sid": 28131,
@@ -36497,7 +36408,7 @@
       "entry": 63129,
       "name": "Kan'za the Seer",
       "map": "frostmane_hollow",
-      "order": 321,
+      "order": 320,
       "abilities": [
         {
           "sid": 6141,
@@ -36555,7 +36466,7 @@
       "entry": 63133,
       "name": "Tan'sha the Sleek",
       "map": "frostmane_hollow",
-      "order": 322,
+      "order": 321,
       "abilities": [
         {
           "sid": 3143,
@@ -36615,7 +36526,7 @@
       "entry": 63130,
       "name": "Hailar the Frigid",
       "map": "frostmane_hollow",
-      "order": 323,
+      "order": 322,
       "abilities": [
         {
           "sid": 16803,
@@ -36702,7 +36613,7 @@
       "entry": 63132,
       "name": "Handler Oboka",
       "map": "frostmane_hollow",
-      "order": 324,
+      "order": 323,
       "abilities": [
         {
           "sid": 8005,
@@ -36738,7 +36649,7 @@
       "entry": 92107,
       "name": "Grovetender Engryss",
       "map": "crescent_grove",
-      "order": 325,
+      "order": 324,
       "abilities": [
         {
           "sid": 12057,
@@ -36818,7 +36729,7 @@
       "entry": 92109,
       "name": "Keeper Ranathos",
       "map": "crescent_grove",
-      "order": 326,
+      "order": 325,
       "abilities": [
         {
           "sid": 6780,
@@ -36898,7 +36809,7 @@
       "entry": 92108,
       "name": "High Priestess A'lathea",
       "map": "crescent_grove",
-      "order": 327,
+      "order": 326,
       "abilities": [
         {
           "sid": 23380,
@@ -36956,7 +36867,7 @@
       "entry": 92111,
       "name": "Fenektis the Deceiver",
       "map": "crescent_grove",
-      "order": 328,
+      "order": 327,
       "abilities": [
         {
           "sid": 7357,
@@ -37038,7 +36949,7 @@
       "entry": 92110,
       "name": "Master Raxxieth",
       "map": "crescent_grove",
-      "order": 329,
+      "order": 328,
       "abilities": [
         {
           "sid": 15579,
@@ -37118,7 +37029,7 @@
       "entry": 62784,
       "name": "Walgan Bloodcaller",
       "map": "windhorn_canyon",
-      "order": 330,
+      "order": 329,
       "abilities": [
         {
           "sid": 16044,
@@ -37200,7 +37111,7 @@
       "entry": 62783,
       "name": "Ambassador Vortalus",
       "map": "windhorn_canyon",
-      "order": 331,
+      "order": 330,
       "abilities": [
         {
           "sid": 22355,
@@ -37283,7 +37194,7 @@
       "entry": 62780,
       "name": "Bonespeaker Narlgom",
       "map": "windhorn_canyon",
-      "order": 332,
+      "order": 331,
       "abilities": [
         {
           "sid": 11445,
@@ -37378,7 +37289,7 @@
       "entry": 62781,
       "name": "Prophet Stormhoof",
       "map": "windhorn_canyon",
-      "order": 333,
+      "order": 332,
       "abilities": [
         {
           "sid": 11672,
@@ -37458,7 +37369,7 @@
       "entry": 62779,
       "name": "Pathun Duskhide",
       "map": "windhorn_canyon",
-      "order": 334,
+      "order": 333,
       "abilities": [
         {
           "sid": 6266,
@@ -37540,7 +37451,7 @@
       "entry": 62782,
       "name": "Chieftain Shalk Blackwind",
       "map": "windhorn_canyon",
-      "order": 335,
+      "order": 334,
       "abilities": [
         {
           "sid": 19471,
@@ -37605,7 +37516,7 @@
       "entry": 62778,
       "name": "Ahgk'tos the Pure",
       "map": "windhorn_canyon",
-      "order": 336,
+      "order": 335,
       "abilities": [
         {
           "sid": 23105,
@@ -37685,7 +37596,7 @@
       "entry": 62056,
       "name": "Bogpaw Truthsay",
       "map": "dragonmaw_retreat",
-      "order": 337,
+      "order": 336,
       "abilities": [
         {
           "sid": 22415,
@@ -37765,7 +37676,7 @@
       "entry": 62057,
       "name": "Gowlfang",
       "map": "dragonmaw_retreat",
-      "order": 338,
+      "order": 337,
       "abilities": [
         {
           "sid": 8715,
@@ -37801,7 +37712,7 @@
       "entry": 62072,
       "name": "Searistrasz",
       "map": "dragonmaw_retreat",
-      "order": 339,
+      "order": 338,
       "abilities": [
         {
           "sid": 8401,
@@ -37912,7 +37823,7 @@
       "entry": 62069,
       "name": "Halgan Redbrand",
       "map": "dragonmaw_retreat",
-      "order": 340,
+      "order": 339,
       "abilities": [
         {
           "sid": 11711,
@@ -37992,7 +37903,7 @@
       "entry": 62037,
       "name": "Zuluhed the Whacked",
       "map": "dragonmaw_retreat",
-      "order": 341,
+      "order": 340,
       "abilities": [
         {
           "sid": 52042,
@@ -38098,7 +38009,7 @@
       "entry": 62067,
       "name": "Web Master Torkon",
       "map": "dragonmaw_retreat",
-      "order": 342,
+      "order": 341,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -38111,7 +38022,7 @@
       "entry": 62066,
       "name": "Cavernweb Broodmother",
       "map": "dragonmaw_retreat",
-      "order": 343,
+      "order": 342,
       "abilities": [
         {
           "sid": 13884,
@@ -38169,7 +38080,7 @@
       "entry": 62068,
       "name": "Slagfist Destroyer",
       "map": "dragonmaw_retreat",
-      "order": 344,
+      "order": 343,
       "abilities": [
         {
           "sid": 6864,
@@ -38249,7 +38160,7 @@
       "entry": 62070,
       "name": "Overlord Blackheart",
       "map": "dragonmaw_retreat",
-      "order": 345,
+      "order": 344,
       "abilities": [
         {
           "sid": 13444,
@@ -38333,7 +38244,7 @@
       "entry": 62071,
       "name": "Garlok Flamekeeper",
       "map": "dragonmaw_retreat",
-      "order": 346,
+      "order": 345,
       "abilities": [
         {
           "sid": 18958,
@@ -38413,7 +38324,7 @@
       "entry": 62038,
       "name": "Elder Hollowblood",
       "map": "dragonmaw_retreat",
-      "order": 347,
+      "order": 346,
       "abilities": [
         {
           "sid": 15038,
@@ -38556,7 +38467,7 @@
       "entry": 61419,
       "name": "Matthias Holtz",
       "map": "gilneas_city",
-      "order": 348,
+      "order": 347,
       "abilities": [
         {
           "sid": 2643,
@@ -38638,7 +38549,7 @@
       "entry": 61420,
       "name": "Packmaster Ragetooth",
       "map": "gilneas_city",
-      "order": 349,
+      "order": 348,
       "abilities": [
         {
           "sid": 5484,
@@ -38696,7 +38607,7 @@
       "entry": 61421,
       "name": "Judge Sutherland",
       "map": "gilneas_city",
-      "order": 350,
+      "order": 349,
       "abilities": [
         {
           "sid": 6060,
@@ -38798,7 +38709,7 @@
       "entry": 61422,
       "name": "Dustivan Blackcowl",
       "map": "gilneas_city",
-      "order": 351,
+      "order": 350,
       "abilities": [
         {
           "sid": 15583,
@@ -38906,7 +38817,7 @@
       "entry": 61423,
       "name": "Marshal Magnus Greystone",
       "map": "gilneas_city",
-      "order": 352,
+      "order": 351,
       "abilities": [
         {
           "sid": 8380,
@@ -38990,7 +38901,7 @@
       "entry": 61263,
       "name": "Regent-Lady Celia Harlow",
       "map": "gilneas_city",
-      "order": 353,
+      "order": 352,
       "abilities": [
         {
           "sid": 25309,
@@ -39108,7 +39019,7 @@
       "entry": 61264,
       "name": "Regent-Lord Mortimer Harlow",
       "map": "gilneas_city",
-      "order": 354,
+      "order": 353,
       "abilities": [
         {
           "sid": 2495,
@@ -39211,7 +39122,7 @@
       "entry": 61418,
       "name": "Genn Greymane",
       "map": "gilneas_city",
-      "order": 355,
+      "order": 354,
       "abilities": [
         {
           "sid": 17620,
@@ -39315,7 +39226,7 @@
       "entry": 11517,
       "name": "Oggleflint",
       "map": "ragefire_chasm",
-      "order": 356,
+      "order": 355,
       "abilities": [
         {
           "sid": 15584,
@@ -39351,7 +39262,7 @@
       "entry": 11520,
       "name": "Taragaman the Hungerer",
       "map": "ragefire_chasm",
-      "order": 357,
+      "order": 356,
       "abilities": [
         {
           "sid": 18072,
@@ -39409,7 +39320,7 @@
       "entry": 11518,
       "name": "Jergosh the Invoker",
       "map": "ragefire_chasm",
-      "order": 358,
+      "order": 357,
       "abilities": [
         {
           "sid": 20800,
@@ -39467,7 +39378,7 @@
       "entry": 11519,
       "name": "Bazzalan",
       "map": "ragefire_chasm",
-      "order": 359,
+      "order": 358,
       "abilities": [
         {
           "sid": 14873,
@@ -39525,7 +39436,7 @@
       "entry": 639,
       "name": "Edwin VanCleef",
       "map": "deadmines",
-      "order": 360,
+      "order": 359,
       "abilities": [
         {
           "sid": 3391,
@@ -39590,7 +39501,7 @@
       "entry": 644,
       "name": "Rhahk'Zor",
       "map": "deadmines",
-      "order": 361,
+      "order": 360,
       "abilities": [
         {
           "sid": 6304,
@@ -39635,7 +39546,7 @@
       "entry": 642,
       "name": "Sneed's Shredder",
       "map": "deadmines",
-      "order": 362,
+      "order": 361,
       "abilities": [
         {
           "sid": 7399,
@@ -39724,7 +39635,7 @@
       "entry": 643,
       "name": "Sneed",
       "map": "deadmines",
-      "order": 363,
+      "order": 362,
       "abilities": [
         {
           "sid": 6713,
@@ -39762,7 +39673,7 @@
       "entry": 645,
       "name": "Cookie",
       "map": "deadmines",
-      "order": 364,
+      "order": 363,
       "abilities": [
         {
           "sid": 6306,
@@ -39825,7 +39736,7 @@
       "entry": 646,
       "name": "Mr. Smite",
       "map": "deadmines",
-      "order": 365,
+      "order": 364,
       "abilities": [
         {
           "sid": 6432,
@@ -39942,7 +39853,7 @@
       "entry": 647,
       "name": "Captain Greenskin",
       "map": "deadmines",
-      "order": 366,
+      "order": 365,
       "abilities": [
         {
           "sid": 5208,
@@ -40013,7 +39924,7 @@
       "entry": 1763,
       "name": "Gilnid",
       "map": "deadmines",
-      "order": 367,
+      "order": 366,
       "abilities": [
         {
           "sid": 5213,
@@ -40052,7 +39963,7 @@
       "entry": 3586,
       "name": "Miner Johnson",
       "map": "deadmines",
-      "order": 368,
+      "order": 367,
       "abilities": [
         {
           "sid": 12097,
@@ -40090,7 +40001,7 @@
       "entry": 61961,
       "name": "Jared Voss",
       "map": "deadmines",
-      "order": 369,
+      "order": 368,
       "abilities": [
         {
           "sid": 3815,
@@ -40192,7 +40103,7 @@
       "entry": 61963,
       "name": "Masterpiece Harvester",
       "map": "deadmines",
-      "order": 370,
+      "order": 369,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -40205,7 +40116,7 @@
       "entry": 1696,
       "name": "Targorr the Dread",
       "map": "stormwind_stockade",
-      "order": 371,
+      "order": 370,
       "abilities": [
         {
           "sid": 3391,
@@ -40287,7 +40198,7 @@
       "entry": 1663,
       "name": "Dextren Ward",
       "map": "stormwind_stockade",
-      "order": 372,
+      "order": 371,
       "abilities": [
         {
           "sid": 19134,
@@ -40371,7 +40282,7 @@
       "entry": 1666,
       "name": "Kam Deepfury",
       "map": "stormwind_stockade",
-      "order": 373,
+      "order": 372,
       "abilities": [
         {
           "sid": 7164,
@@ -40433,7 +40344,7 @@
       "entry": 1717,
       "name": "Hamhock",
       "map": "stormwind_stockade",
-      "order": 374,
+      "order": 373,
       "abilities": [
         {
           "sid": 6742,
@@ -40491,7 +40402,7 @@
       "entry": 1716,
       "name": "Bazil Thredd",
       "map": "stormwind_stockade",
-      "order": 375,
+      "order": 374,
       "abilities": [
         {
           "sid": 7964,
@@ -40571,7 +40482,7 @@
       "entry": 1720,
       "name": "Bruegal Ironknuckle",
       "map": "stormwind_stockade",
-      "order": 376,
+      "order": 375,
       "abilities": [],
       "phases": [],
       "adds": [],
@@ -40584,7 +40495,7 @@
       "entry": 3914,
       "name": "Rethilgore",
       "map": "shadowfang_keep",
-      "order": 377,
+      "order": 376,
       "abilities": [
         {
           "sid": 7295,
@@ -40620,7 +40531,7 @@
       "entry": 3886,
       "name": "Razorclaw the Butcher",
       "map": "shadowfang_keep",
-      "order": 378,
+      "order": 377,
       "abilities": [
         {
           "sid": 7485,
@@ -40656,7 +40567,7 @@
       "entry": 3887,
       "name": "Baron Silverlaine",
       "map": "shadowfang_keep",
-      "order": 379,
+      "order": 378,
       "abilities": [
         {
           "sid": 7068,
@@ -40699,7 +40610,7 @@
       "entry": 4278,
       "name": "Commander Springvale",
       "map": "shadowfang_keep",
-      "order": 380,
+      "order": 379,
       "abilities": [
         {
           "sid": 1026,
@@ -40778,7 +40689,7 @@
       "entry": 4279,
       "name": "Odo the Blindwatcher",
       "map": "shadowfang_keep",
-      "order": 381,
+      "order": 380,
       "abilities": [
         {
           "sid": 7481,
@@ -40867,7 +40778,7 @@
       "entry": 4274,
       "name": "Fenrus the Devourer",
       "map": "shadowfang_keep",
-      "order": 382,
+      "order": 381,
       "abilities": [
         {
           "sid": 7125,
@@ -40916,7 +40827,7 @@
       "entry": 3927,
       "name": "Wolf Master Nandos",
       "map": "shadowfang_keep",
-      "order": 383,
+      "order": 382,
       "abilities": [
         {
           "sid": 7487,
@@ -41021,7 +40932,7 @@
       "entry": 4275,
       "name": "Archmage Arugal",
       "map": "shadowfang_keep",
-      "order": 384,
+      "order": 383,
       "abilities": [
         {
           "sid": 7621,
@@ -41176,7 +41087,7 @@
       "entry": 3872,
       "name": "Deathsworn Captain",
       "map": "shadowfang_keep",
-      "order": 385,
+      "order": 384,
       "abilities": [
         {
           "sid": 15584,
@@ -41260,7 +41171,7 @@
       "entry": 14682,
       "name": "Sever",
       "map": "shadowfang_keep",
-      "order": 386,
+      "order": 385,
       "abilities": [
         {
           "sid": 16508,
@@ -41342,7 +41253,7 @@
       "entry": 61969,
       "name": "Prelate Ironmane",
       "map": "shadowfang_keep",
-      "order": 387,
+      "order": 386,
       "abilities": [
         {
           "sid": 11711,
@@ -41429,7 +41340,7 @@
       "entry": 7079,
       "name": "Viscous Fallout",
       "map": "gnomeregan",
-      "order": 388,
+      "order": 387,
       "abilities": [
         {
           "sid": 21687,
@@ -41465,7 +41376,7 @@
       "entry": 6235,
       "name": "Electrocutioner 6000",
       "map": "gnomeregan",
-      "order": 389,
+      "order": 388,
       "abilities": [
         {
           "sid": 11082,
@@ -41549,7 +41460,7 @@
       "entry": 6229,
       "name": "Crowd Pummeler 9-60",
       "map": "gnomeregan",
-      "order": 390,
+      "order": 389,
       "abilities": [
         {
           "sid": 10887,
@@ -41629,7 +41540,7 @@
       "entry": 6228,
       "name": "Dark Iron Ambassador",
       "map": "gnomeregan",
-      "order": 391,
+      "order": 390,
       "abilities": [
         {
           "sid": 9053,
@@ -41738,7 +41649,7 @@
       "entry": 7361,
       "name": "Grubbis",
       "map": "gnomeregan",
-      "order": 392,
+      "order": 391,
       "abilities": [],
       "phases": [],
       "adds": [
@@ -41758,7 +41669,7 @@
       "entry": 7800,
       "name": "Mekgineer Thermaplugg",
       "map": "gnomeregan",
-      "order": 393,
+      "order": 392,
       "abilities": [
         {
           "sid": 10101,

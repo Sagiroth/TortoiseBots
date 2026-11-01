@@ -954,16 +954,16 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 393)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
+        self.assertEqual(len(doc["bosses"]), 392)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1432)
 
 
-        self.assertEqual(len(doc["bosses"]), 393)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
+        self.assertEqual(len(doc["bosses"]), 392)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1432)
 
 
-        self.assertEqual(len(doc["bosses"]), 393)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
+        self.assertEqual(len(doc["bosses"]), 392)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1432)
 
     def test_committed_anchored_timers(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -1382,8 +1382,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 393)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1435)
+        self.assertEqual(len(doc["bosses"]), 392)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1432)
 
 
     def test_every_panel_name_is_present(self):
@@ -2377,6 +2377,9 @@ SPELL_MOD_COLUMNS = {
     "Id", "Attributes", "AttributesEx", "CastingTimeIndex", "InterruptFlags",
     "ChannelInterruptFlags",
 }
+SPELL_EFFECT_MOD_COLUMNS = {
+    "Id", "EffectIndex", "EffectImplicitTargetA", "EffectImplicitTargetB", "EffectRadiusIndex",
+}
 
 # SpellDefines.h: SPELL_PREVENTION_TYPE_SILENCE (130), SPELL_INTERRUPT_FLAG_DAMAGE
 # (439), CHANNEL_FLAG_INTERRUPT (449), SPELL_ATTR_EX_CHANNELED_1/_2 (767, 771).
@@ -2577,6 +2580,21 @@ def _read_spells(core=CORE_DIR):
                 value = row.get(column, -1)
                 if value != -1:
                     spell[field] = value
+    # spell_effect_mod overlays the template's per-effect fields (the game's own "effect_mod before template"
+    # order): a non -1 override wins, index 0 is effect 1.
+    effect_mod = core / "sql" / "base" / "tw_world_spell_effect_mod.sql"
+    if effect_mod.is_file():
+        for row in _read_dump_table(effect_mod, "spell_effect_mod", SPELL_EFFECT_MOD_COLUMNS):
+            spell = spells.get(row.get("Id"))
+            index = row.get("EffectIndex")
+            if spell is None or index not in (0, 1, 2):
+                continue
+            for column, field in (("EffectImplicitTargetA", "effectImplicitTargetA"),
+                                  ("EffectImplicitTargetB", "effectImplicitTargetB"),
+                                  ("EffectRadiusIndex", "effectRadiusIndex")):
+                value = row.get(column, -1)
+                if value != -1:
+                    spell["%s%d" % (field, index + 1)] = value
     return spells
 
 
@@ -4790,9 +4808,6 @@ class DungeonDireMaulValueTest(unittest.TestCase):
         (14322, 16740): ('0', '0', '0', 't=aoe;ok=heal'),
         (14322, 8269): ('0', '0', '0', 't=self;self;hp30;ok.purge=nopurge'),
         (14322, 22835): ('0', '0', '0', 't=self;self;hp15;ok.purge=nopurge'),
-        (11484, 13748): ('0', '2400', '3800', 't=victim;int'),
-        (11484, 22940): ('0', '3800', '5200', 't=aoe;ok=heal'),
-        (11484, 22939): ('0', '0', '0', 't=self;summon=14397'),
     }
 
     PHASES = [
@@ -4812,10 +4827,9 @@ class DungeonDireMaulValueTest(unittest.TestCase):
         (11496, 14396, 'summon', 1),
         (14354, 13276, 'summon', 0),
         (16097, 16098, 'summon', 1),
-        (11484, 14397, 'summon', 0),
     ]
 
-    BOSSES = [11467, 11484, 11486, 11487, 11488, 11489, 11490, 11492, 11496, 11501, 13280, 14308, 14321, 14322, 14323, 14324, 14325, 14326, 14327, 14349, 14354, 14502, 14506, 14690, 16097]
+    BOSSES = [11467, 11486, 11487, 11488, 11489, 11490, 11492, 11496, 11501, 13280, 14308, 14321, 14322, 14323, 14324, 14325, 14326, 14327, 14349, 14354, 14502, 14506, 14690, 16097]
 
     def setUp(self):
         all_rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -6191,9 +6205,10 @@ class DungeonPlaguelandsValueTest(unittest.TestCase):
 
 # ---- the trash table against the core --------------------------------------------------------------------------
 
-# SpellRadius.dbc, index -> yards: 8 -> 5, 10 -> 30, 13 -> 10, 18 -> 15. The index is in spell_template, the yards in
-# the client's DBC, so the mapping is pinned here and the test reads the index from the core row.
-TRASH_RADIUS_YARDS = {8: 5, 10: 30, 13: 10, 18: 15}
+# SpellRadius.dbc, index -> yards: 8 -> 5, 10 -> 30, 11 -> 45, 13 -> 10, 18 -> 15. The index is in spell_template, the
+# yards in the client's DBC, so the mapping is pinned here and the test reads the index from the core row. 11 is also
+# the header's own mapping in runtime/SpellShapeData.h:21 (9 = 20, 10 = 30, 11 = 45, 12 = 100, 13 = 10, 21 = 35, 23 = 40).
+TRASH_RADIUS_YARDS = {8: 5, 10: 30, 11: 45, 13: 10, 18: 15}
 
 # The effect-1 target pairs that put a spell's area on the caster itself (SpellDefines.h): the caster's source or
 # destination location with an enemy or friendly area at it. A spell like that reaches its radius in yards around the
@@ -6244,6 +6259,77 @@ TRASH_ABILITY_VALUES = {
     (10476, 17151): (False, "ally", False, False, False, 0),
     (10476, 12739): (True, "victim", False, False, False, 0),
     (10476, 17234): (False, "victim", False, False, False, 0),
+    # The phase-2 batch. spell_template lines, then creature_spells:127 or creature_ai_scripts:58; the Stormwind Vault
+    # pair is custom content, added by sql/database_updates/world/20260510092659_world.sql:12425-12426.
+    # 20014/9611: 25778's 22/15 target pair is restated by spell_effect_mod.sql:58 (Anubisath KB), and its radius index is 0
+    # (the core falls back to the spell's max range), so it carries no r=.
+    (60597, 25778): (False, "aoe", True, False, False, 0),
+    (60597, 12169): (False, "self", False, False, False, 0),
+    # 16378/11757
+    (60596, 20720): (True, "victim", False, False, False, 0),
+    (60596, 15253): (True, "aoe", True, False, False, 10),
+    # 9746/10796/16453
+    (5648, 12471): (True, "victim", False, False, False, 0),
+    (5648, 14032): (False, "victim", False, False, False, 0),
+    (5648, 20798): (False, "self", False, False, False, 0),
+    # 9438/13918/6926: 11899 summons the Greater Healing Ward (8179), 8264 the Lava Spout Totem (6017)
+    (5650, 11899): (True, "", False, False, False, 0),
+    (5650, 17843): (True, "ally", False, False, False, 0),
+    (5650, 8264): (False, "", False, False, False, 0),
+    # 9248
+    (7246, 11641): (False, "victim", False, False, False, 0),
+    # 8846/5975
+    (7247, 11016): (True, "victim", False, False, False, 0),
+    (7247, 7154): (False, "ally", False, False, False, 0),
+    # 9437
+    (5649, 11898): (False, "aoe", True, False, False, 10),
+    # 13016/11750 (spell_mod.sql:75 gives Cone of Cold its 10 s cooldown)/17572/14150
+    (11471, 16799): (True, "victim", False, False, False, 0),
+    (11471, 15244): (False, "victim", False, False, True, 0),
+    (11471, 22744): (False, "victim", False, False, False, 0),
+    (11471, 18100): (False, "self", False, False, False, 0),
+    # 13053/17571: Shriek is the 5 yd silence (radius index 8), Ribbon of Souls the 45 yd one (index 11)
+    (11472, 16838): (False, "aoe", True, False, False, 5),
+    (11472, 22743): (False, "aoe", True, False, False, 45),
+    # 12163/13906
+    (11475, 15802): (True, "victim", False, False, False, 0),
+    (11475, 17831): (False, "aoe", True, False, False, 5),
+    # 10605/17752/17751: the Three are the npc_residual_montruosity script's casts (instance_dire_maul.cpp:809 Arcane
+    # Bolt, :818 Arcane Blast, :752 Summon Mana Bursts on death: 22939 summons the Mana Bursts, 14397)
+    (11484, 13748): (True, "victim", False, False, False, 0),
+    (11484, 22940): (False, "aoe", True, False, False, 10),
+    (11484, 22939): (False, "", False, False, False, 0),
+    # 12483
+    (5263, 16186): (False, "victim", False, False, False, 0),
+    # 9548/9246/9547: 12095 summons its Deathwalker's Spirit (8317) on death
+    (5271, 12096): (True, "victim", False, False, False, 0),
+    (5271, 11639): (False, "victim", False, False, False, 0),
+    (5271, 12095): (False, "", False, False, False, 0),
+    # 9492/7001/7815/9600/9493: 12151 summons an Atal'ai Skeleton (8324), 12040 is the below-30%-hp Shadow Shield
+    (5273, 12039): (True, "ally", False, False, False, 0),
+    (5273, 8362): (True, "ally", False, False, False, 0),
+    (5273, 9613): (True, "victim", False, False, False, 0),
+    (5273, 12151): (False, "", False, False, False, 0),
+    (5273, 12040): (False, "self", False, False, False, 0),
+    # 7001: Renew is the Acolyte's EventAI cast (480901/480902); Heal 2055 is only a creature_template slot
+    (4809, 8362): (True, "ally", False, False, False, 0),
+    # 7014
+    (4810, 8374): (False, "victim", False, False, True, 0),
+    # 7829/7012: 8372 summons the Aqua Guardian (6047)
+    (4811, 9672): (True, "victim", False, False, False, 0),
+    (4811, 8372): (False, "", False, False, False, 0),
+    # 14829/7004
+    (4812, 18972): (False, "victim", False, False, False, 0),
+    (4812, 8365): (False, "self", False, False, False, 0),
+    # 6356/7815/9989: 12746 summons a Voidwalker (8996)
+    (4813, 7645): (True, "victim", False, False, False, 0),
+    (4813, 9613): (True, "victim", False, False, False, 0),
+    (4813, 12746): (False, "", False, False, False, 0),
+    # 10587/11662/9810/9405: the four instant shocks of its creature_spells list
+    (4814, 13728): (False, "victim", False, False, False, 0),
+    (4814, 15039): (False, "victim", False, False, False, 0),
+    (4814, 12548): (False, "victim", False, False, False, 0),
+    (4814, 11824): (False, "victim", False, False, False, 0),
 }
 
 # The mob rows, from creature_template.sql:118 and the run notes quoted in the CSV's own note rows.
@@ -6258,6 +6344,26 @@ TRASH_MOB_VALUES = {
     10469: ("Scholomance Adept", "scholomance", 3, ["caster", "aoe", "runner"], 2),
     10477: ("Scholomance Necromancer", "scholomance", 3, ["caster", "runner"], 3),
     10476: ("Scholomance Necrolyte", "scholomance", 2, ["caster"], 1),
+    60597: ("Maddened Vault Guard", "stormwind_vault", 3, ["aoe"], 2),
+    60596: ("Runic Construct", "stormwind_vault", 3, ["caster", "aoe"], 3),
+    5648: ("Sandfury Shadowcaster", "zulfarrak", 3, ["caster", "runner"], 2),
+    5650: ("Sandfury Witch Doctor", "zulfarrak", 3, ["healer", "summoner", "runner"], 3),
+    7246: ("Sandfury Shadowhunter", "zulfarrak", 2, ["cc", "patrol", "runner"], 2),
+    7247: ("Sandfury Soul Eater", "zulfarrak", 2, ["healer", "runner"], 2),
+    5649: ("Sandfury Blood Drinker", "zulfarrak", 3, ["aoe", "runner"], 3),
+    11471: ("Eldreth Apparition", "dire_maul", 3, ["caster", "cc"], 2),
+    11472: ("Eldreth Spirit", "dire_maul", 3, ["aoe", "cc"], 2),
+    11475: ("Eldreth Phantasm", "dire_maul", 3, ["caster"], 2),
+    11484: ("Residual Monstrosity", "dire_maul", 3, ["caster", "aoe", "summoner"], 3),
+    5263: ("Mummified Atal'ai", "sunken_temple", 2, ["caster"], 1),
+    5271: ("Atal'ai Deathwalker", "sunken_temple", 3, ["caster", "fear", "summoner"], 2),
+    5273: ("Atal'ai High Priest", "sunken_temple", 3, ["healer", "summoner", "runner"], 3),
+    4809: ("Twilight Acolyte", "blackfathom_deeps", 3, ["healer", "runner"], 3),
+    4810: ("Twilight Reaver", "blackfathom_deeps", 2, ["aoe", "runner"], 2),
+    4811: ("Twilight Aquamancer", "blackfathom_deeps", 2, ["caster", "summoner", "runner"], 2),
+    4812: ("Twilight Loreseeker", "blackfathom_deeps", 1, ["cc", "runner"], 1),
+    4813: ("Twilight Shadowmage", "blackfathom_deeps", 3, ["caster", "mc", "summoner"], 3),
+    4814: ("Twilight Elementalist", "blackfathom_deeps", 2, ["caster", "runner"], 1),
 }
 
 
@@ -6340,6 +6446,11 @@ class TrashValueTest(unittest.TestCase):
             self.assertIn(want[5], yards, "%s %s r=%s, spell radii %s" % (entry, spell, want[5], yards))
 
     def test_a_caster_centred_area_carries_a_radius(self):
+        # A caster-centred area carries the radius its spell draws. A spell whose every radius index is 0 (Knock Away
+        # 25778, an Anubisath-style knockback whose targets spell_effect_mod restates to 22/15) has no area to draw:
+        # the core falls back to the spell's own max range for a 0 index, and the table holds no yardage for that. A
+        # non-zero index, though, must be one TRASH_RADIUS_YARDS knows (the test fails otherwise, so a new index is
+        # added rather than silently dropped).
         found = set()
         for row in self.rows:
             if row["row"] != "ability":
@@ -6348,6 +6459,16 @@ class TrashValueTest(unittest.TestCase):
             pair = (spell.get("effectImplicitTargetA1"), spell.get("effectImplicitTargetB1"))
             if pair not in CASTER_CENTRED_TARGETS:
                 continue
+            indexes = [spell.get("effectRadiusIndex%d" % n, 0) for n in (1, 2, 3)]
+            if not any(indexes):
+                continue
+            for index in indexes:
+                if index:
+                    self.assertIn(
+                        index, TRASH_RADIUS_YARDS,
+                        "%s %s has radius index %s with no yards in TRASH_RADIUS_YARDS"
+                        % (row["entry"], row["key"], index),
+                    )
             key = (int(row["entry"]), int(row["key"]))
             found.add(key)
             self.assertTrue(
@@ -6355,7 +6476,8 @@ class TrashValueTest(unittest.TestCase):
             )
         self.assertEqual(
             {(15146, 24616), (14750, 5115), (14750, 23511), (14750, 24024), (10499, 17631),
-             (10477, 14887), (10477, 12020)},
+             (10477, 14887), (10477, 12020), (60596, 15253), (5649, 11898), (11472, 16838),
+             (11472, 22743), (11475, 17831), (11484, 22940)},
             found,
         )
 
@@ -6370,11 +6492,20 @@ class TrashValueTest(unittest.TestCase):
         # 11368 is Jeklik's summon add: the trash block is the one place its own casts live.
         self.assertIn(11368, self.add_entries)
 
-    def test_the_seed_set_is_the_brief_s_ten(self):
-        self.assertEqual({15111, 15146, 11368, 14750, 10470, 10471, 10499, 10469, 10477, 10476},
-                         set(self.mobs))
-        self.assertEqual([{"key": "zulgurub", "mapId": 309}, {"key": "scholomance", "mapId": 289}],
-                         self.maps)
+    def test_the_table_covers_the_top_10_groups(self):
+        # The top 10 of the scope's ranking, less 8317: the Deathwalker's Spirit has no spell of its own (no slots, no
+        # creature_spells list, its EventAI only despawns it and pulses zone combat), so it has no ability row to carry.
+        self.assertEqual(
+            {15111, 15146, 11368, 14750, 10470, 10471, 10499, 10469, 10477, 10476,
+             60597, 60596, 5648, 5650, 7246, 7247, 5649, 11471, 11472, 11475, 11484,
+             5263, 5271, 5273, 4809, 4810, 4811, 4812, 4813, 4814},
+            set(self.mobs))
+        self.assertEqual(
+            [{"key": "zulgurub", "mapId": 309}, {"key": "scholomance", "mapId": 289},
+             {"key": "stormwind_vault", "mapId": 35}, {"key": "zulfarrak", "mapId": 209},
+             {"key": "dire_maul", "mapId": 429}, {"key": "sunken_temple", "mapId": 109},
+             {"key": "blackfathom_deeps", "mapId": 48}],
+            self.maps)
 
     def test_the_committed_json_matches_the_csv(self):
         doc = boss_data.build_trash_document(
