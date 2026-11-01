@@ -518,6 +518,7 @@
         n: e.n || "boss",
         s: e.s || "",
         sid: e.sid != null ? e.sid : null,
+        e: e.e != null ? e.e : null,
         target: e.tn || "",
       });
     });

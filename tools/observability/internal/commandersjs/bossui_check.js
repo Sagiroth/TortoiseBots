@@ -127,6 +127,8 @@ assert.strictEqual((tlHtml.match(/class="fd-bosscast bc-\d"/g) || []).length, 3,
 assert.ok(tlHtml.includes('data-fd-bosscast="8000"'), "a marker scrubs to its own time");
 assert.ok(tlHtml.includes("Hakkar: Blood Siphon → Healbot at 8.0 s"), "the marker says who cast what at whom");
 assert.ok(/class="fd-bosscast bc-0"/.test(tlHtml), "Blood Siphon takes the table's first slot");
+assert.ok(src.includes("BossPanel.abilityBySpell(bossTable, c.sid, c.e)"), "the Boss lane colours a shared spell by its caster");
+
 assert.ok(css.includes(".fd-bosscast"), "the marker is styled");
 
 // ---- map: a hollow body and the phase word for an untouchable boss ----------------------------------------------------

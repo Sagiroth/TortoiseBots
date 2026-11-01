@@ -153,8 +153,13 @@
     const byEntry = {};
     bosses.forEach((b) => { if (!byEntry[b.entry]) byEntry[b.entry] = b; });
     const bySpell = {};
-    bosses.forEach((b) => b.abilities.forEach((a, i) => { if (!(a.sid in bySpell)) bySpell[a.sid] = { boss: b, ability: a, index: i }; }));
-    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell };
+    const bySpellAll = {};
+    bosses.forEach((b) => b.abilities.forEach((a, i) => {
+      const slot = { boss: b, ability: a, index: i };
+      if (!(a.sid in bySpell)) bySpell[a.sid] = slot;
+      (bySpellAll[a.sid] = bySpellAll[a.sid] || []).push(slot);
+    }));
+    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell, bySpellAll: bySpellAll };
   }
 
   let cache = null, loading = null, loaded = null, rawDoc = null;
@@ -179,10 +184,17 @@
     const e = num(entry);
     return e === null ? null : t.byEntry[e] || null;
   }
-  function abilityBySpell(table, sid) {
+  function abilityBySpell(table, sid, casterEntry) {
     const t = table === undefined ? cache : table;
     const s = num(sid);
-    return t && s !== null ? t.bySpell[s] || null : null;
+    if (!t || s === null) return null;
+    const e = num(casterEntry);
+    const slots = t.bySpellAll ? t.bySpellAll[s] : null;
+    if (e !== null && slots && slots.length > 1) {
+      const hit = slots.find((slot) => slot.boss.entry === e);
+      if (hit) return hit;
+    }
+    return t.bySpell[s] || null;
   }
   // ---- phases ----------------------------------------------------------------------------------------------------------
 
@@ -260,6 +272,7 @@
       t: num(first(e.t, e.t_ms, e.tMs)),
       tg: str(first(e.tg, e.targetGuid, e.target_guid)),
       tn: str(first(e.tn, e.targetName, e.target_name)),
+      e: num(e.e),
       n: str(e.n),
       by: str(e.by),
       m: str(e.m),
@@ -276,9 +289,16 @@
     const elapsed = Math.max(0, now - start);
     const ph = phaseOf(b, mob, priorPhase);
     const seenAt = {};
+    const countsFor = (e, sid) => {
+      if (e.sid !== sid) return false;
+      if (e.sid === null || e.t === null) return false;
+      if (e.k !== "cast" && e.k !== "ab" && e.k !== "da" && e.k !== "dr") return false;
+      const slots = t.bySpellAll ? t.bySpellAll[sid] : null;
+      if (!slots || slots.length <= 1) return true;
+      return e.e === null || e.e === b.entry || !slots.some((s) => s.boss.entry === e.e);
+    };
     evs.forEach((e) => {
-      if (e.sid === null || e.t === null) return;
-      if (e.k !== "cast" && e.k !== "ab" && e.k !== "da" && e.k !== "dr") return;
+      if (!countsFor(e, e.sid)) return;
       if (!(e.sid in seenAt) || e.t > seenAt[e.sid]) seenAt[e.sid] = e.t;
     });
     const currentSid = num(mob.cid);
@@ -286,7 +306,7 @@
     const total = num(mob.ctot);
     const targetName = str(first(mob.ctn, mob.ctargetName, mob.castTargetName, mob.ctarget, ""));
     let lastCast = null;
-    evs.forEach((e) => { if (e.k === "cast" && (lastCast === null || e.t > lastCast.t)) lastCast = e; });
+    evs.forEach((e) => { if (e.k === "cast" && countsFor(e, e.sid) && (lastCast === null || e.t > lastCast.t)) lastCast = e; });
 
     const abilities = b.abilities.map((a, i) => {
       const seenAtMs = a.sid in seenAt ? seenAt[a.sid] : null;
