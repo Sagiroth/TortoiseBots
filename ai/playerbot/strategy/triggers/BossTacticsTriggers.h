@@ -37,6 +37,14 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This DPS bot's current target is a boss entry a hold_kill row holds (its blocker still lives).
+    class BossTacticsHoldKillTrigger : public Trigger
+    {
+    public:
+        BossTacticsHoldKillTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics hold kill", 1) {}
+        bool IsActive() override;
+    };
+
     // A creature in the fight casts a spell an avoid_cast row lists and this bot (not a tank) stands inside its radius.
     class BossTacticsAvoidCastTrigger : public Trigger
     {

@@ -40,6 +40,7 @@ TACTICS_STRATEGY_H = (STRATEGY / "generic/BossTacticsStrategy.h").read_text()
 COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
 MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
 LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
+COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -105,11 +106,12 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("row.kind == BossTacticKind::TankHold", pickup)
         self.assertIn("dynamic_cast<Player*>(unit->GetVictim())", pickup)
         self.assertIn("!ai->IsTank(victimPlayer)", pickup)
-        # The preference runs in the loose-add branch, before the nearest tie-break.
-        loose = tank[tank.index("// Loose adds: the one a tank_hold row lists"):]
+        # The preference now runs above the main tank's stickiness (see
+        # TankTakesTheLooseVoidwalker.test_the_pickup_check_precedes_the_main_tank_stickiness); the loose-add branch
+        # below it keeps nearest first for everything else.
+        loose = tank[tank.index("// Loose adds: nearest first"):]
         loose = loose[:loose.index("return bot->GetDistance(newUnit) < bot->GetDistance(oldUnit)")]
-        self.assertIn("IsTankHoldPickup(newUnit)", loose)
-        self.assertIn("IsTankHoldPickup(oldUnit)", loose)
+        self.assertNotIn("IsTankHoldPickup(", loose)
 
     def test_action_walks_to_a_policy_point_outside_every_cast(self):
         spots = body(ACTIONS, "int AvoidCastSpots(")
@@ -264,6 +266,103 @@ class AvoidCastRunsForHeldBots(unittest.TestCase):
         fn = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
         self.assertIn("dynamic_cast<ReturnToStayPositionAction*>(action)", fn)
         self.assertIn("CastHoldsMove(false, false, true, stay->second.x, stay->second.y, stay->second.z, zones)", fn)
+
+
+class HoldKillWiring(unittest.TestCase):
+    """ZG walk 21: four Mad Servants died inside 16 s and eight Mad Voidwalkers spawned in the raid at once, each
+    shocking everyone within 15 yd of itself; 7 bots died in the next 2 s. The two `hold_kill` rows (budget 0: no DPS
+    on a Mad Servant while a Mad Voidwalker or a Portal of Madness lives) pace the kills so a pair spawns at a time.
+
+    The rules live in ai/playerbot/BossTacticsPolicy.h (KillHeld; its behaviour is tested in
+    tools/test_boss_tactics_policy.cpp). These pins only prove the live code calls it, with a grid-search count.
+    """
+
+    def test_the_hold_multiplier_reads_killheld_for_dps(self):
+        fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        # The DPS rows stand down on a held current target; the tanks and healers keep their own pick.
+        self.assertIn("KillHeld(fight.rows, current->GetEntry(), countNear)", fn)
+        self.assertIn("PlayerbotAI::IsTank(bot)", fn)
+        self.assertIn("PlayerbotAI::IsHeal(bot)", fn)
+        self.assertIn('dynamic_cast<DpsAssistAction*>(action)', fn)
+        self.assertIn('dynamic_cast<DpsAoeAction*>(action)', fn)
+        # The AoE clause: a held creature in the pile the AoE would hit (one AoE killed four Servants together).
+        self.assertIn("HeldUnitNear(current, fight.rows, countNear)", fn)
+
+    def test_the_hold_kill_trigger_reads_killheld_and_dps_only(self):
+        self.assertIn('Trigger(ai, "boss tactics hold kill", 1)', TRIGGERS_H)
+        fn = body(TRIGGERS, "bool BossTacticsHoldKillTrigger::IsActive()")
+        self.assertIn("Ready(ai, bot)", fn)
+        self.assertLess(fn.index("ScanBossTactics("), fn.index("FindBossHoldKill("))
+        helper = body(ACTIONS, "Unit* ai::FindBossHoldKill(")
+        self.assertIn("IsFreeDps(ai, bot)", helper)                      # never a tank, a healer or an ordered bot
+        self.assertIn('AI_VALUE(Unit*, "current target")', helper)
+        self.assertIn("KillHeld(fight.rows, current->GetEntry(), countNear)", helper)
+
+    def test_the_count_is_a_grid_search_not_the_attacker_list(self):
+        # The Portal of Madness (15141) is unselectable and never attacks, so the blocker count can never come from the
+        # bots' "attackers" list: every hold_kill path reaches creatures through CountNear.
+        helper = body(ACTIONS, "std::uint32_t CountNear(")
+        self.assertIn("GetCreatureListWithEntryInGrid(found, entry, range)", helper)
+        self.assertIn("creature->IsAlive()", helper)
+        for fn in (helper, body(ACTIONS, "bool HeldUnitNear("), body(ACTIONS, "Unit* ai::FindBossHoldKill("),
+                   body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue("),
+                   body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")):
+            self.assertNotIn('"attackers"', fn)
+
+    def test_the_action_switches_off_the_held_entry(self):
+        fn = body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")
+        self.assertIn("FindBossHoldKill(ai, bot, fight)", fn)
+        # The kill_first pick first, else the nearest attacker whose own entry is not held.
+        self.assertIn("FindBossKillFirst(ai, bot, fight)", fn)
+        self.assertIn("KillHeld(fight.rows, unit->GetEntry(), countNear)", fn)
+        self.assertIn("Attack(bot, nearest)", fn)
+        # Nothing to switch to: drop the held pick and stop attacking it, so the assist rows re-pick.
+        self.assertIn('GetValue<Unit*>("current target")->Set(nullptr)', fn)
+        self.assertIn('GetValue<ObjectGuid>("attack target")->Set(ObjectGuid())', fn)
+        self.assertIn("bot->AttackStop()", fn)
+
+    def test_registered_and_queued_beside_the_kill_first_pair(self):
+        self.assertIn(
+            'creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };',
+            TRIGGER_CONTEXT)
+        self.assertIn(
+            'creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };',
+            ACTION_CONTEXT)
+        self.assertIn('new NextAction("boss tactics hold kill", ACTION_HIGH + 2)',
+                      node(TACTICS_STRATEGY, "boss tactics hold kill"))
+
+
+class TankTakesTheLooseVoidwalker(unittest.TestCase):
+    """ZG fix 2: the run's kill_first focus put the skull on a Servant far out (both tanks targeted it while two
+    Voidwalkers stood in the pile), and the explicit main tank never picked a loose add up at all.
+
+    Failing case: "the explicit main tank takes a Voidwalker that is on a healer".
+    """
+
+    def test_commander_focus_skips_a_tank_keyed_to_tankhold(self):
+        fn = body(COMMANDER, "static bool CommanderFocus(")
+        self.assertIn("ai->IsTank(bot)", fn)
+        skip = body(COMMANDER, "static bool FocusIsTankHoldTarget(")
+        self.assertIn("GetBossTactics().Rows(target->GetMapId(), target->GetEntry())", skip)
+        self.assertIn("BossTacticKind::TankHold", skip)
+        self.assertIn("!target", skip)
+        # The tank is un-stayed like everyone else (the run leader counts on every focus order doing that) but takes
+        # neither the "rti" nor the "attack rti target" order, so its own pick keeps the loose adds.
+        self.assertLess(fn.index("RelaxTacticalMovement(ai);"), fn.index("ai->IsTank(bot)"))
+        self.assertLess(fn.index("ai->IsTank(bot)"), fn.index('Event("focus skull"'))
+        self.assertLess(fn.index("ai->IsTank(bot)"), fn.index('Event("focus skull", "", order.lead)'))
+
+    def test_the_pickup_check_precedes_the_main_tank_stickiness(self):
+        # A tank_hold loose add outranks the explicit main tank's stickiness, or the main tank never leaves its Servant
+        # for the Voidwalker on the healer.
+        tank = (STRATEGY / "values/TankTargetValue.cpp").read_text()
+        is_better = tank[tank.index("bool IsBetter(Unit* newUnit, Unit* oldUnit)"):]
+        is_better = is_better[:is_better.index("\n    int GetIntervalLevel(")]
+        self.assertIn("IsTankHoldPickup(newUnit)", is_better)
+        self.assertIn("IsTankHoldPickup(oldUnit)", is_better)
+        self.assertIn("if (newPickup != oldPickup)", is_better)
+        self.assertLess(is_better.index("IsTankHoldPickup(newUnit)"), is_better.index("MainTankSticksToCurrent("))
+        self.assertLess(is_better.index("if (newPickup != oldPickup)"), is_better.index("MainTankSticksToCurrent("))
 
 
 if __name__ == "__main__":

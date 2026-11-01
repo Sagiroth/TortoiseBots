@@ -62,6 +62,14 @@ bool BossTacticsKillFirstTrigger::IsActive()
     return AI_VALUE(Unit*, "current target") != pick;
 }
 
+bool BossTacticsHoldKillTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    return !fight.rows.empty() && FindBossHoldKill(ai, bot, fight) != nullptr;
+}
+
 bool BossTacticsFrontTrigger::IsActive()
 {
     if (!Ready(ai, bot))

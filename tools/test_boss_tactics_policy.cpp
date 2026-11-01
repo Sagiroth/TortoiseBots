@@ -65,7 +65,9 @@ int main()
     CHECK(ParseBossTacticKind("behind") == BossTacticKind::Behind);
     CHECK(ParseBossTacticKind("avoid_cast") == BossTacticKind::AvoidCast);
     CHECK(ParseBossTacticKind("tank_hold") == BossTacticKind::TankHold);
+    CHECK(ParseBossTacticKind("hold_kill") == BossTacticKind::HoldKill);
     CHECK(ParseBossTacticKind("Interrupt") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("Hold_Kill") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("Tank_Hold") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("dispel") == BossTacticKind::None);
@@ -168,6 +170,61 @@ int main()
         // Interrupt and behind rows never pick a target.
         const std::vector<BossTacticRow> other = { Row(70, 6910, BossTacticKind::Interrupt, 0, 16006) };
         CHECK(PickKillFirst(Active(other), { Cand(6910, 3) }) == -1);
+    }
+
+    // hold_kill: DPS leave a boss entry alone while more than `priority` living blockers of it are near. The modal
+    // case, "a Mad Servant is held while one Mad Voidwalker lives": the two Zul'Gurub Servant rows, budget 0, blockers
+    // the Mad Voidwalker 15146 and the unselectable Portal of Madness 15141.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 15111, BossTacticKind::HoldKill, 15146),
+            Row(309, 15111, BossTacticKind::HoldKill, 15141),
+        };
+        const ActiveBossRows active = Active(rows);
+        auto countOf = [](std::uint32_t entry, std::uint32_t n) {
+            return [entry, n](std::uint32_t e) -> std::uint32_t { return e == entry ? n : 0; };
+        };
+        CHECK(KillHeld(active, 15111, countOf(15146, 1)));    // a Mad Servant is held while one Mad Voidwalker lives
+        CHECK(KillHeld(active, 15111, countOf(15146, 2)));
+        CHECK(KillHeld(active, 15111, countOf(15141, 1)));    // the unselectable portal counts like any blocker
+        CHECK(!KillHeld(active, 15111, countOf(15146, 0)));   // nothing left: the Servants are free
+        CHECK(!KillHeld(active, 15111, countOf(11340, 9)));   // a creature no row names
+        CHECK(!KillHeld(active, 15146, countOf(15146, 1)));   // the Voidwalker is not held itself
+        CHECK(!KillHeld(active, 11340, countOf(15146, 5)));
+        CHECK(!KillHeld(ActiveBossRows(), 15111, countOf(15146, 1)));
+
+        // The row's priority is the budget: a budget-2 row holds only once three blockers live.
+        const std::vector<BossTacticRow> budget = { Row(309, 15111, BossTacticKind::HoldKill, 15146, 0, 2) };
+        CHECK(!KillHeld(Active(budget), 15111, countOf(15146, 2)));
+        CHECK(KillHeld(Active(budget), 15111, countOf(15146, 3)));
+
+        // No other kind holds anything.
+        const std::vector<BossTacticRow> others = {
+            Row(309, 15111, BossTacticKind::KillFirst, 15111, 0, 1),
+            Row(309, 15111, BossTacticKind::AvoidCast, 0, 24612, 0, 6.0f),
+            Row(309, 15111, BossTacticKind::TankHold),
+        };
+        CHECK(!KillHeld(Active(others), 15111, countOf(15146, 9)));
+
+        // The subject is the row's boss_entry and the blocker its target_entry: a row keyed the other way round holds
+        // the other creature, not this one.
+        const std::vector<BossTacticRow> swapped = { Row(309, 15146, BossTacticKind::HoldKill, 15111) };
+        CHECK(!KillHeld(Active(swapped), 15111, countOf(15111, 1)));
+        CHECK(KillHeld(Active(swapped), 15146, countOf(15111, 1)));
+    }
+
+    // Loader: a hold_kill row is keyed by boss + kind + blocker + spell, so the two Servant rows coexist, and a nonzero
+    // target_entry is the row's blocker, not a rejection (only a tank_hold row may not carry one).
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Row(309, 15111, BossTacticKind::HoldKill, 15146)));
+        CHECK(table.Add(Row(309, 15111, BossTacticKind::HoldKill, 15141)));
+        CHECK(!table.Add(Row(309, 15111, BossTacticKind::HoldKill, 15146)));   // same key
+        CHECK(table.Add(Row(309, 15111, BossTacticKind::Interrupt, 0, 24612)));
+        table.Seal();
+        const std::vector<BossTacticRow>* rows = table.Rows(309, 15111);
+        CHECK(rows && rows->size() == 3);
+        CHECK(table.HasMap(309));
     }
 
     // Boss front: inside the radius and in the frontal half-plane only.

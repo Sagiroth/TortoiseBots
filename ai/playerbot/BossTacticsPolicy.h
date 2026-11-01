@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -39,6 +40,7 @@ namespace ai
         Behind = 3,     // non-tank bots stay out of the boss's front within `param` yd (frontal cleave)
         AvoidCast = 4,  // non-tank bots leave `param` yd around the caster while it casts `spell_id`
         TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
+        HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -53,6 +55,8 @@ namespace ai
             return BossTacticKind::AvoidCast;
         if (text == "tank_hold")
             return BossTacticKind::TankHold;
+        if (text == "hold_kill")
+            return BossTacticKind::HoldKill;
         return BossTacticKind::None;
     }
 
@@ -442,6 +446,34 @@ namespace ai
         slot->instance = instance;
         slot->lastSeenMs = nowMs;
         return true;
+    }
+
+    // A hold_kill row's blocker is counted in this radius around the bot: wide enough for the pile a Mad Servant dies
+    // in (its Portal of Madness lands at the corpse), narrow enough not to count a second pack.
+    constexpr float kHoldKillRangeYd = 50.0f;
+
+    // A DPS AoE row is held while a held boss entry's creature stands this close to the bot's current target: the AoE
+    // would take it as well (walk 21: one AoE killed four Mad Servants together, and each of them leaves two Mad
+    // Voidwalkers).
+    constexpr float kHoldKillAoeNearYd = 10.0f;
+
+    // Whether DPS leave `entry` alone right now. A hold_kill row blocks while more than `priority` living units of its
+    // target_entry (the blocker: the Mad Voidwalker a dead Mad Servant's portal summons, or the portal itself) are
+    // near, so `priority` 0 means "not one more". The count is the caller's, a grid search around the bot: a Portal of
+    // Madness is unselectable (unit_flags 33555200) and never attacks, so the bots' attacker list would never see it.
+    // The subject is the row's boss_entry; a hold_kill row's target_entry is the blocker, the thing to finish first,
+    // never the boss the row is about.
+    inline bool KillHeld(const ActiveBossRows& rows, std::uint32_t entry,
+                         const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        for (const BossTacticRow* row : rows)
+        {
+            if (row->kind != BossTacticKind::HoldKill || row->bossEntry != entry)
+                continue;
+            if (countNear(row->targetEntry) > row->priority)
+                return true;
+        }
+        return false;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

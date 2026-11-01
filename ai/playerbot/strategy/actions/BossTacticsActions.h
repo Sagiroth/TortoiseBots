@@ -40,6 +40,11 @@ namespace ai
     // and bots under an explicit attack order never get one).
     Unit* FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // The held boss entry this DPS bot is on right now, or null: its current target's entry has a hold_kill row whose
+    // blocker (a Mad Voidwalker, a Portal of Madness) still lives within kHoldKillRangeYd. Tanks, healers and bots
+    // under an explicit attack order never see their target as held.
+    Unit* FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
     // The boss whose front this bot should leave, or null.
     Unit* FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
@@ -72,6 +77,15 @@ namespace ai
     {
     public:
         BossTacticsKillFirstAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics kill first") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Off a boss entry a hold_kill row holds: the kill_first pick if there is one, else the nearest attacker whose own
+    // entry is not held, else nothing (attack stopped so the assist rows re-pick once the blocker is dead).
+    class BossTacticsHoldKillAction : public AttackAction
+    {
+    public:
+        BossTacticsHoldKillAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics hold kill") {}
         bool Execute(Event& event) override;
     };
 

@@ -112,6 +112,15 @@ public:
     bool IsBetter(Unit* newUnit, Unit* oldUnit)
     {
         Player* bot = ai->GetBot();
+        // A loose add a tank_hold row lists, on a non-tank, outranks the explicit main tank's stickiness below (a ZG
+        // Mad Voidwalker shocks the raid while a non-tank holds it): only when exactly one of the two candidates is
+        // such a pickup, so a tank holding its pickup keeps it. Without the row or the strategy both are false and the
+        // order below is the pre-row one (5ef9e9771).
+        bool const newPickup = IsTankHoldPickup(newUnit);
+        bool const oldPickup = IsTankHoldPickup(oldUnit);
+        if (newPickup != oldPickup)
+            return newPickup;
+
         // Explicit main tank with an off-tank beside it holds the skull-side
         // mob it has (donor TankTargetValue.cpp:76-83): current first, every
         // other candidate after, so loose adds never pull it off. Explicit-
@@ -131,14 +140,9 @@ public:
         if (GetIntervalLevel(newUnit) != GetIntervalLevel(oldUnit))
             return GetIntervalLevel(newUnit) > GetIntervalLevel(oldUnit);
 
-        // Loose adds: the one a tank_hold row lists and that is on a non-tank goes first (a ZG Mad
-        // Voidwalker shocks the raid while a non-tank holds it); below that, nearest first so the
-        // pickup is quick.
+        // Loose adds: nearest first, so the pickup is quick (a tank_hold pickup was already decided above).
         if (GetIntervalLevel(newUnit) == 2)
         {
-            const bool newPickup = IsTankHoldPickup(newUnit);
-            if (newPickup != IsTankHoldPickup(oldUnit))
-                return newPickup;
             return bot->GetDistance(newUnit) < bot->GetDistance(oldUnit);
         }
 
@@ -197,10 +201,11 @@ public:
     // blast, docs/play/boss-tactics.md) and that is on a non-tank player: the tank takes it
     // before the nearest add. A ZG Mad Voidwalker held by a non-tank channels, then shocks the
     // whole raid (15 yd, ~1000-1200 shadow) once its target walks away; a tank on it stops both.
-    // Only the free loose-add choice reads this: the explicit attack target and the main-tank
-    // stickiness above are decided before IsBetter's loose-add branch runs. The preference is part of
+    // Only IsBetter reads this, and it reads it first, above the main tank's stickiness, so even the
+    // explicit main tank leaves its current target for such a pickup; an explicit attack order is
+    // still taken before IsBetter runs. The preference is part of
     // the boss tactics tactic, so it is armed only while the bot runs "boss tactics" in combat:
-    // without it the loose-add order is exactly as on 5ef9e9771 (nearest first).
+    // without it every comparison is exactly as on 5ef9e9771 (nearest loose add first).
     bool IsTankHoldPickup(Unit* unit)
     {
         if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))

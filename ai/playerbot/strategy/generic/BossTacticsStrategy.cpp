@@ -17,6 +17,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A DPS bot on a boss entry a hold_kill row holds leaves it (the blocker is the kill): below the kill-first pick,
+    // which is where it switches to first, and above the generic assist rows the multiplier stands down meanwhile.
+    triggers.push_back(new TriggerNode(
+        "boss tactics hold kill",
+        NextAction::array(0, new NextAction("boss tactics hold kill", ACTION_HIGH + 2), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

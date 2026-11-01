@@ -18,7 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -139,6 +139,33 @@ class BossTacticsSql(unittest.TestCase):
                         r"^DELETE\s+FROM\s+`?ai_boss_tactic`?\s+WHERE\s+`map` = \d+",
                         "DELETE not scoped by map in %s: %s" % (os.path.basename(path), line.strip()),
                     )
+
+    def test_hold_kill_paces_the_mad_servants(self):
+        # walk 21: the Mad Servant 15111's two hold_kill rows (budget 0: no DPS while a Mad Voidwalker 15146 or a
+        # Portal of Madness 15141 lives) pace the kills, so the pair of Voidwalkers a dead Servant leaves spawns one
+        # pair at a time instead of eight at once.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5]), int(row[6]))
+                for row in effective_rows()}
+        self.assertIn((309, 15111, "interrupt", 0, 24612, 0), live, "the Servant's Flamestrike row is gone")
+        self.assertIn((309, 15111, "hold_kill", 15146, 0, 0), live)
+        self.assertIn((309, 15111, "hold_kill", 15141, 0, 0), live)
+
+        # The migration that writes them DELETEs the (309, 15111) key first and re-inserts the interrupt row from
+        # 20261101020000 unchanged (its shape is what test_dungeon_plan_sql.py requires of a re-INSERTed key).
+        path = os.path.join(ROOT, "data/sql/world/20261101050000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the hold_kill migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        delete = text.index("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (15111);")
+        self.assertLess(delete, text.index("INSERT INTO `ai_boss_tactic`"))
+        with open(os.path.join(ROOT, "data/sql/world/20261101020000_world.sql"), encoding="utf-8") as handle:
+            earlier = handle.read()
+        interrupt = [line for line in earlier.splitlines() if line.startswith("(309, 15111,")]
+        self.assertEqual(len(interrupt), 1)
+        # The row's content goes back byte-identical; it is no longer the statement's last row, so its terminator is
+        # the comma the two hold_kill rows follow.
+        self.assertIn(interrupt[0].rstrip(",;") + ",", text,
+                      "the Servant's interrupt row did not go back in unchanged")
 
     def test_deleted_rows_are_gone(self):
         # pjerra/turtle-agent#246: the rows below are not interruptible under the
