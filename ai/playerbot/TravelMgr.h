@@ -398,8 +398,7 @@ namespace ai
 		bool IsConditionsActive(bool clear = false);
 		bool IsDestinationActive();
 
-        void CheckStatus();
-
+		void CheckStatus();
 
 		bool IsActive();
 
