@@ -37,6 +37,7 @@ enum class OrderReason : uint8_t
     NoProgress,
     NeedItems,
     BankDenied,
+    NoBanker,
 };
 
 struct NeedItem
@@ -145,13 +146,14 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::NoProgress: return "noprogress";
         case OrderReason::NeedItems: return "needitems";
         case OrderReason::BankDenied: return "bankdenied";
+        case OrderReason::NoBanker: return "nobanker";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::BankDenied); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoBanker); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -164,6 +166,7 @@ inline OrderState StateForReason(OrderReason reason)
         case OrderReason::Grouped:  return OrderState::Waiting;
         case OrderReason::NeedItems:return OrderState::Waiting;
         case OrderReason::BankDenied:return OrderState::Working;
+        case OrderReason::NoBanker:return OrderState::Working;
         case OrderReason::NoSkill:
         case OrderReason::LowSkill: return OrderState::NoSkill;
         case OrderReason::LowLevel:

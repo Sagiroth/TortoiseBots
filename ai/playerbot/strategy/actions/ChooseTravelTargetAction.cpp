@@ -172,7 +172,7 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         NoteBankEmpty(bot->GetGUIDLow(), record->supplyItemId);
         SetSupply(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
             record->supplyItemId, record->supplyCount, SupplyStep::Farm,
-            OrderReason::BankDenied);
+            OrderReason::NoBanker);
         return true;
     }
     if (record->supplyStep == SupplyStep::AuctionHouse && purposeKey == "guild order" &&
