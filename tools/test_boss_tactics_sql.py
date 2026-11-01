@@ -178,6 +178,12 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((822, 63133, "interrupt", 0, 3143), live)
         self.assertNotIn((820, 62782, "interrupt", 62771, 36732), live)
         self.assertNotIn((70, 4854, "interrupt", 0, 8292), live)
+        self.assertNotIn((309, 14507, "interrupt", 0, 23895), live)
+        self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
+        self.assertNotIn((409, 12118, "interrupt", 12119, 20604), live)
+        self.assertNotIn((531, 15275, "interrupt", 0, 7393), live)
+        self.assertNotIn((531, 15276, "interrupt", 0, 7393), live)
+        self.assertNotIn((532, 61224, "interrupt", 0, 57094), live)
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
@@ -492,6 +498,9 @@ class BossTacticsCoreData(unittest.TestCase):
         15146: "sql/base/tw_world_creature_ai_events.sql:52, event 1514101 (creature 15141, the Portal of Madness "
                "a dying Mad Servant 15111 leaves behind with 24621) casts 24620 every 30 s, whose 24622 summons "
                "2 Mad Voidwalkers",
+        14515: "sql/base/tw_world_event_scripts.sql:58, event 9066 (the eventId of the Gong of Bethekk 180526, tw_world_gameobject_template.sql:72) summons her",
+        12018: "src/scripts/dungeons/molten_core/instance_molten_core.cpp:652 (SummonCreature(NPC_DOMO) once the seven runes are doused)",
+        15517: "src/scripts/dungeons/temple_of_ahnqiraj/boss_ouro.cpp:462 (the Ouro spawner casts SPELL_SUMMON_OURO 26061)",
     }
 
     @classmethod

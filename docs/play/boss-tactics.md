@@ -248,6 +248,6 @@ How it combines with the rest: while a row seats the bot, the stand action (`bos
 
 1. Read the boss from the core: `creature_template` (`spell_list_id`, `ai_name`), `creature_spells`, the `creature_ai_events`/`creature_ai_scripts` rows or the `src/scripts` boss file, and `spell_template` for each spell. Do not use another core's ids.
 2. Add the rows in a **new** migration `data/sql/world/YYYYMMDDHHMMSS_world.sql` (idempotent: `DELETE` the map's rows, `INSERT` them again). Never edit an applied migration.
-3. Run `python3 tools/test_boss_tactics_sql.py` (and `python3 tools/test_boss_stand_sql.py` for stand rows), then check it in game with `AiPlayerbot.DungeonTactics = 1` or a commander binding and a boss pull.
+3. Run `TORTOISE_CORE=<tortoise-wow checkout> python3 tools/test_boss_tactics_sql.py` (the core checks must run, not skip: the output must say `Ran 17 tests` with no `skipped`; and `python3 tools/test_boss_stand_sql.py` for stand rows), then check it in game with `AiPlayerbot.DungeonTactics = 1` or a commander binding and a boss pull.
 
 Behaviour is based on the mod-playerbots per-map raid strategy pattern, reimplemented as data (no donor code; the source is named in its PR).
