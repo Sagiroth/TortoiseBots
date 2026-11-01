@@ -281,6 +281,17 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return false;
     }
 
+    if (bot->IsMounted())
+    {
+        ai->Unmount();
+        return true;
+    }
+    if (bot->IsMoving())
+    {
+        ai->StopMoving();
+        return true;
+    }
+
     // The core focus check runs at cast time: name the forge, not the void.
     // One call casts once; the trigger refires for the rest of the batch.
     uint32 spellDuration = 0;
@@ -297,12 +308,9 @@ bool GuildCraftOrderAction::isUseful()
     if (!bot->GetGuildId())
         return false;
 
-    if (bot->IsMoving())
-        return false;
-
-    if (bot->IsMounted())
-        return false;
-
+    // Moving or mounted is no reason to wait: Execute stops and dismounts
+    // right before the cast. A bot jittering on a failed path never stood
+    // still, so its craft step never ran (live: Copper Tubes for 30 min).
     if (bot->IsNonMeleeSpellCasted(false, true, true))
         return false;
 
