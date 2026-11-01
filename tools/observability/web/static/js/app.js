@@ -9144,7 +9144,7 @@
   // One folded run of clean trash: "Leg 2 · 12 trash pulls, 0 deaths", opened and closed in place.
   function fdRailFoldHtml(it) {
     const mins = Math.round((it.durMs || 0) / 1000);
-    const text = (it.leg ? 'Leg ' + it.leg + ' · ' : '') + it.n + ' trash pulls, 0 deaths';
+    const text = (it.leg ? 'Leg ' + String(it.leg).replace(/_/g, ' ') + ' · ' : '') + it.n + ' trash pulls, 0 deaths';
     return `<button type="button" class="fd-fold${it.open ? ' open' : ''}" data-fd-k="${esc(encodeURIComponent(it.id))}" data-fd-fold="${esc(encodeURIComponent(it.id))}" aria-expanded="${it.open ? 'true' : 'false'}">`
       + `<span class="fd-foldt">${esc(text)}</span>`
       + `<span class="fd-folds">${Math.floor(mins / 60)}:${('0' + (mins % 60)).slice(-2)} fighting · ${it.open ? 'hide' : 'show'}</span></button>`;
