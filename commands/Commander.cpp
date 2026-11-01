@@ -52,6 +52,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RaidLayoutPolicy.h"
@@ -10687,6 +10688,25 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);
     // The combat monitor's 1 Hz sample of this run's fight (task A8b).
     RefreshCombatMonitor(commanderRaw, *binding, lead, bots, facts, slot);
+    // The same fact the run's own rest order waits for, handed to the bots:
+    // their meal gate cannot see a straggler or a tick without a victim, and
+    // a timestamp expires by itself after a stop, wipe or unbind. A tick that
+    // sees no fight clears it at once, or the hold still live on the next
+    // tick would refuse the run's own rest order. `| 1` keeps a computed 0
+    // from reading as "never set" across the timer wrap.
+    if (facts.anyInCombat)
+    {
+        uint32 const until = WorldTimer::getMSTime() + ai::RUN_FIGHT_HOLD_MS;
+        for (Player* bot : bots)
+            if (bot && bot->IsAlive())
+                if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+                    botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(int32(until | 1));
+    }
+    else
+        for (Player* bot : bots)
+            if (bot && bot->IsAlive())
+                if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+                    botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(0);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
     std::string const order = slot.playerLed.on
