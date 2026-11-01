@@ -1191,8 +1191,13 @@ public:
             }
             out.push_back(row.itemId);
         }
+        // A queued request covers its item only inside the same staleness window
+        // as the clock gate (UnfinishedSubOrderCount): one that never found a
+        // worker must not keep the ladder skipping the item while the clocks run.
+        uint32_t now = WorldTimer::getMSTime();
         for (auto const& [key, queued] : m_queued)
-            if (key.parentBotGuidLow == botGuidLow && key.itemId)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId &&
+                now - queued.queuedAtMs < kQueuedSubOrderStaleMs)
                 out.push_back(key.itemId);
         return out;
     }

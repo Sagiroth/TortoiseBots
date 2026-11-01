@@ -104,6 +104,14 @@ class GuildOrderPartialNeedWiringTest(unittest.TestCase):
         self.assertIn("kQueuedSubOrderStaleMs", block)
         self.assertIn("queuedAtMs", block)
 
+    def test_covered_items_expire_stale_queued_requests(self):
+        # A queued request that never found a worker stops covering its item
+        # with the same window as the clock gate, so the ladder retries it.
+        block = between(STORE, "std::vector<uint32_t> CoveredSubOrderItems(uint32_t botGuidLow)",
+            "uint32_t UnfinishedSubOrderCount(")
+        self.assertIn("kQueuedSubOrderStaleMs", block)
+        self.assertIn("queuedAtMs", block)
+
     def test_unfinished_count_does_not_use_covered_items(self):
         # The covered-items list still counts a finished child's pending
         # delivery: the clock's own count must not be that list.
