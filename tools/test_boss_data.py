@@ -1878,19 +1878,22 @@ def _dump_tuples(values):
         while i < size:
             char = values[i]
             if quote:
+                current.append(char)
                 if escaped:
                     escaped = False
                 elif char == "\\":
                     escaped = True
                 elif char == quote:
                     if i + 1 < size and values[i + 1] == quote:
-                        i += 2
-                        continue
-                    quote = None
+                        current.append(values[i + 1])
+                        i += 1
+                    else:
+                        quote = None
                 i += 1
                 continue
             if char in "'\"":
                 quote = char
+                current.append(char)
             elif char == ",":
                 fields.append("".join(current).strip())
                 current = []
@@ -1971,19 +1974,37 @@ CREATURE_SPELLS_COLUMNS = {"entry", "castFlags_1", "castFlags_2", "castFlags_3",
     "spellId_%d" % index for index in range(1, 9)}
 EVENTAI_EVENT_COLUMNS = {"creature_id", "action1_script", "action2_script", "action3_script"}
 EVENTAI_SCRIPT_COLUMNS = {"id", "command", "datalong", "datalong2"}
+CREATURE_AI_COLUMNS = {"entry", "ai_name", "script_name", "spell_list_id"}
+
+
+def _read_creature_ai(entries, core=CORE_DIR):
+    """{entry: (ai_name, script_name)} for `entries`, missing names as ''. A `script_name` picks the scripted AI
+    first (CreatureAISelector.cpp:45-46), so it overrides both creature_spells and EventAI."""
+    template = core / "sql" / "base" / "tw_world_creature_template.sql"
+    found = {}
+    if template.is_file():
+        for row in _read_dump_table(template, "creature_template", CREATURE_AI_COLUMNS):
+            entry = row.get("entry")
+            if entry in entries:
+                found[entry] = (row.get("ai_name") or "", row.get("script_name") or "")
+    return found
 
 
 def _read_trash_casts(entries, core=CORE_DIR):
     """{(creature entry, spell id): cast flags} for `entries`, from the creature_spells list a mob's
-    `spell_list_id` names and from its EventAI cast commands (command 15: datalong spell, datalong2 flags)."""
+    `spell_list_id` names and from its EventAI cast commands (command 15: datalong spell, datalong2 flags).
+    Only the AI the core actually runs counts: a `script_name` beats both, EventAI commands count for a mob whose
+    `ai_name` is 'EventAI', and the creature_spells list counts only when no `script_name` overrides it."""
     base = core / "sql" / "base"
     casts = {}
     lists = {}
+    ai = _read_creature_ai(entries, core=core)
     template = base / "tw_world_creature_template.sql"
     if template.is_file():
-        for row in _read_dump_table(template, "creature_template", {"entry", "spell_list_id"}):
-            if row.get("entry") in entries and row.get("spell_list_id"):
-                lists.setdefault(row["spell_list_id"], set()).add(row["entry"])
+        for row in _read_dump_table(template, "creature_template", CREATURE_AI_COLUMNS):
+            entry = row.get("entry")
+            if entry in entries and row.get("spell_list_id") and not ai.get(entry, ("", ""))[1]:
+                lists.setdefault(row["spell_list_id"], set()).add(entry)
     table = base / "tw_world_creature_spells.sql"
     if table.is_file() and lists:
         for row in _read_dump_table(table, "creature_spells", CREATURE_SPELLS_COLUMNS):
@@ -2002,7 +2023,8 @@ def _read_trash_casts(entries, core=CORE_DIR):
     if events.is_file() and scripts.is_file():
         wanted = set()
         for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
-            if row.get("creature_id") not in entries:
+            entry = row.get("creature_id")
+            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI":
                 continue
             for column in ("action1_script", "action2_script", "action3_script"):
                 if row.get(column):
@@ -2013,7 +2035,7 @@ def _read_trash_casts(entries, core=CORE_DIR):
                 by_script.setdefault(row["id"], []).append((row.get("datalong"), row.get("datalong2") or 0))
         for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
             entry = row.get("creature_id")
-            if entry not in entries:
+            if entry not in entries or ai.get(entry, ("", ""))[0] != "EventAI":
                 continue
             for column in ("action1_script", "action2_script", "action3_script"):
                 for spell, flags in by_script.get(row.get(column), ()):
@@ -3340,15 +3362,14 @@ TRASH_ABILITY_VALUES = {
     # area (radius index 8) around the Voidwalker
     (15146, 24614): (True, "self", False, False, False, 5),
     (15146, 24616): (False, "aoe", True, False, False, 15),
-    # 18691, creature_ai_scripts:58
+    # 18691, GenericSpellAI.cpp:417 reads the creature_template slot and :356 casts it
     (11368, 24023): (False, "victim", False, False, False, 0),
-    # 4287/2741/18273/12435/18692/18651
+    # 4287/2741/18273/12435/18692, boss_jeklik.cpp:531/547/509/539/526
     (14750, 5115): (False, "ally", False, False, False, 10),
     (14750, 3391): (False, "victim", False, False, False, 0),
     (14750, 23511): (False, "aoe", True, False, False, 10),
     (14750, 16128): (False, "victim", False, False, False, 0),
     (14750, 24024): (False, "aoe", True, False, False, 10),
-    (14750, 23968): (False, "self", False, False, False, 0),
     # 13363/9982
     (10470, 17165): (True, "victim", False, False, False, 0),
     (10470, 12739): (True, "victim", False, False, False, 0),
@@ -3532,6 +3553,7 @@ class TrashSpellSourceTest(unittest.TestCase):
         cls.spells = _read_spells()
         cls.rows = boss_data.read_trash_rows(ROOT / "data" / "boss" / "trash_abilities.csv")
         cls.casts = _read_trash_casts({int(r["entry"]) for r in cls.rows})
+        cls.ai = _read_creature_ai({int(r["entry"]) for r in cls.rows})
 
     def source_problems(self, rows=None, casts=None):
         return source_spell_problems(
@@ -3551,6 +3573,46 @@ class TrashSpellSourceTest(unittest.TestCase):
         # 12739 Shadow Bolt comes from the creature_spells list with castFlags 8 (CF_MAIN_RANGED_SPELL).
         self.assertFalse(self.casts[(10470, 12739)] & CF_TRIGGERED)
         self.assertTrue(self.casts[(10470, 12739)] & 0x008)
+
+    def test_a_scripted_entry_cites_its_script(self):
+        """A creature a `script_name` gives an AI runs neither its creature_spells list nor its EventAI
+        (CreatureAISelector.cpp:45-46), so its casts live in the script: every ability row of such an entry must
+        name the script line that makes it, not the world table the script overrides."""
+        scripted = {entry for entry, (_, script) in self.ai.items() if script}
+        self.assertTrue(scripted, "no trash entry has a script_name: check the core read")
+        problems = [
+            "line %s (%s): %s ability %s has script_name %r, so its rows must cite the script line, not %r"
+            % (row["_line"], row["map"], row["entry"], row["key"],
+               self.ai[int(row["entry"])][1], row["source"])
+            for row in self.rows
+            if row["row"] == "ability" and int(row["entry"]) in scripted
+            and not any(re.search(r"\.(cpp|h):\d+", part) for part in row["source"].split(";"))
+        ]
+        self.assertEqual([], problems)
+
+    def test_an_ability_row_is_a_cast_the_running_ai_makes(self):
+        """Every ability row's spell must be a cast the AI the core runs makes: a row whose spell only lives in a
+        table that never runs (a creature_template slot, or an EventAI/creature_spells list a script overrides) is a
+        source taken from the wrong place. A scripted entry's cast is in the script, so its row passes by citing the
+        script line (test_a_scripted_entry_cites_its_script)."""
+        scripted = {entry for entry, (_, script) in self.ai.items() if script}
+        problems = []
+        for row in self.rows:
+            if row["row"] != "ability":
+                continue
+            entry, spell = int(row["entry"]), int(row["key"])
+            if (entry, spell) in self.casts:
+                continue
+            if entry in scripted and any(re.search(r"\.(cpp|h):\d+", part)
+                                         for part in row["source"].split(";")):
+                continue
+            problems.append(
+                "line %s (%s): %s ability %s is no cast the running AI makes (running casts: %s)%s"
+                % (row["_line"], row["map"], entry, spell,
+                   sorted(s for (e, s) in self.casts if e == entry),
+                   "" if entry not in scripted else "; its script cites no script line")
+            )
+        self.assertEqual([], problems)
 
     def test_a_triggered_cast_is_no_interrupt(self):
         rows = [dict(r) for r in self.rows]

@@ -9,16 +9,15 @@ zulgurub,15146,ability,24614,0,0,0,t=self;self;int;r=5;ok.purge=nopurge,sql/base
 zulgurub,15146,ability,24616,0,0,0,t=aoe;r=15,sql/base/tw_world_spell_template.sql:19249;sql/base/tw_world_creature_ai_scripts.sql:58
 zulgurub,15146,note,,"Shadow Shock is an instant 15 yd pulse around it that no kick stops; the Voidwalkers arrive through a Servant's Portal of Madness.",,,,
 zulgurub,11368,mob,,2,patrol,1,,sql/base/tw_world_creature_template.sql:118
-zulgurub,11368,ability,24023,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:18691;sql/base/tw_world_creature_ai_scripts.sql:58
-zulgurub,11368,note,,"Charges in on aggro; it is also Jeklik's summon add, and the Bat and Bat Rider packs cost about 155 deaths over ZG walks 12-17.",,,,
+zulgurub,11368,ability,24023,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:18691;src/game/AI/GenericSpellAI.cpp:417;src/game/AI/GenericSpellAI.cpp:356
+zulgurub,11368,note,,"Charges in on aggro (creature_template spell slot 24023, cast by the generic_spell_ai script); it is also Jeklik's summon add, and the Bat and Bat Rider packs cost about 155 deaths over ZG walks 12-17.",,,,
 zulgurub,14750,mob,,3,aoe,3,,sql/base/tw_world_creature_template.sql:118
-zulgurub,14750,ability,5115,0,0,0,t=ally;self;r=10,sql/base/tw_world_spell_template.sql:4287;sql/base/tw_world_creature_spells.sql:127
-zulgurub,14750,ability,3391,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:2741;sql/base/tw_world_creature_spells.sql:127
-zulgurub,14750,ability,23511,0,0,0,t=aoe;aura;r=10,sql/base/tw_world_spell_template.sql:18273;sql/base/tw_world_creature_ai_scripts.sql:58
-zulgurub,14750,ability,16128,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12435;sql/base/tw_world_creature_ai_scripts.sql:58
-zulgurub,14750,ability,24024,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:18692;sql/base/tw_world_creature_ai_scripts.sql:58
-zulgurub,14750,ability,23968,0,0,0,t=self;self;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:18651;sql/base/tw_world_creature_ai_scripts.sql:58
-zulgurub,14750,note,,"ZG walks 12-17: 2 wipes and about 6 near wipes. Unstable Concoction is the rider's own bomb: at 50 % hp it blows itself up, 10 yd around it, 3 s cast, cannot be kicked.",,,,
+zulgurub,14750,ability,5115,0,0,0,t=ally;self;r=10,sql/base/tw_world_spell_template.sql:4287;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:531
+zulgurub,14750,ability,3391,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:2741;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:547
+zulgurub,14750,ability,23511,0,0,0,t=aoe;aura;r=10,sql/base/tw_world_spell_template.sql:18273;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:509
+zulgurub,14750,ability,16128,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12435;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:539
+zulgurub,14750,ability,24024,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:18692;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:526
+zulgurub,14750,note,,"ZG walks 12-17: 2 wipes and about 6 near wipes. Unstable Concoction (24024) is the rider's own bomb: below 40 % hp it blows itself up, 10 yd around it, 3 s cast, cannot be kicked; it also shouts Demoralizing Shout on aggro and buffs nearby allies with Battle Command.",,,,
 scholomance,10470,mob,,3,caster,2,,sql/base/tw_world_creature_template.sql:118
 scholomance,10470,ability,17165,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13363;sql/base/tw_world_creature_spells.sql:127
 scholomance,10470,ability,12739,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9982;sql/base/tw_world_creature_spells.sql:127
