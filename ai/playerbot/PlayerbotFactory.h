@@ -99,7 +99,19 @@ public:
     // rolls the class pair and teaches it when the bot is at/above the gate
     // and holds no primary; never touches a bot that already has one. Public
     // so the level-up spell hook can grant it on ding.
-    void EnsurePrimaryProfessions();
+    // Profession specializations (runtime/ProfessionSpecializationPolicy.h):
+    // idempotent direct grant of the quest-chain specialization spells the
+    // bot qualifies for (skill at/above the quest gate), gated on
+    // AiPlayerbot.BotProfessionSpecializations (0 off, 1 one branch by guid
+    // parity, 2 all branches). Pool bots only; never touches real players.
+    // Called from EnsurePrimaryProfessions (seed/ding/login skill passes),
+    // so every path that raises skill re-checks the gate.
+    void EnsureSpecializations();
+    // Spec-gated recipes (item_template required_spell in the spec spells):
+    // taught directly from the item's use-spell, gated on the matching spec
+    // spell the same way CanUseItem gates using the recipe. Public for the
+    // same seed/ding/login callers as EnsureSpecializations.
+    void LearnSpecializationRecipes();
     // True when the bot holds any primary profession (never re-roll those).
     bool HasAnyPrimaryProfession() const;
     // Issue #189 Phase 1: idempotent "make complete" for random-pool bots.
