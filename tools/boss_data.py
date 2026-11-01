@@ -33,6 +33,11 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
                               hp<N>        one-shot below N percent health
                               ok=<reason>  the whole ability needs no answer
                               ok.<need>=<reason>  that one need needs no answer
+                              dur=<ms>     the ability lasts this long; the repeat
+                                           window counts from its end
+                              from=<phase> the first timer counts from when the boss
+                                           first entered that phase this fight
+                                           (needs a timer; must be a phase row)
     phase    key=name       a=rule: hp<N | aura=<spell id> | flag=<letter> | start
                             b=order (1 = checked first); a `start` rule always
                             matches and must be the last one (the pull phase)
@@ -392,6 +397,8 @@ def parse_flags(text):
         "hp": 0,
         "ok": "",
         "okNeeds": {},
+        "dur": 0,
+        "from": "",
     }
     seen = set()
     if not text:
@@ -434,6 +441,20 @@ def parse_flags(text):
             if not re.fullmatch(r"\d+", value) or not 1 <= int(value) <= 99:
                 raise DataError(f"bad hp flag {token!r} in {text!r}")
             flags["hp"] = int(value)
+        elif token.startswith("dur="):
+            value = token[4:]
+            if not re.fullmatch(r"\d+", value) or int(value) < 1:
+                raise DataError(f"bad dur {value!r} in {text!r}")
+            if flags["dur"]:
+                raise DataError(f"duplicate dur flag in {text!r}")
+            flags["dur"] = int(value)
+        elif token.startswith("from="):
+            name = token[5:]
+            if not PHASE_NAME_RE.match(name):
+                raise DataError(f"bad from phase {name!r} in {text!r}")
+            if flags["from"]:
+                raise DataError(f"duplicate from flag in {text!r}")
+            flags["from"] = name
         else:
             raise DataError(f"unknown flag {token!r} in {text!r}")
     _check_ok(flags, text)
@@ -608,11 +629,18 @@ def heading_slugs(text):
 
 def _has_number(lines, number):
     token = re.compile(rf"(?<!\d){number}(?!\d)")
+    product = re.compile(r"(?<![\w.])\d+(?:\s*\*\s*\d+)+(?![\w.])")
     for _, text in lines:
         if token.search(text):
             return True
         if number % 1000 == 0 and "IN_MILLISECONDS" in text:
             if re.search(rf"(?<!\d){number // 1000}(?!\d)", text):
+                return True
+        for match in product.finditer(text):
+            value = 1
+            for factor in re.split(r"\s*\*\s*", match.group(0)):
+                value *= int(factor)
+            if value == number:
                 return True
     return False
 
@@ -669,6 +697,9 @@ def check_citations(row, citations, core, kb, cache):
             value = int(row[field])
             if value and not _has_number(flat, value):
                 yield f"{_row_id(row)}: cited lines do not contain {field}={value}"
+        flags = parse_flags(row["d"])
+        if flags["dur"] and not _has_number(flat, flags["dur"]):
+            yield f"{_row_id(row)}: cited lines do not contain dur={flags['dur']}"
     elif kind == "phase":
         rule = parse_phase_rule(row["a"])
         if rule["kind"] == "hp" and not _has_number(flat, rule["hp"]):
@@ -752,6 +783,10 @@ def make_bosses(rows, names, raids=None):
             if rep_min > rep_max:
                 raise DataError(f"{_row_id(row)}: b={rep_min} > c={rep_max}")
             flags = parse_flags(row["d"])
+            if flags["from"] and not first:
+                raise DataError(f"{_row_id(row)}: from= needs a first timer (a > 0)")
+            if flags["dur"] and not rep_max:
+                raise DataError(f"{_row_id(row)}: dur= needs a repeat window (c > 0)")
             ability = {
                 "sid": sid,
                 "name": spell_name[sid]["name"],
@@ -761,6 +796,10 @@ def make_bosses(rows, names, raids=None):
                 "c": rep_max,
                 **flags,
             }
+            if not ability["dur"]:
+                del ability["dur"]
+            if not ability["from"]:
+                del ability["from"]
             boss["abilities"].append(ability)
             ability_rows[entry][sid] = ability
 
@@ -829,6 +868,8 @@ def make_bosses(rows, names, raids=None):
                     f"boss {entry}: ability {ability['sid']} names phase {ability['phase']!r} "
                     "with no phase row"
                 )
+            if ability.get("from") and ability["from"] not in phase_names[entry]:
+                raise DataError(f"from={ability['from']} is not a phase of boss {entry}")
             if ability["summon"]:
                 if not any(a["entry"] == ability["summon"] for a in boss["adds"]):
                     raise DataError(

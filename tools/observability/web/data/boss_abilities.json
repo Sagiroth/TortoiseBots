@@ -2582,7 +2582,8 @@
           "ok": "",
           "okNeeds": {
             "purge": "nopurge"
-          }
+          },
+          "dur": 15000
         },
         {
           "sid": 25174,
@@ -10110,7 +10111,7 @@
           "sid": 28089,
           "name": "Polarity Shift",
           "castMs": 0,
-          "a": 0,
+          "a": 10000,
           "b": 30000,
           "c": 30000,
           "phase": "fight",
@@ -10125,7 +10126,8 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {},
+          "from": "fight"
         },
         {
           "sid": 28059,
@@ -10192,13 +10194,14 @@
           "summon": 0,
           "hp": 0,
           "ok": "heal",
-          "okNeeds": {}
+          "okNeeds": {},
+          "from": "fight"
         },
         {
           "sid": 28299,
           "name": "Ball Lightning",
           "castMs": 0,
-          "a": 1000,
+          "a": 0,
           "b": 1500,
           "c": 1500,
           "phase": "fight",
@@ -10219,7 +10222,7 @@
           "sid": 27680,
           "name": "Berserk",
           "castMs": 0,
-          "a": 0,
+          "a": 300000,
           "b": 0,
           "c": 0,
           "phase": "fight",
@@ -10236,7 +10239,8 @@
           "ok": "",
           "okNeeds": {
             "purge": "nopurge"
-          }
+          },
+          "from": "fight"
         }
       ],
       "phases": [
@@ -10280,7 +10284,8 @@
         "Phase 1 is Stalagg and Feugen. Each fakes death at 0 and revives after 5 s unless both are dead; both dead starts a 15 s transition to Thaddius.",
         "War Stomp 15-20 s on both; Static Field every 6 s (Feugen); Power Surge every 25-30 s (Stalagg); Magnetic Pull every 20.5 s swaps tanks and threat.",
         "Polarity Shift first at 10 s then every 30 s; 3 s later every living player is split into halves and casts Positive Charge 28059 or Negative Charge 28084 on itself. Same-charge players within 13 yd buff each other through 29659 and 29660 applied by the aura script.",
-        "Ball Lightning only while the tank is out of melee: first 1 s then every 1.5 s. Chain Lightning every 5-7 s. Berserk 5 min after phase 2 starts."
+        "Ball Lightning only while the tank is out of melee: first 1 s then every 1.5 s. Chain Lightning every 5-7 s. Berserk 5 min after phase 2 starts.",
+        "The panel's fight phase starts when the spawn aura 28160 drops, up to 1 s before THAD_PHASE2 (the transition events run 1 s apart), so the from=fight windows can show up to 1 s early."
       ]
     },
     "15989": {
@@ -19297,7 +19302,7 @@
           "sid": 23462,
           "name": "Fire Nova",
           "castMs": 0,
-          "a": 0,
+          "a": 6000,
           "b": 6000,
           "c": 6000,
           "phase": "",
@@ -19312,13 +19317,14 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {},
+          "from": "fight"
         },
         {
           "sid": 23341,
           "name": "Flame Buffet",
           "castMs": 0,
-          "a": 0,
+          "a": 3000,
           "b": 14000,
           "c": 14000,
           "phase": "",
@@ -19335,13 +19341,14 @@
           "ok": "",
           "okNeeds": {
             "dispel": "nodispel"
-          }
+          },
+          "from": "fight"
         },
         {
           "sid": 20228,
           "name": "Pyroblast",
           "castMs": 0,
-          "a": 0,
+          "a": 14000,
           "b": 15000,
           "c": 15000,
           "phase": "",
@@ -19358,10 +19365,27 @@
           "ok": "",
           "okNeeds": {
             "dispel": "nodispel"
+          },
+          "from": "fight"
+        }
+      ],
+      "phases": [
+        {
+          "name": "caged",
+          "order": 1,
+          "rule": {
+            "kind": "flag",
+            "flag": "n"
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
           }
         }
       ],
-      "phases": [],
       "adds": [
         {
           "entry": 10316,
@@ -19371,7 +19395,7 @@
         }
       ],
       "notes": [
-        "The cage is the first phase: Emberseer is unselectable and immune until every Blackhand Incarcerator within 35 yd is dead, then he removes the cage and casts 16047 and 16048. There is no pull timer: Fire Nova first lands 6 s after he is freed, Flame Buffet 3 s and Pyro Blast 14 s, and the repeats run from each cast.",
+        "The cage is the first phase: Emberseer is unselectable and immune until every Blackhand Incarcerator within 35 yd is dead, then he removes the cage and casts 16047 and 16048. His timers count from the moment he is freed (the panel's `fight` phase); the repeats run from each cast.",
         "Pyro Blast's timer adds 15 s to whatever was left, whether or not the cast succeeded, so a failed attempt waits that window instead of retrying on the next tick; a late cast shortens the next gap.",
         "The Incarcerators cast 16045 Encage on a random player in line of sight and then Strike; those are add casts, not Emberseer's."
       ]

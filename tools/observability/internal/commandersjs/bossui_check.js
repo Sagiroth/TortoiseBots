@@ -166,6 +166,28 @@ assert.ok(src.includes('<section class="fd-bosses"'), "the card has the boss pan
 assert.ok(src.includes("cmdPaintBosses(card, cmdLiveBossPanels(bind))"), "Live paints the engaged bosses");
 assert.ok(src.includes("cmdPaintBosses(card, selLive ? cmdLiveBossPanels(bind) : fight ? cmdFightBossPanels(bind, fight) : [])"), "the debugger paints the live or finished fight's bosses");
 assert.ok(src.includes("BossPanel.load()"), "the page loads the committed table once");
+
+// The live panel's phase-start memory belongs to the fight that recorded it. Drive cmdBossPanels as the Live card does.
+ctx.BOSS_TABLE = ctx.BossPanel.normalize({ bosses: [{
+  entry: 9001, name: "Phase Boss", map: 309,
+  abilities: [{ spell: 9, name: "Opener", first: 10000, repeatMin: 0, repeatMax: 0, flags: "p=fight;from=fight" }],
+  phases: [{ name: "adds", rule: "aura=1", order: 1 }, { name: "fight", rule: "start", order: 2 }],
+  adds: [], notes: [] }] });
+vm.runInContext([grabConst("cmdBossPhase"), grabConst("cmdBossPhaseAt"), grab("cmdBossPanels")].join("\n"), ctx);
+const panelAt = (now, fightMs) => run(
+  "(function () { var m = [{ id: '5', entry: 9001, name: 'Phase Boss', rank: 'b', reaction: 'h', victim: '1', hp: 60, au: [] }];" +
+  " return cmdBossPanels({ commander: 'Phase', combat: { fight_ms: fightMs }, bots: [{ id: '1' }], mobs: m }, null, m, [], now - fightMs, now); })()",
+  { now: now, fightMs: fightMs });
+const T0 = 1000000000;
+assert.strictEqual(panelAt(T0, 60000)[0].phaseAt.fight, 60000, "the phase start is recorded when first seen");
+assert.strictEqual(panelAt(T0 + 2000, 62000)[0].phaseAt.fight, 60000, "a later report of the same fight keeps the start");
+assert.strictEqual(panelAt(T0 + 600000, 3000)[0].phaseAt.fight, 3000, "a new fight never inherits the old fight's start");
+// A boss the reports no longer carry keeps its panel marked not visible, but a ghost row adds no phase start.
+const ghosts = run("cmdBossPanels({ commander: 'Phase', combat: { fight_ms: 10000, bots: [{ dps: 1 }] }, bots: [{ id: '1' }] }," +
+  " null, [{ entry: 9001, name: 'Phase Boss', hp: null, au: [], uf: 'v', ghost: true }], [], now - 10000, now)",
+  { now: T0 + 900000 });
+assert.strictEqual(ghosts.length, 1, "a vanished boss keeps its panel");
+assert.strictEqual(ghosts[0].phaseAt.fight, undefined, "a ghost row adds no phase start");
 assert.strictEqual(run("BP.model(null, { entry: 1 }, [], 0, 0)"), null, "no table: no panel and no throw");
 
 // ---- the hover box lists the same chips -------------------------------------------------------------------------------

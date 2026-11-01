@@ -361,6 +361,52 @@ class BossDataTest(unittest.TestCase):
         self.assertFalse(plain["tail"])
         self.assertEqual(boss_data.derived_needs(plain), [])
 
+    def test_dur_and_from_flags_parse(self):
+        flags = boss_data.parse_flags("t=self;dur=15000;from=fight")
+        self.assertEqual(flags["dur"], 15000)
+        self.assertEqual(flags["from"], "fight")
+        self.assertEqual((boss_data.parse_flags("t=aoe")["dur"],
+                          boss_data.parse_flags("t=aoe")["from"]), (0, ""))
+        with self.assertRaises(boss_data.DataError):
+            boss_data.parse_flags("dur=0")
+        with self.assertRaises(boss_data.DataError):
+            boss_data.parse_flags("dur=100;dur=200")
+        with self.assertRaises(boss_data.DataError):
+            boss_data.parse_flags("from=Nope")
+
+    def test_from_needs_a_first_timer(self):
+        rows = [ability(a="0", d="t=random;from=p1"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        errors, _ = fx.validate()
+        self.assertTrue(any("from= needs a first timer" in e for e in errors), errors)
+
+    def test_dur_needs_a_repeat_window(self):
+        rows = [ability(a="0", b="0", c="0", d="dur=9000"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        errors, _ = fx.validate()
+        self.assertTrue(any("dur= needs a repeat window" in e for e in errors), errors)
+
+    def test_from_must_name_a_phase_of_the_boss(self):
+        rows = [ability(d="t=random;from=nope"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        errors, _ = fx.validate()
+        self.assertTrue(any("from=nope is not a phase of boss 14517" in e for e in errors), errors)
+
+    def test_dur_must_be_in_cited_lines(self):
+        rows = [ability(a="0", b="9000", c="9000", d="dur=9000"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        errors, _ = fx.validate()
+        self.assertTrue(any("do not contain dur=9000" in e for e in errors), errors)
+
+    def test_product_of_literals_counts_as_number(self):
+        self.assertTrue(boss_data._has_number([(1, "x = 1000 * 60 * 5;")], 300000))
+        self.assertFalse(boss_data._has_number([(1, "x = 1000 * 60 * 5;")], 3000))
+        self.assertFalse(boss_data._has_number([(1, "a1000 * 10")], 10000))
+
     def test_unknown_ok_reason_fails(self):
         rows = [ability(d="t=random;ok=banana"), add(),
                 phase("p1", "start", 1, source="boss.cpp:3")]
@@ -734,6 +780,27 @@ class BossDataTest(unittest.TestCase):
 
         self.assertEqual(len(doc["bosses"]), 264)
         self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 1118)
+
+    def test_committed_anchored_timers(self):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        bosses = boss_data.build_document(rows, names)["bosses"]
+        sartura = {a["sid"]: a for a in bosses["15516"]["abilities"]}
+        self.assertEqual(sartura[26083]["dur"], 15000)
+        thaddius = bosses["15928"]
+        self.assertEqual([p["name"] for p in thaddius["phases"]], ["adds", "fight"])
+        abilities = {a["sid"]: a for a in thaddius["abilities"]}
+        for sid in (28089, 28167, 27680):
+            self.assertEqual(abilities[sid]["from"], "fight", sid)
+        self.assertNotIn("from", abilities[28299], "Ball Lightning has no timer to count from")
+        self.assertEqual((abilities[28089]["a"], abilities[27680]["a"]), (10000, 300000))
+        emberseer = bosses["9816"]
+        self.assertEqual([p["name"] for p in emberseer["phases"]], ["caged", "fight"])
+        abilities = {a["sid"]: a for a in emberseer["abilities"]}
+        self.assertEqual(
+            {sid: (abilities[sid]["a"], abilities[sid]["from"]) for sid in (23462, 23341, 20228)},
+            {23462: (6000, "fight"), 23341: (3000, "fight"), 20228: (14000, "fight")},
+        )
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -1174,12 +1241,12 @@ NAXX_ABILITIES = {
         (28134, 25000, 25000, 30000, "self", "adds", {"self", "ok.purge=nopurge"}, 0),
         (28337, 20500, 20500, 20500, "victim", "adds", set(), 0),
         (28160, 0, 0, 0, "self", "", {"self", "ok=phase"}, 0),
-        (28089, 0, 30000, 30000, "self", "fight", set(), 0),
+        (28089, 10000, 30000, 30000, "self", "fight", set(), 0),
         (28059, 0, 0, 0, "aoe", "fight", {"aura", "ok.dispel=nodispel"}, 0),
         (28084, 0, 0, 0, "aoe", "fight", {"aura", "ok.dispel=nodispel"}, 0),
         (28167, 5000, 5000, 7000, "random", "fight", {"ok=heal"}, 0),
-        (28299, 1000, 1500, 1500, "victim", "fight", {"ok=heal"}, 0),
-        (27680, 0, 0, 0, "self", "fight", {"self", "ok.purge=nopurge"}, 0),
+        (28299, 0, 1500, 1500, "victim", "fight", {"ok=heal"}, 0),
+        (27680, 300000, 0, 0, "self", "fight", {"self", "ok.purge=nopurge"}, 0),
     ],
     15989: [
         (28542, 0, 0, 0, "aoe", "ground", {"aura"}, 0),
@@ -2726,10 +2793,11 @@ BLACKROCK_ABILITIES = {
     (9216, 16171): (0, 0, 0, "self", "", {"script"}),
     (9268, 13446): (0, 0, 0, "victim", "", {"tank"}),
     (9268, 17547): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
-    # Upper Blackrock Spire (#1389): timers stay 0 (creature_spells stores seconds), flags as UbrsValueTest pins them.
-    (9816, 23462): (0, 6000, 6000, "aoe", "", set()),
-    (9816, 23341): (0, 14000, 14000, "aoe", "", {"aura", "dispel-nodispel"}),
-    (9816, 20228): (0, 15000, 15000, "random", "", {"aura", "dispel-nodispel"}),
+    # Upper Blackrock Spire: Emberseer's timers are script literals; the creature_spells rows stay 0 (seconds).
+    # Flags as UbrsValueTest pins them.
+    (9816, 23462): (6000, 6000, 6000, "aoe", "", set()),
+    (9816, 23341): (3000, 14000, 14000, "aoe", "", {"aura", "dispel-nodispel"}),
+    (9816, 20228): (14000, 15000, 15000, "random", "", {"aura", "dispel-nodispel"}),
     (10429, 13736): (0, 0, 0, "aoe", "", {"int", "interrupt-nokick"}),
     (10429, 15708): (0, 0, 0, "victim", "", {"aura", "dispel-nodispel"}),
     (10429, 15754): (0, 0, 0, "victim", "", set()),
@@ -3877,11 +3945,14 @@ class UbrsValueTest(unittest.TestCase):
         "9816": {
             "name": "Pyroguard Emberseer",
             "abilities": {
-                23462: (0, 6000, 6000, "aoe", "", ()),
-                23341: (0, 14000, 14000, "aoe", "", ("aura", "ok.dispel=nodispel")),
-                20228: (0, 15000, 15000, "random", "", ("aura", "ok.dispel=nodispel")),
+                23462: (6000, 6000, 6000, "aoe", "", ()),
+                23341: (3000, 14000, 14000, "aoe", "", ("aura", "ok.dispel=nodispel")),
+                20228: (14000, 15000, 15000, "random", "", ("aura", "ok.dispel=nodispel")),
             },
-            "phases": [],
+            "phases": [
+                ("caged", "flag", None, 1),
+                ("fight", "start", None, 2),
+            ],
             "adds": {10316: ("ward", 1)},
         },
         "10429": {
@@ -4022,13 +4093,15 @@ class UbrsValueTest(unittest.TestCase):
         # Whirlwind is a channel with preventionType 2: the core cannot kick it either.
         whirlwind = next(a for a in self.boss("10429")["abilities"] if a["sid"] == 13736)
         self.assertEqual(whirlwind["okNeeds"], {"interrupt": "nokick"})
-        # Emberseer's timers start at liberation, so no ability has a pull timer.
+        # Emberseer's timers start at liberation: the first column counts from the fight phase, not the pull.
         emberseer = self.boss("9816")
-        self.assertTrue(all(a["a"] == 0 for a in emberseer["abilities"]))
+        self.assertEqual(
+            {a["sid"]: (a["a"], a["from"]) for a in emberseer["abilities"]},
+            {23462: (6000, "fight"), 23341: (3000, "fight"), 20228: (14000, "fight")},
+        )
+        self.assertEqual([p["name"] for p in emberseer["phases"]], ["caged", "fight"])
         emberseer_notes = " ".join(emberseer["notes"])
-        self.assertIn("6 s after he is freed", emberseer_notes)
-        self.assertIn("Flame Buffet 3 s", emberseer_notes)
-        self.assertIn("Pyro Blast 14 s", emberseer_notes)
+        self.assertIn("count from the moment he is freed", emberseer_notes)
         # Gyth's own block has no verifiable ms timers: the row stores seconds,
         # so the columns are 0 and the cadence is in the note.
         gyth = {a["sid"]: a for a in self.boss("10339")["abilities"]}
