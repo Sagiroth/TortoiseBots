@@ -238,6 +238,7 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
     path.push_back(itemId);
     uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
     std::vector<NeedItem> missingAll;
+    SupplyCandidate craftable;
     // Recipe tools are minted at the craft (CraftToolsAlways); with it off a
     // missing tool goes down the ladder like a reagent, one each.
     std::vector<NeedItem> materials;
@@ -268,14 +269,24 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         if (owned >= required)
             continue;
         SupplyCandidate nested;
-        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap) &&
-            !nested.craft)
+        if (!FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap))
+            continue;
+        if (!nested.craft)
             missingAll.push_back(NeedItem{ nested.itemId, nested.count });
+        else if (!craftable.itemId)
+            craftable = nested;
     }
     path.pop_back();
     if (!missingAll.empty())
     {
         out = { missingAll.front().itemId, missingAll.front().count, false };
+        return true;
+    }
+    // A component the bags can already make comes first: the item itself
+    // cannot be cast until it exists (Copper Tube before the Blunderbuss).
+    if (craftable.itemId)
+    {
+        out = craftable;
         return true;
     }
     out = { itemId, count, true };
