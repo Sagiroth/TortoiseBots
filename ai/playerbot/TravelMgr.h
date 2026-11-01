@@ -398,7 +398,14 @@ namespace ai
 		bool IsConditionsActive(bool clear = false);
 		bool IsDestinationActive();
 
-		void CheckStatus();
+        void CheckStatus();
+
+        // TEMPORARY probe (pattern-4 churn follow-up): log one throttled row
+        // when a fresh trip (younger than FRESH_TRIP_PROBE_AGE_SEC) dies or is
+        // replaced, naming the killer. Cheap: two cached manual-time reads
+        // and no world scan; at most one row per 30 s per bot. Remove with
+        // the probe verdict in TravelRepickPolicy.h.
+        void NoteFreshTripDeath(const char* reason, TravelStatus newStatus);
 
 		bool IsActive();
 

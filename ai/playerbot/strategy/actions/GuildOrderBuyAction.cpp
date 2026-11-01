@@ -192,7 +192,9 @@ bool GuildOrderBuyAction::Execute(Event& event)
         TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
         if (!ai->HasActivePlayerMaster() && target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK)
         {
-            sTravelMgr.SetNullTravelTarget(target);
+            // TEMPORARY probe (pattern-4 churn follow-up).
+            target->NoteFreshTripDeath("service-buy", TravelStatus::TRAVEL_STATUS_NONE);
+             sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
         }
     }

@@ -1288,6 +1288,55 @@ void TravelTarget::CopyTarget(TravelTarget* const target) {
     relevance = target->relevance;
     extendRetryCount = target->extendRetryCount;
 }
+// TEMPORARY probe (pattern-4 churn follow-up, see TravelRepickPolicy.h):
+// one throttled CSV row when a fresh trip dies or is replaced, naming the
+// killer. Trip age reads the status clock: SetStatus restamps it, so the age
+// is time-in-current-status - a trip re-picked seconds ago still reads young
+// through READY/TRAVEL, which is exactly the churn window. The probe key and
+// throttle ride the existing manual-time value (no new value class, no world
+// scan); logEvent itself no-ops unless bot_events.csv is enabled.
+void TravelTarget::NoteFreshTripDeath(const char* reason, TravelStatus newStatus)
+{
+    if (!ai || !reason)
+        return;
+    int32 const ageMs = GetExpiredTime();
+    if (ageMs < 0)
+        return;
+    std::int64_t const ageSec = ageMs / 1000;
+    if (ageSec >= ai::FRESH_TRIP_PROBE_AGE_SEC)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!context)
+        return;
+    time_t const now = time(0);
+    time_t const lastLog = context->GetValue<time_t>("manual time", "fresh trip death log")->Get();
+    bool const hasLogged = lastLog != 0;
+    std::int64_t const lastAgo = hasLogged ? (std::int64_t)(now - lastLog) : -1;
+    if (!ai::FreshTripDeathProbeShouldLog(ageSec, lastAgo, hasLogged))
+        return;
+    context->GetValue<time_t>("manual time", "fresh trip death log")->Set(now);
+    std::string oldPurpose = "none";
+    if (tDestination && tDestination->GetPurpose() != TravelDestinationPurpose::None)
+    {
+        uint32 const purposeId = static_cast<uint32>(tDestination->GetPurpose());
+        oldPurpose = std::to_string(purposeId);
+    }
+    char const* newName = "?";
+    switch (newStatus)
+    {
+    case TravelStatus::TRAVEL_STATUS_NONE: newName = "NONE"; break;
+    case TravelStatus::TRAVEL_STATUS_PREPARE: newName = "PREPARE"; break;
+    case TravelStatus::TRAVEL_STATUS_READY: newName = "READY"; break;
+    case TravelStatus::TRAVEL_STATUS_TRAVEL: newName = "TRAVEL"; break;
+    case TravelStatus::TRAVEL_STATUS_WORK: newName = "WORK"; break;
+    case TravelStatus::TRAVEL_STATUS_COOLDOWN: newName = "COOLDOWN"; break;
+    case TravelStatus::TRAVEL_STATUS_EXPIRED: newName = "EXPIRED"; break;
+    default: break;
+    }
+    sPlayerbotAIConfig.logEvent(ai, "FreshTripDeath",
+        std::to_string((std::int64_t)(ageMs / 100)) + ":" + oldPurpose,
+        std::string(reason) + ":" + newName);
+}
 
 void TravelTarget::SetStatus(TravelStatus status) {
     m_status = status;
@@ -1447,6 +1496,7 @@ void TravelTarget::CheckStatus()
         if (!member || (ai->IsSafe(member) && member->GetGroup() != bot->GetGroup()))
         {
             ai->TellDebug(ai->GetMaster(), "Travel target expired because it was from a player that is no longer in the group.", "debug travel");
+            NoteFreshTripDeath("check-group", TravelStatus::TRAVEL_STATUS_EXPIRED);
             SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             return;
         }
@@ -1455,6 +1505,7 @@ void TravelTarget::CheckStatus()
     if (!ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT) && !ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
     {
         ai->TellDebug(ai->GetMaster(), "The target is clearing because it was a travel once destination.", "debug travel");
+        NoteFreshTripDeath("check-nostrategy", TravelStatus::TRAVEL_STATUS_NONE);
         sTravelMgr.SetNullTravelTarget(this);
         return;
     }
@@ -1462,6 +1513,7 @@ void TravelTarget::CheckStatus()
     if (statusTime != 0 && GetTimeLeft() <= 0 && !IsForced())
     {
         ai->TellDebug(ai->GetMaster(), "Travel target expired because the status time was exceeded.", "debug travel");
+        NoteFreshTripDeath("check-timeout", TravelStatus::TRAVEL_STATUS_EXPIRED);
         SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
         // No ClearValues: the time-boxed purpose park (flag + timestamp) must
         // survive a routine expiry of another purpose; the request gate clears
@@ -1506,6 +1558,7 @@ void TravelTarget::CheckStatus()
             if (destinationInactive && GrindSpotOutgrown(tDestination, bot))
             {
                 ai->TellDebug(ai->GetMaster(), "The target is expiring because the bot has outgrown the spot.", "debug travel");
+                NoteFreshTripDeath("check-outgrown", TravelStatus::TRAVEL_STATUS_EXPIRED);
                 SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                 // No ClearValues here either (see above): this expiry only
                 // ends the outgrown spot's own target, not other purposes' parks.
@@ -1525,6 +1578,7 @@ void TravelTarget::CheckStatus()
             {
                 ai->TellDebug(ai->GetMaster(), "The target is expiring because its quest errand is done.", "debug travel");
                 forced = false;
+                NoteFreshTripDeath("check-questdone", TravelStatus::TRAVEL_STATUS_EXPIRED);
                 SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                 return;
             }
@@ -1556,6 +1610,7 @@ void TravelTarget::CheckStatus()
                         ai->MarkEmptyGatherSpot(wPosition->GetMapId(), wPosition->getX(), wPosition->getY(), WorldTimer::getMSTime());
                 }
                 forced = false;
+                NoteFreshTripDeath("check-gathergone", TravelStatus::TRAVEL_STATUS_EXPIRED);
                 SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                 return;
             }
@@ -1592,6 +1647,7 @@ void TravelTarget::CheckStatus()
                     context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + parkFor);
                 }
             }
+            NoteFreshTripDeath(destinationInactive ? "check-destdead" : "check-conddead", TravelStatus::TRAVEL_STATUS_COOLDOWN);
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             return;
         }
@@ -1636,6 +1692,7 @@ void TravelTarget::CheckStatus()
                 workContext->GetValue<bool>("no active travel destinations", ahKey)->Set(true);
                 workContext->GetValue<time_t>("manual time", "no travel purpose until::" + ahKey)->Set(now + 10 * MINUTE);
             }
+            NoteFreshTripDeath("check-workidle", TravelStatus::TRAVEL_STATUS_EXPIRED);
             SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             return;
         }

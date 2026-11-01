@@ -27,6 +27,7 @@ using ai::TRAVEL_STARVED_PARKED_PURPOSES;
 using ai::TravelSearchesStarved;
 using ai::TravelStarvedParkKeys;
 using ai::TravelMeshSieveApplies;
+using ai::FreshTripDeathProbeShouldLog;
 using ai::HandInTripProgressed;
 using ai::HAND_IN_PROGRESS_STEP_YD;
 
@@ -241,6 +242,25 @@ int main()
         CHECK(TravelMeshSieveApplies(64, fishing));
     }
     std::cout << "  [PASS] mesh sieve covers every purpose but fishing\n";
+
+    // Fresh-trip death probe: only trips under 10 s log, at most one row
+    // per 30 s per bot. First kill always logs; later kills only after the
+    // throttle lapses.
+    {
+        CHECK(ai::FRESH_TRIP_PROBE_AGE_SEC == 10);
+        CHECK(ai::FRESH_TRIP_PROBE_THROTTLE_SEC == 30);
+        CHECK(FreshTripDeathProbeShouldLog(0, -1, false));
+        CHECK(FreshTripDeathProbeShouldLog(9, -1, false));
+        CHECK(!FreshTripDeathProbeShouldLog(10, -1, false));
+        CHECK(!FreshTripDeathProbeShouldLog(3600, -1, false));
+        CHECK(!FreshTripDeathProbeShouldLog(-1, -1, false));
+        CHECK(FreshTripDeathProbeShouldLog(3, 30, true));
+        CHECK(FreshTripDeathProbeShouldLog(3, 31, true));
+        CHECK(!FreshTripDeathProbeShouldLog(3, 29, true));
+        CHECK(!FreshTripDeathProbeShouldLog(3, 0, true));
+        CHECK(FreshTripDeathProbeShouldLog(3, -1, true));
+    }
+    std::cout << "  [PASS] fresh-trip probe logs young trips, throttled\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;

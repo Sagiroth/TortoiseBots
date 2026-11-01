@@ -498,6 +498,8 @@ bool ShouldTravelNamedValue::Calculate()
             if ((wantDelivery && !delivering) || (wantWork && delivering))
             {
                 target->SetForced(false);
+                // TEMPORARY probe (pattern-4 churn follow-up).
+                target->NoteFreshTripDeath("named-legflip", TravelStatus::TRAVEL_STATUS_EXPIRED);
                 target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             }
             else if (wantWork && !delivering && target->GetDestination() &&
@@ -510,6 +512,8 @@ bool ShouldTravelNamedValue::Calculate()
                 if (order.itemId && OrderMailboxItems(bot, order.itemId) == 0)
                 {
                     target->SetForced(false);
+                    // TEMPORARY probe (pattern-4 churn follow-up).
+                    target->NoteFreshTripDeath("named-mailbox", TravelStatus::TRAVEL_STATUS_EXPIRED);
                     target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                 }
             }

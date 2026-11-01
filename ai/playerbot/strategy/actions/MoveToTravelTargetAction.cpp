@@ -490,7 +490,11 @@ bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, bool offGraph, s
     if (offGraph && TeleportToNearestRouteNode())
     {
         if (TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target"))
+        {
+            // TEMPORARY probe (pattern-4 churn follow-up).
+            travelTarget->NoteFreshTripDeath("nopath-rescue", TravelStatus::TRAVEL_STATUS_NONE);
             sTravelMgr.SetNullTravelTarget(travelTarget);
+        }
         return true;
     }
     Event rescueEvent("travel nopath trapped");
@@ -1180,6 +1184,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // active target would instead freeze ALL travel (IsActive stays
             // true, requests gate on it) for the whole window.
             sPlayerbotAIConfig.logEvent(ai, "TravelTargetDropped", purpose, std::to_string(target->GetRetryCount(true)));
+            // TEMPORARY probe (pattern-4 churn follow-up): name the killer
+            // when a fresh trip drops.
+            target->NoteFreshTripDeath("move-drop", TravelStatus::TRAVEL_STATUS_NONE);
             // A workshop leg remembers its own point: the purpose park below
             // only delays the re-pick, which then offers the same forge
             // again. Inside smelt range the bot crafts from where it stands,

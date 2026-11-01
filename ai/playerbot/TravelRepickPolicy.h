@@ -192,7 +192,24 @@ namespace ai
         constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
         return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
     }
-    // Off-mesh sieve scope (night2 movestuck/gatherfrozen follow-up): a
+    // TEMPORARY probe (pattern-4 churn follow-up): a travel target younger
+    // than the fresh window that goes to EXPIRED/COOLDOWN/NONE or is replaced
+    // logs one throttled row naming the killer, so the next realm cycle shows
+    // which call site ends fresh trips. Pure verdict so the standalone test
+    // covers it: at most one row per window per bot; only fresh trips count.
+    // Remove once pattern 4 has an owner. Window/throttle in whole seconds.
+    constexpr std::int64_t FRESH_TRIP_PROBE_AGE_SEC = 10;
+    constexpr std::int64_t FRESH_TRIP_PROBE_THROTTLE_SEC = 30;
+    inline bool FreshTripDeathProbeShouldLog(std::int64_t tripAgeSec, std::int64_t lastLogAgoSec,
+        bool hasLoggedBefore)
+    {
+        if (tripAgeSec < 0 || tripAgeSec >= FRESH_TRIP_PROBE_AGE_SEC)
+            return false;
+        if (!hasLoggedBefore)
+            return true;
+        return lastLogAgoSec < 0 || lastLogAgoSec >= FRESH_TRIP_PROBE_THROTTLE_SEC;
+    }
+
     // destination point with no walkable navmesh polygon nearby can never be
     // walked to, so the pick only fails six walks and is re-picked. Every
     // purpose with a walkable point takes the sieve; fishing stays out (its

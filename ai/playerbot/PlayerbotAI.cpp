@@ -1820,7 +1820,9 @@ void PlayerbotAI::OnDeath()
                         ai::AddErrandPark(errandParks_, ai::kErrandParkSlots, errandPurpose, errandEntry, nowErrandMs);
                         sPlayerbotAIConfig.logEvent(this, "ErrandParked", errandDest->GetTitle(), WorldPosition(bot).GetAreaName());
                         TellDebug(GetMaster(), "Giving up on " + errandDest->GetTitle() + " for a while - I died on the way twice", "debug travel");
-                        sTravelMgr.SetNullTravelTarget(errandTarget);
+                        // TEMPORARY probe (pattern-4 churn follow-up).
+                        errandTarget->NoteFreshTripDeath("death-errandpark", TravelStatus::TRAVEL_STATUS_EXPIRED);
+                         sTravelMgr.SetNullTravelTarget(errandTarget);
                         errandTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                         errandTarget->SetExpireIn(1000);
                     }
@@ -1909,7 +1911,9 @@ void PlayerbotAI::OnDeath()
                                     if (escapePoint && IsDeathSpotAvoided(escapePoint->GetMapId(), escapePoint->getX(),
                                         escapePoint->getY(), nowClusterMs))
                                     {
-                                        sTravelMgr.SetNullTravelTarget(escapeTarget);
+                                        // TEMPORARY probe (pattern-4 churn follow-up).
+                                        escapeTarget->NoteFreshTripDeath("death-cluster", TravelStatus::TRAVEL_STATUS_EXPIRED);
+                                         sTravelMgr.SetNullTravelTarget(escapeTarget);
                                         escapeTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                                         escapeTarget->SetExpireIn(1000);
                                     }

@@ -249,6 +249,9 @@ namespace ai
             ai->TellPlayer(requester, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
             TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+            // TEMPORARY probe (pattern-4 churn follow-up).
+            if (travelTarget)
+                travelTarget->NoteFreshTripDeath("release", TravelStatus::TRAVEL_STATUS_EXPIRED);
             sTravelMgr.SetNullTravelTarget(travelTarget);
             travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             travelTarget->SetExpireIn(1000);
