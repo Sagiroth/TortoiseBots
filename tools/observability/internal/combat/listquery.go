@@ -3,6 +3,7 @@ package combat
 import (
 	"errors"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -12,6 +13,7 @@ import (
 // as before.
 //
 //	limit=N          at most N rows (1..MaxListLimit), newest first
+//	                 (a before or since without limit is capped at MaxListLimit)
 //	before=S[,KEY]   only rows older than the cursor: start < S, or start == S and key > KEY (the list order is start
 //	                 descending, then key ascending, so the last row of a page is the next page's cursor)
 //	since=S          only rows with start >= S
@@ -68,6 +70,11 @@ func ParseListQuery(v url.Values) (ListQuery, error) {
 		}
 		q.Since = n
 	}
+	// A span (before or since) without a limit is still one page: capped at MaxListLimit, with X-More when rows were left out,
+	// so a cursor reaching back across a month never answers the whole index.
+	if q.Limit == 0 && q.Spans() {
+		q.Limit = MaxListLimit
+	}
 	flag := func(name string) (bool, error) {
 		switch v.Get(name) {
 		case "":
@@ -119,14 +126,24 @@ func (q ListQuery) Match(r FightSummary) bool {
 	return true
 }
 
-// Apply filters rows (already newest first) and cuts them to the limit; more is true when the limit dropped rows. A live
-// row (a fight still running) passes the time range and outcome filters only when it matches like any other row.
+// Apply filters rows and cuts them to the limit; more is true when the limit dropped rows. Before any cut the rows are put in
+// the cursor's order, stably: start descending, then key ascending (the memory list puts its live row first, which a cursor
+// cannot page through). A live row passes the filters only when it matches like any other row. With no param the rows come
+// back untouched, in their own order.
 func (q ListQuery) Apply(rows []FightSummary) (out []FightSummary, more bool) {
 	if !q.Active() {
 		return rows, false
 	}
-	out = make([]FightSummary, 0, len(rows))
-	for _, r := range rows {
+	sorted := make([]FightSummary, len(rows))
+	copy(sorted, rows)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Start != sorted[j].Start {
+			return sorted[i].Start > sorted[j].Start
+		}
+		return sorted[i].Key < sorted[j].Key
+	})
+	out = make([]FightSummary, 0, len(sorted))
+	for _, r := range sorted {
 		if !q.Match(r) {
 			continue
 		}

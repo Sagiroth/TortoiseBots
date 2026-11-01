@@ -688,27 +688,7 @@ func main() {
 	// commander, newest first; each fight carries the v1 warnings with it.
 	// The optional combat.ListQuery params (limit, before, since, boss, deaths, outcome) page and filter the list; without
 	// them it answers as it always did. A page cut by limit answers the header X-More: 1.
-	mux.HandleFunc("/api/v1/combat/fights", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		lq, err := combat.ParseListQuery(r.URL.Query())
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":"` + err.Error() + `"}`))
-			return
-		}
-		rows, more := lq.Apply(combatStore.List(r.URL.Query().Get("commander")))
-		if more {
-			w.Header().Set("X-More", "1")
-		}
-		if historyStore != nil {
-			for i := range rows {
-				if row, ok := historyStore.Lookup(rows[i].Key); ok {
-					rows[i].PackKey, rows[i].NonTankMs = row.PackKey, row.NonTankMs
-				}
-			}
-		}
-		writeJSON(w, rows)
-	}))
+	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// The detail key is (commander, session, id): fight ids repeat
 		// across commanders and sessions. The list rows carry the composed
@@ -1137,4 +1117,32 @@ func qUint(s string) uint32 {
 		return 0
 	}
 	return uint32(v)
+}
+
+// combatFightsHandler serves GET /api/v1/combat/fights?commander=: the memory list, newest first, with the stored pack key and
+// non-tank seconds of each row the history knows. The optional combat.ListQuery params (limit, before, since, boss, deaths,
+// outcome) page and filter it; without them it answers as it always did. A page cut by its limit answers X-More: 1, and a bad
+// param is a 400.
+func combatFightsHandler(combatStore *combat.Store, historyStore *history.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		lq, err := combat.ParseListQuery(r.URL.Query())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"` + err.Error() + `"}`))
+			return
+		}
+		rows, more := lq.Apply(combatStore.List(r.URL.Query().Get("commander")))
+		if more {
+			w.Header().Set("X-More", "1")
+		}
+		if historyStore != nil {
+			for i := range rows {
+				if row, ok := historyStore.Lookup(rows[i].Key); ok {
+					rows[i].PackKey, rows[i].NonTankMs = row.PackKey, row.NonTankMs
+				}
+			}
+		}
+		writeJSON(w, rows)
+	}
 }

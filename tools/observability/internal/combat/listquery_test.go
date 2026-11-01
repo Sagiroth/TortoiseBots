@@ -2,6 +2,7 @@ package combat
 
 import (
 	"net/url"
+	"strconv"
 	"testing"
 )
 
@@ -89,3 +90,57 @@ func TestListQueryBadInput(t *testing.T) {
 		}
 	}
 }
+
+// TestListQuerySortsBeforeTheCut pins the order a cursor relies on: rows that arrive out of order (the memory list's live row
+// first, a tie on the second) are put in start-descending, key-ascending order before limit or before cut them.
+func TestListQuerySortsBeforeTheCut(t *testing.T) {
+	in := []FightSummary{
+		{Key: "live", Start: 150, Live: true},
+		{Key: "k-3", Start: 300},
+		{Key: "k-2b", Start: 200},
+		{Key: "k-2a", Start: 200},
+		{Key: "k-1", Start: 100},
+	}
+	out, more := mustQ(t, "limit=3").Apply(in)
+	if keys(out) != "k-3,k-2a,k-2b" || !more {
+		t.Fatalf("limit=3: got %s more=%v", keys(out), more)
+	}
+	out, _ = mustQ(t, "before=200,k-2a&limit=2").Apply(in)
+	if keys(out) != "k-2b,live" {
+		t.Fatalf("cursor page: got %s", keys(out))
+	}
+	if keys(in) != "live,k-3,k-2b,k-2a,k-1" {
+		t.Fatalf("Apply reordered its input: %s", keys(in))
+	}
+	// No param: the rows come back untouched, in their own order.
+	out, _ = mustQ(t, "").Apply(in)
+	if keys(out) != keys(in) {
+		t.Fatalf("no params reordered: %s", keys(out))
+	}
+}
+
+// TestListQuerySpanDefaultCap pins the default page: since or before without limit is capped at MaxListLimit, with more set.
+func TestListQuerySpanDefaultCap(t *testing.T) {
+	rows := make([]FightSummary, MaxListLimit+5)
+	for i := range rows {
+		rows[i] = FightSummary{Key: "k" + string(rune('a'+i%26)) + itoa(i), Start: int64(10000 - i)}
+	}
+	for _, raw := range []string{"since=1", "before=99999"} {
+		q := mustQ(t, raw)
+		if q.Limit != MaxListLimit {
+			t.Fatalf("%s: limit %d, want %d", raw, q.Limit, MaxListLimit)
+		}
+		out, more := q.Apply(rows)
+		if len(out) != MaxListLimit || !more {
+			t.Errorf("%s: %d rows more=%v", raw, len(out), more)
+		}
+	}
+	if q := mustQ(t, "boss=1"); q.Limit != 0 {
+		t.Errorf("a filter alone keeps no cap: %d", q.Limit)
+	}
+	if q := mustQ(t, "since=1&limit=7"); q.Limit != 7 {
+		t.Errorf("an explicit limit stands: %d", q.Limit)
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }
