@@ -384,9 +384,22 @@ bool MoveToTravelTargetAction::TryRescueStuckTravel(TravelTarget* target, std::s
          (ai->IsOwnedBot() || !sRandomBotFacade.IsRandomBot(bot))) ||
         TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
         return false;
-
     WorldPosition const botPos(bot);
-    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance))
+    bool const watched = ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) ||
+        ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance);
+    if (ai::WatchedRescueMayStep(watched, target->IsForced()))
+    {
+        // A watched rescue refuses the teleport but the walk is unwatched:
+        // stepping toward the target instead of returning silently keeps
+        // the bot progressing (and logging) instead of freezing in place.
+        if (TryStepTowardTarget(location))
+        {
+            target->SetRetry(true, 1);
+            return true;
+        }
+        return false;
+    }
+    if (watched)
         return false;
 
     AiObjectContext* context = ai->GetAiObjectContext();

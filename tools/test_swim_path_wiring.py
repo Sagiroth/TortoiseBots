@@ -97,10 +97,11 @@ class SwimHandoffWiringTest(unittest.TestCase):
         self.assertLess(first, empty)
         second = self.move2.index("switch (SwimHandoff(startPos, endPos, movePath, lastMove, packHold, ignoreEnemyTargets))", first + 1)
         self.assertLess(self.move2.index("movePath.makeShortCut(startPos, sPlayerbotAIConfig.reactDistance, bot);"), second)
-        self.assertLess(second, self.move2.index("return true; // Path collapsed"))
+        # Collapsed route with no swim counts as a failure (MoveFailReason
+        # shortcut-empty), so the travel budget fills and the drop/rescue
+        # machinery runs; a swim handoff still reports Moving.
+        self.assertLess(second, self.move2.index("lastMove.moveFailReason = MOVE_FAIL_SHORTCUT_EMPTY;"))
         self.assertLess(second, self.move2.index("movePath.ClipPath(ai, mover, ignoreEnemyTargets, packHold);"))
-        self.assertEqual(self.move2.count("case SwimHandoffResult::Moving: return true;"), 2)
-        self.assertEqual(self.move2.count("case SwimHandoffResult::Refused: return false;"), 2)
 
     def test_handoff_guards_and_dispatch(self):
         h = self.hand

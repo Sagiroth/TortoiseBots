@@ -27,6 +27,7 @@ using ai::ServiceTripArrivalRadius;
 using ai::ServiceTripIsServicePurpose;
 using ai::ServiceTripRescueEligible;
 using ai::ServiceTripStableOffset;
+using ai::WatchedRescueMayStep;
 
 int main()
 {
@@ -99,6 +100,13 @@ int main()
     CHECK(!ServiceTripRescueEligible(true, true, true, false, true, false, false, true));    // forced
     std::cout << "  [PASS] rescue gate holds every conservative clause\n";
 
+    // A watched rescue falls back to the step walk (never silent), except a
+    // forced trip, whose guards own it.
+    CHECK(WatchedRescueMayStep(true, false));
+    CHECK(!WatchedRescueMayStep(true, true));
+    CHECK(!WatchedRescueMayStep(false, false));
+    CHECK(!WatchedRescueMayStep(false, true));
+    std::cout << "  [PASS] watched rescue steps instead of freezing\n";
     std::cout << "service trip policy: OK\n";
     return 0;
 }
