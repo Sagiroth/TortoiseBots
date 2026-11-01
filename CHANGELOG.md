@@ -106,6 +106,7 @@
 - New: Wailing Caverns' plan fights Kresh; a boss row's timeout_s sets the wait for a boss away from his spot.
 - Fixed `cmd move` lifting a point in open water onto a ledge above the surface that no path reaches: the point stays in the water (a pier the bots can walk onto still wins), so the run leader's swim up Karazhan Crypt's shaft no longer pauses.
 - Fixed the test speed's party hold pausing a run when `cmd move` refused the hold on the lead bot's own spot (a swim under a ledge): the walk goes on.
+- Zul'Gurub: the ranged and the healers spread out around High Priest Venoxis (17-26 yards from him, at least 12 yards apart) instead of stacking under him, so his chaining Holy Wrath no longer reaches the casters — the last walk lost nine bots in one second to it — and his Holy Fire joins the interrupt list in place of the useless Renew entry.
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.
