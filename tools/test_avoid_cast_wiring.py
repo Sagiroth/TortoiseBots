@@ -72,7 +72,8 @@ class AvoidCastWiring(unittest.TestCase):
 
     def test_only_the_tank_holding_the_caster_stays(self):
         helper = body(ACTIONS, "bool BotHoldsCaster(")
-        self.assertIn("HoldsCaster(PlayerbotAI::IsTank(bot), caster->GetVictim() == bot)", helper)
+        self.assertIn("const bool casterIsOnNonTank = victim && victim != bot", helper)
+        self.assertIn("HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank)", helper)
         # The held casters' blasts are left out of the zones the hold and the walk-out read.
         zones = body(ACTIONS, "std::vector<CastDangerZone> ai::CastDangerZones(")
         self.assertIn("BotHoldsCaster(bot, unit)", zones)

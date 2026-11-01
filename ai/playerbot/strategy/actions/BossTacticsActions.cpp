@@ -173,10 +173,16 @@ float CenterDistance(Unit* caster, float x, float y, float z)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// A tank the caster is on stays in the blast (BossTacticsPolicy.h HoldsCaster).
+// A tank stays in the blast when the caster is on it or on a non-tank, so it can take or keep it
+// (BossTacticsPolicy.h HoldsCaster). A non-player victim (a pet, a totem) is not counted: this file has no
+// victim-to-player idiom to own one, only the player form below.
 bool BotHoldsCaster(Player* bot, Unit* caster)
 {
-    return HoldsCaster(PlayerbotAI::IsTank(bot), caster->GetVictim() == bot);
+    Unit* victim = caster->GetVictim();
+    const bool casterIsOnBot = victim == bot;
+    const bool casterIsOnNonTank = victim && victim != bot && victim->GetTypeId() == TYPEID_PLAYER &&
+        !PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank);
 }
 }
 

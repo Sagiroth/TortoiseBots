@@ -312,13 +312,17 @@ int main()
         CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100, 100u));
     }
 
-    // Who holds a caster: only a tank the caster is on. A caster on nobody keeps nobody in, and a healer it turned to
-    // leaves.
+    // Who holds a caster: a tank stays in when the caster is on it or on a non-tank, so it can take or keep it.
     {
-        CHECK(HoldsCaster(true, true));
-        CHECK(!HoldsCaster(true, false));    // an off-tank, or a tank before the caster picked anyone
-        CHECK(!HoldsCaster(false, true));    // a healer the caster is on
-        CHECK(!HoldsCaster(false, false));
+        CHECK(HoldsCaster(true, true, false));    // the tank holding the caster
+        CHECK(HoldsCaster(true, false, true));    // tank holds a caster on a healer
+        CHECK(!HoldsCaster(true, false, false));  // an off-tank, or a tank before the caster picked anyone
+        CHECK(!HoldsCaster(false, true, false));  // a healer the caster is on
+        CHECK(!HoldsCaster(false, false, false));
+        CHECK(!HoldsCaster(false, true, true));
+        CHECK(!HoldsCaster(false, false, true));
+        CHECK(!MustLeaveCast(HoldsCaster(true, false, true), 13.0f, 2.0f));   // the tank walks in, not out
+        CHECK(MustLeaveCast(HoldsCaster(false, false, true), 13.0f, 2.0f));   // the healer still leaves
     }
 
     // The avoid_cast map flag: only a map with an avoid_cast row, and only after the seal.

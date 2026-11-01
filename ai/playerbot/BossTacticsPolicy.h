@@ -190,12 +190,13 @@ namespace ai
                         AvoidCastRadius(active, casterEntry, channeledSpellId));
     }
 
-    // Whether a bot holds a caster, so stays in its blast: only a tank the caster is on (its current victim). It holds
-    // the caster and whatever else is on it, and walking it out drags them along. A caster on nobody, or on a bot that
-    // is no tank, keeps nobody in: an off-tank and a healer the caster turned to leave like anyone else.
-    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot)
+    // Whether a bot holds a caster, so stays in its blast: a tank stays in (no walk-out, no cast hold) when the
+    // caster is on it or on a non-tank, so the tank can take or keep it. Walk 20's Voidwalkers on healers shocked
+    // the raid when the tanks walked out too. A caster on nobody keeps nobody in, and a non-tank leaves like
+    // anyone else.
+    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank)
     {
-        return botIsTank && casterIsOnBot;
+        return botIsTank && (casterIsOnBot || casterIsOnNonTank);
     }
 
     // Whether a bot `distance` yd from such a caster has to leave (see HoldsCaster).
