@@ -12,15 +12,25 @@
   // The debuff keys in the panel's order (the module samples these 1 Hz on the focus unit).
   const DEBUFF_KEYS = ["sunder5", "sunder", "faerie_fire", "cor", "coe", "cos", "demo", "thunder_clap", "expose_armor"];
 
-  // One row per fight of GET /api/v1/combat/fights: outcome, how long, boss, deaths, warnings.
-  // list: [{id, start, dur, outcome, boss_name, leg, step, deaths, warnings}].
+  // ` · phase N (E)` after the boss name: the module counted N = 1 + the entry changes of the fight's boss unit and
+  // E is the entry he reads now (a boss a script changed mid-fight, e.g. Thekal 14599 -> 14509). Only when N > 1.
+  function bossLabel(f) {
+    const name = (f && f.boss_name) || "";
+    const n = num(f && f.boss_phase), e = num(f && f.boss_phase_entry);
+    if (!name) return "–";
+    return n !== null && n > 1 && e ? name + " · phase " + n + " (" + e + ")" : name;
+  }
+
+  // One row per fight of GET /api/v1/combat/fights: outcome, how long, boss, deaths, warnings; the live row (a fight
+  // COMBAT_EVENTS opened) too, so `phase N (E)` shows while it runs.
+  // list: [{id, start, dur, outcome, boss_name, boss_phase, boss_phase_entry, leg, step, deaths, warnings}].
   function fightRows(list) {
     return (Array.isArray(list) ? list : []).map((f) => ({
       id: f.id || "",
       start: num(f.start),
       dur: num(f.dur),
       outcome: f.outcome || "end",
-      boss: f.boss_name || "–",
+      boss: bossLabel(f),
       leg: f.leg || "",
       step: num(f.step),
       deaths: num(f.deaths) || 0,
@@ -135,6 +145,6 @@
       + '<p class="empty-hint">' + esc(pullPostMortem(fight)) + "</p></div>";
   }
 
-  const api = { DEBUFF_KEYS, fightRows, fmtDur, fmtPct, botTable, debuffBars, warningStrip, pullPostMortem, render };
+  const api = { DEBUFF_KEYS, bossLabel, fightRows, fmtDur, fmtPct, botTable, debuffBars, warningStrip, pullPostMortem, render };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fights = api;
 })(typeof self !== "undefined" ? self : this);

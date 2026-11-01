@@ -8577,7 +8577,7 @@
       const secs = Math.max(1, (fight.dur_ms || 0) / 1000);
       const dmg = (fight.bots || []).reduce((n, b) => n + (b.dmg || 0), 0);
       const heal = (fight.bots || []).reduce((n, b) => n + (b.heal || 0), 0);
-      title = (info.label || fight.boss_name || 'trash') + ' · ' + secs.toFixed(1) + ' s · step ' + (fight.step || 0);
+      title = (info.label || fight.boss_name || 'trash') + fdBossPhase(fight.boss_phase, fight.boss_phase_entry) + ' · ' + secs.toFixed(1) + ' s · step ' + (fight.step || 0);
       chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
         + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`
         + `<span class="fd-chip">${esc(fight.outcome || '')}</span>`;
@@ -8666,6 +8666,14 @@
 
   function numOr0(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
 
+  // ` · phase N (E)` after a boss name: the module counted N = 1 + the entry changes of the fight's boss unit, and E
+  // is the entry he reads now (a boss a script changed mid-fight, e.g. Thekal 14599 -> 14509). Only when N > 1; a
+  // fight the module never reported the phase for shows the name alone.
+  function fdBossPhase(phase, entry) {
+    const n = numOr0(phase), e = numOr0(entry);
+    return n > 1 && e ? ' · phase ' + n + ' (' + e + ')' : '';
+  }
+
   // The raid frames header's numbers: the dead, and the living mana users under 30% (a rage or energy bar cannot be low on mana).
   function fdFrameStats(frames) {
     const tiles = (frames || []).reduce((a, g) => a.concat((g && g.tiles) || []), []);
@@ -8719,7 +8727,8 @@
       const boss = !!(r.boss_name || (fight && fight.boss_name));
       segs.push({
         kind: boss ? 'boss' : 'fight', key: r.key, label: 'P' + (i + 1),
-        name: boss ? String(r.boss_name || fight.boss_name) : '',
+        name: boss ? String(r.boss_name || fight.boss_name) + fdBossPhase(numOr0(r.boss_phase) || numOr0(fight && fight.boss_phase),
+          numOr0(r.boss_phase_entry) || numOr0(fight && fight.boss_phase_entry)) : '',
         fromS: Math.max(s, t0), toS: Math.max(e, t0),
       });
       ((fight && fight.deaths) || []).forEach((d, j) => {

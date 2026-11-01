@@ -208,17 +208,19 @@ func (s *Store) List(commander string) []FightSummary {
 // summaryLocked builds one list row; called with the lock held.
 func (s *Store) summaryLocked(commander string, k keptFight) FightSummary {
 	return FightSummary{
-		ID:       k.fight.ID,
-		Key:      Key(commander, k.session, k.fight.ID),
-		Session:  k.session,
-		Start:    k.fight.Start,
-		Dur:      k.fight.DurMS,
-		Outcome:  k.fight.Outcome,
-		BossName: k.fight.BossName,
-		Leg:      k.fight.Leg,
-		Step:     k.fight.Step,
-		Deaths:   len(k.fight.Deaths),
-		Warnings: len(Judge(k.fight, s.rules)),
+		ID:             k.fight.ID,
+		Key:            Key(commander, k.session, k.fight.ID),
+		Session:        k.session,
+		Start:          k.fight.Start,
+		Dur:            k.fight.DurMS,
+		Outcome:        k.fight.Outcome,
+		BossName:       k.fight.BossName,
+		BossPhase:      k.fight.BossPhase,
+		BossPhaseEntry: k.fight.BossPhaseEntry,
+		Leg:            k.fight.Leg,
+		Step:           k.fight.Step,
+		Deaths:         len(k.fight.Deaths),
+		Warnings:       len(Judge(k.fight, s.rules)),
 	}
 }
 
