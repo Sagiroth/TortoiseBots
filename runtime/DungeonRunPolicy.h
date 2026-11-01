@@ -252,6 +252,8 @@ constexpr std::uint32_t kStrandWaits = 10;        // ... "wait" answers a step, 
 constexpr std::uint32_t kStrandSummonWaitMs = 120000; // ... a bot left behind in a fight is waited for this long, then a pause
 constexpr float kStrandRearmYd = 100.0f;          // ... a lead bot moved this far from the point it was teleported to
                                                   //     arms the rescue again (RearmStrandIfLeadMovedAway)
+constexpr std::uint32_t kStrandRearmsPerStep = 2; // ... at most this often a step, then the latch holds (the walk
+                                                  //     back's pause path takes it)
 constexpr std::uint32_t kEscapeSettleMs = 2000;   // the hop is over once the lead bot stands still this long ...
 constexpr std::uint32_t kEscapeCapMs = 6000;      // ... or after this long
 constexpr float kEscapeMovedYd = 2.0f;            // the glue refuses the hop when the lead bot moved this far since the read
@@ -1809,6 +1811,10 @@ struct Run
     std::size_t strandCountStep = static_cast<std::size_t>(-1);
     std::uint32_t strandTries = 0;
     std::uint32_t strandWaits = 0;
+    // The latch re-arms a lead bot moved away again (RearmStrandIfLeadMovedAway) at most kStrandRearmsPerStep times a
+    // step (strandRearmStep: the step they count for, as strandCountStep; ResetStep leaves them).
+    std::size_t strandRearmStep = static_cast<std::size_t>(-1);
+    std::uint32_t strandRearms = 0;
     // The teleport due now (or just failed) is a ReplayRescue's (set by ReplayRescue beside RescueDue): when
     // StrandFailed gives up on it, the walk back replays the plan's points (ReplayWalkBack, spec 2B) instead of
     // hopping straight toward the target the run had just refused. Cleared when the lead bot arrives (its step's
@@ -5841,15 +5847,26 @@ inline void RearmRescueAfterDeath(Run& r)
 // teleport it a second time (RescueAllowed false): it gave the point up and the lead bot ended stuck in the river
 // (ZG walk 22 test2 r4 step 99). Out of combat, in the same step, a lead bot farther than kStrandRearmYd from the
 // point it was teleported to (the walk back still at that point: the lead bot was not walked back there) arms the
-// latch again, and the walk back's rescue may teleport once more; the step's failed tries and waits stay counted.
+// latch again, and the walk back's rescue may teleport once more; the step's failed tries and waits stay counted, and
+// a step re-arms it at most kStrandRearmsPerStep times (past that the point is refused as before, the walk back's
+// own pause path).
 inline void RearmStrandIfLeadMovedAway(Run& r, const Facts& f)
 {
     if (r.strandStep != r.step || r.strandOn || r.strandDue || !r.walkBack || !r.plan ||
         r.walkBackIdx != r.strandIdx || r.strandIdx >= r.plan->steps.size() || f.anyInCombat)
         return;
     const PlanStep& p = r.plan->steps[r.strandIdx];
-    if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z) > kStrandRearmYd)
-        r.strandStep = static_cast<std::size_t>(-1);
+    if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z) <= kStrandRearmYd)
+        return;
+    if (r.strandRearmStep != r.step)
+    {
+        r.strandRearmStep = r.step;
+        r.strandRearms = 0;
+    }
+    if (r.strandRearms >= kStrandRearmsPerStep)
+        return;
+    ++r.strandRearms;
+    r.strandStep = static_cast<std::size_t>(-1);
 }
 
 // A failed teleport of the stranded lead bot (refused, or the lead bot not at the

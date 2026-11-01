@@ -12009,6 +12009,66 @@ static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
     CHECK(near.note.find(": on to the next") != std::string::npos);
 }
 
+// The re-arm is capped at kStrandRearmsPerStep a step: a glue that keeps putting the lead bot back at the instance
+// entrance (its own mass summons racing the run's recovery) could otherwise teleport it back again and again on one
+// step. Past the cap the latch holds, the point is refused as before and the walk back goes on ("on to the next");
+// a later step counts its own re-arms (Run::strandRearmStep).
+static void TestTheStrandRearmIsCappedPerStep()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f), Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f),
+        Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f), Step(PlanStepKind::Move, -422.4f, 106.7f, -172.9f),
+        Step(PlanStepKind::Move, -420.0f, 120.0f, -172.9f), Step(PlanStepKind::Rest)};
+    std::string const back = MoveOrder(-422.4f, 82.4f, -172.9f, false);
+    Run r = Start(&plan, 2);
+    NoteCheckpoint(r, 1);
+    r.noPathSkips = {2, 3, 4};
+    r.walkBack = true;
+    r.walkBackIdx = r.walkBackStart = 1;
+    Facts away = StrandFacts(-960.0f, 620.0f, -172.9f);
+    // Each attempt starts from the same state: the rescue's teleport was used (the lead bot stood at the point), the
+    // agent's mass summon moved it away again, 760 yd from the point, and the hop off where it stands found no spot
+    // again.
+    auto movedAway = [&]()
+    {
+        r.strandIdx = 1;
+        r.strandStep = r.step;
+        r.leadLastX = -960.0f;
+        r.leadLastY = 620.0f;
+        r.leadLastZ = -172.9f;
+        r.noSpotKnown = true;
+        r.noSpotX = -960.0f;
+        r.noSpotY = 620.0f;
+        r.noSpotZ = -172.9f;
+    };
+    for (std::uint32_t i = 0; i < kStrandRearmsPerStep; ++i)
+    {
+        movedAway();
+        std::string const move = Tick(r, away); // the walk back resumes: the latch re-arms, then the point's own move
+        CHECK(move == back);
+        OrderRefused(r, move, kBareUnreachable);
+        CHECK(r.strandDue); // the rescue again, not 'on to the next'
+        CHECK(Tick(r, away) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+        CHECK(r.strandRearms == i + 1);
+        r.strandOn = false; // the teleport settled and the lead bot stood at the point (the glue's own next tick)
+        r.strandMs = 0;
+    }
+    // The cap is spent: the next move-away does not re-arm, and the refused point is passed as before.
+    movedAway();
+    CHECK(Tick(r, away) == back);
+    OrderRefused(r, back, kBareUnreachable);
+    CHECK(!r.strandDue);
+    CHECK(r.walkBackIdx == 2);
+    CHECK(r.note.find(": on to the next") != std::string::npos);
+    CHECK(r.strandRearms == kStrandRearmsPerStep);
+    // The count is the step's own: the walk back at the point again on the next step re-arms again.
+    ++r.step;
+    r.walkBackIdx = r.strandIdx = 1;
+    r.strandStep = r.step;
+    RearmStrandIfLeadMovedAway(r, away);
+    CHECK(r.strandRearmStep == r.step && r.strandRearms == 1 && r.strandStep != r.step);
+}
+
 static void TestR22PullAndDirectStepsKeepTheirRefusals()
 {
     DungeonPlan plan = RfkS85Plan();
@@ -26328,6 +26388,7 @@ int main()
     TestShotStandOnPath();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
+    TestTheStrandRearmIsCappedPerStep();
     TestPullStandNeedsMoreRangeThanTheMargin();
     TestStandRequestIsReadOnce();
     TestStandWalkStuckOrdersFromHere();

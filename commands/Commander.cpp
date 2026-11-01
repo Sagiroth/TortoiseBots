@@ -8021,14 +8021,18 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
     f.leadReaching = !(victim && party.count(victim->GetObjectGuid().GetRawValue()));
 }
 
-// Whose distance, attack rules and friendliness a raid boss fight's attackers are read by (ReadGuardFacts,
-// AddPlayerAttackers): the lead bot, or with it dead its first living off-tank in range, else any living bot on its
-// map. Null when none is.
+// Whose distance, attack rules and friendliness a raid fight's attackers are read by (ReadGuardFacts,
+// AddPlayerAttackers): the lead bot, or with it dead its first living off-tank in range (the boss fight's, else the
+// trash fight's), else any living bot on its map. Null when none is.
 Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
 {
     if (lead->IsAlive())
         return lead;
     for (std::string const& name : f.raid.bossOffTanksAlive)
+        for (Player* bot : bots)
+            if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+                return bot;
+    for (std::string const& name : f.raid.offTanksAlive)
         for (Player* bot : bots)
             if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
                 return bot;
@@ -9052,7 +9056,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.yd = yd;
         // The raid trash guard sends a loose mob to a living off-tank near the
         // lead bot and not busy with a commander task (DungeonRun::RaidTrashFight).
-        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
+        // With the lead bot dead, any on its map: the fight may have moved off its body.
+        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() &&
+            (yd <= kGuardYd || !lead->IsAlive()) &&
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.offTanksAlive.push_back(member.name);
         // ... and with AiPlayerbot.DungeonRunRaidBossRules the boss fight's off-tanks, raid-wide: within

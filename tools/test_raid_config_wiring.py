@@ -83,8 +83,15 @@ class RaidConfigWiringTest(unittest.TestCase):
         code = strip_comments(COMMANDER)
         self.assertIn("(yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd || !lead->IsAlive()) &&", code)
         self.assertIn("f.raid.bossOffTanksAlive.push_back(member.name);", code)
-        # The trash fights' off-tanks keep kGuardYd.
-        self.assertIn("bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&", code)
+        # The trash fights' off-tanks keep kGuardYd, and are not measured from a dead lead bot either: the fight may
+        # have moved off its body (or the lead bot released), and the pick-ups must not switch themselves off there.
+        self.assertIn("(yd <= kGuardYd || !lead->IsAlive()) &&", code)
+        self.assertIn("f.raid.offTanksAlive.push_back(member.name);", code)
+        # With the lead bot dead the anchor the attackers are read around is one of the boss fight's off-tanks, then
+        # one of the trash fight's, then any living bot on its map.
+        anchor = body(code, "Player* RaidGuardAnchor(Player* lead,", "\n}\n")
+        self.assertLess(anchor.index("f.raid.bossOffTanksAlive"), anchor.index("f.raid.offTanksAlive"))
+        self.assertLess(anchor.index("f.raid.offTanksAlive"), anchor.rindex("for (Player* bot : bots)"))
 
 
 if __name__ == "__main__":
