@@ -1,0 +1,40 @@
+#pragma once
+
+// Sub-order legs change faster than the once-a-minute request cadence, so the
+// throttle keys on the leg: a changed leg logs at once, an unchanged leg at
+// most once a minute. Header-only and free of core/database types on purpose:
+// exercised standalone in tools/test_guild_order_telemetry_policy.cpp.
+#include "GuildOrderContract.h"
+#include <cstdint>
+#include <ctime>
+#include <string>
+
+namespace TortoiseBots
+{
+namespace GuildOrders
+{
+
+// SupplyStepToken(step) + ":" + std::to_string(itemId) -> e.g. "bank:2319", "-:0".
+inline std::string OrderLegToken(SupplyStep step, uint32_t itemId)
+{
+    return std::string(SupplyStepToken(step)) + ":" + std::to_string(itemId);
+}
+
+// A row is due when the leg changed since the last logged row, otherwise at
+// most once a minute (today's cadence).
+inline bool OrderRequestLogDue(std::string const& lastLeg, std::string const& leg, time_t nowSec, time_t nextDueSec)
+{
+    return leg != lastLeg || nowSec >= nextDueSec;
+}
+
+// Top-level orders carry no parent ("-"); a parent whose name lookup failed
+// falls back to "?" like the store's BotName.
+inline std::string OrderParentToken(uint32_t parentGuidLow, std::string const& parentName)
+{
+    if (parentGuidLow == 0)
+        return "-";
+    return parentName.empty() ? "?" : parentName;
+}
+
+} // namespace GuildOrders
+} // namespace TortoiseBots

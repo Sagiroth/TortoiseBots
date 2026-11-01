@@ -25,6 +25,7 @@
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderTelemetryPolicy.h"
 #include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
@@ -2406,15 +2407,29 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
     std::string travelName = getQualifier();
 
-    if (IsGuildOrderTravelName(travelName) &&
-        AI_VALUE2(time_t, "manual time", "order request log::" + travelName) <= time(0))
+    if (IsGuildOrderTravelName(travelName))
     {
-        SET_AI_VALUE2(time_t, "manual time", "order request log::" + travelName, time(0) + MINUTE);
         std::optional<TortoiseBots::GuildOrders::OrderRecord> logged =
             TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-        sPlayerbotAIConfig.logEvent(ai, "GuildOrderRequest", travelName,
-            logged ? std::string(TortoiseBots::GuildOrders::SupplyStepToken(logged->supplyStep)) + ":" +
-                std::to_string(logged->supplyItemId) : std::string("-"));
+        std::string leg = logged ?
+            TortoiseBots::GuildOrders::OrderLegToken(logged->supplyStep, logged->supplyItemId) : "-";
+        std::string lastLeg = AI_VALUE2(std::string, "manual string", "order request leg::" + travelName);
+        if (TortoiseBots::GuildOrders::OrderRequestLogDue(lastLeg, leg,
+            time(0), AI_VALUE2(time_t, "manual time", "order request log::" + travelName)))
+        {
+            SET_AI_VALUE2(std::string, "manual string", "order request leg::" + travelName, leg);
+            SET_AI_VALUE2(time_t, "manual time", "order request log::" + travelName, time(0) + MINUTE);
+            std::string parentName;
+            if (logged && logged->parentBotGuidLow &&
+                !sObjectMgr.GetPlayerNameByGUID(
+                    ObjectGuid(HIGHGUID_PLAYER, logged->parentBotGuidLow), parentName))
+                parentName.clear();
+            sPlayerbotAIConfig.logEvent(ai, "GuildOrderRequest", travelName, logged ? leg : "-",
+                logged ? TortoiseBots::GuildOrders::OrderParentToken(
+                    logged->parentBotGuidLow, parentName) : "-",
+                logged ? std::to_string(logged->itemId) : "0",
+                logged ? TortoiseBots::GuildOrders::TypeToken(logged->type) : "-");
+        }
     }
 
     // A newly working order jumps the queue: expire a non-order travel
