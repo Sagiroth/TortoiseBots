@@ -472,8 +472,10 @@ Unit* DpsTargetValue::Calculate()
 {
     // Explicit orders and raid marks remain ahead of tank assistance. A one_at_a_time non-pick is the one exception:
     // the ordered bot falls through to the normal pick, which converges on the sole pick with everyone else.
+    // (No recursion: the non-pick falls through to the picks below, which never read the explicit target.)
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return OrderedOneAtATimeNonPick(ai, bot, explicitTarget) ? Calculate() : explicitTarget;
+        if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))
+            return explicitTarget;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner
     // (a raid mark on another corner would walk it back into the mark).
@@ -552,8 +554,10 @@ protected:
 
 Unit* DpsAoeTargetValue::Calculate()
 {
+    // (No recursion: the non-pick falls through to the picks below, which never read the explicit target.)
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return OrderedOneAtATimeNonPick(ai, bot, explicitTarget) ? Calculate() : explicitTarget;
+        if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))
+            return explicitTarget;
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;

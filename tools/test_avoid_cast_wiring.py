@@ -550,7 +550,10 @@ class OneAtATimeWiring(unittest.TestCase):
         aoe = body(DPS_TARGET, "Unit* DpsAoeTargetValue::Calculate()")
         for fn in (dps, aoe):
             self.assertIn("if (Unit* explicitTarget = GetExplicitAttackTarget())", fn)
-            self.assertIn("OrderedOneAtATimeNonPick(ai, bot, explicitTarget) ? Calculate() : explicitTarget", fn)
+            # The non-pick falls through to the picks below; it must never call Calculate() again (that recursed
+            # without end while the explicit order stayed set).
+            self.assertIn("if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))\n            return explicitTarget;", fn)
+            self.assertNotIn("? Calculate()", fn)
 
 
 class HeldSubjectVetoWiring(unittest.TestCase):
