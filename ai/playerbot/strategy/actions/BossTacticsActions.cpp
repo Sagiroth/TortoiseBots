@@ -946,10 +946,10 @@ std::unordered_map<uint64, StandFailure> g_standFailures;
 // Entries in the two maps: a bot with nothing to forget costs one atomic read, not a lock.
 std::atomic<size_t> g_standStateCount{0};
 
-// The seat plan of an open window (PlanStandSeats), by boss instance (BossStandPolicy.h StandPlanKey), anchor and
-// role: built by the first bot that sees the window and read by every bot of the role, so all of them walk to one plan
-// and nobody's seat flips while bots move. A plan nobody read for kBossStandPlanIdleMs is stale: the sweep below drops
-// it, whatever its key, and the next window builds a new one. Guarded by g_standHoldMutex.
+// The seat plan of an open window (PlanStandSeats, then grown by ExtendStandPlan), by boss instance (BossStandPolicy.h
+// StandPlanKey), anchor and role: built by the first bot that sees the window and read by every bot of the role, so all
+// of them walk to one plan and nobody's seat flips while bots move. A plan nobody read for kBossStandPlanIdleMs is
+// stale: the sweep below drops it, whatever its key, and the next window builds a new one. Guarded by g_standHoldMutex.
 struct StandPlan
 {
     std::vector<StandSeat> seats;
@@ -1121,7 +1121,8 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         return target;
 
     // The side is the side of the lane (anchor -> release anchor) the bot stands on. The seats come from the window's
-    // one plan (PlanStandSeats), built once from the positions when the window opened and kept while it is read.
+    // one plan (PlanStandSeats), built when the window opens, grown by bots that join the fight later; a seat once
+    // given never moves.
     const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
     StandSeat seat;
     {
@@ -1140,6 +1141,8 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             plan.seats = PlanStandSeats(points, bots, lane);
             it = g_standPlans.insert_or_assign(key, std::move(plan)).first;
         }
+        else
+            ExtendStandPlan(it->second.seats, points, bots, lane);  // a bot engaged after the window opened gets a free seat
         it->second.lastReadMs = nowMs;
         for (const StandSeat& planned : it->second.seats)
         {

@@ -862,6 +862,141 @@ int main()
                 CHECK(seat.valid && std::fabs(seat.y + 32.0f) < 0.001f);
     }
 
+    // A plan grows with the bots that engage after the window opened: the 12 rows of 20261101080000_world.sql for
+    // High Priest Venoxis (map 309, entry 14507, one anchor at -12018, -1695, radius 7, no release anchor so the lane
+    // is invalid, every row on side 0, one slot a row: 5 healer points and 7 ranged points). The window opens on the
+    // pull, so a plan built at its first tick names only the bots already on the boss's threat list; the rest engage a
+    // second later and grow the plan, each on its own side, without moving a seat already handed out.
+    {
+        const auto venoxis = [](StandRole role, std::uint8_t seq, float x, float y, float z)
+        {
+            BossStandRow row = Row(1, -12018.0f, -1695.0f, 7, role, 0, 0, seq, x, y, 0.0f, 0.0f, 1);
+            row.map = 309;
+            row.bossEntry = 14507;
+            row.z = z;
+            return row;
+        };
+        const std::vector<BossStandRow> rows = {
+            venoxis(StandRole::Healer, 0, -12038.09f, -1705.89f, 41.08f),
+            venoxis(StandRole::Healer, 1, -12018.23f, -1717.85f, 39.37f),
+            venoxis(StandRole::Healer, 2, -11998.22f, -1706.64f, 32.34f),
+            venoxis(StandRole::Healer, 3, -11997.89f, -1684.15f, 32.34f),
+            venoxis(StandRole::Healer, 4, -12016.77f, -1672.08f, 32.41f),
+            venoxis(StandRole::Ranged, 0, -12029.88f, -1714.64f, 39.50f),
+            venoxis(StandRole::Ranged, 1, -12006.51f, -1714.87f, 33.58f),
+            venoxis(StandRole::Ranged, 2, -11995.05f, -1695.40f, 32.34f),
+            venoxis(StandRole::Ranged, 3, -12005.74f, -1675.60f, 32.34f),
+            venoxis(StandRole::Ranged, 4, -12027.94f, -1675.31f, 33.56f),
+            venoxis(StandRole::Ranged, 5, -12037.09f, -1682.91f, 39.34f),
+            venoxis(StandRole::Ranged, 6, -12040.94f, -1694.25f, 39.55f)
+        };
+        std::vector<const BossStandRow*> healerPoints;
+        std::vector<const BossStandRow*> rangedPoints;
+        for (const BossStandRow& row : rows)
+            (row.role == StandRole::Healer ? healerPoints : rangedPoints).push_back(&row);
+        CHECK(healerPoints.size() == 5);
+        CHECK(rangedPoints.size() == 7);
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        CHECK(!lane.valid);
+
+        // The window's first tick: Shalyn (healer) alone; the plan is her solo min-cost seat.
+        std::vector<StandSeat> plan = PlanStandSeats(healerPoints, { { 1, -12036.0f, -1704.0f } }, lane);
+        CHECK(plan.size() == 1 && plan[0].valid && plan[0].id == 1);
+        const StandSeat shalynSeat = plan[0];
+        CHECK(std::fabs(shalynSeat.x - (-12038.09f)) < 0.001f && std::fabs(shalynSeat.y - (-1705.89f)) < 0.001f);
+
+        // The rest of the healers engaged a second later (their t+8 positions): the plan grows by four, each on the
+        // side's free seats. Tarantella stands nearer Shalyn's seat than Shalyn does: a plan that re-planned its
+        // members would give Shalyn's seat away, a plan that grows must leave it alone.
+        const std::vector<StandBot> healers = { { 1, -12036.0f, -1704.0f },  { 2, -12038.5f, -1706.5f },
+                                                { 3, -11998.22f, -1706.64f }, { 4, -11997.89f, -1684.15f },
+                                                { 5, -12016.77f, -1672.08f } };
+        CHECK(ExtendStandPlan(plan, healerPoints, healers, lane));
+        CHECK(plan.size() == 5);
+        for (const StandSeat& seat : plan)
+            CHECK(seat.valid);
+        for (std::size_t i = 0; i + 1 < plan.size(); ++i)
+            CHECK(plan[i].id < plan[i + 1].id);  // ascending id order
+        bool shalyn = false;
+        for (const StandSeat& seat : plan)
+            if (seat.id == 1)
+            {
+                shalyn = true;
+                CHECK(seat.x == shalynSeat.x && seat.y == shalynSeat.y && seat.z == shalynSeat.z);
+            }
+        CHECK(shalyn);
+        for (std::size_t a = 0; a < plan.size(); ++a)
+            for (std::size_t b = a + 1; b < plan.size(); ++b)
+                CHECK(Dist(plan[a].x, plan[a].y, plan[b].x, plan[b].y) >= 11.0f);
+
+        // Every healer is already named: the grow is a no-op and leaves the plan as it is.
+        const std::vector<StandSeat> grown = plan;
+        CHECK(!ExtendStandPlan(plan, healerPoints, healers, lane));
+        CHECK(plan.size() == grown.size());
+        for (std::size_t i = 0; i < plan.size(); ++i)
+        {
+            CHECK(plan[i].id == grown[i].id && plan[i].valid == grown[i].valid);
+            CHECK(plan[i].x == grown[i].x && plan[i].y == grown[i].y && plan[i].z == grown[i].z);
+        }
+
+        // The plan built empty (the boss was dragged into the disk before any caster had threat) grows to the 7 ranged
+        // seats; the eighth ranged bot keeps the reactive dodge (its side has no free seat).
+        std::vector<StandSeat> empty = PlanStandSeats(rangedPoints, std::vector<StandBot>(), lane);
+        CHECK(empty.empty());
+        const std::vector<StandBot> ranged = {
+            { 11, -12029.88f, -1714.64f }, { 12, -12006.51f, -1714.87f }, { 13, -11995.05f, -1695.40f },
+            { 14, -12005.74f, -1675.60f }, { 15, -12027.94f, -1675.31f }, { 16, -12037.09f, -1682.91f },
+            { 17, -12040.94f, -1694.25f }, { 18, -12030.0f, -1715.0f }
+        };
+        CHECK(ExtendStandPlan(empty, rangedPoints, ranged, lane));
+        CHECK(empty.size() == 8);
+        int seatedRanged = 0;
+        int unseatedRanged = 0;
+        for (const StandSeat& seat : empty)
+            (seat.valid ? seatedRanged : unseatedRanged)++;
+        CHECK(seatedRanged == 7);
+        CHECK(unseatedRanged == 1);
+        CHECK(empty[7].id == 18 && !empty[7].valid);
+        for (std::size_t a = 0; a < empty.size(); ++a)
+            for (std::size_t b = a + 1; b < empty.size(); ++b)
+                if (empty[a].valid && empty[b].valid)
+                    CHECK(Dist(empty[a].x, empty[a].y, empty[b].x, empty[b].y) >= 11.0f);
+    }
+
+    // A newcomer is seated on its own side of the lane: one that joins on the far side gets a seat there, never on the
+    // other side's free spots.
+    {
+        BossStandRow plus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0, 5);
+        plus.releaseAnchor = 2;
+        BossStandRow minus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 1, 0, 0, -32, 1, 0, 5);
+        minus.releaseAnchor = 2;
+        BossStandRow release = Row(2, 100, 0, 8, StandRole::Ranged, 777, 0, 0, 100, 32, 1, 0);
+        const std::vector<BossStandRow> rows = { plus, minus, release };
+        const std::vector<const BossStandRow*> points = { &rows[0], &rows[1] };
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        CHECK(lane.valid);
+        std::vector<StandSeat> plan = PlanStandSeats(points, { { 1, 5, 30 } }, lane);
+        CHECK(plan.size() == 1 && plan[0].valid);
+        bool tie = false;
+        CHECK(StandSideOf(points, lane, { 0, plan[0].x, plan[0].y }, tie) == 0);
+        CHECK(ExtendStandPlan(plan, points, { { 1, 5, 30 }, { 2, 5, -30 } }, lane));
+        CHECK(plan.size() == 2);
+        for (const StandSeat& seat : plan)
+            CHECK(seat.valid);
+        bool far = false;
+        for (const StandSeat& seat : plan)
+            if (seat.id == 2)
+            {
+                far = true;
+                bool seatTie = false;
+                CHECK(StandSideOf(points, lane, { 0, seat.x, seat.y }, seatTie) == 1);
+            }
+        CHECK(far);
+        for (std::size_t a = 0; a < plan.size(); ++a)
+            for (std::size_t b = a + 1; b < plan.size(); ++b)
+                CHECK(Dist(plan[a].x, plan[a].y, plan[b].x, plan[b].y) >= 11.0f);
+    }
+
     // A plan nobody read for kBossStandPlanIdleMs is stale; the clock wraps.
     CHECK(!StandPlanStale(2999, 0));
     CHECK(StandPlanStale(3000, 0));

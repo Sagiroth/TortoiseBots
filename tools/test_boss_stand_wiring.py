@@ -282,12 +282,19 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue()", fn)
 
     def test_the_seats_come_from_one_plan_per_window(self):
-        # The seats of a window are planned once from the positions and kept for the window: no bot's seat flips while
-        # bots walk to theirs, and every bot of the role reads the same plan.
+        # The seats of a window are planned when the window opens, grown by the bots that join the fight later, never
+        # reshuffled: a seat once given never moves, and every bot of the role reads the same plan.
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         self.assertIn("PlanStandSeats(points, bots, lane)", fn)
         self.assertIn("StandPlanStale(nowMs, it->second.lastReadMs)", fn)
         self.assertIn("it->second.lastReadMs = nowMs;", fn)
+        # A bot that engages after the window opened grows the plan in the else of the stale check (the window's plan
+        # already exists and is fresh), under the same lock, before the read is stamped.
+        self.assertIn("else\n            ExtendStandPlan(it->second.seats, points, bots, lane);", fn)
+        self.assertLess(fn.index("plan.seats = PlanStandSeats(points, bots, lane);"),
+                        fn.index("ExtendStandPlan(it->second.seats, points, bots, lane);"))
+        self.assertLess(fn.index("ExtendStandPlan(it->second.seats, points, bots, lane);"),
+                        fn.index("it->second.lastReadMs = nowMs;"))
         self.assertNotIn("AssignStandSlot(", fn)
         declared = body(ACTIONS, "// The seat plan of an open window",
                         end="std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;")
