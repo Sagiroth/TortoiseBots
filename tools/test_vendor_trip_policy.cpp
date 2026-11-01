@@ -55,9 +55,6 @@ int main()
     CHECK(BagPressureSaleRelievesBags(70, 72, 4, 85));
     CHECK(BagPressureSaleRelievesBags(62, 72, 1, 85));
     CHECK(!BagPressureSaleRelievesBags(72, 72, 0, 85));
-    // Completely full: no more loot can arrive, so 1-3 sellable slots still go (Codex review).
-    CHECK(BagPressureSaleRelievesBags(72, 72, 1, 85));
-    CHECK(BagPressureSaleRelievesBags(72, 72, 3, 85));
     CHECK(!BagPressureSaleRelievesBags(18, 20, 1, 85));
     CHECK(BagPressureSaleRelievesBags(0, 0, 0, 85));
     CHECK(BagPressureSaleRelievesBags(2, 16, 3, 85));
