@@ -2407,7 +2407,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
     std::string travelName = getQualifier();
 
-    if (IsGuildOrderTravelName(travelName))
+    // Only with bot_events.csv on: the parent-name lookup can reach the database for an offline parent.
+    if (IsGuildOrderTravelName(travelName) && sPlayerbotAIConfig.hasLog("bot_events.csv"))
     {
         std::optional<TortoiseBots::GuildOrders::OrderRecord> logged =
             TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
@@ -2426,7 +2427,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 !sObjectMgr.GetPlayerNameByGUID(
                     ObjectGuid(HIGHGUID_PLAYER, logged->parentBotGuidLow), parentName))
                 parentName.clear();
-            sPlayerbotAIConfig.logEvent(ai, "GuildOrderRequest", travelName, logged ? leg : "-",
+            sPlayerbotAIConfig.logEvent(ai, "GuildOrderRequest", travelName, leg,
                 logged ? TortoiseBots::GuildOrders::OrderParentToken(
                     logged->parentBotGuidLow, parentName) : "-",
                 logged ? std::to_string(logged->itemId) : "0",
