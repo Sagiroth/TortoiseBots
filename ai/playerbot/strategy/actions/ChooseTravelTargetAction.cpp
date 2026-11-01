@@ -2810,6 +2810,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 {
                     if (slice.zoneId != farmZoneId || slice.spawns == 0)
                         continue;
+                    // A planned instance zone is never farmed solo: treat it
+                    // like an empty zone so the leg moves on instead of
+                    // parking on spots the search can never serve.
+                    if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(slice.mapId))
+                        continue;
                     bool const enemyHome = botTeam == ALLIANCE ? (slice.team & (1 << 1)) :
                         (slice.team & (1 << 0));
                     if (enemyHome)

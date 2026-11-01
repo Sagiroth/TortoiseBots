@@ -193,6 +193,11 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     if (!spell)
         return;
     uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    // One row per reagent: sibling components share base reagents (two
+    // Copper Tubes and four Handfuls of Bolts all need Copper Bars), so the
+    // rows the recursion appends add up instead of listing the same item
+    // twice. The delegated count then covers the whole tree.
+    size_t mergeFrom = out.size();
     for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
@@ -200,6 +205,15 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
         uint32_t reagentId = uint32_t(spell->Reagent[i]);
         CollectMissingReagents(ai, bot, reagentId, spell->ReagentCount[i] * casts, out, &snap);
     }
+    for (size_t i = mergeFrom; i < out.size(); ++i)
+        for (size_t j = i + 1; j < out.size();)
+            if (out[j].itemId == out[i].itemId)
+            {
+                out[i].count += out[j].count;
+                out.erase(out.begin() + j);
+            }
+            else
+                ++j;
     if (!sPlayerbotAIConfig.craftToolsAlways)
         for (uint32_t totem : spell->Totem)
             if (totem && !SnapshotBags(ai, snap, totem) && !SnapshotMail(bot, snap, totem))
