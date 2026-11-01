@@ -433,6 +433,12 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
         return { record->itemId, record->farmZoneId };
     if (record->type != OrderType::Craft)
         return { 0, 0 };
+    // The supply ladder's farm leg may farm a reagent of a sub-component
+    // (Mageweave for the trigger of Rocket Boots), which the direct-reagent
+    // lookup below never names: without order mode the search drops every
+    // planned zone as outgrown or across the sea.
+    if (record->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Farm && record->supplyItemId)
+        return { record->supplyItemId, record->farmZoneId };
 
     // Same reagent the "guild order farm item" value picks: one shared
     // function, so order mode and travel never farm different items.
