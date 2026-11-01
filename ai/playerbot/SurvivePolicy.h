@@ -214,6 +214,20 @@ namespace ai
         return isHybridSelfHealer && !inGroup && hasMana && manaPct >= lowManaPct;
     }
 
+    // Hopeless single fight (outnumbered escape): a lone attacker far above
+    // the bot is as unwinnable as two fair ones - a +6 mob versus the bot's
+    // own level hits the damage-vs-health curve past the point where the
+    // pool's fair-fight win rate holds (2026-11-01 window: +6-or-more PvE
+    // was 12.6 % of all deaths while fair fights were lost at killer 69 %
+    // HP). The count gate below stays, but a single attacker this far above
+    // counts as outnumbered. PvP attackers keep the old rule: players kite,
+    // lose interest and can be answered by guards, so a lone player never
+    // forces a flee on level gap alone.
+    inline bool IsHopelessSingleAttacker(bool attackerIsPlayer, int attackerLevel, int botLevel)
+    {
+        return !attackerIsPlayer && attackerLevel >= botLevel + 6;
+    }
+
     // Death telemetry: the deaths.csv 'adds' loop used to count victim-
     // filtered "all targets" entries, but SetDeathState drains the attacker
     // set and clears victim pointers before OnDeath runs, so it was
