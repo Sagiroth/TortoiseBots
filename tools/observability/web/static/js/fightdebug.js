@@ -640,6 +640,9 @@
       casts: num(b.casts) || 0,
       spells: (b.spells || []).map((s) => ({ n: s.n, c: num(s.c) || 0 }))
         .sort((x, y) => (y.c - x.c) || (x.n < y.n ? -1 : x.n > y.n ? 1 : 0)),
+      // Casts in the few seconds after combat ended (a meal, a mount, a stance swap): not fight casts.
+      tailSpells: (b.tail_spells || []).map((s) => ({ n: s.n, c: num(s.c) || 0 }))
+        .sort((x, y) => (y.c - x.c) || (x.n < y.n ? -1 : x.n > y.n ? 1 : 0)),
     };
   }
 

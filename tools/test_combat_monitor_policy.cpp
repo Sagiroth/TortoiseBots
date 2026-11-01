@@ -856,8 +856,284 @@ static void TestEventsRequeueKeepsOrder()
     CHECK(rounds > 1);   // the budget shrank at least once
 }
 
+// meal_in_tail_not_in_fight: a cast still held in the after-combat tail counts in
+// tail_spells, not in the fight's own spells, casts or heal casts, and its taunt
+// kind is not replayed as an event (the fight ended without a re-engage).
+static void TestMealInTailNotInFight()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnCast(1, "Heroic Strike", false, 1000);
+    b.SetInCombat(false, false, 20000);   // first quiet tick: the grace starts
+    CHECK(b.InFight());
+    b.OnCast(1, "Drink", true, 20500, 't', 777, "Magmadar");   // the run cleared its meal mark, the bot sits down
+    b.SetInCombat(false, false, 23000);   // 3 s of quiet ends the fight
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700023000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"spells\":[{\"n\":\"Heroic Strike\",\"c\":1}],\"tail_spells\":[{\"n\":\"Drink\",\"c\":1}]"));
+    size_t const tanky = p[0].find("\"name\":\"Tanky\"");
+    std::string const row = p[0].substr(tanky, p[0].find("\"name\":\"Healy\"") - tanky);
+    CHECK(Contains(row, "\"casts\":1"));
+    CHECK(!Contains(row, "\"casts\":2"));
+    CHECK(Contains(row, "\"heal_casts\":0"));
+    CHECK(Count(p[0], "\"n\":\"Drink\"") == 1);
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    for (LiveEvent const& e : events)
+        CHECK(e.kind != EventKind::Taunt && e.kind != EventKind::Interrupt);
+}
+
+// meal_after_reengage_counts: combat again inside the grace resets the tail, so the
+// meal is a fight cast (a gap between packs that re-engages within 3 s).
+static void TestMealAfterReengageCounts()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnCast(1, "Heroic Strike", false, 1000);
+    b.SetInCombat(false, false, 20000);   // quiet tick
+    b.SetInCombat(true, false, 21000);    // another pack pulls
+    b.OnCast(1, "Drink", false, 21500);
+    b.SetInCombat(false, false, 22000);
+    b.SetInCombat(false, false, 25000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700025000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"spells\":[{\"n\":\"Drink\",\"c\":1},{\"n\":\"Heroic Strike\",\"c\":1}],\"tail_spells\":[]"));
+    CHECK(Contains(p[0], "\"casts\":2"));
+}
+
+// tail_json_field: the truncated payload carries an empty tail list, and the full one
+// is bounded to eight entries, most cast first.
+static void TestTailJsonField()
+{
+    Book b;
+    std::vector<MemberInfo> m;
+    for (int i = 0; i < 40; ++i)
+        m.push_back({(uint32_t)(i + 1), std::string(200, static_cast<char>('A' + (i % 26))), "mage",
+            Role::Damage, i / 5});
+    b.SetMembers(m);
+    b.Start(0, 1700000000, BossCtx(), 7);
+    for (int i = 0; i < 40; ++i)
+        for (int j = 0; j < 50; ++j)
+            b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j) + std::string(60, 'x'),
+                false, 1500);
+    for (int i = 0; i < 200; ++i)
+        b.OnDeath(1, std::string(80, 'k'), 1.0f, 2.0f, 3.0f, (uint32_t)(1500 + i));
+    for (uint32_t e = 0; e < 500; ++e)
+        b.OnDamage(3, 0, 1, "Magey", 30000 + e, (uint64_t)(5000 + e), std::string(80, 'e'), 1600);
+    b.SetInCombat(false, false, 6000);
+    b.OnCast(1, "Drink", false, 6500);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"truncated\":true"));
+    CHECK(Contains(p[0], "\"tail_spells\":[]"));
+    CHECK(!Contains(p[0], "Drink"));
+
+    Book c;
+    c.SetMembers(Trio());
+    c.Start(0, 1700000000, BossCtx(), 2);
+    c.SetInCombat(false, false, 6000);
+    for (int i = 0; i < 10; ++i)
+        for (int k = 0; k <= i; ++k)
+            c.OnCast(1, "Tail" + std::to_string(i), false, 6500);
+    c.SetInCombat(false, false, 9000);
+    Seq seq2;
+    std::vector<std::string> q = c.TakeFightPayloads(1, 9, seq2.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(q.size() == 1);
+    std::string const tail = q[0].substr(q[0].find("\"tail_spells\":["));
+    CHECK(Count(tail, "\"n\":\"Tail") == 8);
+    CHECK(Contains(tail, "{\"n\":\"Tail9\",\"c\":10},{\"n\":\"Tail8\",\"c\":9}"));
+    CHECK(!Contains(tail, "\"n\":\"Tail1\""));
+
+    // The tail sorts by count alone: an AlwaysListed name is not pulled forward.
+    Book d;
+    d.SetMembers(Trio());
+    d.Start(0, 1700000000, BossCtx(), 3);
+    d.SetInCombat(false, false, 6000);
+    for (int i = 0; i < 3; ++i)
+        d.OnCast(1, "Drink", false, 6500);
+    d.OnCast(1, "Taunt", false, 6500);
+    d.SetInCombat(false, false, 9000);
+    std::vector<std::string> r = d.TakeFightPayloads(1, 9, seq2.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(r.size() == 1);
+    CHECK(Contains(r[0], "\"tail_spells\":[{\"n\":\"Drink\",\"c\":3},{\"n\":\"Taunt\",\"c\":1}]"));
+}
+
+// pending_bound: a re-engage folds every grace cast back, not just the last few the
+// serialized tail used to hold. Twenty held casts are all fight casts; past the raw
+// bound the per-spell counts still restore spells, casts and heal casts exactly.
+static void TestGraceCastsBeyondTailCapFoldBack()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnCast(1, "Heroic Strike", false, 1000);
+    b.SetInCombat(false, false, 20000);   // quiet tick: the grace starts
+    for (int i = 0; i < 20; ++i)
+        b.OnCast(1, "Drink", false, (uint32_t)(20500 + i));
+    b.SetInCombat(true, false, 21000);    // combat resumes: the gap was a lull
+    b.SetInCombat(false, false, 30000);
+    b.SetInCombat(false, false, 33000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700033000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"spells\":[{\"n\":\"Drink\",\"c\":20},{\"n\":\"Heroic Strike\",\"c\":1}]"));
+    CHECK(Contains(p[0], "\"tail_spells\":[]"));
+    size_t const tanky = p[0].find("\"name\":\"Tanky\"");
+    std::string const row = p[0].substr(tanky, p[0].find("\"name\":\"Healy\"") - tanky);
+    CHECK(Contains(row, "\"casts\":21"));
+    CHECK(Contains(row, "\"heal_casts\":0"));
+
+    // Past the raw bound: 64 held records plus aggregates keep the numbers exact.
+    Book c;
+    c.SetMembers(Trio());
+    c.Start(0, 1700000000, BossCtx(), 1);
+    c.SetInCombat(false, false, 6000);
+    for (size_t i = 0; i < 64; ++i)   // the raw pending bound
+        c.OnCast(1, "Drink", false, (uint32_t)(6500 + i));
+    for (int i = 0; i < 6; ++i)
+        c.OnCast(1, "Flash Heal", true, (uint32_t)(6600 + i));
+    c.SetInCombat(true, false, 7000);
+    c.SetInCombat(false, false, 20000);
+    c.SetInCombat(false, false, 23000);
+    Seq seq2;
+    std::vector<std::string> q = c.TakeFightPayloads(1, 9, seq2.fn(), 1700023000, "Cmdr", 123, 55, 409);
+    CHECK(q.size() == 1);
+    CHECK(Contains(q[0], "{\"n\":\"Drink\",\"c\":64},{\"n\":\"Flash Heal\",\"c\":6}"));
+    CHECK(Contains(q[0], "\"tail_spells\":[]"));
+    size_t const tanky2 = q[0].find("\"name\":\"Tanky\"");
+    std::string const row2 = q[0].substr(tanky2, q[0].find("\"name\":\"Healy\"") - tanky2);
+    CHECK(Contains(row2, "\"casts\":70"));
+    CHECK(Contains(row2, "\"heal_casts\":6"));
+
+    // The grace ends the fight: raw records and aggregates both stay in the tail.
+    Book d;
+    d.SetMembers(Trio());
+    d.Start(0, 1700000000, BossCtx(), 1);
+    d.SetInCombat(false, false, 6000);
+    for (size_t i = 0; i < 64; ++i)   // the raw pending bound
+        d.OnCast(1, "Drink", false, (uint32_t)(6500 + i));
+    for (int i = 0; i < 6; ++i)
+        d.OnCast(1, "Flash Heal", true, (uint32_t)(6600 + i));
+    d.SetInCombat(false, false, 9000);
+    CHECK(!d.InFight());
+    Seq seq3;
+    std::vector<std::string> r = d.TakeFightPayloads(1, 9, seq3.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(r.size() == 1);
+    CHECK(Contains(r[0], "\"tail_spells\":[{\"n\":\"Drink\",\"c\":64},{\"n\":\"Flash Heal\",\"c\":6}]"));
+    CHECK(Contains(r[0], "\"casts\":0"));
+    CHECK(Contains(r[0], "\"heal_casts\":0"));
+}
+
+// A re-engage replays every member's grace events oldest first across members,
+// not member by member: member order only breaks equal timestamps.
+static void TestReengageReplaysOldestFirst()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.SetInCombat(false, false, 20000);
+    b.OnCast(1, "Taunt", false, 21000, 't', 777, "Magmadar");     // later, first member
+    b.OnCast(2, "Fade", false, 20500, 'i', 778, "Magmadar");      // earlier, second member
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    CHECK(events.size() == 1 && events[0].kind == EventKind::Start);
+    b.SetInCombat(true, false, 22000);
+    std::vector<LiveEvent> replayed;
+    b.TakeEvents(replayed, dropped);
+    CHECK(replayed.size() == 2);
+    CHECK(replayed[0].kind == EventKind::Interrupt);
+    CHECK(replayed[0].guid == 2 && replayed[0].atMs == 20500);
+    CHECK(replayed[1].kind == EventKind::Taunt);
+    CHECK(replayed[1].guid == 1 && replayed[1].atMs == 21000);
+}
+
+// A cast between the quiet tick and a re-engage inside the grace is a fight cast:
+// it is held while the gap looks like the end, folded into spells, casts and the
+// rolling state when combat resumes, and its taunt is replayed as an event.
+static void TestQuietGapCastFoldedOnReengage()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnCast(1, "Heroic Strike", false, 1000);
+    b.SetInCombat(false, false, 20000);                  // quiet tick: the grace starts
+    b.OnCast(1, "Drink", false, 20500);                  // held
+    b.OnCast(1, "Taunt", false, 20600, 't', 777, "Magmadar");   // held, with its kind
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    CHECK(events.size() == 1 && events[0].kind == EventKind::Start);   // nothing replayed early
+    b.SetInCombat(true, false, 21000);                   // combat resumes: the gap was a lull
+    std::vector<LiveEvent> replayed;
+    b.TakeEvents(replayed, dropped);
+    CHECK(replayed.size() == 1);
+    CHECK(replayed[0].kind == EventKind::Taunt);
+    CHECK(replayed[0].spell == "Taunt" && replayed[0].target == 777 && replayed[0].atMs == 20600);
+    b.OnCast(3, "Fireball", false, 21500);
+    b.SetInCombat(false, false, 30000);
+    b.SetInCombat(false, false, 33000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700033000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"tail_spells\":[]"));
+    size_t const tanky = p[0].find("\"name\":\"Tanky\"");
+    std::string const row = p[0].substr(tanky, p[0].find("\"name\":\"Healy\"") - tanky);
+    CHECK(Contains(row, "\"casts\":3"));   // Heroic Strike, Drink and the Taunt, all fight casts
+    CHECK(Contains(row, "\"n\":\"Drink\",\"c\":1"));
+    CHECK(Contains(row, "\"n\":\"Taunt\",\"c\":1"));
+}
+
+// The tail rides the same payload, so it shrinks with the ladder: a fight that
+// fits at three spells stays non-truncated when the grace holds many expensive
+// casts, instead of growing back over the budget.
+static void TestTailCappedByLadderStep()
+{
+    Book b;
+    std::vector<MemberInfo> m;
+    for (int i = 0; i < 40; ++i)
+        m.push_back({(uint32_t)(i + 1), "Bot" + std::to_string(i), "mage", Role::Damage, 0});
+    b.SetMembers(m);
+    b.Start(0, 1700000000, BossCtx(), 1);
+    std::string const pad(100, 'x');
+    for (int i = 0; i < 40; ++i)
+        for (int j = 0; j < 12; ++j)
+            b.OnCast((uint32_t)(i + 1), "S" + std::to_string(i) + "_" + std::to_string(j) + pad, false, 1500);
+    b.SetInCombat(false, false, 6000);   // the quiet tick: the grace starts
+    for (int i = 0; i < 40; ++i)
+        for (int j = 0; j < 8; ++j)
+            b.OnCast((uint32_t)(i + 1), "T" + std::to_string(i) + "_" + std::to_string(j) + pad, false, 6500);
+    b.SetInCombat(false, false, 9000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(!Contains(p[0], "\"truncated\":true"));
+    CHECK(p[0].size() <= kPayloadByteBudget);
+    CHECK(Contains(p[0], "\"tail_spells\":[]"));
+    CHECK(!Contains(p[0], "\"n\":\"T0_"));
+}
+
 int main()
 {
+    TestMealInTailNotInFight();
+    TestMealAfterReengageCounts();
+    TestGraceCastsBeyondTailCapFoldBack();
+    TestReengageReplaysOldestFirst();
+    TestQuietGapCastFoldedOnReengage();
+    TestTailCappedByLadderStep();
+    TestTailJsonField();
     TestNonMemberIgnored();
     TestFightLifecycle();
     TestShortFightDropped();
