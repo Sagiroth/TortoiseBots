@@ -11,6 +11,8 @@
 #include "../../../../runtime/AltBotPolicy.h"
 #include "../../../../runtime/RunGivenItemRegistry.h"
 #include "../../../../runtime/GuildOrderStore.h"
+#include "../../../../runtime/GuildOrderProtectedItems.h"
+#include "playerbot/GuildOrderCraft.h"
 
 using namespace ai;
 
@@ -197,6 +199,27 @@ bool SellAction::Sell(Player* requester, Item* item)
     // item, supply item, whole known-recipe reagent tree).
     if (item && ai->GetBot()->GetGuildId() && GuildOrderConsumesItem(ai->GetBot(), item->GetProto()->ItemId))
         return false;
+    // Same set computed fresh on this map thread: a sale cannot be undone,
+    // so a stale or not yet computed stored set must not let one through.
+    if (item && ai->GetBot()->GetGuildId())
+    {
+        uint32 const itemId = item->GetProto()->ItemId;
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(ai->GetBot()->GetGUIDLow());
+        if (order && !order->cancelled && order->state == TortoiseBots::GuildOrders::OrderState::Working)
+        {
+            Player* owner = ai->GetBot();
+            std::unordered_set<uint32_t> kept;
+            TortoiseBots::GuildOrders::CollectOrderProtectedItems(order->itemId, false,
+                order->type == TortoiseBots::GuildOrders::OrderType::Craft, order->supplyItemId,
+                [owner](uint32_t parent) { return ai::KnownReagentsFor(owner, parent); }, kept);
+            if (kept.count(itemId))
+            {
+                sPlayerbotAIConfig.logEvent(ai, "OrderKeepMiss", item->GetProto()->Name1, std::to_string(itemId));
+                return false;
+            }
+        }
+    }
 
     std::ostringstream out;
     std::list<ObjectGuid> vendors = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest npcs")->Get();
