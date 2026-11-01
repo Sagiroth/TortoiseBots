@@ -40,6 +40,8 @@
 - Fixed: arms warriors cast Mortal Strike on cooldown and pool rage for it.
 - Fixed: warriors in raids no longer dance to Berserker Stance for a single-target Whirlwind.
 - Fixed: dps warriors in raids no longer Mocking Blow the tank's mob or walk off to Hamstring a mob on a healer when Piercing Howl is held back, and Fury warriors stay in Berserker Stance between fights.
+- Holy paladins heal a party member between 50 and 70 % health with Holy Light instead of Flash of Light, so their healing in raids matches a priest's instead of half of it.
+- Holy paladins healing from range no longer recast Seal of Wisdom between Judgements, which saves about 30 global cooldowns and their mana each raid.
 
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
