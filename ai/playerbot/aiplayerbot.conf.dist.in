@@ -1332,6 +1332,17 @@ AiPlayerbot.BotLogFile =
 # risk: bots levelling a profession from 1 to 300 on their own has not been tested.
 # AiPlayerbot.ProfessionsGrowWithLevel = 1
 
+# Pool bots with a profession at the specialization gate earn its specialization
+# spells directly (Engineering Goblin/Gnomish at 200, Blacksmithing Armorsmith/
+# Weaponsmith plus Axe/Hammer/Swordsmith at 200, Leatherworking Dragonscale/
+# Elemental/Tribal at 225, Turtle Jewelcrafting Gemology/Goldsmith at 225):
+# the quest chains players use are exclusive per branch, but bots never run
+# them, and the core enforces nothing between branches, so all branches
+# together are safe. Their spec-gated recipes land the same way (gated by the
+# matching spec spell). Only pool bots; real players are never touched.
+# 0 off, 1 one branch per bot (even/odd guid, never flips), 2 all branches.
+AiPlayerbot.BotProfessionSpecializations = 2
+
 #max limit of members in a guild (bots will leave guild if there are more members than this number)
 # AiPlayerbot.GuildMaxBotLimit = 1000
 

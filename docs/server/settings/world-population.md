@@ -46,6 +46,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
 | [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
 | [`AiPlayerbot.ProfessionsGrowWithLevel`](#aiplayerbotprofessionsgrowwithlevel) | `1` | Pool bots get profession skill and recipes with their level. |
+| [`AiPlayerbot.BotProfessionSpecializations`](#aiplayerbotbotprofessionspecializations) | `2` | Pool bots earn profession specialization spells at the skill gate. |
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
@@ -471,6 +472,17 @@ With this on, a pool bot's profession pair keeps pace with its level: skill arou
 With this off, bots still get their profession pair at level 5, but only as the real rank-1 Apprentice of each profession (skill 1, no automatic recipes). Further ranks and recipes come only from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
 
 Use at your own risk: bots levelling a profession from 1 to 300 on their own has not been tested.
+
+</details>
+
+### `AiPlayerbot.BotProfessionSpecializations`
+Pool bots with a profession at the specialization gate earn its specialization spells directly (Engineering Goblin/Gnomish at skill 200, Blacksmithing Armorsmith/Weaponsmith plus Axe/Hammer/Swordsmith at 200, Leatherworking Dragonscale/Elemental/Tribal at 225, Turtle Jewelcrafting Gemology/Goldsmith at 225): the quest chains players use are exclusive per branch, but bots never run them, and the core enforces nothing between branches, so knowing all of them together is safe. Spec-gated recipes land the same way, gated by the matching spec spell. Only pool bots; real players are never touched. No tailoring, alchemy or enchanting specialization spells exist in this core's data, so those professions get nothing.
+**Default:** `2` · **Values:** `0` off, `1` one branch per bot (even/odd guid, never flips), `2` all branches · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The grant runs on every profession skill pass (seed, level-up, login), so a bot that skills up to the gate earns the spells without visiting the quest chain. With `ProfessionsGrowWithLevel` on, the spec-gated schematics, patterns and plans land too; organic bots (`ProfessionsGrowWithLevel` off) earn them from the world instead.
 
 </details>
 
