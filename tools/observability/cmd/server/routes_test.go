@@ -1,9 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"tortoise-observability/web"
 )
 
 // TestTrackRouteWired guards the route, its parsing and its store call: the
@@ -64,6 +69,54 @@ func TestHistoryRoutesWired(t *testing.T) {
 	} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("main.go does not contain %q", want)
+		}
+	}
+}
+
+// TestTrashDataRouteServed guards the trash table's route: the page asks for /data/trash_abilities.json, so the
+// file must be in the binary (web.FS embeds web/data) and come back as the JSON the trash module reads.
+func TestTrashDataRouteServed(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `mux.Handle("/data/", noCache(http.FileServer(http.FS(web.FS))))`; !strings.Contains(string(src), want) {
+		t.Fatalf("main.go does not serve the embedded data folder: %q", want)
+	}
+	// noCache is a closure inside main(); the file server over the same embedded FS is what it wraps.
+	srv := httptest.NewServer(http.FileServer(http.FS(web.FS)))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/data/trash_abilities.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /data/trash_abilities.json = %d", resp.StatusCode)
+	}
+	var doc struct {
+		Maps []struct {
+			Key   string `json:"key"`
+			MapID int    `json:"mapId"`
+		} `json:"maps"`
+		Mobs map[string]struct {
+			Entry     int      `json:"entry"`
+			Danger    int      `json:"danger"`
+			Roles     []string `json:"roles"`
+			Abilities []struct {
+				SID int `json:"sid"`
+			} `json:"abilities"`
+		} `json:"mobs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatalf("the served trash table is no JSON: %v", err)
+	}
+	if len(doc.Mobs) == 0 || len(doc.Maps) == 0 {
+		t.Fatalf("the served trash table is empty: %d mobs, %d maps", len(doc.Mobs), len(doc.Maps))
+	}
+	for key, mob := range doc.Mobs {
+		if mob.Entry == 0 || mob.Danger < 1 || len(mob.Roles) == 0 || len(mob.Abilities) == 0 {
+			t.Errorf("mob %s is incomplete: %+v", key, mob)
 		}
 	}
 }

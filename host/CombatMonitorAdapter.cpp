@@ -14,7 +14,7 @@ namespace TortoiseBots {
 
 CombatMonitorUnitAdapter::CombatMonitorUnitAdapter()
     : UnitScript("tortoisebots_combat_monitor", { UNITHOOK_ON_DAMAGE, UNITHOOK_ON_HEAL,
-        UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_UNIT_DEATH })
+        UNITHOOK_MODIFY_HEAL_RECEIVED, UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_UNIT_DEATH })
 {
 }
 
@@ -75,6 +75,32 @@ void CombatMonitorUnitAdapter::OnHeal(Unit* healer, Unit* receiver, uint32& gain
     if (!healerOwner)
         return;
     CombatMonitorService::Instance().OnHeal(healerOwner, gain, overheal);
+}
+
+void CombatMonitorUnitAdapter::ModifyHealReceived(Unit* target, Unit* healer, uint32& heal,
+                                                  SpellEntry const* spellInfo)
+{
+    if (!CombatMonitorService::Instance().Enabled())
+        return;
+    if (!target || !healer || !heal || !spellInfo)
+        return;
+    if (!spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL))
+        return;
+    // A hybrid spell (Regrowth) reaches this hook twice: the direct half is
+    // applied inside the healer's own cast, with the cast timer already at 0,
+    // and OnHeal already counts it; a tick is the only other way in, so the
+    // cast still counting down (or no cast at all) means the tick.
+    if (spellInfo->HasEffect(SPELL_EFFECT_HEAL))
+        if (Spell* current = healer->FindCurrentSpellBySpellId(spellInfo->Id))
+            if (!current->GetCastedTime())
+                return;
+    uint32_t const healerOwner = OwnerLow(healer);
+    if (!healerOwner)
+        return;
+    uint32_t const missing = target->GetMaxHealth() > target->GetHealth()
+        ? target->GetMaxHealth() - target->GetHealth() : 0;
+    uint32_t const overheal = heal > missing ? heal - missing : 0;
+    CombatMonitorService::Instance().OnHeal(healerOwner, heal, overheal);
 }
 
 void CombatMonitorUnitAdapter::OnUnitEnterCombat(Unit* unit, Unit* /*enemy*/)

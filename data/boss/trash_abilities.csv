@@ -1,0 +1,137 @@
+map,entry,row,key,a,b,c,d,source
+zulgurub,15111,mob,,3,caster;summoner,3,,sql/base/tw_world_creature_template.sql:118
+zulgurub,15111,ability,24611,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:19245;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+zulgurub,15111,ability,24612,0,0,0,t=aoe;ground;int,sql/base/tw_world_spell_template.sql:19246;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+zulgurub,15111,ability,24621,0,0,0,summon=15141,sql/base/tw_world_spell_template.sql:19254;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15111,note,,"ZG walks 15-17: the Servant packs at steps 88-97 ended 4 of the 6 raids that reached them, 19-23 dead at the pull; killing a Servant opens its Portal of Madness (24621) on death, and that portal (15141) is where the Voidwalkers come from.",,,,
+zulgurub,15146,mob,,3,aoe,2,,sql/base/tw_world_creature_template.sql:118
+zulgurub,15146,ability,24614,0,0,0,t=self;self;int;r=5;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:19247;sql/base/tw_world_spell_template.sql:19248;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15146,ability,24616,0,0,0,t=aoe;r=15,sql/base/tw_world_spell_template.sql:19249;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15146,note,,"Shadow Shock is an instant 15 yd pulse around it that no kick stops; the Voidwalkers arrive through a Servant's Portal of Madness.",,,,
+zulgurub,11368,mob,,2,patrol,1,,sql/base/tw_world_creature_template.sql:118
+zulgurub,11368,ability,24023,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:18691;src/game/AI/GenericSpellAI.cpp:417;src/game/AI/GenericSpellAI.cpp:356
+zulgurub,11368,note,,"Charges in on aggro (creature_template spell slot 24023, cast by the generic_spell_ai script); it is also Jeklik's summon add, and the Bat and Bat Rider packs cost about 155 deaths over ZG walks 12-17.",,,,
+zulgurub,14750,mob,,3,aoe,3,,sql/base/tw_world_creature_template.sql:118
+zulgurub,14750,ability,5115,0,0,0,t=ally;self;r=10,sql/base/tw_world_spell_template.sql:4287;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:531
+zulgurub,14750,ability,3391,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:2741;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:547
+zulgurub,14750,ability,23511,0,0,0,t=aoe;aura;r=10,sql/base/tw_world_spell_template.sql:18273;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:509
+zulgurub,14750,ability,16128,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12435;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:539
+zulgurub,14750,ability,24024,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:18692;src/scripts/dungeons/zulgurub/boss_jeklik.cpp:526
+zulgurub,14750,note,,"ZG walks 12-17: 2 wipes and about 6 near wipes. Unstable Concoction (24024) is the rider's own bomb: below 40 % hp it blows itself up, 10 yd around it, 3 s cast, cannot be kicked; it also shouts Demoralizing Shout on aggro and buffs nearby allies with Battle Command.",,,,
+scholomance,10470,mob,,3,caster,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10470,ability,17165,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13363;sql/base/tw_world_creature_spells.sql:127
+scholomance,10470,ability,12739,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9982;sql/base/tw_world_creature_spells.sql:127
+scholomance,10470,note,,"Scholomance leg 0-2: the caster packs caused about 95 wipes over 10 runs and stopped 3 runs; both listed casts are kickable. Fear 12542 sits in its template spell slots but is never cast.",,,,
+scholomance,10471,mob,,3,healer;caster,3,,sql/base/tw_world_creature_template.sql:118
+scholomance,10471,ability,16592,0,0,0,t=self;self;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:12823;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10471,ability,17613,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:13735;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10471,ability,17615,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13736;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,ability,17165,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13363;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,ability,11443,0,0,0,t=victim;int;aura,sql/base/tw_world_spell_template.sql:9073;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,note,,"Dark Mending is a kickable heal, so the Acolyte dies first; it also mana burns and opens with Shadowform.",,,,
+scholomance,10499,mob,,3,caster;aoe,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10499,ability,17630,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13751;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10499,ability,17631,0,0,0,t=aoe;r=30,sql/base/tw_world_spell_template.sql:13752;sql/base/tw_world_creature_spells.sql:127
+scholomance,10499,note,,"Wail of Souls is an instant 30 yd AoE with a knockback and a mana drain, so no kick stops it.",,,,
+scholomance,10469,mob,,3,caster;aoe;runner,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10469,ability,15043,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:11666;sql/base/tw_world_creature_spells.sql:127
+scholomance,10469,ability,15499,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:11942;sql/base/tw_world_creature_spells.sql:127
+scholomance,10469,ability,15244,0,0,0,t=victim;cone,sql/base/tw_world_spell_template.sql:11750;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+scholomance,10469,note,,"Cone of Cold is a 10 yd frontal cone on a 10 s cooldown; the Adept flees at 15% hp.",,,,
+scholomance,10477,mob,,3,caster;runner,3,,sql/base/tw_world_creature_template.sql:118
+scholomance,10477,ability,14887,0,0,0,t=aoe;int;r=30,sql/base/tw_world_spell_template.sql:11525;sql/base/tw_world_creature_spells.sql:127
+scholomance,10477,ability,17616,0,0,0,t=aoe,sql/base/tw_world_spell_template.sql:13737;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10477,ability,12020,0,0,0,t=aoe;aura;r=5,sql/base/tw_world_spell_template.sql:9486;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10477,note,,"Shadow Bolt Volley is a kickable 30 yd AoE; Corpse Explosion comes on a kill and Call of the Grave at 30% hp.",,,,
+scholomance,10476,mob,,2,caster,1,,sql/base/tw_world_creature_template.sql:118
+scholomance,10476,ability,17151,0,0,0,t=ally;self,sql/base/tw_world_spell_template.sql:13349;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,ability,12739,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9982;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,ability,17234,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13431;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,note,,"Shadow Barrier shields a friend; the Necrolyte is the pack's other caster.",,,,
+stormwind_vault,60597,mob,,3,aoe,2,,sql/database_updates/world/20260510092659_world.sql:12426
+stormwind_vault,60597,ability,25778,0,0,0,t=aoe,sql/base/tw_world_spell_template.sql:20014;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_effect_mod.sql:58;sql/database_updates/world/20260510092659_world.sql:12426
+stormwind_vault,60597,ability,12169,0,0,0,t=self;self;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:9611;sql/base/tw_world_creature_spells.sql:127;sql/database_updates/world/20260510092659_world.sql:12426
+stormwind_vault,60597,note,,"Stormwind Vault first pull: about 14 wipes, and one run stopped at the third step after 12 wipes and 60 deaths; a later step 8 pull still brought 3-4 guards at once. Knock Away throws a bot out of the group.",,,,
+stormwind_vault,60596,mob,,3,caster;aoe,3,,sql/database_updates/world/20260510092659_world.sql:12425
+stormwind_vault,60596,ability,20720,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:16378;sql/base/tw_world_creature_spells.sql:127;sql/database_updates/world/20260510092659_world.sql:12425
+stormwind_vault,60596,ability,15253,0,0,0,t=aoe;int;r=10,sql/base/tw_world_spell_template.sql:11757;sql/base/tw_world_creature_spells.sql:127;sql/database_updates/world/20260510092659_world.sql:12425
+stormwind_vault,60596,note,,"The other half of that first pull: a kickable Arcane Bolt and an interruptible Arcane Explosion, so the construct goes down first.",,,,
+zulfarrak,5648,mob,,3,caster;runner,2,,sql/base/tw_world_creature_template.sql:117
+zulfarrak,5648,ability,12471,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9746;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,5648,ability,14032,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:10796;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,5648,ability,20798,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:16453;sql/base/tw_world_creature_ai_scripts.sql:58
+zulfarrak,5648,note,,"Antu'sul camp (steps 22-30): about 13 wipes and 3 runs stopped. Shadow Bolt is kickable, Demon Skin is its opening self-buff, and it runs at 15% hp.",,,,
+zulfarrak,5650,mob,,3,healer;summoner;runner,3,,sql/base/tw_world_creature_template.sql:117
+zulfarrak,5650,ability,11899,0,0,0,summon=8179;int,sql/base/tw_world_spell_template.sql:9438;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,5650,ability,17843,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:13918;sql/base/tw_world_creature_ai_scripts.sql:58
+zulfarrak,5650,ability,8264,0,0,0,summon=6017,sql/base/tw_world_spell_template.sql:6926;sql/base/tw_world_creature_ai_scripts.sql:58
+zulfarrak,5650,note,,"The camp's healer: a kickable Flash Heal and a Healing Ward (8179) that heals on; killing the ward makes it drop a Lava Spout Totem (6017). It runs at 15% hp.",,,,
+zulfarrak,7246,mob,,2,cc;patrol;runner,2,,sql/base/tw_world_creature_template.sql:118
+zulfarrak,7246,ability,11641,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:9248;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,7246,note,,"Patrols with the Velratha blood-drinker group. Hex turns a bot into a critter, so it stops fighting; the hunter runs at 15% hp.",,,,
+zulfarrak,7247,mob,,2,healer;runner,2,,sql/base/tw_world_creature_template.sql:118
+zulfarrak,7247,ability,11016,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:8846;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,7247,ability,7154,0,0,0,t=ally,sql/base/tw_world_spell_template.sql:5975;sql/base/tw_world_creature_ai_scripts.sql:58
+zulfarrak,7247,note,,"Heals its group with Dark Offering every 11-16 s and drains with a kickable Soul Bite; it runs at 15% hp.",,,,
+zulfarrak,5649,mob,,3,aoe;runner,3,,sql/base/tw_world_creature_template.sql:117
+zulfarrak,5649,ability,11898,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:9437;sql/base/tw_world_creature_spells.sql:127
+zulfarrak,5649,note,,"Velratha group: about 6 wipes, 3 of them in 6 runs. Blood Leech is an instant 10 yd drain - 78 of the 94 hits in one wipe - so no kick stops it, and the group runs at 10-13% hp.",,,,
+dire_maul,11471,mob,,3,caster;cc,2,,sql/base/tw_world_creature_template.sql:118
+dire_maul,11471,ability,16799,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13016;sql/base/tw_world_creature_spells.sql:127
+dire_maul,11471,ability,15244,0,0,0,t=victim;cone,sql/base/tw_world_spell_template.sql:11750;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+dire_maul,11471,ability,22744,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:17572;sql/base/tw_world_creature_spells.sql:127
+dire_maul,11471,ability,18100,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:14150;sql/base/tw_world_creature_ai_scripts.sql:58
+dire_maul,11471,note,,"Dire Maul West Eldreth hall (steps 128 and 147): about 11 wipes, five of them in a row at step 147. Frostbolt is kickable, Chains of Ice roots a bot where it stands, and it opens with Frost Armor.",,,,
+dire_maul,11472,mob,,3,aoe;cc,2,,sql/base/tw_world_creature_template.sql:118
+dire_maul,11472,ability,16838,0,0,0,t=aoe;aura;r=5,sql/base/tw_world_spell_template.sql:13053;sql/base/tw_world_creature_ai_scripts.sql:58
+dire_maul,11472,ability,22743,0,0,0,t=aoe;r=45,sql/base/tw_world_spell_template.sql:17571;sql/base/tw_world_creature_ai_scripts.sql:58
+dire_maul,11472,note,,"Banshee Shriek silences everyone around it and no kick stops it; Ribbon of Souls hits the whole group. Part of the Eldreth hall's ~11 wipes.",,,,
+dire_maul,11475,mob,,3,caster,2,,sql/base/tw_world_creature_template.sql:118
+dire_maul,11475,ability,15802,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:12163;sql/base/tw_world_creature_spells.sql:127
+dire_maul,11475,ability,17831,0,0,0,t=aoe;aura;r=5,sql/base/tw_world_spell_template.sql:13906;sql/base/tw_world_creature_ai_scripts.sql:58
+dire_maul,11475,note,,"Shrink is a kickable cast that shrinks a bot and cuts its stats; Call of the Grave is an instant 5 yd disease pulse every 15-20 s.",,,,
+dire_maul,11484,mob,,3,caster;aoe;summoner,3,,sql/base/tw_world_creature_template.sql:118
+dire_maul,11484,ability,13748,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:10605;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:729;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:809
+dire_maul,11484,ability,22940,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:17752;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:818
+dire_maul,11484,ability,22939,0,0,0,summon=14397,sql/base/tw_world_spell_template.sql:17751;src/scripts/dungeons/dire_maul/instance_dire_maul.cpp:752
+dire_maul,11484,note,,"Immol'thar hall: about 9 wipes, two of them at steps 441/442 and stopping a run there. Arcane Bolt is kickable, Arcane Blast is an instant 10 yd knockback no kick stops every 3.8-5.2 s, and on death it summons Mana Bursts (14397).",,,,
+sunken_temple,5263,mob,,2,caster,1,,sql/base/tw_world_creature_template.sql:117
+sunken_temple,5263,ability,16186,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12483;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5263,note,,"Jammal'an corridor (steps 897-915): about 11 wipes. Its Fevered Plague is a disease DoT on the tank.",,,,
+sunken_temple,5271,mob,,3,caster;fear;summoner,2,,sql/base/tw_world_creature_template.sql:117
+sunken_temple,5271,ability,12096,0,0,0,t=victim;int;aura,sql/base/tw_world_spell_template.sql:9548;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5271,ability,11639,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:9246;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5271,ability,12095,0,0,0,summon=8317,sql/base/tw_world_spell_template.sql:9547;sql/base/tw_world_creature_ai_scripts.sql:58
+sunken_temple,5271,note,,"Fear is kickable and it is what the corridor punishes; on death it summons its Deathwalker's Spirit (8317) into the fight.",,,,
+sunken_temple,5273,mob,,3,healer;summoner;runner,3,,sql/base/tw_world_creature_template.sql:117
+sunken_temple,5273,ability,12039,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:9492;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5273,ability,8362,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:7001;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5273,ability,9613,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:7815;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5273,ability,12151,0,0,0,summon=8324,sql/base/tw_world_spell_template.sql:9600;sql/base/tw_world_creature_spells.sql:127
+sunken_temple,5273,ability,12040,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:9493;sql/base/tw_world_creature_ai_scripts.sql:58
+sunken_temple,5273,note,,"Both heals are kickable, so the High Priest dies first; it summons an Atal'ai Skeleton (8324), shields itself below 30% hp and runs at 15% hp.",,,,
+blackfathom_deeps,4809,mob,,3,healer;runner,3,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4809,ability,8362,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:7001;sql/base/tw_world_creature_ai_scripts.sql:58
+blackfathom_deeps,4809,note,,"Kelris platform and hall (steps 554-584): about 6 wipes and 3 runs stopped. Its Renew is kickable, so the Acolyte dies first; it runs at 15% hp.",,,,
+blackfathom_deeps,4810,mob,,2,aoe;runner,2,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4810,ability,8374,0,0,0,t=victim;cone,sql/base/tw_world_spell_template.sql:7014;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4810,note,,"Arcing Smash is a frontal cone on everything in front of it; the Reaver runs at 15% hp.",,,,
+blackfathom_deeps,4811,mob,,2,caster;summoner;runner,2,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4811,ability,9672,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:7829;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4811,ability,8372,0,0,0,summon=6047,sql/base/tw_world_spell_template.sql:7012;sql/base/tw_world_creature_ai_scripts.sql:58
+blackfathom_deeps,4811,note,,"Summons an Aqua Guardian as it spawns; Frostbolt is kickable and it runs at 15% hp.",,,,
+blackfathom_deeps,4812,mob,,1,cc;runner,1,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4812,ability,18972,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:14829;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4812,ability,8365,0,0,0,t=self;self,sql/base/tw_world_spell_template.sql:7004;sql/base/tw_world_creature_ai_scripts.sql:58
+blackfathom_deeps,4812,note,,"Slows a bot with no cast to kick and grows itself below 30% hp; the least dangerous of the casters on the platform.",,,,
+blackfathom_deeps,4813,mob,,3,caster;mc;summoner,3,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4813,ability,7645,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:6356;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4813,ability,9613,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:7815;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4813,ability,12746,0,0,0,summon=8996,sql/base/tw_world_spell_template.sql:9989;sql/base/tw_world_creature_ai_scripts.sql:58
+blackfathom_deeps,4813,note,,"Dominate Mind is a kickable cast that charms a bot into fighting its own group; it summons a Voidwalker (8996) as it spawns.",,,,
+blackfathom_deeps,4814,mob,,2,caster;runner,1,,sql/base/tw_world_creature_template.sql:117
+blackfathom_deeps,4814,ability,13728,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:10587;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4814,ability,15039,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:11662;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4814,ability,12548,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:9810;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4814,ability,11824,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:9405;sql/base/tw_world_creature_spells.sql:127
+blackfathom_deeps,4814,note,,"Every shock it casts is instant, so no kick stops any of them; four damage schools on the same pull. It runs at 15% hp.",,,,

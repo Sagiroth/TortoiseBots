@@ -46,12 +46,16 @@ void ArcaneMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "arcane rupture",
         NextAction::array(0, new NextAction("arcane rupture", ACTION_NORMAL + 1), NULL)));
 
-    // The filler has no "shoot" fallback (a GCD or threat-veto refusal
-    // must not start the wand); wand only while its mana cost is out of
-    // reach, below every spell row (NukeUnaffordable, WandPolicy.h).
+    // Frostbolt before the wand: the channel costs 320-410 mana against
+    // Frostbolt's 130-195, so a mage that cannot afford missiles but can
+    // afford Frostbolt (the common middle of a kited fight) wanded at ~15
+    // DPS instead of nuking (pool: arcane mages died OOM at 90% mob HP).
+    // Frostbolt IMPOSSIBLE (still OOM, moving, GCD) falls through to the
+    // wand below every spell row as before.
     triggers.push_back(new TriggerNode(
         "arcane missiles unaffordable",
-        NextAction::array(0, new NextAction("shoot", ACTION_DEFAULT), NULL)));
+        NextAction::array(0, new NextAction("frostbolt", ACTION_DEFAULT),
+                             new NextAction("shoot", ACTION_DEFAULT), NULL)));
 }
 
 void ArcaneMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

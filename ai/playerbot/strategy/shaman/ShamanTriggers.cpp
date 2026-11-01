@@ -11,6 +11,8 @@ std::list<std::string> ShamanWeaponTrigger::spells;
 
 bool ShamanWeaponTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     // Upkeep must survive every level: before this the strategies queued one
     // fixed imbue (windfury for enhancement, flametongue elsewhere) while this
     // trigger stayed true on any known imbue, so the cast failed every tick

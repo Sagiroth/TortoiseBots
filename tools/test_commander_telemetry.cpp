@@ -549,6 +549,17 @@ void TestAuraSelection()
     Check(UnitFlags(false, false, false, false, false).empty(), "a calm unit has no flags");
     Check(UnitFlags(true, true, true, true, true) == "nihde", "the flags are in their fixed order");
     Check(UnitFlags(false, false, true, false, true) == "he", "only the flags that hold are written");
+
+    Check(ImmuneToAllSchools(FoldImmuneSchools(std::vector<int32_t>{1, 126})),
+        "two auras that together cover every school are full immunity");
+    Check(!ImmuneToAllSchools(FoldImmuneSchools(std::vector<int32_t>{1})),
+        "one physical-only aura is not full immunity");
+    Check(!ImmuneToAllSchools(FoldImmuneSchools(std::vector<int32_t>{126})),
+        "the magic schools without physical are not full immunity");
+    Check(ImmuneToAllSchools(FoldImmuneSchools(std::vector<int32_t>{0xFF})),
+        "bits above the seven schools are ignored");
+    Check(!ImmuneToAllSchools(FoldImmuneSchools(std::vector<int32_t>{})),
+        "no immunity aura is not full immunity");
 }
 
 // The boss state rides an overlay row only: its auras (capped) and flag letters; an ordinary mob carries neither.

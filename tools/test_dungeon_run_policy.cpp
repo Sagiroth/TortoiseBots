@@ -20586,6 +20586,7 @@ static UnitFact PatrolUnit(std::uint64_t guid, std::uint32_t entry, float dist, 
     u.losLead = los;
     u.z = kPatrolPullFloorZ;
     u.formation = formation;
+    u.patrols = true; // a patrolling formation unit (UnitFact::patrols)
     return u;
 }
 
@@ -20714,13 +20715,18 @@ static void TestPatrolStandPullHoldsForAResidueUnit()
     CHECK(r.shotStandFor == 0);
     f.packResidue.front().distLead = 22.0f;
     CHECK(Tick(r, f) == "pullback 9");
-    // A static residue unit out of shot never comes to the stand: the residue pull handles it as before (no hold).
+    // A static residue unit out of shot never comes to the stand: one tick names it, then the residue pull handles it
+    // as before (no hold).
     Run still = Start(&plan, 1);
     Facts s = PatrolPullFacts(80.0f);
     s.packClearMarginYd = 10.0f;
     s.packResidue = s.units;
+    s.packResidue.front().patrols = false;
     s.units.clear();
-    Tick(still, s);
+    CHECK(Tick(still, s).empty()); // one tick names it (Run::standPullStatic) ...
+    CHECK(still.note == "patrol pull: not waiting for units that walk no patrol and stand out of the 24.0 yd shot "
+        "(14750 0x0000000000000009 80.0 yd): the step pulls them as a plain pull");
+    Tick(still, s); // ... then the residue pull handles it as before (no hold)
     CHECK(still.note.find("patrol pull") == std::string::npos);
 }
 
@@ -20823,6 +20829,232 @@ static void TestPatrolStandPullCeilingPauses()
         "in 600 s: pull it, then .bot run resume (the step then pulls as a plain pull), or .bot run skip");
     CHECK(Resume(r));
     Tick(r, f); // the plain pull: with the pull stand key on, its firing stand read (HoldForShot), no patrol wait
+    CHECK(r.state == State::Running && r.shotStandFor == 9 && r.note.find("patrol pull") == std::string::npos);
+}
+
+// ZG walk 19 step 33: the pack's only unit left walks no patrol (a static Bat Rider 6.6 yd inside the radius) and stands
+// out of the tank's shot: one tick names it, then the row pulls it as a plain pull; no 600 s wait, no pause.
+static void TestPatrolStandPullSkipsAStaticUnitOutOfShot()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.7f);
+    f.units.front().patrols = false;
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "patrol pull: not waiting for units that walk no patrol and stand out of the 24.0 yd shot "
+        "(14750 0x0000000000000009 40.7 yd): the step pulls them as a plain pull");
+    CHECK(r.standPullMs == 0 && r.standPullStatic.count(9) == 1);
+    Tick(r, f); // the plain pull: with the pull stand key on, its firing stand read (HoldForShot)
+    CHECK(r.state == State::Running && r.shotStandFor == 9 && r.note.find("patrol pull") == std::string::npos);
+    CHECK(r.standPullMs == 0);
+}
+
+// A static kill_first unit out of shot and a patrolling bat: the gate names the static one once, then waits for the
+// patrol (not for the static one, which the kill_first rank picked before).
+static void TestPatrolStandPullStaticUnitDoesNotHideAPatrol()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.front().patrols = false;
+    f.units.push_back(PatrolUnit(10, 11368, 60.0f, 100));
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("(14750 0x0000000000000009 40.0 yd)") != std::string::npos);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "patrol pull: waiting at the stand for 11368 0x000000000000000a to come within 24.0 yd (now 60.0 yd)");
+}
+
+// A static unit in shot from the stand is pulled from the stand, as before.
+static void TestPatrolStandPullStaticUnitInShotPullsFromTheStand()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(22.0f);
+    f.units.front().patrols = false;
+    CHECK(Tick(r, f) == "pullback 9");
+    CHECK(r.standPullStatic.empty());
+}
+
+// Once left to the plain pull, the static unit is not the gate's again when the firing stand puts it in shot: no walk
+// back to the stand (which would loop between the stand and the firing stand).
+static void TestPatrolStandPullStaticUnitStaysAPlainPull()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.front().patrols = false;
+    f.standPatrols.clear();
+    Tick(r, f); // the note
+    Facts there = PatrolPullFacts(20.0f); // at a firing stand 14 yd off the stand, the unit in shot
+    there.units.front().patrols = false;
+    there.standPatrols.clear();
+    there.leadX = -12236.0f;
+    CHECK(Tick(r, there) == "pullback 9"); // the plain pull goes out from where the party stands, not back to the stand
+    CHECK(r.standPullStatic.count(9) == 1); // the set kept it out of the gate
+    CHECK(r.note.find("patrol pull") == std::string::npos);
+}
+
+// A spawn-owned patroller of the row that walks no patrol and stands out of the tank's shot: the patroller list has
+// the same rule as the row's units (one tick names it, Run::standPullStatic), not the gate's 600 s wait (the plain
+// path's own patroller wait, WaitForPatroller, still runs from the next tick, as before this branch).
+static void TestPatrolStandPullStaticPatrollerIsNotWaitedFor()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.packClearMarginYd = 10.0f;
+    f.units.clear();
+    f.patrollers = {PatrolUnit(11, 11368, 40.0f, 100)};
+    f.patrollers.front().patrols = false;
+    f.patrollers.front().spawnOwned = true;
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "patrol pull: not waiting for units that walk no patrol and stand out of the 24.0 yd shot "
+        "(11368 0x000000000000000b 40.0 yd): the step pulls them as a plain pull");
+    CHECK(r.standPullStatic.count(11) == 1);
+    CHECK(r.patrolWaitMs == 0); // no WaitForPatroller wait for it
+}
+
+// A unit judged while the party is off the stand is considered as before (the walk back brings the party to the stand):
+// only at the stand does the gate judge it unable to come. A static unit in shot from the stand is then the gate's
+// again (the pick), and the clearance rule holds the pull.
+static void TestPatrolStandPullStaticUnitJudgedAtTheStand()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.front().patrols = false;
+    f.leadX = -12238.0f; // 12 yd off the stand
+    f.standPatrols.push_back(PatrolUnit(20, 11368, 30.0f, 200));
+    CHECK(Tick(r, f) == "move -12250.0 -1497.5 132.8"); // back to the stand first: nothing judged here
+    CHECK(r.standPullStatic.empty());
+    Facts at = PatrolPullFacts(22.0f); // at the stand, the unit in shot
+    at.units.front().patrols = false;
+    at.standPatrols.push_back(PatrolUnit(20, 11368, 30.0f, 200));
+    CHECK(Tick(r, at).empty());
+    CHECK(r.note == "patrol pull: 14750 0x0000000000000009 is in shot (22.0 yd), waiting for 11368 0x0000000000000014 of another patrol, 30.0 yd "
+        "from the lead bot, to walk off (clear at 40.0 yd, 30.0 yd from the way)");
+    CHECK(r.standPullStatic.empty());
+}
+
+// A static unit left to the plain pull (Run::standPullStatic) still pulls past the same clearance the gate gives any
+// pull: another patrol near the lead bot holds the row, and with it gone the plain pull goes out.
+static void TestPatrolStandPullStaticUnitWaitsForAnotherPatrol()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.front().patrols = false;
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty()); // the one-tick note: the unit is left to the plain pull
+    CHECK(r.standPullStatic.count(9) == 1);
+    // The glue reads the other patrols on a row with a static unit too (ReadRunFacts).
+    Facts near = PatrolPullFacts(40.0f);
+    near.units.front().patrols = false;
+    near.standPatrols = {PatrolUnit(20, 11368, 30.0f, 200)};
+    CHECK(Tick(r, near).empty());
+    CHECK(r.note == "patrol pull: waiting for 11368 0x0000000000000014 of another patrol, 30.0 yd from the lead bot, "
+        "to walk off before the units that walk no patrol are pulled (clear at 40.0 yd, 30.0 yd from the way)");
+    CHECK(r.state == State::Running && r.standPullMs == kTickMs);
+    Facts gone = near;
+    gone.standPatrols.clear();
+    Tick(r, gone); // the plain pull: with the pull stand key on, its firing stand read (HoldForShot)
+    CHECK(r.state == State::Running && r.shotStandFor == 9 && r.note.find("patrol pull") == std::string::npos);
+}
+
+// Two static units left to the plain pull, the first in fact order clear and the second (not first) with another patrol
+// on its way: the clearance checks every unit of the set the plain pull could still choose (its own pick and kill order
+// need not take the first listed one), so the row holds on the patrol of the second. With that patrol gone, the plain
+// pull goes out.
+static void TestPatrolStandPullStaticClearanceChecksEverySetUnit()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.clear();
+    UnitFact west = PatrolUnit(9, 14750, 40.0f, 100);   // 40 yd west of the lead bot: the first in fact order
+    west.patrols = false;
+    west.x = -12290.0f;
+    west.y = -1497.5f;
+    UnitFact east = PatrolUnit(10, 11368, 40.0f, 100);  // 40 yd east
+    east.patrols = false;
+    east.x = -12210.0f;
+    east.y = -1497.5f;
+    f.units = {west, east};
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty()); // one tick names both: the step pulls them as a plain pull
+    CHECK(r.note == "patrol pull: not waiting for units that walk no patrol and stand out of the 24.0 yd shot "
+        "(14750 0x0000000000000009 40.0 yd, 11368 0x000000000000000a 40.0 yd): the step pulls them as a plain pull");
+    CHECK(r.standPullStatic.count(9) == 1 && r.standPullStatic.count(10) == 1);
+    // A patrol 43 yd from the lead bot (past the 40 yd clearance) 3 yd off the way to the SECOND unit: 43 yd off the
+    // way to the first (its way runs east, the patrol sits west), so the first unit's clearance is clear.
+    Facts near = f;
+    near.standPatrols = {PatrolUnit(20, 11368, 43.0f, 200)};
+    near.standPatrols.front().x = -12207.0f;
+    near.standPatrols.front().y = -1497.5f;
+    CHECK(Tick(r, near).empty());
+    CHECK(r.note == "patrol pull: waiting for 11368 0x0000000000000014 of another patrol, 43.0 yd from the lead bot "
+        "and 3.0 yd from the pull's way, to walk off before the units that walk no patrol are pulled (clear at 40.0 yd, "
+        "30.0 yd from the way)");
+    CHECK(r.state == State::Running && r.standPullMs == kTickMs);
+    Facts gone = near;
+    gone.standPatrols.clear();
+    Tick(r, gone); // the plain pull: with the pull stand key on, its firing stand read (HoldForShot)
+    CHECK(r.state == State::Running && r.shotStandFor == 9 && r.note.find("patrol pull") == std::string::npos);
+}
+
+// A unit of the set the plain pull can no longer choose (evading) is no part of the clearance, even with another patrol
+// on its way: the row does not hold for it (PickPackPull skips it too), and the pulling unit's own clearance decides.
+static void TestPatrolStandPullStaticClearanceSkipsANonPullableUnit()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.clear();
+    UnitFact west = PatrolUnit(9, 14750, 40.0f, 100);   // 40 yd west: the plain pull's kill_first pick
+    west.patrols = false;
+    west.x = -12290.0f;
+    west.y = -1497.5f;
+    UnitFact east = PatrolUnit(10, 11368, 40.0f, 100);  // 40 yd east: pullable, no patrol on its way
+    east.patrols = false;
+    east.x = -12210.0f;
+    east.y = -1497.5f;
+    f.units = {west, east};
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty()); // the one-tick note: both left to the plain pull
+    CHECK(r.standPullStatic.count(9) == 1 && r.standPullStatic.count(10) == 1);
+    Facts evading = f;
+    evading.units.front().evading = true; // running home: the plain pull cannot choose it any more
+    evading.standPatrols = {PatrolUnit(20, 11368, 43.0f, 200)}; // 3 yd off the evading unit's way, past the clearance
+    evading.standPatrols.front().x = -12293.0f;
+    evading.standPatrols.front().y = -1497.5f;
+    CHECK(Tick(r, evading).empty()); // no hold for the unit that cannot be pulled: the plain pull goes out
+    CHECK(r.note.find("patrol pull") == std::string::npos);
+    CHECK(r.state == State::Running && r.shotStandFor == 10 && r.standPullMs == 0);
+}
+
+// The clearance wait of a static unit counts toward the same 600 s: the run pauses once, and after a resume the row
+// pulls as a plain pull (never a new forever-hold).
+static void TestPatrolStandPullStaticUnitCeilingPauses()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.units.front().patrols = false;
+    f.standPatrols.clear();
+    CHECK(Tick(r, f).empty()); // the one-tick note
+    Facts held = PatrolPullFacts(40.0f);
+    held.units.front().patrols = false;
+    held.standPatrols = {PatrolUnit(20, 11368, 30.0f, 200)};
+    for (std::uint32_t i = 0; i < kStandPullWaitMs / kTickMs - 1 && r.state == State::Running; ++i)
+        CHECK(Tick(r, held).empty());
+    Tick(r, held);
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "patrol pull: the units that walk no patrol could not be pulled with no other patrol within 40.0 yd "
+        "in 600 s: pull them, then .bot run resume (the step then pulls as a plain pull), or .bot run skip");
+    CHECK(Resume(r));
+    Tick(r, held); // the plain pull: the firing stand read (HoldForShot), no patrol wait
     CHECK(r.state == State::Running && r.shotStandFor == 9 && r.note.find("patrol pull") == std::string::npos);
 }
 
@@ -26397,6 +26629,16 @@ int main()
     TestPatrolStandPullGathersWhileItWaits();
     TestPatrolStandPullNoRangedPullPullsAsBefore();
     TestPatrolStandPullCeilingPauses();
+    TestPatrolStandPullSkipsAStaticUnitOutOfShot();
+    TestPatrolStandPullStaticUnitDoesNotHideAPatrol();
+    TestPatrolStandPullStaticUnitInShotPullsFromTheStand();
+    TestPatrolStandPullStaticUnitStaysAPlainPull();
+    TestPatrolStandPullStaticPatrollerIsNotWaitedFor();
+    TestPatrolStandPullStaticUnitJudgedAtTheStand();
+    TestPatrolStandPullStaticUnitWaitsForAnotherPatrol();
+    TestPatrolStandPullStaticClearanceChecksEverySetUnit();
+    TestPatrolStandPullStaticClearanceSkipsANonPullableUnit();
+    TestPatrolStandPullStaticUnitCeilingPauses();
     TestPatrolStandPullParamSetsTheClearance();
     TestPatrolStandPullOffInCombat();
     TestPlainPullIgnoresOtherPatrols();

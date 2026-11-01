@@ -52,6 +52,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RaidLayoutPolicy.h"
@@ -1485,13 +1486,43 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
     return unit;
 }
 
+// A unit's boss/elite/rare letter as the wire carries it (CommanderTelemetry::RankKind); 0 for a player or an ordinary unit.
+static char ViewRankOf(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    if (!creature)
+        return 0;
+    return CommanderTelemetry::RankKind(creature->GetCreatureInfo()->rank,
+        creature->HasExtraFlag(CREATURE_FLAG_EXTRA_INSTANCE_BIND),
+        ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry()));
+}
+
 // hostileOnly: leave out a unit the bot does not react to as hostile (the
 // first pass over the sight lists, so neutrals never take a slot from an enemy).
 void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::View::HostileSet& taken,
-    Player* bot, ObjectGuid guid, bool hostileOnly = false)
+    std::vector<ObjectGuid>& nonBosses, Player* bot, ObjectGuid guid,
+    bool hostileOnly = false, bool bossOnly = false)
 {
     if (taken.Full() || guid.IsEmpty() || taken.Contains(guid.GetRawValue()))
         return;
+    if (bossOnly)
+    {
+        // A guid's rank does not change within a frame, so a non-boss a bot's
+        // lists repeat is dropped here before any unit lookup.
+        if (std::find(nonBosses.begin(), nonBosses.end(), guid) != nonBosses.end())
+            return;
+        Map* map = bot->GetMap();
+        Unit* seen = map ? map->GetUnit(guid) : nullptr;
+        // A guid that does not resolve here (a stale list, another instance
+        // copy) says nothing about the unit; only this occurrence is skipped.
+        if (!seen)
+            return;
+        if (ViewRankOf(seen) != 'b')
+        {
+            nonBosses.push_back(guid);
+            return;
+        }
+    }
     Unit* unit = SeenHostile(bot, guid);
     if (!unit)
         return;
@@ -1522,9 +1553,7 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
         unit->HasUnitState(UNIT_STAT_CONFUSED), unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
     hostile->level = unit->GetLevel();
     if (creature)
-        hostile->rank = CommanderTelemetry::RankKind(creature->GetCreatureInfo()->rank,
-            creature->HasExtraFlag(CREATURE_FLAG_EXTRA_INSTANCE_BIND),
-            ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry()));
+        hostile->rank = ViewRankOf(unit);
     // What kind of unit it is: fields the unit and its template already hold
     // (no lookup, no scan).
     hostile->reaction = reaction <= REP_HOSTILE ? 'h' : (reaction >= REP_FRIENDLY ? 'f' : 'n');
@@ -1554,6 +1583,7 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
 {
     static std::vector<Player*> bots;
     static RemoteCommander::View::HostileSet taken;
+    static std::vector<ObjectGuid> nonBosses;
     static std::list<ObjectGuid> cached;
 
     snapshot.Clear();
@@ -1602,6 +1632,24 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
     }
 
     taken.Clear();
+    nonBosses.clear();
+    // Bosses first: a boss any bot fights, or that fights a bot, keeps its row however many adds are near (24 rows at most).
+    for (Player* bot : bots)
+    {
+        if (taken.Full())
+            break;
+        if (!bot->IsInWorld() || !bot->IsAlive())
+            continue;
+        if (Unit* victim = bot->GetVictim())
+            AddViewHostile(snapshot, taken, nonBosses, bot, victim->GetObjectGuid(), false, true);
+        AddViewHostile(snapshot, taken, nonBosses, bot, bot->GetTargetGuid(), false, true);
+        for (Unit* attacker : bot->GetAttackers())
+            if (attacker)
+                AddViewHostile(snapshot, taken, nonBosses, bot, attacker->GetObjectGuid(), false, true);
+        ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "attackers", cached);
+        for (ObjectGuid const& guid : cached)
+            AddViewHostile(snapshot, taken, nonBosses, bot, guid, false, true);
+    }
     for (Player* bot : bots)
     {
         if (taken.Full())
@@ -1610,15 +1658,15 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
             continue;
         // What it fights first, then what it merely sees.
         if (Unit* victim = bot->GetVictim())
-            AddViewHostile(snapshot, taken, bot, victim->GetObjectGuid());
-        AddViewHostile(snapshot, taken, bot, bot->GetTargetGuid());
+            AddViewHostile(snapshot, taken, nonBosses, bot, victim->GetObjectGuid());
+        AddViewHostile(snapshot, taken, nonBosses, bot, bot->GetTargetGuid());
         for (Unit* attacker : bot->GetAttackers())
             if (attacker)
-                AddViewHostile(snapshot, taken, bot, attacker->GetObjectGuid());
+                AddViewHostile(snapshot, taken, nonBosses, bot, attacker->GetObjectGuid());
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         ReadCachedGuidList(ai, "attackers", cached);
         for (ObjectGuid const& guid : cached)
-            AddViewHostile(snapshot, taken, bot, guid);
+            AddViewHostile(snapshot, taken, nonBosses, bot, guid);
     }
     // Then everything the bots' own sight lists hold, up to the cap: the
     // hostile ones first, the neutral ones (marked n) with the room left.
@@ -1631,7 +1679,7 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
                 continue;
             ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "possible targets", cached);
             for (ObjectGuid const& guid : cached)
-                AddViewHostile(snapshot, taken, bot, guid, hostileOnly);
+                AddViewHostile(snapshot, taken, nonBosses, bot, guid, hostileOnly);
         }
 }
 
@@ -8850,16 +8898,25 @@ uint64 RunFormationOf(Creature* creature)
     return creature->GetObjectGuid().GetRawValue();
 }
 
-// A creature walks a patrol: its own default movement is WAYPOINT, or it is a formation member whose living leader's is.
+// A creature walks a patrol: its own default movement is WAYPOINT, or it is a formation member whose walk its leader
+// drives. The walk is judged by the formation's ORIGINAL leader: CreatureGroup::OnMemberDied (the core) promotes the
+// first living member to temporary leader and drives it with MoveWaypointAsDefault, which leaves the promoted
+// leader's own default movement IDLE, so judging by the current leader would call a live patrol static after its
+// waypoint leader died (the temp leader and its followers read IDLE). Dead creatures stay in the map until they
+// respawn, so the original leader is still found. The current leader (the creature itself or a promoted one) must be
+// alive: its death stops the walk.
 bool RunWalksPatrol(Creature* creature)
 {
     if (creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE)
         return true;
-    if (CreatureGroup* group = creature->GetCreatureGroup())
-        if (group->IsFormation() && group->GetLeaderGuid() != creature->GetObjectGuid())
-            if (Creature* leader = creature->GetMap()->GetCreature(group->GetLeaderGuid()))
-                return leader->IsAlive() && leader->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
-    return false;
+    CreatureGroup* const group = creature->GetCreatureGroup();
+    if (!group || !group->IsFormation())
+        return false;
+    Creature* const leader = creature->GetMap()->GetCreature(group->GetLeaderGuid());
+    if (!leader || !leader->IsAlive())
+        return false;
+    Creature* const original = creature->GetMap()->GetCreature(group->GetOriginalLeaderGuid());
+    return original && original->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
 }
 
 // A stand-pull pull row's other patrols (DungeonRun::Facts::standPatrols, PatrolStandPullGate): living hostile
@@ -9773,9 +9830,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     ReadTimeSinkWays(slot, lead, f);
     ReadPullStand(slot, lead, f);
     // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
-    // the pack in the tank's shot), not on every tick of the wait.
+    // the pack in the tank's shot), not on every tick of the wait. A row that left a unit of the pack to the plain pull
+    // (Run::standPullStatic) reads them too: its plain pull still needs the clearance.
     if (!f.anyInCombat && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step] &&
-        step->kind == ai::PlanStepKind::Pull && TortoiseBots::DungeonRun::StandPullPackInShot(f))
+        step->kind == ai::PlanStepKind::Pull &&
+        (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))
         ReadStandPatrols(lead, f);
     ReadRunNeedFacts(slot, lead, f);
 }
@@ -10640,6 +10699,25 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);
     // The combat monitor's 1 Hz sample of this run's fight (task A8b).
     RefreshCombatMonitor(commanderRaw, *binding, lead, bots, facts, slot);
+    // The same fact the run's own rest order waits for, handed to the bots:
+    // their meal gate cannot see a straggler or a tick without a victim, and
+    // a timestamp expires by itself after a stop, wipe or unbind. A tick that
+    // sees no fight clears it at once, or the hold still live on the next
+    // tick would refuse the run's own rest order. `| 1` keeps a computed 0
+    // from reading as "never set" across the timer wrap.
+    if (facts.anyInCombat)
+    {
+        uint32 const until = WorldTimer::getMSTime() + ai::RUN_FIGHT_HOLD_MS;
+        for (Player* bot : bots)
+            if (bot && bot->IsAlive())
+                if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+                    botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(int32(until | 1));
+    }
+    else
+        for (Player* bot : bots)
+            if (bot && bot->IsAlive())
+                if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+                    botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(0);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
     std::string const order = slot.playerLed.on
@@ -12438,9 +12516,14 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
             reads.push_back(AuraReadOf(holder));
     mob.auras = CommanderTelemetry::SelectUnitAuras(reads);
     Creature* creature = unit->ToCreature();
+    std::vector<int32> immuneMasks;
+    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_SCHOOL_IMMUNITY))
+        if (aura)
+            immuneMasks.push_back(aura->GetModifier()->m_miscvalue);
+    uint32 const immuneMask = CommanderTelemetry::FoldImmuneSchools(immuneMasks);
     mob.flags = CommanderTelemetry::UnitFlags(
         unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE),
-        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_IMMUNE_TO_PLAYER),
+        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_IMMUNE_TO_PLAYER) || CommanderTelemetry::ImmuneToAllSchools(immuneMask),
         unit->IsHovering() || unit->IsFlying(),
         unit->GetStandState() == UNIT_STAND_STATE_DEAD,
         creature && creature->IsInEvadeMode());
@@ -13234,9 +13317,7 @@ static void FillDungeonMob(Player* seer, Unit* unit, CommanderTelemetry::MobInfo
         : unattackable ? 'u' : 0;
     mob.level = unit->GetLevel();
     if (creature)
-        mob.rank = CommanderTelemetry::RankKind(creature->GetCreatureInfo()->rank,
-            creature->HasExtraFlag(CREATURE_FLAG_EXTRA_INSTANCE_BIND),
-            ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry()));
+        mob.rank = ViewRankOf(unit);
     mob.cc = CommanderTelemetry::CcKind(unit->HasUnitState(UNIT_STAT_STUNNED), unit->HasUnitState(UNIT_STAT_CONFUSED),
         unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
     if (uint32 const spellId = CurrentSpellId(unit))

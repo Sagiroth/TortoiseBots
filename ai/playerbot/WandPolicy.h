@@ -91,9 +91,9 @@ namespace ai
         // ping-pongs.
         bool healerMustStop = false;
         // The mana-short row ("<filler> unaffordable" -> shoot, mage) owns
-        // this wand: the filler nuke costs more than the mana left. The
-        // stop probes Frostbolt and Fireball, which can be cheaper than an
-        // arcane or fire mage's filler; stopping then only ping-pongs.
+        // this wand: both the filler nuke and the arcane/fire fallback
+        // Frostbolt cost more than the mana left. While either is affordable
+        // its row casts it, so the wand goes.
         bool manaShortRowActive = false;
     };
 

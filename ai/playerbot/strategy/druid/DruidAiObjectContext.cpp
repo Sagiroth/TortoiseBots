@@ -223,6 +223,8 @@ namespace ai
                 creators["bash"] = [](PlayerbotAI* ai) { return new BashInterruptSpellTrigger(ai); };
                 creators["faerie fire (feral)"] = [](PlayerbotAI* ai) { return new FaerieFireFeralTrigger(ai); };
                 creators["faerie fire"] = [](PlayerbotAI* ai) { return new FaerieFireTrigger(ai); };
+                creators["faerie fire on boss"] = [](PlayerbotAI* ai) { return new FaerieFireRaidTrigger(ai); };
+                creators["rejuvenation spread"] = [](PlayerbotAI* ai) { return new RejuvenationSpreadTrigger(ai); };
                 creators["insect swarm"] = [](PlayerbotAI* ai) { return new InsectSwarmTrigger(ai); };
                 creators["moonfire"] = [](PlayerbotAI* ai) { return new MoonfireTrigger(ai); };
                 creators["wrath"] = [](PlayerbotAI* ai) { return new WrathTrigger(ai); };
@@ -336,6 +338,7 @@ namespace ai
                 creators["healing touch"] = [](PlayerbotAI* ai) { return new CastHealingTouchAction(ai); };
                 creators["regrowth on party"] = [](PlayerbotAI* ai) { return new CastRegrowthOnPartyAction(ai); };
                 creators["rejuvenation on party"] = [](PlayerbotAI* ai) { return new CastRejuvenationOnPartyAction(ai); };
+                creators["rejuvenation spread"] = [](PlayerbotAI* ai) { return new CastRejuvenationSpreadAction(ai); };
                 creators["healing touch on party"] = [](PlayerbotAI* ai) { return new CastHealingTouchOnPartyAction(ai); };
                 creators["swiftmend"] = [](PlayerbotAI* ai) { return new CastSwiftmendAction(ai); };
                 creators["swiftmend on party"] = [](PlayerbotAI* ai) { return new CastSwiftmendOnPartyAction(ai); };

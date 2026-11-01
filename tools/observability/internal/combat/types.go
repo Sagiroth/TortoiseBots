@@ -31,6 +31,9 @@ type FightBot struct {
 	HealCasts uint32       `json:"heal_casts"`
 	Deaths    uint32       `json:"deaths"`
 	Spells    []SpellCount `json:"spells"`
+	// TailSpells are the casts in the few seconds after combat ended (meals, mounts,
+	// stance swaps); the fight's own spells and casts leave them out.
+	TailSpells []SpellCount `json:"tail_spells"`
 }
 
 // EngagedEntry is one enemy entry the members fought: entry, name and how

@@ -42,17 +42,22 @@ class WandFallbackWiringTest(unittest.TestCase):
 
     def test_mana_short_row_per_spec(self):
         ctx = (STRATEGY / "mage/MageAiObjectContext.cpp").read_text()
-        for spell, strat in (("frostbolt", "FrostMageStrategy.cpp"), ("fireball", "FireMageStrategy.cpp"),
-                             ("arcane missiles", "ArcaneMageStrategy.cpp")):
+        # Frost's own filler is already Frostbolt, so its unaffordable row
+        # wands directly; arcane/fire fall back to cheaper Frostbolt first
+        # (pool fair-fight losses: the 320-410 mana channel OOM'd while the
+        # 130-195 mana Frostbolt was affordable, and the bot wanded).
+        for spell, strat, fallback in (("frostbolt", "FrostMageStrategy.cpp", '"shoot", ACTION_DEFAULT'),
+                                       ("fireball", "FireMageStrategy.cpp", '"frostbolt", ACTION_DEFAULT'),
+                                       ("arcane missiles", "ArcaneMageStrategy.cpp", '"frostbolt", ACTION_DEFAULT')):
             self.assertIn('creators["%s unaffordable"] = [](PlayerbotAI* ai) { return new NukeUnaffordableTrigger(ai, "%s unaffordable", "%s"); };'
                           % (spell, spell, spell), ctx)
             text = (STRATEGY / "mage" / strat).read_text()
             fn = body(text, "::InitCombatTriggers(std::list<TriggerNode*>& triggers)")
-            self.assertRegex(fn, r'"%s unaffordable",\s*NextAction::array\(0, new NextAction\("shoot", ACTION_DEFAULT\)' % spell)
+            self.assertRegex(fn, r'"%s unaffordable",\s*NextAction::array\(0, new NextAction\(%s' % (spell, fallback))
         trig = (STRATEGY / "mage/MageTriggers.cpp").read_text()
         self.assertIn("return NukeUnaffordable(true, bot->GetPower(POWER_MANA), cost);", trig)
-        stop = body(trig, "bool WandBlocksNukeTrigger::IsActive()")
-        self.assertIn("state.manaShortRowActive = ManaShortForNuke(ai, bot, SpecFillerNuke(ai));", stop)
+        self.assertIn("ManaShortForNuke(ai, bot, filler) &&", trig)
+        self.assertIn('ManaShortForNuke(ai, bot, "frostbolt")', trig)
 
     def test_raid_aggro_row_needs_raid_group(self):
         for text, cls in ((MAGE, "MageRaidStrategy"), (WARLOCK, "WarlockRaidStrategy")):

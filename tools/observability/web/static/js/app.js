@@ -5799,7 +5799,7 @@
       // The cast clock starts when the report arrives, not when the refresh gate lets it on screen: the module read "time left"
       // before the report was sent.
       const nowMs = performance.now();
-      list.forEach(bind => cmdNoteMobTimes(bind, nowMs));
+      list.forEach(bind => { cmdApplyBossRanks(bind); cmdNoteMobTimes(bind, nowMs); });
       // What the page remembers (paths, hp changes, events) keeps every report, so a slow refresh rate loses no part of a path; while
       // paused it is held too, so nothing on the map moves, and it is replayed in order on resume.
       refreshGate.note(() => list.forEach(bind => { CmdView.note(cmdTracker, bind, updatedAt); UnitInfo.noteEvents(cmdEvents, bind, updatedAt); cmdNotePaths(bind, updatedAt); }));
@@ -6513,9 +6513,25 @@
   // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
   // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
   const cmdBossPhase = {};
+  // phaseKey -> {start: the live fight's start ms, times: {phase name: ms since it when first seen}}
+  const cmdBossPhaseAt = {};
   const cmdBossSeen = {}; // commander -> entry -> {name, seenAt}: a boss the fight had and the reports now leave out
   function cmdBossTable() {
     return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
+  }
+  // A rank-3 add the table lists as an add (Thaurissan's Image, Gnarlmoon's owls) is drawn as an elite (BossPanel.rankFor).
+  function cmdApplyBossRanks(bind) {
+    const table = cmdBossTable();
+    if (!table || !bind || !Array.isArray(bind.mobs) || typeof BossPanel === 'undefined' || !BossPanel.rankFor) return;
+    bind.mobs.forEach(m => { if (m && m.rank === 'b') m.rank = BossPanel.rankFor(table, bind.mobs_map, m); });
+  }
+  // The table is one slow static file and the first report can land before it: rank what the page already holds, then paint, so
+  // that report is drawn with the table's ranks and not the rank the report carried.
+  function cmdBossTableLoaded() {
+    (state.commanders.list || []).forEach(bind => cmdApplyBossRanks(bind));
+    covCompute();
+    if (state.activeTab === 'commanders') renderCommanders();
+    else if (state.activeTab === 'coverage') renderCoverage();
   }
   function cmdBossPanels(bind, fight, mobs, events, startMs, nowMs) {
     const panel = typeof BossPanel !== 'undefined' ? BossPanel : null, table = cmdBossTable();
@@ -6523,24 +6539,33 @@
     let rows = [];
     if (fight) {
       const seen = {};
-      if (fight.boss) seen[fight.boss] = fight.boss_name || ('creature ' + fight.boss);
-      (fight.engaged || []).forEach(e => { if (e && e.e && !(e.e in seen)) seen[e.e] = e.n || ('creature ' + e.e); });
-      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e], hp: null, au: [], uf: '' }));
+      if (fight.boss) seen[fight.boss] = { name: fight.boss_name || ('creature ' + fight.boss), c: 1 };
+      (fight.engaged || []).forEach(e => {
+        if (!e || !e.e) return;
+        const have = seen[e.e], c = Number(e.c) > 0 ? Number(e.c) : 1;
+        if (!have) { seen[e.e] = { name: e.n || ('creature ' + e.e), c: c }; return; }
+        if (!have.name || have.name === 'creature ' + e.e) have.name = e.n || have.name;
+        if (c > have.c) have.c = c;
+      });
+      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e].name, hp: null, au: [], uf: '', c: seen[e].c }));
     } else {
       if (!bind.combat || !FightDebug.liveEngaged(bind)) return [];
-      rows = (mobs || []).filter(m => m && m.rank === 'b');
+      rows = (mobs || []).filter(m => m && (m.rank === 'b' || m.ghost));
     }
     const out = [];
-    rows.forEach(m => {
-      const b = panel.bossFor(table, m.entry);
-      if (!b) return;
+    panel.bossRows(table, rows).forEach(({ boss: b, row: m, copies }) => {
       const live = !fight;
-      const adds = live ? (mobs || []).filter(x => x && x !== m && ((x.sum && String(x.sum) === String(m.id))
+      const adds = live ? (mobs || []).filter(x => x && x !== m && panel.bossFor(table, x.entry) !== b && ((x.sum && String(x.sum) === String(m.id))
         || b.adds.some(a => a.entry === x.entry))) : [];
-      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + m.entry;
-      const model = panel.model(table, Object.assign({}, m, { adds: adds }), events || [], startMs, nowMs, cmdBossPhase[phaseKey] || null);
+      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + b.entry;
+      const kept = fight ? null : cmdBossPhaseAt[phaseKey];
+      // A kept phase-start map belongs to the fight that recorded it: a new pull starts more than 5 s from it.
+      const phaseAt = fight ? null : kept && Math.abs(kept.start - startMs) > 5000 ? {} : (kept && kept.times) || {};
+      const model = panel.model(table, Object.assign({}, m, { adds: adds, copies: copies }), events || [], startMs, nowMs,
+        { priorPhase: cmdBossPhase[phaseKey] || null, phaseAt: phaseAt });
       if (!model) return;
       if (model.phase) cmdBossPhase[phaseKey] = model.phase;
+      if (!fight) cmdBossPhaseAt[phaseKey] = { start: startMs, times: model.phaseAt || {} };
       out.push(model);
     });
     return out.sort((a, b) => (a.boss.order - b.boss.order) || (a.boss.entry - b.boss.entry));
@@ -6551,30 +6576,51 @@
     return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc, coverage: covForBoss(p.boss.entry) })).join('');
   }
   // The debugger shows the panels in its rail, the Live card under the map; one panel, painted where the view puts it.
-  function cmdPaintBosses(card, panels) {
+  // A card with no panel takes the fallback instead (the Live card's trash list), decided here so the one box is
+  // written once per report: two paints would empty and refill it and lose the hover.
+  function cmdPaintBosses(card, panels, fallbackHtml) {
     if (!card) return;
     const debug = card.classList.contains('fd-on');
     const section = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosses');
     const list = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosslist');
     if (!section || !list) return;
-    section.hidden = !(panels && panels.length);
-    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : '';
+    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : (fallbackHtml || '');
+    section.hidden = !html;
     if (list._k !== html) { list._k = html; setHtml(list, html); }
+  }
+  // The "Dangerous here" list the Live card shows in the boss section's place when no engaged boss owns it: the trash the
+  // bind's live mob rows hold, one line each. The boss panel wins whenever there is one.
+  function cmdTrashBlockHtml(bind) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.block) return '';
+    const rows = TrashInfo.block(bind && bind.mobs);
+    if (!rows || !rows.length) return '';
+    return '<h3 class="cmd-h">Dangerous here</h3><ol class="fd-trashlist">'
+      + rows.map((r) => '<li>' + esc(r.text) + '</li>').join('') + '</ol>';
   }
   function cmdLiveBossPanels(bind) {
     const now = Date.now();
-    if (!bind || !bind.combat) { if (bind) delete cmdBossSeen[bind.commander]; return []; }
+    if (!bind || !bind.combat) {
+      if (bind) {
+        delete cmdBossSeen[bind.commander];
+        const prefix = bind.commander + '|live|';
+        Object.keys(cmdBossPhaseAt).forEach(k => { if (k.indexOf(prefix) === 0) delete cmdBossPhaseAt[k]; });
+      }
+      return [];
+    }
     const mobs = bind.mobs || [];
     const mem = cmdBossSeen[bind.commander] || (cmdBossSeen[bind.commander] = {});
     const present = {};
+    const panel = typeof BossPanel !== 'undefined' ? BossPanel : null;
     mobs.forEach(m => {
       if (!m || m.rank !== 'b' || m.entry == null) return;
-      present[m.entry] = true;
-      mem[m.entry] = { name: m.name || ('creature ' + m.entry), seenAt: now };
+      const b = panel && panel.bossFor ? panel.bossFor(cmdBossTable(), m.entry) : null;
+      const key = b ? b.entry : m.entry;
+      present[key] = true;
+      mem[key] = { name: (b && b.name) || m.name || ('creature ' + m.entry), seenAt: now };
     });
     // A boss the fight had and the module no longer reports (Arlokk vanished) is shown as not visible after two 2 s reports.
     const vanished = Object.keys(mem).filter(e => !present[e] && now - mem[e].seenAt >= 4000)
-      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v' }));
+      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v', ghost: true }));
     const byId = {};
     (bind.bots || []).forEach(b => { if (b && (b.id != null || b.guid != null)) byId[String(b.id != null ? b.id : b.guid)] = b.name; });
     const named = mobs.map(m => (m && m.ctg && byId[String(m.ctg)] ? Object.assign({}, m, { ctargetName: byId[String(m.ctg)] }) : m));
@@ -6593,9 +6639,13 @@
     if (!table || !panel || !m || m.rank !== 'b') return m;
     const b = panel.bossFor(table, m.entry);
     if (!b) return m;
-    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + m.entry;
+    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + b.entry;
     const ph = panel.phaseOf(b, m, cmdBossPhase[key] || null);
-    if (ph.phase) cmdBossPhase[key] = ph.phase;
+    // One latch per boss: only the row the panel follows (the lowest guid) may move it, or an image's own hp would rewrite
+    // the phase the original is in.
+    const kept = panel.bossRows(table, (bind.mobs || []).filter(x => x && (x.rank === 'b' || x.ghost))).find(r => r.boss.entry === b.entry);
+    const mine = kept && (kept.row === m || (kept.row.id != null && m.id != null && String(kept.row.id) === String(m.id)));
+    if (ph.phase && mine) cmdBossPhase[key] = ph.phase;
     return Object.assign({}, m, { phase: ph.phase });
   }
 
@@ -6797,6 +6847,15 @@
     return g;
   }
 
+  // The word the page writes before an elite's cast when the trash table knows the spell: KICK when the core can kick it, AoE
+  // when it is an area effect. Bosses are the boss table's business, so only elites are asked. "" with no table or no row.
+  function cmdTrashWord(m) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.castWord || !m || m.rank !== 'e') return '';
+    const word = TrashInfo.castWord(m.entry, m.cid);
+    if (!word) return '';
+    return { word: word, cls: word === 'KICK' ? 'kick' : 'aoe' };
+  }
+
   // The boss overlay of one mob row: the area of the spell it casts (under its dot, so the dot stays readable), then where it
   // looks, the cast's progress ring and its label. Bosses and elites only, each part under its own layer. nowLeftMs is the time
   // left at this moment: the report's own time counted down for a live map, the frame's time for a replay. A cast whose time has
@@ -6822,9 +6881,10 @@
     if (o.mobcast && casting) {
       const r = (m.rank === 'b' ? 14 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
       const target = m.ctg && botsById && botsById[m.ctg] ? botsById[m.ctg].name : '';
-      const label = (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
+      const tw = cmdTrashWord(m);
+      const label = (tw ? tw.word + ' ' : '') + (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
       over += `<circle class="castring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${f(p.x)} ${f(p.y)})"/>`
-        + `<text class="mobcast" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
+        + `<text class="mobcast${tw ? ' ' + tw.cls : ''}" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
     }
     return { under, over };
   }
@@ -6834,7 +6894,8 @@
   function cmdMobLook(m, bossmark) {
     const rank = m && m.rank, cls = CmdView.mobClass(m);
     const boss = !!bossmark && rank === 'b', elite = !!bossmark && rank === 'e';
-    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5 };
+    const danger = elite && typeof TrashInfo !== 'undefined' && TrashInfo.danger && TrashInfo.danger(m.entry) === 3 ? 3 : 0;
+    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5, danger: danger };
   }
 
   // One enemy as a map group: the threat rings, its body (a boss in its own colour with a pulsing gold ring, the crown above
@@ -6844,8 +6905,8 @@
     const k = c.k, f = c.f, on = d.on || {}, p = CmdView.project(m.x, m.y);
     const cls = CmdView.mobClass(m), look = cmdMobLook(m, on.bossmark), r = look.r * k, uid = 'm:' + m.id;
     const ov = cmdMobOverlaySvg(c, m, on, d.leftMs, d.botsById);
-    // A boss nothing can target or that is off the floor (Thekal's fake death, Onyxia in the air) is drawn hollow.
-    const ghost = look.boss && typeof m.uf === 'string' && /[nh]/.test(m.uf);
+    // A boss nothing can target, hit or that is off the floor (Thekal's fake death, Onyxia in the air, Solnius asleep) is drawn hollow.
+    const ghost = look.boss && typeof m.uf === 'string' && /[nhi]/.test(m.uf);
     c.units[uid] = { kind: 'm', obj: m };
     let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}${ghost ? ' ghost' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
     if (on.threatcolors && d.marks) {
@@ -6859,7 +6920,10 @@
       g += `<circle class="bossring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 6 * k)}"/>`
         + `<circle class="bossring2" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 10 * k)}"/>`;
     }
-    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>${ov.over}`;
+    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
+    // A danger-3 trash mob gets one glyph in the empty corner of its body, only while the boss-mark layer is on.
+    if (look.danger === 3) g += `<circle class="mobdanger" cx="${f(p.x + r * 0.75)}" cy="${f(p.y - r * 0.75)}" r="${f(2.6 * k)}"/>`;
+    g += ov.over;
     if (look.boss) g += cmdMapIcon('crown', p.x, p.y - r - 11 * k, 16 * k);
     // a boss's health bar sits above the crown (r + 16*k), so the crown is not drawn over it
     g += d.overlay(m, 'mob', p, look.boss ? r + 16 * k : r);
@@ -7992,7 +8056,12 @@
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
     if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
     if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); }
-    else { mountFightPanel(card, bind); cmdPaintBosses(card, cmdLiveBossPanels(bind)); }
+    else {
+      mountFightPanel(card, bind);
+      // The engaged bosses, or — with none — the trash the bind's live mobs hold: one paint decides which of the two
+      // the boss section shows.
+      cmdPaintBosses(card, cmdLiveBossPanels(bind), cmdTrashBlockHtml(bind));
+    }
   }
 
   // The debugger page moves the one layer panel into its map; take it back to the page before any card that may hold it leaves,
@@ -8977,7 +9046,7 @@
     // the replay to that cast; the marker carries the caster, the spell and its target in words.
     const bossTable = typeof cmdBossTable === 'function' ? cmdBossTable() : (typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null);
     (tl.bossCasts || []).forEach(c => {
-      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid) : null;
+      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid, c.e) : null;
       const ci = slot ? slot.index % 8 : 0;
       const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
       html += `<button type="button" class="fd-bosscast bc-${ci}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
@@ -9053,10 +9122,13 @@
     if (!panel) return '';
     const grp = typeof panel.sub === 'number' && panel.sub >= 0 ? ' · group ' + (panel.sub + 1) : '';
     const spells = (panel.spells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
+    const tail = (panel.tailSpells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
     return `<h4 class="fd-both">${esc(panel.name)} · ${esc(panel.cls)}${grp}</h4>`
       + `<p class="fd-botl mono">${FightDebug.fmtInt(panel.dmg)} dmg · ${FightDebug.fmtInt(panel.heal)} heal · ${FightDebug.fmtInt(panel.taken)} taken · ${panel.casts} casts</p>`
       + `<table class="data-table fd-table"><caption>Casts</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
       + `<tbody>${spells || '<tr><td colspan="2" class="empty-hint">No casts recorded.</td></tr>'}</tbody></table>`
+      + (tail ? `<table class="data-table fd-table"><caption>After combat</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
+        + `<tbody>${tail}</tbody></table>` : '')
       + (panel.guid != null ? `<p class="fd-open"><button type="button" class="fd-link" data-fd-profile="${esc(panel.guid)}">Gear &amp; profile →</button></p>` : '');
   }
 
@@ -9170,9 +9242,11 @@
     }
     const mobs = [];
     const mobAt = FightReplay.mobsAt(track && track.prep, tS);
+    const bossTable = cmdBossTable();
     Object.keys(mobAt).forEach(id => {
       const m = mobAt[id];
       const mob = { id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' };
+      if (bossTable && typeof BossPanel !== 'undefined' && BossPanel.rankFor) mob.rank = BossPanel.rankFor(bossTable, map, mob);
       // The boss overlay at the cursor: the frame at or before it carries the cast (its absolute end gives the time left there),
       // and the facing turns the shorter way between two frames that both report it (else the nearest one that does).
       const a = frame && frame.mobs ? frame.mobs[id] : null;
@@ -10077,10 +10151,10 @@
   refreshGate.onChange(() => { seedCmdTrails(state.commanders.list); if (cmdDemo.on) { clearInterval(cmdDemo.timer); cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); } });
   fetchCommanders();
   // The boss table is one static file (a missing one leaves every panel and map mark away, never an error).
-  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(() => {
-    covCompute();
+  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(cmdBossTableLoaded);
+  // The trash table is one static file too (a missing one leaves the block and its map marks away, never an error).
+  if (typeof TrashInfo !== 'undefined' && TrashInfo.load) TrashInfo.load().then(() => {
     if (state.activeTab === 'commanders') renderCommanders();
-    else if (state.activeTab === 'coverage') renderCoverage();
   });
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze

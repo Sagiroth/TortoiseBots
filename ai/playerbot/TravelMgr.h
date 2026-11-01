@@ -67,6 +67,10 @@ namespace ai
 		// the outgrown-zone rules may constrain. Owned/hired bots follow their
 		// player and must vendor/repair anywhere.
 		bool IsMasterlessRandom() const { return masterlessRandom; }
+		// No real player master at snapshot time: masterlessRandom already
+		// excludes it, but the elite-camp gate takes it plainly so the rule
+		// reads without the facade.
+		bool HasRealPlayerMaster() const { return hasRealPlayerMaster; }
 
 		bool HasFocusQuest() const {return !focusList.empty();}
 		bool IsFocusQuest(uint32 questId) const { return focusList.find(questId) != focusList.end(); }
@@ -108,6 +112,7 @@ namespace ai
 		uint8 groupSize = 0;
 		uint32 money = 0;
 		bool masterlessRandom = false;
+		bool hasRealPlayerMaster = false;
 
 		focusQuestTravelList focusList = {};
 

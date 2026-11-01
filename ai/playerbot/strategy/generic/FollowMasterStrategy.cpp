@@ -10,17 +10,18 @@ void FollowMasterStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
         "master target active",
         NextAction::array(0, new NextAction("dps assist", ACTION_EMERGENCY), NULL)));
 
-    // Out-of-combat catch-up runs below the party buffs (ACTION_NORMAL+2..+4):
-    // donor follow is a 1.0 default action, so buffs always outbid it there.
-    // When a buff is pending and its target is in range the buff wins this
-    // tick; when the bot is far behind, the buff target is out of range, the
-    // buff action is impossible and the engine falls through to follow here.
-    // Combat keeps ACTION_HIGH: mid-fight positioning must never wait for a
-    // buff. Still above loot (7) and drink (6), so a far-behind bot catches
-    // up before looting.
+    // Follow-first (owner report 2026-11-01): a master moving far enough to
+    // follow overrides every non-combat row. Party buffs sit at
+    // ACTION_NORMAL+2..+4 and drink/food at 6, so the dead-zone "update
+    // follow" row at ACTION_IDLE always lost while a buff was pending and
+    // the bot finished casting before running. The free-move catch-up row
+    // fires only past the follow leash (or the dead zone for a tight leash),
+    // where buff/drink must already stand down (FollowUrgencyPolicy.h), and
+    // runs above every buff/downtime row; the idle station row keeps
+    // ACTION_IDLE so a bot in place still buffs and drinks.
     triggers.push_back(new TriggerNode(
         "out of free move range",
-        NextAction::array(0, new NextAction("follow", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("follow", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "update follow",

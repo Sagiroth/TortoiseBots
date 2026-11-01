@@ -532,8 +532,20 @@ bool ai::VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier)
 
     AiObjectContext* context = ai->GetAiObjectContext();
 
+    // The errand is already underway: re-requesting re-picks the same vendor
+    // and restarts the walk (travel churn). The walk needs engine visits,
+    // not new picks.
+    TravelTarget* held = AI_VALUE(TravelTarget*, "travel target");
+    TravelDestination* heldDest = held ? held->GetDestination() : nullptr;
+    if (VendorTripAlreadyUnderway(heldDest != nullptr,
+        heldDest ? (uint32)heldDest->GetPurpose() : 0))
+        return false;
+
     return !JourneyInFlightOwnsBot((int)AI_VALUE(TravelTarget*, "travel target")->GetStatus());
 }
+
+static_assert((uint32)TravelDestinationPurpose::Vendor == ai::VENDOR_TRIP_PURPOSE_ID,
+    "VendorTripPolicy mirrors the Vendor purpose id");
 
 void ai::ParkVendorErrand(PlayerbotAI* ai, uint32 minutes)
 {
