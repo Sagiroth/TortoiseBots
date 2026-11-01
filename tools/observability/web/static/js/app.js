@@ -6844,8 +6844,8 @@
     const k = c.k, f = c.f, on = d.on || {}, p = CmdView.project(m.x, m.y);
     const cls = CmdView.mobClass(m), look = cmdMobLook(m, on.bossmark), r = look.r * k, uid = 'm:' + m.id;
     const ov = cmdMobOverlaySvg(c, m, on, d.leftMs, d.botsById);
-    // A boss nothing can target or that is off the floor (Thekal's fake death, Onyxia in the air) is drawn hollow.
-    const ghost = look.boss && typeof m.uf === 'string' && /[nh]/.test(m.uf);
+    // A boss nothing can target, hit or that is off the floor (Thekal's fake death, Onyxia in the air, Solnius asleep) is drawn hollow.
+    const ghost = look.boss && typeof m.uf === 'string' && /[nhi]/.test(m.uf);
     c.units[uid] = { kind: 'm', obj: m };
     let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}${ghost ? ' ghost' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
     if (on.threatcolors && d.marks) {
