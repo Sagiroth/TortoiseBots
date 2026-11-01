@@ -95,6 +95,7 @@ namespace ai
     // bought, never farmed.
     class GuildOrderVendorReagentValue : public CalculatedValue<uint32>
     {
+    public:
         GuildOrderVendorReagentValue(PlayerbotAI* ai) : CalculatedValue<uint32>(ai, "guild order vendor reagent", 10) {}
 
         uint32 Calculate() override;
