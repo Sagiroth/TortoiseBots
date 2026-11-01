@@ -343,6 +343,7 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         // The choice below never parks on a Sub row for another item: the
         // candidate here is already the next uncovered one, so a parked row
         // for a delegated component yields to supplying (or delegating) this
+        // one.
         if (current == SupplyStep::Sub)
             current = SupplyStep::None;
         if (current == SupplyStep::Craft && candidate.craft)
