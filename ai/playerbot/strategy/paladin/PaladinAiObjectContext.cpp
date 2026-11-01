@@ -242,6 +242,7 @@ namespace ai
                 creators["judgement of wisdom"] = [](PlayerbotAI* ai) { return new JudgementOfWisdomTrigger(ai); };
                 creators["judgement of light"] = [](PlayerbotAI* ai) { return new JudgementOfLightTrigger(ai); };
                 creators["seal"] = [](PlayerbotAI* ai) { return new SealTrigger(ai); };
+                creators["seal in melee"] = [](PlayerbotAI* ai) { return new SealInMeleeTrigger(ai); };
                 creators["judgement upkeep seal of wisdom"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep seal of wisdom", JudgementUpkeepTrigger::Step::SealWisdom); };
                 creators["judgement upkeep seal of light"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep seal of light", JudgementUpkeepTrigger::Step::SealLight); };
                 creators["judgement upkeep"] = [](PlayerbotAI* ai) { return new JudgementUpkeepTrigger(ai, "judgement upkeep", JudgementUpkeepTrigger::Step::Judge); };

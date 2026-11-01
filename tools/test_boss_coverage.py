@@ -27,6 +27,7 @@ FIXTURE = ROOT / "data" / "boss" / "testdata" / "coverage_cases.json"
 CSV_HEADER = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
 RAID_HEADER = ["key", "map_id", "name"]
 CODE_HEADER = ["map", "boss", "key", "need", "level", "name", "text", "source"]
+TRASH_HEADER = ["map", "entry", "row", "key", "a", "b", "c", "d", "source"]
 
 
 def ability(sid, name, **flags):
@@ -502,6 +503,7 @@ class CliFixture:
         self.names = self.dir / "names.json"
         self.raids = self.dir / "raids.csv"
         self.answers = self.dir / "code_answers.csv"
+        self.trash = self.dir / "trash_abilities.csv"
         self.sql = self.dir / "sql"
         self.sql.mkdir()
         with open(self.csv, "w", newline="", encoding="utf-8") as handle:
@@ -527,6 +529,8 @@ class CliFixture:
             writer = csv.writer(handle, lineterminator="\n")
             writer.writerow(RAID_HEADER)
             writer.writerow(["testraid", "900", "Test Raid"])
+        with open(self.trash, "w", newline="", encoding="utf-8") as handle:
+            csv.writer(handle, lineterminator="\n").writerow(TRASH_HEADER)
         with open(self.answers, "w", newline="", encoding="utf-8") as handle:
             csv.writer(handle, lineterminator="\n").writerow(CODE_HEADER)
         (self.sql / "001_world.sql").write_text(
@@ -546,6 +550,7 @@ class CliFixture:
             "csv": str(self.csv),
             "names": str(self.names),
             "raids": str(self.raids),
+            "trash_csv": str(self.trash),
             "code_answers": str(self.answers),
             "sql_dir": str(self.sql),
             "repo_root": str(self.dir),
@@ -568,6 +573,7 @@ class CliFixture:
             boss_data.read_raids(self.raids),
             boss_data.read_code_answers(self.answers),
             self.dir,
+            extra_maps=boss_data.trash_map_keys(self.trash),
         )
 
 
@@ -642,14 +648,46 @@ class CliTest(unittest.TestCase):
 
     def test_cli_runs_on_every_committed_raid(self):
         raids = boss_data.read_raids(ROOT / "data" / "boss" / "raids.csv")
+        # raids.csv also carries the maps only the trash table uses (Scholomance), and the coverage report is per boss.
+        with_bosses = {
+            row["map"] for row in boss_data.read_rows(ROOT / "data" / "boss" / "boss_abilities.csv")
+        }
         out = io.StringIO()
         with redirect_stdout(out):
             code = boss_data.main(["coverage"])
         self.assertEqual(code, 0)
         text = out.getvalue()
         for raid in raids:
+            if raid["key"] not in with_bosses:
+                continue
             header = f"{raid['name']} (map {raid['mapId']}): "
             self.assertIn(header, text, raid["key"])
+
+    def test_cli_accepts_a_trash_only_map(self):
+        # The trash table names a map with no boss of its own; the report skips it, it is no build error.
+        fixture = self.make()
+        with open(fixture.raids, "a", newline="", encoding="utf-8") as handle:
+            csv.writer(handle, lineterminator="\n").writerow(["trashland", "901", "Trash Land"])
+        with open(fixture.trash, "a", newline="", encoding="utf-8") as handle:
+            csv.writer(handle, lineterminator="\n").writerow(
+                ["trashland", "77", "mob", "", "1", "pack", "0", "", "src/trash.cpp:1"]
+            )
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = boss_coverage.cmd_coverage(fixture.args())
+        self.assertEqual(code, 0)
+        self.assertIn("Test Raid (map 900)", out.getvalue())
+        self.assertNotIn("Trash Land", out.getvalue())
+
+    def test_cli_rejects_a_raid_with_neither_boss_nor_trash(self):
+        fixture = self.make()
+        with open(fixture.raids, "a", newline="", encoding="utf-8") as handle:
+            csv.writer(handle, lineterminator="\n").writerow(["ghostland", "902", "Ghost Land"])
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code = boss_coverage.cmd_coverage(fixture.args())
+        self.assertEqual(code, 2)
+        self.assertIn("has no boss in the CSV", err.getvalue())
 
 
 if __name__ == "__main__":

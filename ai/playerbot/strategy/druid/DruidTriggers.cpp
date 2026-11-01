@@ -38,6 +38,23 @@ bool InFeralFormTrigger::IsActive()
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
 
+bool FaerieFireRaidTrigger::IsActive()
+{
+    if (!FaerieFireTrigger::IsActive())
+        return false;
+    Unit* target = GetTarget();
+    Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    if (!creature || !creature->IsWorldBoss())
+        return false;
+    return AI_VALUE2(uint8, "mana", "self target") >= 80;
+}
+
+bool RejuvenationSpreadTrigger::IsActive()
+{
+    if (!ai->HasSpell("rejuvenation"))
+        return false;
+    return FindRejuvenationSpreadTarget(ai, bot) != nullptr;
+}
 Value<Unit*>* ThornsOnMainTankTrigger::GetTargetValue()
 {
     return context->GetValue<Unit*>("main tank");

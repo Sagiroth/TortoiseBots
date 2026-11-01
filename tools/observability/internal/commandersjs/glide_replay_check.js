@@ -64,7 +64,7 @@ const ctx = {
   cmdLiveEvents: {}, CMD_LIVE_EVENT_MAX: 12,
   cmdLivePaintEvents: () => {}, cmdLiveFightChanged: () => {}, cmdLiveError: () => {},
   fetchCommanders: () => {}, cmdFightsCache: {},
-  cmdNoteMobTimes: () => {}, CmdView: { note: () => {} }, UnitInfo: { noteEvents: () => {} }, cmdNotePaths: () => {},
+  cmdNoteMobTimes: () => {}, cmdApplyBossRanks: () => {}, CmdView: { note: () => {} }, UnitInfo: { noteEvents: () => {} }, cmdNotePaths: () => {},
   cmdTracker: {}, cmdEvents: {}, cmdPruneAll: () => {}, seedCmdTrails: () => {}, paintCommandersBadge: () => {},
   renderCommanders: () => {},
 };

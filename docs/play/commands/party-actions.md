@@ -333,7 +333,7 @@ Orders companion bots to sit, eat food, and drink water until their health and m
 .bot action rest
 ```
 
-Aliases include `.bot action drink` and `.bot action eat`. Mage bots can share conjured food and water with the party through their own give-food and give-water triggers. If bots cannot rest, the system responds with grouped reasons (`No bot rested: <reason>: <bots>...`, capped at 240 bytes with `+K more`):
+Aliases include `.bot action drink` and `.bot action eat`. Mage bots can share conjured food and water with the party through their own give-food and give-water triggers. In a dungeon run the lead bot also holds these orders while the run is fighting: a 2.5-second mark refreshed once a second while any bound bot or its pet is in combat, reported as `party still fighting`. If bots cannot rest, the system responds with grouped reasons (`No bot rested: <reason>: <bots>...`, capped at 240 bytes with `+K more`):
 - `dead`
 - `in combat`
 - `party still fighting`

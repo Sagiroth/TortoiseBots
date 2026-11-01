@@ -180,3 +180,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot ah item`](../../server/admin-commands.md#bot-ah-item) | Admin & GM | Inspects, resets, or overrides item auction prices. |
 | [`.ahbot`](../../server/admin-commands.md#ahbot) | Admin & GM | Shorthand alias for `.bot ah` commands. |
 | [`.reload config`](../../server/admin-commands.md#reload-config) | Admin & GM | Reloads core configuration files. |
+
+## Meal Orders During a Run Fight
+
+A dungeon run's lead bot marks the party "the run is fighting" for 2.5 seconds whenever any bound bot or its pet is in combat, refreshed once a second. While that mark is live, `.bot action rest`, `.bot action drink` and `.bot action eat` are refused for the marked bots with the reason `party still fighting`, so nobody sits down on the tick before the run's own rest order or the next pull. The order goes through once a tick sees nobody in the fight.

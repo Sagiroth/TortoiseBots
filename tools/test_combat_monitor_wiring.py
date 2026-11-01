@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADAPTER = (ROOT / "host" / "CombatMonitorAdapter.cpp").read_text()
 ADAPTER_H = (ROOT / "host" / "CombatMonitorAdapter.h").read_text()
+POLICY = (ROOT / "runtime" / "CombatMonitorPolicy.h").read_text()
 SERVICE = (ROOT / "runtime" / "CombatMonitorService.cpp").read_text()
 SERVICE_H = (ROOT / "runtime" / "CombatMonitorService.h").read_text()
 MODULE = (ROOT / "host" / "Module.cpp").read_text()
@@ -51,8 +52,8 @@ def anon_namespace_lines(text):
 
 
 class CombatMonitorWiringTest(unittest.TestCase):
-    def test_adapter_registers_all_five_hooks(self):
-        for hook in ("UNITHOOK_ON_DAMAGE", "UNITHOOK_ON_HEAL",
+    def test_adapter_registers_all_six_hooks(self):
+        for hook in ("UNITHOOK_ON_DAMAGE", "UNITHOOK_ON_HEAL", "UNITHOOK_MODIFY_HEAL_RECEIVED",
                      "UNITHOOK_ON_UNIT_ENTER_COMBAT", "UNITHOOK_ON_UNIT_DEATH",
                      "PLAYERHOOK_ON_SPELL_CAST"):
             self.assertIn(hook, ADAPTER, hook)
@@ -60,6 +61,7 @@ class CombatMonitorWiringTest(unittest.TestCase):
     def test_every_hook_body_starts_with_the_enabled_check(self):
         code = strip_comments(ADAPTER)
         for name, cls in (("OnDamage", "CombatMonitorUnitAdapter"), ("OnHeal", "CombatMonitorUnitAdapter"),
+                          ("ModifyHealReceived", "CombatMonitorUnitAdapter"),
                           ("OnSpellCast", "CombatMonitorCastAdapter"),
                           ("OnUnitEnterCombat", "CombatMonitorUnitAdapter"),
                           ("OnUnitDeath", "CombatMonitorUnitAdapter")):
@@ -203,6 +205,40 @@ class CombatMonitorWiringTest(unittest.TestCase):
             self.assertIn(constant, cast, constant)
         self.assertIn("getUnitTargetGuid()", cast)
         self.assertLess(cast.index("SPELL_EFFECT_ATTACK_ME"), cast.index("OnCast("), "classification first")
+
+    def test_cast_hook_keeps_after_combat_casts_apart(self):
+        # The run clears its meal mark on the first quiet tick and the fight stays open
+        # 3 s longer: a cast in that gap waits as pending, so a re-engage folds it into
+        # the fight and only a cast still pending at the end is a tail cast.
+        code = strip_comments(POLICY)
+        cast = body(code, "void OnCast(", "\n    }\n")
+        self.assertIn("outOfCombat_", cast)
+        self.assertIn("pending", cast)
+        self.assertIn("overflow", cast)
+        self.assertLess(cast.index("outOfCombat_"), cast.index("ApplyCast("),
+                        "the grace check runs before the fight counters")
+        reengage = body(code, "void SetInCombat(", "\n    }\n")
+        self.assertIn("FlushPending(", reengage)
+        end = body(code, "void EndFight(", "\n    }\n")
+        self.assertIn("tailSpells", end)
+        self.assertIn("pending", end)
+        self.assertIn("overflow", end)
+        self.assertIn("SpellListByCount", POLICY)
+
+    def test_heal_received_credits_only_periodic_ticks(self):
+        code = strip_comments(ADAPTER)
+        heal = body(code, "CombatMonitorUnitAdapter::ModifyHealReceived(", "\n}\n")
+        self.assertIn("SPELL_AURA_PERIODIC_HEAL", heal)
+        self.assertIn("SPELL_EFFECT_HEAL", heal)
+        self.assertIn("FindCurrentSpellBySpellId", heal)
+        self.assertIn("GetCastedTime", heal)
+        self.assertIn("OnHeal(", heal)
+        self.assertIn("GetMaxHealth()", heal)
+        self.assertIn("GetHealth()", heal)
+        self.assertLess(heal.index("SPELL_AURA_PERIODIC_HEAL"), heal.index("OnHeal("),
+                        "only a periodic-heal spell reaches the books")
+        self.assertLess(heal.index("GetCastedTime"), heal.index("OnHeal("),
+                        "the direct half of a hybrid cast is skipped before counting")
 
     def test_event_drain_runs_before_the_snapshot_gate(self):
         code = strip_comments(EMITTER)

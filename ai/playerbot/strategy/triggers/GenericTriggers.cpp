@@ -1575,7 +1575,7 @@ bool AoeThreatNearbyTrigger::IsActive()
         }
     }
     // Any one sensor firing is enough; each read is value-cached (dynobj
-    // aura check, 15yd trap scan, 15yd trigger scan).
+    // aura check, 30yd trap scan, 15yd trigger scan).
     if (AI_VALUE2(bool, "has area debuff", "self target"))
         return true;
     if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())

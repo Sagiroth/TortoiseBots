@@ -216,6 +216,8 @@ assert.strictEqual(tl.hits.length, 6);
 assert.strictEqual(tl.hits[5].d, 3091);
 assert.strictEqual(tl.hits[5].h, 44);
 assert.ok(tl.hits.every((h) => h.pct >= 0 && h.pct <= 100));
+assert.strictEqual(F.timeline({ dur_ms: 10000, log: [{ k: "cast", t: 1000, e: 5, n: "Erennius", s: "Call of Nightmare", sid: 46079 }] }).bossCasts[0].e, 5);
+
 
 // ---- role tables ----------------------------------------------------------------------------------------------------
 const rt = F.roleTables(byId("5-4"), LAYOUT);
@@ -263,6 +265,12 @@ assert.strictEqual(bp.casts, 16);
 assert.deepStrictEqual(bp.spells.map((s) => s.n),
   ["Sunder Armor", "Shield Slam", "Bloodrage", "Food", "Heroic Strike", "Taunt"]);
 assert.strictEqual(F.botPanel(byId("5-4"), "Nobody"), null);
+// After-combat casts ride their own list, ordered by count, and never enter the fight's spells.
+const bt = F.botPanel({ bots: [{ name: "B", spells: [{ n: "Fireball", c: 2 }],
+  tail_spells: [{ n: "Drink", c: 1 }, { n: "Food", c: 3 }] }] }, "B");
+assert.deepStrictEqual(bt.spells, [{ n: "Fireball", c: 2 }]);
+assert.deepStrictEqual(bt.tailSpells, [{ n: "Food", c: 3 }, { n: "Drink", c: 1 }]);
+assert.deepStrictEqual(F.botPanel({ bots: [{ name: "B", spells: [] }] }, "B").tailSpells, []);
 
 // ---- the fight rail -------------------------------------------------------------------------------------------------
 const list = [

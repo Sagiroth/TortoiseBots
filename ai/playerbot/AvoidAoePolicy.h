@@ -19,11 +19,141 @@
 // No core includes.
 
 #include <cmath>
+#include <vector>
 
 namespace ai
 {
     // Donor radius cap: hazards bigger than this are not dodged by stepping.
     constexpr float kMaxAoeAvoidRadiusYd = 15.0f;
+
+    // Trap discovery range: wide enough that a held destination can be checked
+    // against the fire around it, not only the fire under the bot (max(30 yd,
+    // the largest supported hazard + 15 yd)).
+    constexpr float kTrapScanRangeYd = 30.0f;
+
+    // A retry step for a fire wider than the escape step (which is capped at
+    // the flee distance).
+    constexpr float kAoeFallbackStepYd = 12.0f;
+
+    // The widened last-resort search: a full ring of headings at a third, wider
+    // step, for the fires the ordered candidate list misses.
+    constexpr float kAoeFallbackWideStepYd = 20.0f;
+    constexpr int kAoeFallbackHeadings = 16;
+
+    // Trap hazard radius. A trap GO's data2 radius (10 yd on Zul'Gurub's Inferno
+    // 177764) is the activation radius, not the reach of its spell: Flames 19628
+    // is school damage at the source with SpellRadius index 8 = 5 yd. A step out
+    // and a walk back in use the spell's own circle plus this margin, so the
+    // no-go zone is where the spell hits, not the whole trap trigger.
+    constexpr float kTrapHazardMarginYd = 2.0f;
+
+    inline float TrapHazardRadius(float spellRadiusYd, float trapRadius)
+    {
+        return spellRadiusYd > 0.0f ? spellRadiusYd + kTrapHazardMarginYd : trapRadius;
+    }
+
+    // A damaging ground effect as plain numbers (a trap GO's spell circle, a
+    // damaging dynamic object). Centre to centre in 3D, the core's measure.
+    struct AoeHazardCircle
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float radius = 0.0f;
+    };
+
+    // Implicit target pair of an effect that hits enemies around its source
+    // (Flames 19628: CASTER_SRC + ENEMY_AOE_AT_SRC_LOC).
+    constexpr int kAoeAtSourceTargetA = 22;
+    constexpr int kAoeAtSourceTargetB = 15;
+
+    inline bool InsideAoeHazard(const AoeHazardCircle& hazard, float x, float y, float z)
+    {
+        float const dx = hazard.x - x;
+        float const dy = hazard.y - y;
+        float const dz = hazard.z - z;
+        return hazard.radius > 0.0f && std::sqrt(dx * dx + dy * dy + dz * dz) < hazard.radius;
+    }
+
+    // Where a move towards a unit stops: the unit's centre moved toward the
+    // bot by the action's stop range (melee reach, spell/heal range). Judging
+    // the centre holds a reach whose target stands in fire although the bot
+    // stops at its edge; the clamp keeps the point from passing the bot.
+    struct AoePoint
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
+    inline AoePoint ReachEndpoint(float targetX, float targetY, float targetZ, float botX, float botY, float botZ,
+        float stopRange)
+    {
+        float const dx = botX - targetX;
+        float const dy = botY - targetY;
+        float const dz = botZ - targetZ;
+        float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (stopRange <= 0.0f || distance <= 0.0f)
+            return AoePoint{targetX, targetY, targetZ};
+        if (stopRange >= distance)
+            return AoePoint{botX, botY, botZ};
+        float const scale = stopRange / distance;
+        return AoePoint{targetX + dx * scale, targetY + dy * scale, targetZ + dz * scale};
+    }
+
+    // A step-out landing as plain numbers.
+    struct AoeLanding
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
+    // A step-out's landing must clear every damaging circle, not only the one it
+    // leaves: the next fire is usually beside the one under the bot.
+    inline bool LandingInsideHazard(const std::vector<AoeHazardCircle>& hazards, float x, float y, float z)
+    {
+        for (const AoeHazardCircle& hazard : hazards)
+            if (InsideAoeHazard(hazard, x, y, z))
+                return true;
+        return false;
+    }
+
+    // Heading ring for the widened last-resort search: evenly spaced headings
+    // all round the bot, so a fire the ordered candidate list steps the bot
+    // past cannot wedge the bot in place.
+    inline void AoeFallbackHeadings(float* out)
+    {
+        constexpr float twoPi = 6.2831853072f;
+        for (int i = 0; i < kAoeFallbackHeadings; ++i)
+            out[i] = twoPi * float(i) / float(kAoeFallbackHeadings);
+    }
+
+    // The widened search's pick: the first landing, in search order (nearest step
+    // first, then heading), that clears every damaging circle and the circle
+    // being stepped out of. -1 when every candidate stands in fire - the caller
+    // then stays put; a landing in the next fire is not an escape from this one.
+    inline int ChooseClearAoeLanding(const std::vector<AoeHazardCircle>& hazards, const AoeHazardCircle& current,
+        const AoeLanding* landings, int count)
+    {
+        for (int i = 0; i < count; ++i)
+            if (!InsideAoeHazard(current, landings[i].x, landings[i].y, landings[i].z) &&
+                !LandingInsideHazard(hazards, landings[i].x, landings[i].y, landings[i].z))
+                return i;
+        return -1;
+    }
+
+    // The trap hold (the avoid_cast CastHoldsMove shape): a move whose destination
+    // lies in a damaging circle is held, so a bot does not walk back into fire it
+    // stepped out of. Not the step-out itself and not a move whose target is the
+    // bot.
+    inline bool HazardsHoldMove(bool isWalkOut, bool targetIsSelf, bool hasDestination, float x, float y, float z,
+                                const std::vector<AoeHazardCircle>& hazards)
+    {
+        if (isWalkOut || targetIsSelf || !hasDestination)
+            return false;
+        return LandingInsideHazard(hazards, x, y, z);
+    }
 
     // Radius gate shared by all three sensor cases.
     inline bool IsAvoidableAoeRadius(float radius)
@@ -46,7 +176,7 @@ namespace ai
     {
         if (effect == 2) // SPELL_EFFECT_SCHOOL_DAMAGE
             return !selectable;
-        if (targetA != 22 || targetB != 15) // CASTER_SRC + ENEMY_AOE_AT_SRC_LOC
+        if (targetA != kAoeAtSourceTargetA || targetB != kAoeAtSourceTargetB)
             return false;
         return effect == 17 || // SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL (Herod 15578)
             effect == 58 ||    // SPELL_EFFECT_WEAPON_DAMAGE

@@ -1,5 +1,6 @@
 #include <vector>
 #include "playerbot/GroupMembers.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/CommandedGroupQuery.h"
@@ -530,10 +531,15 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // only rises once it hits something, so a caster sitting behind the
         // tank kept eating through the pull and its CC order. Cheap checks
         // first: only a bot that is asleep, seated and has a food or drink
-        // aura looks at its group. Standing drops the aura, so this fires
-        // once; the fresh attackers make "combat start" fire on the next tick.
+        // aura looks at its group. The run leader's mark wakes it wherever it
+        // sits, the member test seeing nobody on the ticks between kills and
+        // beyond sight distance. Standing drops the aura, so this fires once;
+        // the fresh attackers make "combat start" fire on the next tick.
         if (aiInternalUpdateDelay > 0 && !isWaiting && bot->IsSittingDown() &&
-            HasSeatedAura(bot) && IsGroupMemberNearInCombat())
+            HasSeatedAura(bot) &&
+            (IsGroupMemberNearInCombat() ||
+                RunFightHolds((uint32)aiObjectContext->GetValue<int32>("manual int", "run fight until ms")->Get(),
+                    WorldTimer::getMSTime())))
         {
             bot->SetStandState(UNIT_STAND_STATE_STAND);
             aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();

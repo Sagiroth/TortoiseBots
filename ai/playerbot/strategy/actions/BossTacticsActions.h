@@ -93,6 +93,22 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // A damaging trap's circle over a move's destination holds that move the way
+    // a listed cast does: a bot does not walk back into fire it just stepped out
+    // of. The stay and follow spots are judged as the destinations they are; a
+    // reach is judged at the point where it stops (the target moved toward the
+    // bot by its stop range), not at the target's centre. Attacks are never
+    // held (target pick-up and engagement must run) and the hold is combat-only.
+    // The step-out itself (avoid aoe) is never held, or it could not leave.
+    // Registered on the always-on combat strategies (avoid aoe, dungeon), not on
+    // a boss-tactics one: a trap fire is not gated behind an encounter.
+    class TrapHoldMultiplier : public Multiplier
+    {
+    public:
+        TrapHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "trap hold") {}
+        float GetValue(Action* action) override;
+    };
+
     class BossTacticsAvoidCastAction : public MovementAction
     {
     public:

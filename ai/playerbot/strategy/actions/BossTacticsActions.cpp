@@ -10,6 +10,8 @@
 #include "ChooseTargetActions.h"
 #include "PositionAction.h"
 #include "FollowActions.h"
+#include "ReachTargetActions.h"
+#include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
@@ -281,6 +283,69 @@ float BossTacticsCastHoldMultiplier::GetValue(Action* action)
                          target->GetPositionZ(), zones)
                ? 0.0f
                : 1.0f;
+}
+
+float TrapHoldMultiplier::GetValue(Action* action)
+{
+    if (!action || !dynamic_cast<MovementAction*>(action))
+        return 1.0f;
+    // An attack picks a target and engages it; the pick-up is not a walk into
+    // fire, and holding one leaves the bot unable to fight at all.
+    if (dynamic_cast<AttackAction*>(action))
+        return 1.0f;
+    // Both walk-outs must run: the step out of the ground effect, and the listed
+    // cast's own way out (its destination may lie in a fire beside the blast).
+    if (dynamic_cast<AvoidAoeAction*>(action) || dynamic_cast<BossTacticsAvoidCastAction*>(action))
+        return 1.0f;
+    // Combat only: a follow or a return to the stay outside combat is the
+    // engine's travel, not a bot walking back into a fight's fire.
+    if (!bot->IsInCombat())
+        return 1.0f;
+    // A stay walks the bot back to its spot: held while that spot lies in a fire.
+    if (dynamic_cast<ReturnToStayPositionAction*>(action))
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        PositionMap& positions = AI_VALUE(PositionMap&, "position");
+        auto stay = positions.find("stay");
+        if (stay == positions.end() || !stay->second.isSet() || stay->second.mapId != bot->GetMapId())
+            return 1.0f;
+        std::vector<AoeHazardCircle> hazards;
+        CollectDamagingTrapHazardsAt(ai, bot, stay->second.x, stay->second.y, stay->second.z, hazards);
+        return HazardsHoldMove(false, false, true, stay->second.x, stay->second.y, stay->second.z, hazards)
+                   ? 0.0f
+                   : 1.0f;
+    }
+    // A follow walks to its formation spot around the unit, not to the unit:
+    // that spot is the destination, so the unit's own position is not judged.
+    if (dynamic_cast<FollowAction*>(action))
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        WorldPosition const spot = AI_VALUE(WorldPosition, "formation position");
+        if (spot.GetMapId() != bot->GetMapId())
+            return 1.0f;
+        std::vector<AoeHazardCircle> hazards;
+        CollectDamagingTrapHazardsAt(ai, bot, spot.getX(), spot.getY(), spot.getZ(), hazards);
+        return HazardsHoldMove(false, false, true, spot.getX(), spot.getY(), spot.getZ(), hazards) ? 0.0f : 1.0f;
+    }
+    // Any other move towards a unit (a reach, a chase, a heal walk): judge the
+    // point where the walk stops. A reach stops short of its target by the
+    // action's stop range, so a target standing in fire with its near edge
+    // clear does not hold the reach.
+    Unit* target = action->GetTarget();
+    if (!target || target == bot || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
+        return 1.0f;
+    float stopRange = 0.0f;
+    if (ReachTargetAction* reach = dynamic_cast<ReachTargetAction*>(action))
+    {
+        stopRange = reach->GetStopRange();
+        if (stopRange <= 0.0f)
+            stopRange = bot->GetCombatReach() + target->GetCombatReach();
+    }
+    AoePoint const endpoint = ReachEndpoint(target->GetPositionX(), target->GetPositionY(),
+        target->GetPositionZ(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), stopRange);
+    std::vector<AoeHazardCircle> hazards;
+    CollectDamagingTrapHazardsAt(ai, bot, endpoint.x, endpoint.y, endpoint.z, hazards);
+    return HazardsHoldMove(false, false, true, endpoint.x, endpoint.y, endpoint.z, hazards) ? 0.0f : 1.0f;
 }
 
 // Not MovementAction::isUseful: that one is false on a stay, and the bots of a run fight on one (a pull's anchor hold,
