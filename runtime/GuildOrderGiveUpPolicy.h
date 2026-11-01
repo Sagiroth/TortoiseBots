@@ -7,6 +7,7 @@
 // and free of core/database types on purpose: the thresholds are exercised
 // standalone in tools/test_guild_order_giveup_policy.cpp. The order store
 // feeds this function plain counters it already keeps per order.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -68,14 +69,14 @@ inline constexpr uint32_t kOrderLegParkSeconds = 15;
 
 // Failed searches moved the farm leg through this many zones without one
 // landed pick: the leg cannot reach its spots, so the ladder moves on
-// (sub-order or need list). Capped, not the full plan length: a 30-zone
-// plan would otherwise cost ~1.5 h of empty searches before giving up.
+// (sub-order or need list). The whole plan, capped: a 30-zone plan would
+// otherwise cost ~1.5 h of empty searches before giving up.
 inline constexpr uint32_t kSearchZoneMovesExhaustPlan = 8;
 
 inline bool SearchZoneMovesExhaustPlan(uint32_t zoneMoves, size_t planZones)
 {
-    (void)planZones;
-    return zoneMoves > 0 && zoneMoves >= kSearchZoneMovesExhaustPlan;
+    size_t const limit = std::min<size_t>(planZones > 0 ? planZones : 1, kSearchZoneMovesExhaustPlan);
+    return zoneMoves > 0 && zoneMoves >= limit;
 }
 
 // Whether the failed-search count moves the zone. Counts only consecutive

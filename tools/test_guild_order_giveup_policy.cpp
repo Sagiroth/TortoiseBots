@@ -71,6 +71,10 @@ int main()
     CHECK(!SearchZoneMovesExhaustPlan(7, 30));
     CHECK(SearchZoneMovesExhaustPlan(8, 30));
     CHECK(SearchZoneMovesExhaustPlan(8, 1));
+    CHECK(SearchZoneMovesExhaustPlan(1, 1));
+    CHECK(SearchZoneMovesExhaustPlan(3, 3));
+    CHECK(!SearchZoneMovesExhaustPlan(2, 3));
+    CHECK(SearchZoneMovesExhaustPlan(1, 0));
     CHECK(SearchZoneMovesExhaustPlan(9, 30));
 
     // Arrived auction visits without an auctioneer in reach move the leg
