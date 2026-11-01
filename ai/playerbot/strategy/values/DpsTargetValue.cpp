@@ -73,23 +73,39 @@ namespace
     }
 
 
-    // The hold_kill rows of a candidate's own entry and the grid-search blocker count near this bot: KillHeld's plain
-    // inputs. The role gate is the hold-kill action's (IsFreeDps): a tank or a healer keeps its own pick, and an
-    // explicit attack order is taken before any picker runs.
+    // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives
+    // (KillHeld). Opt-in like the tank pickup (IsTankHoldPickup): only a bot that runs "boss tactics" in combat holds.
+    // Cheapest check first: the candidate's rows (a map without hold_kill rows, which is every map but ZG, returns on the
+    // first lookup), then the strategy, then the role gate the hold-kill action uses (IsFreeDps: a tank or a healer keeps
+    // its own pick, an explicit attack order wins). The blocker count is the "hold kill blockers" value, one grid search
+    // per bot and entry per second, never a search of its own inside a candidate loop.
     bool HeldDpsTarget(PlayerbotAI* ai, Player* bot, Unit* unit)
     {
-        if (!unit || !ai || !bot || PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+        if (!unit || !ai || !bot)
             return false;
-        if (!ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty())
+        const BossTacticTable& table = GetBossTactics();
+        if (!table.HasMap(bot->GetMapId()))
             return false;
-        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry());
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), unit->GetEntry());
         if (!rows)
             return false;
         ActiveBossRows active;
         active.reserve(rows->size());
+        bool holdRow = false;
         for (const BossTacticRow& row : *rows)
+        {
             active.push_back(&row);
-        const auto countNear = [bot](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
+            holdRow = holdRow || row.kind == BossTacticKind::HoldKill;
+        }
+        if (!holdRow)
+            return false;
+        if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return false;
+        if (!ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty())
+            return false;
+        const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
         return DpsLeavesAlone(true, active, unit->GetEntry(), countNear);
     }
 
@@ -405,7 +421,8 @@ namespace
             mobChaser.hasGapCloser = !chaser.ranged && GapCloserReady(ai, bot, unit);
             if (!ai::ShouldFinishRunner(facts, mobChaser))
                 continue;
-            if (IsWastedDpsTarget(ai, unit) || AttackersValue::IsKeepoutSetAside(unit, bot))
+            if (IsWastedDpsTarget(ai, unit) || HeldDpsTarget(ai, bot, unit) ||
+                AttackersValue::IsKeepoutSetAside(unit, bot))
                 continue;
             if (chaser.ranged && !bot->IsWithinLOSInMap(unit))
                 continue;
@@ -508,7 +525,7 @@ Unit* DpsAoeTargetValue::Calculate()
         return explicitTarget;
 
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
 
     FindMaxHpTargetStrategy strategy(ai);
     return TargetValue::FindTarget(&strategy);

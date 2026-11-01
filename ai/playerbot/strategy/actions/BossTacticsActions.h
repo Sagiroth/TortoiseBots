@@ -28,10 +28,10 @@ namespace ai
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
 
-    // Living creatures of `entry` within `range` yd of `around`, by grid search, counting a blocker only while it
-    // fights or when it can never fight at all (CountsAsBlocker, BossTacticsPolicy.h). Never the bots' "attackers"
-    // list: a Portal of Madness is unselectable and never attacks.
-    std::uint32_t CountNear(Unit* around, std::uint32_t entry, float range);
+    // How many living units of `entry`, a hold_kill row's blocker, stand within kHoldKillRangeYd of the bot and count
+    // (CountsAsBlocker, BossTacticsPolicy.h): the "hold kill blockers" value, a grid search at most once a second per
+    // bot and entry. Never the bots' "attackers" list: a Portal of Madness is unselectable and never attacks.
+    std::uint32_t HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry);
 
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan

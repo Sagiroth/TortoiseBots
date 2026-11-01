@@ -43,6 +43,9 @@ LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 DPS_TARGET = (STRATEGY / "values/DpsTargetValue.cpp").read_text()
 TANK_TARGET = (STRATEGY / "values/TankTargetValue.cpp").read_text()
+BLOCKERS = (STRATEGY / "values/HoldKillBlockersValue.cpp").read_text()
+BLOCKERS_H = (STRATEGY / "values/HoldKillBlockersValue.h").read_text()
+VALUE_CONTEXT = (STRATEGY / "values/ValueContext.h").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -281,18 +284,23 @@ class HoldKillWiring(unittest.TestCase):
 
     def test_the_hold_multiplier_reads_killheld_for_dps(self):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        # The DPS rows stand down on a held current target; the tanks and healers keep their own pick.
+        # The DPS rows stand down on a held current target.
         self.assertIn("KillHeld(fight.rows, current->GetEntry(), countNear)", fn)
-        self.assertIn("PlayerbotAI::IsTank(bot)", fn)
-        self.assertIn("PlayerbotAI::IsHeal(bot)", fn)
         self.assertIn('dynamic_cast<DpsAssistAction*>(action)', fn)
         self.assertIn('dynamic_cast<DpsAoeAction*>(action)', fn)
+        # L-c: both hold clauses use the free-DPS gate HeldDpsTarget and the action use (IsFreeDps: no tank, no healer,
+        # no explicit attack order), not a role test of their own.
+        self.assertEqual(fn.count("freeDps"), 3)
+        self.assertIn("const bool freeDps = IsFreeDps(ai, bot);", fn)
+        self.assertIn("if (!freeDps)", fn)
+        self.assertNotIn("PlayerbotAI::IsTank(bot)", fn)
+        self.assertNotIn("PlayerbotAI::IsHeal(bot)", fn)
         # The AoE clause: a held creature in the pile the AoE would hit (one AoE killed four Servants together).
-        self.assertIn("HeldUnitNear(current, fight.rows, countNear)", fn)
-        # ...and the dps target the assist rows would send the bot to, not only the current one: with the hold in the
-        # target choice the two agree, and a held dps target (the group tank's victim) still stands the rows down.
-        self.assertIn('AI_VALUE(Unit*, "dps target")', fn)
-        self.assertIn("KillHeld(fight.rows, dpsTarget->GetEntry(), countNear)", fn)
+        self.assertIn("HeldUnitNear(current, fight, countNear)", fn)
+        # L-a: the pick the row would send the bot to, not only the current target: the dps aoe target for the AoE rows,
+        # the dps target for the assist rows.
+        self.assertIn('aoe ? AI_VALUE(Unit*, "dps aoe target") : AI_VALUE(Unit*, "dps target")', fn)
+        self.assertIn("KillHeld(fight.rows, picked->GetEntry(), countNear)", fn)
 
     def test_the_hold_kill_trigger_reads_killheld_and_dps_only(self):
         self.assertIn('Trigger(ai, "boss tactics hold kill", 1)', TRIGGERS_H)
@@ -306,24 +314,57 @@ class HoldKillWiring(unittest.TestCase):
 
     def test_the_count_is_a_grid_search_not_the_attacker_list(self):
         # The Portal of Madness (15141) is unselectable and never attacks, so the blocker count can never come from the
-        # bots' "attackers" list: every hold_kill path reaches creatures through CountNear.
-        helper = body(ACTIONS, "std::uint32_t ai::CountNear(")
-        self.assertIn("GetCreatureListWithEntryInGrid(found, entry, range)", helper)
+        # bots' "attackers" list: the one count is a grid search in the "hold kill blockers" value.
+        helper = body(BLOCKERS, "uint32 HoldKillBlockersValue::Calculate(")
+        self.assertIn("bot->GetCreatureListWithEntryInGrid(found, entry, kHoldKillRangeYd)", helper)
         self.assertIn("creature->IsAlive()", helper)
-        for fn in (helper, body(ACTIONS, "bool HeldUnitNear("), body(ACTIONS, "Unit* ai::FindBossHoldKill("),
+        self.assertNotIn('"attackers"', helper)
+        for fn in (body(ACTIONS, "std::uint32_t ai::HoldKillBlockers("), body(ACTIONS, "bool HeldUnitNear("),
+                   body(ACTIONS, "Unit* ai::FindBossHoldKill("),
                    body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue("),
-                   body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")):
+                   body(ACTIONS, "bool BossTacticsHoldKillAction::Execute("),
+                   body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")):
             self.assertNotIn('"attackers"', fn)
+
+    def test_the_grid_search_has_one_site_and_runs_once_a_second(self):
+        # Cost: no grid search inside a candidate loop. The only call anywhere in the module is the value's, qualified by
+        # the blocker entry and recalculated at most once a second; every reader goes through it.
+        sites = [str(f.relative_to(ROOT)) for f in (ROOT / "ai").rglob("*")
+                 if f.suffix in (".cpp", ".h") and f.read_text(errors="ignore").count("GetCreatureListWithEntryInGrid") > 0]
+        self.assertEqual(sites, ["ai/playerbot/strategy/values/HoldKillBlockersValue.cpp"])
+        self.assertEqual(BLOCKERS.count("GetCreatureListWithEntryInGrid"), 1)
+        self.assertIn('CalculatedValue<uint32>(ai, "hold kill blockers", 1)', BLOCKERS_H)
+        self.assertIn("public Qualified", BLOCKERS_H)
+        self.assertIn(
+            'creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };',
+            VALUE_CONTEXT)
+        self.assertIn('#include "HoldKillBlockersValue.h"', VALUE_CONTEXT)
+        reader = body(ACTIONS, "std::uint32_t ai::HoldKillBlockers(")
+        self.assertIn('AI_VALUE2(uint32, "hold kill blockers", static_cast<int32>(entry))', reader)
+        # Every reader builds its count from that one reader, none counts on its own.
+        for text in (ACTIONS, DPS_TARGET):
+            self.assertNotIn("CountNear", text)
+        self.assertEqual(ACTIONS.count("HoldKillBlockers(ai, entry)"), 3)
+        self.assertEqual(DPS_TARGET.count("HoldKillBlockers(ai, entry)"), 1)
 
     def test_the_count_counts_only_fighting_or_unselectable_blockers(self):
         # A loose Voidwalker that has not woken yet (out of combat, selectable) does not hold the Servant; the portal,
         # which never fights, does: the filter is generic (no entry constants).
-        helper = body(ACTIONS, "std::uint32_t ai::CountNear(")
+        helper = body(BLOCKERS, "uint32 HoldKillBlockersValue::Calculate(")
         self.assertIn("CountsAsBlocker(", helper)
         self.assertIn("creature->IsInCombat()", helper)
         self.assertIn("HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)", helper)
         policy = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
         self.assertIn("inline bool CountsAsBlocker(", policy)
+
+    def test_the_helper_is_defined_outside_the_anonymous_namespace(self):
+        # A qualified definition (ai::Name) inside an anonymous namespace does not compile (the CountNear regression):
+        # every `ai::` definition sits below the anonymous namespace's closing brace.
+        close = ACTIONS.index("\n}\n\n// The blocker count of the hold_kill rows")
+        self.assertLess(ACTIONS.index("namespace\n{"), close)
+        for name in ("std::uint32_t ai::HoldKillBlockers(", "BossTacticsFight ai::ScanBossTactics("):
+            self.assertGreater(ACTIONS.index(name), close)
+        self.assertNotIn("ai::", ACTIONS[ACTIONS.index("namespace\n{"):close].replace("ai::PossibleAttack", ""))
 
     def test_the_action_switches_off_the_held_entry(self):
         fn = body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")
@@ -358,21 +399,41 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
     """
 
     def test_the_dps_and_aoe_pickers_skip_a_held_entry(self):
-        fn = body(DPS_TARGET, "bool HeldDpsTarget(")
+        fn = body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")
         # The same role gate the hold-kill action uses: a tank or a healer keeps its own pick, an explicit order wins.
         self.assertIn("PlayerbotAI::IsTank(bot)", fn)
         self.assertIn("PlayerbotAI::IsHeal(bot)", fn)
         self.assertIn('GetValue<ObjectGuid>("explicit attack target")', fn)
-        # The rows of the candidate's own entry, and the grid-search count: KillHeld on plain inputs.
-        self.assertIn("GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry())", fn)
+        # The rows of the candidate's own entry, and the blocker count: KillHeld on plain inputs.
+        self.assertIn("table.Rows(bot->GetMapId(), unit->GetEntry())", fn)
         self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), countNear)", fn)
-        self.assertIn("CountNear(bot, entry, kHoldKillRangeYd)", fn)
+        self.assertIn("HoldKillBlockers(ai, entry)", fn)
         # Every picker drops a held candidate: the three tournaments and the AoE pick, the group tank's victim and the
         # raid mark. With nothing unheld left the value returns null instead of the held pick.
         self.assertEqual(DPS_TARGET.count("HeldDpsTarget(ai, ai->GetBot(), attacker)"), 4)
         self.assertIn("HeldDpsTarget(ai, bot, tankTarget)", DPS_TARGET)
-        self.assertIn("HeldDpsTarget(ai, bot, rti)", DPS_TARGET)
         self.assertIn("HeldDpsTarget(ai, bot, target) ? nullptr : target", DPS_TARGET)
+
+    def test_the_hold_is_opt_in_and_checks_the_rows_first(self):
+        # Opt-in like IsTankHoldPickup: a bot without the "boss tactics" strategy in combat never holds. Cheapest first:
+        # the map, then the candidate's rows with a HoldKill row, then the strategy, then the role and order gates.
+        fn = body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        order = ["table.HasMap(bot->GetMapId())", "table.Rows(bot->GetMapId(), unit->GetEntry())",
+                 "BossTacticKind::HoldKill", 'ai->HasStrategy("boss tactics"', "PlayerbotAI::IsTank(bot)",
+                 'GetValue<ObjectGuid>("explicit attack target")', "DpsLeavesAlone("]
+        positions = [fn.index(token) for token in order]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_the_aoe_mark_and_the_runner_finish_skip_a_held_entry(self):
+        # L-a: DpsAoeTargetValue's raid-mark early return drops a held mark; L-b: the finish-runner pick skips a held one.
+        fn = body(DPS_TARGET, "Unit* DpsAoeTargetValue::Calculate()")
+        self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", fn)
+        dps = body(DPS_TARGET, "Unit* DpsTargetValue::Calculate()")
+        self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", dps)
+        runner = DPS_TARGET[DPS_TARGET.index("IsFinishableRunner(facts)"):]
+        runner = runner[:runner.index("chaser.ranged && !bot->IsWithinLOSInMap(unit)")]
+        self.assertIn("IsWastedDpsTarget(ai, unit) || HeldDpsTarget(ai, bot, unit)", runner)
 
     def test_the_mark_yields_to_a_nearer_loose_voidwalker(self):
         # A TankHold row on the mark's own entry, and a tank_hold pickup nearer to this bot than the mark: the mark
