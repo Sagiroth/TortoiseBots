@@ -99,6 +99,10 @@ namespace ai
             // IsTankHoldPickup looks the caster up as a boss_entry, so a target_entry would key the two differently.
             if (row.kind == BossTacticKind::TankHold && row.targetEntry != 0)
                 return false;
+            // The same for a hold_kill row: its boss_entry is the entry the DPS leave alone and its target_entry the
+            // blocker that holds them off, so a row without a blocker could never hold anything.
+            if (row.kind == BossTacticKind::HoldKill && row.targetEntry == 0)
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -225,6 +229,15 @@ namespace ai
                             bool casterTankHoldRow)
     {
         return botIsTank && (casterIsOnBot || (casterTankHoldRow && casterIsOnNonTank && botTargetsCaster));
+    }
+
+    // Whether a tank takes the raid mark (rti). When the mark's own entry is listed by a tank_hold row it is the loose
+    // caster the row covers, and it yields to a tank_hold pickup that stands nearer to this bot: the tournament's
+    // loose bucket takes that add first, so the mark does not pull the tank off it. Without the row, or with no nearer
+    // pickup, the mark is taken as it always was.
+    inline bool TankTakesMark(bool markHasTankHoldRow, bool hasPickup, float nearestPickupDistance, float markDistance)
+    {
+        return !markHasTankHoldRow || !hasPickup || nearestPickupDistance >= markDistance;
     }
 
     // Whether a bot `distance` yd from such a caster has to leave (see HoldsCaster).
@@ -476,6 +489,25 @@ namespace ai
         return false;
     }
 
+    // Whether a unit of a hold_kill row's blocker entry counts towards its budget: a creature fighting, or one that
+    // can never fight at all (UNIT_FLAG_NOT_SELECTABLE — the Portal of Madness 15141 only ticks its summon and is
+    // never an attacker). A loose Voidwalker that has not woken yet is neither, so it does not hold the Servant.
+    inline bool CountsAsBlocker(bool inCombat, bool notSelectable)
+    {
+        return inCombat || notSelectable;
+    }
+
+    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
+    // (KillHeld). The dps target, the dps AoE target, the group tank's victim and the raid mark all drop such a
+    // candidate, so with nothing unheld left the bot has no target and waits for the blocker to die instead of
+    // feeding the pile. The role gate is the hold-kill action's: a tank or a healer keeps its own pick (the caller
+    // passes false for them), and an explicit attack order is taken long before this runs.
+    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry,
+                               const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        return freeDpsBot && KillHeld(rows, entry, countNear);
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
@@ -512,6 +544,30 @@ namespace ai
             {
                 best = static_cast<int>(i);
                 bestPriority = priority;
+                bestDistance = c.distance;
+            }
+        }
+        return best;
+    }
+
+    // Index of the nearest candidate a free DPS bot may attack: the same candidate rules the kill_first pick applies
+    // (pickable, kBossTacticsEngageRange) minus the entries a hold_kill row holds, so a bot switching off a held entry
+    // lands on the blocker or a loose add and never on another held entry. -1 when nothing is left.
+    inline int PickNearestUnheld(const ActiveBossRows& rows, const std::vector<TacticCandidate>& candidates,
+                                 const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        int best = -1;
+        float bestDistance = 0.0f;
+        for (std::size_t i = 0; i < candidates.size(); ++i)
+        {
+            const TacticCandidate& c = candidates[i];
+            if (!c.pickable || c.distance > kBossTacticsEngageRange)
+                continue;
+            if (KillHeld(rows, c.entry, countNear))
+                continue;
+            if (best < 0 || c.distance < bestDistance)
+            {
+                best = static_cast<int>(i);
                 bestDistance = c.distance;
             }
         }

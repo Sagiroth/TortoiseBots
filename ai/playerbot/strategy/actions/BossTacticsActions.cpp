@@ -57,7 +57,9 @@ bool IsFreeDps(PlayerbotAI* ai, Player* bot)
 // Living creatures of `entry` within `range` yd of `around`, by grid search (the core's AllCreaturesOfEntryInRange
 // through WorldObject::GetCreatureListWithEntryInGrid). Never the bots' "attackers" list: the Portal of Madness 15141
 // a dead Mad Servant leaves is unselectable (unit_flags 33555200) and never attacks, so it would never show up there.
-std::uint32_t CountNear(Unit* around, std::uint32_t entry, float range)
+// A blocker counts while it fights, or while it can never fight at all: a loose Voidwalker that has not woken yet is
+// not a blocker yet, the portal is.
+std::uint32_t ai::CountNear(Unit* around, std::uint32_t entry, float range)
 {
     if (!around || !entry)
         return 0;
@@ -66,7 +68,9 @@ std::uint32_t CountNear(Unit* around, std::uint32_t entry, float range)
     std::uint32_t count = 0;
     for (Creature* creature : found)
     {
-        if (creature->IsAlive())
+        if (!creature->IsAlive())
+            continue;
+        if (CountsAsBlocker(creature->IsInCombat(), creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)))
             ++count;
     }
     return count;
@@ -325,25 +329,24 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
         if (pick != held)
             return Attack(bot, pick);
     }
-    // Else the nearest attacker whose own entry is not held: the blocker of the held entry, a healer's loose add.
-    const auto countNear = [&](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
-    Unit* nearest = nullptr;
-    float nearestDistance = 0.0f;
+    // Else the nearest creature this bot may attack, by the same candidate rules the kill_first pick applies
+    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds.
+    const auto countNear = [bot](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
+    std::vector<TacticCandidate> candidates;
+    candidates.reserve(fight.units.size());
     for (Unit* unit : fight.units)
     {
-        if (KillHeld(fight.rows, unit->GetEntry(), countNear))
-            continue;
-        const float distance = bot->GetDistance(unit);
-        if (!nearest || distance < nearestDistance)
-        {
-            nearest = unit;
-            nearestDistance = distance;
-        }
+        TacticCandidate c;
+        c.entry = unit->GetEntry();
+        c.distance = bot->GetDistance(unit);
+        c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+        candidates.push_back(c);
     }
-    if (nearest)
-        return Attack(bot, nearest);
-    // Nothing to switch to: drop the held pick and stop, so the assist rows re-pick once the blocker is dead. The hold
-    // multiplier stands them down while it lives, so the bot waits out the Servant instead of feeding the pile.
+    const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
+    if (nearestIndex >= 0)
+        return Attack(bot, fight.units[nearestIndex]);
+    // Nothing to switch to: drop the held pick and stop, so the assist rows re-pick once the blocker is dead. Every
+    // picker skips a held entry, so the bot has no dps target while the blocker lives and waits the Servant out.
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);
     context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
@@ -361,20 +364,28 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     if (!dpsAssist && !tankAssist && !aoe)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const auto countNear = [bot](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
+    // hold_kill: a DPS bot leaves a held boss entry alone (the row's blocker is the kill). The assist rows are stood
+    // down on the target they would send the bot to — the dps target as well as the current one — and on the AoE pile.
+    // A tank or healer keeps its own pick, and TankAssistAction never has a kill_first pick to hold.
+    if ((dpsAssist || aoe) && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot))
+    {
+        if (Unit* dpsTarget = AI_VALUE(Unit*, "dps target"))
+        {
+            if (KillHeld(fight.rows, dpsTarget->GetEntry(), countNear))
+                return 0.0f;
+        }
+    }
     Unit* current = AI_VALUE(Unit*, "current target");
     if (!current)
         return 1.0f;
-    const BossTacticsFight fight = ScanBossTactics(ai, bot);
     if (FindBossKillFirst(ai, bot, fight) == current)
         return 0.0f;
-    // hold_kill: a DPS bot leaves a held boss entry alone (the row's blocker is the kill), and its AoE rows stand down
-    // while a held creature stands in the pile the AoE would hit. A tank or healer keeps its own pick, and
-    // TankAssistAction never has a kill_first pick to hold.
     if (!dpsAssist && !aoe)
         return 1.0f;
     if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
         return 1.0f;
-    const auto countNear = [bot](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
     if (KillHeld(fight.rows, current->GetEntry(), countNear))
         return 0.0f;
     return aoe && HeldUnitNear(current, fight.rows, countNear) ? 0.0f : 1.0f;

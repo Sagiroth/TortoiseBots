@@ -28,6 +28,11 @@ namespace ai
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
 
+    // Living creatures of `entry` within `range` yd of `around`, by grid search, counting a blocker only while it
+    // fights or when it can never fight at all (CountsAsBlocker, BossTacticsPolicy.h). Never the bots' "attackers"
+    // list: a Portal of Madness is unselectable and never attacks.
+    std::uint32_t CountNear(Unit* around, std::uint32_t entry, float range);
+
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan
     {

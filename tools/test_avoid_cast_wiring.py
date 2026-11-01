@@ -41,6 +41,8 @@ COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
 MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
 LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
+DPS_TARGET = (STRATEGY / "values/DpsTargetValue.cpp").read_text()
+TANK_TARGET = (STRATEGY / "values/TankTargetValue.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -96,7 +98,7 @@ class AvoidCastWiring(unittest.TestCase):
         # A tank holding nothing takes a caster a tank_hold row lists, that is on a non-tank, before the nearest
         # loose add (TankTargetValue.cpp): that is what makes it pick the Mad Voidwalker up at all.
         tank = (STRATEGY / "values/TankTargetValue.cpp").read_text()
-        pickup = tank[tank.index("bool IsTankHoldPickup(Unit* unit)"):]
+        pickup = tank[tank.index("bool IsTankHoldPickup(PlayerbotAI* ai, Unit* unit)"):]
         pickup = pickup[:pickup.index("\n    }")]
         # Armed only with the boss tactics strategy in combat (fix 2): without it the loose-add order is exactly
         # the pre-row one (nearest first), and the row lookup is not even reached.
@@ -287,6 +289,10 @@ class HoldKillWiring(unittest.TestCase):
         self.assertIn('dynamic_cast<DpsAoeAction*>(action)', fn)
         # The AoE clause: a held creature in the pile the AoE would hit (one AoE killed four Servants together).
         self.assertIn("HeldUnitNear(current, fight.rows, countNear)", fn)
+        # ...and the dps target the assist rows would send the bot to, not only the current one: with the hold in the
+        # target choice the two agree, and a held dps target (the group tank's victim) still stands the rows down.
+        self.assertIn('AI_VALUE(Unit*, "dps target")', fn)
+        self.assertIn("KillHeld(fight.rows, dpsTarget->GetEntry(), countNear)", fn)
 
     def test_the_hold_kill_trigger_reads_killheld_and_dps_only(self):
         self.assertIn('Trigger(ai, "boss tactics hold kill", 1)', TRIGGERS_H)
@@ -301,7 +307,7 @@ class HoldKillWiring(unittest.TestCase):
     def test_the_count_is_a_grid_search_not_the_attacker_list(self):
         # The Portal of Madness (15141) is unselectable and never attacks, so the blocker count can never come from the
         # bots' "attackers" list: every hold_kill path reaches creatures through CountNear.
-        helper = body(ACTIONS, "std::uint32_t CountNear(")
+        helper = body(ACTIONS, "std::uint32_t ai::CountNear(")
         self.assertIn("GetCreatureListWithEntryInGrid(found, entry, range)", helper)
         self.assertIn("creature->IsAlive()", helper)
         for fn in (helper, body(ACTIONS, "bool HeldUnitNear("), body(ACTIONS, "Unit* ai::FindBossHoldKill("),
@@ -309,13 +315,24 @@ class HoldKillWiring(unittest.TestCase):
                    body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")):
             self.assertNotIn('"attackers"', fn)
 
+    def test_the_count_counts_only_fighting_or_unselectable_blockers(self):
+        # A loose Voidwalker that has not woken yet (out of combat, selectable) does not hold the Servant; the portal,
+        # which never fights, does: the filter is generic (no entry constants).
+        helper = body(ACTIONS, "std::uint32_t ai::CountNear(")
+        self.assertIn("CountsAsBlocker(", helper)
+        self.assertIn("creature->IsInCombat()", helper)
+        self.assertIn("HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)", helper)
+        policy = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+        self.assertIn("inline bool CountsAsBlocker(", policy)
+
     def test_the_action_switches_off_the_held_entry(self):
         fn = body(ACTIONS, "bool BossTacticsHoldKillAction::Execute(")
         self.assertIn("FindBossHoldKill(ai, bot, fight)", fn)
-        # The kill_first pick first, else the nearest attacker whose own entry is not held.
+        # The kill_first pick first, else the nearest creature this bot may attack, by the kill_first candidate rules.
         self.assertIn("FindBossKillFirst(ai, bot, fight)", fn)
-        self.assertIn("KillHeld(fight.rows, unit->GetEntry(), countNear)", fn)
-        self.assertIn("Attack(bot, nearest)", fn)
+        self.assertIn("PossibleAttackTargetsValue::IsValid(unit, bot)", fn)
+        self.assertIn("PickNearestUnheld(fight.rows, candidates, countNear)", fn)
+        self.assertIn("Attack(bot, fight.units[nearestIndex])", fn)
         # Nothing to switch to: drop the held pick and stop attacking it, so the assist rows re-pick.
         self.assertIn('GetValue<Unit*>("current target")->Set(nullptr)', fn)
         self.assertIn('GetValue<ObjectGuid>("attack target")->Set(ObjectGuid())', fn)
@@ -330,6 +347,47 @@ class HoldKillWiring(unittest.TestCase):
             ACTION_CONTEXT)
         self.assertIn('new NextAction("boss tactics hold kill", ACTION_HIGH + 2)',
                       node(TACTICS_STRATEGY, "boss tactics hold kill"))
+
+
+class HoldLivesInTheTargetChoice(unittest.TestCase):
+    """H1/H2 (Codex H + cold M1): the hold-kill action fought the generic pickers (the dps target re-picked the held
+    Servant the next tick) and the skip was only in the action. The pickers themselves drop a held entry now.
+
+    The rules live in ai/playerbot/BossTacticsPolicy.h (DpsLeavesAlone, KillHeld) and are unit-tested in
+    tools/test_boss_tactics_policy.cpp. These pins only prove the live code calls them.
+    """
+
+    def test_the_dps_and_aoe_pickers_skip_a_held_entry(self):
+        fn = body(DPS_TARGET, "bool HeldDpsTarget(")
+        # The same role gate the hold-kill action uses: a tank or a healer keeps its own pick, an explicit order wins.
+        self.assertIn("PlayerbotAI::IsTank(bot)", fn)
+        self.assertIn("PlayerbotAI::IsHeal(bot)", fn)
+        self.assertIn('GetValue<ObjectGuid>("explicit attack target")', fn)
+        # The rows of the candidate's own entry, and the grid-search count: KillHeld on plain inputs.
+        self.assertIn("GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry())", fn)
+        self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), countNear)", fn)
+        self.assertIn("CountNear(bot, entry, kHoldKillRangeYd)", fn)
+        # Every picker drops a held candidate: the three tournaments and the AoE pick, the group tank's victim and the
+        # raid mark. With nothing unheld left the value returns null instead of the held pick.
+        self.assertEqual(DPS_TARGET.count("HeldDpsTarget(ai, ai->GetBot(), attacker)"), 4)
+        self.assertIn("HeldDpsTarget(ai, bot, tankTarget)", DPS_TARGET)
+        self.assertIn("HeldDpsTarget(ai, bot, rti)", DPS_TARGET)
+        self.assertIn("HeldDpsTarget(ai, bot, target) ? nullptr : target", DPS_TARGET)
+
+    def test_the_mark_yields_to_a_nearer_loose_voidwalker(self):
+        # A TankHold row on the mark's own entry, and a tank_hold pickup nearer to this bot than the mark: the mark
+        # drops and the tournament's loose bucket (pickups first) takes over. Without the row, as before.
+        self.assertIn("MarkYieldsToNearerPickup(ai, bot, rti)", TANK_TARGET)
+        fn = body(TANK_TARGET, "bool MarkYieldsToNearerPickup(")
+        self.assertIn("MarkHasTankHoldRow(mark)", fn)
+        self.assertIn("TankTakesMark(true, hasPickup, nearestPickup, bot->GetDistance(mark))", fn)
+        self.assertIn("IsTankHoldPickup(ai, unit)", fn)
+
+    def test_the_pickup_check_reads_the_strategy_gate(self):
+        fn = body(TANK_TARGET, "bool IsTankHoldPickup(")
+        self.assertIn('HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn("BossTacticKind::TankHold", fn)
+        self.assertIn("ai->IsTank(victimPlayer)", fn)
 
 
 class TankTakesTheLooseVoidwalker(unittest.TestCase):
@@ -358,10 +416,10 @@ class TankTakesTheLooseVoidwalker(unittest.TestCase):
         tank = (STRATEGY / "values/TankTargetValue.cpp").read_text()
         is_better = tank[tank.index("bool IsBetter(Unit* newUnit, Unit* oldUnit)"):]
         is_better = is_better[:is_better.index("\n    int GetIntervalLevel(")]
-        self.assertIn("IsTankHoldPickup(newUnit)", is_better)
-        self.assertIn("IsTankHoldPickup(oldUnit)", is_better)
+        self.assertIn("IsTankHoldPickup(ai, newUnit)", is_better)
+        self.assertIn("IsTankHoldPickup(ai, oldUnit)", is_better)
         self.assertIn("if (newPickup != oldPickup)", is_better)
-        self.assertLess(is_better.index("IsTankHoldPickup(newUnit)"), is_better.index("MainTankSticksToCurrent("))
+        self.assertLess(is_better.index("IsTankHoldPickup(ai, newUnit)"), is_better.index("MainTankSticksToCurrent("))
         self.assertLess(is_better.index("if (newPickup != oldPickup)"), is_better.index("MainTankSticksToCurrent("))
 
 

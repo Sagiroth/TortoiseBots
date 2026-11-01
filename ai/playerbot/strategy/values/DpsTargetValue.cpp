@@ -8,6 +8,8 @@
 #include "playerbot/FourHorsemenRotationPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
 
@@ -70,6 +72,26 @@ namespace
         return false;
     }
 
+
+    // The hold_kill rows of a candidate's own entry and the grid-search blocker count near this bot: KillHeld's plain
+    // inputs. The role gate is the hold-kill action's (IsFreeDps): a tank or a healer keeps its own pick, and an
+    // explicit attack order is taken before any picker runs.
+    bool HeldDpsTarget(PlayerbotAI* ai, Player* bot, Unit* unit)
+    {
+        if (!unit || !ai || !bot || PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return false;
+        if (!ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty())
+            return false;
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        ActiveBossRows active;
+        active.reserve(rows->size());
+        for (const BossTacticRow& row : *rows)
+            active.push_back(&row);
+        const auto countNear = [bot](std::uint32_t entry) { return CountNear(bot, entry, kHoldKillRangeYd); };
+        return DpsLeavesAlone(true, active, unit->GetEntry(), countNear);
+    }
 
     // mod-playerbots DPS target tournament (LD-1/LD-4): lifetime buckets per
     // bot type instead of flat least-HP, CC-moon skip, skull snap. The
@@ -142,7 +164,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -180,7 +202,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -210,7 +232,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -413,7 +435,7 @@ Unit* DpsTargetValue::Calculate()
     // A raid mark set aside in a creature aura keep-out falls through to
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
 
     GeneralDpsStrategy ccProbe(ai, 0.0f);
 
@@ -425,7 +447,7 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
-            !IsWastedDpsTarget(ai, tankTarget))
+            !IsWastedDpsTarget(ai, tankTarget) && !HeldDpsTarget(ai, bot, tankTarget))
             return tankTarget;
     }
 
@@ -435,25 +457,26 @@ Unit* DpsTargetValue::Calculate()
     float groupDps = AI_VALUE(float, "estimated group dps");
     // Every tournament skips the CC marks; when they are all that is left,
     // the marked mob is killed last instead of never (FindLastCcTarget).
+    Unit* target = nullptr;
     if (nearCount > 3 && IsCasterBot(ai, bot))
     {
         CasterDpsStrategy strategy(ai, groupDps);
-        if (Unit* target = TargetValue::FindTarget(&strategy))
-            return target;
-        return FindLastCcTarget();
+        target = TargetValue::FindTarget(&strategy);
     }
-    if (nearCount > 3 && IsComboBot(ai, bot))
+    else if (nearCount > 3 && IsComboBot(ai, bot))
     {
         ComboDpsStrategy strategy(ai, groupDps);
-        if (Unit* target = TargetValue::FindTarget(&strategy))
-            return target;
-        return FindLastCcTarget();
+        target = TargetValue::FindTarget(&strategy);
     }
-
-    GeneralDpsStrategy strategy(ai, groupDps);
-    if (Unit* target = TargetValue::FindTarget(&strategy))
-        return target;
-    return FindLastCcTarget();
+    else
+    {
+        GeneralDpsStrategy strategy(ai, groupDps);
+        target = TargetValue::FindTarget(&strategy);
+    }
+    if (!target)
+        target = FindLastCcTarget();
+    // Nobody attacks a held entry: with nothing unheld left the value returns null and the bot waits for the blocker.
+    return HeldDpsTarget(ai, bot, target) ? nullptr : target;
 }
 
 class FindMaxHpTargetStrategy : public FindNonCcTargetStrategy
@@ -468,8 +491,8 @@ public:
     virtual void CheckAttacker(Unit* attacker, ThreatManager* threatManager) override
     {
         // Same CC-mark rule as every other picker: a protected mark is
-        // skipped, a free one is a normal enemy.
-        if (IsCcTarget(attacker))
+        // skipped, a free one is a normal enemy. A held entry is nobody's pick: the hold_kill blocker is the kill.
+        if (IsCcTarget(attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
             return;
         if (!result || result->GetHealth() < attacker->GetHealth())
             result = attacker;

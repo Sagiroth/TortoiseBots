@@ -104,6 +104,7 @@ int main()
         CHECK(!table.Add(Row(70, 6910, BossTacticKind::Interrupt, 0, 0)));             // interrupt without a spell
         CHECK(!table.Add(Row(70, 7228, BossTacticKind::Behind, 0, 8374, 0, 0.0f)));    // behind without a radius
         CHECK(!table.Add(Row(70, 7228, BossTacticKind::Behind, 0, 8374, 0, -3.0f)));
+        CHECK(!table.Add(Row(309, 15111, BossTacticKind::HoldKill)));                  // hold_kill without a blocker
         CHECK(table.Size() == 0);
         table.Seal();
         CHECK(!table.HasMap(70));  // an empty sealed table has no map: the tactics stay off
@@ -213,8 +214,69 @@ int main()
         CHECK(KillHeld(Active(swapped), 15146, countOf(15111, 1)));
     }
 
-    // Loader: a hold_kill row is keyed by boss + kind + blocker + spell, so the two Servant rows coexist, and a nonzero
-    // target_entry is the row's blocker, not a rejection (only a tank_hold row may not carry one).
+    // The hold lives in the target choice too, not only in the action: a free DPS bot leaves a held entry alone
+    // (DpsLeavesAlone), so the dps pickers drop it and with nothing unheld left the value returns null and the bot
+    // waits. The action's nearest-attacker fallback drops a held candidate the same way (PickNearestUnheld).
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 15111, BossTacticKind::HoldKill, 15146),
+            Row(309, 15111, BossTacticKind::HoldKill, 15141),
+        };
+        const ActiveBossRows active = Active(rows);
+        auto countOf = [](std::uint32_t entry, std::uint32_t n) {
+            return [entry, n](std::uint32_t e) -> std::uint32_t { return e == entry ? n : 0; };
+        };
+
+        // Candidates in pick order: a held Servant is never re-picked while a Voidwalker lives.
+        const std::vector<TacticCandidate> servantThenVoidwalker = { Cand(15111, 5.0f), Cand(15146, 20.0f) };
+        CHECK(PickNearestUnheld(active, servantThenVoidwalker, countOf(15146, 1)) == 1);   // the Voidwalker
+        CHECK(PickNearestUnheld(active, { Cand(15111, 5.0f) }, countOf(15146, 1)) == -1);  // nothing unheld: no pick
+        CHECK(PickNearestUnheld(ActiveBossRows(), servantThenVoidwalker, countOf(15146, 1)) == 0);  // no rows: Servant
+
+        // The same rule with the role gate the hold-kill action uses: the first candidate a free DPS bot may attack.
+        auto firstUnheld = [&](const ActiveBossRows& r, const std::vector<std::uint32_t>& entries,
+                               const std::function<std::uint32_t(std::uint32_t)>& count) -> std::uint32_t
+        {
+            for (std::uint32_t entry : entries)
+                if (!DpsLeavesAlone(true, r, entry, count))
+                    return entry;
+            return 0;
+        };
+        const std::vector<std::uint32_t> both = { 15111, 15146 };
+        CHECK(firstUnheld(active, both, countOf(15146, 1)) == 15146);
+        CHECK(firstUnheld(active, { 15111 }, countOf(15146, 1)) == 0);
+        CHECK(firstUnheld(ActiveBossRows(), both, countOf(15146, 1)) == 15111);
+        CHECK(firstUnheld(active, both, countOf(15146, 0)) == 15111);       // no blocker: the Servant is free again
+        CHECK(!DpsLeavesAlone(false, active, 15111, countOf(15146, 1)));    // a tank or healer is not a free DPS bot
+
+        // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
+        CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
+        CHECK(PickNearestUnheld(active, { Cand(15146, 5.0f, false) }, countOf(15146, 0)) == -1);
+    }
+
+    // A blocker counts towards a hold_kill budget only while it fights, or when it can never fight at all (the
+    // unselectable Portal of Madness); a loose Voidwalker that has not woken yet does not hold the Servant.
+    {
+        CHECK(!CountsAsBlocker(false, false));   // out of combat and selectable: an add on the way, not a blocker yet
+        CHECK(CountsAsBlocker(true, false));     // fighting
+        CHECK(CountsAsBlocker(false, true));     // the unselectable portal
+        CHECK(CountsAsBlocker(true, true));
+    }
+
+    // The tank mark yields to a nearer tank_hold pickup: with a TankHold row on the mark's own entry and a pickup
+    // nearer than the mark, the mark is dropped (the tournament's loose bucket takes the pickup first); otherwise,
+    // and without the row, the mark is taken as before.
+    {
+        CHECK(!TankTakesMark(true, true, 8.0f, 30.0f));    // an off-tank takes the nearer loose Voidwalker
+        CHECK(TankTakesMark(true, true, 30.0f, 30.0f));    // the same distance: the mark, not a coin toss
+        CHECK(TankTakesMark(true, true, 40.0f, 30.0f));    // no nearer pickup
+        CHECK(TankTakesMark(true, false, 0.0f, 30.0f));    // no pickup at all
+        CHECK(TankTakesMark(false, true, 8.0f, 30.0f));    // the mark without a TankHold row: as before
+        CHECK(TankTakesMark(false, false, 0.0f, 30.0f));
+    }
+
+    // Loader: a hold_kill row is keyed by boss + kind + blocker + spell, so the two Servant rows coexist; its
+    // target_entry is the blocker, so one without a blocker is refused (like a tank_hold row that carries one).
     {
         BossTacticTable table;
         CHECK(table.Add(Row(309, 15111, BossTacticKind::HoldKill, 15146)));
