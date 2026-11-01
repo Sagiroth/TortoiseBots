@@ -198,9 +198,13 @@ public:
     // before the nearest add. A ZG Mad Voidwalker held by a non-tank channels, then shocks the
     // whole raid (15 yd, ~1000-1200 shadow) once its target walks away; a tank on it stops both.
     // Only the free loose-add choice reads this: the explicit attack target and the main-tank
-    // stickiness above are decided before IsBetter's loose-add branch runs.
+    // stickiness above are decided before IsBetter's loose-add branch runs. The preference is part of
+    // the boss tactics tactic, so it is armed only while the bot runs "boss tactics" in combat:
+    // without it the loose-add order is exactly as on 5ef9e9771 (nearest first).
     bool IsTankHoldPickup(Unit* unit)
     {
+        if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
         const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(unit->GetMapId(), unit->GetEntry());
         if (!rows)
             return false;

@@ -185,9 +185,13 @@ bool BotHoldsCaster(PlayerbotAI* ai, Player* bot, Unit* caster, const ActiveBoss
     const bool casterIsOnBot = victim == bot;
     const bool casterIsOnNonTank = victim && victim != bot && victim->GetTypeId() == TYPEID_PLAYER &&
         !PlayerbotAI::IsTank(static_cast<Player*>(victim));
-    // The same value the rest of this file reads for the bot's target (BossTacticsKillFirstAction, the hold multiplier).
-    const bool botTargetsCaster = AI_VALUE(Unit*, "current target") == caster;
     const bool casterTankHoldRow = HasTankHold(active, caster->GetEntry());
+    // "current target" is what TankAssistAction's Attack() sets. A tank that has or picks the caster as its "tank
+    // target" is the same tank: BossTacticsCastHoldMultiplier holds that very AttackAction while the caster's blast
+    // applies to this bot, so "current target" can lag behind. "tank target" is read ONLY for a caster the row lists,
+    // so the reaction engine pays for the value on the one caster whose blast this tank may hold, not every caster.
+    const bool botTargetsCaster = AI_VALUE(Unit*, "current target") == caster ||
+        (casterTankHoldRow && PlayerbotAI::IsTank(bot) && AI_VALUE(Unit*, "tank target") == caster);
     return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow);
 }
 }

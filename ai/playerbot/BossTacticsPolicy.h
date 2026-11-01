@@ -91,6 +91,10 @@ namespace ai
                 return false;
             if (row.kind == BossTacticKind::AvoidCast && (row.spellId == 0 || !(row.param > 0.0f)))
                 return false;
+            // A tank_hold row is keyed by the caster's boss_entry (target_entry 0): HasTankHold reads the subject while
+            // IsTankHoldPickup looks the caster up as a boss_entry, so a target_entry would key the two differently.
+            if (row.kind == BossTacticKind::TankHold && row.targetEntry != 0)
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {

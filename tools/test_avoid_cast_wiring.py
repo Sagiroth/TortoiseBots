@@ -77,6 +77,13 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("victim->GetTypeId() == TYPEID_PLAYER", helper)
         self.assertIn('AI_VALUE(Unit*, "current target") == caster', helper)
         self.assertIn("HasTankHold(active, caster->GetEntry())", helper)
+        # The tank-target fallback (fix 1): a channelling caster's blast holds the AttackAction that would set
+        # "current target", so a tank the loose-add choice picked up also counts through "tank target" — read only
+        # behind the row check, so the reaction engine pays for the value on the one caster whose blast this tank
+        # may hold, not every caster.
+        self.assertIn('(casterTankHoldRow && PlayerbotAI::IsTank(bot) && AI_VALUE(Unit*, "tank target") == caster)',
+                      helper)
+        self.assertLess(helper.index("HasTankHold(active, caster->GetEntry())"), helper.index('"tank target"'))
         self.assertIn(
             "HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow)",
             helper)
@@ -90,6 +97,10 @@ class AvoidCastWiring(unittest.TestCase):
         tank = (STRATEGY / "values/TankTargetValue.cpp").read_text()
         pickup = tank[tank.index("bool IsTankHoldPickup(Unit* unit)"):]
         pickup = pickup[:pickup.index("\n    }")]
+        # Armed only with the boss tactics strategy in combat (fix 2): without it the loose-add order is exactly
+        # the pre-row one (nearest first), and the row lookup is not even reached.
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', pickup)
+        self.assertLess(pickup.index("HasStrategy"), pickup.index("GetBossTactics().Rows("))
         self.assertIn("GetBossTactics().Rows(unit->GetMapId(), unit->GetEntry())", pickup)
         self.assertIn("row.kind == BossTacticKind::TankHold", pickup)
         self.assertIn("dynamic_cast<Player*>(unit->GetVictim())", pickup)

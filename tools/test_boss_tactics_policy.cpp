@@ -338,6 +338,7 @@ int main()
         BossTacticTable table;
         CHECK(table.Add(Row(309, 15146, BossTacticKind::TankHold)));
         CHECK(!table.Add(Row(309, 15146, BossTacticKind::TankHold)));   // same key
+        CHECK(!table.Add(Row(309, 15146, BossTacticKind::TankHold, 15147)));  // a tank_hold row cannot name a target_entry
         table.Seal();
         CHECK(table.Rows(309, 15146) != nullptr);
         const std::vector<BossTacticRow> rows = {

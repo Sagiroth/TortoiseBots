@@ -11,7 +11,9 @@
 -- Voidwalkers. EventAI 1514601 channels Consuming Shadows 24614 (5 yd, 400 shadow a second) on its target within 5 yd;
 -- EventAI 1514602 casts instant Shadow Shock 24616 (15 yd, level-scaled ~1000-1200 shadow) whenever its target is 6-40
 -- yd away. Untanked (walk 20), the target walked out of the channel and the shock killed most of the raid. With this
--- row a tank picks the Voidwalker up and holds it in melee: no channel target, no shock.
+-- row the tank that has or picks the Voidwalker as its target stays in and takes it, and the loose-add choice prefers
+-- a tank_hold caster that is on a non-tank; until the tank has aggro the healer still walks out, so a Shadow Shock can
+-- still land in that window (no taunt is added).
 --
 -- The Gurubashi Bat Rider 14750 (20261030160000_world.sql) gets NO tank_hold row: its Unstable Concoction 24024 is a
 -- 10 yd self blast it casts once before it dies, and holding a tank in it only kills the tank.
