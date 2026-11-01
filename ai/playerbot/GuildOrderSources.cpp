@@ -367,6 +367,11 @@ void BuildGuildOrderSourceIndex()
         std::map<uint32_t, GuildOrderZoneSlice> slices;
         for (AsyncGuidPosition const& point : points)
         {
+            // A solo farm leg never walks into an instance: the travel
+            // search only serves points on the bot's own map, so an
+            // instance slice would plan a zone the leg can never reach.
+            if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(point.getMapId()))
+                continue;
             uint32_t areaId = 0;
             bool allyHome = false, hordeHome = false;
             uint32_t const zoneId = ZoneOf(point.getAreaFlag(), point.getMapId(), areaId, allyHome, hordeHome);
@@ -554,6 +559,8 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     for (GuildOrderZoneSlice const& slice : slices->second)
     {
         if (slice.zoneId != zoneId || slice.spawns == 0)
+            continue;
+        if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(slice.mapId))
             continue;
         bool const enemyHome = team == uint32_t(ALLIANCE) ? (slice.team & (1 << 1)) :
             (team == uint32_t(HORDE) ? (slice.team & (1 << 0)) : false);
@@ -773,6 +780,11 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
 
         for (GuildOrderZoneSlice const& slice : slices->second)
         {
+            // Belt and braces with the index build: slices cached before
+            // this filter shipped (or on a map the rule does not know) never
+            // plan a dungeon zone for a solo farm leg.
+            if (!TortoiseBots::GuildOrders::FarmZoneMapSoloWalkable(slice.mapId))
+                continue;
             bool const enemyHome = team == ALLIANCE ? (slice.team & (1 << 1)) : (slice.team & (1 << 0));
             if (enemyHome)
                 continue;

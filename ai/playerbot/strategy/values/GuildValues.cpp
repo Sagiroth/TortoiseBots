@@ -193,12 +193,46 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     if (!spell)
         return;
     uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    // Shared base reagents add up across sibling components: the walk below
+    // names each craftable sibling once with its own shortfall, so the
+    // delegated (or farmed) count must cover the whole tree, not the first
+    // sibling that needs it. Each sibling's casts come from its own
+    // shortfall, not the parent's.
+    std::unordered_map<uint32_t, uint32_t> shared;
     for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
             continue;
         uint32_t reagentId = uint32_t(spell->Reagent[i]);
-        CollectMissingReagents(ai, bot, reagentId, spell->ReagentCount[i] * casts, out, &snap);
+        uint32_t spellFor = SnapshotCraftSpell(bot, snap, reagentId);
+        if (!spellFor || IsUnlimitedVendorItem(reagentId))
+            continue;
+        SpellEntry const* sub = sServerFacade.LookupSpellInfo(spellFor);
+        if (!sub)
+            continue;
+        uint32_t owned = SnapshotBags(ai, snap, reagentId) + SnapshotMail(bot, snap, reagentId);
+        uint32_t need = spell->ReagentCount[i] * casts;
+        if (owned >= need)
+            continue;
+        uint32_t subCasts = ai::CraftCastsForRemaining(spellFor, reagentId, need - owned);
+        for (uint8_t j = 0; j < MAX_SPELL_REAGENTS; ++j)
+        {
+            if (!sub->ReagentCount[j] || sub->Reagent[j] <= 0)
+                continue;
+            shared[uint32_t(sub->Reagent[j])] += sub->ReagentCount[j] * subCasts;
+        }
+    }
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        uint32_t need = spell->ReagentCount[i] * casts;
+        auto sharedNeed = shared.find(reagentId);
+        if (sharedNeed != shared.end() && sharedNeed->second > need)
+            CollectMissingReagents(ai, bot, reagentId, sharedNeed->second, out, &snap);
+        else
+            CollectMissingReagents(ai, bot, reagentId, need, out, &snap);
     }
     if (!sPlayerbotAIConfig.craftToolsAlways)
         for (uint32_t totem : spell->Totem)
