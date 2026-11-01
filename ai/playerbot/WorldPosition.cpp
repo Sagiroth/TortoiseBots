@@ -670,7 +670,8 @@ void WorldPosition::EnsurePointDangerIndex()
                     PointDangerCellCoord(dataPair.second.position.x),
                     PointDangerCellCoord(dataPair.second.position.y) };
                 (*cells)[key].push_back(PointDangerSpawn{ dataPair.second.position.x,
-                    dataPair.second.position.y, toAlly, toHorde, info->level_max });
+                    dataPair.second.position.y, toAlly, toHorde, info->level_max,
+                    info->rank > CREATURE_ELITE_NORMAL });
                 return false;
             }
         };
@@ -718,6 +719,42 @@ uint32 WorldPosition::getHighestHostileLevelNear(float radius, Team botTeam) con
     return highest;
 }
 
+uint32 WorldPosition::getHighestHostileEliteLevelNear(float radius, Team botTeam) const
+{
+    // Same cell walk as getHighestHostileLevelNear, elite spawns only: one
+    // extra bool per stored spawn, no second index, no per-query allocation.
+    if (botTeam != ALLIANCE && botTeam != HORDE)
+        return 0;
+    EnsurePointDangerIndex();
+    bool const isHorde = botTeam == HORDE;
+    int32 minCX = PointDangerCellCoord(x - radius);
+    int32 maxCX = PointDangerCellCoord(x + radius);
+    int32 minCY = PointDangerCellCoord(y - radius);
+    int32 maxCY = PointDangerCellCoord(y + radius);
+    float const radiusSq = radius * radius;
+    uint32 highest = 0;
+    for (int32 cx = minCX; cx <= maxCX; ++cx)
+        for (int32 cy = minCY; cy <= maxCY; ++cy)
+        {
+            auto it = s_pointDangerCells.find(PointDangerCellKey{ mapId, cx, cy });
+            if (it == s_pointDangerCells.end())
+                continue;
+            for (auto const& spawn : it->second)
+            {
+                if (!spawn.elite)
+                    continue;
+                if (!(isHorde ? spawn.hostileToHorde : spawn.hostileToAlliance))
+                    continue;
+                float dx = spawn.x - x;
+                float dy = spawn.y - y;
+                if (dx * dx + dy * dy > radiusSq)
+                    continue;
+                if (spawn.levelMax > highest)
+                    highest = spawn.levelMax;
+            }
+        }
+    return highest;
+}
 // Diagnostics only: 0 until the one-time build completes (callers must check
 // IsHostileTownIndexBuilt() first). After the build the maps are immutable, so
 // size reads need no lock.

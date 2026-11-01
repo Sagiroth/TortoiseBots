@@ -5,7 +5,7 @@ generated file, `tools/observability/web/data/boss_abilities.json` (served at
 `/data/boss_abilities.json`). Edit the CSV here, never the JSON:
 
 ```
-python3 tools/boss_data.py build     # CSV + names.json + raids.csv + code_answers.csv -> JSON
+python3 tools/boss_data.py build     # CSVs + names.json + raids.csv + code_answers.csv -> JSONs
 python3 tools/boss_data.py check     # citations, uniqueness, answers, JSON freshness
 python3 tools/boss_data.py check --db  # also: ids and flags against tw_world
 python3 tools/boss_data.py coverage 309  # which abilities the bots have no answer for
@@ -21,12 +21,14 @@ and, when a code strategy already answers something, `code_answers.csv`.
 | File | What |
 |:--|:--|
 | `boss_abilities.csv` | the source; one row per ability, phase rule, add or note |
-| `raids.csv` | raid key, map id and display name; `check` fails when a CSV map has no row or a row has no boss |
+| `trash_abilities.csv` | the trash elites that wipe runs; one `mob` row per entry, then its abilities and notes |
+| `raids.csv` | raid key, map id and display name; `check` fails when a CSV map has no row or a row has no boss or trash mob |
 | `code_answers.csv` | the answers that live in C++ (a trigger, action or strategy), with a repo path per claim |
 | `names.json` | spell and creature names (plus known cast ms) used by `build` |
 | `../../tools/boss_data.py` | `build` / `check` / `coverage`; validates every citation and every answer |
 | `../../tools/boss_coverage.py` | the coverage rule shared with the page (`coverage_cases.json` keeps both sides equal) |
 | `../../tools/observability/web/data/boss_abilities.json` | generated, committed, served |
+| `../../tools/observability/web/data/trash_abilities.json` | the trash table, minified: it loads with every page, so it stays small |
 
 `names.json` is committed so `check` works without a database. On a world-DB
 machine, `python3 tools/boss_data.py build --db` refreshes it from
@@ -47,7 +49,10 @@ trigger header for map 249); it needs no citation column.
 | `ability` | spell id | first ms after pull, `0` = no timer | repeat min ms | repeat max ms (`b=c` constant, `0/0` one-shot) | flags |
 | `phase` | phase name | `hp<N>`, `aura=<spell>`, `flag=<letter>`, `start` | order, 1 checked first | | |
 | `add` | creature entry | `summon`/`linked`/`ward`/`totem`/`trigger` | kill priority, `0` none | | |
+| `alias` | creature entry | | | | |
 | `note` | | text shown under the panel | | | |
+
+An `alias` row names the boss under another entry (a mid-fight `SetEntry`/`UpdateEntry`); the page shows it on the boss's panel; cite the script line. An entry is one alias of one boss: a duplicate in the same block, an entry that is itself a boss, and an entry that is an add of any boss are refused.
 
 Ability flags, `;`-joined: `p=<phase>` (must be a phase row), `t=victim|random|self|aoe|ally`,
 `aura` (leaves an aura on players), `self` (an aura on the boss), `mark` (marked
@@ -57,12 +62,78 @@ icon), `ground` (persistent area, checked against spell effect 27 with `--db`),
 `int` (a cast with a cast time or a channel; add `ok.interrupt=nokick` when the
 core cannot stop it), `summon=<entry>` (needs an add row),
 `hp<N>` (one-shot below N percent), `ok=<reason>` (the whole ability needs no
-answer) and `ok.<need>=<reason>` (that one need needs no answer).
+answer), `ok.<need>=<reason>` (that one need needs no answer), `dur=<ms>` (the
+ability lasts this long; the repeat window counts from its end; cite the line
+that sets the duration) and `from=<phase>` (the first timer counts from when the
+boss first entered that phase this fight, which must be a phase row; it needs a
+timer in `a`, and the panel shows no first window until it has seen that phase).
 
 Phase rules: first match in order wins; `hp<` rules latch; `start` always matches
 and must be the last rule (it is the phase at pull, so a boss whose script has no
 visible phase still gets a label). An `aura=` rule needs an ability row for that
 spell.
+
+`flag=v` matches a boss the reports no longer carry: the phase reads the boss's
+absence from the reports; a boss missing for another reason (crowded out, out of
+range) also reads as vanished. The page marks it not visible after two 2 s reports;
+cite the script line that calls `SetVisibility(VISIBILITY_OFF)`.
+
+## Trash abilities
+
+`trash_abilities.csv` (`map,entry,row,key,a,b,c,d,source`) is the same table for
+the dungeon and raid elites that wipe runs, which are no boss and get no boss
+panel. It is keyed by creature entry: one `mob` row per entry, then that entry's
+`ability` and `note` rows. `build` writes the minified
+`trash_abilities.json` the page fetches once; a missing file leaves the page's
+trash hints away.
+
+| row | key | a | b | c | d |
+|:--|:--|:--|:--|:--|:--|
+| `mob` | | danger `1`-`3` | roles, `;`-joined: `healer`, `caster`, `summoner`, `aoe`, `fear`, `cc`, `runner`, `patrol`, `mc` | kill hint `0`-`3`, display only | |
+| `ability` | spell id | `0` | `0` | `0` | the boss flags plus `r=<yards>` |
+| `note` | | one line of prose | | | |
+
+An ability row takes the boss flag grammar (`t=`, `int`, `ground`, `cone`,
+`aura`, `self`, `mark`, `summon=`, `hp<N>`, `ok=`/`ok.<need>=`) and adds
+`r=<yards>` for a caster-centred radius (1-60), read from the spell's
+`EffectRadiusIndex` (or that of the spell its aura triggers, as with Consuming
+Shadows' pulse) through the client's SpellRadius.dbc. There are no timer
+columns: trash casts come from `creature_spells` or EventAI, whose delays are
+seconds in a one-line dump, so the cadence belongs in the note. A `note` row may
+leave `source` empty, because run evidence (wipe counts, step numbers) has no
+file in the core to cite; the mob's own row cites `creature_template`, or the
+migration under `sql/database_updates/world/` that adds a custom creature (the
+Stormwind Vault pair, 60596/60597).
+
+`check` fails on a danger or kill outside its range, a role outside the closed
+set, a non-zero timer column, an `r=` outside 1-60, a second `mob` row for the
+same entry with different values, a missing creature or spell name in
+`names.json`, a duplicate ability, an ability or note row before its `mob` row,
+and a citation that names no spell or creature. Two rules are the trash table's
+own:
+
+- **A boss is no trash.** An entry that is a boss of `boss_abilities.csv` is an
+  error. An entry that is a boss's **add** (Jeklik's 11368) may have a trash
+  block: the add row keeps the role and priority, the trash block supplies the
+  abilities the boss table has no room for.
+- **`summon=<entry>` needs no add row here.** A trash `summon=` names the
+  creature in `names.json`; only the boss table's adds have a row of their own.
+
+`check --db` runs the boss table's ground (effect 27) and cone (implicit target
+24) checks over the trash rows too, and `tools/test_boss_data.py`'s
+`TrashSpellSourceTest` runs the kick rule over them both ways: an `int` row must
+be kickable by the core (preventionType 1, a cast time for a generic cast or
+`CHANNEL_FLAG_INTERRUPT` for a channel) and its AI must not cast it with
+`CF_TRIGGERED`, which has no cast time to interrupt; and a spell the core can
+kick that its AI casts untriggered must carry `int`, so the page labels it
+`KICK`. A row that stays without the flag on purpose is listed in the test's
+`TRASH_INT_OMISSIONS` with its reason.
+
+On the page, an elite's cast label takes the table's word (`KICK` for an `int`
+row, `AoE` for an area one), a danger-3 elite carries a badge on the map while
+the boss-mark layer is on, and the Live card's boss section shows a
+"Dangerous here" list of the dangerous entries in view (at most five lines) when
+no boss panel is open; the boss panel wins.
 
 ## `ok=` reasons
 
@@ -105,6 +176,9 @@ every raid in the CSV:
 - every `self` row applies an aura (effect 6, 27, 35, 119, 128, 129, 132, 133 or
   134 with an aura name).
 
+A timer may be written as a product of literals: `1000 * 60 * 5` counts as
+300000. A named constant (`MINUTE`) is not accepted.
+
 It skips without a core checkout (`TORTOISE_CORE_DIR`, default
 `~/tortoise-wow`) and fails with the exact row and spell otherwise. Rows that
 predate the check and are not this pass's to change live in the test's
@@ -142,7 +216,9 @@ raid, the abilities the bots have no answer for, plus the tactic and stand rows
 that answer nothing. Rows come from replaying `data/sql/world` in file-name order
 (`--sql-dir`), or from the world DB with `--db`; the abilities come from the CSV,
 so an uncommitted row shows up at once. `--all` prints every line, `--json` the
-machine form, `--fail-on-missing` exits 1 when anything is missing. `--db` refuses (exit 2) a table that hits the daemon's row cap, as a partial read would look complete. The page's
+machine form, `--fail-on-missing` exits 1 when anything is missing. A `raids.csv`
+row whose map only the trash table has (`--trash-csv`) is skipped, since the
+report is per boss. `--db` refuses (exit 2) a table that hits the daemon's row cap, as a partial read would look complete. The page's
 "Raid coverage" tab reads the same rule from the running world DB.
 
 ## Citations
@@ -152,7 +228,9 @@ relative to the core checkout (`--core-dir`, default `$TORTOISE_CORE_DIR` or
 `~/tortoise-wow`); a `data/` path is relative to this repository. A timer or spell id must appear inside one of the cited
 ranges; a constant name (`SPELL_X`) counts when its definition in the same file
 holds the id. A value `N` is also accepted as `N//1000` on a line using
-`IN_MILLISECONDS`. Knowledge-base notes use `kb:<file>#<heading-slug>` under
+`IN_MILLISECONDS`. A `+` lists derived timer lines: `path:22+68` accepts a timer
+equal to the sum of the numbers on those lines, each holding exactly one number
+(a spawn timer plus its detonate delay). Knowledge-base notes use `kb:<file>#<heading-slug>` under
 `--kb-dir` (default `$TURTLE_KB_DIR` or `~/TortoiseBots-audit/turtle-kb`).
 
 CI has no core checkout and no KB: `check` prints `core source check skipped` /

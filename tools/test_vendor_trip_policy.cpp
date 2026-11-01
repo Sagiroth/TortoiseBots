@@ -10,7 +10,9 @@
     } \
 } while (0)
 
+using ai::VENDOR_TRIP_PURPOSE_ID;
 using ai::VENDOR_TRIP_REPICK_WINDOW;
+using ai::VendorTripAlreadyUnderway;
 using ai::VendorTripSuppressedByRecentTrip;
 
 int main()
@@ -33,7 +35,15 @@ int main()
     CHECK(!VendorTripSuppressedByRecentTrip(now - VENDOR_TRIP_REPICK_WINDOW - 1, now));
 
     // An ancient trip never suppresses.
-    CHECK(!VendorTripSuppressedByRecentTrip(1, now));
+    // An already-picked vendor trip is its own answer: the valve must not
+    // re-request while it is held, whatever its status. Any other held
+    // purpose (or no destination) keeps the old behaviour.
+    CHECK(VENDOR_TRIP_PURPOSE_ID == 512);
+    CHECK(VendorTripAlreadyUnderway(true, 512));
+    CHECK(!VendorTripAlreadyUnderway(true, 4096));
+    CHECK(!VendorTripAlreadyUnderway(true, 131072));
+    CHECK(!VendorTripAlreadyUnderway(false, 512));
+    CHECK(!VendorTripAlreadyUnderway(false, 0));
 
     std::cout << "vendor trip policy: OK\n";
     return 0;

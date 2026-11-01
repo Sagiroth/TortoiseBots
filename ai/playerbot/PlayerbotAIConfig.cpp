@@ -1110,6 +1110,7 @@ bool PlayerbotAIConfig::Initialize()
     syncAltLevelToMaster = config.GetBoolDefault("AiPlayerbot.SyncAltLevelToMaster", false);
     talentsInPublicNote = config.GetBoolDefault("AiPlayerbot.TalentsInPublicNote", true);
     professionsGrowWithLevel = config.GetBoolDefault("AiPlayerbot.ProfessionsGrowWithLevel", true);
+    botProfessionSpecializations = config.GetIntDefault("AiPlayerbot.BotProfessionSpecializations", 2);
 
     //LLM START
     // The native generator is deliberately disabled until an asynchronous,

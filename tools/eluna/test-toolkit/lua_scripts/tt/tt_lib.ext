@@ -365,6 +365,12 @@ local function spellInfo(unit, slot)
     local sp = unit:GetCurrentSpell(slot)
     if not sp then return nil end
     local id = sp:GetEntry()
+    -- Only a channel's target is safe to read: Spell:GetTarget() returns the
+    -- spell's cached unit pointer, which the core refreshes only while the
+    -- spell is casting. A projectile in flight (the generic slot) keeps a
+    -- stale pointer when its target is deleted (a dead hunter's pet), and
+    -- reading it crashed mangosd (ZG walk 16, Throw Liquid Fire 23970).
+    if slot ~= TT.SPELL_CHANNELED then return id, nil end
     local tgt = sp:GetTarget()
     local th
     if tgt and tgt.GetGUID then th = TT.objHex(tgt) end

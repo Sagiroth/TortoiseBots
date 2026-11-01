@@ -12,6 +12,8 @@
 
 using ai::PointDangerApplies;
 using ai::PointDangerous;
+using ai::EliteCampDangerApplies;
+using ai::EliteCampDangerous;
 
 int main()
 {
@@ -61,6 +63,29 @@ int main()
         CHECK(PointDangerous(11, 9));
         CHECK(!PointDangerous(10, 9));
         std::cout << "  [PASS] ceiling travels with the bot (+1 below 10)\n";
+    }
+
+    // -------------------------------------------------------------
+    // Elite camps: a rank-1 at the band (Burnt Monk 30-33 vs a level-31
+    // bot) bars the point for a solo masterless bot, while an elite two
+    // below does not. Groups and real-player-mastered bots keep today's
+    // behaviour, whatever the camp.
+    {
+        CHECK(EliteCampDangerApplies(true, false, false, 31));
+        CHECK(!EliteCampDangerApplies(false, false, false, 31));
+        CHECK(!EliteCampDangerApplies(true, true, false, 31));
+        CHECK(!EliteCampDangerApplies(true, false, true, 31));
+        // Floor at level 4 like the normal gate: start-zone bots keep
+        // destinations near an elite spawn the way pre-floor #418 did.
+        CHECK(!EliteCampDangerApplies(true, false, false, 1));
+        CHECK(!EliteCampDangerApplies(true, false, false, 3));
+        CHECK(EliteCampDangerApplies(true, false, false, 4));
+        CHECK(EliteCampDangerous(true, 30, 31));
+        CHECK(EliteCampDangerous(true, 33, 31));
+        CHECK(EliteCampDangerous(true, 29, 31));
+        CHECK(!EliteCampDangerous(true, 28, 31));
+        CHECK(!EliteCampDangerous(false, 33, 31));
+        std::cout << "  [PASS] same-band-or-above elite camps bar solo pool bots only\n";
     }
 
     std::cout << "All point-danger gate checks PASSED!\n";

@@ -195,6 +195,11 @@ const panelHtml = run("fdBotHtml(panel)", { panel: Object.assign({}, panel, { gu
 assert.ok(panelHtml.includes("Ragemeister · warrior · group 1"), panelHtml);
 assert.ok(panelHtml.includes('<button type="button" class="fd-link" data-fd-profile="813">Gear &amp; profile →</button>'), "the panel opens the character's profile: " + panelHtml.slice(0, 240));
 assert.ok(panelHtml.includes("Sunder Armor"), "the spell table");
+assert.ok(!panelHtml.includes("After combat"), "no after-combat table when the tail is empty");
+const tailHtml = run("fdBotHtml(panel)", { panel: Object.assign({}, panel, { tailSpells: [{ n: "Drink", c: 2 }, { n: "Food", c: 1 }] }) });
+assert.ok(tailHtml.includes("<caption>After combat</caption>"), "the after-combat table: " + tailHtml.slice(0, 400));
+assert.ok(tailHtml.includes("<td>Drink</td><td class=\"n\">2</td>") && tailHtml.includes("<td>Food</td>"), tailHtml);
+assert.ok(tailHtml.indexOf("After combat") > tailHtml.indexOf("<caption>Casts</caption>"), "apart from the fight's own casts");
 const liveRows = run("FightDebug.liveTables(bind)", {
   bind: {
     bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }],

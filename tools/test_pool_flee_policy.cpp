@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -13,9 +14,11 @@
 
 using ai::kPoolFleeHeadingCount;
 using ai::kPoolFleeNoSpotBackoffMs;
+using ai::FleePackPoint;
 using ai::PoolFleeHeadingOffsets;
 using ai::PoolFleeLandingWakesMob;
 using ai::PoolFleeMobInReach;
+using ai::PoolFleePackCentroid;
 using ai::PoolFleeSearchBackedOff;
 
 int main()
@@ -61,6 +64,48 @@ int main()
     CHECK(PoolFleeMobInReach(30.0f, 18.0f, 16.0f));
     CHECK(!PoolFleeMobInReach(36.0f, 18.0f, 16.0f));
     std::cout << "  [PASS] mob pre-filter by one step\n";
+
+    // Pack centroid: the average of the live attackers' positions; empty
+    // means no pack. A bot between two mobs gets the middle, so the fan
+    // finds the gap instead of stepping toward one of them.
+    {
+        struct Mob { float x, y; bool live; };
+        auto posOf = [](Mob const& mob, float& x, float& y) {
+            if (!mob.live)
+                return false;
+            x = mob.x;
+            y = mob.y;
+            return true;
+        };
+        std::vector<Mob> none;
+        CHECK(!PoolFleePackCentroid(none, posOf).valid);
+        std::vector<Mob> split = { { -10.0f, 0.0f, true }, { 10.0f, 0.0f, true } };
+        FleePackPoint middle = PoolFleePackCentroid(split, posOf);
+        CHECK(middle.valid);
+        CHECK(std::fabs(middle.x) < 1e-6f && std::fabs(middle.y) < 1e-6f);
+        std::vector<Mob> withCorpse = { { -10.0f, 0.0f, true }, { 10.0f, 0.0f, false }, { 0.0f, 6.0f, true } };
+        FleePackPoint pair = PoolFleePackCentroid(withCorpse, posOf);
+        CHECK(pair.valid);
+        CHECK(std::fabs(pair.x + 5.0f) < 1e-5f && std::fabs(pair.y - 3.0f) < 1e-5f);
+        std::cout << "  [PASS] pack centroid averages live attackers only\n";
+    }
+    // Same centroid over the flee tick's fixed stack scratch: a prefix over
+    // a filled array (no per-tick heap vector) averages the same live pack.
+    {
+        struct StackMob { float x, y; bool live; };
+        auto stackPosOf = [](StackMob const& mob, float& x, float& y) {
+            if (!mob.live)
+                return false;
+            x = mob.x;
+            y = mob.y;
+            return true;
+        };
+        StackMob pack[ai::kPoolFleeMaxPackAttackers] = { { -10.0f, 0.0f, true }, { 10.0f, 0.0f, true } };
+        FleePackPoint middle = PoolFleePackCentroid(ai::FleeAttackerPrefix<StackMob>{ pack, 2 }, stackPosOf);
+        CHECK(middle.valid);
+        CHECK(std::fabs(middle.x) < 1e-6f && std::fabs(middle.y) < 1e-6f);
+        std::cout << "  [PASS] pack centroid runs on stack scratch\n";
+    }
 
     std::cout << "All pool flee policy tests passed.\n";
     return 0;

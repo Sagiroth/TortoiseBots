@@ -51,6 +51,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 <details>
 <summary>Wand and mana recovery details</summary>
 
+- When the primary filler is out of mana reach (*Arcane Missiles* at 320-410 mana, *Fireball* at 190-265), the bot fires cheaper *Frostbolt* (130-195) before falling back to the wand.
 - On Turtle WoW, wand swings trigger the global cooldown. The bot uses a dedicated `wand blocks nuke` trigger to stop wanding as soon as filler spells are affordable again.
 - While under threat back-off (≥80% of tank threat) or out of mana, the bot relies on *Shoot* to maintain damage safely.
 - Wand swings immediately stand down when a *Polymorph* target is queued for crowd control.

@@ -31,6 +31,8 @@ bool ShieldBlockTrigger::IsActive()
 
 bool BloodrageBuffTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     if (!ai->HasSpell("bloodrage"))
         return false;
 

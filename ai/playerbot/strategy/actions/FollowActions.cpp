@@ -18,6 +18,13 @@ bool FollowAction::Execute(Event& event)
     bool moved = false;
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Formation* formation = AI_VALUE(Formation*, "formation");
+    // Follow-first: a catch-up follow breaks downtime at once (drink/food
+    // auras drop on standing, casts stop below). Follow() stands the bot up
+    // and interrupts itself, but only after the rescue/safety branches; do
+    // it here so every follow path starts moving this tick.
+    if (followTarget && followTarget != bot && !bot->IsInCombat() &&
+        bot->GetStandState() != UNIT_STAND_STATE_STAND)
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     // BoostFollow: match the mount state instead of speed-hacking. A mounted
     // master outruns an unmounted bot at any speed multiplier, and UpdateSpeed

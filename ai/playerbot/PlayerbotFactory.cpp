@@ -8,9 +8,10 @@
 #include "playerbot/AmmoStackPolicy.h"
 #include "../../runtime/BotNameService.h"
 #include "../../runtime/HunterPetPolicy.h"
-#include "../../runtime/policy/pet/PetSpellRankPolicy.h"
 #include "../../runtime/policy/provision/StarterKitPolicy.h"
 #include "../../runtime/ProfessionGrantPolicy.h"
+#include "../../runtime/policy/pet/PetSpellRankPolicy.h"
+#include "../../runtime/ProfessionSpecializationPolicy.h"
 #include "../../runtime/OwnedBotQolPolicy.h"
 #include "../../runtime/policy/class/ShamanTankKitPolicy.h"
 #include "../../runtime/GearItemLevelCapPolicy.h"
@@ -2647,6 +2648,22 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
                 ai->CastSpell(tSpell->spell, bot);
         }
     }
+
+    // Specialization sweep: direct grant of the quest-chain specialization
+    // spells (plus their trainer recipes below) once skill qualifies. Runs
+    // on every skill pass (seed, ding, login) so a bot that skills up to the
+    // gate earns it without visiting the quest chain it never runs.
+    EnsureSpecializations();
+
+    // Spec-gated recipes come from specialist vendors/trainers the bot never
+    // visits, never from the general-trainer sweep above (no npc_trainer rows
+    // teach them). Teach them directly here, gated on the matching spec spell
+    // the same way item required_spell gates their use (recipe 10644 needs
+    // none of the spec spells, only Alchemy 210; schematics 18653/18654 need
+    // 20222/20219). Same free-learn rule as the sweep above: only with
+    // ProfessionsGrowWithLevel, organic bots earn them from the world.
+    if (sPlayerbotAIConfig.professionsGrowWithLevel)
+        LearnSpecializationRecipes();
 }
 
 void PlayerbotFactory::InitTradeSkills()
@@ -2667,6 +2684,94 @@ bool PlayerbotFactory::HasAnyPrimaryProfession() const
         if (bot->HasSkill(id))
             return true;
     return false;
+}
+
+// Profession specialization grants: the quest chains (Engineering Pledge of
+// Secrecy / Show Your Work, Blacksmithing Art vs Way, Leatherworking
+// branches) are mutually exclusive per branch for PLAYERS via ExclusiveGroup,
+// but bots never run them, so the grant is direct and idempotent. Core
+// enforces nothing between branches (no spell_chain req, no unlearn, no
+// trainer rows, skill_line_ability learn_on_get 0), so mode 2 grants all
+// branches; mode 1 picks one by guid parity and never flips.
+void PlayerbotFactory::EnsureSpecializations()
+{
+    if (!bot || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    int const mode = sPlayerbotAIConfig.botProfessionSpecializations;
+    if (mode != int(TortoiseBots::SpecializationMode::OnePerBot) &&
+        mode != int(TortoiseBots::SpecializationMode::All))
+        return;
+    uint32 const guidLow = bot->GetGUIDLow();
+    for (uint32 g = 0; g < TortoiseBots::kSpecializationGroupCount; ++g)
+    {
+        TortoiseBots::SpecializationGroup const& group = TortoiseBots::kSpecializationGroups[g];
+        if (!group.spellCount || !bot->HasSkill(uint16(group.skillId)))
+            continue;
+        if (!TortoiseBots::QualifiesForSpecialization(bot->GetSkillValuePure(uint16(group.skillId)), group.requiredValue))
+            continue;
+        if (group.requiresSpell && !bot->HasSpell(group.requiresSpell))
+            continue;
+        if (mode == int(TortoiseBots::SpecializationMode::OnePerBot))
+        {
+            uint32 const pick = TortoiseBots::PickSpecializationIndex(guidLow, group.spellCount);
+            uint32 const spell = group.spells[pick];
+            if (spell && !bot->HasSpell(spell))
+                bot->LearnSpell(spell, false);
+            continue;
+        }
+        for (uint32 s = 0; s < group.spellCount; ++s)
+            if (group.spells[s] && !bot->HasSpell(group.spells[s]))
+                bot->LearnSpell(group.spells[s], false);
+    }
+}
+
+void PlayerbotFactory::LearnSpecializationRecipes()
+{
+    if (!bot || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    static std::vector<std::pair<uint32, uint32>> const s_specRecipes = []()
+    {
+        std::vector<std::pair<uint32, uint32>> rows;
+        for (uint32 id = 0; id < sItemStorage.GetMaxEntry(); ++id)
+        {
+            ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(id);
+            if (!proto || proto->Class != ITEM_CLASS_RECIPE)
+                continue;
+            uint32 const reqSpell = proto->RequiredSpell;
+            if (!reqSpell)
+                continue;
+            bool gated = false;
+            for (uint32 g = 0; g < TortoiseBots::kSpecializationGroupCount && !gated; ++g)
+            {
+                TortoiseBots::SpecializationGroup const& group = TortoiseBots::kSpecializationGroups[g];
+                for (uint32 s = 0; s < group.spellCount; ++s)
+                    if (group.spells[s] && group.spells[s] == reqSpell)
+                    {
+                        gated = true;
+                        break;
+                    }
+            }
+            if (!gated || !proto->Spells[0].SpellId || proto->RequiredSkill == 0)
+                continue;
+            rows.push_back({ reqSpell, uint32(proto->Spells[0].SpellId) });
+        }
+        return rows;
+    }();
+    for (auto const& row : s_specRecipes)
+    {
+        // Gated by the matching spec spell, mirroring item RequiredSpell.
+        if (!bot->HasSpell(row.first))
+            continue;
+        SpellEntry const* useSpell = sServerFacade.LookupSpellInfo(row.second);
+        if (!useSpell)
+            continue;
+        for (int j = 0; j < 3; ++j)
+        {
+            if (useSpell->Effect[j] == SPELL_EFFECT_LEARN_SPELL && useSpell->EffectTriggerSpell[j] &&
+                !bot->HasSpell(useSpell->EffectTriggerSpell[j]))
+                bot->LearnSpell(useSpell->EffectTriggerSpell[j], false);
+        }
+    }
 }
 
 void PlayerbotFactory::InitSkills()

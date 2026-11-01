@@ -28,6 +28,10 @@ constexpr size_t kMaxDroppedTracked = 4096;   // distinct guids past that cap co
 constexpr size_t kLastHits = 5;               // death recap
 constexpr uint32_t kSelfKillLookbackMs = 30000; // a self-kill names the newest other attacker this recent (spirit lasts 15 s)
 constexpr size_t kMaxSpellsPerBot = 12;
+constexpr size_t kMaxTailSpellsPerBot = 8;    // after-combat casts listed per bot
+// Grace casts kept raw so a re-engage can replay their events and rolling state.
+// Past it the counts stay exact per spell but only the retained records replay.
+constexpr size_t kMaxPendingCastsPerBot = 64;
 constexpr size_t kMaxFightsKept = 5;          // finished fights waiting to be sent, per book
 constexpr size_t kPayloadByteBudget = 60000;
 constexpr size_t kMaxLiveEvents = 64;          // queued per book, oldest dropped (counted)
@@ -163,6 +167,9 @@ struct BotTotals
     uint64_t damage = 0, healing = 0, overheal = 0, taken = 0;
     uint32_t casts = 0, healCasts = 0, deaths = 0;
     std::map<std::string, uint32_t> spells;
+    std::map<std::string, uint32_t> tailSpells;   // cast in the after-combat grace, not fight casts
+    // Damage and healing of a tail cast still count in the fight totals (they happened
+    // before the end); its heal cast does not, so heal per cast reads slightly high.
 };
 
 struct FightContext
@@ -373,6 +380,23 @@ inline std::vector<std::pair<std::string, uint32_t>> SpellList(BotTotals const& 
     return always;
 }
 
+// The after-combat list: most cast first, then by name. Unlike SpellList it does not
+// pull AlwaysListed names forward, because these are not the fight's casts.
+inline std::vector<std::pair<std::string, uint32_t>> SpellListByCount(
+    std::map<std::string, uint32_t> const& spells, size_t maxN)
+{
+    std::vector<std::pair<std::string, uint32_t>> out(spells.begin(), spells.end());
+    std::sort(out.begin(), out.end(), [](std::pair<std::string, uint32_t> const& a,
+                                         std::pair<std::string, uint32_t> const& b) {
+        if (a.second != b.second)
+            return a.second > b.second;
+        return a.first < b.first;
+    });
+    if (out.size() > maxN)
+        out.resize(maxN);
+    return out;
+}
+
 inline void PruneBefore(std::vector<std::pair<uint32_t, uint32_t>>& events, uint32_t nowMs)
 {
     int64_t const cut = static_cast<int64_t>(nowMs) - static_cast<int64_t>(kWindowMs);
@@ -458,6 +482,8 @@ public:
         for (auto& m : order_)
         {
             m.totals = BotTotals{};
+            m.pending.clear();
+            m.overflow.clear();
             m.dmgDone.clear();
             m.heals.clear();
             m.castTimes.clear();
@@ -478,26 +504,33 @@ public:
         if (!inFight_ || !IsMember(caster))
             return;
         MemberState& m = At(caster);
-        ++m.totals.casts;
-        if (heal)
-            ++m.totals.healCasts;
-        ++m.totals.spells[spell];
-        m.castTimes.push_back(nowMs);
-        PruneBefore(m.castTimes, nowMs);
-        m.lastSpell = spell;
-        m.lastSpellMs = nowMs;
-        if (castKind == 't' || castKind == 'i')
+        // The run clears its meal mark on the first quiet tick and the fight stays open
+        // 3 s longer. A cast in that gap counts in the tail and is held: a re-engage
+        // inside the grace folds the held casts back into the fight's own numbers.
+        PendingCast c;
+        c.spell = spell;
+        c.targetName = targetName;
+        c.nowMs = nowMs;
+        c.target = target;
+        c.heal = heal;
+        c.castKind = castKind;
+        if (outOfCombat_)
         {
-            LiveEvent ev;
-            ev.kind = castKind == 't' ? EventKind::Taunt : EventKind::Interrupt;
-            ev.atMs = nowMs;
-            ev.guid = caster;
-            ev.name = m.info.name;
-            ev.spell = spell;
-            ev.target = target;
-            ev.targetName = targetName;
-            Push(std::move(ev));
+            // Kept out of the fight's numbers until the grace proves a lull. The raw
+            // record can replay its event and rolling state; past the raw bound the
+            // per-spell counts keep spells, casts and heal casts exact.
+            if (m.pending.size() < kMaxPendingCastsPerBot)
+                m.pending.push_back(std::move(c));
+            else
+            {
+                TailOverflow& o = m.overflow[spell];
+                ++o.casts;
+                if (heal)
+                    ++o.heals;
+            }
+            return;
         }
+        ApplyCast(m, c);
     }
 
     void OnDamage(uint32_t attackerMember, uint32_t victimMember, uint32_t amount,
@@ -612,7 +645,11 @@ public:
         }
         if (anyMemberInCombat)
         {
-            outOfCombat_ = false;
+            if (outOfCombat_)
+            {
+                FlushPending();
+                outOfCombat_ = false;
+            }
             return;
         }
         if (!outOfCombat_)
@@ -872,10 +909,28 @@ public:
     }
 
 private:
+    struct PendingCast
+    {
+        std::string spell;
+        std::string targetName;
+        uint32_t nowMs = 0;
+        uint64_t target = 0;
+        bool heal = false;
+        char castKind = 0;
+    };
+
+    struct TailOverflow   // grace casts past the raw pending bound: counts only
+    {
+        uint32_t casts = 0;
+        uint32_t heals = 0;
+    };
+
     struct MemberState
     {
         MemberInfo info;
         BotTotals totals;
+        std::deque<PendingCast> pending;   // grace casts kept raw for a re-engage replay
+        std::map<std::string, TailOverflow> overflow;   // grace casts past the raw bound
         std::vector<std::pair<uint32_t, uint32_t>> dmgDone;   // (nowMs, amount)
         std::vector<std::pair<uint32_t, uint32_t>> heals;     // (nowMs, amount)
         std::vector<uint32_t> castTimes;
@@ -978,6 +1033,16 @@ private:
             for (size_t j = 0; j < spells.size(); ++j)
                 ss << (j ? "," : "") << "{\"n\":\"" << JsonEscape(spells[j].first)
                    << "\",\"c\":" << spells[j].second << "}";
+            ss << "],\"tail_spells\":[";
+            // The tail rides the same payload, so it shrinks with the ladder: a fight
+            // that only fits with three spells or fewer lists no tail rather than
+            // growing back over the budget.
+            size_t const tailCap = maxSpells < kMaxSpellsPerBot ? 0 : std::min(kMaxTailSpellsPerBot, maxSpells);
+            std::vector<std::pair<std::string, uint32_t>> tailSpells =
+                SpellListByCount(m.totals.tailSpells, tailCap);
+            for (size_t j = 0; j < tailSpells.size(); ++j)
+                ss << (j ? "," : "") << "{\"n\":\"" << JsonEscape(tailSpells[j].first)
+                   << "\",\"c\":" << tailSpells[j].second << "}";
             ss << "]}";
         }
         ss << "],\"debuffs\":{\"sampled_s\":" << f.sampled << ",\"up_s\":{";
@@ -1019,6 +1084,70 @@ private:
     }
 
     MemberState& At(uint32_t guid) { return order_[index_[guid]]; }
+
+    void ApplyCast(MemberState& m, PendingCast const& c)   // a cast that belongs to the fight
+    {
+        ++m.totals.casts;
+        if (c.heal)
+            ++m.totals.healCasts;
+        ++m.totals.spells[c.spell];
+        m.castTimes.push_back(c.nowMs);
+        PruneBefore(m.castTimes, c.nowMs);
+        m.lastSpell = c.spell;
+        m.lastSpellMs = c.nowMs;
+        if (c.castKind == 't' || c.castKind == 'i')
+        {
+            LiveEvent ev;
+            ev.kind = c.castKind == 't' ? EventKind::Taunt : EventKind::Interrupt;
+            ev.atMs = c.nowMs;
+            ev.guid = m.info.guid;
+            ev.name = m.info.name;
+            ev.spell = c.spell;
+            ev.target = c.target;
+            ev.targetName = c.targetName;
+            Push(std::move(ev));
+        }
+    }
+
+    void FlushPending()   // combat resumed in the grace: the gap was a lull, not the fight's end
+    {
+        // One replay across members so TakeEvents stays oldest first: the member
+        // order and each member's record order only break equal-timestamp ties.
+        struct Replay
+        {
+            uint32_t nowMs = 0;
+            size_t member = 0;
+            size_t seq = 0;
+            PendingCast const* cast = nullptr;
+        };
+        std::vector<Replay> replay;
+        for (size_t i = 0; i < order_.size(); ++i)
+        {
+            MemberState& m = order_[i];
+            // Overflow records predate the raw window and carry no event or rolling
+            // time; they still restore spells, casts and heal casts exactly.
+            for (auto const& kv : m.overflow)
+            {
+                m.totals.casts += kv.second.casts;
+                m.totals.healCasts += kv.second.heals;
+                m.totals.spells[kv.first] += kv.second.casts;
+            }
+            m.overflow.clear();
+            for (size_t j = 0; j < m.pending.size(); ++j)
+                replay.push_back(Replay{m.pending[j].nowMs, i, j, &m.pending[j]});
+        }
+        std::sort(replay.begin(), replay.end(), [](Replay const& a, Replay const& b) {
+            if (a.nowMs != b.nowMs)
+                return a.nowMs < b.nowMs;
+            if (a.member != b.member)
+                return a.member < b.member;
+            return a.seq < b.seq;
+        });
+        for (Replay const& r : replay)
+            ApplyCast(order_[r.member], *r.cast);
+        for (auto& m : order_)
+            m.pending.clear();
+    }
 
     void Push(LiveEvent ev)
     {
@@ -1074,6 +1203,17 @@ private:
         ev.durMs = dur;
         ev.kept = dur >= kMinFightMs;
         Push(std::move(ev));
+        // The grace ended the fight: its casts were held, never fight casts.
+        for (auto& m : order_)
+        {
+            m.totals.tailSpells.clear();
+            for (auto const& c : m.pending)
+                ++m.totals.tailSpells[c.spell];
+            for (auto const& kv : m.overflow)
+                m.totals.tailSpells[kv.first] += kv.second.casts;
+            m.pending.clear();
+            m.overflow.clear();
+        }
         if (dur >= kMinFightMs)
         {
             FinishedFight f;
