@@ -2723,7 +2723,7 @@ def _script_cite_problems(row, script_name, slots=(), core=CORE_DIR):
     if not registered:
         return ["no src/ file registers script %r" % script_name]
     problems, backed, in_registering_file = [], False, False
-    for _, path, start, end in parts:
+    for _, path, start, end, _ in parts:
         file = core / path
         if not file.is_file():
             problems.append("%s does not exist" % path)
@@ -2934,85 +2934,6 @@ def summon_row_problems(rows, spells):
     return problems
 
 
-def _kickable(spell):
-    """Spell::EffectInterruptCast: the prevention type gates both slots, and a
-    channel is stopped by its channel flags, not by InterruptFlags."""
-    if spell["preventionType"] != SPELL_PREVENTION_TYPE_SILENCE:
-        return False
-    if spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED:
-        return bool(spell["channelInterruptFlags"] & CHANNEL_FLAG_INTERRUPT)
-    return bool(spell["interruptFlags"] & SPELL_INTERRUPT_FLAG_DAMAGE)
-
-
-def _interrupt_data(spell):
-    if spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED:
-        return ("channeled (attributesEx 0x%x), preventionType %s, channelInterruptFlags 0x%x"
-                % (spell["attributesEx"], spell["preventionType"],
-                   spell["channelInterruptFlags"]))
-    return ("generic, preventionType %s, interruptFlags 0x%x"
-            % (spell["preventionType"], spell["interruptFlags"]))
-
-
-def source_spell_problems(rows, spells, shape_ids):
-    """Every disagreement between the CSV rows and the core's spell data."""
-    problems = []
-
-    def add(check, spell, where, detail):
-        problems.append({"check": check, "spell": spell, "where": where, "detail": detail})
-
-    for row in rows:
-        where = "line %s (%s, boss %s)" % (row["_line"], row["map"], row["boss"])
-        if row["row"] == "phase" and row["a"].startswith("aura="):
-            spell_id = int(row["a"][5:])
-            spell = spells.get(spell_id)
-            if spell is None:
-                add("phase-aura-missing", spell_id, where, "no spell_template row")
-            elif spell["attributes"] & 0x40:
-                add("phase-aura-passive", spell_id, where,
-                    "attributes 0x%x has 0x40 (passive), so the aura never reaches the panel"
-                    % spell["attributes"])
-            continue
-        if row["row"] != "ability":
-            continue
-        spell_id = int(row["key"])
-        flags = boss_data.parse_flags(row["d"])
-        spell = spells.get(spell_id)
-        if spell is None:
-            add("ability-missing", spell_id, where, "no spell_template row")
-            continue
-        kickable = _kickable(spell)
-        nokick = flags["okNeeds"].get("interrupt") == "nokick"
-        if flags["int"] and not nokick and not kickable:
-            add("int-not-kickable", spell_id, where,
-                "%s; the core's kick cannot stop it" % _interrupt_data(spell))
-        if nokick and kickable:
-            add("nokick-kickable", spell_id, where,
-                "%s; the core's kick can stop it" % _interrupt_data(spell))
-        if flags["self"] and not _applies_aura(spell):
-            add("self-no-aura", spell_id, where,
-                "effects %s/%s/%s apply no aura"
-                % (spell.get("effect1", 0), spell.get("effect2", 0), spell.get("effect3", 0)))
-    for spell_id in shape_ids:
-        spell = spells.get(spell_id)
-        where = "runtime/SpellShapeData.h"
-        if spell is None:
-            add("shape-missing", spell_id, where, "no spell_template row")
-        elif spell["castingTimeIndex"] <= 1:
-            add("shape-instant", spell_id, where,
-                "castingTimeIndex %s, the spell is instant" % spell["castingTimeIndex"])
-    return sorted(problems, key=lambda p: (p["check"], p["spell"], p["where"]))
-
-
-def _interrupt_fixture(prevention=SPELL_PREVENTION_TYPE_SILENCE, interrupt=0,
-                       channel=0, attributes_ex=0):
-    return {
-        "preventionType": prevention,
-        "interruptFlags": interrupt,
-        "channelInterruptFlags": channel,
-        "attributesEx": attributes_ex,
-    }
-
-
 class InterruptRuleTest(unittest.TestCase):
     """Spell::EffectInterruptCast (SpellEffects.cpp:3408-3412) branch by slot."""
 
@@ -3041,31 +2962,6 @@ class InterruptRuleTest(unittest.TestCase):
 def _summon_row(kind, boss, key, d=""):
     return {"row": kind, "boss": str(boss), "key": str(key), "d": d, "_line": "fixture"}
 
-
-
-class InterruptRuleTest(unittest.TestCase):
-    """Spell::EffectInterruptCast (SpellEffects.cpp:3408-3412) branch by slot."""
-
-    def test_a_generic_cast_with_the_damage_flag_is_kickable(self):
-        self.assertTrue(_kickable(_interrupt_fixture(interrupt=SPELL_INTERRUPT_FLAG_DAMAGE)))
-
-    def test_a_generic_cast_without_the_damage_flag_is_not_kickable(self):
-        self.assertFalse(_kickable(_interrupt_fixture(interrupt=0x0d)))
-
-    def test_a_channel_is_kickable_by_its_channel_flags(self):
-        spell = _interrupt_fixture(interrupt=0x0d, channel=CHANNEL_FLAG_INTERRUPT,
-                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
-        self.assertTrue(_kickable(spell))
-
-    def test_a_channel_ignores_interrupt_flags(self):
-        spell = _interrupt_fixture(interrupt=SPELL_INTERRUPT_FLAG_DAMAGE,
-                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
-        self.assertFalse(_kickable(spell))
-
-    def test_the_prevention_type_gates_the_channel_branch_too(self):
-        spell = _interrupt_fixture(prevention=2, channel=CHANNEL_FLAG_INTERRUPT,
-                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
-        self.assertFalse(_kickable(spell))
 
 
 @unittest.skipUnless(
