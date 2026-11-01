@@ -121,6 +121,7 @@ ANSWER_FLAGS = ("ground", "aura", "self", "cone", "tail", "mark", "int")
 FLAG_LETTERS = {
     "n": "UNIT_FLAG_NOT_SELECTABLE",
     "i": "UNIT_FLAG_IMMUNE_TO_PLAYER",
+    "v": "VISIBILITY_OFF",  # the page sets v on a boss the reports left out; SetVisibility(VISIBILITY_OFF) is what drops it
     "h": None,  # flying/hovering state, no script literal to check
     "d": None,  # stand state dead (feign)
     "e": None,  # evading

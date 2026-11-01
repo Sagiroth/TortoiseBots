@@ -64,6 +64,11 @@ and must be the last rule (it is the phase at pull, so a boss whose script has n
 visible phase still gets a label). An `aura=` rule needs an ability row for that
 spell.
 
+`flag=v` matches a boss the reports no longer carry: the phase reads the boss's
+absence from the reports; a boss missing for another reason (crowded out, out of
+range) also reads as vanished. The page marks it not visible after two 2 s reports;
+cite the script line that calls `SetVisibility(VISIBILITY_OFF)`.
+
 ## `ok=` reasons
 
 The coverage rule (`/coverage` on the page, `boss_data.py coverage` in a
