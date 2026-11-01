@@ -10461,9 +10461,9 @@ inline float StandPullClearYd(const PlanStep& s)
 // come to the stand: one tick names it (`not waiting for units that walk no patrol ...`), then it is left to the plain
 // pull for the step (Run::standPullStatic; ZG walk 19 step 33: the static Bat Rider 49141 6.6 yd inside the radius held
 // the row 600 s and the run paused). It is judged only from the stand: off it, the walk back comes first, and the unit
-// is judged at the stand. A row that left such a unit to the plain pull still gets the clearance: another patrol near
-// the lead bot or along the way to that unit holds the row on the same wait (its plain pull would walk the party
-// through the patrol's lane).
+// is judged at the stand. A row that left such units to the plain pull still gets the clearance: another patrol near
+// the lead bot or along the way to any of them the plain pull could still choose holds the row on the same wait (its
+// plain pull would walk the party through the patrol's lane).
 // It times the run leader's own pull only: a patrol that walks into the stand while the party waits fights as before,
 // so the plan must put the stand out of every other lane's aggro reach for the gate to matter.
 // Returns the unit the pull may go out on (standPullShotGuid set); null with `held` true when this tick waits,
@@ -10595,24 +10595,30 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     if (!pick)
     {
         // The units the row left to the plain pull (Run::standPullStatic): the plain pull still goes out past the same
-        // clearance a pull gets, so another patrol near the lead bot or along the way to such a unit holds the row on
-        // the same 600 s (then the usual pause, never a new forever-hold). The first of them in candidate order stands
-        // in for the pick (the way the pull runs).
-        const UnitFact* stillest = nullptr;
+        // clearance a pull gets, so another patrol near the lead bot or along the way to any of them holds the row on
+        // the same 600 s (then the usual pause, never a new forever-hold). Every one of them the plain pull could still
+        // choose is checked, not the first listed one: its own PickPackPull and kill order need not take that one, and a
+        // unit no longer pullable (or a patroller the row no longer waits for) is no part of the pull at all (a
+        // never-pullable unit must not hold the row for the 600 s). The first of them with another patrol in the way
+        // stands in for the pick (the way the pull runs).
+        float otherPathYd = -1.0f;
+        const UnitFact* other = nullptr;
         if (fromStand <= kHoldReturnYd)
             for (const std::vector<UnitFact>* list : {&f.units, &f.packResidue, &f.patrollers})
             {
                 for (const UnitFact& u : *list)
-                    if (r.standPullStatic.count(u.guid))
-                    {
-                        stillest = &u;
+                {
+                    if (!r.standPullStatic.count(u.guid) || !Pullable(r, u))
+                        continue;
+                    if (list == &f.patrollers && !PatrollerToWaitFor(r, f, u))
+                        continue;
+                    other = otherPatrol(u, otherPathYd);
+                    if (other)
                         break;
-                    }
-                if (stillest)
+                }
+                if (other)
                     break;
             }
-        float otherPathYd = -1.0f;
-        const UnitFact* const other = stillest ? otherPatrol(*stillest, otherPathYd) : nullptr;
         if (!other)
             return nullptr;
         held = true;
