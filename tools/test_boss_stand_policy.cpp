@@ -717,8 +717,8 @@ int main()
     CHECK(!StandArrived(0, 0, 3, 3));
 
     // The plan of a window: one seat per bot, as many within reach as the seats allow, the least walk among those.
-    // The anchor-7 ranged rows of 20261029170000_world.sql: anchor (6.8951, -180.2460), radius 8, release anchor 3
-    // (-63.5156, -240.0960), one line (dx, dy = -0.760, -0.650), 5 slots per point.
+    // A lane fixture (shaped like the Onyxia NW hover point; those rows are not in this module): anchor
+    // (6.8951, -180.2460), radius 8, release anchor 3 (-63.5156, -240.0960), one line (dx, dy = -0.760, -0.650), 5 slots per point.
     {
         BossStandRow release = Row(3, -63.5156f, -240.0960f, 8, StandRole::Ranged, 18584, 0, 0, -82.0f, -214.0f,
                                    0.760f, 0.650f);

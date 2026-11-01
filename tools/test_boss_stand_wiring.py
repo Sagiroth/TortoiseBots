@@ -1,4 +1,4 @@
-"""Wiring pins for the boss stand sets (Onyxia kill plan, code item C3).
+"""Wiring pins for the boss stand sets (ai_boss_stand, the generic seat engine).
 
 The rules live in ai/playerbot/BossStandPolicy.h (pure, tested by
 tools/test_boss_stand_policy.cpp). These pins prove the live code calls them:
@@ -11,8 +11,7 @@ tools/test_boss_stand_policy.cpp). These pins prove the live code calls them:
    floor is silently ignored by the movement code), stops the bot's cast and
    attack, and moves once;
  - the stand wins over the caster reach (no walk back under the boss while a row
-   seats the bot) and over the reactive Deep Breath dodge, which stays the
-   fallback for every bot no row seats;
+   seats the bot) and over the dragon flank and raid spread reactions;
  - no boss name or entry in the generic code.
 
 Run: python3 -m unittest tools/test_boss_stand_wiring.py
@@ -39,8 +38,6 @@ TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
 REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
 DUNGEON_ACTIONS = (STRATEGY / "actions/DungeonActions.cpp").read_text()
 DUNGEON_ACTIONS_H = (STRATEGY / "actions/DungeonActions.h").read_text()
-ONYXIA_ACTIONS = (STRATEGY / "actions/OnyxiasLairDungeonActions.cpp").read_text()
-ONYXIA_ACTIONS_H = (STRATEGY / "actions/OnyxiasLairDungeonActions.h").read_text()
 MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
 
 
@@ -248,24 +245,8 @@ class BossStandWiring(unittest.TestCase):
         self.assertLess(stand, walk)
         self.assertIn("if (FindBossStand(ai, bot).valid)\n                return false;", fn)
 
-    def test_the_reactive_dodge_stays_the_fallback(self):
-        fn = body(ONYXIA_ACTIONS, "bool OnyxiaBreathSafeZoneAction::Execute(Event& event)")
-        stand = fn.index("FindBossStand(ai, bot).valid")
-        far_spots = fn.index("kBreathSafeSpots[axis]")
-        self.assertLess(stand, far_spots)
-        self.assertIn("if (FindBossStand(ai, bot).valid)\n        return false;", fn)
-
-    def test_the_reactive_dodge_is_not_picked_while_a_seat_applies(self):
-        # The reaction engine stops the bot's move when it PICKS a movement reaction (before Execute), so the stand
-        # gate has to sit in isUseful, which the engine reads before it picks.
-        cls = body(ONYXIA_ACTIONS_H, "class OnyxiaBreathSafeZoneAction", end="\n    };\n")
-        self.assertIn("bool isUseful() override;", cls)
-        fn = body(ONYXIA_ACTIONS, "bool OnyxiaBreathSafeZoneAction::isUseful()")
-        self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
-        self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
-
     def test_a_picked_movement_reaction_stops_the_bot(self):
-        # The mechanism the gate above answers: if this stops being true the gate may be moved back to Execute.
+        # The mechanism the isUseful gates answer: if this stops being true the gates may be moved back to Execute.
         engine = (AI / "strategy/ReactionEngine.cpp").read_text()
         find = body(engine, "bool ReactionEngine::FindReaction(bool isStunned)")
         self.assertLess(find.index("reaction->isUseful()"), find.index("incomingReaction.SetAction(reaction);"))
@@ -342,8 +323,8 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("key.group", hashed)
 
     def test_the_other_movement_reactions_give_way_to_the_seat(self):
-        # Same gate as the breath dodge (test_the_reactive_dodge_is_not_picked_while_a_seat_applies): the reaction
-        # engine stops the bot's move when it PICKS a movement reaction, so a flank or spread step must not be picked
+        # The reaction engine (test_a_picked_movement_reaction_stops_the_bot) stops the bot's move when it PICKS a
+        # movement reaction, so a flank or spread step must not be picked
         # while a stand set seats the bot.
         self.assertIn('#include "playerbot/BossTacticsStand.h"', DUNGEON_ACTIONS)
         for cls in ("DragonFlankAction", "RaidSpreadAction"):
