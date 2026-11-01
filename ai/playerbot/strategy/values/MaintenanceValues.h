@@ -7,8 +7,6 @@
 #include "BudgetValues.h"
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
-    // Follow-first (owner report 2026-11-01): downtime stands down while
-    // the bot should be catching up to its moving master.
 #include "playerbot/FollowUrgencyPolicy.h"
 
 
