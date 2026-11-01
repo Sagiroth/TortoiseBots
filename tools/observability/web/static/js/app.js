@@ -7694,6 +7694,7 @@
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
         <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
@@ -7735,7 +7736,6 @@
           <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
           <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
-        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
       </div>`;
     bindCmdMap(card, key);
     // The debugger-only page hides the page-level "Refresh every" row, so the card header carries the same picker (one saved setting).
@@ -8115,13 +8115,18 @@
     }).catch(() => { card.dataset.fightState = 'idle'; });
   }
 
-  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the foot of the centre column), but a card
-  // first drawn on the Live page had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into
-  // the body. On the Live page it stays under the fights panel, as before.
+  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the top of the right column, above
+  // the Tanks table and beside the map), placed just before the roles so the reading order matches; a card first drawn on the Live page
+  // had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into the body. On the Live page it
+  // stays under the fights panel, as before.
   function cmdPlaceLiveStrip(card, debug) {
     const live = card.querySelector('.cmd-live'), body = card.querySelector('.cmd-body');
     if (!live || !body) return;
-    if (debug) { if (live.parentElement !== body) body.appendChild(live); }
+    if (debug) {
+      const roles = body.querySelector('.fd-roles');
+      if (roles && roles.parentElement === body) { if (live.parentElement !== body || live.nextElementSibling !== roles) body.insertBefore(live, roles); }
+      else if (live.parentElement !== body) body.appendChild(live);
+    }
     else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
   }
   // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
