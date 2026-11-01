@@ -1,5 +1,6 @@
 // Standalone test for runtime/GuildOrderTelemetryPolicy.h: sub-order leg telemetry.
 #include "../runtime/GuildOrderTelemetryPolicy.h"
+#include <string>
 
 #include <cstdio>
 
@@ -19,6 +20,22 @@ int main()
     CHECK(OrderRequestLogDue("bank:2319", "bank:2319", 160, 160) == true);
     CHECK(OrderRequestLogDue("bank:2319", "bags:2319", 100, 160) == true);
     CHECK(OrderRequestLogDue("", "bank:2319", 100, 0) == true);
+    // A replacement order logs its first row at once even when the leg matches.
+    CHECK(OrderIdentityToken(0, 2319, OrderType::Farm) == "0:2319:farm");
+    CHECK(OrderIdentityToken(42, 2319, OrderType::Farm) == "42:2319:farm");
+    CHECK(OrderRequestKey(SupplyStep::Bank, 2319, 0, 2319, OrderType::Farm) == "bank:2319|0:2319:farm");
+    std::string firstRequest = OrderRequestKey(SupplyStep::Bank, 2319, 0, 2319, OrderType::Farm);
+    // Same order, same leg inside the minute stays suppressed.
+    CHECK(OrderRequestLogDue(firstRequest, firstRequest, 100, 160) == false);
+    // Same leg, new parent logs at once.
+    CHECK(OrderRequestLogDue(firstRequest,
+        OrderRequestKey(SupplyStep::Bank, 2319, 42, 2319, OrderType::Farm), 100, 160) == true);
+    // Same leg, new order item logs at once.
+    CHECK(OrderRequestLogDue(firstRequest,
+        OrderRequestKey(SupplyStep::Bank, 2319, 0, 4306, OrderType::Farm), 100, 160) == true);
+    // Same leg, new order type logs at once.
+    CHECK(OrderRequestLogDue(firstRequest,
+        OrderRequestKey(SupplyStep::Bank, 2319, 0, 2319, OrderType::Buy), 100, 160) == true);
     // Top-level orders carry no parent; unknown names fall back to "?".
     CHECK(OrderParentToken(0, "Goldie") == "-");
     CHECK(OrderParentToken(42, "Goldie") == "Goldie");

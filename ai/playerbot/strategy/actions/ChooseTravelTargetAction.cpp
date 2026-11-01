@@ -2413,11 +2413,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
         std::string leg = logged ?
             TortoiseBots::GuildOrders::OrderLegToken(logged->supplyStep, logged->supplyItemId) : "-";
-        std::string lastLeg = AI_VALUE2(std::string, "manual string", "order request leg::" + travelName);
-        if (TortoiseBots::GuildOrders::OrderRequestLogDue(lastLeg, leg,
+        std::string key = logged ? TortoiseBots::GuildOrders::OrderRequestKey(logged->supplyStep,
+            logged->supplyItemId, logged->parentBotGuidLow, logged->itemId, logged->type) : "-";
+        std::string lastKey = AI_VALUE2(std::string, "manual string", "order request leg::" + travelName);
+        if (TortoiseBots::GuildOrders::OrderRequestLogDue(lastKey, key,
             time(0), AI_VALUE2(time_t, "manual time", "order request log::" + travelName)))
         {
-            SET_AI_VALUE2(std::string, "manual string", "order request leg::" + travelName, leg);
+            SET_AI_VALUE2(std::string, "manual string", "order request leg::" + travelName, key);
             SET_AI_VALUE2(time_t, "manual time", "order request log::" + travelName, time(0) + MINUTE);
             std::string parentName;
             if (logged && logged->parentBotGuidLow &&
