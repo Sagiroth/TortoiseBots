@@ -33,8 +33,9 @@ vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
-  grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"),
-  grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"),
+  grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"),
+  grab("fdShowAllGet"), grab("fdWindowStart"),
+  grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"), grabConst("FD_WINDOW_S"), grabConst("FD_SHOWALL_KEY"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
   "var fdPage = { open: null };",
@@ -44,6 +45,7 @@ vm.runInContext([
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
   "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
+  "var fdWinFights = (fd, bind, since, cb) => { if (cb) cb(null); };",
   "var FightHistory = { dayOf: () => \"2026-10-29\", rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
 ].join("\n"), ctx, { filename: "app.js state" });
 
@@ -53,7 +55,8 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
 (async () => {
   // ---- 1. a live fight that ends hands the pick back ---------------------------------------------------------------
   ctx.worstPick = 1;
-  ctx.FightDebug.worstIndex = () => ctx.worstPick;
+  // The pick reads the summaries (the details are no longer all loaded).
+  ctx.FightDebug.worstSummaryIndex = () => ctx.worstPick;
   const rows = [{ key: "5-5" }, { key: "5-4" }, { key: "5-3" }];
   const detail = [null, { fight: {} }, { fight: {} }];
   ctx.rows = rows; ctx.detail = detail;
@@ -111,12 +114,14 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   await settle();
   assert.strictEqual(run("failedAnswer"), null, "a failed first fetch answers null, not an empty list");
 
-  // ---- 2b. a failed detail is asked once more at once, then says so; later rows still load ---------------------------
+  // ---- 2b. a failed detail is asked once more at once, then says so; the next pick still loads -------------------------
+  // Details load on demand: only the picked fight (the reader's click or the debugger's own pick) is fetched.
   run("cmdFd = {}; cmdFightsCache = {}; cmdFightsPending = {}");
   const list = [{ key: "bad" }, { key: "empty" }, { key: "good" }];
   ctx.cmdRaidFights = (bind, cb) => cb(list);
   const reqs = {};
   ctx.fetch = (url) => {
+    if (url.indexOf("/combat/fight/") < 0) return Promise.resolve({ days: [] }); // the night picker's days
     const key = decodeURIComponent(url.slice(url.indexOf("/fight/") + 7));
     reqs[key] = (reqs[key] || 0) + 1;
     if (key === "bad") return Promise.reject(new Error("500"));
@@ -128,9 +133,15 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   const card = { classList: { contains: () => true } };
   clock = 0;
   run("fdPage.open = 'D'");
+  const fdD = run("fdState('D')");
   run("fdLoad(card, bind)", { card, bind: { commander: "D" } });
   await settle();
-  const fdD = run("fdState('D')");
+  assert.deepStrictEqual(reqs, {}, "nothing picked: no detail is fetched up front");
+  for (const k of ["bad", "empty", "good"]) {
+    fdD.sel = k;
+    run("fdLoad(card, bind)", { card, bind: { commander: "D" } });
+    await settle();
+  }
   assert.strictEqual(reqs.bad, 2, "a failed key is asked once more at once, never left loading");
   assert.strictEqual(reqs.empty, 2, "an answer without a fight counts as a failure and gets the same retry");
   assert.strictEqual(reqs.good, 1, "the row after the failures loads");
@@ -178,17 +189,34 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   await settle();
   assert.strictEqual(fdP.day, "2026-10-27", "a past night is selected by its own day");
 
-  // ---- 2c. the picked fight's detail is fetched even when it is older than the newest 50 --------------------------------
+  // ---- 2c. detail on demand: only the picked fight, whatever its age --------------------------------------------------
   const oldList = Array.from({ length: 60 }, (_, i) => ({ key: "k" + i }));
   const fdOld = { sel: "k59", details: {}, failed: {}, list: oldList };
-  assert.strictEqual(run("(fdDetailRow(fd) || {}).key", { fd: fdOld }), "k59",
-    "the picked fight is fetched by its key, beyond the newest-50 window");
-  const fdLivePick = { sel: "live", details: {}, failed: {}, list: oldList };
-  assert.strictEqual(run("(fdDetailRow(fd) || {}).key", { fd: fdLivePick }), "k0", "a live pick still walks the newest rows");
-  const fdBeyond = { sel: "live", details: {}, failed: {}, list: oldList };
-  for (let i = 0; i < 50; i++) fdBeyond.details["k" + i] = { fight: {} };
-  assert.strictEqual(run("fdDetailRow(fd)", { fd: fdBeyond }), null,
-    "a night longer than the window leaves the older rows unasked (their cards say so), not loading for ever");
+  assert.strictEqual(run("(fdDetailRow(fd) || {}).key", { fd: fdOld }), "k59", "the picked fight is fetched by its key");
+  assert.strictEqual(run("fdDetailRow(fd)", { fd: { sel: "live", details: {}, failed: {}, list: oldList } }), null,
+    "a live pick fetches no finished fight's detail (the old loader walked the newest 50 here)");
+  assert.strictEqual(run("fdDetailRow(fd)", { fd: { sel: null, details: {}, failed: {}, list: oldList } }), null, "no pick, no fetch");
+  assert.strictEqual(run("fdDetailRow(fd)", { fd: { sel: "k3", details: { k3: { fight: {} } }, failed: {}, list: oldList } }), null,
+    "a cached detail is not fetched again");
+  assert.strictEqual(run("fdDetailRow(fd)", { fd: { sel: "L", details: {}, failed: {}, list: [{ key: "L", live: true }] } }), null,
+    "a running fight's row has no detail to fetch");
+  // A whole loader pass over 60 rows with one pick asks for that one fight only.
+  run("cmdFd = {}; cmdFightsCache = {}; cmdFightsPending = {}");
+  const asked = [];
+  ctx.fetch = (url) => { if (url.indexOf("/combat/fight/") < 0) return Promise.resolve({ days: [] }); asked.push(decodeURIComponent(url.slice(url.indexOf("/fight/") + 7))); return Promise.resolve({ fight: { id: "x" } }); };
+  ctx.cmdRaidFights = (bind, cb) => cb(oldList);
+  run("fdPage.open = 'O'");
+  const fdO = run("fdState('O')");
+  fdO.sel = "k7";
+  run("fdLoad(card, bind)", { card, bind: { commander: "O" } });
+  await settle();
+  run("fdLoad(card, bind)", { card, bind: { commander: "O" } });
+  await settle();
+  assert.deepStrictEqual(asked, ["k7"], "one detail for the opened fight, none for the other 59 rows: " + JSON.stringify(asked));
+  // The window: the bound run's start or two hours ago, whichever is earlier, on a minute boundary.
+  assert.strictEqual(run("fdWindowStart({ bound_at: 0 }, 10000 * 1000)"), 10000 - 7200 - ((10000 - 7200) % 60));
+  assert.strictEqual(run("fdWindowStart({ bound_at: 1000 }, 10000 * 1000)"), 960, "a run bound earlier keeps its whole run");
+  assert.strictEqual(run("fdWindowStart({ bound_at: 9000 }, 10000 * 1000)"), 2760, "a run bound later still shows two hours");
 
   // A fight of another commander's binding has no kept positions on this card: it is read like a past night, never this
   // card's track.

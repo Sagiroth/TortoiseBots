@@ -3328,6 +3328,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-rtfight:hover { filter: brightness(1.1); }
 .fd-rtfight.on { outline: 2px solid var(--text-main); outline-offset: 1px; }
 .fd-rtdeath { position: absolute; top: -12px; transform: translateX(-50%); color: var(--fd-fail); font-size: 0.7rem; font-weight: 700; line-height: 1; }
+.fd-rtdeath.sum { opacity: 0.75; }
+.fd-rtdeath sub { font-size: 0.55rem; }
 .fd-rtcur { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-main); pointer-events: none; }
 .fd-rtplay { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .fd-rtplay .fd-playbtn { white-space: nowrap; }
@@ -3384,6 +3386,21 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-fight.v-ok .fd-fv { color: var(--fd-ok); }
 .fd-fight.v-load { border-left-color: var(--text-dim); }
 .fd-fight[aria-pressed="true"] { background: var(--bg-card-hover); border-color: var(--border-strong); border-left-color: var(--accent-yellow); }
+/* A card judged from its summary only (its detail loads when it is opened): the verdict word is quieter than a checked one. */
+.fd-fight.v-sum .fd-fv { opacity: 0.8; font-style: italic; }
+/* Clean trash folded into one line per leg and run; opened, its cards sit indented under the line. */
+.fd-fold { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; width: 100%; padding: 5px 8px; text-align: left; border: 1px dashed var(--border-color); border-left: 3px solid var(--fd-ok); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.fd-fold:hover, .fd-fold:focus-visible { background: var(--bg-card-hover); color: var(--text-main); }
+.fd-fold:focus-visible, .fd-older:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 2px; }
+.fd-fold .fd-foldt { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.fd-fold .fd-folds { font-size: 0.68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-fold.open { border-style: solid; }
+.fd-fight.fd-infold { margin-left: 10px; width: calc(100% - 10px); }
+.fd-older { width: 100%; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.fd-older:hover:not([disabled]) { background: var(--bg-card-hover); }
+.fd-older[disabled] { cursor: default; color: var(--text-muted); }
+.fd-older .fd-oldn { color: var(--text-muted); font-size: 0.68rem; }
+.fd-showall { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted); cursor: pointer; }
 .fd-len { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-dim) 30%, transparent); overflow: hidden; }
 .fd-len i { display: block; height: 100%; background: var(--text-muted); }
 

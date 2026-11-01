@@ -704,8 +704,78 @@
         detail: det ? "ready" : failed ? "failed" : waiting ? "loading" : "unasked",
         // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
         live: !!row.live,
+        // What the summary alone says (details load only for the fight the reader opens): a wipe or a death is a problem, a
+        // rule the daemon fired is a check, anything else looks clean from the summary.
+        sum: summaryVerdict(row),
+        boss: !!row.boss_name,
+        wipe: row.outcome === "wipe",
+        leg: row.leg != null ? String(row.leg) : "",
+        group: utcDay(row.start) + "|" + (row.session != null && row.session !== "" ? String(row.session) : ""),
+        start: num(row.start) || 0,
       };
     });
+  }
+
+  // A summary's verdict, without the fight's bot rows: the same rule as the tab's red dot (FdTabs.problem) split in two.
+  function summaryVerdict(row) {
+    if (!row || row.live) return null;
+    if (row.outcome === "wipe" || (num(row.deaths) || 0) > 0) return "fail";
+    if ((num(row.warnings) || 0) > 0) return "warn";
+    return "ok";
+  }
+
+  // The worst finished fight by its summary alone: a wipe first, then the most deaths, then the most fired rules; ties keep the
+  // earliest (the newest fight). -1 when every row is clean, so the caller opens on the newest. The debugger picks with this
+  // because it no longer fetches every fight's detail up front.
+  function worstSummaryIndex(rows) {
+    let best = -1;
+    let bestScore = null;
+    (Array.isArray(rows) ? rows : []).forEach((r, i) => {
+      if (!r || r.live || !r.key) return;
+      const score = [r.outcome === "wipe" ? 1 : 0, num(r.deaths) || 0, num(r.warnings) || 0];
+      if (!score[0] && !score[1] && !score[2]) return;
+      const worse = !bestScore || score[0] > bestScore[0]
+        || (score[0] === bestScore[0] && (score[1] > bestScore[1] || (score[1] === bestScore[1] && score[2] > bestScore[2])));
+      if (worse) { best = i; bestScore = score; }
+    });
+    return best;
+  }
+
+  // A card the rail always shows in full: a boss, a wipe, any death, the running fight. The rest (clean trash) folds.
+  function railFull(c) {
+    return !!(c && (c.boss || c.wipe || c.deaths > 0 || c.live));
+  }
+
+  // The rail in reading order (oldest first): full cards, and runs of two or more clean trash fights folded into one line per
+  // leg and run. cards are railCards' output (newest first). opts: {showAll, open: {foldId: true|false}, sel}. A fold's id is its
+  // oldest fight's key, so it stays the same while new trash joins it; the fold holding the selected fight opens by itself.
+  // Items: {kind: "card", card} or {kind: "fold", id, cards (oldest first), open, leg, n, durMs}.
+  function railItems(cards, opts) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    const list = (Array.isArray(cards) ? cards : []).slice().reverse();
+    if (o.showAll) return list.map((card) => ({ kind: "card", card }));
+    const out = [];
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const id = "fold:" + run[0].key;
+        const hasSel = o.sel != null && run.some((c) => c.key === o.sel);
+        out.push({
+          kind: "fold", id, cards: run, leg: run[0].leg || "", n: run.length,
+          durMs: run.reduce((t, c) => t + (c.durMs || 0), 0),
+          // The reader's own open or close wins; untouched, the fold holding the picked fight is open.
+          open: o.open && typeof o.open[id] === "boolean" ? o.open[id] : hasSel,
+        });
+      } else run.forEach((card) => out.push({ kind: "card", card }));
+      run = [];
+    };
+    list.forEach((c) => {
+      if (railFull(c)) { flush(); out.push({ kind: "card", card: c }); return; }
+      if (run.length && (run[0].group !== c.group || run[0].leg !== c.leg)) flush();
+      run.push(c);
+    });
+    flush();
+    return out;
   }
 
   // A live fight is one with a hostile unit engaged with the group: a hostile mob whose victim is a group member, or
@@ -797,7 +867,8 @@
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS, CAST_DEATH_MS,
     roleOf, spellCount, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
-    spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
+    spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged,
+    summaryVerdict, worstSummaryIndex, railFull, railItems, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
 })(typeof self !== "undefined" ? self : this);
