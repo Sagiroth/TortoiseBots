@@ -22036,12 +22036,24 @@ static void TestRaidBossBossOffANonTankWithTheLeadDead()
 // RaidGuardTick's dead-lead branch sees the boss on a non-tank. Outside one, nothing is read then (as before).
 static void TestRaidBossGuardReadModes()
 {
-    CHECK(GuardReadMode(true, true, false) == GuardRead::Lead);
-    CHECK(GuardReadMode(true, true, true) == GuardRead::Lead);
-    CHECK(GuardReadMode(false, false, false) == GuardRead::None);
-    CHECK(GuardReadMode(true, false, false) == GuardRead::None);
-    CHECK(GuardReadMode(false, false, true) == GuardRead::RaidAnchor);
-    CHECK(GuardReadMode(true, false, true) == GuardRead::RaidAnchor);
+    CHECK(GuardReadMode(true, true, false, false) == GuardRead::Lead);
+    CHECK(GuardReadMode(true, true, true, false) == GuardRead::Lead);
+    CHECK(GuardReadMode(false, false, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(true, false, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(false, false, true, false) == GuardRead::RaidAnchor);
+    CHECK(GuardReadMode(true, false, true, false) == GuardRead::RaidAnchor);
+}
+
+// F7: a raid's trash fight whose off-tanks pick up (RaidTrashOffTanks, GuardTarget's dead-lead branch) needs the
+// glue's read with the lead bot dead too: the mobs the main tank left on the healers are the off-tanks' to take off
+// them (ZG walk 22 test2 r4 step 99). A dead lead bot with no living off-tank, a living lead bot (the party guard's
+// own rules), and every other fight: nothing read, as before.
+static void TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead()
+{
+    CHECK(GuardReadMode(false, false, false, true) == GuardRead::RaidAnchor);  // the lead bot dead, an off-tank alive
+    CHECK(GuardReadMode(false, false, false, false) == GuardRead::None);       // ... and none: nothing to pick up
+    CHECK(GuardReadMode(true, false, false, true) == GuardRead::None);         // a living lead bot: unchanged
+    CHECK(GuardReadMode(false, false, true, false) == GuardRead::RaidAnchor);  // a raid's boss fight: unchanged
 }
 
 // The facts as the glue reads them with the lead bot dead (GuardRead::RaidAnchor): leadAlive, leadIsTank and
@@ -26533,6 +26545,7 @@ int main()
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();
+    TestGuardReadModeReadsTheRaidTrashAttackersWithTheLeadDead();
     TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();

@@ -12690,6 +12690,14 @@ inline bool RaidTrashFight(const Run& r, const Facts& f)
         !r.raidBossFight;
 }
 
+// ... and one whose off-tanks pick up: a living off-tank can take a loose mob off the party (GuardTarget's dead-lead
+// branch, CheckGuard's off-tank round robin). The glue's guard read asks the same of a raid trash fight with the lead
+// bot dead (GuardReadMode), so the read and the pick agree on which fights have off-tanks.
+inline bool RaidTrashOffTanks(const Run& r, const Facts& f)
+{
+    return RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty();
+}
+
 // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules: a boss step, or a boss of the plan engaged on any
 // step (RaidTrashFight's other side), never in a hold or an event. Once one, the fight stays one (Run::raidBossFight,
 // set by TickBody) though its boss turns unattackable for a phase (EngagedPlanBoss). Its guard is RaidGuardTick and its
@@ -12712,20 +12720,24 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
 }
 
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
-// AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight).
+// AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight). `raidTrashOffTanks`: a raid's trash fight whose off-tanks
+// pick up (RaidTrashFight with a living off-tank: GuardTarget's dead-lead branch).
 enum class GuardRead
 {
     None,       // nothing: no party guard without a living tank lead bot (as before the raid boss rules)
     Lead,       // the party guard's facts around the lead bot, a living tank (its stay, its own mob, the attackers)
-    RaidAnchor, // a raid's boss fight with the lead bot dead or no tank: only the raid's attackers (partyAttackers),
-                // read around a living anchor (the lead bot when alive, else an off-tank or any living bot), so
-                // RaidGuardTick sends an off-tank at the boss on a non-tank and at the adds
+    RaidAnchor, // the lead bot dead or no tank: only the raid's attackers (partyAttackers), read around a living
+                // anchor (the lead bot when alive, else an off-tank or any living bot). A boss fight's, so
+                // RaidGuardTick sends an off-tank at the boss on a non-tank and at the adds, or a raid trash
+                // fight's, so its off-tanks take the loose mobs the dead main tank left on the party
 };
-inline GuardRead GuardReadMode(bool leadAlive, bool leadIsTank, bool raidBoss)
+inline GuardRead GuardReadMode(bool leadAlive, bool leadIsTank, bool raidBoss, bool raidTrashOffTanks)
 {
     if (leadAlive && leadIsTank)
         return GuardRead::Lead;
-    return raidBoss ? GuardRead::RaidAnchor : GuardRead::None;
+    if (raidBoss)
+        return GuardRead::RaidAnchor;
+    return !leadAlive && raidTrashOffTanks ? GuardRead::RaidAnchor : GuardRead::None;
 }
 
 // The main tank (the lead bot, alive) holds a plan boss (Facts::leadHeldEntries, read in a raid's boss fight only).
@@ -12881,7 +12893,7 @@ inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
     // held do not stay on the healers (ZG walk 22 test2 r4 step 99: the Mad Voidwalkers went to nobody once the
     // main tank died). Nobody's stand: no guard return, no engage.
     if (!f.leadAlive)
-        return RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
+        return RaidTrashOffTanks(r, f) ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
     // Watching: fightOrders too, so a refill (guardOrders and engageOrders back
     // to 0) does not end the watch the earlier orders started.
     if (!f.leadIsTank ||
