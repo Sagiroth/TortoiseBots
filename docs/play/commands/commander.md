@@ -375,7 +375,7 @@ TBM:RUN|uldaman|running|7/41|baelog|pull|pull|pulling 4851
 TBM:RUN|uldaman|paused|12/41|baelog|boss|begin|3 dead: regroup (cmd revive party), then .bot run resume (2 regroups by itself at this step did not hold)
 ```
 
-With the ring estimate (`AiPlayerbot.DungeonRunAggroWalkRing = 1`) a pull over its ceiling notes `pull estimate: N bodies over the ceiling M (plan|config): 0x..., ... (+K more)`, at most eight guids, and the last move row before it notes once `ahead: pull N brings N (ceiling M): ...` (advice only, no order changes).
+With the ring estimate (`AiPlayerbot.DungeonRunAggroWalkRing = 1`) a pull over its ceiling notes `pull estimate: N bodies over the ceiling M (plan|config): 0x..., ... (+K more)`, at most eight guids, and the last move row before it notes once `ahead: pull N brings N (ceiling M): ...`, or `ahead: pull N estimate unavailable` when the row lists no creature on the map (advice only, no order changes).
 
 A pull's line (a `pull` or `boss` step's, and a hop pull's) names the joiners it drew in the note: `joiners N (entry <entry> x<count>, ...)`, or `joiners 0` when none came — the pulled pack recorded at the pullback (the pulled creature with its own creature group and its linked creatures, and the unit crowd-controlled for the pull — not every pack the step happens to list), then every hostile engaged with the party outside it in the first 10 s. It is note text (no `|`), so a reader of the seven fields reads it as part of the note.
 
