@@ -38,7 +38,7 @@ The separate `mod-dungeon-clear` module is not ported as a second autonomous pul
 TortoiseBots deliberately excludes certain features to maintain immersion, stability, and vanilla fidelity:
 
 - **Expansion Content (TBC / WotLK):** No Death Knights, glyphs, vehicles, Outland/Northrend zones, or Arena ratings. Classes and mechanics strictly adhere to Vanilla 1.12 with Turtle WoW 1.18.1 additions.
-- **Synchronous LLM in Combat or Movement:** Combat decisions, healing triage (prioritizing wounds), interrupts, and movement never wait on external language model responses. The combat and reaction engine is entirely deterministic C++.
+- **Bot chatter:** Bots do not chat on their own: no replies to what players say, no announcements of loot, quests, kills or level-ups, no suggestions in public channels and no language-model chat. They answer orders and questions from their own master and group, and a bot LFG group still advertises in LookingForGroup. Conversation between bots and players is left to a separate chat module.
 - **Multi-Tab Guild Vaults:** Turtle WoW 1.18.1 does not support WotLK-style multi-tab guild banks. Bot interactions with unsupported guild bank actions fail closed safely.
 
 ## Tactical & Targeting Rules for Players

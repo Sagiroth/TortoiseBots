@@ -965,8 +965,7 @@ AiPlayerbot.BotLfgOnlyWithPlayersOnline = 1
 # faction across all groups, and only while a real player of that faction is
 # online. A real player who whispers the leader "inv" gets a party invite when his
 # faction, level and class fit the open role; other whispers get one short answer.
-# Not limited by AiPlayerbot.EnableBroadcasts. Only read while
-# AiPlayerbot.BotLfgGroups = 1. `.reload config` reads it again.
+# Only read while AiPlayerbot.BotLfgGroups = 1. `.reload config` reads it again.
 # 0 - off
 # 1 - on (Default)
 AiPlayerbot.BotLfgChat = 1
@@ -1289,11 +1288,6 @@ AiPlayerbot.ImmuneSpellIds = 19428
 # Randombots will form guilds by buying a charter, getting signatures and handing it in.
 # AiPlayerbot.RandomBotFormGuild = 1
 
-# Bots announce group/raid invites in say or guild chat. Only a real player is
-# announced to; a bot inviting another bot stays silent (the pool invites
-# itself non-stop while it fills up).
-AiPlayerbot.InviteChat = 1
-
 # Enable per-bot action log files (logs/bots/<botname>_acc<id>_<timestamp>.log)
 # and "[BOT]" prefixed structured log lines in the server log. Useful for
 # diagnosing bot lifecycle issues; off in production. The crash handler also
@@ -1388,115 +1382,6 @@ AiPlayerbot.BotProfessionSpecializations = 2
 
 #max limit of members in a guild (bots will leave guild if there are more members than this number)
 # AiPlayerbot.GuildMaxBotLimit = 1000
-
-##################################################################################
-#
-# Broadcast rates
-#
-# 1 - to enable broadcasts globally, 0 - to disable (default 1)
-#
-# 0 silences what the bots say on their own: the quest/loot/kill/level-up/suggest
-# broadcasts, the /say and /yell chatter, guild and world channel messages, the
-# recruitment and invite lines, the flavour text of an emote and the scripted
-# battleground callouts.
-#
-# Whispers, party and raid chat, the answer to a player who ordered the bot
-# (speak, a reply to the bot's own master) and the TortoiseBotsManager addon
-# protocol are not broadcasts and stay.
-AiPlayerbot.EnableBroadcasts = 1
-#
-# all broadcast chances should be in range 0-30000
-#
-# value of 0 will disable this particular broadcast
-# setting value to 30000 does not guarantee the broadcast, as there are some internal randoms as well
-#
-# setting channel broadcast chance to 0, will re-route most broadcasts to other available channels
-# setting all channel broadcasts to 0 will disable most broadcasts
-# AiPlayerbot.BroadcastToGuildGlobalChance = 30000
-# World/general channels are what real players actually read, and every quest/loot/
-# kill/levelup/suggest-* broadcast below routes through them at chance=100 - so these
-# two global gates are the main throttle on how much of that ends up as visible chat spam.
-AiPlayerbot.BroadcastToWorldGlobalChance = 3000
-AiPlayerbot.BroadcastToGeneralGlobalChance = 3000
-# AiPlayerbot.BroadcastToTradeGlobalChance = 30000
-# AiPlayerbot.BroadcastToLFGGlobalChance = 30000
-# AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 30000
-# AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 30000
-# AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 30000
-# AiPlayerbot.BroadcastToSayGlobalChance = 30000
-# AiPlayerbot.BroadcastToYellGlobalChance = 30000
-#
-# individual settings
-# setting one of these to 0 will disable the particular broadcast
-# AiPlayerbot.BroadcastChanceLootingItemPoor = 30
-# AiPlayerbot.BroadcastChanceLootingItemNormal = 300
-# AiPlayerbot.BroadcastChanceLootingItemUncommon = 10000
-# AiPlayerbot.BroadcastChanceLootingItemRare = 20000
-# AiPlayerbot.BroadcastChanceLootingItemEpic = 30000
-# AiPlayerbot.BroadcastChanceLootingItemLegendary = 30000
-# AiPlayerbot.BroadcastChanceLootingItemArtifact = 30000
-#
-# AiPlayerbot.BroadcastChanceQuestAccepted = 6000
-# AiPlayerbot.BroadcastChanceQuestUpdateObjectiveCompleted = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateObjectiveProgress = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateFailedTimer = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateComplete = 1000
-# AiPlayerbot.BroadcastChanceQuestTurnedIn = 10000
-#
-# AiPlayerbot.BroadcastChanceKillNormal = 30
-# AiPlayerbot.BroadcastChanceKillElite = 300
-# AiPlayerbot.BroadcastChanceKillRareelite = 3000
-# AiPlayerbot.BroadcastChanceKillWorldboss = 20000
-# AiPlayerbot.BroadcastChanceKillRare = 10000
-# AiPlayerbot.BroadcastChanceKillUnknown = 100
-# AiPlayerbot.BroadcastChanceKillPet = 10
-# AiPlayerbot.BroadcastChanceKillPlayer = 30
-#
-# AiPlayerbot.BroadcastChanceLevelupGeneric = 20000
-# AiPlayerbot.BroadcastChanceLevelupTenX = 30000
-# AiPlayerbot.BroadcastChanceLevelupMaxLevel = 30000
-#
-# AiPlayerbot.BroadcastChanceSuggestInstance = 5000
-# AiPlayerbot.BroadcastChanceSuggestQuest = 10000
-# AiPlayerbot.BroadcastChanceSuggestGrindMaterials = 5000
-# AiPlayerbot.BroadcastChanceSuggestGrindReputation = 5000
-# Trade spam ("WTS %category", "I am selling [item]") from masterless pool bots
-# is off by default: with hundreds of bots in one zone it reads as wall-to-wall
-# selling. Set >0 (e.g. 300) to let ungrouped random bots hawk their bags again.
-# AiPlayerbot.BroadcastChanceSuggestSell = 0
-# suggest_something is pure ambient chit-chat (no real event behind it, e.g. "anyone
-# know the lore behind Elwynn Forest") - it fired at 100% chance by default, making it
-# the single biggest source of world/general noise. Cut hard since it carries no info.
-AiPlayerbot.BroadcastChanceSuggestSomething = 2000
-#
-# Very rude speeches
-# AiPlayerbot.BroadcastChanceSuggestSomethingToxic = 0
-#
-# Specifically for "<word> [item link]"
-# AiPlayerbot.BroadcastChanceSuggestToxicLinks = 0
-#
-# prefix is used as a word in "<word> [item link]"
-# AiPlayerbot.ToxicLinksPrefix = gnomes
-#
-# chance to suggest thunderfury
-# AiPlayerbot.BroadcastChanceSuggestThunderfury = 1
-#
-# does not depend on global chance
-# AiPlayerbot.BroadcastChanceGuildManagement = 30000
-#
-##################################################################################
-
-# Chance to reply to toxic links with toxic links (0-100)
-AiPlayerbot.ToxicLinksRepliesChance = 30
-# Chance to reply to thunderfury with thunderfury (0-100)
-AiPlayerbot.ThunderfuryRepliesChance = 40
-# Bots will chat in guild about certain events (int) (0-100)
-AiPlayerbot.GuildRepliesRate = 100         # Reply someone saying something.
-
-# 1 = bots without a master say out loud (/say) everything they would
-# normally whisper to a master, incl. narration of where they go and why.
-# Greetings, broadcasts and normal bot chat do not depend on this. Default 0.
-AiPlayerbot.RandomBotSayWithoutMaster = 0
 
 # Minimum level at which bots will start accepting duels
 # AiPlayerbot.BotAcceptDuelMinimumLevel = 10
@@ -2594,75 +2479,6 @@ AiPlayerbot.LogRetentionDays = 3
 
 # Filters certain actions from showing up in 'nc +debug' and 'nc +debug action'
 # AiPlayerbot.DebugFilter = add gathering loot,check values,emote,check mount state,jump
-
-# LLM values. These values are for noncombat strategy 'ai chat' which allows bots to reply using a LLM api.
-# For a quickstart download koboldcpp, a 7b model from huggingface and start kobold.
-# (Default) KoboldCPP examples:
-
-# Enables/disables LLM globaly: 0 = disabled, 1 = enabled with ai chat strategy, 2 = ai chat strategy default for all bots, 3 = enabled without ai chat strategy.
-# AiPlayerbot.LLMEnabled = 0
-# The api endpoint that should be called for chat generation.
-# AiPlayerbot.LLMApiEndpoint = http://127.0.0.1:5001/api/v1/generate
-# The default json to send to the endpoint.
-# AiPlayerbot.LLMApiJson = {"max_length": 100, "prompt": "[<pre prompt>]<context> <prompt> <post prompt>"}
-
-# The max context length allowed for the model. 0 to disable. This will shrink the context (all previous conversations) to make the entire prompt <pre prompt><context><prompt><post prompt> fit.
-# AiPlayerbot.LLMContextLength = 4096
-# Time in seconds the server will wait for the generation to finish. This includes waiting in queue.
-# AiPlayerbot.LLMGenerationTimeout = 600
-# Maximum generation requests allowed at the same time. This includes waiting in queue.
-# AiPlayerbot.LLMMaxSimultaniousGenerations = 100
-
-# The default prompt to send at the beginning of each conversation.
-# AiPlayerbot.LLMPrePrompt = You are a roleplaying character in Vanilla/Tortoise WoW. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.
-# The prompt part containing the last message from the player the bot is responding to.
-# AiPlayerbot.LLMPrompt = <receiver name>:<initial message>
-# The default prompt to send at the end of each conversation.
-# AiPlayerbot.LLMPostPrompt = <sender name>:
-
-# The prompt used for rpg chat with npc's
-# AiPlayerbot.LLMRpgPrompt = In Vanilla/Tortoise WoW in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>. Standing nearby is <unit type> <unit name> <unit subname> a level <unit level> <unit gender> <unit race> <unit faction> <unit class>. Answer as a roleplaying character. Limit responses to 100 characters.
-
-# Response parse method. The (json) response that the llm will output needs to be cut and split to result in a number of plain lines the bot can give as feedback.
-# Step1: What pattern the server should look for to find the start of the repsonse the llm gave.
-# AiPlayerbot.LLMResponseStartPattern = ("text":\s*")
-# Step2: What pattern the server should look for that the response has ended.
-# AiPlayerbot.LLMResponseEndPattern = ("|\b(?!<sender name>\b)(\w+):)
-# Step3: What pattern the server should look for to remove from the response.
-# AiPlayerbot.LLMResponseDeletePattern = (\\n|<sender name>:|\\[^ ]+)
-# Step4: What pattern the server should look for to split the repsonse in multiple lines. Note only lines that follow this pattern will be extracted.
-# AiPlayerbot.LLMResponseSplitPattern = (\*.*?\*)|(\[.*?\])|(\'.*\')|([^\*\[\] ][^\*\[\]]+?[.?!])
-
-# The file llm_character_card.txt allows you to define how individual bots speak. You need to create this file in the root folder.
-# Each new line adds an additional prompt to the specified bot, which can be used to adjust specific bot's personality and speaking style.
-# The format must be as follows:
-# name1::text1
-# name2::text2
-# name3::text3
-
-# Examples:
-# Celguar::I am the Keeper of the Source.
-# Mostlikely::I like to travel a lot.
-# Flekz::I hold the power of ancient wizardry.
-
-AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
-
-# Should previous conversations from all channels be mixed?
-# AiPlayerbot.LLMGlobalContext = 0
-
-# The chance (0-100) bots will use ai chat to respond to other bots
-# AiPlayerbot.LLMBotToBotChatChance = 0
-
-# The chance (0-100) bots will use ai chat talk to npcs during rpg
-# AiPlayerbot.LLMRpgAIChatChance = 100
-
-# Channels that bots are not allowed to use ai-chat to reply on. Channels: guild,world,general,trade,lfg,ldefence,wdefence,grecruitement,say,whisper,emote,temote,yell,party,raid
-# AiPlayerbot.LLMBlockedReplyChannels =
-
-# OPEN-AI (chat completions) example:
-# AiPlayerbot.LLMApiEndpoint = http://IP/URL:PORT/v1/chat/completions
-# AiPlayerbot.LLMApiJson = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "<pre prompt> <context>"},{"role": "user", "content": "<prompt>"}],"max_tokens": 60}
-# AiPlayerbot.LLMResponseStartPattern = ("content":\s*")
 
 ##################################################################################
 #                                                                                #

@@ -76,25 +76,7 @@ bool RevealGatheringItemAction::Execute(Event& event)
     GameObject *go = result[urand(0, result.size() - 1)];
     if (!go) return false;
 
-    std::ostringstream msg;
-    msg << "I see a " << ChatHelper::formatGameobject(go) << ". ";
-    switch (go->GetGoType())
-    {
-      case GAMEOBJECT_TYPE_CHEST:
-          msg << "Let's look at it.";
-          break;
-      case GAMEOBJECT_TYPE_FISHINGNODE:
-          msg << "Let's fish a bit.";
-          break;
-      default:
-          msg << "Should we go nearer?";
-    }
-
     // everything is fine, do it
     ai->Ping(go->getPositionX(), go->getPositionY());
-    // Issue #1108: the ping is functional, the line in /say is ambient
-    // chatter and follows AiPlayerbot.EnableBroadcasts.
-    if (sPlayerbotAIConfig.enableBroadcasts)
-        bot->Say(msg.str(), LANG_UNIVERSAL);
     return true;
 }

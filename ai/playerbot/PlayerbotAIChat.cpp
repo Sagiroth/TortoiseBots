@@ -116,18 +116,9 @@ ChatChannelSource PlayerbotAI::GetChatChannelSource(Player* bot, uint32 type, st
     return ChatChannelSource::SRC_UNDEFINED;
 }
 
-// Issue #1108: one gate for the automated chat. AiPlayerbot.EnableBroadcasts
-// = 0 silences what the bots say on their own; a line that answers a player
-// who commanded the bot (".bot speak", a reply to the bot's own master) is
-// functional and always goes out.
-bool PlayerbotAI::IsChatAllowed() const
-{
-    return sPlayerbotAIConfig.enableBroadcasts || IsCommandedChat();
-}
-
 bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 {
-    if (!IsChatAllowed() || msg.empty())
+    if (msg.empty())
     {
         return false;
     }
@@ -147,8 +138,7 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 
                 if (guildBot->GetGuildId() == bot->GetGuildId())
                 {
-                    if (likePlayer || (sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3) &&
-                        sPlayerbotAIConfig.llmBotToBotChatChance))
+                    if (likePlayer)
                     {
                         WorldPacket packet_template(CMSG_MESSAGECHAT);
 
@@ -191,16 +181,13 @@ static bool SayToNamedChannel(Player* bot, std::string const& name, std::string 
     return true;
 }
 
-// Issue #1108: the named channels are broadcast channels, so they follow
-// AiPlayerbot.EnableBroadcasts. A commanded answer ("speak /1 ...") is not a
-// broadcast and still goes out.
-bool PlayerbotAI::SayToWorld(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "World", msg); }
-bool PlayerbotAI::SayToGeneral(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "General", msg); }
-bool PlayerbotAI::SayToTrade(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "Trade", msg); }
-bool PlayerbotAI::SayToLFG(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "LookingForGroup", msg); }
-bool PlayerbotAI::SayToLocalDefense(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "LocalDefense", msg); }
-bool PlayerbotAI::SayToWorldDefense(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "WorldDefense", msg); }
-bool PlayerbotAI::SayToGuildRecruitment(std::string msg) { return IsChatAllowed() && SayToNamedChannel(bot, "GuildRecruitment", msg); }
+bool PlayerbotAI::SayToWorld(std::string msg) { return SayToNamedChannel(bot, "World", msg); }
+bool PlayerbotAI::SayToGeneral(std::string msg) { return SayToNamedChannel(bot, "General", msg); }
+bool PlayerbotAI::SayToTrade(std::string msg) { return SayToNamedChannel(bot, "Trade", msg); }
+bool PlayerbotAI::SayToLFG(std::string msg) { return SayToNamedChannel(bot, "LookingForGroup", msg); }
+bool PlayerbotAI::SayToLocalDefense(std::string msg) { return SayToNamedChannel(bot, "LocalDefense", msg); }
+bool PlayerbotAI::SayToWorldDefense(std::string msg) { return SayToNamedChannel(bot, "WorldDefense", msg); }
+bool PlayerbotAI::SayToGuildRecruitment(std::string msg) { return SayToNamedChannel(bot, "GuildRecruitment", msg); }
 
 bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
 {
@@ -213,27 +200,20 @@ bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
         return false;
     }
 
-    if (likePlayer || (sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3) &&
-        sPlayerbotAIConfig.llmBotToBotChatChance))
+    if (likePlayer)
     {
-        for (auto reciever : GetPlayersInGroup())
-        {
-            if (likePlayer || isRealPlayer_Helper(reciever))
-            {
-                WorldPacket packet_template(CMSG_MESSAGECHAT);
+        WorldPacket packet_template(CMSG_MESSAGECHAT);
 
-                uint32 lang = LANG_UNIVERSAL;
+        uint32 lang = LANG_UNIVERSAL;
 
-                packet_template << CHAT_MSG_PARTY;
-                packet_template << LANG_UNIVERSAL;
-                packet_template << msg;
+        packet_template << CHAT_MSG_PARTY;
+        packet_template << LANG_UNIVERSAL;
+        packet_template << msg;
 
-                std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
+        std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-                bot->GetSession()->QueuePacket(packetPtr.release());
-                return true;
-            }
-        }
+        bot->GetSession()->QueuePacket(packetPtr.release());
+        return true;
     }
 
     WorldPacket data;
@@ -267,7 +247,7 @@ bool PlayerbotAI::SayToRaid(std::string msg)
 
 bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 {
-    if (!IsChatAllowed() || msg.empty())
+    if (msg.empty())
         return false;
 
     SanitizeCommandLikeChat(msg);
@@ -281,22 +261,18 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
         lang = LANG_ORCISH;
     }
 
-    if (likePlayer || (sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3) &&
-        sPlayerbotAIConfig.llmBotToBotChatChance))
+    if (likePlayer)
     {
-        if (likePlayer || this->HasPlayerNearby(sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL)))
-        {
-            WorldPacket packet_template(CMSG_MESSAGECHAT);
+        WorldPacket packet_template(CMSG_MESSAGECHAT);
 
-            packet_template << CHAT_MSG_YELL;
-            packet_template << lang;
-            packet_template << msg;
+        packet_template << CHAT_MSG_YELL;
+        packet_template << lang;
+        packet_template << msg;
 
-            std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
+        std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            bot->GetSession()->QueuePacket(packetPtr.release());
-            return true;
-        }
+        bot->GetSession()->QueuePacket(packetPtr.release());
+        return true;
     }
 
     bot->Yell(msg, lang);
@@ -306,7 +282,7 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 
 bool PlayerbotAI::Say(std::string msg, bool likePlayer)
 {
-    if (!IsChatAllowed() || msg.empty())
+    if (msg.empty())
         return false;
 
     SanitizeCommandLikeChat(msg);
@@ -320,23 +296,18 @@ bool PlayerbotAI::Say(std::string msg, bool likePlayer)
         lang = LANG_ORCISH;
     }
 
-    if (likePlayer || (sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3) &&
-        sPlayerbotAIConfig.llmBotToBotChatChance))
+    if (likePlayer)
     {
-        if (likePlayer || this->HasPlayerNearby(sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_SAY)))
-        {
+        WorldPacket packet_template(CMSG_MESSAGECHAT);
 
-            WorldPacket packet_template(CMSG_MESSAGECHAT);
+        packet_template << CHAT_MSG_SAY;
+        packet_template << lang;
+        packet_template << msg;
 
-            packet_template << CHAT_MSG_SAY;
-            packet_template << lang;
-            packet_template << msg;
+        std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
-
-            bot->GetSession()->QueuePacket(packetPtr.release());
-            return true;
-        }
+        bot->GetSession()->QueuePacket(packetPtr.release());
+        return true;
     }
 
     bot->Say(msg, lang);
@@ -406,12 +377,9 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
         if (type == CHAT_MSG_SYSTEM && HasRealPlayerMaster())
             type = CHAT_MSG_WHISPER;
 
-        // Issue #1108: a bot without a master that has nobody to answer says
-        // it in /say. That is ambient chatter, so it follows
-        // AiPlayerbot.EnableBroadcasts; with broadcasts off the message type
-        // stays CHAT_MSG_SYSTEM and nothing is sent. A bot the owner put into
-        // the debug strategy keeps its diagnostic line.
-        if (type == CHAT_MSG_SYSTEM && (HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT) || (sPlayerbotAIConfig.enableBroadcasts && sPlayerbotAIConfig.randomBotSayWithoutMaster)))
+        // A bot without a master that has nobody to answer stays silent; only
+        // a bot in the debug strategy says its diagnostic line in /say.
+        if (type == CHAT_MSG_SYSTEM && HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
             type = CHAT_MSG_SAY;
 
         if (type == CHAT_MSG_SYSTEM && isRealPlayer_Helper(player))

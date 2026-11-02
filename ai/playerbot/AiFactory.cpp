@@ -1469,9 +1469,6 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     // Mob avoidance remains disabled until the core supplies a real path
     // filter; see SetAvoidAreaAction and the audit's core follow-up.
 
-    if(sPlayerbotAIConfig.llmEnabled == 2)
-        nonCombatEngine->addStrategy("ai chat");
-
     // A hire follows its master and never talks to quest NPCs on its own:
     // the DefaultQuestStrategy gossip-hello triggers stay off the hire
     // (explicit orders still run through the action). Owned alts keep it.

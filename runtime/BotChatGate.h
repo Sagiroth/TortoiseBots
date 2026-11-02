@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -8,69 +7,25 @@
 
 namespace TortoiseBots {
 
-// Issue #846: since #839 every chat line a bot hears is copied on the sender's
-// thread and parsed by PlayerbotAI::HandleBotOutgoingPacket on the world
-// thread, so a large pool in a busy channel costs the world tick
-// O(bots x lines). The packet hook cannot ask the AI whether it cares (no AI
-// pointer off the world thread, issue #844), so each AI publishes the two
-// early exits of that handler that do not depend on the line's content beyond
-// its channel and text, and the hook skips the copy when one applies:
+// Every chat line a bot hears is copied on the sender's thread and parsed by
+// PlayerbotAI::HandleBotOutgoingPacket on the world thread, so a large pool in
+// a busy channel would cost the world tick O(bots x lines). The packet hook
+// cannot ask the AI whether it cares (no AI pointer off the world thread), so
+// each AI publishes what it reads and the hook skips the copy of the rest:
 //
 //  - ignoreAllChat: AllowActivity() is false, the handler returns first thing
 //    (only with activity throttling, an opt-in; never by default).
-//  - ignoreUnaddressedTrade: a masterless, unhired pool bot that is not
-//    recording chat ignores Trade-channel lines that do not name it (#469).
+//  - onlyOrders: the bot reads party chat and whispers only, where its orders
+//    come from; every other line is wanted only while it records chat.
 //
 // The AI republishes on change from its world-thread update, so the gate is at
 // most one AI update old; a bot without a published gate gets every line.
-// General / LFG / World chat still reaches masterless pool bots: they reply
-// there, so skipping it would change how they play.
 struct BotChatGate
 {
     bool ignoreAllChat = false;
-    bool ignoreUnaddressedTrade = false;
-    std::string name;
+    bool onlyOrders = false;
 };
 
-// The fields of an SMSG_MESSAGECHAT CHAT_MSG_CHANNEL body the gate needs, read
-// the way HandleBotOutgoingPacket reads them (type, language, channel name,
-// player rank, sender guid, text length, text); pointers into the packet, no
-// copy.
-struct ChannelChatLine
-{
-    char const* channel = nullptr;
-    size_t channelLength = 0;
-    uint64_t sender = 0;
-    char const* text = nullptr;
-    size_t textLength = 0;
-};
-
-// `data` / `size`: the whole packet body; the caller checked that data[0] is
-// CHAT_MSG_CHANNEL. False when the body is too short to hold the fields.
-inline bool ParseChannelChatLine(uint8_t const* data, size_t size, ChannelChatLine& line)
-{
-    size_t pos = 1 + 4; // type, language
-    if (!data || size <= pos)
-        return false;
-    void const* nul = std::memchr(data + pos, 0, size - pos);
-    if (!nul)
-        return false;
-    size_t const nameEnd = static_cast<size_t>(static_cast<uint8_t const*>(nul) - data);
-    line.channel = reinterpret_cast<char const*>(data + pos);
-    line.channelLength = nameEnd - pos;
-    pos = nameEnd + 1 + 4; // NUL, player rank
-    if (size < pos + 8 + 4)
-        return false;
-    uint64_t sender = 0;
-    for (int i = 7; i >= 0; --i) // little-endian, as ByteBuffer writes it
-        sender = (sender << 8) | data[pos + static_cast<size_t>(i)];
-    line.sender = sender;
-    pos += 8 + 4; // sender, text length
-    line.text = reinterpret_cast<char const*>(data + pos);
-    void const* textEnd = std::memchr(data + pos, 0, size - pos);
-    line.textLength = textEnd ? static_cast<size_t>(static_cast<uint8_t const*>(textEnd) - (data + pos)) : size - pos;
-    return true;
-}
 // The fields of an SMSG_MESSAGECHAT CHAT_MSG_WHISPER body the inbox needs,
 // read the way ChatHandler::BuildChatPacket writes them (type, language,
 // sender guid, text length, text, chat tag). The text is what the sender
@@ -122,26 +77,6 @@ inline bool ParseWhisperChatLine(uint8_t const* data, size_t size, WhisperChatLi
         }
     }
     return true;
-}
-
-// True when the bot's AI would ignore this channel line at its Trade gate, so
-// the hook need not copy it. `isTradeChannel(name, length)` is only asked when the
-// gate could apply. A line the bot said itself is kept (its AI-chat context
-// records it), and so is anything this parse cannot read.
-template <class IsTradeChannel>
-bool BotIgnoresChannelLine(BotChatGate const& gate, uint64_t botGuid, ChannelChatLine const& line,
-    IsTradeChannel isTradeChannel)
-{
-    if (!gate.ignoreUnaddressedTrade || line.sender == botGuid)
-        return false;
-    // An empty name is found in every line, as std::string::find finds it.
-    if (gate.name.empty())
-        return false;
-    char const* const text = line.text ? line.text : "";
-    char const* const textEnd = text + (line.text ? line.textLength : 0);
-    if (std::search(text, textEnd, gate.name.begin(), gate.name.end()) != textEnd)
-        return false;
-    return isTradeChannel(line.channel, line.channelLength);
 }
 
 } // namespace TortoiseBots

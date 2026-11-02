@@ -41,7 +41,6 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotGroupNearby`](#aiplayerbotrandombotgroupnearby) | `0` | Allows masterless pool bots to form spontaneous questing groups together. |
 | [`AiPlayerbot.RandomBotRaidNearby`](#aiplayerbotrandombotraidnearby) | `1` | Allows masterless pool bots to form and invite nearby bots into raid groups. |
 | [`AiPlayerbot.RandomBotGuildNearby`](#aiplayerbotrandombotguildnearby) | `1` | Allows masterless pool bots to invite nearby unguilded bots into their guild. |
-| [`AiPlayerbot.InviteChat`](#aiplayerbotinvitechat) | `1` | Broadcasts group and raid invitation announcements in say or guild chat. |
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
 | [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
@@ -407,19 +406,6 @@ Allows masterless pool bots to invite nearby unguilded bots into their guild.
 <summary>How it works in detail</summary>
 
 When enabled, bot guild members will periodically invite nearby guildless bots into their guild.
-
-</details>
-
-### `AiPlayerbot.InviteChat`
-Announces group and raid invitations in say or guild chat.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-When enabled, bots announce their group and raid invitations with chat lines. Guild invites use this channel directly; the spoken join line additionally requires EnableBroadcasts = 1.
-
-Announcements only trigger when inviting a real human player. Bot-to-bot invitations suppress chat announcements to prevent starting zones from being flooded with chatter during pool population.
 
 </details>
 

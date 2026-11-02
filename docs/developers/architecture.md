@@ -42,7 +42,7 @@ flowchart TD
     end
 ```
 
-## The 5 Core Invariants
+## The 4 Core Invariants
 
 | Invariant | Architectural Principle | Violations to Prevent | Enforcement Mechanism |
 | :--- | :--- | :--- | :--- |
@@ -50,7 +50,6 @@ flowchart TD
 | **2. Zero Core Coupling** | Core server contains zero bot AI or state. | `WorldSession::GetBot()`, `Player::m_bot`, `if (IsBot())`. | `tools/verify_penqle_host_contract.sh --core <path>` audit. |
 | **3. Generic Headless Sessions** | Bots use standard `WorldSession` with `SessionTransport::Headless`. | Custom socket subclasses, bypassing network auth. | Headless checks, Human Reclaim protocol. |
 | **4. Narrow Host Boundary** | All host interaction passes through explicit adapters in `host/`. | Direct header pollution, leaking module types into core. | `tools/verify_penqle_host_contract.sh`. |
-| **5. Asynchronous LLM Isolation** | LLM/Chat reasoning is asynchronous from combat ticks. | Blocking the main world frame for network responses. | Per-message `std::async` + `DelayedBotPacket` deque drained on the world tick. |
 
 ---
 
@@ -88,10 +87,7 @@ requires a restart.
 
 Within that world-tick pass, `BotManager::UpdateBots` schedules bots without any core involvement: bots under a real player update first and unbudgeted, while the random pool follows as a turn queue whose per-tick budget engages only while the previous world tick ran long. For scheduling details, see [Strategy Engine & Action Scheduling](strategy-engine.md).
 
-Module and bot AI state is touched on the world thread only. A player's `.bot` or `TBM` command can arrive on a map or AsyncPackets thread, so the command adapters queue it (requester guid + text, never a pointer) and the world tick drains it before the bot update (every tick, also with the AI disabled); commands without an in-game player run inline (they are already on the world thread). See [host-api.md](host-api.md). The packet hooks follow the same rule: chat delivered to a bot is copied and handled by the world tick, and master -> bot lookups off the world thread read a guid view `BotManager` publishes under a lock once per tick instead of walking its records. A bot's AI is deleted on the world thread, and the AI storage lock covers only the lookup, so a packet hook off the world thread never keeps a `PlayerbotAI` or bot `Player` pointer: every packet an AI handles is copied, keyed by the bot's guid, and handed to the AI by the same world-tick drain, which resolves the guid again. Only a hook on the world thread itself, and the master's map-thread mimic summary (the world thread waits for map threads), use an AI directly. Commands, deferred chat and deferred packets share one sequence number stamped at enqueue, and the drain runs them merged by it, so a player's chat and `.bot` commands reach the bots in the order the module received them. To keep that world-thread drain cheap, each AI publishes the chat its first checks would drop (`runtime/BotChatGate.h`) and the hook does not copy those lines.
-
-### 5. Asynchronous LLM Isolation
-LLM-based chat interactions are purely asynchronous and decoupled. If an LLM backend times out or fails, combat AI, movement, healing, interrupts, and crowd control continue running with zero interruption or frame hitching.
+Module and bot AI state is touched on the world thread only. A player's `.bot` or `TBM` command can arrive on a map or AsyncPackets thread, so the command adapters queue it (requester guid + text, never a pointer) and the world tick drains it before the bot update (every tick, also with the AI disabled); commands without an in-game player run inline (they are already on the world thread). See [host-api.md](host-api.md). The packet hooks follow the same rule: chat delivered to a bot is copied and handled by the world tick, and master -> bot lookups off the world thread read a guid view `BotManager` publishes under a lock once per tick instead of walking its records. A bot's AI is deleted on the world thread, and the AI storage lock covers only the lookup, so a packet hook off the world thread never keeps a `PlayerbotAI` or bot `Player` pointer: every packet an AI handles is copied, keyed by the bot's guid, and handed to the AI by the same world-tick drain, which resolves the guid again. Only a hook on the world thread itself, and the master's map-thread mimic summary (the world thread waits for map threads), use an AI directly. Commands, deferred chat and deferred packets share one sequence number stamped at enqueue, and the drain runs them merged by it, so a player's chat and `.bot` commands reach the bots in the order the module received them. To keep that world-thread drain cheap, each AI publishes which chat it reads (party chat and whispers, where its orders come from; `runtime/BotChatGate.h`) and the hook does not copy the other lines.
 
 ---
 

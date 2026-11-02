@@ -756,6 +756,5 @@ bool RollWonLogAction::Execute(Event& event)
 
     ItemQualifier itemQualifier(itemId, (int32)randomPropertyId);
     sPlayerbotAIConfig.logEvent(ai, "RollWon", proto->Name1, std::to_string(itemId));
-    BroadcastHelper::BroadcastLootingItem(ai, bot, proto, itemQualifier);
     return true;
 }

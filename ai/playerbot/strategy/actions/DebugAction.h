@@ -43,9 +43,6 @@ namespace ai
         bool HandleMount(Event& event, Player* requester, const std::string& text);
         bool HandleUnmount(Event& event, Player* requester, const std::string& text);
         bool HandleArea(Event& event, Player* requester, const std::string& text);
-        bool HandleLLM(Event& event, Player* requester, const std::string& text);
-        bool HandleChatReplyDo(Event& event, Player* requester, const std::string& text);
-        bool HandleMonsterTalk(Event& event, Player* requester, const std::string& text);
         bool HandleGY(Event& event, Player* requester, const std::string& text);
         bool HandleGrid(Event& event, Player* requester, const std::string& text);
         bool HandleValues(Event& event, Player* requester, const std::string& text);

@@ -359,40 +359,6 @@ namespace ai
             if (group && ai->GetGrouperType() > GrouperType::LEADER_5 && !group->IsRaidGroup() && bot->GetGroup()->GetMembersCount() > 3)
                 group->ConvertToRaid();
 
-            Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-            // The invite line ("Hey %player, do you want join my group?") is for
-            // a real player. Pool bots invite each other non-stop while the pool
-            // fills up, so answering every bot invite in /s turned a starting
-            // zone into a wall of bot names no human ever reads.
-            if (sPlayerbotAIConfig.inviteChat && isRealPlayer_Helper(player) &&
-                (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
-            {
-                if (guild && player && bot->GetGuildId() == player->GetGuildId())
-                {
-                    BroadcastHelper::BroadcastGuildGroupOrRaidInvite(
-                        ai,
-                        bot,
-                        player,
-                        group,
-                        guild
-                    );
-                }
-                else
-                {
-
-                    std::map<std::string, std::string> placeholders;
-                    placeholders["%player"] = player->GetName();
-
-                    if (sPlayerbotAIConfig.enableBroadcasts)
-                    {
-                        if (group && group->IsRaidGroup())
-                            bot->Say(BOT_TEXT2("join_raid", placeholders), (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
-                        else
-                            bot->Say(BOT_TEXT2("join_group", placeholders), (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
-                    }
-                }
-            }
-
             return Invite(bot, player);
         }
 
@@ -526,17 +492,6 @@ namespace ai
             if (group && ai->GetGrouperType() > GrouperType::LEADER_5 && !group->IsRaidGroup() && bot->GetGroup()->GetMembersCount() > 3)
             {
                 group->ConvertToRaid();
-            }
-
-            if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
-            {
-                BroadcastHelper::BroadcastGuildGroupOrRaidInvite(
-                    ai,
-                    bot,
-                    player,
-                    group,
-                    guild
-                );
             }
 
             return Invite(bot, player);
