@@ -1,9 +1,13 @@
 #include "GuildOrderStore.h"
+#include "GuildOrderStoreColumns.h"
 
+#include "GuildOrderAuctionPolicy.h"
+#include "GuildOrderCancelDepositPolicy.h"
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderNeedPolicy.h"
+#include "GuildOrderRelistPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
 #include "GuildOrderSupplyPolicy.h"
 #include "GuildOrderSubOrderPolicy.h"
@@ -40,10 +44,11 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "MapNodes/MasterPlayer.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <iterator>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -100,32 +105,6 @@ inline bool VendorSellsUnlimited(uint32_t itemId)
 inline constexpr uint32_t kWorkedFlushMs = 60000;
 inline constexpr uint32_t kNeedBankCheckMs = 10000;
 
-std::vector<NeedItem> ParseNeedItems(std::string const& token)
-{
-    std::vector<NeedItem> out;
-    if (token.empty() || token == "-")
-        return out;
-    std::istringstream entries(token);
-    std::string entry;
-    while (std::getline(entries, entry, ';'))
-    {
-        size_t colon = entry.find(':');
-        if (colon == std::string::npos)
-            continue;
-        try
-        {
-            unsigned long itemId = std::stoul(entry.substr(0, colon));
-            unsigned long count = std::stoul(entry.substr(colon + 1));
-            if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
-                out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
-        }
-        catch (...)
-        {
-        }
-    }
-    return out;
-}
-
 class OrderStore
 {
 public:
@@ -134,6 +113,29 @@ public:
         static OrderStore instance;
         return instance;
     }
+    // A branch cancel (or a parent ending) that removes a child row with its
+    // quota already in the bags: detach the child as a live top-level order
+    // set to delivering, so the bank deposit path (travel, banker, drain)
+    // still runs and the guild keeps the finished items. World thread only,
+    // with the store mutex held; the bag count is read before the lock (the
+    // world thread owns player lookups, the mutex never covers them).
+    static bool DetachChildDepositLocked(OrderRecord& record, uint32_t bagCount)
+    {
+        if (record.parentBotGuidLow == 0 || record.cancelled || !record.itemId || !record.amount)
+            return false;
+        if (!CancelledChildDeposits(record.state, record.reason, record.delivered, bagCount, 0, record.amount))
+            return false;
+        record.parentBotGuidLow = 0;
+        record.state = OrderState::Delivering;
+        record.reason = OrderReason::None;
+        record.supplyStep = SupplyStep::Deliver;
+        record.supplyItemId = record.itemId;
+        record.supplyCount = 0;
+        record.supplyGoldCount = 0;
+        record.supplyReturnStep = SupplyStep::None;
+        return true;
+    }
+
 
     // Row write outside the store mutex (the caller snapshotted it out of
     // Tick): a failed write re-marks the row dirty for the next pass.
@@ -152,61 +154,58 @@ public:
 
         m_orders.clear();
 
-        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
-            "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
-            "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
-            "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-            "`created_at`, `updated_at` "
-            "FROM `tortoise_bots_guild_order`"));
+        std::string select = "SELECT ";
+        select += StoreColumns::SelectList();
+        select += " FROM `tortoise_bots_guild_order`";
+        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(select.c_str()));
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
                 OrderRecord record;
-                record.botGuidLow = fields[0].GetUInt32();
-                record.guildId = fields[1].GetUInt32();
-                record.giverGuidLow = fields[2].GetUInt32();
-                record.parentBotGuidLow = fields[3].GetUInt32();
-                record.rootGiverGuidLow = fields[4].GetUInt32();
-                ParseType(fields[5].GetCppString(), record.type);
-                record.itemId = fields[6].GetUInt32();
-                record.amount = fields[7].GetUInt32();
-                record.hours = fields[8].GetUInt32();
-                record.delivered = fields[9].GetUInt32();
-                ParseState(fields[10].GetCppString(), record.state);
-                ParseReason(fields[11].GetCppString(), record.reason);
-                record.farmZoneId = fields[12].GetUInt32();
-                record.farmChance = static_cast<uint8_t>(fields[13].GetUInt32());
-                record.farmItemId = fields[14].GetUInt32();
-                record.zoneIndex = fields[15].GetUInt32();
-                record.deathsInZone = fields[16].GetUInt32();
-                record.workedSinceNewItemSec = fields[17].GetUInt32();
-                record.workedTotalSec = fields[18].GetUInt32();
-                record.workedNoGainSec = fields[19].GetUInt32();
-                record.reportedHave = fields[20].GetUInt32();
-                record.farmRest = fields[21].GetUInt32() != 0;
-                record.keep = fields[22].GetUInt32() != 0;
-                record.goldCap = fields[23].GetUInt32();
-                record.hasGoldCap = fields[24].GetUInt32() != 0;
-                record.guildGoldWithdrawn = fields[25].GetUInt32();
-                record.guildGoldHeld = fields[26].GetUInt32();
-                record.cancelled = fields[27].GetUInt32() != 0;
-                ParseSupplyStep(fields[28].GetCppString(), record.supplyStep);
-                ParseSupplyStep(fields[29].GetCppString(), record.supplyReturnStep);
-                record.supplyItemId = fields[30].GetUInt32();
-                record.supplyCount = fields[31].GetUInt32();
-                record.supplyGoldCount = fields[32].GetUInt32();
-                record.needItems = ParseNeedItems(fields[33].GetCppString());
-                record.needWhispered = fields[34].GetUInt32() != 0;
-                record.lastNeedWhisper = fields[35].GetCppString();
-                record.needBankDenied = fields[36].GetUInt32() != 0;
-                record.stockTarget = fields[37].GetUInt32();
-                record.lastBankCheckMs = fields[38].GetUInt32();
-                record.createdAt = fields[39].GetUInt64();
-                record.updatedAt = fields[40].GetUInt64();
+                record.botGuidLow = fields[StoreColumns::ColBotGuid].GetUInt32();
+                record.guildId = fields[StoreColumns::ColGuildId].GetUInt32();
+                record.giverGuidLow = fields[StoreColumns::ColGiverGuid].GetUInt32();
+                record.parentBotGuidLow = fields[StoreColumns::ColParentBot].GetUInt32();
+                record.rootGiverGuidLow = fields[StoreColumns::ColRootGiver].GetUInt32();
+                ParseType(fields[StoreColumns::ColType].GetCppString(), record.type);
+                record.itemId = fields[StoreColumns::ColItemId].GetUInt32();
+                record.amount = fields[StoreColumns::ColAmount].GetUInt32();
+                record.hours = fields[StoreColumns::ColHours].GetUInt32();
+                record.delivered = fields[StoreColumns::ColDelivered].GetUInt32();
+                ParseState(fields[StoreColumns::ColState].GetCppString(), record.state);
+                ParseReason(fields[StoreColumns::ColReason].GetCppString(), record.reason);
+                record.farmZoneId = fields[StoreColumns::ColFarmZone].GetUInt32();
+                record.farmChance = static_cast<uint8_t>(fields[StoreColumns::ColFarmChance].GetUInt32());
+                record.farmItemId = fields[StoreColumns::ColFarmItem].GetUInt32();
+                record.zoneIndex = fields[StoreColumns::ColZoneIndex].GetUInt32();
+                record.deathsInZone = fields[StoreColumns::ColDeathsInZone].GetUInt32();
+                record.workedSinceNewItemSec = fields[StoreColumns::ColWorkedSec].GetUInt32();
+                record.workedTotalSec = fields[StoreColumns::ColWorkedTotal].GetUInt32();
+                record.workedNoGainSec = fields[StoreColumns::ColWorkedNoGain].GetUInt32();
+                record.reportedHave = fields[StoreColumns::ColReported].GetUInt32();
+                record.farmRest = fields[StoreColumns::ColFarmRest].GetUInt32() != 0;
+                record.keep = fields[StoreColumns::ColKeep].GetUInt32() != 0;
+                record.goldCap = fields[StoreColumns::ColGoldCap].GetUInt32();
+                record.hasGoldCap = fields[StoreColumns::ColGoldCapSet].GetUInt32() != 0;
+                record.guildGoldWithdrawn = fields[StoreColumns::ColGuildGoldWithdrawn].GetUInt32();
+                record.guildGoldHeld = fields[StoreColumns::ColGuildGoldHeld].GetUInt32();
+                record.cancelled = fields[StoreColumns::ColCancelled].GetUInt32() != 0;
+                ParseSupplyStep(fields[StoreColumns::ColSupplyStep].GetCppString(), record.supplyStep);
+                ParseSupplyStep(fields[StoreColumns::ColSupplyReturnStep].GetCppString(), record.supplyReturnStep);
+                record.supplyItemId = fields[StoreColumns::ColSupplyItem].GetUInt32();
+                record.supplyCount = fields[StoreColumns::ColSupplyCount].GetUInt32();
+                record.supplyGoldCount = fields[StoreColumns::ColSupplyGoldCount].GetUInt32();
+                record.needItems = ParseNeedItems(fields[StoreColumns::ColNeedItems].GetCppString());
+                record.needWhispered = fields[StoreColumns::ColNeedWhispered].GetUInt32() != 0;
+                record.lastNeedWhisper = fields[StoreColumns::ColLastNeedWhisper].GetCppString();
+                record.needBankDenied = fields[StoreColumns::ColNeedBankDenied].GetUInt32() != 0;
+                record.stockTarget = fields[StoreColumns::ColStockTarget].GetUInt32();
+                record.lastBankCheckMs = fields[StoreColumns::ColLastBankCheck].GetUInt32();
+                record.createdAt = fields[StoreColumns::ColCreatedAt].GetUInt64();
+                record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
+                record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -217,8 +216,47 @@ public:
             } while (result->NextRow());
         }
 
+        // Relist ledger rows ride with the order store: a sale or an expired
+        // listing may land long after the order row is gone, and the value
+        // still belongs to the guild until the bank trip pays it back.
+        m_relist.clear();
+        std::unique_ptr<QueryResult> relists(CharacterDatabase.Query(
+            "SELECT `bot_guid`, `seq`, `guild_id`, `item_id`, `count`, `unit_price`, `bid`, "
+            "`buyout`, `deposit`, `posted_at`, `expires_at`, `state`, `claim_mail`, `held_gold`, "
+            "`held_count` FROM `tortoise_bots_guild_relist`"));
+        size_t relistCount = 0;
+        if (relists)
+        {
+            do
+            {
+                Field* fields = relists->Fetch();
+                RelistLedgerEntry entry;
+                entry.botGuidLow = fields[0].GetUInt32();
+                entry.seq = fields[1].GetUInt32();
+                entry.guildId = fields[2].GetUInt32();
+                entry.itemId = fields[3].GetUInt32();
+                entry.count = fields[4].GetUInt32();
+                entry.unitPrice = fields[5].GetUInt32();
+                entry.bid = fields[6].GetUInt32();
+                entry.buyout = fields[7].GetUInt32();
+                entry.deposit = fields[8].GetUInt32();
+                entry.postedAtSec = fields[9].GetUInt64();
+                entry.expiresAtSec = fields[10].GetUInt64();
+                entry.state = RelistStateFromDb(fields[11].GetUInt32());
+                entry.claimMailId = fields[12].GetUInt32();
+                entry.heldGold = fields[13].GetUInt32();
+                entry.heldCount = fields[14].GetUInt32();
+                if (!entry.botGuidLow || !entry.seq || !entry.itemId || !entry.count)
+                    continue;
+                m_relist[entry.botGuidLow].push_back(entry);
+                ++relistCount;
+            } while (relists->NextRow());
+        }
+
         m_initialized = true;
         TB_LOG_BASIC("TortoiseBots: loaded %zu guild order(s) from database.", m_orders.size());
+        if (relistCount)
+            TB_LOG_BASIC("TortoiseBots: loaded %zu guild relist ledger row(s).", relistCount);
     }
 
     // The pool reads the store before the startup sequence may have loaded
@@ -231,6 +269,18 @@ public:
         if (it == m_orders.end())
             return std::nullopt;
         return it->second.record;
+    }
+    // The addon timeline: a copy of the row's step history under the lock, or
+    // nullopt for no order or a cancelled stub.
+    std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return std::nullopt;
+        if (it->second.record.cancelled)
+            return std::nullopt;
+        return it->second.steps;
     }
     // True when the item is reserved for the bot's unfinished order: the
     // live order and supply items always, plus the stored reagent set, even
@@ -366,16 +416,17 @@ public:
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`) "
+                "`created_at`, `updated_at`, `carried`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
-                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.farmRest ? 1u : 0u,
+                record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
+                record.farmRest ? 1u : 0u,
                 record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
                 SupplyStepToken(record.supplyStep),
@@ -383,7 +434,8 @@ public:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
+                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
+                record.reportedCarry))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -435,17 +487,34 @@ public:
     {
         if (!botGuidLow)
             return false;
-        bool park = false;
+        uint32_t bagCount = 0;
+        {
+            std::optional<OrderRecord> row = Find(botGuidLow);
+            if (!row)
+                return false;
+            if (row->itemId)
+                if (Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, botGuidLow)))
+                    bagCount = bot->GetItemCount(row->itemId);
+        }
+        bool parked = false;
+        bool detachedDeposit = false;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto it = m_orders.find(botGuidLow);
             if (it == m_orders.end())
                 return false;
-            // Unspent guild gold must reach the bank first: the row parks as
-            // a stub so the refund drain can still find the debt after a
-            // restart. Nothing else runs on it: travel, give-up and progress
-            // all check the flag first.
-            if (it->second.record.guildGoldHeld > 0)
+            // A child removed with its quota in the bags keeps its row as a
+            // live top-level delivery instead of ending with the stack in
+            // its bags: the bank deposit path (travel, banker, drain) runs
+            // per order, so the guild keeps the finished items.
+            if (DetachChildDepositLocked(it->second.record, bagCount))
+            {
+                it->second.record.reportedHave = 0;
+                MarkDirtyLocked(it->second);
+                ClearQueuedSubOrdersLocked(botGuidLow);
+                detachedDeposit = true;
+            }
+            else if (it->second.record.guildGoldHeld > 0)
             {
                 it->second.record.cancelled = true;
                 it->second.record.state = OrderState::Working;
@@ -457,15 +526,19 @@ public:
                 it->second.record.supplyReturnStep = SupplyStep::None;
                 it->second.record.needItems.clear();
                 it->second.record.needWhispered = false;
+                it->second.record.needBankDenied = false;
                 it->second.record.reportedHave = 0;
                 MarkDirtyLocked(it->second);
-                park = true;
+                parked = true;
+                ClearQueuedSubOrdersLocked(botGuidLow);
             }
             else
+            {
                 m_orders.erase(it);
-            ClearQueuedSubOrdersLocked(botGuidLow);
+                ClearQueuedSubOrdersLocked(botGuidLow);
+            }
         }
-        if (park)
+        if (parked || detachedDeposit)
             return true;
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
@@ -476,12 +549,27 @@ public:
     // several sub-order requests in parallel (different items, on different
     // bots). RequestSupply only records them under the lock; Update drains
     // and places them with live players and the planner.
+    // The running roster scan travels with the request: an attempt only
+    // looks at part of the guild, so the resume point and the best candidate
+    // found so far must survive until the walk completes.
+    struct QueuedSubOrderScan
+    {
+        uint32_t lastMember = 0; // last roster member the scan looked at (guid)
+        uint32_t scanStart = 0; // member the running scan started at (guid)
+        uint32_t bestGuid = 0; // best free candidate found so far (guid)
+        int bestRank = -1; // its rank, -1 while no free candidate was found
+        bool bestCanMake = false; // that candidate crafts the item (else farms it)
+        bool sawBusyUsable = false; // a busy bot could still make or farm it
+        uint32_t busyScans = 0; // consecutive completed scans that saw only busy bots
+    };
     struct QueuedSubOrder
     {
         uint32_t parentBotGuidLow = 0;
         uint32_t itemId = 0;
         uint32_t count = 0;
-        uint32_t nextTryMs = 0; // world uptime ms before this request retries
+        uint32_t nextTryMs = 0;  // world uptime ms before this request retries
+        uint32_t queuedAtMs = 0; // world uptime ms the request first queued
+        QueuedSubOrderScan scan;
     };
 
     struct QueuedSubOrderKey
@@ -516,7 +604,14 @@ public:
                 queued->second.count = count;
             return true;
         }
-        m_queued.emplace(key, QueuedSubOrder{ parentBotGuidLow, itemId, count });
+        QueuedSubOrder request;
+        request.parentBotGuidLow = parentBotGuidLow;
+        request.itemId = itemId;
+        request.count = count;
+        // Stamp the queue time once: a retry keeps it, so the clock pause a
+        // queued request causes expires with the request, not with each retry.
+        request.queuedAtMs = WorldTimer::getMSTime();
+        m_queued.emplace(key, request);
         return true;
     }
 
@@ -526,16 +621,47 @@ public:
         std::vector<QueuedSubOrder> out;
         for (auto const& [key, queued] : m_queued)
         {
-            int32_t until = int32_t(queued.nextTryMs - nowMs);
-            if (until <= 0)
+            if (SubOrderRequestDue(queued.nextTryMs, nowMs))
                 out.push_back(queued);
         }
         for (QueuedSubOrder const& due : out)
             m_queued.erase(QueuedSubOrderKey{ due.parentBotGuidLow, due.itemId });
+        // Due requests are drained in key order and rotated past the one
+        // that used the last tick's planner budget: otherwise the same
+        // request leads every tick and a second one never gets evaluated.
+        std::sort(out.begin(), out.end(), [](QueuedSubOrder const& left, QueuedSubOrder const& right)
+        {
+            if (left.parentBotGuidLow != right.parentBotGuidLow)
+                return left.parentBotGuidLow < right.parentBotGuidLow;
+            return left.itemId < right.itemId;
+        });
+        if (!out.empty())
+        {
+            std::vector<uint32_t> parents;
+            std::vector<uint32_t> items;
+            parents.reserve(out.size());
+            items.reserve(out.size());
+            for (QueuedSubOrder const& request : out)
+            {
+                parents.push_back(request.parentBotGuidLow);
+                items.push_back(request.itemId);
+            }
+            size_t const begin = SubOrderDrainOffset(parents.data(), items.data(), out.size(),
+                m_drainedParentBotGuidLow, m_drainedItemId);
+            std::rotate(out.begin(), out.begin() + begin, out.end());
+        }
         return out;
     }
 
-    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs)
+    void NoteSubOrderDrained(uint32_t parentBotGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_drainedParentBotGuidLow = parentBotGuidLow;
+        m_drainedItemId = itemId;
+    }
+
+    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs,
+        uint32_t queuedAtMs, QueuedSubOrderScan const& scan)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
@@ -547,6 +673,8 @@ public:
         if (count > queued.count)
             queued.count = count;
         queued.nextTryMs = nextTryMs;
+        queued.queuedAtMs = queuedAtMs;
+        queued.scan = scan;
     }
 
     void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
@@ -610,6 +738,11 @@ public:
             it->second.record.needItems.clear();
             it->second.record.needWhispered = false;
             it->second.record.needBankDenied = false;
+            // Only a successful hand-off empties the carry, and the final
+            // line and the stored row must not repeat the last pre-delivery
+            // scan. A cant or noskill row keeps the stack still in the bags.
+            if (HandOffSucceeded(state))
+                it->second.record.reportedCarry = 0;
             // Unspent guild gold outlives the order: the row parks instead
             // of disappearing, and the refund drain pays it from any banker
             // visit before FinishRepaid clears the row.
@@ -638,10 +771,12 @@ public:
         // A denial belongs to the bank leg that produced it: it survives
         // only while the step and item stay put. A step or item change with
         // no explicit reason clears it, so the addon never shows a stale
-        // denial while the bot farms or buys.
+        // denial while the bot farms or buys. The empty-counter verdict
+        // survives the same way: the ladder keeps buying more of it on the
+        // same visit, and a new listing may still succeed.
         if (reason == OrderReason::None && step == record.supplyStep && record.supplyItemId == itemId &&
             (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoBanker ||
-                record.reason == OrderReason::NoSource))
+                record.reason == OrderReason::NoSource || record.reason == OrderReason::NoListing))
             reason = record.reason;
         // The farm give-up verdict belongs to the farm leg: a sub-order is
         // normal progress, so the addon must not show it as a failure.
@@ -651,8 +786,6 @@ public:
         {
             record.state = OrderState::Working;
             record.reason = OrderReason::None;
-            record.needItems.clear();
-            record.needWhispered = false;
         }
         if (record.supplyStep == step && record.supplyItemId == itemId &&
             record.supplyCount == count && record.supplyGoldCount == goldCount &&
@@ -670,16 +803,40 @@ public:
         }
         if (step != record.supplyStep || itemId != record.supplyItemId)
             record.searchZoneMoves = 0;
+        // Two clocks belong to the auction leg: entering it (or changing its
+        // item) starts the travel cap, and the reach deadline starts only when
+        // the bot arrives in the auctioneer's city. Leaving the leg clears
+        // both.
+        bool const enteringAuction = step == SupplyStep::AuctionHouse &&
+            (record.supplyStep != SupplyStep::AuctionHouse || record.supplyItemId != itemId);
+        // A relist trip is the same purchase's bookkeeping, not a new
+        // search of the counter, and neither is walking back from a gold
+        // top-up: both belong to the visit that is already counted.
+        bool const relistEntry = it->second.relistItemId == itemId && it->second.relistCount;
+        bool const goldReturn = itemId && it->second.auctionGoldReturnItemId == itemId;
+        if (enteringAuction && goldReturn)
+            it->second.auctionGoldReturnItemId = 0;
+        else if (enteringAuction && !relistEntry)
+            NoteAuctionLegEntered(it->second.auctionCycles[itemId], itemId);
+        if (step == SupplyStep::Bank && returnStep == SupplyStep::AuctionHouse && goldCount)
+            it->second.auctionGoldReturnItemId = itemId;
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
         record.supplyReturnStep = returnStep;
         record.supplyGoldCount = goldCount;
         record.reason = reason;
-        if (step != SupplyStep::Need)
+        if (step == SupplyStep::Need)
+            MarkAuctionLadderEndLocked(it->second, itemId);
+        if (enteringAuction)
         {
-            record.needItems.clear();
-            record.needWhispered = false;
+            it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = WorldTimer::getMSTime();
+        }
+        else if (step != SupplyStep::AuctionHouse)
+        {
+            it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = 0;
         }
         MarkDirtyLocked(it->second);
         it->second.supplySearch = SupplySearchStreak{};
@@ -692,9 +849,7 @@ public:
         if (it == m_orders.end())
             return;
         OrderRecord& record = it->second.record;
-        bool same = record.needItems.size() == items.size();
-        for (size_t i = 0; same && i < items.size(); ++i)
-            same = record.needItems[i].itemId == items[i].itemId && record.needItems[i].count == items[i].count;
+        bool same = NeedItemsEqual(record.needItems, items);
         if (same && record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems)
         {
             // The denial expired: the bank may have stocked since. A repeat
@@ -703,14 +858,68 @@ public:
             return;
         }
         record.needItems = items;
+        for (NeedItem const& item : items)
+            MarkAuctionLadderEndLocked(it->second, item.itemId);
         record.state = OrderState::Waiting;
         record.reason = OrderReason::NeedItems;
         record.supplyStep = SupplyStep::Need;
         record.supplyReturnStep = SupplyStep::None;
         record.supplyGoldCount = 0;
-        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(items);
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, items);
         record.needBankDenied = bankDenied;
         MarkDirtyLocked(it->second);
+    }
+
+    void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state) || it->second.record.cancelled ||
+            !itemId || !count)
+            return;
+        OrderRecord& record = it->second.record;
+        MergeNeedItem(record.needItems, itemId, count);
+        MarkAuctionLadderEndLocked(it->second, itemId);
+        // One denied probe is enough to keep the bank lane off this order:
+        // OR keeps a denial a previous item recorded, so a later candidate
+        // does not re-arm the lane (a full re-list clears it in SetNeedItems,
+        // as do the need-clear and need-resume paths).
+        record.needBankDenied = record.needBankDenied || bankDenied;
+        // A working row was on some other item: dropping the supply leg makes
+        // the ladder re-plan the whole tree around the new need item. The
+        // reason belonged to the leg that produced it, so the next candidate
+        // does not inherit a dead end (a vendor/farm/bank leg it would skip).
+        if (record.state == OrderState::Working)
+        {
+            record.reason = ResetDeadEndReasonOnWorking(record.reason);
+            record.supplyStep = SupplyStep::None;
+            record.supplyItemId = 0;
+            record.supplyCount = 0;
+            record.supplyGoldCount = 0;
+            record.supplyReturnStep = SupplyStep::None;
+        }
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
+        MarkDirtyLocked(it->second);
+    }
+
+    bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+        std::vector<NeedItem> const& items)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state))
+            return false;
+        OrderRecord& record = it->second.record;
+        // Compare-and-set: the prune ran on a snapshot, so a merge or a clear
+        // in between wins and the next refresh re-prunes the live list. The
+        // false return tells the caller the write did not land and the row it
+        // worked from is stale.
+        if (!NeedItemsEqual(record.needItems, expected))
+            return false;
+        record.needItems = items;
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
+        MarkDirtyLocked(it->second);
+        return true;
     }
 
     void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
@@ -898,8 +1107,8 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end() ||
-            !((it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems) ||
-              (it->second.record.state == OrderState::Working && it->second.record.supplyStep == SupplyStep::Sub)))
+            !NeedBankLaneEligible(it->second.record.state, it->second.record.reason,
+                it->second.record.supplyStep, !it->second.record.needItems.empty()))
             return false;
         return nowMs - it->second.lastNeedBankCheckMs >= kNeedBankCheckMs;
     }
@@ -920,7 +1129,8 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end() ||
-            !(it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems))
+            !NeedLadderLaneEligible(it->second.record.state, it->second.record.reason,
+                !it->second.record.needItems.empty()))
             return false;
         return NeedLadderCheckDue(nowMs, it->second.lastNeedLadderCheckMs);
     }
@@ -1002,6 +1212,37 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    // Remember a failed farm-leg travel target point, so the planner leaves
+    // the zone out once kFarmZoneFailedTargets different points in it failed
+    // inside the window. Only the zone the order actually farms counts: a
+    // banker or auctioneer leg fails in a city, never in the farm zone, and
+    // must not mark it.
+    void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+        float x, float y, float z)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        if (it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::Farm ||
+            it->second.record.farmZoneId != zoneId)
+            return;
+        RecordFarmZoneTargetFailure(it->second.farmZoneFailures[zoneId],
+            FarmZoneTargetPointAt(mapId, x, y, z), WorldTimer::getMSTime());
+    }
+
+    std::vector<FarmZoneTargetFailure> GetFarmZoneFailures(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return {};
+        auto found = it->second.farmZoneFailures.find(zoneId);
+        return found == it->second.farmZoneFailures.end() ? std::vector<FarmZoneTargetFailure>() :
+            found->second;
+    }
+
     void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1081,8 +1322,353 @@ public:
             return 0;
         OrderRecord& record = it->second.record;
         record.arrivedAuctionVisits = auctioneerInReach ? 0 : record.arrivedAuctionVisits + 1;
+        // The travel target landed: the reach deadline starts here (and
+        // clears when the arrival already has the auctioneer in reach).
+        if (auctioneerInReach)
+        {
+            it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = 0;
+        }
+        else if (!it->second.auctionReachStartedMs)
+            it->second.auctionReachStartedMs = WorldTimer::getMSTime();
         MarkDirtyLocked(it->second);
         return record.arrivedAuctionVisits;
+    }
+
+    // The bot came within sight of an auctioneer of the city it stands in: the
+    // reach deadline starts here, not where the leg was entered.
+    void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return;
+        if (!it->second.auctionReachStartedMs)
+            it->second.auctionReachStartedMs = nowMs;
+    }
+
+    // Either auction clock running out hands the leg back to the ladder: the
+    // reach deadline once the bot arrived in the city, the travel cap while it
+    // is still walking. Neither clock starts at leg entry, so a bot in the
+    // field keeps its whole walk.
+    bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId)
+            return true;
+        auto found = it->second.auctionCycles.find(itemId);
+        return found == it->second.auctionCycles.end() ||
+            TortoiseBots::GuildOrders::AuctionReentryAllowed(found->second, itemId);
+    }
+
+    void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return;
+        OrderRecord const& record = it->second.record;
+        NoteOrderStep(it->second.steps, OrderStepEntry{ static_cast<uint64_t>(std::time(nullptr)),
+            record.state, reason, record.supplyStep, record.supplyItemId });
+    }
+
+    bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return false;
+        return AuctionUnreachableElapsed(it->second.auctionReachStartedMs, nowMs) ||
+            AuctionLegTravelCapped(it->second.auctionLegStartedMs, nowMs);
+    }
+
+    void NoteAuctioneerInReach(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        // The walk is over: neither clock has anything left to time.
+        it->second.auctionReachStartedMs = 0;
+        it->second.auctionLegStartedMs = 0;
+    }
+
+    void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.relistItemId = itemId;
+        it->second.relistCount = count;
+        it->second.relistUnitPrice = unitPrice;
+    }
+
+    bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        itemId = 0;
+        count = 0;
+        unitPrice = 0;
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            !it->second.relistItemId || !it->second.relistCount)
+            return false;
+        itemId = it->second.relistItemId;
+        count = it->second.relistCount;
+        unitPrice = it->second.relistUnitPrice;
+        return true;
+    }
+
+    void ClearRelistSurplus(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.relistItemId = 0;
+        it->second.relistCount = 0;
+        it->second.relistUnitPrice = 0;
+    }
+
+    // One relist was posted: its sale gold or its returned stack comes back
+    // by mail later. The listing terms are the identity the notification
+    // carries back, so one auction of the item cannot settle another's row.
+    // Map thread only (the buy action); the row write is synchronous and checked.
+    void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+        uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec)
+    {
+        if (!botGuidLow || !guildId || !itemId || !count)
+            return;
+        RelistLedgerEntry entry;
+        entry.botGuidLow = botGuidLow;
+        entry.guildId = guildId;
+        entry.itemId = itemId;
+        entry.count = count;
+        entry.unitPrice = unitPrice;
+        entry.bid = bid;
+        entry.buyout = buyout;
+        entry.deposit = deposit;
+        entry.postedAtSec = static_cast<uint64_t>(std::time(nullptr));
+        entry.expiresAtSec = entry.postedAtSec + durationSec;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            entry.seq = 1;
+            for (RelistLedgerEntry const& row : m_relist[botGuidLow])
+                if (row.seq >= entry.seq)
+                    entry.seq = row.seq + 1;
+        }
+        // The checked write lands before the row exists in memory: a failed
+        // insert must not leave a debt only this process knows about.
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
+                "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
+                "`state`, `claim_mail`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0', '0')",
+                entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
+                entry.bid, entry.buyout, entry.deposit, static_cast<uint32_t>(entry.postedAtSec),
+                static_cast<uint32_t>(entry.expiresAtSec)))
+        {
+            TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u) was posted but its "
+                "ledger row could not be written; the value is not tracked.", botGuidLow, itemId, count);
+            return;
+        }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry>& rows = m_relist[botGuidLow];
+        for (RelistLedgerEntry const& row : rows)
+            if (row.seq == entry.seq)
+                return;
+        rows.push_back(entry);
+    }
+
+    // The bot's ledger rows, oldest first. Any thread.
+    std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return {};
+        return it->second;
+    }
+
+    // One state change of a ledger row. The checked write lands before memory
+    // changes, so a restart never sees a state the table lost. Map thread only
+    // (the mail read).
+    bool WriteRelistState(uint32_t botGuidLow, uint32_t seq, RelistState state, uint32_t mailId,
+        uint32_t gold, uint32_t items)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_relist.find(botGuidLow);
+            if (it == m_relist.end())
+                return false;
+            bool found = false;
+            for (RelistLedgerEntry const& entry : it->second)
+            {
+                if (entry.seq == seq)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return false;
+        }
+        if (!CharacterDatabase.DirectPExecute(
+                "UPDATE `tortoise_bots_guild_relist` SET `state` = '%u', `claim_mail` = '%u', "
+                "`held_gold` = '%u', `held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                static_cast<uint32_t>(state), mailId, gold, items, botGuidLow, seq))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return true;
+        for (RelistLedgerEntry& entry : it->second)
+        {
+            if (entry.seq != seq)
+                continue;
+            entry.state = state;
+            entry.claimMailId = mailId;
+            entry.heldGold = gold;
+            entry.heldCount = items;
+            break;
+        }
+        return true;
+    }
+
+    // A matched mail is about to be taken: the row names it and the value it
+    // promises. Map thread only (the mail read).
+    bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+        uint32_t items)
+    {
+        if (!mailId)
+            return false;
+        return WriteRelistState(botGuidLow, seq, RelistState::Claimed, mailId, gold, items);
+    }
+
+    // A claimed mail was collected: the value is in the bot's hands. Map
+    // thread only (the mail read).
+    bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+    {
+        return WriteRelistState(botGuidLow, seq, RelistState::Received, 0, gold, items);
+    }
+
+    // Writes a ledger row (insert or replace by seq). The table write is
+    // checked and synchronous: memory changes only once it landed. World
+    // thread only (the relist drain).
+    bool SaveRelist(RelistLedgerEntry const& row)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
+                "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
+                "`state`, `claim_mail`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u')",
+                row.botGuidLow, row.seq, row.guildId, row.itemId, row.count, row.unitPrice,
+                row.bid, row.buyout, row.deposit, static_cast<uint32_t>(row.postedAtSec),
+                static_cast<uint32_t>(row.expiresAtSec), static_cast<uint32_t>(row.state),
+                row.claimMailId, row.heldGold, row.heldCount))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry>& rows = m_relist[row.botGuidLow];
+        for (RelistLedgerEntry& existing : rows)
+        {
+            if (existing.seq == row.seq)
+            {
+                existing = row;
+                return true;
+            }
+        }
+        rows.push_back(row);
+        return true;
+    }
+
+    // Drops a ledger row from the table and from memory, with the same
+    // checked write as SaveRelist. World thread only (the relist drain).
+    bool DeleteRelist(uint32_t botGuidLow, uint32_t seq)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                botGuidLow, seq))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return true;
+        std::vector<RelistLedgerEntry>& rows = it->second;
+        for (auto row = rows.begin(); row != rows.end(); ++row)
+        {
+            if (row->seq == seq)
+            {
+                rows.erase(row);
+                break;
+            }
+        }
+        if (rows.empty())
+            m_relist.erase(it);
+        return true;
+    }
+
+    // The received rows the bank trip has to pay out, oldest first. Any
+    // thread: the bank action checks what it can pay, the drain pays it.
+    std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry> out;
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return out;
+        for (RelistLedgerEntry const& entry : it->second)
+            if (RelistNeedsDeposit(entry))
+                out.push_back(entry);
+        return out;
+    }
+
+    // One stale sweep a minute, not one per world tick.
+    bool RelistExpireDue(uint64_t nowSec)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_lastRelistExpireSec && nowSec < m_lastRelistExpireSec + 60)
+            return false;
+        m_lastRelistExpireSec = nowSec;
+        return true;
+    }
+
+    // Three days with nothing back means the posting no longer reports on
+    // the auction house: the entry stops being a debt to the guild. World
+    // thread only; called at a minute's cadence, never per tick.
+    void ExpireStaleRelists(uint64_t nowSec)
+    {
+        std::vector<RelistLedgerEntry> dropped;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (auto it = m_relist.begin(); it != m_relist.end();)
+            {
+                std::vector<RelistLedgerEntry>& rows = it->second;
+                for (auto row = rows.begin(); row != rows.end();)
+                {
+                    if (RelistEntryStale(*row, nowSec))
+                    {
+                        dropped.push_back(*row);
+                        row = rows.erase(row);
+                    }
+                    else
+                        ++row;
+                }
+                it = rows.empty() ? m_relist.erase(it) : std::next(it);
+            }
+        }
+        for (RelistLedgerEntry const& entry : dropped)
+        {
+            TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u) posted %llu s ago "
+                "returned nothing; dropping the ledger row.", entry.botGuidLow, entry.itemId,
+                entry.count, static_cast<unsigned long long>(nowSec - entry.postedAtSec));
+            CharacterDatabase.PExecute(
+                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                entry.botGuidLow, entry.seq);
+        }
     }
 
     void NoteBagsFull(uint32_t botGuidLow)
@@ -1164,9 +1750,40 @@ public:
             }
             out.push_back(row.itemId);
         }
+        // A queued request covers its item only inside the same staleness window
+        // as the clock gate (UnfinishedSubOrderCount): one that never found a
+        // worker must not keep the ladder skipping the item while the clocks run.
+        uint32_t now = WorldTimer::getMSTime();
         for (auto const& [key, queued] : m_queued)
-            if (key.parentBotGuidLow == botGuidLow && key.itemId)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId &&
+                now - queued.queuedAtMs < kQueuedSubOrderStaleMs)
                 out.push_back(key.itemId);
+        return out;
+    }
+    // Direct children that are work in progress, for the parent's clock gate:
+    // a running row (not finished, not cancelled), plus a queued request still
+    // inside its staleness window. A finished row's pending delivery is not
+    // work, and a queued request older than the window never became a running
+    // row, so neither may keep the parent's clocks paused.
+    uint32_t UnfinishedSubOrderCount(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_orders.find(botGuidLow) == m_orders.end())
+            return 0;
+        uint32_t out = 0;
+        for (auto const& [guid, stored] : m_orders)
+        {
+            OrderRecord const& row = stored.record;
+            if (row.parentBotGuidLow != botGuidLow || row.cancelled || !row.itemId)
+                continue;
+            if (!IsFinished(row.state))
+                ++out;
+        }
+        uint32_t now = WorldTimer::getMSTime();
+        for (auto const& [key, queued] : m_queued)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId &&
+                now - queued.queuedAtMs < kQueuedSubOrderStaleMs)
+                ++out;
         return out;
     }
     // Finished direct sub-orders whose delivery still waits for the
@@ -1197,27 +1814,42 @@ public:
             return;
         // The failed sub-order leaves its item on the parent's need list:
         // merge with the items already waiting so parallel sub-orders that
-        // fail together each keep their row. A return through the need state
-        // replaces whatever wait the parent entered first, so every dead
-        // end funnels through this one entry.
+        // fail together each keep their row.
         OrderRecord& record = parent->second.record;
-        bool merged = false;
-        for (NeedItem& need : record.needItems)
+        MergeNeedItem(record.needItems, itemId, count);
+        if (record.type == OrderType::Craft)
         {
-            if (need.itemId != itemId)
-                continue;
-            if (count > need.count)
-                need.count = count;
-            merged = true;
+            if (record.state == OrderState::Working)
+            {
+                // A running sub-order is not the player's item: the row keeps
+                // working, and dropping the supply leg makes the ladder
+                // re-plan the rest of the tree instead of retrying the failed
+                // item. A leg on some other item survives, and a dead-end
+                // reason belongs to the leg that produced it, so both go
+                // together.
+                if (!KeepLegOnNeedClear(record.supplyItemId, record.needItems))
+                {
+                    record.reason = ResetDeadEndReasonOnWorking(record.reason);
+                    record.supplyStep = SupplyStep::None;
+                    record.supplyItemId = 0;
+                    record.supplyCount = 0;
+                    record.supplyGoldCount = 0;
+                    record.supplyReturnStep = SupplyStep::None;
+                }
+            }
         }
-        if (!merged)
-            record.needItems.push_back(NeedItem{ itemId, count });
-        record.state = OrderState::Waiting;
-        record.reason = OrderReason::NeedItems;
-        record.supplyStep = SupplyStep::Need;
-        record.supplyReturnStep = SupplyStep::None;
-        record.supplyGoldCount = 0;
-        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(record.needItems);
+        else
+        {
+            // Partial need is a craft rule: a farm or buy order parks on the
+            // failed item like any other dead end.
+            record.state = OrderState::Waiting;
+            record.reason = OrderReason::NeedItems;
+            record.supplyStep = SupplyStep::Need;
+            record.supplyReturnStep = SupplyStep::None;
+            record.supplyGoldCount = 0;
+            MarkAuctionLadderEndLocked(parent->second, itemId);
+        }
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
         MarkDirtyLocked(parent->second);
     }
 
@@ -1254,6 +1886,7 @@ public:
             stub.supplyReturnStep = SupplyStep::None;
             stub.needItems.clear();
             stub.needWhispered = false;
+            stub.needBankDenied = false;
             stub.reportedHave = 0;
             m_orders[subOrderBotGuidLow] = Stored{stub};
             MarkDirtyLocked(m_orders[subOrderBotGuidLow]);
@@ -1269,6 +1902,7 @@ public:
         moved.farmChance = 0;
         moved.zoneIndex = 0;
         moved.reportedHave = 0;
+        moved.reportedCarry = 0;
         moved.supplyStep = SupplyStep::None;
         moved.supplyReturnStep = SupplyStep::None;
         moved.supplyItemId = 0;
@@ -1324,6 +1958,7 @@ public:
         bool needVendorReady = false; // a parked need item is vendor-unlimited and affordable now
         bool needAhReady = false;     // a parked need item is newly listed on the AH
         bool needRetryLadder = false; // a long-parked need row re-runs the whole ladder
+        uint32_t unfinishedSubOrders = 0; // direct children still work in progress
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -1332,6 +1967,7 @@ public:
         bool haveRow = false;
         OrderRecord record;
         uint32_t reportedHave = 0;
+        uint32_t reportedCarry = 0;
         bool sendLine = false;
         bool finishedEdge = false;
         bool legChanged = false;
@@ -1390,6 +2026,30 @@ public:
             out.legChanged = true;
         }
 
+        if (record.state == OrderState::Working && !record.cancelled && !record.needItems.empty() &&
+            (in.needItemInBank || in.needVendorReady || in.needAhReady || in.needRetryLadder))
+        {
+            // A lane hit on a working row clears the whole list and re-plans:
+            // the ladder walks every item again, and one that is still a dead
+            // end comes straight back without a new whisper (the token
+            // already names it). The leg on some other item survives, unless
+            // it sources a listed item.
+            if (!KeepLegOnNeedClear(record.supplyItemId, record.needItems))
+            {
+                record.supplyStep = SupplyStep::None;
+                record.supplyItemId = 0;
+                record.supplyCount = 0;
+                record.supplyReturnStep = SupplyStep::None;
+            }
+            record.needItems.clear();
+            record.needBankDenied = false;
+            stored.needLadderChecks = 0;
+            if (in.needItemInBank)
+                record.bankEmptyItemId = 0;
+            MarkDirtyLocked(stored);
+            out.legChanged = true;
+        }
+
         // Keep watch: a fresh bank look below the stock target re-arms the
         // round (new quota, reset clocks, fresh plan) whether the bot is on
         // or off; the pool logs it back in like any unfinished order.
@@ -1401,6 +2061,13 @@ public:
             {
                 record.state = OrderState::Working;
                 record.reason = OrderReason::None;
+                // A new round is a new conversation: the finished round's need
+                // list is gone, and its whisper state (list, token, bank
+                // denial) must not silence or gate this round's first list.
+                record.needItems.clear();
+                record.needWhispered = false;
+                record.lastNeedWhisper.clear();
+                record.needBankDenied = false;
                 record.amount = missing;
                 record.delivered = 0;
                 record.farmZoneId = 0;
@@ -1408,6 +2075,8 @@ public:
                 record.zoneIndex = 0;
                 record.farmItemId = 0;
                 record.farmRest = false;
+                it->second.auctionCycles.clear();
+                it->second.auctionGoldReturnItemId = 0;
                 record.deathsInZone = 0;
                 record.searchFailsInZone = 0;
                 record.searchZoneMoves = 0;
@@ -1415,6 +2084,7 @@ public:
                 record.workedTotalSec = 0;
                 record.workedNoGainSec = 0;
                 record.reportedHave = 0;
+                record.reportedCarry = 0;
                 stored.lastOwnedCount = 0;
                 stored.lastFarmCount = 0;
                 stored.lastFarmItemId = 0;
@@ -1449,9 +2119,14 @@ public:
             }
         }
 
-        // A parent parked on a sub-order is waiting, even while its row stays working.
+        // A parent is waiting on work, not idle, only while it has no leg of
+        // its own (the ladder's WaitOnSubOrders return is step None) and a
+        // child row is still unfinished: the clock stays paused then. A parent
+        // working its own leg keeps every clock, so a stalled leg still ends
+        // the round and hands the order back to the ladder.
         if (!wasFinished && in.botOnline && in.botAlive && !in.grouped &&
-            record.state == OrderState::Working && record.supplyStep != SupplyStep::Sub)
+            record.state == OrderState::Working &&
+            !PauseOrderClocks(record.supplyStep, static_cast<int>(in.unfinishedSubOrders)))
         {
             stored.workedCarryMs += in.workedMs;
             if (stored.workedCarryMs >= 1000)
@@ -1609,13 +2284,29 @@ public:
         // the state alone marks it delivering). Mailbox items count for
         // progress and the give-up clock above, but delivery needs the
         // items in the bags - the bank deposit cannot take them from mail.
+        // An oversized AH purchase inflates the bags with the order item
+        // past the amount; delivery waits until the surplus is back on the
+        // auction house (or the relist gave up), or the bank would take the
+        // whole stack before it could be posted.
         if (!wasFinished && in.scanned && record.state == OrderState::Working && record.amount > 0 &&
-            record.delivered + in.bagCount >= record.amount)
+            !stored.relistItemId && record.delivered + in.bagCount >= record.amount)
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;
             record.supplyStep = SupplyStep::Deliver;
             record.supplyItemId = record.itemId;
+            record.supplyCount = 0;
+            record.supplyGoldCount = 0;
+            out.legChanged = true;
+            MarkDirtyLocked(stored);
+        }
+        if (!wasFinished && in.scanned && in.botOnline &&
+            DeliveryLostItsStock(record.state, record.reason, record.delivered, record.amount, ownedNow))
+        {
+            record.state = OrderState::Working;
+            record.reason = OrderReason::None;
+            record.supplyStep = SupplyStep::None;
+            record.supplyItemId = 0;
             record.supplyCount = 0;
             record.supplyGoldCount = 0;
             out.legChanged = true;
@@ -1628,8 +2319,7 @@ public:
         // flag sets only on a sent line, so an offline giver is retried on a
         // later tick. The giver lookup rides the live-update pass that
         // already carries both players.
-        if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
-            !record.needWhispered)
+        if (NeedWhisperDue(record.state, record.reason, !record.needItems.empty(), record.needWhispered))
         {
             ObjectGuid giverGuid(HIGHGUID_PLAYER, record.giverGuidLow);
             Player* giver = sObjectAccessor.FindPlayer(giverGuid);
@@ -1637,19 +2327,45 @@ public:
             {
                 out.needWhisper = true;
                 record.needWhispered = true;
-                record.lastNeedWhisper = NeedItemsToken(record.needItems);
+                record.lastNeedWhisper = NeedWhisperTokenUnion(record.lastNeedWhisper, record.needItems);
                 MarkDirtyLocked(stored);
             }
         }
 
-        // Reported progress never drops: offline (or not yet re-seen) bots
-        // keep max(delivered, last reported). A stocked order reports the
-        // bank stock the last look saw: owned counting means nothing there.
-        // Off-scan passes hold the last reported count: the zeros above are
-        // unscheduled, not a lost bag.
-        out.reportedHave = in.scanned ? ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave) :
-            (record.state == OrderState::Stocked && in.bankChecked ?
-                (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
+        // The row's have count is what reached the guild: delivered only,
+        // never the bags. It still never drops: offline (or not yet re-seen)
+        // bots keep max(delivered, last reported). A stocked order reports
+        // the bank stock the last look saw: owned counting means nothing
+        // there. Both counts are read off the row every pass, so a deposit
+        // reports itself without waiting for the next scan.
+        bool stocked = record.state == OrderState::Stocked;
+        // A row whose hand-off succeeded (done after the bank deposit, sent
+        // by mail) holds nothing for the order any more. A row that ended
+        // cant or noskill still has the stack in the bags, so it keeps the
+        // figure a scan last found. Reported before the line and the row
+        // write below, so neither invents a figure.
+        bool handOffSucceeded = HandOffSucceeded(record.state);
+        out.reportedHave = ReportedHaveThisPass(stocked, in.bankChecked, in.bankCount,
+            record.stockTarget, record.delivered, record.reportedHave);
+        out.reportedCarry = ReportedCarryThisPass(record.state, in.scanned, in.botOnline, in.bagCount,
+            in.mailboxCount, record.reportedCarry);
+        // A fresh scan is the row's carry truth: fold it in and mark the row
+        // dirty at once, so a bot that logs out before the next progress line
+        // still lists what it carried. The zero after a hand-off is truth
+        // too and reaches the row although no scan runs for it. Only the line
+        // waits for the throttle.
+        bool carryChanged = out.reportedCarry != record.reportedCarry;
+        if ((in.scanned || handOffSucceeded) && carryChanged)
+        {
+            record.reportedCarry = out.reportedCarry;
+            MarkDirtyLocked(stored);
+        }
+        bool carryToReport = out.reportedCarry != stored.reportCarry;
+
+        // One timeline entry per change of state, reason, leg or leg item.
+        if (OrderStepDiffers(stored.steps, record.state, record.reason, record.supplyStep, record.supplyItemId))
+            NoteOrderStep(stored.steps, OrderStepEntry{ static_cast<uint64_t>(std::time(nullptr)),
+                record.state, record.reason, record.supplyStep, record.supplyItemId });
 
         std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
@@ -1657,7 +2373,8 @@ public:
                             stored.reportNeed != needToken;
         if (!stored.reportSeen || stored.reportStep != record.supplyStep)
             out.legChanged = true;
-        bool progressDue = out.reportedHave != record.reportedHave &&
+        bool haveChanged = out.reportedHave != record.reportedHave;
+        bool progressDue = (haveChanged || carryToReport) &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
         if (out.sendLine)
@@ -1667,10 +2384,12 @@ public:
             stored.reportReason = record.reason;
             stored.reportStep = record.supplyStep;
             stored.reportNeed = needToken;
-            if (out.reportedHave != record.reportedHave)
+            if (haveChanged || carryToReport)
+                stored.reportMs = in.nowMs;
+            stored.reportCarry = out.reportedCarry;
+            if (haveChanged)
             {
                 record.reportedHave = out.reportedHave;
-                stored.reportMs = in.nowMs;
                 MarkDirtyLocked(stored);
             }
         }
@@ -1691,6 +2410,7 @@ private:
         uint32_t lastFarmItemId = 0;
         uint32_t lastFarmCount = 0;
         bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
+        std::unordered_map<uint32_t, std::vector<FarmZoneTargetFailure>> farmZoneFailures; // zone -> mesh-failed farm travel targets
         SupplySearchStreak supplySearch; // empty service-leg searches for the current leg
         OrderProtectedSet kept; // protected item ids for the row's keys (recomputed on the bot's map thread)
         bool sawOnline = false;
@@ -1698,13 +2418,33 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
+        uint32_t reportCarry = 0; // carry the last line announced, not the row's stored carry
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
         uint32_t needLadderChecks = 0; // slow checks since the row last parked
         uint32_t lastProgressScanMs = 0;
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
+        OrderStepHistory steps; // memory only: the addon's step timeline
+        std::unordered_map<uint32_t, AuctionLegCycle> auctionCycles; // per reagent, memory only
+        uint32_t auctionGoldReturnItemId = 0; // bank gold top-up returning to its auction visit
+        uint32_t auctionReachStartedMs = 0; // arrived in the auctioneer's city; 0 = not yet
+        uint32_t auctionLegStartedMs = 0;   // auction leg entered; bounds the travel
+        uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
+        uint32_t relistCount = 0;
+        uint32_t relistUnitPrice = 0;
     };
+
+    // Memory only, like the cycle itself: no row write for a bookkeeping
+    // flag that a restart may drop.
+    static void MarkAuctionLadderEndLocked(Stored& stored, uint32_t itemId)
+    {
+        if (!itemId)
+            return;
+        auto found = stored.auctionCycles.find(itemId);
+        if (found != stored.auctionCycles.end())
+            NoteAuctionLadderEnd(found->second, itemId);
+    }
 
     // A zone move advances to the next zone of the plan (the wrap-around is
     // at pick time in the travel code) and resets the per-zone clocks.
@@ -1777,7 +2517,7 @@ private:
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u' "
                 "WHERE `bot_guid` = '%u'",
                 record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
@@ -1790,7 +2530,7 @@ private:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.updatedAt), record.botGuidLow))
+                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, record.botGuidLow))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -1808,9 +2548,19 @@ private:
 
     std::mutex m_mutex;
     std::unordered_map<uint32_t, Stored> m_orders;
+    // Relisted auction surplus per bot, oldest first: the guild-funded value
+    // that is still on the auction house, in the mail or in the bot's hands.
+    std::unordered_map<uint32_t, std::vector<RelistLedgerEntry>> m_relist;
+    uint64_t m_lastRelistExpireSec = 0;
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
+    // Last request the drain gave planner time to: the next drain starts
+    // after it, so one request cannot spend every tick's evaluation budget.
+    uint32_t m_drainedParentBotGuidLow = 0;
+    uint32_t m_drainedItemId = 0;
     bool m_initialized = false;
 };
+
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry);
 
 std::string ZoneName(uint32_t zoneId)
 {
@@ -1946,7 +2696,6 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-void SendOrderLine(OrderRecord const& order, uint32_t have);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. One guild_member query per guild per
 // tick shared across due requests; planner evaluations share a per-tick
@@ -2010,7 +2759,18 @@ bool PlaceSubOrders(uint32_t nowMs)
         ++plannerEvals;
         return SubOrderCandidateUsable(bot, itemId, canMake, canFarm, gathers);
     };
+    // The placement's busy rule, shared by the scan and the pre-Give
+    // re-check: only a running row or a stocked keep watch blocks a bot.
+    auto busyOrder = [](std::optional<OrderRecord> const& existing)
+    {
+        return existing.has_value() && !existing->cancelled &&
+            (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
+    };
     bool placedAny = false;
+    // The request the drain gave planner time to last: the next drain starts
+    // after it, so one request cannot take every tick's evaluations.
+    uint32_t drainedParent = 0;
+    uint32_t drainedItem = 0;
     for (OrderStore::QueuedSubOrder const& request : queued)
     {
         if (!request.itemId || !request.count)
@@ -2036,8 +2796,11 @@ bool PlaceSubOrders(uint32_t nowMs)
         if (cached == membersByGuild.end())
         {
             std::vector<uint32_t> members;
+            // Ordered: the scan resumes at a guid, so an unordered result
+            // would move the resume point between attempts and skip members.
             std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
-                "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", parent->guildId));
+                "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u' ORDER BY `guid`",
+                parent->guildId));
             if (result)
             {
                 do
@@ -2050,15 +2813,32 @@ bool PlaceSubOrders(uint32_t nowMs)
             }
             cached = membersByGuild.emplace(parent->guildId, std::move(members)).first;
         }
-        bool stoppedEarly = false;
-        std::vector<SubOrderCandidate> candidates;
-        for (uint32_t guidLow : cached->second)
+        std::vector<uint32_t> const& roster = cached->second;
+        size_t const rosterSize = roster.size();
+        // The scan resumes after the last member it looked at, so a guild
+        // bigger than one tick's evaluations is covered over retries instead
+        // of re-scanning the same head, and a member leaving or joining
+        // between attempts cannot shift the resume point onto another one.
+        SubOrderScanPlan const plan = PlanSubOrderScan(roster.data(), rosterSize,
+            request.scan.lastMember, request.scan.scanStart);
+        // Best free candidate and busy verdict found in the earlier slices; a
+        // request without a running scan starts a new full scan and forgets
+        // them.
+        SubOrderScanBest best;
+        if (request.scan.scanStart)
+        {
+            best.guid = request.scan.bestGuid;
+            best.rank = request.scan.bestRank;
+            best.canMake = request.scan.bestCanMake;
+            best.sawBusyUsable = request.scan.sawBusyUsable;
+        }
+        size_t const evalsBefore = plannerEvals;
+        size_t looked = 0;
+        for (; looked < plan.remaining; ++looked)
         {
             if (plannerEvals >= kSubOrderPlannerEvalsPerTick)
-            {
-                stoppedEarly = true;
                 break;
-            }
+            uint32_t guidLow = roster[(plan.begin + looked) % rosterSize];
             ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
             Player* bot = sObjectAccessor.FindPlayer(guid);
             if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
@@ -2071,77 +2851,111 @@ bool PlaceSubOrders(uint32_t nowMs)
             std::optional<OrderRecord> existing = Find(guidLow);
             // A finished order only lingers in the list; a keep order still
             // watches the bank, so only that one keeps the bot busy.
-            candidate.hasOrder = existing.has_value() && !existing->cancelled &&
-                (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
-            if (candidate.hasOrder)
-            {
-                bool make = false, farm = false, gathers = false;
-                if (evalUsable(bot, request.itemId, make, farm, gathers))
-                    candidate.queuedBusy = true;
-                else
-                    continue;
-                candidates.push_back(candidate);
-            }
-            else if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
+            candidate.hasOrder = busyOrder(existing);
+            candidate.keepHolder = candidate.hasOrder &&
+                existing->state == OrderState::Stocked && existing->keep;
+            if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
                 candidate.gathers))
                 continue;
-            else
-                candidates.push_back(candidate);
+            // A busy candidate keeps the verdicts: only a busy bot that can
+            // make or farm the item makes the request worth retrying.
+            candidate.queuedBusy = candidate.hasOrder;
+            NoteSubOrderCandidate(best, candidate);
         }
-        // The planner budget ran out mid-guild: unevaluated members may still
-        // take the request, so requeue instead of failing it. A request that
-        // evaluated every member and found nobody still fails below.
-        if (stoppedEarly)
+        if (plannerEvals > evalsBefore)
+        {
+            drainedParent = request.parentBotGuidLow;
+            drainedItem = request.itemId;
+        }
+        SubOrderScanCursor const scan = AdvanceSubOrderScan(roster.data(), rosterSize, plan,
+            request.scan.lastMember, looked);
+        // The scan is decided once it has covered the roster: an attempt that
+        // stopped early carries what it found into the next slice instead of
+        // placing a candidate a later slice would outrank.
+        if (!scan.complete)
         {
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
+                request.count, nowMs + kSubOrderSliceRetryMs, request.queuedAtMs,
+                OrderStore::QueuedSubOrderScan{ scan.lastGuid, scan.startGuid, best.guid,
+                    best.rank, best.canMake, best.sawBusyUsable, request.scan.busyScans });
             continue;
         }
-        bool queuedOut = false;
-        size_t picked = PickSubOrderCandidate(candidates.data(), candidates.size(), queuedOut);
-        SubOrderPick pick = ClassifySubOrderPick(picked, candidates.size(), queuedOut);
-        if (pick == SubOrderPick::Take)
+        SubOrderPick const pick = ClassifySubOrderScan(best, request.scan.busyScans + 1);
+        if (pick == SubOrderPick::Queued)
         {
-            OrderRecord record;
-            record.botGuidLow = candidates[picked].botGuidLow;
-            record.guildId = parent->guildId;
-            record.giverGuidLow = parent->botGuidLow;
-            record.parentBotGuidLow = parent->botGuidLow;
-            record.rootGiverGuidLow = parent->rootGiverGuidLow ? parent->rootGiverGuidLow : parent->giverGuidLow;
-            record.type = candidates[picked].canMake ? OrderType::Craft : OrderType::Farm;
-            record.itemId = request.itemId;
-            record.amount = request.count;
-            record.goldCap = parent->goldCap;
-            record.hasGoldCap = parent->hasGoldCap;
-            if (!Give(record))
-            {
-                OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                    request.count, nowMs + kSubOrderRetryMs);
-                continue;
-            }
-            placedAny = true;
-            // A new row joins the branch: later same-tick requests see its
-            // depth and item instead of the pre-tick snapshot.
-            refreshBranches();
-            if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
-                SendOrderLine(*placed, 0);
-        }
-        else if (pick == SubOrderPick::Queued)
+            // Only busy members could take it: keep the request queued and
+            // scan the roster again on the next retry, until the streak of
+            // busy-only scans runs out and the item joins the need list.
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
-        else
+                request.count, nowMs + kSubOrderRetryMs, request.queuedAtMs,
+                OrderStore::QueuedSubOrderScan{ 0, 0, 0, -1, false, false,
+                    request.scan.busyScans + 1 });
+            continue;
+        }
+        if (pick != SubOrderPick::Take)
+        {
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
+            continue;
+        }
+        // The scan may have carried this candidate over several ticks, and
+        // Give REPLACEs whatever order the bot holds now: re-run the member
+        // checks and restart the walk when it went stale in between.
+        ObjectGuid bestGuid(HIGHGUID_PLAYER, best.guid);
+        Player* bestBot = sObjectAccessor.FindPlayer(bestGuid);
+        SubOrderRecheck recheck;
+        recheck.found = bestBot != nullptr;
+        recheck.inWorld = bestBot && bestBot->IsInWorld();
+        recheck.sameGuild = bestBot && bestBot->GetGuildId() == parent->guildId;
+        recheck.durable = IsDurableOrderBot(best.guid);
+        recheck.hasOrder = busyOrder(Find(best.guid));
+        if (!SubOrderRecheckPasses(recheck))
+        {
+            OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
+                request.count, nowMs + kSubOrderSliceRetryMs, request.queuedAtMs,
+                OrderStore::QueuedSubOrderScan{});
+            continue;
+        }
+        OrderRecord record;
+        record.botGuidLow = best.guid;
+        record.guildId = parent->guildId;
+        record.giverGuidLow = parent->botGuidLow;
+        record.parentBotGuidLow = parent->botGuidLow;
+        record.rootGiverGuidLow = parent->rootGiverGuidLow ? parent->rootGiverGuidLow : parent->giverGuidLow;
+        record.type = best.canMake ? OrderType::Craft : OrderType::Farm;
+        record.itemId = request.itemId;
+        record.amount = request.count;
+        record.goldCap = parent->goldCap;
+        record.hasGoldCap = parent->hasGoldCap;
+        if (!Give(record))
+        {
+            // A fresh scan re-evaluates the roster on the next retry.
+            OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
+                request.count, nowMs + kSubOrderRetryMs, request.queuedAtMs,
+                OrderStore::QueuedSubOrderScan{});
+            continue;
+        }
+        placedAny = true;
+        // A new row joins the branch: later same-tick requests see its
+        // depth and item instead of the pre-tick snapshot.
+        refreshBranches();
+        if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
+        {
+            Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, placed->botGuidLow));
+            SendOrderLine(*placed, 0, Carry(bot, *placed));
+        }
     }
+    if (drainedParent)
+        OrderStore::Instance().NoteSubOrderDrained(drainedParent, drainedItem);
     return placedAny;
 }
 
-void SendOrderLine(OrderRecord const& order, uint32_t have)
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     uint32_t giverLow = order.rootGiverGuidLow ? order.rootGiverGuidLow : order.giverGuidLow;
     Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, giverLow));
     if (!giver || !giver->IsInWorld())
         return;
-    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have));
+    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have, carry));
 }
 
 void SendNeedWhisper(OrderRecord const& order)
@@ -2230,6 +3044,11 @@ std::optional<OrderRecord> Find(uint32_t botGuidLow)
     return OrderStore::Instance().Find(botGuidLow);
 }
 
+std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().FindStepHistory(botGuidLow);
+}
+
 bool IsOrderableItem(ItemPrototype const* proto)
 {
     return proto && !proto->Name1.empty() && proto->Bonding != BIND_WHEN_PICKED_UP &&
@@ -2271,14 +3090,34 @@ bool Cancel(uint32_t botGuidLow)
     bool gone = OrderStore::Instance().Cancel(botGuidLow);
     if (gone)
     {
-        OnDeliveryOrderGone(botGuidLow);
-        OnSupplyOrderGone(botGuidLow);
-        ExpireGuildOrderTarget(botGuidLow);
+        // A row that detached into a final top-level delivery keeps its
+        // travel target and queue state: the delivery path still runs.
+        if (std::optional<OrderRecord> live = Find(botGuidLow))
+        {
+            OrderStore::Instance().WriteAndRescue(*live);
+            Player* liveBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, botGuidLow));
+            SendOrderLine(*live, live->reportedHave, Carry(liveBot, *live));
+        }
+        else
+        {
+            OnDeliveryOrderGone(botGuidLow);
+            OnSupplyOrderGone(botGuidLow);
+            ExpireGuildOrderTarget(botGuidLow);
+        }
         for (uint32_t child : branch)
         {
             if (child == botGuidLow)
                 continue;
             OrderStore::Instance().Cancel(child);
+            // A child that detached into a final top-level delivery keeps
+            // its row (and its target): only reaped rows drop theirs.
+            if (std::optional<OrderRecord> live = Find(child))
+            {
+                OrderStore::Instance().WriteAndRescue(*live);
+                Player* liveBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, child));
+                SendOrderLine(*live, live->reportedHave, Carry(liveBot, *live));
+                continue;
+            }
             OnDeliveryOrderGone(child);
             OnSupplyOrderGone(child);
             ExpireGuildOrderTarget(child);
@@ -2371,7 +3210,8 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
         OrderStore::Instance().Cancel(newBotGuidLow);
         return false;
     }
-    SendOrderLine(record, row->reportedHave);
+    Player* newBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, record.botGuidLow));
+    SendOrderLine(record, row->reportedHave, Carry(newBot, record));
     return true;
 }
 
@@ -2409,6 +3249,17 @@ void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t c
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied)
 {
     OrderStore::Instance().SetNeedItems(botGuidLow, items, bankDenied);
+}
+
+void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied)
+{
+    OrderStore::Instance().AddNeedItem(botGuidLow, itemId, count, bankDenied);
+}
+
+bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+    std::vector<NeedItem> const& items)
+{
+    return OrderStore::Instance().ReplaceNeedItems(botGuidLow, expected, items);
 }
 
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
@@ -2485,6 +3336,17 @@ void NoteDeath(uint32_t botGuidLow)
     OrderStore::Instance().NoteDeath(botGuidLow);
 }
 
+void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+    float x, float y, float z)
+{
+    OrderStore::Instance().NoteFarmZoneTargetFailed(botGuidLow, zoneId, mapId, x, y, z);
+}
+
+std::vector<FarmZoneTargetFailure> FarmZoneFailures(uint32_t botGuidLow, uint32_t zoneId)
+{
+    return OrderStore::Instance().GetFarmZoneFailures(botGuidLow, zoneId);
+}
+
 void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
 {
     OrderStore::Instance().NoteSearchFailed(botGuidLow, zoneId);
@@ -2505,6 +3367,84 @@ uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach)
     return OrderStore::Instance().NoteArrivedAuctionVisit(botGuidLow, auctioneerInReach);
 }
 
+bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId)
+{
+    return OrderStore::Instance().AuctionReentryAllowed(botGuidLow, itemId);
+}
+
+void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)
+{
+    OrderStore::Instance().NoteAuctionLegEnded(botGuidLow, reason);
+}
+
+bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
+{
+    return OrderStore::Instance().AuctionLegUnreachable(botGuidLow, nowMs);
+}
+
+void NoteAuctioneerInReach(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteAuctioneerInReach(botGuidLow);
+}
+
+void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteAuctionZoneArrival(botGuidLow, nowMs);
+}
+
+void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
+{
+    OrderStore::Instance().NoteRelistSurplus(botGuidLow, itemId, count, unitPrice);
+}
+
+bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice)
+{
+    return OrderStore::Instance().PendingRelist(botGuidLow, itemId, count, unitPrice);
+}
+
+void ClearRelistSurplus(uint32_t botGuidLow)
+{
+    OrderStore::Instance().ClearRelistSurplus(botGuidLow);
+}
+
+void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+    uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec)
+{
+    OrderStore::Instance().NoteRelistPosted(botGuidLow, guildId, itemId, count, unitPrice, bid, buyout,
+        deposit, durationSec);
+}
+
+std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().RelistEntries(botGuidLow);
+}
+
+bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+    uint32_t items)
+{
+    return OrderStore::Instance().NoteRelistClaimed(botGuidLow, seq, mailId, gold, items);
+}
+
+bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+{
+    return OrderStore::Instance().NoteRelistReceived(botGuidLow, seq, gold, items);
+}
+
+bool SaveRelistRow(RelistLedgerEntry const& row)
+{
+    return OrderStore::Instance().SaveRelist(row);
+}
+
+bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq)
+{
+    return OrderStore::Instance().DeleteRelist(botGuidLow, seq);
+}
+
+std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().RelistDeposits(botGuidLow);
+}
+
 void NoteBagsFull(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteBagsFull(botGuidLow);
@@ -2515,15 +3455,18 @@ void AddDelivered(uint32_t botGuidLow, uint32_t count)
     OrderStore::Instance().AddDelivered(botGuidLow, count);
 }
 
-uint32_t Progress(Player* bot, OrderRecord const& order)
+uint32_t Carry(Player* bot, OrderRecord const& order)
 {
-    uint32_t have = order.delivered;
-    if (bot && bot->IsInWorld() && order.itemId)
-        have += bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
-    return have;
+    if (!order.itemId)
+        return 0;
+    bool terminal = IsTerminal(order.state);
+    bool botOnline = bot && bot->IsInWorld();
+    uint32_t liveCarry = botOnline && !terminal ?
+        bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId) : 0;
+    return ListedCarry(terminal, botOnline, liveCarry, order.reportedCarry);
 }
 
-std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have)
+std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
@@ -2546,7 +3489,8 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|" +
            BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
-           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems);
+           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems) + "|" +
+           std::to_string(carry);
 }
 
 void Initialize()
@@ -2581,6 +3525,11 @@ void Update(uint32_t diff)
     // few, bots are many. The only place that looks up players and sends
     // live updates; map-thread mutators only mark rows dirty.
     uint32_t now = WorldTimer::getMSTime();
+    // Once a minute, not per tick: an entry whose posting never reported back
+    // after three days stops being a debt to the guild (one log line each).
+    uint64_t nowSec = static_cast<uint64_t>(std::time(nullptr));
+    if (OrderStore::Instance().RelistExpireDue(nowSec))
+        OrderStore::Instance().ExpireStaleRelists(nowSec);
     PlaceSubOrders(now);
     for (OrderRecord const& snapshot : OrderStore::Instance().All())
     {
@@ -2627,26 +3576,42 @@ void Update(uint32_t diff)
             (in.farmItemId ? 0 : in.bagCount);
         in.workedMs = diff;
         in.nowMs = now;
-        if (scanDue && snapshot.state == OrderState::Waiting && snapshot.reason == OrderReason::NeedItems)
+        // Direct children still in progress (a running row, or a queued
+        // request inside its staleness window): only a row with no leg of its
+        // own pauses its clocks for them.
+        in.unfinishedSubOrders = active ? OrderStore::Instance().UnfinishedSubOrderCount(guidLow) : 0;
+        if (scanDue && NeedLadderLaneEligible(snapshot.state, snapshot.reason, !snapshot.needItems.empty()) &&
+            !snapshot.cancelled)
         {
-            for (NeedItem const& need : snapshot.needItems)
+            // Bags and mailbox are the player's delivery lane, so only a
+            // parked row reads them; the bank, vendor and AH lanes below
+            // serve a working row's need list the same way.
+            if (snapshot.state == OrderState::Waiting)
             {
-                if (online && bot->GetItemCount(need.itemId) + MailboxItems(bot, need.itemId) >= need.count)
+                for (NeedItem const& need : snapshot.needItems)
                 {
-                    in.needItemAvailable = true;
-                    break;
+                    if (online && bot->GetItemCount(need.itemId) + MailboxItems(bot, need.itemId) >= need.count)
+                    {
+                        in.needItemAvailable = true;
+                        break;
+                    }
                 }
             }
             if (OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
             {
                 OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
-                for (NeedItem const& need : snapshot.needItems)
-                    if (!snapshot.needBankDenied && BankItemCount(snapshot.guildId, need.itemId) >= need.count)
-                    {
-                        in.needItemAvailable = true;
-                        in.needItemInBank = true;
-                        break;
-                    }
+                // Withdrawing disabled, or a bank that already refused this
+                // order: a stock the bot cannot take must not look like a
+                // lane hit, or the row clears and replans every ten seconds.
+                if (sPlayerbotAIConfig.guildOrderBankWithdraw)
+                    for (NeedItem const& need : snapshot.needItems)
+                        if (!snapshot.needBankDenied &&
+                            BankItemCount(snapshot.guildId, need.itemId) >= need.count)
+                        {
+                            in.needItemAvailable = true;
+                            in.needItemInBank = true;
+                            break;
+                        }
             }
             // A parked need row re-runs the ladder when its facts changed: a
             // vendor-unlimited item the new rule buys, or a fresh AH listing.
@@ -2677,6 +3642,7 @@ void Update(uint32_t diff)
             }
         }
         else if (snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub &&
+            sPlayerbotAIConfig.guildOrderBankWithdraw &&
             OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
         {
             OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
@@ -2702,7 +3668,7 @@ void Update(uint32_t diff)
         if (out.persist)
             OrderStore::Instance().WriteAndRescue(out.persistRecord);
         if (out.sendLine)
-            SendOrderLine(out.record, out.reportedHave);
+            SendOrderLine(out.record, out.reportedHave, out.reportedCarry);
         if (out.needWhisper)
             SendNeedWhisper(out.record);
         if (out.legChanged)
@@ -2712,7 +3678,9 @@ void Update(uint32_t diff)
     {
         // A finished sub-order that did not deliver fails the parent: the
         // full cancel path reaps its branch (queues, travel target) and
-        // puts the item on the parent's need list.
+        // puts the item on the parent's need list. A child holding its
+        // quota detaches into a final top-level delivery instead, through
+        // the same cancel path.
         if (!snapshot.parentBotGuidLow || snapshot.state == OrderState::Done)
             continue;
         if (!IsFinished(snapshot.state))
@@ -2730,6 +3698,7 @@ void Update(uint32_t diff)
     UpdateDeliveries();
     UpdateSupplyWithdrawals();
     UpdateGoldRefunds();
+    UpdateRelistDeposits();
     OrderStore::Instance().FinishRepaid();
 }
 

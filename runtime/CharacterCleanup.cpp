@@ -233,6 +233,7 @@ void DeleteCharacterEverywhere(uint32 guidLow, uint32 accountId)
     CharacterDatabase.DirectPExecute("DELETE FROM `character_transmogs` WHERE `guid` = '%u'", guidLow);
     CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_hire_unlock_kills` WHERE `guid` = '%u'", guidLow);
     CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", guidLow);
+    CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u'", guidLow);
 }
 
 } // namespace TortoiseBots

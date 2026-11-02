@@ -45,4 +45,17 @@ namespace ai
     {
         return tripSince != 0 && now - tripSince < VENDOR_TRIP_REPICK_WINDOW;
     }
+
+    // A bag-pressure vendor journey for a bot whose bags are mostly held order
+    // stock: worth the walk only when the sale frees a bag row or gets the bags
+    // under the pressure line; otherwise each looted grey sends it to town again.
+    constexpr uint32_t ORDER_BAG_PRESSURE_MIN_SELL_SLOTS = 4;
+    inline bool BagPressureSaleRelievesBags(uint32_t usedSlots, uint32_t totalSlots, uint32_t sellableSlots,
+        uint8_t pressurePercent)
+    {
+        if (!totalSlots) return true;
+        if (sellableSlots >= ORDER_BAG_PRESSURE_MIN_SELL_SLOTS) return true;
+        uint32_t const freed = sellableSlots < usedSlots ? sellableSlots : usedSlots;
+        return (usedSlots - freed) * 100u < uint32_t(pressurePercent) * totalSlots;
+    }
 }

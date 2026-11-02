@@ -50,6 +50,16 @@ int main()
     CHECK(kept.count(3858));
     CHECK(kept.size() == 6);
 
+    // A supply leg on an intermediate (crafting the tube) keeps the tube's own
+    // reagents: the supply item joined the set first, and the tree walk once
+    // skipped expanding an item it had already seen (live: Unstable Trigger,
+    // its Mageweave Cloth and Solid Blasting Powder were sold).
+    kept.clear();
+    CHECK(CollectOrderProtectedItems(7189, false, true, 10559, KnownReagents, kept));
+    CHECK(kept.count(10559));
+    CHECK(kept.count(3860));
+    CHECK(kept.count(3858));
+
     // The current supply item joins the set (here: the nested ore leg).
     kept.clear();
     CHECK(CollectOrderProtectedItems(7189, false, true, 3858, KnownReagents, kept));
@@ -80,6 +90,14 @@ int main()
     CHECK(kept.count(4234));
     CHECK(!kept.count(3860));
     CHECK(!kept.count(3858));
+
+    // The worked supply item expands even when a vendor sells it: the leg
+    // crafts the tube, so the mithril chain below it is live stock.
+    kept.clear();
+    CHECK(CollectOrderProtectedItems(7189, false, true, 10559, KnownReagents, vendorTube, kept));
+    CHECK(kept.count(10559));
+    CHECK(kept.count(3860));
+    CHECK(kept.count(3858));
 
     // Farm/buy orders protect the order and supply items only.
     kept.clear();
