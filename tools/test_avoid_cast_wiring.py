@@ -925,7 +925,7 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)",
                       RUN_POLICY)
         guard = body(RUN_POLICY, "inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, "
-                                 "std::string& order)")
+                                 "std::string& order, bool trash = false)")
         self.assertIn("LinkedDeathMemberEntry(r, f, u.entry)", guard)
         self.assertIn("f.linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath;", COMMANDER)
         note = body(RUN_POLICY, "inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)")
