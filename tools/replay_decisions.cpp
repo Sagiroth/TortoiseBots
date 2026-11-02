@@ -125,7 +125,7 @@ int List(const Args& args, bool find)
     std::uint64_t const step = haveStep ? std::strtoull(Value(args, "--step").c_str(), nullptr, 10) : 0;
 
     for (const std::string& note : capture.notes)
-        if (!find)
+        if (!find && note.compare(0, 4, "end ") != 0)
             std::cout << note << "\n";
     for (const TickRec& tick : capture.ticks)
     {
@@ -142,6 +142,10 @@ int List(const Args& args, bool find)
         }
         std::cout << TickLine(tick) << "\n";
     }
+    if (!find)
+        for (const std::string& note : capture.notes)
+            if (note.compare(0, 4, "end ") == 0)
+                std::cout << note << "\n";
     return 0;
 }
 
