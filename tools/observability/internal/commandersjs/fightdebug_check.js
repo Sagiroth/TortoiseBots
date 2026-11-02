@@ -160,13 +160,13 @@ const packRows = [
   { key: "prev-night", session: 4, start: secAt(2026, 10, 28, 23, 0) },
 ];
 assert.deepStrictEqual(F.packNumbers(packRows), [2, 1, 3, 2, 1, 1],
-  "a new run (session) restarts at Pack 1, and so does a new UTC day");
+  "a new run (session) restarts at Pack 1, and so does a new night (06:00 local rollover)");
 assert.deepStrictEqual(F.packNumbers([]), []);
-assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per day");
+assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per night");
 // The rail reads the same numbers: two runs on one night do not continue each other's count.
 const multiRail = F.railCards(packRows, {}, null, null);
 assert.deepStrictEqual(multiRail.map((c) => c.label), ["Pack 2", "Pack 1", "Pack 3", "Pack 2", "Pack 1", "Pack 1"],
-  "the rail's Pack N restarts with the run and the day");
+  "the rail's Pack N restarts with the run and the night");
 
 // ---- the killer: the last hit that is not the dead bot; only self-damage known is "unknown" ------------------------
 const SELF_FIGHT = {
@@ -660,5 +660,37 @@ assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, pack
   assert.strictEqual(cutRow.num, "2/≥2");
   assert.ok(cutRow.ev.endsWith("Unstable Concoction was cast at least 2× (the fight dropped 40 older log events, so earlier casts and the deaths after them are missing)."));
 }
+
+// ---- a cut spell list: the Sunder rate is unknown, not a fail ------------------------------------------------
+// The bounded short form lists no spells; any other degraded rung cuts the tail first, so only a full 3-spell row
+// ending in an always-listed spell may still hide Sunder.
+const cutMT = (spells) => fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, spells })] });
+const cutOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_sunder");
+assert.strictEqual(cutOf(cutMT([])).lvl, "fail"); // full build, no Sunder: judged
+assert.strictEqual(cutOf(cutMT([])).num, "0.0/10 s");
+const trunc = cutMT([]);
+trunc.truncated = true;
+assert.strictEqual(cutOf(trunc).lvl, "unknown");
+assert.strictEqual(cutOf(trunc).num, "unknown (spell list cut)");
+const rung3 = cutMT([{ n: "Revenge", c: 2 }]);
+rung3.spells_cut = 2;
+assert.strictEqual(cutOf(rung3).lvl, "unknown");
+const hidden3 = cutMT([{ n: "Heroic Strike", c: 1 }, { n: "Revenge", c: 2 }, { n: "Shield Block", c: 1 }]);
+hidden3.spells_cut = 3;
+assert.strictEqual(cutOf(hidden3).lvl, "unknown");
+const proven3 = cutMT([{ n: "Heroic Strike", c: 1 }, { n: "Revenge", c: 2 }, { n: "Bloodrage", c: 1 }]);
+proven3.spells_cut = 3;
+assert.strictEqual(cutOf(proven3).lvl, "fail"); // ends in a non-listed spell: the absence is proof
+const short3 = cutMT([{ n: "Heroic Strike", c: 1 }]);
+short3.spells_cut = 3;
+assert.strictEqual(cutOf(short3).lvl, "fail"); // short of the cap: the absence is proof
+// ---- an unknown check is CHECK, never ok; worstIndex counts it like a warn ----------------------------------------
+const onlyUnknown = fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells: [] })] });
+onlyUnknown.truncated = true;
+assert.strictEqual(F.checks(onlyUnknown, MTLAYOUT, []).filter((c) => c.lvl !== "ok").map((c) => c.id).join(","), "mt_sunder");
+assert.strictEqual(F.verdict(onlyUnknown, MTLAYOUT, []), "check");
+const allClean = fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells: [{ n: "Sunder Armor", c: 12 }] })] });
+assert.strictEqual(F.verdict(allClean, MTLAYOUT, []), "ok");
+assert.strictEqual(F.worstIndex([{ fight: allClean, warnings: [] }, { fight: onlyUnknown, warnings: [] }], MTLAYOUT), 1);
 
 console.log("fightdebug_check: ok");

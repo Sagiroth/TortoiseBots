@@ -112,10 +112,10 @@ static void TestFightLifecycle()
     b.OnDamage(0, 1, 3000, "Magmadar", 11502, 777, "Magmadar", 7000);
     b.OnDamage(3, 1, 100, "Magey", 0, 0, "", 8000);
     b.OnHeal(2, 2500, 500, 9000);
-    b.NoteBossDied(11501);
+    b.NoteBossDied(11501, 0);
     b.SetInCombat(false, false, 20000);
     CHECK(b.InFight());
-    b.NoteBossDied(11502);
+    b.NoteBossDied(11502, 0);
     b.SetInCombat(false, false, 23000);
     CHECK(!b.InFight());
 
@@ -468,7 +468,7 @@ static void TestMonitorOffIsInert()
     b.OnDeath(1, "Mob", 0.0f, 0.0f, 0.0f, 1000);
     b.SampleDebuffs({"sunder"});
     b.SetInCombat(false, false, 2000);
-    b.NoteBossDied(11502);
+    b.NoteBossDied(11502, 0);
     CHECK(!b.InFight());
     CHECK(b.WindowJson(2000).empty());
     Seq seq;
@@ -622,7 +622,7 @@ static void TestRefinedBossDeathIsKill()
     b.SetMembers(Trio());
     b.Start(0, 1700000000, FightContext{}, 1);
     b.NoteBoss(5, "A");
-    b.NoteBossDied(5);
+    b.NoteBossDied(5, 0);
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
     Seq seq;
@@ -641,8 +641,8 @@ static void TestBossDeathBeforePickIsKill()
     b.SetMembers(Trio());
     b.Start(0, 1700000000, FightContext{}, 1);
     b.OnDamage(1, 0, 500, "Tanky", 11502, 777, "Magmadar", 1000);
-    b.NoteBossDied(11503);   // an add: not the boss picked next
-    b.NoteBossDied(11502);   // the boss, before the sampler had picked one
+    b.NoteBossDied(11503, 0);   // an add: not the boss picked next
+    b.NoteBossDied(11502, 0);   // the boss, before the sampler had picked one
     b.NoteBoss(11502, "Magmadar");
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
@@ -656,7 +656,7 @@ static void TestBossDeathBeforePickIsKill()
     Book other;   // only another creature died: the picked boss is not a kill
     other.SetMembers(Trio());
     other.Start(0, 1700000000, FightContext{}, 1);
-    other.NoteBossDied(11503);
+    other.NoteBossDied(11503, 0);
     other.NoteBoss(11502, "Magmadar");
     other.SetInCombat(false, false, 6000);
     other.SetInCombat(false, false, 9000);
@@ -664,6 +664,73 @@ static void TestBossDeathBeforePickIsKill()
     CHECK(q.size() == 1);
     CHECK(Contains(q[0], "\"boss\":11502"));
     CHECK(Contains(q[0], "\"outcome\":\"end\""));
+}
+
+// Zul'Gurub walk 25 r1 (#1453): the fight's boss is Thekal 14599 and a script changes the same unit's entry to
+// 14509 mid-fight. The fight gains a phase for the change and that unit's death is the boss's death: the core
+// reports the entry it died as (14509) with the guid's spawn entry (14599). Both payloads carry the phase.
+static void TestBossFormDeathIsKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(14599, "High Priest Thekal");
+    CHECK(b.Context().bossPhase == 1 && b.Context().bossPhaseEntry == 14599);
+    b.NoteBossForm(14509);
+    CHECK(b.Context().bossPhase == 2 && b.Context().bossPhaseEntry == 14509);
+    b.NoteBossDied(14509, 14599);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"outcome\":\"kill\""));
+    CHECK(Contains(p[0],
+        "\"boss\":14599,\"boss_name\":\"High Priest Thekal\",\"boss_phase\":2,\"boss_phase_entry\":14509"));
+    // The live payload carries them too (COMBAT_EVENTS, the fight header).
+    EventsFightHeader header;
+    header.inFight = true;
+    header.number = 1;
+    header.startMs = 1000;
+    header.startUnix = 1700000000;
+    header.fightMs = 500;
+    header.ctx = b.Context();
+    std::vector<LiveEvent> events;
+    std::string const live = BuildEventsJson(12, 77, 1, 1793210001, 1793210001000, "Cmdr", 5, 9, 249, header, events, 0);
+    CHECK(Contains(live,
+        "\"boss\":14599,\"boss_name\":\"High Priest Thekal\",\"boss_phase\":2,\"boss_phase_entry\":14509"));
+    // The phase is the changes seen + 1: a change back to his own entry counts as one more, and the same entry
+    // again does not (never decremented).
+    Book forms;
+    forms.SetMembers(Trio());
+    forms.Start(0, 1700000000, FightContext{}, 1);
+    forms.NoteBoss(14599, "High Priest Thekal");
+    forms.NoteBossForm(14509);
+    forms.NoteBossForm(14599);
+    CHECK(forms.Context().bossPhase == 3 && forms.Context().bossPhaseEntry == 14599);
+    forms.NoteBossForm(14599);
+    CHECK(forms.Context().bossPhase == 3);
+    // A fight with no boss keeps phase 0 (and no boss to change).
+    Book plain;
+    plain.SetMembers(Trio());
+    plain.Start(0, 1700000000, FightContext{}, 1);
+    CHECK(plain.Context().bossPhase == 0 && plain.Context().bossPhaseEntry == 0);
+}
+
+// An add's death is no kill (the fight's boss is the only unit whose entry is matched).
+static void TestAddDeathIsNoKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(14599, "High Priest Thekal");
+    b.NoteBossDied(15068, 0); // a Zulian Guardian
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"outcome\":\"end\""));
 }
 
 // The sampler closes a fight its lead left open as unfinished; a boss that
@@ -685,7 +752,7 @@ static void TestCloseUnfinished()
     kill.SetMembers(Trio());
     kill.Start(0, 1700000000, FightContext{}, 1);
     kill.NoteBoss(11502, "Magmadar");
-    kill.NoteBossDied(11502);
+    kill.NoteBossDied(11502, 0);
     kill.CloseUnfinished(20000);
     std::vector<std::string> q = kill.TakeFightPayloads(1, 9, seq.fn(), 1700020000, "Cmdr", 123, 55, 409);
     CHECK(q.size() == 1);
@@ -1124,6 +1191,139 @@ static void TestTailCappedByLadderStep()
     CHECK(Contains(p[0], "\"tail_spells\":[]"));
     CHECK(!Contains(p[0], "\"n\":\"T0_"));
 }
+// The payload ladder (12 -> 3 -> 3 -> 0 spells) marks every degraded build
+// with its per-bot spell cap, so the dashboard gives no verdict on a cut
+// spell list. The full build carries no marker.
+static void TestDegradedBuildsCarrySpellsCut()
+{
+    auto take = [](size_t fullSpells, size_t pad) {
+        Book b;
+        std::vector<MemberInfo> m;
+        for (uint32_t i = 0; i < 40; ++i)
+            m.push_back({i + 1, "Bot" + std::to_string(i), "mage", Role::Damage, 0});
+        b.SetMembers(m);
+        b.Start(0, 1700000000, BossCtx(), 1);
+        for (uint32_t i = 0; i < 40; ++i)
+            for (size_t j = 0; j < fullSpells; ++j)
+                b.OnCast(i + 1, "S" + std::to_string(i) + "_" + std::to_string(j) + std::string(pad, 'x'), false, 1500);
+        b.SetInCombat(true, false, 1000);
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+        Seq seq;
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+        CHECK(p.size() == 1);
+        CHECK(p[0].size() <= kPayloadByteBudget);
+        return p[0];
+    };
+    // A small fight fits the full 12-spell build: no marker.
+    CHECK(!Contains(take(3, 0), "\"spells_cut\""));
+    auto isFull = [](std::string const& js) {
+        return Count(js, "\"n\":\"S") > 3 * 40;   // the full build lists 12 per bot
+    };
+    CHECK(isFull(take(20, 0)));
+    // Step out, then bisect to the first pad whose full build no longer fits.
+    size_t lo = 0, hi = 100;
+    while (isFull(take(20, hi)))
+    {
+        lo = hi;
+        hi *= 2;
+        CHECK(hi < 100000);
+    }
+    while (lo + 1 < hi)
+    {
+        size_t mid = (lo + hi) / 2;
+        if (isFull(take(20, mid)))
+            lo = mid;
+        else
+            hi = mid;
+    }
+    // The first rung past the full build lists 3 spells per bot and says so.
+    std::string const rung3 = take(20, hi);
+    CHECK(Contains(rung3, "\"spells_cut\":3"));
+    CHECK(Count(rung3, "\"n\":\"S") <= 3 * 40);
+    CHECK(!Contains(rung3, "\"truncated\":true"));
+    // A rung that only fits with fewer death hits keeps the same marker.
+    {
+        Book b;
+        std::vector<MemberInfo> m;
+        for (uint32_t i = 0; i < 40; ++i)
+            m.push_back({i + 1, "Bot" + std::to_string(i), "mage", Role::Damage, 0});
+        b.SetMembers(m);
+        b.Start(0, 1700000000, BossCtx(), 1);
+        for (uint32_t i = 0; i < 40; ++i)
+            for (size_t j = 0; j < 20; ++j)
+                b.OnCast(i + 1, "S" + std::to_string(i) + "_" + std::to_string(j) + std::string(hi, 'x'), false, 1500);
+        for (int i = 0; i < 200; ++i)
+            b.OnDeath(1, std::string(80, 'k'), 1.0f, 2.0f, 3.0f, (uint32_t)(1500 + i));
+        b.SetInCombat(true, false, 1000);
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+        Seq seq;
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+        CHECK(p.size() == 1);
+        CHECK(Contains(p[0], "\"spells_cut\":3"));
+        CHECK(Count(p[0], "\"n\":\"S") <= 3 * 40);
+    }
+    // The 0-spell bounded form marks itself truncated with no spells; the
+    // bot-less form keeps the truncated mark with no bot rows at all.
+    {
+        Book b;
+        std::vector<MemberInfo> m;
+        for (int i = 0; i < 40; ++i)
+            m.push_back({(uint32_t)(i + 1), std::string(200, static_cast<char>('A' + (i % 26))), "mage",
+                Role::Damage, i / 5});
+        b.SetMembers(m);
+        b.Start(0, 1700000000, BossCtx(), 7);
+        for (int i = 0; i < 40; ++i)
+            for (int j = 0; j < 50; ++j)
+                b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j) + std::string(60, 'x'),
+                    false, 1500);
+        for (int i = 0; i < 200; ++i)
+            b.OnDeath(1, std::string(80, 'k'), 1.0f, 2.0f, 3.0f, (uint32_t)(1500 + i));
+        for (uint32_t e = 0; e < 500; ++e)
+            b.OnDamage(3, 0, 1, "Magey", 30000 + e, (uint64_t)(5000 + e), std::string(80, 'e'), 1600);
+        b.SetInCombat(true, false, 1000);
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+        Seq seq;
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+        CHECK(p.size() == 1);
+        CHECK(Contains(p[0], "\"truncated\":true"));
+        CHECK(!Contains(p[0], "\"n\":\"Spell"));
+    }
+    // The bot-less bounded form goes out with the same truncated mark (see
+    // TestOversizeFightOneSeqPerTake): exhausted members keep no bot rows.
+    // A caller-side BuildFightJson shape check would need the private builder;
+    // the wire mark the daemon reads is asserted here on both takes.
+    {
+        Book b;
+        std::vector<MemberInfo> m;
+        for (uint32_t i = 0; i < 200; ++i)
+            m.push_back({i + 1, std::string(3000, '\x01'), std::string(3000, '\x02'), Role::Damage, 0});
+        b.SetMembers(m);
+        FightContext ctx = BossCtx();
+        ctx.plan = std::string(20000, '\x03');
+        ctx.leg = std::string(20000, '"');
+        ctx.kind = std::string(20000, '\\');
+        ctx.bossName = std::string(20000, '\n');
+        ctx.planned.assign(20000, 4000000000u);
+        b.Start(0, 1700000000, ctx, 8);
+        b.SetInCombat(true, false, 1000);
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+        std::string const commander(30000, '\x04');
+        Seq seq;
+        std::vector<std::string> dropped;
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, commander, 123, 55, 409, &dropped);
+        CHECK(p.size() == 1);
+        CHECK(Contains(p[0], "\"truncated\":true"));
+        CHECK(Count(p[0], "\"guid\":") == kTruncatedBots);
+        CHECK(b.HasTakeablePayloads());
+        p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009001, commander, 123, 55, 409, &dropped);
+        CHECK(p.size() == 1);
+        CHECK(Contains(p[0], "\"truncated\":true"));
+    }
+}
 
 int main()
 {
@@ -1133,6 +1333,7 @@ int main()
     TestReengageReplaysOldestFirst();
     TestQuietGapCastFoldedOnReengage();
     TestTailCappedByLadderStep();
+    TestDegradedBuildsCarrySpellsCut();
     TestTailJsonField();
     TestNonMemberIgnored();
     TestFightLifecycle();
@@ -1154,6 +1355,8 @@ int main()
     TestNoteBossKeepsRunBoss();
     TestRefinedBossDeathIsKill();
     TestBossDeathBeforePickIsKill();
+    TestBossFormDeathIsKill();
+    TestAddDeathIsNoKill();
     TestCloseUnfinished();
     TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();

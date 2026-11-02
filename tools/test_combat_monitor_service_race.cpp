@@ -66,9 +66,9 @@ static void HookLoop(CombatMonitorService& svc, std::atomic<bool> const& stop, u
         svc.OnHeal(9, 800, 200);
         svc.OnEnterCombat(7);
         if ((tick % 500) == 0)
-            svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+            svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0, 0);
         if ((tick % 700) == 0)
-            svc.OnDeath(0, 11, "", 0.0f, 0.0f, 0.0f, 11502);
+            svc.OnDeath(0, 11, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     }
 }
 

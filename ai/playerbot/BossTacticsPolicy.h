@@ -17,10 +17,12 @@
 // the same lifecycle as runtime/NamedLocationIndex.h: one loading thread adds
 // rows, calls Seal() once, and readers see nothing before the seal.
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +39,9 @@ namespace ai
         KillFirst = 2,  // DPS bots kill `target_entry` before anything else; lowest `priority` first
         Behind = 3,     // non-tank bots stay out of the boss's front within `param` yd (frontal cleave)
         AvoidCast = 4,  // non-tank bots leave `param` yd around the caster while it casts `spell_id`
+        TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
+        HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
+        OneAtATime = 7, // all DPS kill one living unit of `boss_entry` at a time: the lowest health, the lowest guid on a tie
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -49,6 +54,12 @@ namespace ai
             return BossTacticKind::Behind;
         if (text == "avoid_cast")
             return BossTacticKind::AvoidCast;
+        if (text == "tank_hold")
+            return BossTacticKind::TankHold;
+        if (text == "hold_kill")
+            return BossTacticKind::HoldKill;
+        if (text == "one_at_a_time")
+            return BossTacticKind::OneAtATime;
         return BossTacticKind::None;
     }
 
@@ -87,6 +98,18 @@ namespace ai
                 return false;
             if (row.kind == BossTacticKind::AvoidCast && (row.spellId == 0 || !(row.param > 0.0f)))
                 return false;
+            // A tank_hold row is keyed by the caster's boss_entry (target_entry 0): HasTankHold reads the subject while
+            // IsTankHoldPickup looks the caster up as a boss_entry, so a target_entry would key the two differently.
+            if (row.kind == BossTacticKind::TankHold && row.targetEntry != 0)
+                return false;
+            // The same for a hold_kill row: its boss_entry is the entry the DPS leave alone and its target_entry the
+            // blocker that holds them off, so a row without a blocker could never hold anything.
+            if (row.kind == BossTacticKind::HoldKill && row.targetEntry == 0)
+                return false;
+            // A one_at_a_time row is keyed by the entry it paces, its own boss_entry (like a tank_hold row): a
+            // target_entry would leave the row's entry and the paced entry disagreeing.
+            if (row.kind == BossTacticKind::OneAtATime && row.targetEntry != 0)
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -97,6 +120,8 @@ namespace ai
             maps_[row.map] = true;
             if (row.kind == BossTacticKind::AvoidCast)
                 avoidCastMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
+                holdMaps_[row.map] = true;
             ++size_;
             return true;
         }
@@ -118,6 +143,13 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && avoidCastMaps_.find(map) != avoidCastMaps_.end();
         }
 
+        // Whether the map has a hold_kill or one_at_a_time row (the hold multiplier's scan for heals, buffs and moves
+        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). False before the seal.
+        bool HasHoldMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
         // The rows of one boss entry, or null. Null before the seal.
         const std::vector<BossTacticRow>* Rows(std::uint32_t map, std::uint32_t bossEntry) const
         {
@@ -136,6 +168,7 @@ namespace ai
         std::unordered_map<std::uint64_t, std::vector<BossTacticRow>> rows_;
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
+        std::unordered_map<std::uint32_t, bool> holdMaps_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };
@@ -178,12 +211,50 @@ namespace ai
         return radius;
     }
 
-    // Whether a bot holds a caster, so stays in its blast: only a tank the caster is on (its current victim). It holds
-    // the caster and whatever else is on it, and walking it out drags them along. A caster on nobody, or on a bot that
-    // is no tank, keeps nobody in: an off-tank and a healer the caster turned to leave like anyone else.
-    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot)
+    // The radius to keep while a creature of `casterEntry` casts out of either of its two cast slots: the wider of the
+    // rows that list the generic cast and the rows that list the channel. A caster can run both at once (a channel and
+    // a bolt), and the channel is the one a row for a channelled blast names (CURRENT_CHANNELED_SPELL, never the
+    // generic slot). An empty slot (id 0) lists nothing, so it gives 0.
+    inline float ListedCastRadius(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t genericSpellId,
+                                  std::uint32_t channeledSpellId)
     {
-        return botIsTank && casterIsOnBot;
+        return std::max(AvoidCastRadius(active, casterEntry, genericSpellId),
+                        AvoidCastRadius(active, casterEntry, channeledSpellId));
+    }
+
+    // Whether a tank_hold row lists a creature of `casterEntry`: this caster's avoid_cast blast may be held by a tank
+    // while the caster is on a non-tank (the row means "a tank may stay in this caster's blast", see HoldsCaster). The
+    // subject is the row's target_entry, or its boss_entry when that is 0, so the row is keyed by the caster's entry.
+    inline bool HasTankHold(const ActiveBossRows& active, std::uint32_t casterEntry)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::TankHold && TacticSubjectEntry(*row) == casterEntry)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a bot holds a caster, so stays in its blast (no walk-out, no cast hold). A tank holds when the caster
+    // is on it. It also holds — only for a caster whose entry has a tank_hold row — when the caster is on a non-tank
+    // AND this tank's own current target is the caster, so that one tank can take it. Walk 20's Voidwalkers on
+    // healers shocked the raid when the tanks walked out too, but holding every tank in every blast walked tanks into
+    // blasts that kill them (the Gurubashi Bat Rider's 10 yd explosion, where nothing is gained by staying); so the
+    // second case is opt-in per caster and, within that, only the tank already on the caster (every other tank leaves
+    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds.
+    inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank, bool botTargetsCaster,
+                            bool casterTankHoldRow)
+    {
+        return botIsTank && (casterIsOnBot || (casterTankHoldRow && casterIsOnNonTank && botTargetsCaster));
+    }
+
+    // Whether a tank takes the raid mark (rti). When the mark's own entry is listed by a tank_hold row it is the loose
+    // caster the row covers, and it yields to a tank_hold pickup that stands nearer to this bot: the tournament's
+    // loose bucket takes that add first, so the mark does not pull the tank off it. Without the row, or with no nearer
+    // pickup, the mark is taken as it always was.
+    inline bool TankTakesMark(bool markHasTankHoldRow, bool hasPickup, float nearestPickupDistance, float markDistance)
+    {
+        return !markHasTankHoldRow || !hasPickup || nearestPickupDistance >= markDistance;
     }
 
     // Whether a bot `distance` yd from such a caster has to leave (see HoldsCaster).
@@ -407,6 +478,108 @@ namespace ai
         return true;
     }
 
+    // A hold_kill row's blocker is counted in this radius around the bot: wide enough for the pile a Mad Servant dies
+    // in (its Portal of Madness lands at the corpse), narrow enough not to count a second pack.
+    constexpr float kHoldKillRangeYd = 50.0f;
+
+    // A DPS AoE row is held while a held boss entry's creature stands this close to the bot's current target: the AoE
+    // would take it as well (walk 21: one AoE killed four Mad Servants together, and each of them leaves two Mad
+    // Voidwalkers).
+    constexpr float kHoldKillAoeNearYd = 10.0f;
+
+    // Whether DPS leave `entry` alone right now. A hold_kill row blocks while more than `priority` living units of its
+    // target_entry (the blocker: the Mad Voidwalker a dead Mad Servant's portal summons, or the portal itself) are
+    // near, so `priority` 0 means "not one more". The count is the caller's, a grid search around the bot: a Portal of
+    // Madness is unselectable (unit_flags 33555200) and never attacks, so the bots' attacker list would never see it.
+    // The subject is the row's boss_entry; a hold_kill row's target_entry is the blocker, the thing to finish first,
+    // never the boss the row is about.
+    inline bool KillHeld(const ActiveBossRows& rows, std::uint32_t entry,
+                         const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        for (const BossTacticRow* row : rows)
+        {
+            if (row->kind != BossTacticKind::HoldKill || row->bossEntry != entry)
+                continue;
+            if (countNear(row->targetEntry) > row->priority)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a unit of a hold_kill row's blocker entry counts towards its budget: a creature fighting, or one that
+    // can never fight at all (UNIT_FLAG_NOT_SELECTABLE — the Portal of Madness 15141 only ticks its summon and is
+    // never an attacker). A loose Voidwalker that has not woken yet is neither, so it does not hold the Servant.
+    inline bool CountsAsBlocker(bool inCombat, bool notSelectable)
+    {
+        return inCombat || notSelectable;
+    }
+
+    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
+    // (KillHeld). The dps target, the dps AoE target, the group tank's victim and the raid mark all drop such a
+    // candidate, so with nothing unheld left the bot has no target and waits for the blocker to die instead of
+    // feeding the pile. The role gate is the hold-kill action's: a tank or a healer keeps its own pick (the caller
+    // passes false for them), and an explicit attack order is taken long before this runs.
+    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry,
+                               const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        return freeDpsBot && KillHeld(rows, entry, countNear);
+    }
+
+    // A living unit of the paced entry that fights, as the one_at_a_time pick sees it: health first, guid as the
+    // tie-break. `eligible` is whether it may be THE pick (not crowd-controlled, not running home); only PickSoleKill
+    // reads it. An ineligible unit is still a unit of the entry that stands in the pile, so the area veto still counts
+    // it. Every bot builds the same list from the fight-wide grid search, so the pick needs no vote and no new state.
+    struct SoleCandidate
+    {
+        std::uint64_t guid = 0;
+        int hpPct = 100;
+        bool inCombat = false;
+        bool eligible = true;
+    };
+
+    // Index of the one unit the whole fight kills next, or -1 when none of the entry fights yet: the lowest health
+    // among the eligible candidates that are in combat, the lowest guid on a tie.
+    inline int PickSoleKill(const std::vector<SoleCandidate>& c)
+    {
+        int best = -1;
+        for (std::size_t i = 0; i < c.size(); ++i)
+        {
+            if (!c[i].inCombat || !c[i].eligible)
+                continue;
+            if (best < 0 || c[i].hpPct < c[best].hpPct || (c[i].hpPct == c[best].hpPct && c[i].guid < c[best].guid))
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // Whether a unit of a one_at_a_time entry is one every bot leaves alone right now: the fight has a sole pick and it
+    // is another unit. No pick (nobody of the entry fights yet) means nothing is paced: the first unit engaged becomes
+    // the pick and every bot converges on it, fighting or not.
+    inline bool OneAtATimeHolds(std::uint64_t solePick, std::uint64_t guid)
+    {
+        return solePick != 0 && solePick != guid;
+    }
+
+    // Index of the held unit of a paced entry the area veto answers to, among the fight-wide candidates (the value's
+    // living, fighting units of the entry, crowd-controlled ones included; NOT the bot's collapsible attackers list):
+    // the first candidate within `maxDistance` (`distance[i]`, infinity for one that could not be resolved) that is held,
+    // or -1. `budgetHolds` is a hold_kill row whose blocker budget is over: every candidate of the entry is held. Else
+    // (a one_at_a_time row) every candidate except the sole pick is held, an ineligible one included, so a crowd-
+    // controlled Servant next to the cast still vetoes it. -1 when the entry has no pick yet (nothing is paced).
+    inline int HeldSubjectIndex(const std::vector<SoleCandidate>& c, const std::vector<float>& distance,
+                                float maxDistance, bool budgetHolds)
+    {
+        const int pick = PickSoleKill(c);
+        for (std::size_t i = 0; i < c.size() && i < distance.size(); ++i)
+        {
+            if (distance[i] > maxDistance)
+                continue;
+            if (budgetHolds || (pick >= 0 && OneAtATimeHolds(c[pick].guid, c[i].guid)))
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
@@ -443,6 +616,30 @@ namespace ai
             {
                 best = static_cast<int>(i);
                 bestPriority = priority;
+                bestDistance = c.distance;
+            }
+        }
+        return best;
+    }
+
+    // Index of the nearest candidate a free DPS bot may attack: the same candidate rules the kill_first pick applies
+    // (pickable, kBossTacticsEngageRange) minus the entries a hold_kill row holds, so a bot switching off a held entry
+    // lands on the blocker or a loose add and never on another held entry. -1 when nothing is left.
+    inline int PickNearestUnheld(const ActiveBossRows& rows, const std::vector<TacticCandidate>& candidates,
+                                 const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    {
+        int best = -1;
+        float bestDistance = 0.0f;
+        for (std::size_t i = 0; i < candidates.size(); ++i)
+        {
+            const TacticCandidate& c = candidates[i];
+            if (!c.pickable || c.distance > kBossTacticsEngageRange)
+                continue;
+            if (KillHeld(rows, c.entry, countNear))
+                continue;
+            if (best < 0 || c.distance < bestDistance)
+            {
+                best = static_cast<int>(i);
                 bestDistance = c.distance;
             }
         }

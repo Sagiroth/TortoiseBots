@@ -178,6 +178,10 @@ struct FightContext
     uint32_t step = 0;
     uint32_t bossEntry = 0;
     std::string bossName;
+    // The boss's phase: 1 when the fight's boss is picked, +1 for every entry change of his unit the monitor sees
+    // (Thekal's 14599 -> 14509). bossPhaseEntry: the entry he reads now (= bossEntry in phase 1).
+    uint32_t bossPhase = 0;
+    uint32_t bossPhaseEntry = 0;
     std::vector<uint32_t> planned;   // the run's step at fight start (empty plan: no run)
 };
 
@@ -285,7 +289,8 @@ inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64
                << ",\"start_ms\":" << startMsUnix << ",\"plan\":\"" << text(fight.ctx.plan) << "\",\"leg\":\""
                << text(fight.ctx.leg) << "\",\"step\":" << fight.ctx.step << ",\"kind\":\""
                << text(fight.ctx.kind) << "\",\"boss\":" << fight.ctx.bossEntry << ",\"boss_name\":\""
-               << text(fight.ctx.bossName) << "\",\"fight_ms\":" << fight.fightMs << "}";
+               << text(fight.ctx.bossName) << "\",\"boss_phase\":" << fight.ctx.bossPhase << ",\"boss_phase_entry\":"
+               << fight.ctx.bossPhaseEntry << ",\"fight_ms\":" << fight.fightMs << "}";
         }
         else
             ss << "null";
@@ -467,6 +472,12 @@ public:
         startMs_ = nowMs;
         startUnix_ = unixNow;
         ctx_ = ctx;
+        // A context that names a boss already (the run's own boss step): phase 1 is his entry, as NoteBoss records it.
+        if (ctx_.bossEntry != 0 && ctx_.bossPhase == 0)
+        {
+            ctx_.bossPhase = 1;
+            ctx_.bossPhaseEntry = ctx_.bossEntry;
+        }
         bossDied_ = false;
         enemyDeaths_.clear();
         outOfCombat_ = false;
@@ -662,19 +673,32 @@ public:
             EndFight(outOfCombatSince_, false);
     }
 
-    void NoteBossDied(uint32_t entry)   // an enemy of the open fight died
+    void NoteBossDied(uint32_t entry, uint32_t formOf)   // an enemy of the open fight died
     {
         if (!inFight_ || entry == 0)
             return;
-        if (entry == ctx_.bossEntry)
+        // The entry the guid was spawned as when a script changed it: his death is the boss's (a boss that changes
+        // entry keeps his guid, and the core reports the entry it died as).
+        if (entry == ctx_.bossEntry || (formOf != 0 && formOf == ctx_.bossEntry))
         {
             bossDied_ = true;
             return;
         }
         // The sampler picks the boss after the tick's Refresh, so a boss can die
         // before any pick: the entry is kept for the pick that comes later.
+        uint32_t const pick = formOf != 0 ? formOf : entry;
         if (enemyDeaths_.size() < kMaxEnemyDeathsPerFight)
-            enemyDeaths_.insert(entry);
+            enemyDeaths_.insert(pick);
+    }
+
+    // The entry the fight's boss unit reads now (the sampler, every tick): a script changed his entry, so the fight
+    // gains a phase. A change back to his own entry counts too: the phase is the changes seen + 1, never decremented.
+    void NoteBossForm(uint32_t entry)
+    {
+        if (!inFight_ || entry == 0 || ctx_.bossEntry == 0 || entry == ctx_.bossPhaseEntry)
+            return;
+        ctx_.bossPhaseEntry = entry;
+        ++ctx_.bossPhase;
     }
 
     // The sampler's boss: set once per fight, and never over a run's own boss.
@@ -684,6 +708,9 @@ public:
             return;
         ctx_.bossEntry = entry;
         ctx_.bossName = name;
+        // Phase 1 is his own entry; NoteBossForm moves it on when a script changes it.
+        ctx_.bossPhase = 1;
+        ctx_.bossPhaseEntry = entry;
         if (enemyDeaths_.count(entry))
             bossDied_ = true;
     }
@@ -1002,7 +1029,14 @@ private:
            << "\",\"step\":" << f.ctx.step << ",\"kind\":\"" << text(f.ctx.kind, kTruncatedTextBytes)
            << "\",\"start\":" << f.startUnix << ",\"dur_ms\":" << f.durMs << ",\"outcome\":\""
            << OutcomeName(f.outcome) << "\",\"boss\":" << f.ctx.bossEntry << ",\"boss_name\":\""
-           << text(f.ctx.bossName, kTruncatedTextBytes) << "\",\"planned\":[";
+           << text(f.ctx.bossName, kTruncatedTextBytes) << "\",\"boss_phase\":" << f.ctx.bossPhase
+           << ",\"boss_phase_entry\":" << f.ctx.bossPhaseEntry;
+        // The dashboard gives no verdict on a cut spell list: every build past
+        // the full one carries its per-bot spell cap. The full build (and old
+        // emitters) leave the field out and the daemon reads it as zero.
+        if (maxSpells < kMaxSpellsPerBot)
+            ss << ",\"spells_cut\":" << maxSpells;
+        ss << ",\"planned\":[";
         size_t const planned = truncated ? std::min(f.ctx.planned.size(), kTruncatedPlanned) : f.ctx.planned.size();
         for (size_t i = 0; i < planned; ++i)
             ss << (i ? "," : "") << f.ctx.planned[i];

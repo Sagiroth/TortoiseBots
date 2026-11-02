@@ -18,7 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind", "avoid_cast"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -105,13 +105,31 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "avoid_cast":
                 self.assertGreater(int(spell), 0, where)
                 self.assertGreater(float(param), 0.0, where)
+            if kind == "one_at_a_time":
+                self.assertEqual(int(target), 0, where)
+                self.assertEqual(int(spell), 0, where)
 
     def test_primary_keys_are_unique(self):
+        # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
+        # (20261101040000 re-inserts the Mad Voidwalker's avoid_cast row after its boss-scoped DELETE, the shape
+        # test_dungeon_plan_sql.py requires when a later migration adds a row to an existing (map, boss_entry)).
         seen = set()
-        for name, map_id, boss, kind, target, spell, _priority, _param in migration_rows():
-            key = (map_id, boss, kind, target, spell)
-            self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
-            seen.add(key)
+        for kind, payload in migration_statements():
+            if kind == "insert":
+                name, map_id, boss, row_kind, target, spell, _priority, _param = payload
+                key = (int(map_id), int(boss), row_kind, int(target), int(spell))
+                self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
+                seen.add(key)
+                continue
+            _name, match = payload
+            map_id = int(match.group(1))
+            if match.group(4):
+                seen.discard((map_id, int(match.group(3)), match.group(4), int(match.group(5)), int(match.group(6))))
+            elif match.group(2):
+                bosses = {int(entry) for entry in match.group(2).split(",")}
+                seen -= {key for key in seen if key[0] == map_id and key[1] in bosses}
+            else:
+                seen -= {key for key in seen if key[0] == map_id}
 
     def test_deletes_are_map_scoped(self):
         for path in migration_paths():
@@ -125,6 +143,33 @@ class BossTacticsSql(unittest.TestCase):
                         "DELETE not scoped by map in %s: %s" % (os.path.basename(path), line.strip()),
                     )
 
+    def test_hold_kill_paces_the_mad_servants(self):
+        # walk 21: the Mad Servant 15111's two hold_kill rows (budget 0: no DPS while a Mad Voidwalker 15146 or a
+        # Portal of Madness 15141 lives) pace the kills, so the pair of Voidwalkers a dead Servant leaves spawns one
+        # pair at a time instead of eight at once.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5]), int(row[6]))
+                for row in effective_rows()}
+        self.assertIn((309, 15111, "interrupt", 0, 24612, 0), live, "the Servant's Flamestrike row is gone")
+        self.assertIn((309, 15111, "hold_kill", 15146, 0, 0), live)
+        self.assertIn((309, 15111, "hold_kill", 15141, 0, 0), live)
+
+        # The migration that writes them DELETEs the (309, 15111) key first and re-inserts the interrupt row from
+        # 20261101020000 unchanged (its shape is what test_dungeon_plan_sql.py requires of a re-INSERTed key).
+        path = os.path.join(ROOT, "data/sql/world/20261101050000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the hold_kill migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        delete = text.index("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (15111);")
+        self.assertLess(delete, text.index("INSERT INTO `ai_boss_tactic`"))
+        with open(os.path.join(ROOT, "data/sql/world/20261101020000_world.sql"), encoding="utf-8") as handle:
+            earlier = handle.read()
+        interrupt = [line for line in earlier.splitlines() if line.startswith("(309, 15111,")]
+        self.assertEqual(len(interrupt), 1)
+        # The row's content goes back byte-identical; it is no longer the statement's last row, so its terminator is
+        # the comma the two hold_kill rows follow.
+        self.assertIn(interrupt[0].rstrip(",;") + ",", text,
+                      "the Servant's interrupt row did not go back in unchanged")
+
     def test_deleted_rows_are_gone(self):
         # pjerra/turtle-agent#246: the rows below are not interruptible under the
         # core's rule (preventionType 0, or interruptFlags without the damage bit)
@@ -133,6 +178,12 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((822, 63133, "interrupt", 0, 3143), live)
         self.assertNotIn((820, 62782, "interrupt", 62771, 36732), live)
         self.assertNotIn((70, 4854, "interrupt", 0, 8292), live)
+        self.assertNotIn((309, 14507, "interrupt", 0, 23895), live)
+        self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
+        self.assertNotIn((409, 12118, "interrupt", 12119, 20604), live)
+        self.assertNotIn((531, 15275, "interrupt", 0, 7393), live)
+        self.assertNotIn((531, 15276, "interrupt", 0, 7393), live)
+        self.assertNotIn((532, 61224, "interrupt", 0, 57094), live)
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
@@ -173,6 +224,55 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn((309, 14750, "avoid_cast", 0, 24024), live)
         self.assertGreaterEqual(live[(309, 14750, "avoid_cast", 0, 24024)], 13.0)
         self.assertNotIn((309, 14750, "interrupt", 0, 24024), live)
+
+    def test_venoxis_mad_servant_and_voidwalker_rows(self):
+        # Zul'Gurub (309), the High Priest Venoxis leg's Mad Servant / Mad Voidwalker wall. A dying Mad
+        # Servant 15111 leaves a Portal of Madness that summons two Mad Voidwalkers 15146, which channel
+        # Consuming Shadows 24614 (radius index 8 = 5 yd, 400 shadow a second). The row is avoid_cast at
+        # 5 + 3 yd: the scan reads the channel slot, and a kick does stop the channel. Flamestrike 24612 is
+        # the Servant's kickable cast (castingTimeIndex 5, interruptFlags 15); Fireball 24611 gets no row
+        # (a 0.5 s cast the first-castable-wins scan would spend the Flamestrike kicks on).
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): float(row[7]) for row in effective_rows()}
+        self.assertIn((309, 15146, "avoid_cast", 0, 24614), live)
+        self.assertEqual(8.0, live[(309, 15146, "avoid_cast", 0, 24614)])
+        self.assertIn((309, 15111, "interrupt", 0, 24612), live)
+        self.assertNotIn((309, 15146, "interrupt", 0, 24614), live)
+        self.assertNotIn((309, 15111, "interrupt", 0, 24611), live)
+        self.assertFalse([key for key in live if key[:2] == (309, 15146) and key[2] == "kill_first"])
+
+    def test_voidwalker_tank_hold_row(self):
+        # A tank_hold row (20261101040000_world.sql) is opt-in per caster: it means "a tank may stay in this caster's
+        # avoid_cast blast while the caster is on a non-tank", so the tank can pick the Mad Voidwalker 15146 up and
+        # hold it in melee. Without it a tank only holds a caster that is on the tank itself. The Gurubashi Bat Rider
+        # 14750 gets none: its Unstable Concoction blast kills whoever stands in it, so no tank may hold it.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
+        self.assertIn((309, 15146, "tank_hold", 0, 0), live)
+        self.assertFalse([key for key in live if key[2] == "tank_hold" and key[1] == 14750])
+
+    def test_one_at_a_time_paces_the_mad_servants(self):
+        # ZG walk 22: even with both hold_kill rows in, 3-4 Mad Servants of one wave were already engaged when the
+        # first died, and the free DPS split over 2-3 of them. one_at_a_time (map 309, Servant 15111) sends every DPS
+        # to the same Servant: the lowest health, the lowest guid on a tie.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
+        self.assertIn((309, 15111, "one_at_a_time", 0, 0), live)
+
+        # The migration that writes it DELETEs the (309, 15111) key first and re-inserts the interrupt row and both
+        # hold_kill rows from 20261101050000 byte-identical, the shape test_dungeon_plan_sql.py requires of a
+        # re-INSERTed key.
+        path = os.path.join(ROOT, "data/sql/world/20261101070000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the one_at_a_time migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        delete = text.index("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (15111);")
+        self.assertLess(delete, text.index("INSERT INTO `ai_boss_tactic`"))
+        with open(os.path.join(ROOT, "data/sql/world/20261101050000_world.sql"), encoding="utf-8") as handle:
+            earlier = handle.read()
+        kept = [line for line in earlier.splitlines() if line.startswith("(309, 15111,")]
+        self.assertEqual(len(kept), 3)
+        for line in kept:
+            self.assertIn(line.rstrip(",;") + ",", text,
+                          "a Mad Servant row did not go back in unchanged")
+        self.assertIn("(309, 15111, 'one_at_a_time', 0, 0, 0, 0, '", text)
 
 
 def _sql_statements(text):
@@ -395,6 +495,12 @@ class BossTacticsCoreData(unittest.TestCase):
               "(SummonAttacker in the Disciple of Naralex event)",
         7273: "sql/base/tw_world_event_scripts.sql:58, event 2488 (the eventId of the "
               "Gong of Zul'Farrak 141832, tw_world_gameobject_template.sql:72) summons him",
+        15146: "sql/base/tw_world_creature_ai_events.sql:52, event 1514101 (creature 15141, the Portal of Madness "
+               "a dying Mad Servant 15111 leaves behind with 24621) casts 24620 every 30 s, whose 24622 summons "
+               "2 Mad Voidwalkers",
+        14515: "sql/base/tw_world_event_scripts.sql:58, event 9066 (the eventId of the Gong of Bethekk 180526, tw_world_gameobject_template.sql:72) summons her",
+        12018: "src/scripts/dungeons/molten_core/instance_molten_core.cpp:652 (SummonCreature(NPC_DOMO) once the seven runes are doused)",
+        15517: "src/scripts/dungeons/temple_of_ahnqiraj/boss_ouro.cpp:462 (the Ouro spawner casts SPELL_SUMMON_OURO 26061)",
     }
 
     @classmethod
@@ -440,17 +546,18 @@ class BossTacticsCoreData(unittest.TestCase):
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
 
     def test_avoid_cast_spells_are_casts(self):
-        # The avoid_cast scan reads the caster's current generic spell, which an instant
-        # spell never stays in long enough to be seen: a cast time is required.
+        # The avoid_cast scan reads the caster's current generic spell and its channel, so a row is good when the
+        # spell is a cast (a cast time) or a channel (attributesEx 0x44): an instant spell never stays in either slot
+        # long enough to be seen.
         rows = sorted((int(row[1]), int(row[2]), int(row[5])) for row in effective_rows() if row[3] == "avoid_cast")
         problems = []
         for map_id, boss, spell in rows:
             info = self.spells.get(spell)
             if info is None:
                 problems.append("map %s boss %s spell %s: no spell_template row" % (map_id, boss, spell))
-            elif info["castingTimeIndex"] <= 1:
-                problems.append("map %s boss %s spell %s: castingTimeIndex %s, the cast is instant"
-                                % (map_id, boss, spell, info["castingTimeIndex"]))
+            elif info["castingTimeIndex"] <= 1 and not info["attributesEx"] & 0x44:
+                problems.append("map %s boss %s spell %s: castingTimeIndex %s and attributesEx 0x%x, neither a cast "
+                                "nor a channel" % (map_id, boss, spell, info["castingTimeIndex"], info["attributesEx"]))
         self.assertEqual([], problems, "avoid_cast rows the scan cannot see:\n" + "\n".join(problems))
 
     def test_boss_and_target_entries_exist(self):

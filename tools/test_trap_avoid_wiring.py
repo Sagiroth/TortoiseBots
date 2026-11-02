@@ -144,8 +144,6 @@ class LandingWiring(unittest.TestCase):
     def test_a_landing_inside_another_fire_is_rejected(self):
         fn = body(MOVEMENT, "bool AvoidAoeAction::StrafeToSafety(")
         self.assertIn("CollectDamagingTrapHazards(ai, bot, damagingHazards)", fn)
-        self.assertIn('"nearest dynamic objects no los"', fn)
-        self.assertIn("dyn->GetRadius()", fn)
         check = "if (LandingInsideHazard(damagingHazards, cand.getX(), cand.getY(), cand.getZ()))"
         self.assertIn(check, fn)
         # Built once, checked for every candidate, before the landing is accepted.

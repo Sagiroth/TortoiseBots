@@ -67,6 +67,7 @@
 #include "../runtime/BossWindowSignal.h"
 #include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
+#include "../host/CreatureForm.h" // ScriptChangedFrom: the entry a script changed a creature away from
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/CombatMonitorPolicy.h"
@@ -3094,6 +3095,25 @@ static void UpdateHeldAttacks(uint32 diff)
     }
 }
 
+// Whether the focus target is a creature a tank_hold row names (ai_boss_tactic): a caster whose avoid_cast blast a
+// tank may hold, and whose own loose adds only a tank can take off a non-tank. On such a target the focus order arms
+// the DPS and the healers and leaves the tanks to their own pick; every other target, and every map without such a
+// row, arms the tanks as before.
+static bool FocusIsTankHoldTarget(Unit* target)
+{
+    if (!target)
+        return false;
+    const std::vector<ai::BossTacticRow>* rows = ai::GetBossTactics().Rows(target->GetMapId(), target->GetEntry());
+    if (!rows)
+        return false;
+    for (const ai::BossTacticRow& row : *rows)
+    {
+        if (row.kind == ai::BossTacticKind::TankHold)
+            return true;
+    }
+    return false;
+}
+
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
 // group, every bot attacks its Skull target.
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
@@ -3101,6 +3121,7 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
+    bool const dpsOnly = FocusIsTankHoldTarget(target);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3110,6 +3131,11 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         if (!ai)
             continue;
         RelaxTacticalMovement(ai);
+        // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
+        // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
+        // whole party (the run leader counts on every focus order doing that).
+        if (dpsOnly && ai->IsTank(bot))
+            continue;
         bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
         bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
         ExecuteQuietNextAction(ai, true);
@@ -7835,6 +7861,8 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = other->GetObjectGuid().GetRawValue();
         fact.entry = other->GetEntry();
+        if (Creature* asCreature = other->ToCreature())
+            fact.formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(asCreature);
         fact.distLead = other->GetMap() == lead->GetMap() ? lead->GetDistance(other) : 1000.0f;
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
@@ -8069,14 +8097,25 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
     f.leadReaching = !(victim && party.count(victim->GetObjectGuid().GetRawValue()));
 }
 
-// Whose distance, attack rules and friendliness a raid boss fight's attackers are read by (ReadGuardFacts,
-// AddPlayerAttackers): the lead bot, or with it dead its first living off-tank in range, else any living bot on its
-// map. Null when none is.
+// Whose distance, attack rules and friendliness a raid fight's attackers are read by (ReadGuardFacts,
+// AddPlayerAttackers): the lead bot, or with it dead the member the fight is around (DungeonRun::DeadLeadGuardAnchor:
+// an off-tank in combat, else a member with attackers), else the old fallback: its first living off-tank in range (the
+// boss fight's, else the trash fight's), else any living bot on its map. Null when none is.
 Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& f)
 {
     if (lead->IsAlive())
         return lead;
+    int const fighting = TortoiseBots::DungeonRun::DeadLeadGuardAnchor(f);
+    if (fighting >= 0)
+        for (Player* bot : bots)
+            if (bot->GetName() == f.members[fighting].name && bot->IsAlive() && bot->IsInWorld() &&
+                bot->GetMap() == lead->GetMap())
+                return bot;
     for (std::string const& name : f.raid.bossOffTanksAlive)
+        for (Player* bot : bots)
+            if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+                return bot;
+    for (std::string const& name : f.raid.offTanksAlive)
         for (Player* bot : bots)
             if (bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
                 return bot;
@@ -8097,10 +8136,13 @@ Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, Tortoise
 // attackers within kRaidBossGuardYd count, each with its victim's name, and with the lead bot dead (or no tank) the
 // raid's attackers are still read, around a living anchor (DungeonRun::GuardReadMode), so an off-tank takes the boss
 // off a non-tank (DungeonRun::RaidGuardTick).
+// `raidTrashOffTanks`: a raid's trash fight whose off-tanks pick up (DungeonRun::RaidTrashFight with a living
+// off-tank): the lead bot dead, the same read is on within kGuardYd, so those off-tanks still take the loose mobs off
+// the healers (DungeonRun::GuardTarget's dead-lead branch). Never a party run's, and a boss fight's own case above.
 // `raidWalk`: a raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main
 // tank into Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin). Only until the run joins the fight.
 void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f,
-    ai::PlanStep const* hold, bool raidBoss, bool raidWalk = false)
+    ai::PlanStep const* hold, bool raidBoss, bool raidTrashOffTanks, bool raidWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     PlayerbotAI* leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
@@ -8111,7 +8153,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         ReadReachFacts(lead, leadAi, bots, f);
         f.leadIsTank = PlayerbotAI::IsTank(lead);
     }
-    GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);
+    GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss, raidTrashOffTanks);
     if (mode == GuardRead::None)
         return;
     Player* const anchor = RaidGuardAnchor(lead, bots, f);
@@ -8203,6 +8245,11 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
             fact.distLead = mobYd;
+            // Where the add stands: the healer guard picks the nearest ranged dps by its distance to it
+            // (DungeonRun::RaidHealerGuard).
+            fact.x = attacker->GetPositionX();
+            fact.y = attacker->GetPositionY();
+            fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
             fact.engaged = true;
@@ -8411,6 +8458,37 @@ std::vector<std::vector<int>> CreatureSpawnGameEvents(std::vector<uint32> const&
     return events;
 }
 
+// The boss step's own spawn: the spawn row nearest to the step's point (the instance search's rule, shared with the
+// step's read), and the creature it stands for by guid, whatever entry that creature reads now (a script may have
+// changed it away from the row's).
+uint32 OwnBossSpawnLow(uint32 mapId, ai::PlanStep const& step)
+{
+    uint32 own = 0;
+    float ownYd = 0.0f;
+    for (uint32 low : BossSpawnLowGuids(mapId, step.entry))
+        if (CreatureData const* data = sObjectMgr.GetCreatureData(low))
+        {
+            float const yd = ai::PlanDistance(data->position.x, data->position.y, data->position.z,
+                step.x, step.y, step.z);
+            if (!own || yd < ownYd)
+            {
+                own = low;
+                ownYd = yd;
+            }
+        }
+    return own;
+}
+
+Creature* OwnBossSpawnCreature(Player* lead, ai::PlanStep const& step)
+{
+    Map* map = lead->GetMap();
+    if (!map)
+        return nullptr;
+    uint32 const own = OwnBossSpawnLow(lead->GetMapId(), step);
+    CreatureData const* data = own ? sObjectMgr.GetCreatureData(own) : nullptr;
+    return data ? map->GetCreature(data->GetObjectGuid(own)) : nullptr;
+}
+
 // A boss step's instance search (DungeonRun::Facts::bossSearch*), on the tick after the policy asked for it
 // (Run::bossSearchWanted, once per kBossSearchMs window): every spawn of the boss's entry on the lead bot's map,
 // looked up by guid in that map (no grid or world scan), wherever it stands. Alive: one lives (where); dead: one
@@ -8427,18 +8505,7 @@ void ReadBossInInstance(ai::PlanStep const& step, Player* lead, TortoiseBots::Du
     std::vector<uint32> const& spawns = BossSpawnLowGuids(lead->GetMapId(), step.entry);
     f.bossSearchNoSpawn = spawns.empty();
     // The step's own spawn: the spawn row nearest to the step's point.
-    uint32 own = 0;
-    float ownYd = 0.0f;
-    for (uint32 low : spawns)
-        if (CreatureData const* data = sObjectMgr.GetCreatureData(low))
-        {
-            float const yd = ai::PlanDistance(data->position.x, data->position.y, data->position.z, step.x, step.y, step.z);
-            if (!own || yd < ownYd)
-            {
-                own = low;
-                ownYd = yd;
-            }
-        }
+    uint32 own = OwnBossSpawnLow(lead->GetMapId(), step);
     float corpseFromSpot = 0.0f;
     for (uint32 low : spawns)
     {
@@ -8453,13 +8520,16 @@ void ReadBossInInstance(ai::PlanStep const& step, Player* lead, TortoiseBots::Du
             f.bossSearchUnloaded = true;
             continue;
         }
-        if (!creature || creature->GetEntry() != step.entry)
+        // A script may have changed his entry away from the row's (the guid keeps the spawn's): he is still the boss.
+        if (!creature || (creature->GetEntry() != step.entry &&
+                          TortoiseBots::DungeonRun::ScriptChangedFrom(creature) != step.entry))
             continue;
         if (creature->IsAlive())
         {
             if (!f.bossSearchAlive)
             {
                 f.bossSearchAlive = true;
+                f.bossSearchAliveEntry = creature->GetEntry();
                 f.bossAliveX = creature->GetPositionX();
                 f.bossAliveY = creature->GetPositionY();
                 f.bossAliveZ = creature->GetPositionZ();
@@ -9056,6 +9126,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.on = true;
         // AiPlayerbot.DungeonRunRaidBossRules: the raid's boss fight rules (DungeonRun::RaidBossRulesFight).
         f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;
+        // AiPlayerbot.DungeonRunRaidHealerGuard: an add on a healer goes to the ranged dps first (RaidHealerGuard).
+        f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).
@@ -9106,7 +9178,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.yd = yd;
         // The raid trash guard sends a loose mob to a living off-tank near the
         // lead bot and not busy with a commander task (DungeonRun::RaidTrashFight).
-        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
+        // With the lead bot dead, any on its map: the fight may have moved off its body.
+        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() &&
+            (yd <= kGuardYd || !lead->IsAlive()) &&
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.offTanksAlive.push_back(member.name);
         // ... and with AiPlayerbot.DungeonRunRaidBossRules the boss fight's off-tanks, raid-wide: within
@@ -9144,6 +9218,13 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
+        // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
+        // (DungeonRun::RaidHealerGuard). Never one busy with a commander task, as the off-tank lists are not.
+        member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot) &&
+            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue());
+        // Its current target: the unit it has selected (AttackAction sets it), which a healer guard assignment reads
+        // to tell a bot that has its add from one that never took it up (DungeonRun::RaidHealerGuard).
+        member.targetGuid = bot->GetSelectionGuid().GetRawValue();
         // A rogue's pre-pull Sap trigger (SapCcMarkTrigger) fires only for a bot with a live client master and Sap
         // on: without it the run orders no Sap (DungeonRun::PickCcOrder).
         member.canSap = (member.cc & CcBit(CcFamily::Sap)) && memberAi && memberAi->HasRealPlayerMaster() &&
@@ -9191,6 +9272,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 raidManas.push_back(mana);
         }
     }
+    // With the lead bot dead the off-tanks above are raid-wide on its map: keep those in the fight (in combat, or within
+    // kGuardYd of a member with attackers), so an idle one far off does not anchor the guard's read
+    // (DungeonRun::DropIdleDeadLeadOffTanks).
+    if (f.raid.on && !lead->IsAlive())
+        TortoiseBots::DungeonRun::DropIdleDeadLeadOffTanks(f);
     if (f.raid.on)
     {
         f.minHealthPct = TortoiseBots::RaidLayout::RestFloor(raidHealths, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
@@ -9246,9 +9332,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // pick are once per fight.
         bool const raidWalk = current && current->kind == ai::PlanStepKind::Move && !slot.run.raidWalkJoined &&
             TortoiseBots::DungeonRun::RaidTrashFight(slot.run, f);
+        // A raid's trash fight whose off-tanks pick up (DungeonRun::RaidTrashOffTanks): the guard read is on with the
+        // lead bot dead too, so they still take the loose mobs off the healers (DungeonRun::GuardReadMode).
         ReadGuardFacts(lead, bots, f,
             current && current->kind == ai::PlanStepKind::Hold ? current : nullptr,
-            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f), raidWalk);
+            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f),
+            TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f), raidWalk);
     }
 
     // A hold's done condition on every tick, its spot in sight or not
@@ -9294,6 +9383,41 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 entries.push_back(step->entry);
             float const range = std::min(toPoint + step->radius, 2.0f * kSeeYd);
             float bossCorpseFromSpot = 0.0f;
+            // The step's own spawn, looked up by guid whatever entry it reads now: the entries above never list a
+            // boss a script changed (Thekal's 14599 -> 14509), so his own corpse would go unseen and his step would
+            // wait for him. Dead: boss down at once, wherever he lies, and the corpse fields below are his. Alive
+            // under a changed entry: the entry it reads now joins the read, so he is listed with the rest.
+            if (step->kind == ai::PlanStepKind::Boss)
+            {
+                if (Creature* own = OwnBossSpawnCreature(lead, *step))
+                {
+                    // The gate reads the spawn row's place, not the creature's: a dragged boss dies far from
+                    // his row, while a far row's creature may die near the step.
+                    CreatureData const* row = own->GetCreatureData();
+                    float const rowX = row ? row->position.x : own->GetPositionX();
+                    float const rowY = row ? row->position.y : own->GetPositionY();
+                    float const ownFromSpot2d = std::sqrt(
+                        (rowX - step->x) * (rowX - step->x) +
+                        (rowY - step->y) * (rowY - step->y));
+                    if (!own->IsAlive())
+                    {
+                        if (TortoiseBots::DungeonRun::OwnSpawnIsTheBoss(own->GetEntry(),
+                                TortoiseBots::DungeonRun::ScriptChangedFrom(own), step->entry, ownFromSpot2d))
+                        {
+                            f.bossOwnDead = true;
+                            f.bossOwnDeadEntry = own->GetEntry();
+                            f.bossCorpseGuid = own->GetObjectGuid().GetRawValue();
+                            f.bossCorpseX = own->GetPositionX();
+                            f.bossCorpseY = own->GetPositionY();
+                            f.bossCorpseZ = own->GetPositionZ();
+                            bossCorpseFromSpot = DistanceTo(own, step->x, step->y, step->z);
+                        }
+                    }
+                    else if (TortoiseBots::DungeonRun::ScriptChangedFrom(own) == step->entry &&
+                        std::find(entries.begin(), entries.end(), own->GetEntry()) == entries.end())
+                        entries.push_back(own->GetEntry());
+                }
+            }
             // A pull step's read (DungeonRun::ClassifyPullRead): the policy decides the radius, the residue band,
             // spawn ownership and the waypoint followers; the glue only measures. The grid search reaches as far as
             // a spawn-owned patroller may be listed, and only while the gate is on.
@@ -9341,14 +9465,19 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 // The boss's own entry is looked for farther: his corpse may lie
                 // where a pullback dragged him (DungeonRun::Facts::bossDeadNearSpot).
-                bool const bossEntry = step->kind == ai::PlanStepKind::Boss && entry == step->entry;
+                bool const bossRange = step->kind == ai::PlanStepKind::Boss && entry == step->entry;
                 std::list<Creature*> found;
                 lead->GetCreatureListWithEntryInGrid(found, entry,
-                    bossEntry ? std::min(toPoint + step->radius + kSeeYd, 2.0f * kSeeYd)
+                    bossRange ? std::min(toPoint + step->radius + kSeeYd, 2.0f * kSeeYd)
                               : pullStep ? packRange : range);
                 for (Creature* creature : found)
                 {
                     float const fromPoint = DistanceTo(creature, step->x, step->y, step->z);
+                    // The step's boss, whatever entry he reads now (DungeonRun::IsStepBoss): the corpse and the loot
+                    // mark below are his, and the unit carries the entry a script changed him away from.
+                    uint32 const formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
+                    bool const bossEntry = step->kind == ai::PlanStepKind::Boss &&
+                        (creature->GetEntry() == step->entry || formOf == step->entry);
                     if (!creature->IsAlive())
                     {
                         // "Boss down" needs his corpse in sight, not just his absence (a patrol).
@@ -9356,8 +9485,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                             f.bossDeadNearSpot = true;
                         if (bossEntry && lead->GetDistance(creature) <= kSeeYd)
                             f.bossDeadNearLead = true;
-                        // The corpse the run remembers for a later loot step: the one nearest to the spot.
-                        if (bossEntry && (fromPoint <= step->radius + kSeeYd || lead->GetDistance(creature) <= kSeeYd) &&
+                        // The corpse the run remembers for a later loot step: the one nearest to the spot. Not while
+                        // the own spawn above already named the corpse: the grid's nearer entry corpse must not move it.
+                        if (!f.bossOwnDead && bossEntry && (fromPoint <= step->radius + kSeeYd || lead->GetDistance(creature) <= kSeeYd) &&
                             (!f.bossCorpseGuid || fromPoint < bossCorpseFromSpot))
                         {
                             f.bossCorpseGuid = creature->GetObjectGuid().GetRawValue();
@@ -9439,6 +9569,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     UnitFact unit;
                     unit.guid = creature->GetObjectGuid().GetRawValue();
                     unit.entry = creature->GetEntry();
+                    unit.formOf = formOf;
                     unit.distLead = lead->GetDistance(creature);
                     unit.z = creature->GetPositionZ(); // the passed-boss pause reads the unit's real height off it
                     // Hostile or neutral may be pulled; only a friendly one is left alone.
@@ -10326,8 +10457,10 @@ void ReadRunPlayers(DungeonRunSlot const& slot, uint64 commanderRaw, Player* lea
     ai::PlanStep const* current = TortoiseBots::DungeonRun::FactStep(slot.run);
     ai::PlanStep const* hold = current && current->kind == ai::PlanStepKind::Hold ? current : nullptr;
     bool const raidBoss = TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f);
+    // A raid's trash fight whose off-tanks pick up: the same read with the lead bot dead (DungeonRun::GuardReadMode).
+    bool const raidTrashOffTanks = TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f);
     if (fresh)
-        ReadGuardFacts(lead, bots, f, hold, raidBoss);
+        ReadGuardFacts(lead, bots, f, hold, raidBoss, raidTrashOffTanks);
     AddPlayerAttackers(lead, bots, fighting, f, hold, raidBoss);
 }
 
@@ -10821,6 +10954,8 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         it = DungeonRuns().find(commanderRaw);
         if (it == DungeonRuns().end())
             return;
+        // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
+        TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
         if (accepted && captured.movePathRead)
             TortoiseBots::DungeonRun::NoteMovePathType(it->second.run, order, captured.movePathType);
         // A stalled walk's `direct` move refused: the walk goes on without it (DungeonRun::StallDirectRefused).
@@ -13619,18 +13754,34 @@ static void SampleBoundFights(uint32 diff)
         // The boss from data: world-boss rank, an instance-bind flag, or a plan
         // boss step of the lead's map (the boss list's rule), most health first.
         std::vector<BoundFight::BossCandidate> candidates;
+        // The fight's boss entry: a creature a script changed the entry of is picked (and named) under it, and the
+        // unit that reads it now tells the fight its phase (NoteBossForm, one change at a time).
+        uint32 const bossEntry = CombatMonitorService::Instance().BossEntry(binding->groupId);
         for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(binding->groupId))
         {
             BoundFight::BossCandidate c;
             c.entry = u.entry;
             c.guid = u.guid;
             c.name = u.name;
-            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(u.entry))
+            uint32 formOf = 0;
+            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
+            {
+                c.maxHealth = unit->GetMaxHealth();
+                if (Creature* creature = unit->ToCreature())
+                    formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
+            }
+            if (formOf)
+            {
+                c.entry = formOf;
+                if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(formOf))
+                    c.name = info->name;
+                if (formOf == bossEntry)
+                    CombatMonitorService::Instance().NoteBossForm(binding->groupId, u.entry);
+            }
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(c.entry))
                 c.boss = info->rank == CREATURE_ELITE_WORLDBOSS ||
                     (info->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND);
-            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), u.entry);
-            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
-                c.maxHealth = unit->GetMaxHealth();
+            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), c.entry);
             candidates.push_back(std::move(c));
         }
         int const picked = BoundFight::PickBoss(candidates);

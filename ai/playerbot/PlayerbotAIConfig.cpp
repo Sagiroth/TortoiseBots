@@ -3,6 +3,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/AmmoStackPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossStandMgr.h"
 #include "playerbot/DungeonPlanMgr.h"
 #include "../../runtime/BotNames.h"
 #include "../../runtime/HireLevelPolicy.h"
@@ -140,6 +141,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonSelfClear = config.GetBoolDefault("AiPlayerbot.DungeonSelfClear", true);
     dungeonRunRaid = config.GetBoolDefault("AiPlayerbot.DungeonRunRaid", false);
     dungeonRunRaidBossRules = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidBossRules", false);
+    dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
@@ -1286,6 +1288,8 @@ bool PlayerbotAIConfig::Initialize()
     sRandomBotFacade.LoadNamedLocationCache();
     sLog.outString("Loading boss tactics.");
     ai::LoadBossTactics();
+    sLog.outString("Loading boss stand sets.");
+    ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");
     ai::LoadDungeonPlans();
     sRandomBotFacade.LoadBattleMastersCache();

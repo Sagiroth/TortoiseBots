@@ -131,7 +131,7 @@ nodes:
   - id: play-boss-tactics
     path: play/boss-tactics.md
     category: play
-    summary: The per-boss tactics table (ai_boss_tactic) and the opt-in boss tactics strategy that applies it.
+    summary: The per-boss tactics table (ai_boss_tactic), the stand sets (ai_boss_stand) and the opt-in boss tactics strategy that applies them.
   - id: play-known-limitations
     path: play/known-limitations.md
     category: play

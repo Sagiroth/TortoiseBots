@@ -180,6 +180,7 @@ func numPtr(r json.RawMessage) *float64 {
 }
 
 // rawTime reads a time as unix seconds: a number (seconds, or milliseconds when huge) or an ISO 8601 string.
+// A zone-less string parses as UTC.
 func rawTime(r json.RawMessage) int64 {
 	if f, ok := rawNum(r); ok {
 		if f > 1e11 {

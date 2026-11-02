@@ -29,7 +29,13 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
         src = (VALUES / "DpsTargetValue.cpp").read_text()
         for start in ("Unit* DpsTargetValue::Calculate()", "Unit* DpsAoeTargetValue::Calculate()"):
             fn = body(src, start, "\n}\n")
-            self.assertRegex(fn, r"if \(rti && !AttackersValue::IsKeepoutSetAside\(rti, bot\)\) return rti;", start)
+            # The mark is refused when the keep-out set it aside (this book) and when a hold_kill or one_at_a_time
+            # row holds it (HeldDpsTarget): both drop it to the next pick.
+            self.assertRegex(
+                fn,
+                r"if \(rti && !AttackersValue::IsKeepoutSetAside\(rti, bot\) && !HeldDpsTarget\(ai, bot, rti\)\) "
+                r"return rti;",
+                start)
         tank = body((VALUES / "TankTargetValue.cpp").read_text(), "Unit* TankTargetValue::Calculate()", "\n}\n")
         self.assertIn("AttackersValue::IsKeepoutSetAside(rti, bot)", tank)
 

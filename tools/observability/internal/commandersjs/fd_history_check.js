@@ -30,7 +30,7 @@ const ctx = { console, Date: { now: () => clock }, encodeURIComponent, decodeURI
 vm.createContext(ctx);
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("fdHistCmdLoad"), grab("cmdHistoryBind"), grab("fdHistoryListHtml"), grab("fdOverviewHtml"),
-  grab("fdEmptyNote"), grab("fdDayFights"), "var FD_HIST_MS = 10000;",
+  grab("fdEmptyNote"), grab("fdDayFights"), grab("fdHistFetch"), "var FD_HIST_MS = 10000;",
   grabLine("fdHistCmd"), grabLine("fdHistRow"), grabLine("FD_HISTCMD_MS"), grabLine("FD_EMPTY"), grabLine("fdHistNamed"),
   "var state = { commanders: { list: [] } };",
   "var fdPage = { open: null };",
@@ -104,7 +104,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =
   assert.strictEqual(calls(), 2, "the list is asked again once the minute passed");
   assert.strictEqual(plain(run("fdHistCmd.list.length")), 2, "a failed refresh keeps the commanders already known");
 
-  // ---- 5. the day history call never carries an empty day (the daemon answers that with 400) ----------------------------
+  // ---- 5. the days call carries the zone, and the night call carries its night -------------------------------------
   run("fetchFail = false; fetchPayload = []; fetchUrls.length = 0");
   const fd = { hist: {}, histPending: {} };
   let got = "unset";
@@ -115,8 +115,10 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =
   await settle();
   assert.deepStrictEqual(plain(run("fetchUrls")), ["/api/v1/combat/history?commander=Glacienne&day=2026-10-30"]);
   assert.ok(!/day=(&|$)/.test(run("fetchUrls[0]")), "no empty day param");
-  assert.ok(/fdDayFights\(fd, bind, today, /.test(src) && /fdDayFights\(fd, bind, fd\.day, /.test(src),
-    "both callers pass a real day (today for Tonight, the chosen night otherwise)");
+  run("fetchUrls.length = 0");
+  assert.ok(/fdNightParams\(\)/.test(src), "the night paths carry the zone");
+  assert.ok(/fdNightFights\(fd, bind, tonight, /.test(src) && /fdNightFights\(fd, bind, fd\.day, /.test(src),
+    "both callers pass a real night (tonight for Tonight, the chosen night otherwise)");
 
   console.log("fd history ok");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -111,6 +111,9 @@ namespace ai
     {
     public:
         DragonFlankAction(PlayerbotAI* ai, std::string name = "dragon flank") : MovementAction(ai, name) {}
+        // A bot a stand set seats (ai_boss_stand) is never picked as a reaction: picking it already stops the bot's
+        // move and cast, which would cancel the walk to the seat every tick.
+        bool isUseful() override;
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     };
@@ -166,6 +169,9 @@ namespace ai
     {
     public:
         RaidSpreadAction(PlayerbotAI* ai, std::string name = "raid spread") : MovementAction(ai, name) {}
+        // A bot a stand set seats (ai_boss_stand) is never picked as a reaction: picking it already stops the bot's
+        // move and cast, which would cancel the walk to the seat every tick.
+        bool isUseful() override;
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     };

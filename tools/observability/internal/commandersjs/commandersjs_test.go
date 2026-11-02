@@ -102,6 +102,13 @@ func TestFightDebugState(t *testing.T) {
 	runCheck(t, "fightdebug_state_check.js", "../../web/static/js/app.js")
 }
 
+// TestFDLeanJS runs fd_lean_check.js: the lean fight rail (details only for the opened fight, clean trash folded per leg and run,
+// the per-viewer "Show all fights" box, Tonight's two-hour window with "Load older", the keyed rail repaint, the run strip's
+// summary death marks).
+func TestFDLeanJS(t *testing.T) {
+	runCheck(t, "fd_lean_check.js", "../../web/static/js/app.js")
+}
+
 // TestFDMatchUI runs fd_match_check.js: the debugger's header like the approved prototype (its own title and chips, the
 // refresh picker, the short map legend, the raid frames' dead and mana counts) while Live mode keeps every dropped element.
 func TestFDMatchUI(t *testing.T) {
@@ -316,7 +323,31 @@ func TestFightPackParityJS(t *testing.T) {
 // (web/static/js/fighthistory.js) and the two builders app.js feeds from them (the day select, the pack rows that open a
 // past fight, the Live card that belongs to Tonight, and every name escaped).
 func TestFightHistoryJS(t *testing.T) {
+	// Nights are local (06:00 rollover), so the picker's absolute nights need a pinned zone; UTC keeps noon inside the night.
+	t.Setenv("TZ", "UTC")
 	runCheck(t, "fighthistory_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
+}
+
+// TestDashDatesJS runs dashtime_check.js under Europe/Oslo: every clock time the dashboard shows is the browser's local
+// time (feeds, incident table, "since HH:MM", pack table), nights roll over at 06:00 local while the server keeps its UTC
+// day files, and the Saved fights list passes the row's unix seconds straight to whenLabel.
+func TestDashDatesJS(t *testing.T) {
+	t.Setenv("TZ", "Europe/Oslo")
+	runCheck(t, "dashtime_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
+}
+
+// TestNightParitySantiagoJS runs night_parity_check.js under America/Santiago: FightHistory.nightOf answers the same
+// night as the Go nightOf over the hours around the midnight-DST days (2024-09-09 00:15 is the night of 2024-09-08).
+func TestNightParitySantiagoJS(t *testing.T) {
+	t.Setenv("TZ", "America/Santiago")
+	runCheck(t, "night_parity_check.js", "../../web/static/js/fighthistory.js", filepath.Join("testdata", "night-parity-santiago.json"))
+}
+
+// TestNightParityNewYorkJS runs night_parity_check.js under America/New_York: the same parity over the US spring-forward
+// and fall-back weekends.
+func TestNightParityNewYorkJS(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	runCheck(t, "night_parity_check.js", "../../web/static/js/fighthistory.js", filepath.Join("testdata", "night-parity-newyork.json"))
 }
 
 // TestFdLiveEngagedJS runs fd_live_engaged_check.js: a live fight exists only while a hostile unit is engaged with the
