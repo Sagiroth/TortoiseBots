@@ -739,36 +739,82 @@ namespace ai
     // The release latch: once a member dies while the group is released (every living member at or below `param` %),
     // the burn runs on for the rest of the group even if a heal brings one back above `param` or a raise restores a
     // member to full health (both would otherwise re-hold the group mid-burn and split the raid's damage again).
-    // Cleared once no member lives, or `kLinkedDeathLatchMs` after the death, so a fight that cannot finish the trio
-    // goes back to the equalise hold instead of burning one member at a time forever.
+    // A death is an explicit one: a known member's guid that the observing bot finds dead or as a corpse
+    // (LinkedDeathUnseen lists the known guids the read did not see living, for the caller to look up). A member that is
+    // merely not seen (out of range, not in the cache) is never a death, so two bots with different views cannot latch
+    // the release between them. Each death counts once. Cleared once every known member is confirmed dead, or
+    // `kLinkedDeathLatchMs` after the death, so a fight that cannot finish the trio goes back to the equalise hold
+    // instead of burning one member at a time forever.
     constexpr std::uint32_t kLinkedDeathLatchMs = 15000;
     struct LinkedDeathLatch
     {
         bool latched = false;
-        std::uint32_t sinceMs = 0;
-        bool released = false;      // the group was released on the last read
-        std::uint32_t living = 0;   // ... with this many living members
+        std::uint32_t sinceMs = 0;          // when the latch was set (the read that saw the death)
+        std::uint64_t deadGuid = 0;         // the member whose death set it
+        bool released = false;              // the group was released on the last read
+        std::vector<std::uint64_t> known;   // every member guid seen living in this fight
+        std::vector<std::uint64_t> dead;    // the known guids confirmed dead (each counted once)
     };
 
-    // One read of the group updates the latch and answers whether it is on. `releasedNow`: LinkedDeathReleased this
-    // read; `living`: the group's living members; `nowMs`: the world clock.
-    inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, bool releasedNow, std::uint32_t living,
-                                     std::uint32_t nowMs)
+    inline bool LinkedDeathHasGuid(const std::vector<std::uint64_t>& guids, std::uint64_t guid)
     {
-        if (living == 0)
+        return std::find(guids.begin(), guids.end(), guid) != guids.end();
+    }
+
+    // The known members this read did not see living and that are not yet counted dead: the guids the caller looks up
+    // with its own unit lookup. Not seeing one is not a death; only a unit found dead is (LinkedDeathLatchTick's
+    // `deadNow`).
+    inline std::vector<std::uint64_t> LinkedDeathUnseen(const LinkedDeathLatch& latch,
+                                                        const std::vector<LinkedMember>& members)
+    {
+        std::vector<std::uint64_t> unseen;
+        for (std::uint64_t guid : latch.known)
+        {
+            if (LinkedDeathHasGuid(latch.dead, guid))
+                continue;
+            bool living = false;
+            for (const LinkedMember& member : members)
+                if (member.guid == guid)
+                    living = true;
+            if (!living)
+                unseen.push_back(guid);
+        }
+        return unseen;
+    }
+
+    // One read of the group updates the latch and answers whether it is on. `releasedNow`: LinkedDeathReleased this
+    // read; `members`: the living members this read saw; `deadNow`: the LinkedDeathUnseen guids the caller found dead;
+    // `nowMs`: the world clock. A death latches only when the previous read was released too.
+    inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, bool releasedNow, const std::vector<LinkedMember>& members,
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs)
+    {
+        for (const LinkedMember& member : members)
+        {
+            if (!LinkedDeathHasGuid(latch.known, member.guid))
+                latch.known.push_back(member.guid);
+            // A living member is no death: a raise undoes an earlier one, so its next death counts again.
+            latch.dead.erase(std::remove(latch.dead.begin(), latch.dead.end(), member.guid), latch.dead.end());
+        }
+        if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
+            latch.latched = false;
+        for (std::uint64_t guid : deadNow)
+        {
+            if (!LinkedDeathHasGuid(latch.known, guid) || LinkedDeathHasGuid(latch.dead, guid))
+                continue;
+            latch.dead.push_back(guid);
+            if (!latch.latched && latch.released && releasedNow)
+            {
+                latch.latched = true;
+                latch.sinceMs = nowMs;
+                latch.deadGuid = guid;
+            }
+        }
+        latch.released = releasedNow;
+        if (members.empty() && latch.dead.size() == latch.known.size())
         {
             latch = LinkedDeathLatch();
             return false;
         }
-        if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
-            latch.latched = false;
-        if (!latch.latched && latch.released && releasedNow && living < latch.living)
-        {
-            latch.latched = true;
-            latch.sinceMs = nowMs;
-        }
-        latch.released = releasedNow;
-        latch.living = living;
         return latch.latched;
     }
 

@@ -233,8 +233,8 @@ std::mutex g_holdKillLogMutex;
 std::unordered_map<uint64, uint32> g_holdKillLog;
 
 // The linked_death release latch per group and map instance: map, instance, anchor, group id. Its state is the group's
-// (a heal or a raise must not re-hold it for one bot while another still burns), and a fight at the group's map
-// instance ends with all three dead, which clears it (LinkedDeathLatchTick).
+// (a heal or a raise must not re-hold it for one bot while another still burns). Its members are tracked by guid and
+// only an explicit death of a known one latches it; every known member confirmed dead clears it (LinkedDeathLatchTick).
 std::mutex g_linkedDeathLatchMutex;
 std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint8_t>, LinkedDeathLatch>
     g_linkedDeathLatches;
@@ -469,13 +469,21 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
         }
         groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);
         // The latch is per group and instance: a member that dies while the group is released keeps the burn on for
-        // the rest of the group (M2), whichever bot reads it first. Read with no living member too, so the all-dead
-        // read clears it instead of leaving a stale latch behind.
+        // the rest of the group (M2), whichever bot reads it first. A known member this bot did not see living is looked
+        // up by its own guid: only a unit found dead (or a corpse) is a death. One that is merely out of this bot's range
+        // or cache is not, so two bots with different views cannot latch the release between them.
         std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);
         LinkedDeathLatch& latch = g_linkedDeathLatches[std::make_tuple(bot->GetMapId(), bot->GetInstanceId(),
                                                                       groupScan.anchor, groupScan.groupId)];
-        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.released,
-            static_cast<std::uint32_t>(groupScan.members.size()), WorldTimer::getMSTime());
+        std::vector<std::uint64_t> deadNow;
+        for (std::uint64_t guid : LinkedDeathUnseen(latch, groupScan.members))
+        {
+            Unit* known = ai->GetUnit(ObjectGuid(guid));
+            if (known && !known->IsAlive())
+                deadNow.push_back(guid);
+        }
+        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.released, groupScan.members, deadNow,
+                                                 WorldTimer::getMSTime());
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }
