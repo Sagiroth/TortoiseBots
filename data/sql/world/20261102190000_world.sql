@@ -3,8 +3,8 @@
 -- there and export again, never these rows by hand. The plan row carries the unit lists cc_priority, cc_always and kill_first
 -- (columns from 20261015200000_world.sql). Never edit this file once applied; export a new one.
 --
--- PORTED, NOT RE-INVENTED: the export of turtle-agent d8a3040's dungeons/zulfarrak.json with
--- `turtle-agent plan-export --allow-draft --approach-hops --mmaps <map 209 mmaps> --rev d8a3040
+-- PORTED, NOT RE-INVENTED: the export of turtle-agent 2f8583e's dungeons/zulfarrak.json with
+-- `turtle-agent plan-export --allow-draft --approach-hops --mmaps <map 209 mmaps> --rev 2f8583e
 -- --drop-companions-loot --carrier-chests --with-optional gahzrilla --stamp 20261102190000 zulfarrak`,
 -- 20 legs, 347 steps (368 rows). It replaces 20261025002900 (18 legs, 247 steps): #243 adds the Farraki Arena
 -- (leg 8: gossip 62498 then a units hold with flag 16384, kPlanFlagResetToGossip, which goes back to the gossip
@@ -12,7 +12,8 @@
 -- flag 32768 (kPlanFlagDeadGossipOk: its gossip row counted the dead Bly as done). Both flags need a TortoiseBots
 -- module built with #243's and #1455's policy; an older module ignores the bits and the holds wait out their
 -- timeouts. The Gahzrilla leg is in the rows (--with-optional): the Mallet of Zul'Farrak 9240 is GM-added
--- (.additem 9240 on the lead bot before .bot run start; AiPlayerbot.BotGossipNpcs must list 62498 and 7604).
+-- (.additem 9240 on the lead bot before .bot run start). The run's own gossip steps talk to 62498 and 7604 without
+-- AiPlayerbot.BotGossipNpcs: a bot of a running or paused run may talk to the NPC its current gossip step names.
 --
 -- Idempotent: each plan's rows are deleted, then inserted. The tables come from 20261014150000_world.sql.
 
@@ -21,7 +22,7 @@ DELETE FROM `ai_dungeon_step` WHERE `plan` = 'zulfarrak';
 DELETE FROM `ai_dungeon_leg` WHERE `plan` = 'zulfarrak';
 DELETE FROM `ai_dungeon_plan` WHERE `plan` = 'zulfarrak';
 INSERT INTO `ai_dungeon_plan` (`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `source`, `comment`) VALUES
-('zulfarrak', 209, '7246,5648', '7246', '7785,8179,5650,7247,7608,7606,7605,62499', 'turtle-agent d8a3040 dungeons/zulfarrak.json', 'plan v1, live-checked');
+('zulfarrak', 209, '7246,5648', '7246', '7785,8179,5650,7247,7608,7606,7605,62499', 'turtle-agent 2f8583e dungeons/zulfarrak.json', 'plan v1, live-checked');
 INSERT INTO `ai_dungeon_leg` (`plan`, `leg`, `name`, `comment`) VALUES
 ('zulfarrak', 0, 'antusul_a', ''),
 ('zulfarrak', 1, 'antusul_a2', ''),

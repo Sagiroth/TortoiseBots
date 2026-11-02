@@ -1067,6 +1067,88 @@ static void TestArenaWipeRearmsTheGossipOnTheTick()
     CHECK(r.step == 1); // the wipe recovery re-armed to the gossip
 }
 
+// The party up and back at the hold, the arena reset: the lead bot on the plan's last move point before the hold
+// (the regroup's walk back is done there; the hold spot is 30 yd on, in sight).
+static Facts UpAtTheHold()
+{
+    Facts f = ArenaReset(Party());
+    f.leadX = -30.0f;
+    return f;
+}
+
+static void TestArenaSecondWipeGoesBackToTheGossip()
+{
+    // The first wipe re-arms to the gossip (once). The event's second attempt starts and is wiped too: no second
+    // re-arm, but the event WAS started, so the reset is read when the party is back and the crew friendly again.
+    // ResetStep clears eventStarted on that wipe; Run::resetHoldStarted is the latch that keeps the start.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted && r.step == 2);
+    f = ArenaReset(f);
+    f.dead = 5;
+    f.alive = 0;
+    f.leadAlive = false;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.eventRetry && r.eventRearmed.count(1) == 1);
+    // The run is back at the hold (the gossip said the event started again) for its second attempt: it turns
+    // hostile and is wiped in it.
+    r.step = 2;
+    f = Party();
+    f.leadX = -30.0f;
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted && r.step == 2);
+    f = ArenaReset(f);
+    f.dead = 5;
+    f.alive = 0;
+    f.leadAlive = false;
+    Tick(r, f);
+    CHECK(r.step == 2 && !r.eventStarted && r.resetHoldStarted); // no second re-arm, the latch kept
+    CHECK(r.eventRearmed.size() == 1);
+    // Up at the spot, the whole crew friendly: the reset comes within the 5 s window.
+    f = UpAtTheHold();
+    for (int i = 0; i < 5; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Paused);
+    CHECK(Has(r.note, "event reset") && Has(r.note, "starts it again at step 2 (gossip)"));
+}
+
+static void TestArenaResetReadAfterAnOutOfSightRegroupTick()
+{
+    // The wipe's regroup tick came with the lead bot more than 60 yd from the spot: nothing of the arena was read
+    // (no units), so no re-arm. ResetStep cleared eventStarted; once back in range, the latch still says the event
+    // had started, and the reset is read (it used to wait out the 600 s).
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted);
+    Facts far = ArenaReset(Party());
+    far.leadX = 100.0f;
+    far.seen = false;
+    far.units.clear();
+    far.dead = 5;
+    far.alive = 0;
+    far.leadAlive = false;
+    Tick(r, far);
+    CHECK(r.step == 2 && !r.eventStarted && r.resetHoldStarted);
+    CHECK(r.eventRearmed.empty());
+    f = UpAtTheHold();
+    for (int i = 0; i < 5; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Paused);
+    CHECK(Has(r.note, "event reset"));
+}
+
 static void TestArenaHoldWithoutTheFlagIsNoReset()
 {
     // The mutation guard: the same reset ticks on a hold whose row does not set
@@ -1329,6 +1411,23 @@ static void TestDeadGossipHoldWithoutTheDeadNoteWaits()
     CHECK(!Has(r.note, "the NPC that starts it was dead"));
 }
 
+static void TestDeadGossipHoldWithoutAStartStepDoesNotEnd()
+{
+    // A flagged hold with no gossip before it (the plan starts at the hold): there is no startNpcDeadStep and no
+    // event start step, both npos. They must not match: the hold waits for a hostile unit, as the rule above does.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), BlyHoldDeadGossip(), Move(30)};
+    Run r = Start(&plan, 1);
+    Facts f = Party();
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    CHECK(r.startNpcDeadStep == static_cast<std::size_t>(-1) && EventStartStep(r) == static_cast<std::size_t>(-1));
+    CHECK(!Has(r.note, "the NPC that starts it was dead"));
+}
+
 static void TestMograineWhitemaneHoldWaitsForValueFour()
 {
     DungeonPlan plan;
@@ -1530,6 +1629,8 @@ int main()
     TestArenaHoldInFightIsNoReset();
     TestArenaWipeRearmsTheGossipOnce();
     TestArenaWipeRearmsTheGossipOnTheTick();
+    TestArenaSecondWipeGoesBackToTheGossip();
+    TestArenaResetReadAfterAnOutOfSightRegroupTick();
     TestArenaHoldWithoutTheFlagIsNoReset();
     TestArenaHoldWithoutAGossipIsNoReset();
     TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets();
@@ -1537,6 +1638,7 @@ int main()
     TestDeadGossipHoldEndsAtOnceWhenAllLieDead();
     TestDeadGossipHoldEndsWithFriendlySurvivors();
     TestDeadGossipHoldWithoutTheDeadNoteWaits();
+    TestDeadGossipHoldWithoutAStartStepDoesNotEnd();
     TestMograineWhitemaneHoldWaitsForValueFour();
     TestCrystalHoldWaitsForActive();
     TestCrystalHoldMissingObject();
