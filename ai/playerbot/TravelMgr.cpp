@@ -1641,8 +1641,14 @@ void TravelTarget::CheckStatus()
     // no DB hit, world scan or graph rebuild here. Fishing never releases:
     // its WORK is a cast wait (no prey, no attackers by design), so the
     // two signals always read empty at a fish spot. Pool upkeep bots only;
-    // owned/hired bots keep the full WORK clock.
-    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+    // owned/hired bots keep the full WORK clock. A guild order trip never
+    // releases here either: its leg has its own deadlines, and parking the
+    // AH purpose would end the order's auction leg on the next empty search.
+    bool orderTrip = false;
+    for (std::string const& condition : travelConditions)
+        if (condition == "has guild travel order" || condition == "has guild order delivery")
+            orderTrip = true;
+    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK && !orderTrip &&
         !IsForced() && !IsGroupCopy() &&
         sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
         (!tDestination || tDestination->GetPurpose() != TravelDestinationPurpose::GatherFishing))
