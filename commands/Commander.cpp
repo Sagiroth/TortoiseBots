@@ -9017,6 +9017,85 @@ void ReadStandPatrols(Player* lead, TortoiseBots::DungeonRun::Facts& f)
     }
 }
 
+// A linked master without a named spawn is searched for this far from its slave (the row's own search range
+// narrows it).
+constexpr float kPullPackMasterYd = 40.0f;
+
+// The creatures a pull of one of these units brings with it by the core's own grouping
+// (DungeonRun::UnitFact::packGuids): its creature group's members (a formation walks together, an "aggro together"
+// group wakes as one), its creature_linking master where the row makes the slave's aggro wake the master, with that
+// master's own group, and the linked slaves of it among the picks where the row makes the master's aggro wake them.
+// A pull's read lists the units of several packs, so the pack a pull draws is this, never the read.
+void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& units,
+    std::vector<TortoiseBots::DungeonRun::UnitFact>& patrollers, std::vector<TortoiseBots::DungeonRun::UnitFact>& residue,
+    std::vector<TortoiseBots::DungeonRun::UnitFact>& hop)
+{
+    using namespace TortoiseBots::DungeonRun;
+    std::unordered_map<std::uint64_t, Creature*> creatures; // a pick's creature, when the map holds it
+    std::unordered_map<std::uint64_t, UnitFact*> picks;     // ... and its fact
+    for (std::vector<UnitFact>* list : {&units, &patrollers, &residue, &hop})
+        for (UnitFact& u : *list)
+        {
+            picks[u.guid] = &u;
+            if (Creature* c = map->GetCreature(ObjectGuid(u.guid)))
+                creatures[u.guid] = c;
+        }
+    auto addGroup = [](UnitFact& u, Creature* c)
+    {
+        CreatureGroup* const group = c->GetCreatureGroup();
+        if (!group)
+            return;
+        for (auto const& member : group->GetMembers())
+            if (member.first != c->GetObjectGuid())
+                u.packGuids.push_back(member.first.GetRawValue());
+    };
+    // The master a creature_linking row names: its own spawn, else the nearest creature of the master's entry
+    // within the row's search range (0: any).
+    auto masterOf = [map](Creature* c, CreatureLinkingInfo const* row) -> Creature*
+    {
+        if (row->masterDBGuid)
+        {
+            CreatureData const* const data = sObjectMgr.GetCreatureData(row->masterDBGuid);
+            CreatureInfo const* const info = data ? sObjectMgr.GetCreatureTemplate(data->creature_id[0]) : nullptr;
+            return info ? map->GetCreature(ObjectGuid(info->GetHighGuid(), info->entry, row->masterDBGuid)) : nullptr;
+        }
+        if (!row->masterId)
+            return nullptr;
+        std::list<Creature*> found;
+        c->GetCreatureListWithEntryInGrid(found, row->masterId, kPullPackMasterYd);
+        Creature* best = nullptr;
+        for (Creature* master : found)
+            if (master != c && (!row->searchRange || c->GetDistance(master) <= row->searchRange) &&
+                (!best || c->GetDistance(master) < c->GetDistance(best)))
+                best = master;
+        return best;
+    };
+    for (auto const& pick : picks)
+    {
+        UnitFact& u = *pick.second;
+        auto const creature = creatures.find(u.guid);
+        if (creature == creatures.end())
+            continue;
+        addGroup(u, creature->second);
+        CreatureLinkingInfo const* const row = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature->second);
+        if (!row || !(row->linkingFlag & (FLAG_AGGRO_ON_AGGRO | FLAG_TO_AGGRO_ON_AGGRO)))
+            continue;
+        Creature* const master = masterOf(creature->second, row);
+        if (!master)
+            continue;
+        // The slave's aggro wakes the master: the master comes with this unit, and so does its group.
+        if (row->linkingFlag & FLAG_TO_AGGRO_ON_AGGRO)
+        {
+            u.packGuids.push_back(master->GetObjectGuid().GetRawValue());
+            addGroup(u, master);
+        }
+        // The master's aggro wakes the slave: it comes with the master.
+        auto const masterPick = picks.find(master->GetObjectGuid().GetRawValue());
+        if ((row->linkingFlag & FLAG_AGGRO_ON_AGGRO) && masterPick != picks.end())
+            masterPick->second->packGuids.push_back(u.guid);
+    }
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -9967,6 +10046,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         step->kind == ai::PlanStepKind::Pull &&
         (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))
         ReadStandPatrols(lead, f);
+    // The pack a pull of one of the step's units brings, by guid (the joiner count reads the fight against it): the
+    // target's own creature group and its creature_linking mates, never the whole read.
+    if (Map* const map = lead->GetMap())
+        ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);
     ReadRunNeedFacts(slot, lead, f);
 }
 // Item-leg skip (spec C2/C2b/C2c, review round 2 Opus 1/2/3): the current leg's need facts, read every tick: the

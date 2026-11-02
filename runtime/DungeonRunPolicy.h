@@ -644,6 +644,12 @@ struct UnitFact
     std::uint64_t formation = 0;
     // ... and it walks a patrol (its own waypoints, or a formation follower of a living waypoint leader). Not read: false.
     bool patrols = false;
+    // The units a pull can pick (units, patrollers, residue, hop units): the guids the core's own grouping
+    // brings with this one, as the glue read them: its creature group's members, its creature_linking master
+    // where the row makes the slave's aggro wake the master, and the linked slaves of it among the picks
+    // where the row makes the master's aggro wake them. A pull draws these with its target; every other
+    // creature that joins it is a joiner (Run::joinerPack).
+    std::vector<std::uint64_t> packGuids;
 };
 
 // The mage's Polymorph (all ranks and forms): the aura the run waits for after
@@ -1483,11 +1489,10 @@ struct Run
     // its rest is not judged again (joinersRead false), the count stands.
     std::unordered_map<std::uint64_t, std::uint32_t> joinerSeen;
     // The joiners the pull's own pack did not explain: when a pull goes out its
-    // pack is recorded by guid (the units the pull's read lists for it, so a
-    // same-entry creature of another camp is not pack), and for kJoinerWindowMs
-    // every hostile engaged with the party outside that set counts once
-    // (guid -> entry). The report rides on the status note until the next pull
-    // or the step's reset.
+    // pack is recorded by guid (the target and its own group, PullPackOf: the
+    // read's other packs are not pack), and for kJoinerWindowMs every hostile
+    // engaged with the party outside that set counts once (guid -> entry). The
+    // report rides on the status note until the next pull or the step's reset.
     std::unordered_set<std::uint64_t> joinerPack;
     std::unordered_map<std::uint64_t, std::uint32_t> joinerAdds;
     std::uint32_t joinerMs = 0;
@@ -8022,28 +8027,22 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
     return hold("reading a firing stand for " + what);
 }
 
-// The pack a pull brings, by guid, as the pull's own read lists it: a pull or
-// boss step's units and its residue band (the list its pulls and re-pulls pick
-// from), or a hop pull's units of the pulled unit's entry (a hop read lists
-// every pack on the way, and the entries are the only grouping there). The
-// pulled unit itself is always pack.
-inline std::unordered_set<std::uint64_t> PullPackOf(const Facts& f, const UnitFact& u, bool hop)
+// The pack a pull brings, by guid: the pulled unit and the core's own grouping
+// around it (UnitFact::packGuids, read by the glue), plus the units the run
+// leader ordered with this pull (the crowd control it sent, and the pull's own
+// pick of one). Not the read a pull or hop step lists: that holds several
+// packs, so a second pack that joins is a joiner, like anything else outside
+// these.
+inline std::unordered_set<std::uint64_t> PullPackOf(const Run& r, const UnitFact& u, const UnitFact* cc)
 {
     std::unordered_set<std::uint64_t> pack;
     pack.insert(u.guid);
-    auto add = [&pack](const std::vector<UnitFact>& units, bool oneEntry, std::uint32_t entry)
-    {
-        for (const UnitFact& other : units)
-            if (other.hostile && (!oneEntry || other.entry == entry || other.formOf == entry))
-                pack.insert(other.guid);
-    };
-    if (hop)
-        add(f.hopUnits, true, u.entry);
-    else
-    {
-        add(f.units, false, 0);
-        add(f.packResidue, false, 0);
-    }
+    for (std::uint64_t guid : u.packGuids)
+        pack.insert(guid);
+    for (std::uint64_t guid : r.ccSent)
+        pack.insert(guid);
+    if (cc)
+        pack.insert(cc->guid);
     return pack;
 }
 
@@ -8196,7 +8195,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     r.pullGuid = u.guid;
     // The pulled pack, recorded by guid now: a unit that dies, evades or leaves
     // the read is still pack, and the joiners are read against this set.
-    r.joinerPack = PullPackOf(f, u, hop);
+    r.joinerPack = PullPackOf(r, u, cc);
     r.joinerAdds.clear();
     r.joinerMs = 0;
     r.joinerWindow = true;
