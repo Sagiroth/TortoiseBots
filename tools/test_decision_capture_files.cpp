@@ -257,7 +257,6 @@ Harness MakeCapture(std::string const& dir, std::string const& id, std::uint64_t
     FileLimits fileLimits;
     fileLimits.segmentBytes = 1ull * 1024ull * 1024ull;
     fileLimits.captureBytes = captureBytes;
-    fileLimits.totalBytes = 4096ull * 1024ull * 1024ull;
     DecisionCapture::Limits recorderLimits;
     recorderLimits.segmentBytes = segmentBytes;
     recorderLimits.recordBytes = 512u * 1024u;

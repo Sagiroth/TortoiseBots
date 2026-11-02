@@ -52,7 +52,6 @@ struct FileLimits
 {
     std::uint64_t segmentBytes = 32ull * 1024ull * 1024ull;
     std::uint64_t captureBytes = 512ull * 1024ull * 1024ull;
-    std::uint64_t totalBytes = 4096ull * 1024ull * 1024ull;
     std::size_t recordBytes = 512u * 1024u;
     std::uint32_t keyframeEvery = 60;
 };

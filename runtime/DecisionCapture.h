@@ -127,7 +127,6 @@ inline void DecisionCaptureRegistry::SinkSettings(FileLimits& file, DecisionCapt
 {
     file.segmentBytes = DecisionCaptureMiB(settings_.segmentMiB);
     file.captureBytes = DecisionCaptureMiB(settings_.captureMiB);
-    file.totalBytes = DecisionCaptureMiB(settings_.totalMiB);
     file.recordBytes = static_cast<std::size_t>(settings_.recordKiB) * 1024u;
     file.keyframeEvery = settings_.keyframeEvery;
 
