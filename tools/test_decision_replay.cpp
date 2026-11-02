@@ -154,6 +154,25 @@ void TestRecordAndExtract()
     CHECK(ticks->arr[1].Find("key") && !ticks->arr[1].Find("key")->b);
 }
 
+void TestSegmentFile()
+{
+    MemSink sink;
+    RecordScenario(sink);
+    std::string text;
+    for (const auto& line : sink.lines)
+        text += line.first + "\n";
+    std::filesystem::path const segment = gRoot / "base" / "seg-0001.jsonl";
+    CHECK(WriteText(segment, text));
+
+    Capture capture;
+    std::string err;
+    CHECK(LoadSegments({segment.string()}, capture, err));
+    CHECK(capture.ticks.size() == kScenarioTicks);
+    CHECK(capture.captureId == "20261102T161939Z-synthetic-Fionaa");
+    CHECK(capture.ticks.front().key);
+    CHECK(!capture.ticks.back().key);
+}
+
 void TestIndependentReplay()
 {
     Fixture fixture;
@@ -507,6 +526,7 @@ int main()
     gBaseFixture = gRoot / "base" / "synthetic-pull.json";
 
     TestRecordAndExtract();
+    TestSegmentFile();
     {
         Fixture fixture;
         std::string err;
