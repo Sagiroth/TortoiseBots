@@ -1352,7 +1352,7 @@ public:
     // One relist was posted: its sale gold or its returned stack comes back
     // by mail later. The listing terms are the identity the notification
     // carries back, so one auction of the item cannot settle another's row.
-    // Map thread only (the buy action); the row write is queued.
+    // Map thread only (the buy action); the row write is synchronous and checked.
     void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
         uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec)
     {
@@ -1410,7 +1410,7 @@ public:
     }
 
     // A matched mail was collected: the value is in the bot's hands. Map
-    // thread only (the mail read); the row write is queued.
+    // thread only (the mail read); the row write is synchronous and checked.
     bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
     {
         RelistLedgerEntry updated;
