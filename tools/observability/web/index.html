@@ -41,9 +41,13 @@
         <span>Map</span>
       </a>
 
-      <a class="menu-item" data-tab="dungeons" href="#/dungeons" title="Live view of every dungeon or raid copy that has bots in it">
+      <a class="menu-item" data-tab="dungeons" href="#/dungeons" title="Live view of every dungeon copy that has bots in it">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V8l4-4 2 3 3-5 3 5 2-3v17"/><path d="M9 21v-4h6v4"/></svg>
         <span>Dungeons</span>
+      </a>
+      <a class="menu-item" data-tab="raids" href="#/raids" title="Live view of every raid copy that has bots in it, no binding needed">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 21v-4h6v4"/></svg>
+        <span>Raids</span>
       </a>
 
       <a class="menu-item" data-tab="agentmaps" href="#/agent-maps" style="display: none;" title="turtle-agent run maps (SVG and single-file HTML replays) from the folder the daemon was given">
@@ -499,11 +503,11 @@
         <div id="cov-root" class="cov-root"></div>
       </section>
 
-      <!-- TAB: DUNGEONS — every live instance copy (dungeon or raid) that has bots in it, one run per copy (issue #895) -->
+      <!-- TAB: DUNGEONS — every live dungeon copy that has bots in it, one run per copy (issue #895) -->
       <section id="tab-dungeons" class="tab-view" style="display: none;">
         <div id="dgn-empty" class="card cmd-empty">
           <h2 class="cmd-empty-title">No dungeon run right now</h2>
-          <p class="empty-hint">A run appears here within a couple of seconds of a bot entering an instance (a dungeon or raid copy; bots enter with a real player today, alt-bots may enter alone). Two groups in the same dungeon are two runs, each with its own live map. Read-only: this tab shows, it never orders.</p>
+          <p class="empty-hint">A run appears here within a couple of seconds of a bot entering a dungeon copy (bots enter with a real player today, alt-bots may enter alone). Two groups in the same dungeon are two runs, each with its own live map. Raid copies live on the Raids tab. Read-only: this tab shows, it never orders.</p>
         </div>
         <div id="dgn-stale" class="card cmd-empty" style="display: none;">
           <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one dungeon appear as one run per map. Update the module to tell copies apart.</p>
@@ -518,6 +522,28 @@
             <div id="dgn-run-sub" class="muted"></div>
           </div>
           <div id="dgn-card"></div>
+        </div>
+      </section>
+
+      <!-- TAB: RAIDS — every live raid copy that has bots in it, one run per copy, no binding needed -->
+      <section id="tab-raids" class="tab-view" style="display: none;">
+        <div id="raid-empty" class="card cmd-empty">
+          <h2 class="cmd-empty-title">No raid run right now</h2>
+          <p class="empty-hint">A run appears here within a couple of seconds of a bot entering a raid copy. Dungeon copies live on the Dungeons tab. Read-only: this tab shows, it never orders.</p>
+        </div>
+        <div id="raid-stale" class="card cmd-empty" style="display: none;">
+          <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one raid appear as one run per map. Update the module to tell copies apart.</p>
+        </div>
+        <!-- The list of runs -->
+        <div id="raid-list" class="card"></div>
+        <!-- The live view of one group: back link, header and the Commanders map card -->
+        <div id="raid-view" style="display: none;">
+          <div class="card raid-head">
+            <button type="button" id="raid-back" class="btn" title="Back to the list of runs">&larr; All runs</button>
+            <h2 id="raid-run-title"></h2>
+            <div id="raid-run-sub" class="muted"></div>
+          </div>
+          <div id="raid-card"></div>
         </div>
       </section>
 
@@ -805,6 +831,7 @@
 <script src="/static/js/refresh.js?v=1"></script>
 <script src="/static/js/commanders.js?v=8"></script>
 <script src="/static/js/dungeons.js?v=2"></script>
+<script src="/static/js/raids.js?v=1"></script>
 <script src="/static/js/agentmaps.js?v=1"></script>
 <script src="/static/js/maplayers.js?v=7"></script>
 <script src="/static/js/unitinfo.js?v=2"></script>

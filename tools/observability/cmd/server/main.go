@@ -672,12 +672,19 @@ func main() {
 	}))
 
 	// The live dungeon runs (issue #895): one entry per instance copy (map +
-	// instance id) of a dungeon or raid that has bots in it, members (bots and
-	// real players) included. Read-only: the tab draws, it never orders.
+	// instance id) of a dungeon that has bots in it, members (bots and
+	// real players) included. Raid copies leave for /api/v1/raids.
+	// Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/dungeons", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Dungeons())
 	}))
 
+	// The live raid runs: one entry per raid instance copy that has bots in
+	// it, groups with their leaders, offline members and live combat window.
+	// Read-only: the tab draws, it never orders.
+	mux.HandleFunc("/api/v1/raids", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Raids())
+	}))
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 
 	// The boss tactic rows the coverage view compares with the boss table:
