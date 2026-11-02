@@ -8849,8 +8849,9 @@ void ReadRezRoster(Player* lead, std::vector<Player*> const& bots, TortoiseBots:
 // With AiPlayerbot.DungeonRunStandClearance on, the stands the path offers are tried in the reach's own order and the
 // first one clear of every other live pack, and the widest aggro reach of the pull's own pack from every unit of it,
 // is taken (ReadStandClearance, DungeonRun::StandClearAt, StandAbovePackReach). None clear: no stand is reported, the
-// pack that refuses the reach's own stand is named, and DungeonRun::HoldForShot waits for a patrol among them (60 s),
-// else pauses the run.
+// pack that refuses the reach's own stand is named (the reach's first candidate is kept as the default stand), and
+// DungeonRun::HoldForShot waits for a patrol among them (20 s) before it walks to that default stand and pulls: the
+// clearance is advisory and never pauses the run.
 // For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
 // leadShotYd and losLead whatever the key says (the key governs ordinary pulls only), and a stand it reads for such a
 // step is clearance-checked like any other.
@@ -8869,12 +8870,17 @@ inline bool StandThisStep(DungeonRunSlot const& slot)
     return prev.kind == ai::PlanStepKind::Move && prev.leg == s.leg;
 }
 
-// The other packs a firing stand must keep clear of (defined with the patrol readers below).
+// The other packs a firing stand must keep clear of (defined with the patrol readers below), and the creatures of
+// the boss encounter a boss step's stand stands inside (the others' sight lines are read by the caller: otherMobs
+// keeps them by guid).
 static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,
-    TortoiseBots::DungeonRun::Facts& f);
+    TortoiseBots::DungeonRun::Facts& f, TortoiseBots::DungeonRun::BossEncounter const& boss,
+    std::unordered_map<uint64, Creature*>* otherMobs);
 // The formation a creature walks in (defined with the patrol readers below): the pull's pack reads it.
 uint64 RunFormationOf(Creature* creature);
+// Whether the core links the creature to the boss of the step (defined with the patrol readers below).
+bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter const& boss);
 
 void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
@@ -8931,6 +8937,8 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
     static_assert(kStandLedgeDropYd == ai::kRunnerLedgeDropYd,
         "the run leader's firing stand keeps to the bots' own ledge rule (owner decision 2026-10-23)");
     bool const clearance = sPlayerbotAIConfig.dungeonRunStandClearance;
+    // Each other pack's creature by the guid its StandOther carries: the other-storey rule's sight line reads it.
+    std::unordered_map<uint64, Creature*> otherMobs;
     if (clearance)
     {
         // The step's own pack is what this pull takes: its units (Facts::units), the formation each walks in, and the
@@ -8950,15 +8958,32 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
         pack.formations.insert(RunFormationOf(unit));
         if (std::find(members.begin(), members.end(), unit) == members.end())
             members.push_back(unit);
-        ReadStandClearance(lead, bots, pack, members, f);
+        // A boss step's stand stands inside the boss fight: its adds are no other pack there.
+        BossEncounter boss;
+        if (slot.run.plan && slot.run.step < slot.run.plan->steps.size())
+            boss = BossEncounterOf(&slot.run.plan->steps[slot.run.step]);
+        ReadStandClearance(lead, bots, pack, members, f, boss, &otherMobs);
     }
+    // The other-storey rule's sight line from a candidate stand to one other pack (the Arlokk terrace's storeys): the
+    // stand's eye to the unit's, on the map. Asked only for a unit the clearance already refuses, a few yards apart
+    // in height.
+    auto const seesOther = [map, leadHeight, &otherMobs](ShotStand const& s, StandOther const& other)
+    {
+        auto const it = otherMobs.find(other.guid);
+        Creature* const c = it == otherMobs.end() ? nullptr : it->second;
+        if (!c)
+            return true; // no read: the unit keeps the stand refused
+        return map->isInLineOfSight(s.x, s.y, s.z + leadHeight, c->GetPositionX(), c->GetPositionY(),
+            c->GetPositionZ() + c->GetCollisionHeight(), true);
+    };
     // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule).
     bool blocked = false;
     ShotStand best;
     ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
-        [&f, clearance](ShotStand const& candidate)
+        [&f, clearance, &seesOther](ShotStand const& candidate)
         {
-            return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers) &&
+            return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers,
+                [&seesOther, &candidate](StandOther const& other) { return seesOther(candidate, other); }) &&
                 StandAbovePackReach(candidate.x, candidate.y, candidate.z, f.standPackReach));
         },
         blocked, clearance ? kStandClearCandidates : 1, clearance ? &best : nullptr);
@@ -8968,7 +8993,8 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
         if (f.shotStandBlocked)
         {
             // The reach's own stand, the first candidate the clearance refused: the pack that refuses it names the
-            // hold (a patrol to wait for) and the pause (DungeonRun::HoldForShot).
+            // patrol wait (DungeonRun::HoldForShot) and the advisory note. A unit on another storey, out of its
+            // sight, refuses nothing and is not named either.
             f.shotStandBestX = best.x;
             f.shotStandBestY = best.y;
             f.shotStandBestZ = best.z;
@@ -8978,7 +9004,8 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
             bool nowClear = true;
             bool named = false;
             for (StandOther const& other : f.standOthers)
-                if (StandClearanceYd(best.x, best.y, best.z, other) < other.clearYd)
+                if (StandOtherBlocks(other, best.x, best.y, best.z,
+                    [&seesOther, &best](StandOther const& o) { return seesOther(best, o); }))
                 {
                     if (!named)
                     {
@@ -9099,21 +9126,35 @@ bool RunAssistsCreature(Creature* helper, Creature* caller)
     return caller->IsWithinLOSInMap(helper);
 }
 
+// Whether the core links the creature to the boss of the step (creature_linking, its master the boss's entry): such a
+// creature is of the boss fight, not another pack a boss step's stand keeps clear of.
+bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter const& boss)
+{
+    if (!boss.entry)
+        return false;
+    CreatureLinkingInfo const* const info = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature);
+    return info && info->masterId == boss.entry;
+}
+
 // The other packs a firing stand must keep clear of (AiPlayerbot.DungeonRunStandClearance, DungeonRun::StandClearAt),
 // and the floor the pull's own pack puts under it (DungeonRun::StandAbovePackReach): living, hostile, out-of-combat
 // creatures within kStandClearScanYd of the lead bot. One of the pack the pull takes (PullPackOf: the step's units and
 // their formations) is no other pack, and neither is one the pack's call for help takes (the core's family assistance
-// radius, one ring: GrowPullPackByAssistance, only a creature that can answer the call of a pack unit). Each other
-// carries its identity for the hold's note and its aggro reach (the aggro estimate's own rule: detection range minus
-// the party's level advantage over its level, the widest over the party) plus the party's spread. A waypoint patroller
-// carries the whole loop it walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed,
-// so a stand beside a leg the patrol will walk is refused as well. A loop the host cannot read (a special escorts path)
-// stands in by the unit's spot plus kStandClearUnreadPathYd. The pack's own units carry their reach too
-// (Facts::standPackReach): a stand inside the widest of them is walked into, the pack awake before the shot. One grid
-// search and a map lookup per patroller, on the tick a stand is read.
+// radius, one ring: GrowPullPackByAssistance, only a creature that can answer the call of a pack unit). On a boss
+// step the boss fight is no other pack either (BossEncounter): the units the plan lists for the step, the creature the
+// core links to the boss, and the ones already in a fight (the scan skips those). Each other carries its identity for
+// the note and its aggro reach (the aggro estimate's own rule: detection range minus the party's level advantage over
+// its level, the widest over the party) plus kStandClearSpreadYd. A waypoint patroller carries the whole loop it
+// walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed, so a stand beside a leg
+// the patrol will walk is refused as well. A loop the host cannot read (a special escorts path) stands in by the
+// unit's spot plus kStandClearUnreadPathYd. The pack's own units carry their reach too (Facts::standPackReach): a stand
+// inside the widest of them is walked into, the pack awake before the shot. One grid search and a map lookup per
+// patroller, on the tick a stand is read. `otherMobs` keeps each other's creature by its guid, for the caller's
+// other-storey sight lines.
 static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,
-    TortoiseBots::DungeonRun::Facts& f)
+    TortoiseBots::DungeonRun::Facts& f, TortoiseBots::DungeonRun::BossEncounter const& boss,
+    std::unordered_map<uint64, Creature*>* otherMobs)
 {
     using namespace TortoiseBots::DungeonRun;
     std::list<Unit*> found;
@@ -9207,11 +9248,14 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
         if (inPack[i])
             continue;
         Creature* const c = scanned[i];
+        if (BossEncounterUnit(boss, c->GetEntry(), RunLinkedToBoss(c, boss)))
+            continue; // the boss's own fight: not another pack at this step's stand
         ai::AggroMob mob;
         mob.level = c->GetLevel();
         mob.detectionYd = c->GetDetectionRange();
         StandOther other;
         other.entry = c->GetEntry();
+        other.guid = c->GetObjectGuid().GetRawValue();
         other.x = c->GetPositionX();
         other.y = c->GetPositionY();
         other.z = c->GetPositionZ();
@@ -9232,6 +9276,8 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
                 other.marginYd = kStandClearUnreadPathYd;
         }
         f.standOthers.push_back(other);
+        if (otherMobs)
+            (*otherMobs)[other.guid] = c;
     }
 }
 

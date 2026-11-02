@@ -1088,13 +1088,18 @@ AiPlayerbot.DungeonRunPullStand = 0
 # stand-pull step's (always) and a generic stand pull's (with AiPlayerbot.DungeonRunPullStand = 1). Every firing
 # stand the tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
 # from every other living pack is taken. Far enough is the pack's aggro reach (its detection range minus the
-# party's level advantage over it) plus the party's spread round the stand (10 yd): a pack that patrols is checked
-# along its whole loop, so a stand the loop will walk past is refused too. A creature the pulled pack's call for
-# help reaches (the core's 10 yd family assistance radius, transitively) is part of the pulled pack. The stand must
-# also stay the pulled pack's widest aggro reach away from every unit of it, so the party does not wake it on the way.
-# With no clear stand a patrolling pack that blocks it alone is waited for up to 60 s to walk clear (then the stand is
-# walked to); otherwise, or once the 60 s are spent, the run pauses and its note reads
-# "stand_pull: no clear stand for <entry> (blocked by <entry> at <yd>)".
+# party's level advantage over it) plus 4 yd: the bots stand at the stand point, and only the unit's reach and the
+# line of sight the core needs decide whether it can wake on the stand. A pack that patrols is checked along its
+# whole loop, so a stand the loop will walk past is refused too. A creature the pulled pack's call for help reaches
+# (the core's 10 yd family assistance radius, one call out) is part of the pulled pack. The stand must also stay the
+# pulled pack's widest aggro reach away from every unit of it, so the party does not wake it on the way. On a boss
+# step the boss's own fight is no other pack: the units the plan lists for the step, the creatures the core links to
+# the boss and the ones already in the fight never refuse a stand. A unit more than 8 yd above or below the stand
+# with no line of sight to it stands on another storey and never refuses one either.
+# The clearance is advisory: with every stand refused, the tank uses the stand the key is off for (the path's first
+# in range) and the note reads
+# "stand_pull: no clear stand for <entry> (closest <entry> at <yd>); using the default stand". Only a patrolling
+# pack that blocks the stand alone is waited for, up to 20 s, to walk clear; then the run goes on.
 # 0 - off, the stand is picked as before (Default)
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.

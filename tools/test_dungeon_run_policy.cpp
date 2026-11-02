@@ -16054,7 +16054,8 @@ static void TestStandClearancePicksTheFarStand()
         f.shotStandYd = 24.5f;
         CHECK(Tick(r, f) == "move -24.5 0.0 0.0");
     }
-    // Every stand refused: the pull is held, paused with the blocking pack named, never sent from the refused point.
+    // Every stand refused: the clearance is advisory. The tank walks to the stand the key-off read takes (the path's
+    // first candidate), the note names the closest blocker, and the run is never paused.
     {
         Run r = Start(&plan);
         Facts f = StandParty();
@@ -16065,10 +16066,14 @@ static void TestStandClearancePicksTheFarStand()
         f.shotStandBlocked = true;
         f.shotStandBlockEntry = 49202;
         f.shotStandBlockYd = 20.0f;
-        CHECK(Tick(r, f).empty());
-        CHECK(r.state == State::Paused);
-        CHECK(r.note == "stand_pull: no clear stand for 4851 (blocked by 49202 at 20.0 yd)");
-        CHECK(r.shotStandTries[11] == 0); // no plain pull from where the tank stands
+        f.shotStandBestX = plain.x;
+        f.shotStandBestY = plain.y;
+        f.shotStandBestZ = plain.z;
+        f.shotStandBestYd = 24.5f;
+        CHECK(Tick(r, f) == "move -24.5 0.0 0.0");
+        CHECK(r.state == State::Running);
+        CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 49202 at 20.0); using the default stand");
+        CHECK(r.shotStandWalk && r.shotStandX == plain.x && r.shotStandTries[11] == 1);
     }
 }
 
@@ -16205,7 +16210,7 @@ static void TestStandClearanceCoversTheAuthoredStandPull()
         give(r, f, on);
         CHECK(Tick(r, f) == "move -16.4 -16.8 0.0");
     }
-    // Every stand refused: the pull is held, paused with the blocking pack named.
+    // Every stand refused: the default stand, the advisory note, no pause.
     {
         Run r = Start(&plan, 1);
         Facts f = StandParty();
@@ -16216,16 +16221,18 @@ static void TestStandClearanceCoversTheAuthoredStandPull()
         f.shotStandBlocked = true;
         f.shotStandBlockEntry = 49202;
         f.shotStandBlockYd = 20.0f;
-        CHECK(Tick(r, f).empty());
-        CHECK(r.state == State::Paused);
-        CHECK(r.note == "stand_pull: no clear stand for 4851 (blocked by 49202 at 20.0 yd)");
-        CHECK(r.shotStandTries[11] == 0);
+        f.shotStandBestX = 24.5f;
+        f.shotStandBestYd = 15.5f;
+        CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
+        CHECK(r.state == State::Running);
+        CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 49202 at 20.0); using the default stand");
+        CHECK(r.shotStandTries[11] == 1);
     }
 }
 
 // A patrolling pack refuses every firing stand the reach offers: the pull waits for it to walk clear of the reach's own
-// stand (kStandClearWaitMs), then walks there and pulls from it. Any other blocker, or the wait spent, pauses the run:
-// the pull is never sent from a refused reach point.
+// stand (kStandClearWaitMs, 20 s), then walks there and pulls from it. Any other blocker, or the wait spent, walks to
+// the default stand at once with the advisory note: the clearance never pauses or holds a pull past the patrol wait.
 static void TestStandClearanceWaitsForTheBlockingPatrol()
 {
     DungeonPlan plan;
@@ -16250,7 +16257,7 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
         CHECK(Tick(r, f).empty());
         CHECK(r.state == State::Running);
         CHECK(r.note == "stand_pull: no clear stand for 4851 (blocked by 49202 at 20.0 yd): waiting for the patrol to "
-            "walk clear (1 s of 60)");
+            "walk clear (1 s of 20)");
         CHECK(r.shotStandFor == 11 && r.shotClearMs == kTickMs && r.shotStandTries[11] == 0);
         f.shotStandBlockNowClear = true;
         CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
@@ -16266,7 +16273,7 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
         CHECK(Tick(r, f) == "pullback 11");
         CHECK(Has(r.note, "shot from firing stand 1"));
     }
-    // A blocker that walks no patrol: the pull pauses at once, naming it.
+    // A blocker that walks no patrol: the default stand at once, the note naming it, no pause.
     {
         Run r = Start(&plan);
         Facts f = StandParty();
@@ -16277,12 +16284,14 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
         f.shotStandBlocked = true;
         f.shotStandBlockEntry = 49202;
         f.shotStandBlockYd = 20.0f;
-        CHECK(Tick(r, f).empty());
-        CHECK(r.state == State::Paused);
-        CHECK(r.note == "stand_pull: no clear stand for 4851 (blocked by 49202 at 20.0 yd)");
-        CHECK(r.shotStandTries[11] == 0 && r.pulls == 0);
+        f.shotStandBestX = 24.5f;
+        f.shotStandBestYd = 15.5f;
+        CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
+        CHECK(r.state == State::Running);
+        CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 49202 at 20.0); using the default stand");
+        CHECK(r.shotStandTries[11] == 1 && r.pulls == 0);
     }
-    // A patrol that never walks clear: the wait runs kStandClearWaitMs, then the same pause.
+    // A patrol that never walks clear: the wait runs kStandClearWaitMs, then the default stand goes out.
     {
         Run r = Start(&plan);
         Facts f = StandParty();
@@ -16296,11 +16305,12 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
         f.shotStandBlockYd = 20.0f;
         f.shotStandBestX = 24.5f;
         f.shotStandBestYd = 15.5f;
-        for (std::uint32_t i = 0; i < kStandClearWaitMs / kTickMs + 2 && r.state == State::Running; ++i)
+        for (std::uint32_t i = 0; i < kStandClearWaitMs / kTickMs && r.state == State::Running; ++i)
             CHECK(Tick(r, f).empty());
-        CHECK(r.state == State::Paused && r.shotClearMs == kStandClearWaitMs);
-        CHECK(r.note == "stand_pull: no clear stand for 4851 (blocked by 49202 at 20.0 yd)");
-        CHECK(r.shotStandTries[11] == 0 && r.pulls == 0);
+        CHECK(r.state == State::Running && r.shotClearMs == kStandClearWaitMs);
+        CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
+        CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 49202 at 20.0); using the default stand");
+        CHECK(r.shotStandTries[11] == 1 && r.pulls == 0);
     }
 }
 
@@ -16381,6 +16391,127 @@ static void TestStandClearanceFloorsOnThePacksOwnReach()
     ShotStand const none = ShotStandOnPathCleared(path, unit, 24.5f, seesAll,
         [&near](const ShotStand& s) { return StandAbovePackReach(s.x, s.y, s.z, near); }, allBlocked);
     CHECK(!none.known && allBlocked);
+}
+
+// The clearance is advisory (walk 27: every stand pull paused the run): with no clear stand the tank walks to the stand
+// the key-off read takes and the pull goes out from there, the note naming the closest blocker. No hold, no pause.
+static void TestStandClearanceIsAdvisory()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851})};
+    Run r = Start(&plan);
+    Facts f = StandParty();
+    f.units = {Seen(11, 4851, 40.0f)};
+    CHECK(Tick(r, f).empty());
+    f.shotStandGuid = 11;
+    f.shotStandKnown = false;
+    f.shotStandBlocked = true;
+    f.shotStandBlockEntry = 11368;
+    f.shotStandBlockYd = 18.0f;
+    f.shotStandBestX = 24.5f;
+    f.shotStandBestYd = 15.5f;
+    CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
+    CHECK(r.state == State::Running);
+    CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 11368 at 18.0); using the default stand");
+    CHECK(r.shotStandWalk && r.shotStandX == 24.5f && r.shotStandTries[11] == 1);
+    // At the default stand: the pull goes out from there, no second read for the clearance.
+    f.shotStandGuid = 0;
+    f.shotStandKnown = false;
+    f.shotStandBlocked = false;
+    f.leadX = 24.5f;
+    f.units[0].distLead = 15.0f;
+    f.units[0].losLead = true;
+    CHECK(Tick(r, f) == "pullback 11");
+    CHECK(Has(r.note, "shot from firing stand 1"));
+}
+
+// The clearance is the unit's aggro reach plus 4 yd: the bots stand at the stand point, so the party's old 10 yd spread
+// round it is no longer part of the rule (walk 27 refused stands 20 yd from packs that could not reach the party).
+static void TestStandClearanceMarginIsFourYd()
+{
+    CHECK(kStandClearSpreadYd == 4.0f);
+    CHECK(ai::kSpreadSettledDistance > kStandClearSpreadYd); // the party's spread is not the clearance any more
+    std::vector<StandOther> others(1);
+    others[0].x = 0.0f;
+    others[0].clearYd = 15.0f + kStandClearSpreadYd; // a 15 yd reach: the glue adds the 4 yd
+    CHECK(others[0].clearYd == 19.0f);
+    CHECK(!StandClearAt(0.0f, 18.9f, 0.0f, others));
+    CHECK(StandClearAt(0.0f, 19.0f, 0.0f, others)); // the bound itself is clear
+    CHECK(StandClearAt(0.0f, 19.1f, 0.0f, others));
+}
+
+// A boss step's stand stands inside the boss fight (walk 27: Jeklik's Bloodseeker Bats, 18.0 and 21.8 yd from the
+// stand, paused the run): the units the plan lists for the step, its tactic rows' creatures, and the ones the core
+// links to the boss are no other pack. The scan skips them; a pull step is not the boss step, so nothing is ignored.
+static void TestStandClearanceBossEncounterUnitsAreNoOthers()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14517;
+    boss.entries = {11368, 14880};
+    boss.tacticEntries = {14987};
+    plan.steps = {boss};
+    BossEncounter const encounter = BossEncounterOf(&plan.steps[0]);
+    CHECK(encounter.entry == 14517);
+    CHECK(BossEncounterUnit(encounter, 14517, false)); // the boss itself
+    CHECK(BossEncounterUnit(encounter, 11368, false)); // the plan's add
+    CHECK(BossEncounterUnit(encounter, 14880, false)); // ... and a second one
+    CHECK(BossEncounterUnit(encounter, 14987, false)); // a tactic row's creature
+    CHECK(BossEncounterUnit(encounter, 11371, true));  // the core links it to the boss
+    CHECK(!BossEncounterUnit(encounter, 11371, false));
+    // The scan's others: every creature it found that is neither the pack's nor the boss encounter's.
+    struct Found { std::uint64_t guid; std::uint32_t entry; bool linked; };
+    Found const found[] = {{0x101, 11368, false}, {0x102, 14987, false}, {0x103, 50000, false},
+        {0x104, 50001, true}};
+    std::vector<StandOther> others;
+    for (Found const& c : found)
+        if (!BossEncounterUnit(encounter, c.entry, c.linked))
+        {
+            StandOther other;
+            other.guid = c.guid;
+            other.entry = c.entry;
+            other.x = 10.0f;
+            other.clearYd = 18.0f;
+            others.push_back(other);
+        }
+    CHECK(others.size() == 1 && others[0].entry == 50000);
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, others)); // the unrelated unit still refuses the stand
+    // Counted as an other, the boss's own add refuses the stand: the encounter's skip is what keeps it.
+    StandOther add = others[0];
+    add.entry = 11368;
+    std::vector<StandOther> const withAdd = {add};
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, withAdd));
+    // A pull step is not a boss step: nothing of a boss fight is ignored there.
+    PlanStep const pull = PullStep(0.0f, {11368});
+    BossEncounter const none = BossEncounterOf(&pull);
+    CHECK(none.entry == 0 && !BossEncounterUnit(none, 11368, false) && !BossEncounterUnit(none, 11368, true));
+}
+
+// Another storey: a unit more than 8 yd above or below the stand, with no sight line to it, is no other pack the stand
+// keeps clear of (the Arlokk terrace's band: the floor between takes the unit's sight as well as the party's). The
+// height alone excuses nothing: a unit in sight across the gap refuses the stand as before.
+static void TestStandClearanceIgnoresAnotherStoreyOutOfSight()
+{
+    CHECK(kStandClearOtherStoreyYd == 8.0f);
+    std::vector<StandOther> others(1);
+    others[0].x = 5.0f;
+    others[0].z = 20.0f;
+    others[0].clearYd = 18.0f;
+    auto const blind = [](const StandOther&) { return false; };
+    auto const seen = [](const StandOther&) { return true; };
+    // 9 yd above, no sight: ignored, the stand is clear.
+    CHECK(StandOnOtherStorey(others[0], 11.0f, false));
+    CHECK(StandClearAt(0.0f, 0.0f, 11.0f, others, blind));
+    // ... in sight: it refuses the stand.
+    CHECK(!StandClearAt(0.0f, 0.0f, 11.0f, others, seen));
+    // The band's edge: 8 yd is the stand's own storey, and the refusal stays.
+    CHECK(!StandOnOtherStorey(others[0], 12.0f, false));
+    CHECK(!StandClearAt(0.0f, 0.0f, 12.0f, others, blind));
+    // A unit on the stand's own storey is never excused, blind or not.
+    CHECK(!StandClearAt(0.0f, 0.0f, 20.0f, others, blind));
+    // The blocker the note names is read the same way.
+    CHECK(StandBlocker(0.0f, 0.0f, 11.0f, others, blind) == nullptr);
+    CHECK(StandBlocker(0.0f, 0.0f, 11.0f, others, seen) == &others[0]);
 }
 
 // Uldaman run 4, step 38: a fight past the 180 s ceiling paused the run, the
@@ -27485,6 +27616,10 @@ int main()
     TestStandClearanceWaitsForTheBlockingPatrol();
     TestStandClearanceTreatsThePacksAssistanceAsPack();
     TestStandClearanceFloorsOnThePacksOwnReach();
+    TestStandClearanceIsAdvisory();
+    TestStandClearanceMarginIsFourYd();
+    TestStandClearanceBossEncounterUnitsAreNoOthers();
+    TestStandClearanceIgnoresAnotherStoreyOutOfSight();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

@@ -859,8 +859,14 @@ class RunLeaderWiringTest(unittest.TestCase):
         # The pack's formations are looked up by guid with the key on: a walk back's replayed point carries none.
         self.assertIn("pack.formations.insert(RunFormationOf(member));", read)
         self.assertIn("std::find(members.begin(), members.end(), unit)", read)
-        self.assertIn("ReadStandClearance(lead, bots, pack, members, f);", read)
-        self.assertIn("return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers) &&", read)
+        self.assertIn("BossEncounter boss;", read)
+        self.assertIn("boss = BossEncounterOf(&slot.run.plan->steps[slot.run.step]);", read)
+        self.assertIn("ReadStandClearance(lead, bots, pack, members, f, boss, &otherMobs);", read)
+        # The other-storey rule: a stand candidate's sight line to a refused unit, on the map.
+        self.assertIn("auto const seesOther = [map, leadHeight, &otherMobs](ShotStand const& s, StandOther const& other)",
+                      read)
+        self.assertIn("return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers,", read)
+        self.assertIn("[&seesOther, &candidate](StandOther const& other) { return seesOther(candidate, other); }) &&", read)
         self.assertIn("StandAbovePackReach(candidate.x, candidate.y, candidate.z, f.standPackReach));", read)
         self.assertIn("blocked, clearance ? kStandClearCandidates : 1, clearance ? &best : nullptr);", read)
         self.assertIn("f.shotStandBlocked = clearance && blocked;", read)
@@ -872,7 +878,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("ai::PlanDistance(best.x, best.y, best.z, other.x, other.y, other.z) >= other.clearYd", read)
         clearance = body(COMMANDS, "void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,\n"
                                    "    TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,\n"
-                                   "    TortoiseBots::DungeonRun::Facts& f)\n{", "\n}\n")
+                                   "    TortoiseBots::DungeonRun::Facts& f, TortoiseBots::DungeonRun::BossEncounter const& boss,\n"
+                                   "    std::unordered_map<uint64, Creature*>* otherMobs)\n{", "\n}\n")
+        # A boss step's own fight is no other pack, and each other carries its guid for the sight line.
+        self.assertIn("BossEncounterUnit(boss, c->GetEntry(), RunLinkedToBoss(c, boss))", clearance)
+        self.assertIn("other.guid = c->GetObjectGuid().GetRawValue();", clearance)
+        self.assertIn("(*otherMobs)[other.guid] = c;", clearance)
+        self.assertIn("info->masterId == boss.entry", COMMANDS)
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
         self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c)));",
                       clearance)
@@ -896,15 +908,17 @@ class RunLeaderWiringTest(unittest.TestCase):
         # The pack's formation is read for every unit of a stand-pull row's own read (Facts::units).
         facts_read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("unit.formation = RunFormationOf(creature);", facts_read)
-        # The policy: the first clear candidate is taken; no clear stand waits for a patrol, else pauses with the pack
-        # that blocks it, never the plain pull from the refused point.
+        # The policy: the first clear candidate is taken; a patrolling blocker is waited for up to 20 s, else the
+        # default stand goes out with the advisory note. The run never pauses for the clearance.
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         hold = body(policy, "inline bool HoldForShot(", "\n}\n")
         self.assertIn("if (!f.shotStandBlocked)", hold)
-        self.assertIn('"stand_pull: no clear stand for " + std::to_string(u.entry) + " (blocked by "', hold)
+        self.assertIn('"stand_pull: no clear stand for " + std::to_string(u.entry) + " (closest "', hold)
+        self.assertIn('); using the default stand";', hold)
+        self.assertIn("return hold(defaultNote.empty() ? walkNote : defaultNote);", hold)
         self.assertIn('" yd): waiting for the patrol to walk clear ("', hold)
         self.assertIn("r.shotClearMs + dt <= kStandClearWaitMs", hold)
-        self.assertIn("Pause(r, ", hold)
+        self.assertNotIn("Pause(r, ", hold)
         self.assertIn("inline bool StandClearAt(float x, float y, float z, const std::vector<StandOther>& others)", policy)
         self.assertIn("inline const StandOther* StandBlocker(float x, float y, float z, const std::vector<StandOther>& others)",
                       policy)
@@ -917,7 +931,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("inline bool StandAbovePackReach(float x, float y, float z, "
                       "const std::vector<StandPackReach>& pack)", policy)
         self.assertIn("constexpr float kStandClearAssistYd = 10.0f;", policy)
-        self.assertIn("constexpr std::uint32_t kStandClearWaitMs = 60000;", policy)
+        self.assertIn("constexpr std::uint32_t kStandClearWaitMs = 20000;", policy)
+        self.assertIn("constexpr float kStandClearSpreadYd = 4.0f;", policy)
+        self.assertIn("constexpr float kStandClearOtherStoreyYd = 8.0f;", policy)
+        self.assertIn("inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,", policy)
+        self.assertIn("inline BossEncounter BossEncounterOf(const PlanStep* step)", policy)
+        self.assertIn("inline bool BossEncounterUnit(const BossEncounter& boss, std::uint32_t entry, bool linkedToBoss)",
+                      policy)
         self.assertIn("inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, "
                       "std::uint64_t targetFormation)", policy)
         self.assertIn("inline bool InPullPack(const PullPack& pack, std::uint64_t guid, "
