@@ -16120,11 +16120,11 @@ static void TestStandClearanceKeepsOffOtherPacksOnly()
 }
 
 // The clearance on an authored stand-pull step (kPlanFlagStandPull, the Mar'li shape): the glue reads that step's
-// shot range whatever AiPlayerbot.DungeonRunPullStand says (StandThisStep), and a stand read for the step's pull is
-// clearance-checked like any other. The key off: today's pick, the reach's own point, and no other pack read. The
-// policy side: the step's static unit out of the shot leaves the row to the plain pull, and that pull's stand (the
-// pull stand on) is the one the clearance picks; a refused read orders the pull from where the tank stands, with its
-// note.
+// shot range whatever the key says (StandThisStep), and its own pull's stand runs the stand rule with
+// AiPlayerbot.DungeonRunStandClearance (PullStandRuleOn), whatever AiPlayerbot.DungeonRunPullStand says. The policy
+// side: the step's static unit out of the shot leaves the row to the plain pull, and that pull's stand is the one the
+// clearance picks; a refused read orders the pull from where the tank stands, with its note. Both keys off: no stand
+// rule at all, and the row pulls as it did before either key.
 static void TestStandClearanceCoversTheAuthoredStandPull()
 {
     using ai::ApproachPoint;
@@ -16164,9 +16164,12 @@ static void TestStandClearanceCoversTheAuthoredStandPull()
     close.path.push_back(P(-16.4f, -41.8f)); // a leg 25.0 yd from P2 as well
     std::vector<StandOther> const all = {close};
     bool blocked = false;
+    ShotStand best;
     ShotStand const none = ShotStandOnPathCleared(path, unit, range, seesAll,
-        [&all](const ShotStand& s) { return StandClearAt(s.x, s.y, s.z, all); }, blocked);
+        [&all](const ShotStand& s) { return StandClearAt(s.x, s.y, s.z, all); }, blocked, kStandClearCandidates, &best);
     CHECK(!none.known && blocked);
+    // Nothing clear: the stand the hold falls back on is the one the key-off read takes (the path's first candidate).
+    CHECK(best.known && best.x == off.x && best.y == off.y && best.z == off.z);
 
     // The authored stand (the move row) and the stand-pull pull row after it: the tank at the authored stand, its
     // unit 40 yd out, so the row leaves it to the plain pull and that pull reads the stand.
@@ -16187,19 +16190,24 @@ static void TestStandClearanceCoversTheAuthoredStandPull()
     };
     auto const readStand = [&](Run& r, Facts& f)
     {
-        f.pullStand = false; // the key off: the authored stand-pull step's rule runs anyway
+        f.pullStand = false;     // the pull stand key off ...
+        f.standClearance = true; // ... and the clearance key on: the authored step's own pull takes the rule
         CHECK(Tick(r, f).empty()); // the static unit out of the shot: the row pulls it as a plain pull
         CHECK(Has(r.note, "as a plain pull"));
         CHECK(Tick(r, f).empty() && r.shotStandFor == 11);
     };
-    // The clearance off: today's stand, and the tank walks there.
+    // Both keys off: no stand rule, so no stand read and the pull goes out at once.
     {
         Run r = Start(&plan, 1);
         Facts f = StandParty();
         f.units = {Seen(11, 4851, 40.0f)};
-        readStand(r, f);
-        give(r, f, off);
-        CHECK(Tick(r, f) == "move -24.5 0.0 0.0");
+        f.pullStand = false;
+        f.standClearance = false;
+        CHECK(Tick(r, f).empty()); // the static unit out of the shot: the row pulls it as a plain pull
+        CHECK(Has(r.note, "as a plain pull"));
+        CHECK(Tick(r, f) == "pullback 11");
+        CHECK(r.shotStandFor == 0 && !r.shotStandPrep);
+        CHECK(r.note == "pulling 4851");
     }
     // The clearance on: the first stand clear of the patrol, not today's.
     {
@@ -16227,6 +16235,40 @@ static void TestStandClearanceCoversTheAuthoredStandPull()
         CHECK(r.state == State::Running);
         CHECK(r.note == "stand_pull: no clear stand for 4851 (closest 49202 at 20.0); using the default stand");
         CHECK(r.shotStandTries[11] == 1);
+    }
+}
+
+// H1: an authored stand-pull step's stand rule is the clearance key's, and only its own pull takes it. A walk-back
+// hop pull of that step runs no stand rule with both keys off: no read, no walk, the pullback goes out at once.
+static void TestAuthoredStandRuleSkipsHopPulls()
+{
+    DungeonPlan plan;
+    PlanStep standRow = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    standRow.leg = 0;
+    PlanStep pull = PullStep(0.0f, {4851}, ai::kPlanFlagStandPull);
+    pull.leg = 0;
+    plan.steps = {standRow, pull};
+    for (bool clearance : {false, true})
+    {
+        Run r = Start(&plan, 1);
+        Facts f = StandParty();
+        f.pullStand = false;
+        f.standClearance = clearance;
+        std::string order;
+        PullUnit(r, f, Seen(11, 4851, 40.0f, false), order, nullptr, true); // the walk back's hop pull
+        CHECK(order == "pullback 11");
+        CHECK(r.shotStandFor == 0 && !r.shotStandPrep && !r.shotStandWalk && !r.shotGateRan);
+        CHECK(r.note == "pulling 4851");
+    }
+    // The step's own pull still takes it with the clearance key on.
+    {
+        Run r = Start(&plan, 1);
+        Facts f = StandParty();
+        f.pullStand = false;
+        f.standClearance = true;
+        std::string order;
+        PullUnit(r, f, Seen(11, 4851, 40.0f, false), order);
+        CHECK(order.empty() && r.shotStandFor == 11);
     }
 }
 
@@ -16272,6 +16314,43 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
         f.units[0].losLead = true;
         CHECK(Tick(r, f) == "pullback 11");
         CHECK(Has(r.note, "shot from firing stand 1"));
+    }
+    // M1: the patrol wait is the unit's, not the read's: a stand walk leaves it standing, so the next read blocked by
+    // the same patrol does not start a fresh 20 s wait.
+    {
+        Run r = Start(&plan);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f)};
+        CHECK(Tick(r, f).empty());
+        f.shotStandGuid = 11;
+        f.shotStandKnown = false;
+        f.shotStandBlocked = true;
+        f.shotStandBlockPatrols = true;
+        f.shotStandBlockEntry = 49202;
+        f.shotStandBlockYd = 20.0f;
+        f.shotStandBestX = 24.5f;
+        f.shotStandBestY = 0.0f;
+        f.shotStandBestZ = 0.0f;
+        f.shotStandBestYd = 15.5f;
+        for (int i = 0; i < 19; ++i)
+            CHECK(Tick(r, f).empty());
+        CHECK(r.state == State::Running && r.shotClearMs == 19 * kTickMs);
+        // The patrol walked clear: the tank walks to the reach's own stand.
+        f.shotStandBlockNowClear = true;
+        CHECK(Tick(r, f) == "move 24.5 0.0 0.0");
+        CHECK(r.shotClearMs == 19 * kTickMs); // the walk keeps the wait it had
+        // At the stand the patrol refuses it again: the wait goes on from where it was.
+        f.shotStandGuid = 0;
+        f.shotStandKnown = false;
+        f.shotStandBlockNowClear = false;
+        f.leadX = 24.5f;
+        f.units[0].losLead = false;
+        CHECK(Tick(r, f).empty());
+        CHECK(r.shotStandFor == 11 && Has(r.note, "reading a firing stand"));
+        f.shotStandGuid = 11;
+        CHECK(Tick(r, f).empty());
+        CHECK(r.shotClearMs == kStandClearWaitMs && Has(r.note, "(20 s of 20)"));
+        CHECK(r.shotStandFor == 11);
     }
     // A blocker that walks no patrol: the default stand at once, the note naming it, no pause.
     {
@@ -16500,9 +16579,12 @@ static void TestStandClearanceBossEncounterUnitsAreNoOthers()
         }
     CHECK(others.size() == 3 && others[0].entry == 11368 && others[1].entry == 14987 && others[2].entry == 50000);
     CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, others)); // the unrelated trash still refuses the stand
-    // Counted as an other, the summoned bat would refuse it too: the spawn evidence is what keeps it out.
-    StandOther bat = others[0];
+    // Counted as an other, the bat he summoned would refuse it too: the spawn evidence is what keeps it out.
+    StandOther bat;
+    bat.guid = 0x102;
     bat.entry = 11368;
+    bat.x = 10.0f;
+    bat.clearYd = 18.0f;
     std::vector<StandOther> const withBat = {bat};
     CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, withBat));
     // A boss whose own spawn the host could not read (a script summons him): only what a spawn still proves, the
@@ -16583,6 +16665,23 @@ static void TestStandClearanceJudgesAPatrolByItsLoopStorey()
     CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{edge}, blind));
     edge.path = {P(5.0f, 0.0f, 8.1f), P(0.0f, 10.0f, 8.1f)};
     CHECK(StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{edge}, blind));
+    // M2: the exemption takes the loop's whole height range, not the height of its nearest point: a balcony 9 yd up
+    // whose loop also comes down to the stand's floor refuses the stand (its nearest point alone would have excused it).
+    StandOther balcony;
+    balcony.patrols = true;
+    balcony.x = 5.0f;
+    balcony.z = 9.0f;
+    balcony.path = {P(5.0f, 0.0f, 9.0f), P(5.0f, 10.0f, 9.0f), P(5.0f, 10.0f, 0.0f)};
+    balcony.clearYd = 24.0f;
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{balcony}, blind));
+    // A loop wholly 12 yd up stays on another storey: the stand is clear.
+    StandOther high;
+    high.patrols = true;
+    high.x = 5.0f;
+    high.z = 12.0f;
+    high.path = {P(5.0f, 0.0f, 12.0f), P(0.0f, 10.0f, 12.0f)};
+    high.clearYd = 24.0f;
+    CHECK(StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{high}, blind));
     // A patroller whose loop the host could not read keeps the spot rule: out of sight it is excused, in sight it
     // refuses the stand.
     StandOther unread;
@@ -27694,6 +27793,7 @@ int main()
     TestStandClearancePicksTheFarStand();
     TestStandClearanceKeepsOffOtherPacksOnly();
     TestStandClearanceCoversTheAuthoredStandPull();
+    TestAuthoredStandRuleSkipsHopPulls();
     TestStandClearanceWaitsForTheBlockingPatrol();
     TestStandClearanceTreatsThePacksAssistanceAsPack();
     TestStandClearanceFloorsOnThePacksOwnReach();

@@ -107,6 +107,9 @@ constexpr float kArriveYd = 3.0f;                 // a walk is done this close t
 constexpr float kStalledArriveYd = 6.0f;          // ... or this close once it stopped gaining ground (a point
                                                   // just off the mesh or on a ledge the bot cannot reach)
 constexpr float kStandZTolYd = 4.5f;              // a stand this far above or below the lead bot or less is judged on the ground plane
+// The core's INVALID_MAP_ID (CreatureLinkingMgr.cpp): a creature_linking row (a master spawn's guid) has no map of its
+// own, a creature_linking_template row always does.
+constexpr std::uint32_t kInvalidMapId = 0xFFFFFFFF;
 constexpr float kSeeYd = 60.0f;                   // a pack, boss or spot is judged only from this close
 constexpr float kWaitClearMaxDz = 10.0f;          // wait_clear: past the step's own wait, a remaining hostile this far above or below the spot counts as another floor (WaitClearOffFloorOnly)
 // A lead bot revived in another part of the instance (LeadInOtherPart, Scarlet
@@ -231,16 +234,16 @@ constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
 // own reach and the line of sight the core needs decide whether it can wake on the stand. `path` is the whole loop a
 // patroller walks; a loop the host cannot read (a special escorts path) stands in by the unit's spot plus
 // kStandClearUnreadPathYd. A unit that stays put this far above or below the stand with no sight line to it is on
-// another storey (kStandClearOtherStoreyYd): it is no other pack the stand must keep clear of. A patroller is judged
-// by the loop point nearest the stand instead: its spot may be on another storey while the loop comes down to the
-// stand's, and no sight line is asked of a point it has not reached yet. A boss step's stand stands inside
+// another storey (kStandClearOtherStoreyYd): it is no other pack the stand must keep clear of. A patroller is excused
+// only when its whole loop stays that far in height: its spot may be on another storey while the loop comes down to
+// the stand's, and no sight line is asked of a point it has not reached yet. A boss step's stand stands inside
 // the boss fight (BossEncounter): the step's own units and the creatures the core links to the boss are no other
 // packs either.
 constexpr float kStandClearSpreadYd = 4.0f;
 constexpr float kStandClearUnreadPathYd = 10.0f;
 constexpr std::size_t kStandClearCandidates = 8;   // stands tried along the lead bot's path, nearest the lead first
 constexpr float kStandClearScanYd = 2.0f * kSeeYd; // the glue reads the other packs this far around the lead bot
-constexpr float kStandClearOtherStoreyYd = 8.0f;   // a unit this far from the stand in height (a patroller: the loop point nearest it) is on another storey
+constexpr float kStandClearOtherStoreyYd = 8.0f;   // a unit this far from the stand in height (a patroller: every point of its loop) is on another storey
 // The core's family assistance radius (ai::kAggroFamilyAssistYd): a creature this near a pulled one that can answer
 // its call is called to the fight with it, so the pull's pack grows by it (GrowPullPackByAssistance). One ring: the
 // creatures the call reaches do not call the next.
@@ -272,45 +275,30 @@ struct StandPackReach
 };
 
 // Point-to-segment distance in 3D: a stand beside a loop's leg is as close to the patrol as one beside a waypoint.
-// The nearest point's height goes to `nearestZ`: the storey rule reads the height of the loop point the clearance
-// fails on.
 inline float StandClearSegmentYd(float ax, float ay, float az, float bx, float by, float bz, float px, float py,
-    float pz, float& nearestZ)
+    float pz)
 {
     float const dx = bx - ax, dy = by - ay, dz = bz - az;
     float const len2 = dx * dx + dy * dy + dz * dz;
     float t = len2 > 0.0f ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len2 : 0.0f;
     t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-    nearestZ = az + t * dz;
+    float const nearestZ = az + t * dz;
     return ai::PlanDistance(ax + t * dx, ay + t * dy, nearestZ, px, py, pz);
 }
 
-// How near a point comes to the closed loop a patrol walks; `nearestZ` (when given) is the height of the nearest
-// loop point. A path of fewer than two nodes is no loop: no distance at all.
-inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, float x, float y, float z,
-    float* nearestZ = nullptr)
+// How near a point comes to the closed loop a patrol walks. A path of fewer than two nodes is no loop: no distance
+// at all.
+inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, float x, float y, float z)
 {
     std::size_t const n = path.size();
     if (n < 2)
         return std::numeric_limits<float>::max();
     float best = std::numeric_limits<float>::max();
-    float bestZ = path[0].z;
-    auto const take = [&](const ai::ApproachPoint& a, const ai::ApproachPoint& b)
-    {
-        float segZ = a.z;
-        float const d = StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z, segZ);
-        if (d < best)
-        {
-            best = d;
-            bestZ = segZ;
-        }
-    };
     for (std::size_t i = 1; i < n; ++i)
-        take(path[i - 1], path[i]);
-    take(path[n - 1], path[0]);
-    if (nearestZ)
-        *nearestZ = bestZ;
-    return best;
+        best = std::min(best, StandClearSegmentYd(path[i - 1].x, path[i - 1].y, path[i - 1].z, path[i].x, path[i].y,
+            path[i].z, x, y, z));
+    return std::min(best, StandClearSegmentYd(path[n - 1].x, path[n - 1].y, path[n - 1].z, path[0].x, path[0].y,
+        path[0].z, x, y, z));
 }
 
 // How near a point comes to one other unit: its spot (plus the margin of a loop the host could not read), or the
@@ -359,9 +347,10 @@ inline bool StandOnOtherStorey(const StandOther& other, float z, bool los)
 }
 
 // Whether that unit refuses the stand: inside its clearance, and not on another storey. A unit that stays put is
-// excused only when it is this far in height and out of its sight; a patroller is judged by the height of the loop
-// point nearest the stand, no sight line asked: its spot may be on another storey while the loop comes down to the
-// stand's, and the map ray is the expensive read, aimed at a point it has not reached yet.
+// excused only when it is this far in height and out of its sight; a patroller is excused only when its whole
+// recorded loop stays this far in height (the lowest and the highest point both), no sight line asked: its spot may
+// be on another storey while its loop comes down to the stand's, and the map ray is the expensive read, aimed at a
+// point it has not reached yet.
 inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,
     const std::function<bool(const StandOther&)>& los)
 {
@@ -369,9 +358,15 @@ inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,
         return false;
     if (other.path.size() > 1)
     {
-        float nearestZ = other.path[0].z;
-        StandPathClearanceYd(other.path, x, y, z, &nearestZ);
-        return std::fabs(nearestZ - z) <= kStandClearOtherStoreyYd;
+        float lowestZ = other.path[0].z;
+        float highestZ = other.path[0].z;
+        for (const ai::ApproachPoint& point : other.path)
+        {
+            lowestZ = std::min(lowestZ, point.z);
+            highestZ = std::max(highestZ, point.z);
+        }
+        return std::fabs(lowestZ - z) <= kStandClearOtherStoreyYd ||
+            std::fabs(highestZ - z) <= kStandClearOtherStoreyYd;
     }
     if (std::fabs(other.z - z) <= kStandClearOtherStoreyYd)
         return true;
@@ -912,22 +907,24 @@ struct BossEncounterScan
     bool inCombat = false;
 };
 
-// One creature's creature_linking row as the core keeps it: an entry link's masterId is the master's creature entry,
-// a GUID link's is the master spawn's DB guid, which the core also puts in masterDBGuid (nonzero only for a GUID
-// link). Reading a GUID link's masterId as an entry never matches a boss.
+// One creature's creature_linking row as the core keeps it: a template row's masterId is the master's creature entry
+// and it carries a map, a creature_linking row's is the master spawn's DB guid and its map is INVALID_MAP_ID, which
+// the core also copies into masterDBGuid (CreatureLinkingMgr). masterDBGuid is set on some template rows too (a
+// unique master, the FOLLOW flag), so it alone never tells the two kinds apart.
 struct BossLink
 {
     std::uint32_t masterId = 0;
     std::uint32_t masterDBGuid = 0;
+    std::uint32_t mapId = kInvalidMapId;
 };
 
-// Whether the link names the boss: a GUID link is read against the boss's own spawn row, an entry link against the
-// step's boss entry.
+// Whether the link names the boss: its master spawn (a creature_linking row's master_guid, or a template row's
+// unique master), or a template row's master entry against the step's boss entry.
 inline bool BossLinkNamesBoss(const BossEncounter& boss, const BossLink& link)
 {
-    if (link.masterDBGuid != 0)
-        return boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid;
-    return boss.entry != 0 && link.masterId == boss.entry;
+    if (link.masterDBGuid != 0 && boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid)
+        return true;
+    return link.mapId != kInvalidMapId && boss.entry != 0 && link.masterId == boss.entry;
 }
 
 // Whether the scanned creature is one of the boss encounter, on spawn-level evidence only (the glue reads the
@@ -1487,6 +1484,10 @@ struct Facts
     // AiPlayerbot.DungeonRunPullStand (HoldForShot): the key is on. Off (the
     // default) nothing below is read and the pull goes out as before, byte for byte.
     bool pullStand = false;
+    // AiPlayerbot.DungeonRunStandClearance: the key is on. It owns the stand
+    // rule of an authored stand-pull step's own pull (PullStandRuleOn) and
+    // the glue's clearance read of the stands it offers.
+    bool standClearance = false;
     // AiPlayerbot.DungeonRunWalkBackAfterWonFight (GuardWalkBackWanted): on (1),
     // the old walk back to the guard's stand point after every guarded fight. Off
     // (0, the default) the run goes on from where the tank stands once the step's
@@ -7934,7 +7935,9 @@ inline const PlanStep* StandPullStand(const Run& r, const PlanStep& s)
 }
 
 // The current step is an authored stand-pull step (kPlanFlagStandPull, the glue's StandThisStep): a pull or boss step
-// with its stand row right before it in the same leg. The glue reads its shot range and sight whatever the key says.
+// with its stand row right before it in the same leg. The glue reads its shot range and sight whatever the key says
+// (the stand-pull row's own unit is judged with them); the stand rule runs for its own pull with the clearance key
+// (PullStandRuleOn).
 inline bool AuthoredStandStep(const Run& r)
 {
     const PlanStep* const s = Current(r);
@@ -7949,10 +7952,15 @@ inline bool PullStandOn(const Run& r, const Facts& f)
     return f.pullStand && f.leadShotYd > kShotMarginYd && !InEvent(r);
 }
 
-// The same rule, for every pull: an authored stand-pull step's too (the docs' "authored stand pulls (always)").
-inline bool PullStandRuleOn(const Run& r, const Facts& f)
+// The same rule, for an authored stand-pull step's own pull too: its stand
+// runs with AiPlayerbot.DungeonRunStandClearance (the key that owns the
+// stand's clearance), whichever way AiPlayerbot.DungeonRunPullStand says.
+// Never a hop or a walk-back pull, the step's own included: their stand would
+// walk the tank off the point the step's pull stands on.
+inline bool PullStandRuleOn(const Run& r, const Facts& f, bool hop)
 {
-    return (f.pullStand || AuthoredStandStep(r)) && f.leadShotYd > kShotMarginYd && !InEvent(r);
+    return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r))) && f.leadShotYd > kShotMarginYd &&
+        !InEvent(r);
 }
 
 // The tank's shot can go out from where it stands: the unit in sight and
@@ -8260,18 +8268,19 @@ inline std::uint32_t ExpectedJoiners(const Run& r, const UnitFact& u)
 //     the stand the key-off read takes (the path's first candidate, today's
 //     point) with the note naming the closest blocker. The pull is never
 //     paused or held past the patrol wait.
-// The rule runs for an authored stand-pull step too (PullStandRuleOn): its
-// stand is read whatever AiPlayerbot.DungeonRunPullStand says.
+// The rule runs for an authored stand-pull step's own pull too, with
+// AiPlayerbot.DungeonRunStandClearance (PullStandRuleOn); a hop or walk-back
+// pull of that step never takes it.
 // True while the pull waits (`order` may hold the move); false: the order
 // goes out now, and Run::shotHow says how its shot stood.
-inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t dt, std::string& order)
+inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t dt, std::string& order, bool hop)
 {
     r.shotGateRan = true;
     // A stand request is answered (or dropped) on the very next tick: the
     // glue reads at most one stand per request.
     bool const standRead = r.shotStandFor == u.guid && f.shotStandGuid == u.guid;
     r.shotStandFor = 0;
-    if (!PullStandRuleOn(r, f))
+    if (!PullStandRuleOn(r, f, hop))
     {
         r.shotHow = f.leadShotYd > kShotMarginYd ? "no stand rule in an event" : "no ranged weapon pull: stand rule off";
         return false;
@@ -8380,7 +8389,8 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
         float const sy = f.shotStandKnown ? f.shotStandY : f.shotStandBestY;
         float const sz = f.shotStandKnown ? f.shotStandZ : f.shotStandBestZ;
         float const sYd = f.shotStandKnown ? f.shotStandYd : f.shotStandBestYd;
-        r.shotClearMs = 0;
+        // The patrol wait is one unit's, not one read's: a stand walk leaves it
+        // standing (ResetShotStand ends it with the step).
         if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, sx, sy, sz) <= kArriveYd)
         {
             // The stand is where the tank stands: walking gains nothing.
@@ -8526,19 +8536,21 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     }
     // The pull stand (off: false at once, nothing changed): before the gather
     // waiver is spent, so a stand walk from a hop in sight keeps it. An
-    // authored stand-pull step runs it whatever the key says (PullStandRuleOn).
+    // authored stand-pull step's own pull runs it with the clearance key
+    // (PullStandRuleOn); its hop and walk-back pulls never take it.
     // The stand-pull gate's authorization covers only the unit it picked in shot.
-    if ((f.pullStand || AuthoredStandStep(r)) && r.standPullShotGuid != u.guid)
+    bool const authored = f.standClearance && !hop && AuthoredStandStep(r);
+    if ((f.pullStand || authored) && r.standPullShotGuid != u.guid)
     {
         auto const done = r.pullTries.find(u.guid);
-        if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order))
+        if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order, hop))
             return;
     }
     // A gather left out holds for this pull only: the next one gathers again.
     r.gatherWaived = false;
     r.hopWaiveUnits.clear();
     r.gatherRefusals = 0;
-    if (hop && PullStandOn(r, f) && !ShootableFromLead(f, u))
+    if (hop && PullStandRuleOn(r, f, hop) && !ShootableFromLead(f, u))
     {
         r.neverCame.insert(u.guid);
         r.standPullShotGuid = 0; // the pull never went out (a hop unit the tank cannot shoot is left out)
@@ -8573,7 +8585,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     EnterPhase(r, Phase::AwaitPull);
     r.note = "pulling " + std::to_string(u.entry);
     order = "pullback " + std::to_string(u.guid);
-    if (f.pullStand || AuthoredStandStep(r))
+    if (f.pullStand || authored)
     {
         // Each order its own status line (the trace keeps only changes): the
         // target's guid, the how-many-th order to it, and how its shot stood.

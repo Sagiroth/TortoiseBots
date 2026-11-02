@@ -9141,8 +9141,8 @@ bool RunAssistsCreature(Creature* helper, Creature* caller)
 }
 
 // Whether the core links the creature to the boss of the step: a creature_linking_template row names the boss's entry,
-// a creature_linking row the boss spawn (its masterId is that spawn's DB guid, not an entry). Such a creature is of
-// the boss fight, not another pack a boss step's stand keeps clear of.
+// a creature_linking row the boss spawn (its masterId is that spawn's DB guid, not an entry; its map is the core's
+// INVALID_MAP_ID). Such a creature is of the boss fight, not another pack a boss step's stand keeps clear of.
 bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter const& boss)
 {
     CreatureLinkingInfo const* const info = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature);
@@ -9151,6 +9151,7 @@ bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter
     TortoiseBots::DungeonRun::BossLink link;
     link.masterId = info->masterId;
     link.masterDBGuid = info->masterDBGuid;
+    link.mapId = info->mapId;
     return TortoiseBots::DungeonRun::BossLinkNamesBoss(boss, link);
 }
 
@@ -9362,6 +9363,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.packClearRepulls = sPlayerbotAIConfig.dungeonRunPackClearRepulls;
     // The pull stand (DungeonRun::HoldForShot): off, no sight ray, range or stand is read.
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
+    // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
+    f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;

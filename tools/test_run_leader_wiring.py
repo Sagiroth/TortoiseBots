@@ -771,6 +771,8 @@ class RunLeaderWiringTest(unittest.TestCase):
         # the key on; the policy holds the pullback for them only when the facts say the key is on.
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;", read)
+        # The clearance key owns an authored stand-pull step's stand rule (PullStandRuleOn).
+        self.assertIn("f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;", read)
         # The step units (pull/boss) and the residue units carry losLead, from the lead bot's own sight test.
         self.assertIn("if (f.pullStand || StandThisStep(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
         self.assertIn("if (residue)\n                    {\n                        unit.x = creature->GetPositionX();\n"
@@ -799,14 +801,18 @@ class RunLeaderWiringTest(unittest.TestCase):
         # The policy: PullUnit's pullback passes through the gate first; HoldForShot is off without the key or a range.
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         pull = body(policy, "inline void PullUnit(", "\n}\n")
-        gate = pull.index("HoldForShot(r, f, u, dt, order))\n            return;")
-        self.assertLess(pull.index("if ((f.pullStand || AuthoredStandStep(r)) && r.standPullShotGuid != u.guid)\n"), gate)
+        gate = pull.index("HoldForShot(r, f, u, dt, order, hop))\n            return;")
+        # The authored half is the clearance key's, and never a hop or walk-back pull's (H1).
+        self.assertIn("bool const authored = f.standClearance && !hop && AuthoredStandStep(r);", pull)
+        self.assertLess(pull.index("if ((f.pullStand || authored) && r.standPullShotGuid != u.guid)\n"), gate)
         self.assertLess(gate, pull.index('order = "pullback " + std::to_string(u.guid);'))
         self.assertLess(gate, pull.index("++tries;"))
+        self.assertIn('order = "pullback " + std::to_string(u.guid);\n    if (f.pullStand || authored)', pull)
         on = body(policy, "inline bool PullStandOn(", "\n}\n")
         self.assertIn("return f.pullStand && f.leadShotYd > kShotMarginYd && !InEvent(r);", on)
         rule = body(policy, "inline bool PullStandRuleOn(", "\n}\n")
-        self.assertIn("return (f.pullStand || AuthoredStandStep(r)) && f.leadShotYd > kShotMarginYd && !InEvent(r);", rule)
+        self.assertIn("return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r))) && "
+                      "f.leadShotYd > kShotMarginYd &&\n        !InEvent(r);", rule)
         authored = body(policy, "inline bool AuthoredStandStep(", "\n}\n")
         self.assertIn("s->kind == PlanStepKind::Boss || s->kind == PlanStepKind::Pull", authored)
         self.assertIn("StandPullStand(r, *s) != nullptr", authored)
@@ -815,7 +821,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("r.shotGateRan = false;", tick)
         self.assertIn("if (!r.shotGateRan)\n        EndShotHold(r);", tick)
         hold = body(policy, "inline bool HoldForShot(", "\n}\n")
-        self.assertIn("if (!PullStandRuleOn(r, f))", hold)
+        self.assertIn("if (!PullStandRuleOn(r, f, hop))", hold)
         self.assertIn("r.shotStandFor = u.guid;", hold)
         # Every pull caller hands its tick length to the stand walk.
         self.assertIn("CcPick const ccPick = PickCcOrder(r, f, pick->guid);\n        PullUnit(r, f, *pick, order, ccPick.unit, false, dt);", policy)
@@ -825,7 +831,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         # left out with no order (after the stand gate, before any pullback). The run-wide set holds hop units
         # only, is read only by the two hop picks, is cleared by every regroup, and loses a unit that attacks.
         self.assertIn("hop = hop || walkBack;", pull)
-        nohop = pull.index("if (hop && PullStandOn(r, f) && !ShootableFromLead(f, u))")
+        nohop = pull.index("if (hop && PullStandRuleOn(r, f, hop) && !ShootableFromLead(f, u))")
         self.assertLess(gate, nohop)
         self.assertLess(nohop, pull.index('order = "pullback " + std::to_string(u.guid);'))
         self.assertIn("r.pullHop = hop;", pull)
@@ -900,11 +906,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("(*otherMobs)[other.guid] = c;", clearance)
         linked = body(COMMANDS, "bool RunLinkedToBoss(Creature* creature, "
                                 "TortoiseBots::DungeonRun::BossEncounter const& boss)\n{", "\n}\n")
-        # The two kinds of link: creature_linking_template names the boss entry, creature_linking names his spawn's
-        # DB guid (masterDBGuid marks it), which the read hands the policy as one record.
+        # The two kinds of link: creature_linking_template names the boss entry and carries a map, creature_linking
+        # names his spawn's DB guid with the core's INVALID_MAP_ID (masterDBGuid alone marks neither: a unique
+        # template master fills it too). The read hands them the policy as one record.
         self.assertIn("TortoiseBots::DungeonRun::BossLink link;", linked)
         self.assertIn("link.masterId = info->masterId;", linked)
         self.assertIn("link.masterDBGuid = info->masterDBGuid;", linked)
+        self.assertIn("link.mapId = info->mapId;", linked)
         self.assertIn("return TortoiseBots::DungeonRun::BossLinkNamesBoss(boss, link);", linked)
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
         self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), formations.back()));",
@@ -956,11 +964,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("constexpr float kStandClearSpreadYd = 4.0f;", policy)
         self.assertIn("constexpr float kStandClearOtherStoreyYd = 8.0f;", policy)
         self.assertIn("inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,", policy)
-        # A patroller's storey is read at the loop point nearest the stand, with no sight line.
+        # A patroller's storey is read over its whole loop (both ends of its height range), with no sight line.
         self.assertIn("inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, "
-                      "float x, float y, float z,", policy)
-        self.assertIn("StandPathClearanceYd(other.path, x, y, z, &nearestZ);", policy)
-        self.assertIn("return std::fabs(nearestZ - z) <= kStandClearOtherStoreyYd;", policy)
+                      "float x, float y, float z)", policy)
+        self.assertIn("lowestZ = std::min(lowestZ, point.z);", policy)
+        self.assertIn("highestZ = std::max(highestZ, point.z);", policy)
+        self.assertIn("return std::fabs(lowestZ - z) <= kStandClearOtherStoreyYd ||", policy)
+        self.assertIn("std::fabs(highestZ - z) <= kStandClearOtherStoreyYd;", policy)
         self.assertIn("float const spot = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;",
                       policy)
         self.assertIn("inline BossEncounter BossEncounterOf(const PlanStep* step)", policy)
@@ -968,9 +978,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("return (boss.guid != 0 && unit.guid == boss.guid) || unit.summoned || unit.linked ||", policy)
         self.assertIn("(boss.formation != 0 && unit.formation == boss.formation) || unit.inCombat;", policy)
         self.assertIn("inline bool BossLinkNamesBoss(const BossEncounter& boss, const BossLink& link)", policy)
-        self.assertIn("if (link.masterDBGuid != 0)", policy)
-        self.assertIn("return boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid;", policy)
-        self.assertIn("return boss.entry != 0 && link.masterId == boss.entry;", policy)
+        self.assertIn("constexpr std::uint32_t kInvalidMapId = 0xFFFFFFFF;", policy)
+        self.assertIn("if (link.masterDBGuid != 0 && boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid)", policy)
+        self.assertIn("return link.mapId != kInvalidMapId && boss.entry != 0 && link.masterId == boss.entry;", policy)
         self.assertIn("inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, "
                       "std::uint64_t targetFormation)", policy)
         self.assertIn("inline bool InPullPack(const PullPack& pack, std::uint64_t guid, "
