@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Configuration
+- New `AiPlayerbot.DecisionCapture.*` keys (off by default): a running dungeon run leader writes each tick's facts, run and order to rotating files under `LogsDir/decisions`, so a live failure can be replayed offline and kept as a regression test.
 - New `AiPlayerbot.DungeonRunRaidBossRules` (default `0`): a raid's boss fight may run 20 minutes, a death does not stop it while the boss still loses health, and the off-tanks take the adds so the main tank stays on the boss.
 - New `AiPlayerbot.DungeonRunRaidHealerGuard` (default `0`): in a raid boss fight whose main tank holds the boss, an add that attacks a healer goes to the raid's nearest ranged damage dealers within 35 yards of it (up to two per add), and the off-tanks take only such an add when no ranged damage dealer is free — so the off-tank is not spent on a bat while the boss is on the main tank. A dealer only counts once it took the order (a refused one passes to the next), and an order it never takes up (its target is not the add) frees the slot after six seconds and passes over that dealer like a refusal. The guard's orders are two seconds apart and pass over a plan boss, an add the run holds, and an add that already had two orders this fight; dealers busy with a commander task are not picked.
 - `RandomBotShowHelmet` / `RandomBotShowCloak` (default `1`) now take effect: `0` makes pool bots show up without their helmet and/or cloak from their next login. Hired companions and a player's own bots keep the display flags the character already has.
