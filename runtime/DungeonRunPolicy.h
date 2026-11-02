@@ -2603,7 +2603,7 @@ struct AheadEstimate
     bool unavailable = false; // the pull row lists no creature on the map
 };
 
-// The pull row's ring estimate, one per (row, unit) (ReadPullJoiners): the glue reads it on the row's
+// The pull row's ring estimate, one per (row, pass, unit) (ReadPullJoiners): the glue reads it on the row's
 // first tick and refills the unit facts from it on the rest, so one row is one estimate, not one a tick.
 struct PullUnitEstimate
 {
@@ -2616,23 +2616,34 @@ struct PullUnitEstimate
 struct PullEstimateCache
 {
     std::size_t step = static_cast<std::size_t>(-1);
+    // The run's stepPass the entries were read in (ResetStep bumps it: a wipe, a resume or a revisit
+    // of the row is a new pass, and the estimate read in the old one is stale).
+    std::uint32_t pass = 0;
     std::unordered_map<std::uint64_t, PullUnitEstimate> units;
 
-    // The entry for `guid` on row `at`, cleared when another row is read.
-    PullUnitEstimate& At(std::size_t at, std::uint64_t guid)
+    // Holds the entries for (row `at`, pass `passNo`). Another row or pass clears them, so entries of
+    // older passes are dropped as soon as a newer one is read.
+    void Hold(std::size_t at, std::uint32_t passNo)
     {
-        if (step != at)
+        if (step != at || pass != passNo)
         {
             step = at;
+            pass = passNo;
             units.clear();
         }
+    }
+
+    // The entry for `guid` on row `at` of pass `passNo`, cleared when another row or pass is read.
+    PullUnitEstimate& At(std::size_t at, std::uint32_t passNo, std::uint64_t guid)
+    {
+        Hold(at, passNo);
         return units[guid];
     }
 
-    // The row's read for `guid`, or null (another row was read since).
-    PullUnitEstimate const* Find(std::size_t at, std::uint64_t guid) const
+    // The row's read for `guid` in pass `passNo`, or null (another row or pass was read since).
+    PullUnitEstimate const* Find(std::size_t at, std::uint32_t passNo, std::uint64_t guid) const
     {
-        if (step != at)
+        if (step != at || pass != passNo)
             return nullptr;
         auto const it = units.find(guid);
         return it == units.end() ? nullptr : &it->second;

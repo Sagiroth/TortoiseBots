@@ -8746,6 +8746,7 @@ static std::vector<ai::AggroPoint> SampleWalkTo(Player* lead, float x, float y, 
 }
 
 void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanStep const& step, std::size_t stepIndex,
+    std::uint32_t stepPass,
     float toPoint, uint32 ceiling, std::unordered_set<std::uint64_t> const& held, TortoiseBots::DungeonRun::Facts& f,
     TortoiseBots::DungeonRun::PullEstimateCache& estimates)
 {
@@ -8833,7 +8834,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         {
             // One estimate a row (spec A7): a unit read on an earlier tick of this row is refilled from
             // the cache, not pathfound, raycast and estimated again every tick.
-            if (TortoiseBots::DungeonRun::PullUnitEstimate const* done = estimates.Find(stepIndex, unit.guid))
+            if (TortoiseBots::DungeonRun::PullUnitEstimate const* done = estimates.Find(stepIndex, stepPass, unit.guid))
             {
                 unit.estBodies = done->bodies;
                 unit.estGuids = done->guids;
@@ -8921,7 +8922,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         }
         if (walkRing)
         {
-            TortoiseBots::DungeonRun::PullUnitEstimate& store = estimates.At(stepIndex, unit.guid);
+            TortoiseBots::DungeonRun::PullUnitEstimate& store = estimates.At(stepIndex, stepPass, unit.guid);
             store.read = true;
             store.bodies = unit.estBodies;
             store.guids = unit.estGuids;
@@ -10562,7 +10563,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                             f.standPullOwnAlive.push_back(formation);
                 }
             if (step->kind == ai::PlanStepKind::Pull)
-                ReadPullJoiners(lead, bots, *step, slot.run.step, toPoint, f.joinerCeiling, slot.run.joinerHeld, f,
+                ReadPullJoiners(lead, bots, *step, slot.run.step, slot.run.stepPass, toPoint, f.joinerCeiling, slot.run.joinerHeld, f,
                     slot.pullEstCache);
             break;
         }

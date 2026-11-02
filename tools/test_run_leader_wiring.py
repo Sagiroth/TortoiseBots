@@ -745,7 +745,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.joinerCeiling = sPlayerbotAIConfig.dungeonRunAggroEstimate ? "
                       "sPlayerbotAIConfig.dungeonRunAggroCeiling : 0;", read)
         self.assertIn("if (step->kind == ai::PlanStepKind::Pull)\n"
-                      "                ReadPullJoiners(lead, bots, *step, slot.run.step, toPoint, f.joinerCeiling, "
+                      "                ReadPullJoiners(lead, bots, *step, slot.run.step, slot.run.stepPass, toPoint, f.joinerCeiling, "
                       "slot.run.joinerHeld, f,\n                    slot.pullEstCache);", read)
         joiners = body(COMMANDS, "void ReadPullJoiners(", "\n}\n")
         self.assertIn("if (!ceiling || f.units.empty())\n        return;", joiners)
@@ -783,8 +783,8 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("unit.estGuids.push_back(mobs[member.index].guid);", joiners)
         self.assertIn("m.guid = c->GetObjectGuid().GetRawValue();", joiners)
         # One estimate a row: the cached entry is refilled, and an in-combat unit is not judged.
-        self.assertIn("estimates.Find(stepIndex, unit.guid)", joiners)
-        self.assertIn("estimates.At(stepIndex, unit.guid)", joiners)
+        self.assertIn("estimates.Find(stepIndex, stepPass, unit.guid)", joiners)
+        self.assertIn("estimates.At(stepIndex, stepPass, unit.guid)", joiners)
         self.assertLess(joiners.index("if (target->IsInCombat())"), joiners.index("ai::EngagePoint("))
         ahead = body(COMMANDS, "void ReadPullAhead(", "\n}\n")
         self.assertIn("NextPullOfChain(slot, &at)", ahead)

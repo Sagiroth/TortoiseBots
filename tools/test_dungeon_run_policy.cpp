@@ -15410,18 +15410,35 @@ static void TestAheadNotMarkedWhenTheWalkEndsTheRow()
 static void TestPullEstimateCacheKeepsOneReadPerRow()
 {
     PullEstimateCache cache;
-    PullUnitEstimate& first = cache.At(3, 31);
+    PullUnitEstimate& first = cache.At(3, 0, 31);
     CHECK(!first.read && first.bodies == 0);
     first.read = true;
     first.bodies = 5;
     first.guids = {31, 32};
-    PullUnitEstimate const* again = cache.Find(3, 31);
+    PullUnitEstimate const* again = cache.Find(3, 0, 31);
     CHECK(again && again->bodies == 5 && again->guids.size() == 2);
-    CHECK(&cache.At(3, 31) == &first);
-    CHECK(cache.Find(3, 32) == nullptr);
-    cache.At(4, 31);
+    CHECK(&cache.At(3, 0, 31) == &first);
+    CHECK(cache.Find(3, 0, 32) == nullptr);
+    cache.At(4, 0, 31);
     CHECK(cache.step == 4 && cache.units.size() == 1);
-    CHECK(cache.Find(3, 31) == nullptr && cache.Find(4, 31) != nullptr);
+    CHECK(cache.Find(3, 0, 31) == nullptr && cache.Find(4, 0, 31) != nullptr);
+}
+
+// The same row and unit in a new step pass (a wipe, a resume or a revisit ran ResetStep) is read again:
+// the estimate of the old pass is stale, and reading the new pass drops it.
+static void TestPullEstimateCacheRereadsOnNewStepPass()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& old = cache.At(3, 0, 31);
+    old.read = true;
+    old.bodies = 5;
+    CHECK(cache.Find(3, 0, 31) != nullptr);
+    CHECK(cache.Find(3, 1, 31) == nullptr);
+    PullUnitEstimate& fresh = cache.At(3, 1, 31);
+    CHECK(!fresh.read && fresh.bodies == 0);
+    CHECK(cache.step == 3 && cache.pass == 1 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 0, 31) == nullptr);
+    CHECK(cache.Find(3, 1, 31) == &fresh);
 }
 
 // The pull order's note says the bodies the ring estimate expects.
@@ -29745,6 +29762,7 @@ int main()
     TestAheadUnavailableNote();
     TestAheadNotMarkedWhenTheWalkEndsTheRow();
     TestPullEstimateCacheKeepsOneReadPerRow();
+    TestPullEstimateCacheRereadsOnNewStepPass();
     TestRingPullNoteSaysBodiesExpected();
     TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
