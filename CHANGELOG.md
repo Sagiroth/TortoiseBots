@@ -123,6 +123,7 @@
 - Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
+- The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.
 - The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
 - Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.
 - New: the boss panel and the raid coverage card know the Scarlet Monastery bosses: all four wings of map 189, their abilities, Whitemane's pause and resurrection (her spell list returns after the revive) and the rare elites Ironspine, Azshir and the Fallen Champion.

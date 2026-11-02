@@ -153,6 +153,38 @@ It is not the live **Dungeons** tab above: that one shows the instance copies bo
 
 **Bosses** (owner request 2026-10-21): every known boss of the dungeon a card shows was drawn at its spawn point all the time, with its name - a gold crown while it lived, a grey crown with a tick and the name struck through once killed, an outlined crown when not seen - and the run line counted `bosses 3 / 8 killed` of the run's bosses (the ones the plan names; the others are listed in its tooltip), with `bosses –` on a dungeon map where nothing was known. The module sends the list with each boss's state in that party's own instance (`bosses` in the `COMMANDERS` report); without it the page falls back to the plan's boss steps, the bosses in sight and the kills it saw.
 
+### Underperforming bots (Fight debugger)
+
+Inside the Fight debugger card, under everything else and closed by default, **Underperforming bots** lists the bots a run flagged and says why. It is one view for every class and role and for parties and raids of 5 to 40: no boss, map or spell-id constant takes part.
+
+- **One row per listed bot:** name (click it for the gear and profile), class and talent spec, role, and its numbers next to what a median peer in the same role did in the same fights: damage per second (dps), healing per second (healers) or casts per second (tanks, because the fight data carries no threat), then casts per second, deaths, the skill rate for tanks whose class has a spell-count-zero rule (Sunder Armor, Maul/Swipe; shown, never flagged), how many fights flagged it, the reasons as chips (a rule id and its fight count, or the peer comparison in words), a short likely cause, and up to eight fight links (the boss name, or the step) that open that fight on its local night.
+- **The reasons:** the daemon's own warning rules (`combat.Judge`, so a rules change shows here at once), a bot whose main number is below half (yellow) or a quarter (red) of its role peers' median over at least three peer fights, low activity (casts per second below 40% of the peers) and frequent deaths. A red or a yellow rule warning lists a bot, but only in a fight it is judged in (the same alive-time rule as the numbers, so the flagged count never passes the judged count; a bot that died at once cannot be listed by a rule); a role with no peers (the only tank or healer of a five-man) gets no peer comparison, only its rules.
+- **The window:** a live card asks for the current binding (since it began; the last two hours when the module did not report a bound time), a history card for the current local night; a night picked on the rail is a local night too, with the page's zone and the 06:00 rollover, exactly as the fight history lists nights (`night=`, `tz=` and `rollover=` in the request, the UTC day when the zone is unknown). The run picker's first option is the whole window - *This run* on a live card, *Whole night* on a history card; *Last run* and each run of the window narrow the answer to one run. A run is one session of fights: a new run starts when the fight's session changes or the gap from the previous fight's end is over 15 minutes; a supervisor restart inside a run stays one run. The pick is dropped when the window changes (another night, another card, live to history, a new binding), so it never points at a run of the window before it.
+- **Not measured:** range, line of sight and mana are not in the fight data, so causes come from casts, damage, healing and deaths only.
+- **Known limits:** a bot is one row per guid and role, so a bot whose role changed inside the window lists twice (the header counts it once); the window picks fights by their start, a fight is never split across two nights; a live window is the whole binding since it began, which can hold fights from before the current session (the run picker narrows it); the peer medians need same-role peers judged in the same fight, so they compare within one fight and not across the night; a window over `max_fights` keeps its newest fights only, and the page says so.
+
+The limits served with every answer:
+
+| Name | Value | Meaning |
+|---|---|---|
+| `min_judged_s` | 20 | a fight shorter than this is not used for the peer numbers |
+| `min_alive_s` | 10 | a bot alive less than this in a fight is not judged in it |
+| `min_peers` | 2 | role peers a healer or dps needs in a fight for a peer median |
+| `min_tank_peers` | 1 | the same for tanks (a five-man has one tank, so no tank peers there) |
+| `min_fights` | 3 | peer fights a bot needs before a peer reason may list it |
+| `yellow_ratio` | 0.5 | bot / peer below this: yellow |
+| `red_ratio` | 0.25 | below this: red |
+| `idle_ratio` | 0.4 | casts per second below this share of the peers: low activity |
+| `death_ratio` | 2 | deaths at least this many times the peers' expected deaths |
+| `min_deaths` | 3 | ... and at least this many: yellow |
+| `early_death_share` | 0.5 | cause line when the bot died before half the fight in at least this share of its flagged fights |
+| `run_gap_s` | 900 | a longer gap between fights starts a new run |
+| `max_fights` | 500 | fights read per request, the newest kept (`truncated` says so) |
+| `max_fight_refs` | 20 | fight links per bot, newest first |
+| `spell_list_cap` | 12 | a bot with this many listed spells has a cut list (no skill rate) |
+
+`GET /api/v1/combat/underperformers?commander=<name>&(day=<YYYY-MM-DD>|night=<YYYY-MM-DD>&tz=<IANA zone>[&rollover=0-12]|since=<unix s>[&until=<unix s>])[&run=all|last|<i>]` answers `commander`, `since`, `until`, `run`, `fights`, `judged`, `truncated`, `runs` (each `since`, `until`, `fights`, `plan`, `legs`, `session`), `limits`, `bots` and `ok`; `run=all` (the default) is the whole window, and a run pick narrows the fights to that run's session and time bounds but `runs` still lists the whole window, and the answer's `since`/`until` become the run's. Each `bot` carries `you` (its own rates over the peer fights, the same fights as `peers` and the ratio), `you_all` (the same rates over every judged fight) and `fight_refs`, each of which carries the fight's `start` and no day: the page turns the start into the fight's local night to open. `night` is the same local night the fight history lists (tz and the 06:00 rollover, `X-TZ-Fallback: utc` and the night read as a UTC day when the zone is unknown); `day` stays one UTC day. Every number that cannot be computed is `null`, never NaN. A bad parameter answers 400 with `{"error": "..."}`; the route needs the normal GM login.
+
 ### Agent Maps Tab
 
 This tab is a developer tool for [turtle-agent](https://github.com/pjerra/turtle-agent), the headless test client used to test bots in dungeons. If you do not run turtle-agent, you will never see it and can skip this section.

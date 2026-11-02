@@ -1,0 +1,32 @@
+/* Underperforming bots: the Fight debugger's last row, full card width. The
+   row after the card's explicit grid in every media layout, whatever its row
+   count; hidden on a card that is not in Fight debugger mode. */
+.cmd-card.fd-on .fd-under { grid-column: 1 / -1; grid-row: -1 / span 1; min-width: 0; }
+.cmd-card:not(.fd-on) .fd-under { display: none; }
+
+.fd-under .fd-underbox { border-top: 1px solid var(--border-color); }
+.fd-under .fd-underbox > summary { cursor: pointer; }
+.fd-under .fd-underbody { padding: 6px 0 10px; }
+.fd-under .fd-undhead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.fd-under .fd-undsum { color: var(--text-muted); font-size: 0.78rem; }
+.fd-under .fd-undrunlab { color: var(--text-muted); font-size: 0.78rem; }
+.fd-under .fd-untable { overflow-x: auto; margin-top: 6px; }
+.fd-under table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.fd-under th { color: var(--text-muted); font-weight: 600; text-align: left; padding: 4px 8px 4px 0; white-space: nowrap; }
+.fd-under td { vertical-align: top; padding: 5px 8px 5px 0; border-top: 1px solid var(--border-color); }
+.fd-under .fd-undrow.red { box-shadow: inset 3px 0 0 var(--fd-fail); }
+.fd-under .fd-undrow.yellow { box-shadow: inset 3px 0 0 var(--fd-warn); }
+.fd-under .fd-unddot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; }
+.fd-under .fd-unddot.red { background: var(--fd-fail); }
+.fd-under .fd-unddot.yellow { background: var(--fd-warn); }
+.fd-under .fd-undname { padding: 0; border: 0; background: transparent; color: var(--text-main); font: inherit; font-weight: 600; cursor: pointer; }
+.fd-under .fd-undsub { display: block; color: var(--text-muted); font-size: 0.72rem; }
+.fd-under .fd-undchip { display: inline-block; margin: 0 4px 3px 0; padding: 1px 5px; border-radius: var(--radius-sm); font-size: 0.7rem; }
+.fd-under .fd-undchip.red { color: var(--fd-fail); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
+.fd-under .fd-undchip.yellow { color: var(--fd-warn); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
+.fd-under .fd-undcause { color: var(--text-muted); font-size: 0.72rem; }
+.fd-under .fd-undfight { margin: 0 4px 3px 0; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: inherit; font-size: 0.72rem; cursor: pointer; }
+.fd-under .fd-undmore, .fd-under .fd-undmiss, .fd-under .fd-undnote, .fd-under .fd-undoek, .fd-under .fd-undlead { color: var(--text-muted); font-size: 0.74rem; }
+.fd-under .fd-undnote { margin-top: 6px; }
+.fd-under .fd-undtrunc { margin: 2px 0 0; color: var(--text-muted); font-size: 0.74rem; }
+.fd-under .fd-underr { color: var(--fd-fail); }
