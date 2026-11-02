@@ -142,9 +142,22 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertIn("wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
                       "                TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);", drop)
         # The wedged re-check runs only for the bots the run named wedged (Run::combatDropWedged), and it needs the
-        # same reach facts the run's own test read (LOS, a complete path and its length, at most once every 5 s).
+        # same reach facts the run's own test read (LOS, a complete path and its length) -- read afresh, not from the
+        # run tick's 5 s cache, since the drop is destructive.
         self.assertIn("bool const namedWedged = wedgedNames.count(bot->GetName()) != 0;", drop)
-        self.assertIn("ReadMemberReach(lead, bot, now);", drop)
+        self.assertIn("ReadMemberReach(lead, bot, now, false);", drop)
+        self.assertNotIn("ReadMemberReach(lead, bot, now);", drop)
+        reach = body(CODE, "void ReadMemberReach(Player* lead, Player* bot, TortoiseBots::DungeonRun::MemberFact& member, bool cached = true)")
+        self.assertIn("if (!cached)\n    {\n        WedgeReachRead fresh;\n        ComputeMemberReach(lead, bot, fresh);", reach)
+        compute = body(CODE, "void ComputeMemberReach(Player* lead, Player* bot, WedgeReachRead& read)")
+        self.assertIn("read.los = sameMap && bot->IsInWorld() && lead->IsInWorld() && bot->IsWithinLOSInMap(lead);", compute)
+        self.assertIn("PathFinder path(bot);", compute)
+        # The cache is keyed by the bot AND the lead bot (the carrier can change mid-run), and the run tick's own
+        # read still takes it.
+        self.assertIn("std::map<std::pair<uint64, uint64>, WedgeReachRead>& WedgeReachReads()", CODE)
+        self.assertIn("WedgeReachReads()[std::make_pair(bot->GetObjectGuid().GetRawValue(), lead->GetObjectGuid().GetRawValue())];", reach)
+        facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
+        self.assertIn("ReadMemberReach(lead, bot, member);", facts)
         self.assertIn("TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);",
                       drop)
         self.assertIn("if (!wedged)\n                continue;", drop)

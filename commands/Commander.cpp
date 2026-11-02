@@ -156,6 +156,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -8005,9 +8006,10 @@ void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& 
     member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;
 }
 
-// The glue's reach read for a wedged candidate (DungeonRun::WedgedOutOfReach), per bot at most once every
-// kWedgeReachReadMs: its line of sight to the lead bot (the main tank) and a complete navmesh path to it, with
-// that path's length. A member that can see and walk to the lead bot is idle where it stands, not wedged.
+// The glue's reach read for a wedged candidate (DungeonRun::WedgedOutOfReach), per bot and lead bot at most once
+// every kWedgeReachReadMs: its line of sight to the lead bot (the main tank) and a complete navmesh path to it, with
+// that path's length. A member that can see and walk to the lead bot is idle where it stands, not wedged. The lead
+// bot is part of the key: the carrier can change mid-run, and a read against the old one says nothing about the new.
 constexpr uint32 kWedgeReachReadMs = 5000;
 
 struct WedgeReachRead
@@ -8018,36 +8020,52 @@ struct WedgeReachRead
     float lenYd = 0.0f;
 };
 
-std::unordered_map<uint64, WedgeReachRead>& WedgeReachReads()
+std::map<std::pair<uint64, uint64>, WedgeReachRead>& WedgeReachReads()
 {
-    static std::unordered_map<uint64, WedgeReachRead> reads;
+    static std::map<std::pair<uint64, uint64>, WedgeReachRead> reads;
     return reads;
 }
 
-void ReadMemberReach(Player* lead, Player* bot, TortoiseBots::DungeonRun::MemberFact& member)
+// The one sight line and one path a reach read costs, into `read`. Touches no cache.
+void ComputeMemberReach(Player* lead, Player* bot, WedgeReachRead& read)
 {
-    uint64 const guid = bot->GetObjectGuid().GetRawValue();
-    WedgeReachRead& read = WedgeReachReads()[guid];
+    bool const sameMap = bot->GetMap() == lead->GetMap();
+    read.los = sameMap && bot->IsInWorld() && lead->IsInWorld() && bot->IsWithinLOSInMap(lead);
+    read.path = false;
+    read.lenYd = 0.0f;
+    if (!sameMap || !bot->IsInWorld() || !lead->IsInWorld())
+        return;
+    PathFinder path(bot);
+    path.calculate(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), false);
+    Vector3 const end = path.getActualEndPosition();
+    uint32 const type = static_cast<uint32>(path.getPathType());
+    read.path = (type & PATHFIND_NORMAL) &&
+        !(type & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT)) &&
+        (end - Vector3(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ())).length() <= 2.0f &&
+        path.getPath().size() >= 2;
+    read.lenYd = path.Length();
+}
+
+// `cached` false is the destructive drop's read: the drop never decides on a reading up to kWedgeReachReadMs old
+// (the bot may have walked into sight or out of it since), so it pays for a fresh sight line and path.
+void ReadMemberReach(Player* lead, Player* bot, TortoiseBots::DungeonRun::MemberFact& member, bool cached = true)
+{
+    if (!cached)
+    {
+        WedgeReachRead fresh;
+        ComputeMemberReach(lead, bot, fresh);
+        member.losLead = fresh.los;
+        member.pathToLead = fresh.path;
+        member.pathLenYd = fresh.lenYd;
+        return;
+    }
+    WedgeReachRead& read =
+        WedgeReachReads()[std::make_pair(bot->GetObjectGuid().GetRawValue(), lead->GetObjectGuid().GetRawValue())];
     uint32 const now = WorldTimer::getMSTime();
     if (read.atMs == 0 || WorldTimer::getMSTimeDiff(read.atMs, now) >= kWedgeReachReadMs)
     {
         read.atMs = now;
-        bool const sameMap = bot->GetMap() == lead->GetMap();
-        read.los = sameMap && bot->IsInWorld() && lead->IsInWorld() && bot->IsWithinLOSInMap(lead);
-        read.path = false;
-        read.lenYd = 0.0f;
-        if (sameMap && bot->IsInWorld() && lead->IsInWorld())
-        {
-            PathFinder path(bot);
-            path.calculate(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), false);
-            Vector3 const end = path.getActualEndPosition();
-            uint32 const type = static_cast<uint32>(path.getPathType());
-            read.path = (type & PATHFIND_NORMAL) &&
-                !(type & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT)) &&
-                (end - Vector3(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ())).length() <= 2.0f &&
-                path.getPath().size() >= 2;
-            read.lenYd = path.Length();
-        }
+        ComputeMemberReach(lead, bot, read);
     }
     member.losLead = read.los;
     member.pathToLead = read.path;
@@ -8095,10 +8113,10 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
                         if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
                             ++wedgedAttackers;
             // ... in no fight there (DungeonRun::MemberParticipates, the same progress the run's own wedged test
-            // reads) and out of reach of the lead bot (the same read the run's test used: LOS, a complete path and
-            // its length, at most once every 5 s) ...
+            // reads) and out of reach of the lead bot (LOS, a complete path and its length, read afresh now: a
+            // destructive drop never decides on the run tick's cached reach) ...
             ReadMemberParticipation(bot, now);
-            ReadMemberReach(lead, bot, now);
+            ReadMemberReach(lead, bot, now, false);
             wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,
                 TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);
             if (!wedged)
