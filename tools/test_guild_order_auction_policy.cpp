@@ -74,6 +74,38 @@ int main()
         CHECK(AuctionCoveringBeatsPartials(100000, 20, 0, 0));
     }
 
+    // A fitting listing is still bought: the leg only hands off when the
+    // pick is empty. A partial stack is bought too, and a miss of zero is
+    // never a purchase.
+    std::vector<AuctionListing> listings{
+        { 11, 101, 100, 10 }, // 10 for 100 covers the miss of 7
+        { 12, 102, 200, 20 },
+    };
+    CHECK(PickAuctionListing(listings, 7) == 0);
+    std::vector<AuctionListing> partialsOnly{ { 21, 201, 300, 3 } };
+    CHECK(PickAuctionListing(partialsOnly, 7) == 0);
+    std::vector<AuctionListing> none;
+    CHECK(PickAuctionListing(none, 7) == kNoAuctionListing);
+    CHECK(PickAuctionListing(listings, 0) == kNoAuctionListing);
+
+    // The leg is not re-entered for the same reagent until the rest of the
+    // ladder was tried: the first visit blocks a second one, the need stage
+    // earns one retry, and the retry is the last.
+    CHECK(kAuctionVisitsPerReagent == 2);
+    AuctionLegCycle cycle;
+    CHECK(AuctionReentryAllowed(cycle, 2589)); // never tried
+    NoteAuctionLegEntered(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589)); // no other source yet
+    NoteAuctionLadderEnd(cycle, 2590); // another reagent's cycle does not unlock it
+    CHECK(!AuctionReentryAllowed(cycle, 2589));
+    NoteAuctionLadderEnd(cycle, 2589);
+    CHECK(AuctionReentryAllowed(cycle, 2589)); // full cycle: one retry
+    NoteAuctionLegEntered(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589));
+    NoteAuctionLadderEnd(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589)); // retry spent
+    CHECK(AuctionReentryAllowed(cycle, 2591)); // a fresh reagent starts clean
+
     // A hand-off during a relist trip drops the surplus instead of sourcing
     // it: the leg's item is stock the order already bought.
     CHECK(AuctionHandoffLeavesSurplus(true, 2589, 2589));

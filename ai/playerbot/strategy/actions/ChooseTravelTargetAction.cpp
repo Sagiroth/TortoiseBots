@@ -173,6 +173,13 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         if (!atLimit(SupplyStep::Bank, record->supplyItemId))
             return false;
         NoteBankEmpty(bot->GetGUIDLow(), record->supplyItemId);
+        // A counter already searched for this reagent is not entered again
+        // before the rest of the ladder; the hand-off skips it.
+        if (!AuctionReentryAllowed(bot->GetGUIDLow(), record->supplyItemId))
+        {
+            AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoBanker);
+            return true;
+        }
         SetSupply(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
             record->supplyItemId, record->supplyCount, SupplyStep::Farm,
             OrderReason::NoBanker);

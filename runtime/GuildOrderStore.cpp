@@ -763,12 +763,19 @@ public:
         // both.
         bool const enteringAuction = step == SupplyStep::AuctionHouse &&
             (record.supplyStep != SupplyStep::AuctionHouse || record.supplyItemId != itemId);
+        // A relist trip is the same purchase's bookkeeping, not a new
+        // search of the counter, so it earns no auction visit.
+        bool const relistEntry = it->second.relistItemId == itemId && it->second.relistCount;
+        if (enteringAuction && !relistEntry)
+            NoteAuctionLegEntered(it->second.auctionCycles[itemId], itemId);
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
         record.supplyReturnStep = returnStep;
         record.supplyGoldCount = goldCount;
         record.reason = reason;
+        if (step == SupplyStep::Need)
+            MarkAuctionLadderEndLocked(it->second, itemId);
         if (enteringAuction)
         {
             it->second.auctionReachStartedMs = 0;
@@ -799,6 +806,8 @@ public:
             return;
         }
         record.needItems = items;
+        for (NeedItem const& item : items)
+            MarkAuctionLadderEndLocked(it->second, item.itemId);
         record.state = OrderState::Waiting;
         record.reason = OrderReason::NeedItems;
         record.supplyStep = SupplyStep::Need;
@@ -818,6 +827,7 @@ public:
             return;
         OrderRecord& record = it->second.record;
         MergeNeedItem(record.needItems, itemId, count);
+        MarkAuctionLadderEndLocked(it->second, itemId);
         // One denied probe is enough to keep the bank lane off this order:
         // OR keeps a denial a previous item recorded, so a later candidate
         // does not re-arm the lane (a full re-list clears it in SetNeedItems,
@@ -1290,6 +1300,28 @@ public:
     // reach deadline once the bot arrived in the city, the travel cap while it
     // is still walking. Neither clock starts at leg entry, so a bot in the
     // field keeps its whole walk.
+    bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId)
+            return true;
+        auto found = it->second.auctionCycles.find(itemId);
+        return found == it->second.auctionCycles.end() ||
+            TortoiseBots::GuildOrders::AuctionReentryAllowed(found->second, itemId);
+    }
+
+    void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return;
+        OrderRecord const& record = it->second.record;
+        NoteOrderStep(it->second.steps, OrderStepEntry{ static_cast<uint64_t>(std::time(nullptr)),
+            record.state, reason, record.supplyStep, record.supplyItemId });
+    }
+
     bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1763,6 +1795,7 @@ public:
             record.supplyStep = SupplyStep::Need;
             record.supplyReturnStep = SupplyStep::None;
             record.supplyGoldCount = 0;
+            MarkAuctionLadderEndLocked(parent->second, itemId);
         }
         record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
         MarkDirtyLocked(parent->second);
@@ -1990,6 +2023,7 @@ public:
                 record.zoneIndex = 0;
                 record.farmItemId = 0;
                 record.farmRest = false;
+                it->second.auctionCycles.clear();
                 record.deathsInZone = 0;
                 record.searchFailsInZone = 0;
                 record.searchZoneMoves = 0;
@@ -2327,12 +2361,24 @@ private:
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
         OrderStepHistory steps; // memory only: the addon's step timeline
+        std::unordered_map<uint32_t, AuctionLegCycle> auctionCycles; // per reagent, memory only
         uint32_t auctionReachStartedMs = 0; // arrived in the auctioneer's city; 0 = not yet
         uint32_t auctionLegStartedMs = 0;   // auction leg entered; bounds the travel
         uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
         uint32_t relistCount = 0;
         uint32_t relistUnitPrice = 0;
     };
+
+    // Memory only, like the cycle itself: no row write for a bookkeeping
+    // flag that a restart may drop.
+    static void MarkAuctionLadderEndLocked(Stored& stored, uint32_t itemId)
+    {
+        if (!itemId)
+            return;
+        auto found = stored.auctionCycles.find(itemId);
+        if (found != stored.auctionCycles.end())
+            NoteAuctionLadderEnd(found->second, itemId);
+    }
 
     // A zone move advances to the next zone of the plan (the wrap-around is
     // at pick time in the travel code) and resets the per-zone clocks.
@@ -3232,6 +3278,16 @@ void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId)
 uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach)
 {
     return OrderStore::Instance().NoteArrivedAuctionVisit(botGuidLow, auctioneerInReach);
+}
+
+bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId)
+{
+    return OrderStore::Instance().AuctionReentryAllowed(botGuidLow, itemId);
+}
+
+void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)
+{
+    OrderStore::Instance().NoteAuctionLegEnded(botGuidLow, reason);
 }
 
 bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)

@@ -13,6 +13,7 @@
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include <algorithm>
 #include <climits>
+#include <cstddef>
 #include <sstream>
 #include <vector>
 
@@ -34,6 +35,9 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
 void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order,
     OrderReason reason)
 {
+    // The hand-off cause belongs on the timeline under the ah step; the
+    // next leg is recorded on the next Tick.
+    NoteAuctionLegEnded(order.botGuidLow, reason);
     uint32_t relistItemId = 0, relistCount = 0, relistUnitPrice = 0;
     bool const relistLeg = PendingRelist(order.botGuidLow, relistItemId, relistCount, relistUnitPrice) &&
         AuctionHandoffLeavesSurplus(true, relistItemId, order.supplyItemId);
@@ -360,14 +364,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
 
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(auctioneer);
     AuctionHouseObject* auctionHouse = ahEntry ? sAuctionMgr.GetAuctionsMap(ahEntry) : nullptr;
-    struct Candidate
-    {
-        uint32_t auctionId = 0;
-        uint32_t itemGuid = 0;
-        uint32_t buyout = 0;
-        uint32_t count = 0;
-    };
-    std::vector<Candidate> candidates;
+    std::vector<AuctionListing> candidates;
     uint32_t cash = bot->GetMoney();
     uint32_t heldGuildGold = std::min(stored->guildGoldHeld, cash);
     uint32_t ownedGold = cash - heldGuildGold;
@@ -399,49 +396,18 @@ bool GuildOrderBuyAction::Execute(Event& event)
         }
     }
 
-    // The miss is bought the cheapest way the listings allow: a covering
-    // stack only wins when it costs no more than the partial stacks that
-    // would fill the miss, so a cheap narrow listing is never passed over
-    // for a dear wide one. Among the winners the smallest covering stack
-    // wins, then the cheaper unit price.
-    Candidate best;
-    if (!candidates.empty())
-    {
-        std::vector<AuctionQuote> partials;
-        for (Candidate const& candidate : candidates)
-            if (candidate.count < missing)
-                partials.push_back(AuctionQuote{ candidate.count, candidate.buyout });
-        uint32_t cheapestPartialUnit = 0;
-        uint32_t const partialFillCost = PartialFillCost(partials, missing, cheapestPartialUnit);
-        Candidate const* cover = nullptr;
-        Candidate const* partial = nullptr;
-        for (Candidate const& candidate : candidates)
-        {
-            if (candidate.count >= missing)
-            {
-                if (!AuctionCoveringBeatsPartials(candidate.buyout, candidate.count,
-                        partialFillCost, cheapestPartialUnit))
-                    continue;
-                if (!cover || AuctionPickBeats(candidate.count, candidate.buyout, cover->count,
-                        cover->buyout, missing))
-                    cover = &candidate;
-            }
-            else if (!partial || CheaperPerUnit(candidate.buyout, candidate.count,
-                    partial->buyout, partial->count))
-                partial = &candidate;
-        }
-        Candidate const* const pick = cover ? cover : partial;
-        if (pick)
-            best = *pick;
-    }
-
-    if (!best.auctionId)
+    // One search of the counter per visit: the pick is empty when nothing
+    // listed fits the miss or the budget, and the leg hands off in the
+    // same tick instead of looking again.
+    std::size_t const pick = PickAuctionListing(candidates, missing);
+    if (pick == kNoAuctionListing)
     {
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
+    AuctionListing const& best = candidates[pick];
 
     if (best.buyout > cash)
     {
@@ -464,7 +430,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             return false;
         }
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
