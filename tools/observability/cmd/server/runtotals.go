@@ -19,35 +19,91 @@ type historyReader interface {
 	Fight(key string) (combat.Fight, history.Row, bool)
 }
 
-// runTotalsCache holds one summed run per (commander, session): the live run
-// for ten seconds, an ended run (no new fights in ten minutes) for good.
+// runTotalsCache holds one summed run per (commander, session), at most
+// runTotalsCacheCap entries: the live run for ten seconds, an ended run (no
+// new fights in ten minutes) until a newer fight lands. Every hit compares
+// the entry's last-fight marker against the current latest index row for
+// that commander and session and recomputes when it differs.
+const runTotalsCacheCap = 256
+
 type runTotalsCache struct {
 	mu      sync.Mutex
-	now     func() time.Time
-	entries map[string]runTotalsEntry
+	entries map[string]*runTotalsEntry
+	head    *runTotalsEntry
+	tail    *runTotalsEntry
+	len     int
 }
 
 type runTotalsEntry struct {
+	key    string
 	totals combat.RunTotals
 	more   bool
 	at     time.Time
 	last   int64
 	end    bool
+	prev   *runTotalsEntry
+	next   *runTotalsEntry
+}
+
+func (c *runTotalsCache) touch(e *runTotalsEntry) {
+	if c.head == e {
+		return
+	}
+	if e.prev != nil {
+		e.prev.next = e.next
+	}
+	if e.next != nil {
+		e.next.prev = e.prev
+	}
+	if c.tail == e {
+		c.tail = e.prev
+	}
+	e.prev = nil
+	e.next = c.head
+	if c.head != nil {
+		c.head.prev = e
+	}
+	c.head = e
+	if c.tail == nil {
+		c.tail = e
+	}
+}
+
+func (c *runTotalsCache) evict(e *runTotalsEntry) {
+	if e.prev != nil {
+		e.prev.next = e.next
+	} else {
+		c.head = e.next
+	}
+	if e.next != nil {
+		e.next.prev = e.prev
+	} else {
+		c.tail = e.prev
+	}
+	e.prev, e.next = nil, nil
+	delete(c.entries, e.key)
+	c.len--
 }
 
 func (c *runTotalsCache) get(key string, last int64, now time.Time) (combat.RunTotals, bool, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.entries == nil {
+		return combat.RunTotals{}, false, false
+	}
 	e, ok := c.entries[key]
 	if !ok {
 		return combat.RunTotals{}, false, false
 	}
-	if e.end {
-		return e.totals, e.more, true
-	}
-	if now.Sub(e.at) > 10*time.Second || e.last != last {
+	if e.last != last {
+		c.evict(e)
 		return combat.RunTotals{}, false, false
 	}
+	if !e.end && now.Sub(e.at) > 10*time.Second {
+		c.evict(e)
+		return combat.RunTotals{}, false, false
+	}
+	c.touch(e)
 	return e.totals, e.more, true
 }
 
@@ -55,9 +111,27 @@ func (c *runTotalsCache) set(key string, totals combat.RunTotals, more bool, las
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
-		c.entries = map[string]runTotalsEntry{}
+		c.entries = map[string]*runTotalsEntry{}
 	}
-	c.entries[key] = runTotalsEntry{totals: totals, more: more, at: now, last: last, end: end}
+	if e, ok := c.entries[key]; ok {
+		e.totals, e.more, e.at, e.last, e.end = totals, more, now, last, end
+		c.touch(e)
+		return
+	}
+	e := &runTotalsEntry{key: key, totals: totals, more: more, at: now, last: last, end: end}
+	c.entries[key] = e
+	e.next = c.head
+	if c.head != nil {
+		c.head.prev = e
+	}
+	c.head = e
+	if c.tail == nil {
+		c.tail = e
+	}
+	c.len++
+	for c.len > runTotalsCacheCap {
+		c.evict(c.tail)
+	}
 }
 
 var runTotalsLive = &runTotalsCache{}
@@ -68,10 +142,9 @@ var runTotalsNow = time.Now
 // runTotalsHandler serves GET /api/v1/combat/run-totals?commander=&session=:
 // the finished fights of that commander's run (FightSummary.session), summed
 // per bot from the memory store plus the history files (de-duplicated by
-// fight key, the same readers the list routes use). since stays as an extra
-// lower bound in unix milliseconds. At most combat.RunTotalsCap fights are
-// summed; a cut answers X-More: 1. A missing or bad commander or session is
-// a 400.
+// fight key, the same readers the list routes use). At most
+// combat.RunTotalsCap fights are summed; a cut answers X-More: 1. A missing
+// or bad commander or session is a 400.
 func runTotalsHandler(combatStore *combat.Store, historyStore historyReader) http.HandlerFunc {
 	return runTotalsHandlerCap(combatStore, historyStore, combat.RunTotalsCap)
 }
@@ -87,17 +160,6 @@ func runTotalsHandlerCap(combatStore *combat.Store, historyStore historyReader, 
 			_, _ = w.Write([]byte(`{"error":"bad commander or session"}`))
 			return
 		}
-		var sinceS int64
-		if s := q.Get("since"); s != "" {
-			ms, err := strconv.ParseInt(s, 10, 64)
-			if err != nil || ms < 0 {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":"bad since"}`))
-				return
-			}
-			sinceS = ms / 1000
-		}
 		now := runTotalsNow()
 		key := commander + "\x00" + strconv.FormatUint(session, 10)
 		last := runLastStart(combatStore, historyStore, commander, session)
@@ -108,10 +170,13 @@ func runTotalsHandlerCap(combatStore *combat.Store, historyStore historyReader, 
 			writeJSON(w, totals)
 			return
 		}
-		in := collectRun(combatStore, historyStore, commander, session, sinceS, limit)
-		totals, more := combat.SumRun(in, sinceS, limit)
-		totals.Since = sinceS
+		in := collectRun(combatStore, historyStore, commander, session, limit)
+		totals, more := combat.SumRun(in, 0, limit)
 		end := last > 0 && now.Unix()-last > 600
+		if last == 0 {
+			writeJSON(w, totals)
+			return
+		}
 		runTotalsLive.set(key, totals, more, last, end, now)
 		if more {
 			w.Header().Set("X-More", "1")
@@ -143,13 +208,12 @@ func runLastStart(combatStore *combat.Store, historyStore historyReader, command
 
 // collectRun gathers one run's fights: the memory rows of that session, then
 // the matching history index rows newest first (only those are opened), one
-// past the cap so SumRun learns the cut. since is an extra lower bound on
-// the fight start.
-func collectRun(combatStore *combat.Store, historyStore historyReader, commander string, session uint64, since int64, limit int) []combat.RunInput {
+// past the cap so SumRun learns the cut.
+func collectRun(combatStore *combat.Store, historyStore historyReader, commander string, session uint64, limit int) []combat.RunInput {
 	var in []combat.RunInput
 	if combatStore != nil {
 		for _, row := range combatStore.List(commander) {
-			if row.Session != session || row.Start < since {
+			if row.Session != session {
 				continue
 			}
 			f, _, ok := combatStore.GetKey(row.Key)
@@ -165,7 +229,7 @@ func collectRun(combatStore *combat.Store, historyStore historyReader, commander
 	rows := historyStore.ListAll(commander)
 	matched := rows[:0]
 	for _, row := range rows {
-		if row.Commander != commander || row.Session != session || row.Start < since {
+		if row.Commander != commander || row.Session != session {
 			continue
 		}
 		matched = append(matched, row)

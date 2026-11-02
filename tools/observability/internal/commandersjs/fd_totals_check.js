@@ -38,9 +38,9 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("paintSeg"), grab("bindSeg"),
-  grab("fdTotalsSegHtml"), grab("fdTotalsGet"), grab("fdTotalsSet"), grab("fdTotalsSinceMs"), grab("fdTotalsSession"), grab("fdTotalChipsHtml"),
-  grab("fdWindowStart"), grab("fdLiveTableHtml"), grab("fdRolesHtml"),
-  grabConst("FD_TOTALS_KEY"), grabConst("FD_TOTALS_MS"), grabConst("FD_WINDOW_S"),
+  grab("fdTotalsSegHtml"), grab("fdTotalsGet"), grab("fdTotalsSet"), grab("fdTotalsSession"), grab("fdTotalChipsHtml"),
+  grab("fdLiveTableHtml"), grab("fdRolesHtml"),
+  grabConst("FD_TOTALS_KEY"), grabConst("FD_TOTALS_MS"),
   "var fdTotalsMem = null;",
 ].join("\n"), ctx, { filename: "app.js totals" });
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -128,20 +128,7 @@ run("fdTotalsSet('run')");
 assert.strictEqual(run("fdTotalsGet()"), "run", "and the choice is kept in memory for the page");
 ctx.window.localStorage = newStore();
 
-// ---- the run the totals sum -----------------------------------------------------------------------------------------------
-const NOW = 2000000 * 1000;
-assert.strictEqual(run("fdTotalsSinceMs(bind, null, now)", { bind: { bound_at: 1000000 }, now: NOW }), 999960 * 1000,
-  "the bound run's start (fdWindowStart rounds down to the minute)");
-const win = run("fdTotalsSinceMs(bind, null, now)", { bind: { bound_at: 1990000 }, now: NOW });
-assert.ok(win > 1990000 * 1000 - 7200 * 1000 - 60000 && win <= 1990000 * 1000, "a fresh bind: the two-hour window, got " + win);
-assert.strictEqual(run("fdTotalsSinceMs(bind, fd, now)", {
-  bind: { bound_at: 1000000 }, fd: { day: "2026-10-26", list: [{ start: 5000 }, { start: 3000 }, { start: 4000 }] }, now: NOW,
-}), 3000 * 1000, "on a past night the night's first fight start");
-assert.strictEqual(run("fdTotalsSinceMs(bind, fd, now)", {
-  bind: { bound_at: 0, history: true }, fd: { day: "", list: [{ start: 7000 }, { start: 9000 }] }, now: NOW,
-}), 7000 * 1000, "a history card's first fight start");
-assert.ok(run("fdTotalsSinceMs(bind, fd, now)", { bind: { bound_at: 0 }, fd: { day: "2026-10-26", list: [] }, now: NOW }) > 0,
-  "an empty past night falls back to the window");
+// ---- the run the totals sum: a run is one commander in one session ----------------------------------------------------------
 assert.strictEqual(run("fdTotalsSession(bind, fd, list, sel)", {
   bind: {}, fd: {}, list: [], sel: { session: 7 },
 }), 7, "the selected fight's session is the run");
@@ -159,6 +146,7 @@ assert.ok(!liveHtml.includes("data-fd-totals") && !liveHtml.includes("Run total"
 assert.ok(!/totals/i.test(grab("fdLiveTableHtml")), "the live table builder knows no totals");
 assert.ok(/\/api\/v1\/combat\/run-totals\?commander=/.test(src), "Run total fetches the run-totals route");
 assert.ok(/run-totals\?commander=.*&session=/.test(src), "Run total sends the selected fight's session");
+assert.ok(/totalsCache = \{ at: Date\.now\(\), session: String\(session\)(, json|: json)/.test(src), "the client cache keys one run: commander plus session, no window");
 assert.ok(/fdTotalsSegHtml\(totalsMode\)/.test(src), "the seg paints every render");
 assert.ok(!/fdTotalsSegHtml|fdTotalChipsHtml|runRoleTables/.test(grab("fdLiveTableHtml")), "live rendering stays out of it");
 

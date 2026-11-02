@@ -8305,9 +8305,8 @@
   }
 
   // The run the totals sum: the selected fight's session (a run is one
-  // commander in one session), with the window start as the extra lower
-  // bound the route keeps. Live sends the bound run's current session: the
-  // newest row's, or the live list's while no fight ended yet.
+  // commander in one session). Live sends the bound run's current session:
+  // the newest row's, or the live list's while no fight ended yet.
   function fdTotalsSession(bind, fd, list, selRow) {
     if (selRow && selRow.session != null && selRow.session !== '') return selRow.session;
     let best = null;
@@ -8318,36 +8317,23 @@
     return best ? best.session : '';
   }
 
-  function fdTotalsSinceMs(bind, fd, nowMs) {
-    const past = (fd && fd.day) || (bind && bind.history);
-    if (past) {
-      let first = 0;
-      ((fd && fd.list) || []).forEach(r => {
-        const s = numOr0(r && r.start);
-        if (s > 0 && (first === 0 || s < first)) first = s;
-      });
-      if (first > 0) return first * 1000;
-    }
-    return fdWindowStart(bind, nowMs == null ? Date.now() : nowMs) * 1000;
-  }
-
-  // One run's totals, fetched once per commander per session per window: while a fetch is in flight the tables keep the last answer.
-  function fdTotalsLoad(card, bind, fd, session, sinceMs) {
+  // One run's totals, fetched once per commander per session: while a fetch is in flight the tables keep the last answer.
+  function fdTotalsLoad(card, bind, fd, session) {
     const c = fd.totalsCache;
-    if (c && c.session === String(session) && c.since === sinceMs && Date.now() - c.at < FD_TOTALS_MS) return c.json;
-    if (fd.totalsPending) return c && c.session === String(session) && c.since === sinceMs ? c.json : null;
+    if (c && c.session === String(session) && Date.now() - c.at < FD_TOTALS_MS) return c.json;
+    if (fd.totalsPending) return c && c.session === String(session) ? c.json : null;
     if (session === '' || session == null) return null;
     fd.totalsPending = true;
-    fetch('/api/v1/combat/run-totals?commander=' + encodeURIComponent(bind.commander) + '&session=' + encodeURIComponent(session) + '&since=' + sinceMs)
+    fetch('/api/v1/combat/run-totals?commander=' + encodeURIComponent(bind.commander) + '&session=' + encodeURIComponent(session))
       .then(jsonOrThrow).then(json => {
-        fd.totalsCache = { at: Date.now(), session: String(session), since: sinceMs, json: json || null };
+        fd.totalsCache = { at: Date.now(), session: String(session), json: json || null };
       }).catch(() => {
-        fd.totalsCache = { at: Date.now(), session: String(session), since: sinceMs, json: null };
+        fd.totalsCache = { at: Date.now(), session: String(session), json: null };
       }).then(() => {
         fd.totalsPending = false;
         if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
       });
-    return c && c.session === String(session) && c.since === sinceMs ? c.json : null;
+    return c && c.session === String(session) ? c.json : null;
   }
 
   // The switch above the role tables: "This fight" is the picked fight's own numbers, "Run total" the run's sums.
@@ -8801,7 +8787,7 @@
     const totalsMode = !selLive && fight ? fdTotalsGet() : 'fight';
     let totalsJson = null, totalsNote = '';
     if (totalsMode === 'run') {
-      totalsJson = fdTotalsLoad(card, bind, fd, fdTotalsSession(bind, fd, list, selRow), fdTotalsSinceMs(bind, fd, Date.now()));
+      totalsJson = fdTotalsLoad(card, bind, fd, fdTotalsSession(bind, fd, list, selRow));
       if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the run total…' : 'The run total is not available right now.';
     }
     let title = 'Fight';

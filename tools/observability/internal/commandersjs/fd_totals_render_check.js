@@ -31,7 +31,7 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "cmdBossTable", "cmdBossPanels", "cmdPaintBosses", "cmdLiveBossPanels", "cmdFightBossPanels", "cmdTrashBlockHtml",
   "fdState", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
   "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
-  "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdWindowStart", "fdTotalsSinceMs", "fdTotalsSession", "fdTotalsLoad",
+  "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdTotalsSession", "fdTotalsLoad",
   "fdTotalChipsHtml", "fdTotalsSegHtml", "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
   "fdRunModel", "fdRunPct", "fdRunClock", "fdRunT", "fdRunWindow", "fdRunCoverage", "fdRunHtml", "fdRunPlayHtml",
   "fdRunPlaySync", "fdRunSync", "fdRunLoad", "fdRunStop", "fdRunStopAll",
@@ -200,7 +200,7 @@ function makeCard() {
   const segD = cardD.nodes[".fd-totalsseg"].innerHTML;
   assert.ok(/data-v="run"[^>]*class="seg-btn active"|class="seg-btn active"[^>]*data-v="run"/.test(segD),
     "Run total is the active one: " + segD);
-  assert.strictEqual(fetchLog.filter((u) => u.indexOf("/run-totals") >= 0).length, 1, "one totals fetch per window");
+  assert.strictEqual(fetchLog.filter((u) => u.indexOf("/run-totals") >= 0).length, 1, "one totals fetch per session");
 
   console.log("fd_totals_render_check: ok");
 })().catch((e) => { console.error(e); process.exit(1); });
