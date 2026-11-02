@@ -8,6 +8,7 @@
 #include "../runtime/BotLfgService.h"
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/RunReleaseHold.h"
+#include "../runtime/DecisionCapture.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/AltBotPolicy.h"
@@ -776,11 +777,13 @@ void EraseRunSlot(uint64_t commanderRaw)
     if (it == DungeonRuns().end())
         return;
     TakeRunItems(it->second, 0);
+    TortoiseBots::DecisionCaptureService::Instance().End(commanderRaw, "slot released");
     DungeonRuns().erase(it);
 }
 // Every run slot at once (no commander bound any more, the module's clear): the given items go back first.
 void EraseAllRunSlots()
 {
+    TortoiseBots::DecisionCaptureService::Instance().EndAll("all slots released");
     for (auto& entry : DungeonRuns())
         TakeRunItems(entry.second, 0);
     DungeonRuns().clear();
@@ -11500,9 +11503,17 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
                     botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(0);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
-    std::string const order = slot.playerLed.on
-        ? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)
-        : TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+    std::string order;
+    if (slot.playerLed.on)
+        order = TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt);
+    else
+    {
+        // Decision capture (off unless enabled): the facts exactly as the tick
+        // reads them and the run right before it, then what it ordered.
+        TortoiseBots::DecisionCaptureService::Instance().BeforeTick(commanderRaw, slot.run, facts, dt);
+        order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+        TortoiseBots::DecisionCaptureService::Instance().AfterTick(commanderRaw, slot.run, order);
+    }
     // The lead bot says what the run needs on /s (a door's key, a skipped leg's item), once per event.
     if (std::string const say = TortoiseBots::DungeonRun::TakeSay(slot.run); !say.empty())
         if (Player* sayLead = FindCharacter(binding->leadGuid))
@@ -12919,6 +12930,20 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
             slot.playerLed.tank = lead->GetName();
         DungeonRunSlot& stored = DungeonRuns()[commanderRaw] = slot;
         RebuildRunGroups(); // one index rebuild per start (BotAreaTriggerWiringTest pins this adjacency)
+        // Decision capture (off unless enabled): the capture exists before the
+        // first tick of the run, and the start line below names it. A
+        // player-led run ticks through PlayerLed::Tick, which it does not record.
+        std::string captureId;
+        if (!slot.playerLed.on)
+        {
+            std::uint64_t const captureNowMs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            captureId = TortoiseBots::DecisionCaptureService::Instance().Begin(
+                commanderRaw, commander->GetName(), plan->name, captureNowMs);
+            if (captureId.empty())
+                if (std::string const& why = TortoiseBots::DecisionCaptureService::Instance().lastError(); !why.empty())
+                    TB_LOG_BASIC("TortoiseBots: decision capture for %s not started: %s", commander->GetName(), why.c_str());
+        }
         // Item-leg skip: give after the slot exists; the warning rides the start note.
         stored.giveRun = startPlan.giveRun;
         {
@@ -12934,9 +12959,12 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         }
         playerLedGuard.commanderRaw = 0; // started: the binding stays with the run
         s_dungeonRunMs = 0;
-        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s at step %u%s", commander->GetName(), plan->name.c_str(),
+        std::string const captureSuffix =
+            captureId.empty() ? std::string() : " (decision capture " + captureId + ")";
+        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s at step %u%s%s", commander->GetName(), plan->name.c_str(),
             static_cast<uint32>(startStep + 1),
-            stored.run.testSpeed > 1.0f ? (" at " + TortoiseBots::DungeonRun::SpeedLabel(stored.run)).c_str() : "");
+            stored.run.testSpeed > 1.0f ? (" at " + TortoiseBots::DungeonRun::SpeedLabel(stored.run)).c_str() : "",
+            captureSuffix.c_str());
         if (startStep > 0)
         {
             std::string const& legName = plan->LegName(plan->steps[startStep].leg);
