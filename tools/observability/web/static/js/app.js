@@ -2870,7 +2870,7 @@
     norecipe: 'does not know the recipe', stuck: 'got stuck', bagsfull: 'bags are full', nobank: 'no guild bank access',
     elite: 'only drops from elites', timeout: 'farm time ran out', noprogress: '3 hours without a single item',
     needitems: 'needs items from you', bankdenied: 'the guild bank refused', nobanker: 'cannot reach a guild banker',
-    noauctioneer: 'cannot reach an auctioneer'
+    noauctioneer: 'cannot reach an auctioneer', nolisting: 'nothing fitting on the auction house'
   };
   const GO_HOW = {
     bags: 'Looked in its bags and mail for', bank: 'Took from the guild bank:', ah: 'Bought on the auction house:',
