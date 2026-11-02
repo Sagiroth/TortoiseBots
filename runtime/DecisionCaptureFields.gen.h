@@ -18,19 +18,19 @@ namespace DecisionCapture {
 #define TB_DCAP_FIELDS_RaidFacts(X) X(on) X(tanksTotal) X(tanksDead) X(healersTotal) X(healersDead) X(bossRules) X(healerGuard) X(offTanksAlive) X(bossOffTanksAlive) X(walkAttackers)
 #define TB_DCAP_FIELDS_RestLines(X) X(startHealth) X(startHealerMana) X(startMana) X(endHealth) X(endHealerMana) X(endMana)
 #define TB_DCAP_FIELDS_Run(X) X(plan) X(step) X(triggerScan) X(armedTriggers) X(firedTriggers) X(state) X(phase) X(note) X(phaseMs) X(stepIdleMs) X(playerGatherMs) X(playerHoldMs) X(restDue) X(regroupDead) X(eatWaitMs) X(restForEating) X(restWalkDue) X(leadWalkReset) X(stepRested) X(orderSent) X(taskResends) X(proofWaitMs) X(useOnRang) X(dataAtOrder) X(walkedThrough) X(hopWaiveUnits) X(hopWalk) X(hopX) X(hopY) X(hopZ) X(approachHops) X(approachBestYd) X(noPathSkips) X(approachStandStep) X(approachStand) X(approachStandWanted) X(approachStandResumed) X(approachStandResumedSearch) X(refusedPullStandStep) X(approachStandWhy) X(approachStandX) X(approachStandY) X(approachStandZ) X(detour) X(detourX) X(detourY) X(detourZ) X(moveRefusedStep) X(moveRefusals) X(unreachableSkips) X(fighting) X(fightMs) X(staleMs) X(staleRunMs) X(restRepeatMs) X(anchorKnown) X(anchorX) X(anchorY) X(anchorZ) X(anchorPathWanted) X(notCleared) X(legNeedDecided) X(skippedLegs) X(doorPaused) X(doorPausedLeg) X(doorPausedAsk) X(say) X(doorOpenLeg) X(doorOpenTries) X(doorOpenMs) X(deferredPulls) X(deferRetryStep) X(deferReturnStep) X(deferLeg) X(deferGivenUp) X(deferLog) X(liveTactics) X(approachPauseKnown) X(approachPauseX) X(approachPauseY) X(approachPauseZ) X(walkX) X(walkY) X(walkZ) X(walkTries) X(walkStillMs) X(movePathKnown) X(movePathType) X(stallFallback) X(stallStandInWanted) X(walkBestYd) X(legOn) X(legX) X(legY) X(legZ) X(legEnds) X(legBestYd) X(legStartYd) X(walkLegs) X(exactOn) X(exactMs) X(exactRounds) X(exactWaitMs) X(exactStage) X(exactBackX) X(exactBackY) X(exactBackZ) X(exactLastSet) X(exactLastX) X(exactLastY) X(exactLastZ) X(exactAnchorSet) X(exactAnchorX) X(exactAnchorY) X(exactAnchorZ) X(exactStillMs) X(exactProved) X(pullGuid) X(pulls) X(pullTries) X(passed) X(pullHop) X(openAtLastPull) X(fruitlessPulls) X(bossWaitMs) X(bossSeenAlive) X(bossFoughtEarly) X(bossSearchWanted) X(standPullStep) X(standPullMs) X(standPullShotGuid) X(holdAheadStep) X(holdAheadMs) X(holdAheadDone) X(standApproachReached) X(ccOrderMs) X(standPullStatic) X(standPullOwn) X(standPullOwnStep) X(patrolWaitMs) X(packRepulls) X(residuePullGuid) X(residuePullEntry) X(residueOutOfReach) X(patrolSeen) X(bigWalk) X(bigWalkGuid) X(bigWalkX) X(bigWalkY) X(bigWalkZ) X(bigJoiners) X(bigHold) X(bigHoldMs) X(bigHoldSpent) X(bigHoldNote) X(joinerSeen) X(joinerPack) X(joinerAdds) X(joinerMs) X(joinerWindow) X(joinerTracked) X(walkBackPulls) X(unreachable) X(neverCame) X(patrolGaveUp) X(spawnPatrolGaveUp) X(taskBot) X(lootTried) X(lootRefusal) X(lootRights) X(lootFfa) X(lootFfaUsed) X(lootFfaLive) X(lootRestore) X(lootRestoreTries) X(lootFfaMs) X(missing) X(objectsSeen) X(goneMissMs) X(goneMissStep) X(corpses) X(pendingMissing) X(skippedOpenStep) X(regroup) X(reviveSent) X(regroupGatherSent) X(regroupMs) X(rezAbleMs) X(reviveBaseMs) X(rezHoldMs) X(rezNudged) X(rezNudgeOrder) X(rezBodyUnreachable) X(gatherOrder) X(gatherRefusals) X(gatherWaived) X(summoned) X(gatherComingMs) X(straggle) X(sapWalkDue) X(summonDue) X(summonWait) X(summonWaitMs) X(stepSummons) X(runawayMs) X(runawaySummons) X(runawayLastMs) X(runawayStep) X(wedgedSummons) X(wedgedLastMs) X(wedgedStep) X(deadSeenMs) X(directRefusedOn) X(directRefusedMs) X(directRefusedIdx) X(directJoinHolds) X(directWaitFor) X(directWaitMs) X(memberYd) X(reviveSummons) X(regroupGatherCapMs) X(still) X(leadSeen) X(leadLastX) X(leadLastY) X(leadLastZ) X(leadDied) X(waitFor) X(hold) X(heldSummons) X(holdDue) X(leadDeathX) X(leadDeathY) X(leadDeathZ) X(leadOtherPart) X(holdWhilePaused) X(otherPartPaused) X(otherPartResumeRescue) X(otherPartRescues) X(otherPartRescueStep) X(ccSent) X(ccHolds) X(ccWatch) X(ccLandedDrop) X(ccSapFailed) X(ccRegather) X(ccIcons) X(focusGuid) X(focusRefused) X(focusUnstayed) X(focusIconGuid) X(focusIconClear) X(prevFocusIconGuid) X(joinerHeld) X(joinerRest) X(restForJoiners) X(joinerRests) X(joinerNote) X(shotStandFor) X(shotStandTries) X(shotStandWalk) X(shotStandGuid) X(shotStandX) X(shotStandY) X(shotStandZ) X(shotStillMs) X(shotWalkMs) X(shotStandPrep) X(shotHoldGuid) X(shotHow) X(shotClearMs) X(shotClearGuid) X(shotGateRan) X(ccPending) X(ccResent) X(ccWaitMs) X(autoRegroups) X(walkBackDue) X(walkBack) X(walkBackDirect) X(walkBackStart) X(walkBackRestarted) X(walkBackIdx) X(startStep) X(testSpeed) X(untilStep) X(untilText) X(untilHit) X(speedPlayerBlocked) X(speedOnMs) X(speedNow) X(speedLeash) X(speedLeashMs) X(speedLeashSpent) X(speedLeashOrder) X(straightBackoffs) X(retreatOn) X(retreatMs) X(retreatOrders) X(retreatDone) X(restLight) X(fightForwardDue) X(fightForwardWanted) X(shortcutWanted) X(shortcutFrom) X(bigPackDue) X(bigPackStep) X(walkMoveX) X(walkMoveY) X(walkMoveZ) X(walkMovingMs) X(checkpoint) X(routeKnown) X(routeCheck) X(routeSpotX) X(routeSpotY) X(routeSpotZ) X(walkBackRefusals) X(goodLeadKnown) X(goodLeadX) X(goodLeadY) X(goodLeadZ) X(goodLeadMs) X(runMs) X(escapeFromMove) X(leadPathGoodNow) X(islandEscapes) X(escapeOn) X(escapeMs) X(passSpotKnown) X(passX) X(passY) X(passZ) X(islandSuspect) X(islandEvidence) X(evidenceCellX) X(evidenceCellY) X(evidenceX) X(evidenceY) X(evidenceZ) X(evidenceTX) X(evidenceTY) X(evidenceTZ) X(noSpotKnown) X(noSpotX) X(noSpotY) X(noSpotZ) X(stepEscapes) X(islandRefusals) X(strandDue) X(strandIdx) X(strandX) X(strandY) X(strandZ) X(strandStep) X(strandOn) X(strandMs) X(strandSummon) X(strandSummoned) X(strandSummonMs) X(strandCountStep) X(strandTries) X(strandWaits) X(strandRearmStep) X(strandRearms) X(strandReplay) X(strandBotOnly) X(strandFromOtherPart) X(offMapReturnAt) X(offMapReturnStep) X(offMapReturnTries) X(offMapNotedStep) X(offMapNoted) X(rejoinAt) X(rejoinStep) X(rejoinTries) X(resendIdx) X(resendX) X(resendY) X(resendZ) X(resends) X(eventOn) X(eventResetWaitMs) X(eventMs) X(eventStarted) X(resetHoldStarted) X(holdUnitSeen) X(unitsResetMs) X(startNpcDeadStep) X(holdArrived) X(holdStands) X(holdStandsGen) X(holdPlaced) X(holdReleases) X(holdFarTicks) X(pausedByPlayer) X(ceilingPaused) X(ceilingQuietMs) X(leadOffMapPaused) X(leadBackMs) X(playerHoldPaused) X(playerHoldBackMs) X(unattackableFight) X(unattackableSet) X(unattackableMs) X(combatDrop) X(combatDroppedAt) X(combatDrops) X(hpWatch) X(fightHp) X(fightHpMs) X(fightHpDead) X(fightHpDeath) X(fightHpDeathAt) X(ceilingResumedStep) X(leadBackResumedStep) X(playerHoldResumedStep) X(eventIdleMs) X(eventUp) X(eventDown) X(eventTotal) X(wipes) X(wiped) X(nearWipes) X(nearWiped) X(nearWipeMarks) X(wipeEventOn) X(wipeStopDue) X(leadDeaths) X(leadDown) X(windowWiped) X(lastWipeMs) X(diedAtMs) X(deadNow) X(eventRetry) X(eventRearmed) X(guardMs) X(guardOrders) X(guardSinceOrderMs) X(guardReturn) X(offTankTurn) X(raidBossFight) X(raidGuardUnits) X(healerGuardDps) X(healerGuardTried) X(healerGuardClockMs) X(healerGuardOrders) X(healerGuardOrderGuid) X(healerGuardOrderBot) X(healerGuardOrder) X(raidBossJoinMs) X(raidBossJoinGuid) X(raidBossJoined) X(raidAssistMs) X(raidAssistGuid) X(raidAssisted) X(raidWalkJoinMs) X(raidWalkJoinGuid) X(raidWalkJoined) X(raidSwarmJoined) X(raidSwarmPendingGuid) X(raidSwarmPendingMs) X(raidSwarmTries) X(stopReachDue) X(reachStopped) X(guardX) X(guardY) X(guardZ) X(guardEventDown) X(holdUnstayed) X(holdEngageGuid) X(engageGuid) X(engageOrders) X(guardSeen) X(guardUnitOrders) X(fightOrders) X(guardRefilled) X(guardRefills) X(runBack) X(runBackState) X(runBackDone) X(runBacks)
-#define TB_DCAP_FIELDS_CcHold(X) X(bot) X(mark) X(family)
-#define TB_DCAP_FIELDS_CcWatch(X) X(guid) X(resent) X(waitMs)
-#define TB_DCAP_FIELDS_CombatDropState(X) X(set) X(kind) X(ms)
-#define TB_DCAP_FIELDS_HealerGuardMark(X) X(name) X(atMs)
-#define TB_DCAP_FIELDS_HeldSummon(X) X(ms) X(refusals) X(pending)
-#define TB_DCAP_FIELDS_HpLow(X) X(low) X(at) X(fell) X(hittable) X(inRead) X(entry)
-#define TB_DCAP_FIELDS_HpWatch(X) X(entry) X(hp) X(ms)
-#define TB_DCAP_FIELDS_RaidGuardMark(X) X(orders) X(at)
-#define TB_DCAP_FIELDS_RunBackState(X) X(ms) X(stillMs) X(bestYd)
-#define TB_DCAP_FIELDS_StepSummon(X) X(count) X(lastMs)
-#define TB_DCAP_FIELDS_StillState(X) X(x) X(y) X(z) X(ms)
-#define TB_DCAP_FIELDS_Straggle(X) X(outMs) X(rung) X(rungMs)
-#define TB_DCAP_FIELDS_WipeMark(X) X(runMs) X(step)
+#define TB_DCAP_FIELDS_Run_CcHold(X) X(bot) X(mark) X(family)
+#define TB_DCAP_FIELDS_Run_CcWatch(X) X(guid) X(resent) X(waitMs)
+#define TB_DCAP_FIELDS_Run_CombatDropState(X) X(set) X(kind) X(ms)
+#define TB_DCAP_FIELDS_Run_HealerGuardMark(X) X(name) X(atMs)
+#define TB_DCAP_FIELDS_Run_HeldSummon(X) X(ms) X(refusals) X(pending)
+#define TB_DCAP_FIELDS_Run_HpLow(X) X(low) X(at) X(fell) X(hittable) X(inRead) X(entry)
+#define TB_DCAP_FIELDS_Run_HpWatch(X) X(entry) X(hp) X(ms)
+#define TB_DCAP_FIELDS_Run_RaidGuardMark(X) X(orders) X(at)
+#define TB_DCAP_FIELDS_Run_RunBackState(X) X(ms) X(stillMs) X(bestYd)
+#define TB_DCAP_FIELDS_Run_StepSummon(X) X(count) X(lastMs)
+#define TB_DCAP_FIELDS_Run_StillState(X) X(x) X(y) X(z) X(ms)
+#define TB_DCAP_FIELDS_Run_Straggle(X) X(outMs) X(rung) X(rungMs)
+#define TB_DCAP_FIELDS_Run_WipeMark(X) X(runMs) X(step)
 #define TB_DCAP_FIELDS_StandOther(X) X(entry) X(guid) X(patrols) X(x) X(y) X(z) X(path) X(clearYd) X(marginYd)
 #define TB_DCAP_FIELDS_StandPackReach(X) X(entry) X(patrols) X(x) X(y) X(z) X(reachYd)
 #define TB_DCAP_FIELDS_UnitFact(X) X(guid) X(entry) X(formOf) X(distLead) X(x) X(y) X(z) X(hostile) X(stealthed) X(evading) X(polymorphed) X(creatureType) X(ccImmune) X(engaged) X(owner) X(ownerEngaged) X(auraOnEngaged) X(victimHealer) X(victimLead) X(victimTank) X(victimName) X(hitting) X(victimPet) X(castingAtRange) X(campIdle) X(distSpot) X(spawnOwned) X(spawnYd) X(aloft) X(joiners) X(joinersPatrol) X(joinersRead) X(losLead) X(attackable) X(health) X(maxHealth) X(partyHits) X(formation) X(patrols) X(packGuids)
@@ -55,19 +55,19 @@ namespace DecisionCapture {
     S(RaidFacts, TortoiseBots::DungeonRun::RaidFacts) \
     S(RestLines, TortoiseBots::DungeonRun::RestLines) \
     S(Run, TortoiseBots::DungeonRun::Run) \
-    S(CcHold, TortoiseBots::DungeonRun::Run::CcHold) \
-    S(CcWatch, TortoiseBots::DungeonRun::Run::CcWatch) \
-    S(CombatDropState, TortoiseBots::DungeonRun::Run::CombatDropState) \
-    S(HealerGuardMark, TortoiseBots::DungeonRun::Run::HealerGuardMark) \
-    S(HeldSummon, TortoiseBots::DungeonRun::Run::HeldSummon) \
-    S(HpLow, TortoiseBots::DungeonRun::Run::HpLow) \
-    S(HpWatch, TortoiseBots::DungeonRun::Run::HpWatch) \
-    S(RaidGuardMark, TortoiseBots::DungeonRun::Run::RaidGuardMark) \
-    S(RunBackState, TortoiseBots::DungeonRun::Run::RunBackState) \
-    S(StepSummon, TortoiseBots::DungeonRun::Run::StepSummon) \
-    S(StillState, TortoiseBots::DungeonRun::Run::StillState) \
-    S(Straggle, TortoiseBots::DungeonRun::Run::Straggle) \
-    S(WipeMark, TortoiseBots::DungeonRun::Run::WipeMark) \
+    S(Run_CcHold, TortoiseBots::DungeonRun::Run::CcHold) \
+    S(Run_CcWatch, TortoiseBots::DungeonRun::Run::CcWatch) \
+    S(Run_CombatDropState, TortoiseBots::DungeonRun::Run::CombatDropState) \
+    S(Run_HealerGuardMark, TortoiseBots::DungeonRun::Run::HealerGuardMark) \
+    S(Run_HeldSummon, TortoiseBots::DungeonRun::Run::HeldSummon) \
+    S(Run_HpLow, TortoiseBots::DungeonRun::Run::HpLow) \
+    S(Run_HpWatch, TortoiseBots::DungeonRun::Run::HpWatch) \
+    S(Run_RaidGuardMark, TortoiseBots::DungeonRun::Run::RaidGuardMark) \
+    S(Run_RunBackState, TortoiseBots::DungeonRun::Run::RunBackState) \
+    S(Run_StepSummon, TortoiseBots::DungeonRun::Run::StepSummon) \
+    S(Run_StillState, TortoiseBots::DungeonRun::Run::StillState) \
+    S(Run_Straggle, TortoiseBots::DungeonRun::Run::Straggle) \
+    S(Run_WipeMark, TortoiseBots::DungeonRun::Run::WipeMark) \
     S(StandOther, TortoiseBots::DungeonRun::StandOther) \
     S(StandPackReach, TortoiseBots::DungeonRun::StandPackReach) \
     S(UnitFact, TortoiseBots::DungeonRun::UnitFact) \
@@ -308,7 +308,7 @@ struct MemberFact
   engagedRead: bool
   offPlanMap: bool
   offMapReturnable: bool
-  offMapBlock: OffMapBlock
+  offMapBlock: MemberFact::OffMapBlock
   otherCopy: bool
 struct PlayerFact
   name: std::string
@@ -548,12 +548,12 @@ struct Run
   gatherWaived: bool
   summoned: std::unordered_set<std::string>
   gatherComingMs: std::uint32_t
-  straggle: std::unordered_map<std::string, Straggle>
+  straggle: std::unordered_map<std::string, Run::Straggle>
   sapWalkDue: std::string
   summonDue: std::string
   summonWait: std::string
   summonWaitMs: std::uint32_t
-  stepSummons: std::unordered_map<std::string, StepSummon>
+  stepSummons: std::unordered_map<std::string, Run::StepSummon>
   runawayMs: std::unordered_map<std::string, std::uint32_t>
   runawaySummons: std::uint32_t
   runawayLastMs: std::uint64_t
@@ -571,7 +571,7 @@ struct Run
   memberYd: std::unordered_map<std::string, float>
   reviveSummons: std::unordered_map<std::string, std::uint32_t>
   regroupGatherCapMs: std::uint32_t
-  still: std::unordered_map<std::string, StillState>
+  still: std::unordered_map<std::string, Run::StillState>
   leadSeen: bool
   leadLastX: float
   leadLastY: float
@@ -579,7 +579,7 @@ struct Run
   leadDied: bool
   waitFor: std::unordered_set<std::string>
   hold: std::vector<std::string>
-  heldSummons: std::unordered_map<std::string, HeldSummon>
+  heldSummons: std::unordered_map<std::string, Run::HeldSummon>
   holdDue: bool
   leadDeathX: float
   leadDeathY: float
@@ -591,8 +591,8 @@ struct Run
   otherPartRescues: std::uint32_t
   otherPartRescueStep: std::size_t
   ccSent: std::unordered_set<std::uint64_t>
-  ccHolds: std::unordered_map<std::uint64_t, CcHold>
-  ccWatch: std::vector<CcWatch>
+  ccHolds: std::unordered_map<std::uint64_t, Run::CcHold>
+  ccWatch: std::vector<Run::CcWatch>
   ccLandedDrop: std::vector<std::uint64_t>
   ccSapFailed: bool
   ccRegather: bool
@@ -755,11 +755,11 @@ struct Run
   unattackableFight: bool
   unattackableSet: std::vector<std::uint64_t>
   unattackableMs: std::uint32_t
-  combatDrop: std::unordered_map<std::string, CombatDropState>
+  combatDrop: std::unordered_map<std::string, Run::CombatDropState>
   combatDroppedAt: std::unordered_map<std::string, std::uint64_t>
   combatDrops: std::vector<std::string>
-  hpWatch: std::unordered_map<std::uint64_t, HpWatch>
-  fightHp: std::unordered_map<std::uint64_t, HpLow>
+  hpWatch: std::unordered_map<std::uint64_t, Run::HpWatch>
+  fightHp: std::unordered_map<std::uint64_t, Run::HpLow>
   fightHpMs: std::uint32_t
   fightHpDead: std::uint32_t
   fightHpDeath: bool
@@ -775,7 +775,7 @@ struct Run
   wiped: bool
   nearWipes: std::uint32_t
   nearWiped: bool
-  nearWipeMarks: std::vector<WipeMark>
+  nearWipeMarks: std::vector<Run::WipeMark>
   wipeEventOn: bool
   wipeStopDue: bool
   leadDeaths: std::uint32_t
@@ -792,9 +792,9 @@ struct Run
   guardReturn: bool
   offTankTurn: std::size_t
   raidBossFight: bool
-  raidGuardUnits: std::unordered_map<std::uint64_t, RaidGuardMark>
-  healerGuardDps: std::unordered_map<std::uint64_t, std::vector<HealerGuardMark>>
-  healerGuardTried: std::unordered_map<std::uint64_t, std::vector<HealerGuardMark>>
+  raidGuardUnits: std::unordered_map<std::uint64_t, Run::RaidGuardMark>
+  healerGuardDps: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
+  healerGuardTried: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
   healerGuardClockMs: std::uint64_t
   healerGuardOrders: std::uint32_t
   healerGuardOrderGuid: std::uint64_t
@@ -829,59 +829,59 @@ struct Run
   guardRefilled: bool
   guardRefills: std::uint32_t
   runBack: std::vector<std::string>
-  runBackState: std::unordered_map<std::string, RunBackState>
+  runBackState: std::unordered_map<std::string, Run::RunBackState>
   runBackDone: std::unordered_set<std::string>
   runBacks: std::uint32_t
-struct CcHold
+struct Run::CcHold
   bot: std::string
   mark: std::string
   family: CcFamily
-struct CcWatch
+struct Run::CcWatch
   guid: std::uint64_t
   resent: bool
   waitMs: std::uint32_t
-struct CombatDropState
+struct Run::CombatDropState
   set: std::vector<std::uint64_t>
-  kind: CombatDropKind
+  kind: Run::CombatDropKind
   ms: std::uint32_t
-struct HealerGuardMark
+struct Run::HealerGuardMark
   name: std::string
   atMs: std::uint64_t
-struct HeldSummon
+struct Run::HeldSummon
   ms: std::uint64_t
   refusals: std::uint32_t
   pending: bool
-struct HpLow
+struct Run::HpLow
   low: std::uint32_t
   at: std::uint32_t
   fell: bool
   hittable: bool
   inRead: bool
   entry: std::uint32_t
-struct HpWatch
+struct Run::HpWatch
   entry: std::uint32_t
   hp: std::uint32_t
   ms: std::uint32_t
-struct RaidGuardMark
+struct Run::RaidGuardMark
   orders: std::uint32_t
   at: std::uint32_t
-struct RunBackState
+struct Run::RunBackState
   ms: std::uint32_t
   stillMs: std::uint32_t
   bestYd: float
-struct StepSummon
+struct Run::StepSummon
   count: std::uint32_t
   lastMs: std::uint64_t
-struct StillState
+struct Run::StillState
   x: float
   y: float
   z: float
   ms: std::uint32_t
-struct Straggle
+struct Run::Straggle
   outMs: std::uint32_t
   rung: std::uint8_t
   rungMs: std::uint32_t
-struct WipeMark
+struct Run::WipeMark
   runMs: std::uint64_t
   step: std::size_t
 struct StandOther
@@ -1018,9 +1018,9 @@ struct PlanStep
   tacticEntries: std::vector<std::uint32_t>
 enum CcFamily: None,Polymorph,Shackle,Banish,Sap
 enum LootFfa: Idle,Ordered,Looting,Restoring
-enum OffMapBlock: Busy,OpenWorld
+enum MemberFact::OffMapBlock: Busy,OpenWorld
 enum Phase: Begin,Gather,Walk,AwaitPull,AwaitTask,Rest,Wait,Hold
-enum CombatDropKind: Unattackable,FarHeld,Wedged
+enum Run::CombatDropKind: Unattackable,FarHeld,Wedged
 enum State: Running,Paused,Done
 enum RezClass: None,Priest,Paladin,Shaman,Druid
 enum BossTacticKind: None,Interrupt,KillFirst,Behind,AvoidCast,TankHold,HoldKill,OneAtATime
@@ -1028,7 +1028,7 @@ enum LegNeedMode: None,Optional,Door,Blocking
 enum PlanStepKind: None,Move,MoveDirect,Pull,Boss,Loot,Open,UseItem,WaitObject,WaitClear,Rest,Ritual,Hold,Gossip,UseOn
 )TBSCHEMA";
 
-inline constexpr char kDecisionSchemaHash[] = "03b87a7ce27f4621";
+inline constexpr char kDecisionSchemaHash[] = "d7f2a821c0ee4774";
 
 struct DecisionSampleField
 {
@@ -1091,67 +1091,67 @@ inline constexpr DecisionSampleField kDecisionSamples_Run[] = {
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_CcHold[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_CcHold[] = {
     {"bot", R"TBSAMPLE("s")TBSAMPLE"}, {"mark", R"TBSAMPLE("s")TBSAMPLE"}, {"family", R"TBSAMPLE(1)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_CcWatch[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_CcWatch[] = {
     {"guid", R"TBSAMPLE(7)TBSAMPLE"}, {"resent", R"TBSAMPLE(true)TBSAMPLE"}, {"waitMs", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_CombatDropState[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_CombatDropState[] = {
     {"set", R"TBSAMPLE([7])TBSAMPLE"}, {"kind", R"TBSAMPLE(1)TBSAMPLE"}, {"ms", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_HealerGuardMark[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_HealerGuardMark[] = {
     {"name", R"TBSAMPLE("s")TBSAMPLE"}, {"atMs", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_HeldSummon[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_HeldSummon[] = {
     {"ms", R"TBSAMPLE(7)TBSAMPLE"}, {"refusals", R"TBSAMPLE(7)TBSAMPLE"}, {"pending", R"TBSAMPLE(true)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_HpLow[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_HpLow[] = {
     {"low", R"TBSAMPLE(7)TBSAMPLE"}, {"at", R"TBSAMPLE(7)TBSAMPLE"}, {"fell", R"TBSAMPLE(true)TBSAMPLE"}, {"hittable", R"TBSAMPLE(true)TBSAMPLE"}, {"inRead", R"TBSAMPLE(true)TBSAMPLE"}, {"entry", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_HpWatch[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_HpWatch[] = {
     {"entry", R"TBSAMPLE(7)TBSAMPLE"}, {"hp", R"TBSAMPLE(7)TBSAMPLE"}, {"ms", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_RaidGuardMark[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_RaidGuardMark[] = {
     {"orders", R"TBSAMPLE(7)TBSAMPLE"}, {"at", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_RunBackState[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_RunBackState[] = {
     {"ms", R"TBSAMPLE(7)TBSAMPLE"}, {"stillMs", R"TBSAMPLE(7)TBSAMPLE"}, {"bestYd", R"TBSAMPLE(1.5)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_StepSummon[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_StepSummon[] = {
     {"count", R"TBSAMPLE(7)TBSAMPLE"}, {"lastMs", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_StillState[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_StillState[] = {
     {"x", R"TBSAMPLE(1.5)TBSAMPLE"}, {"y", R"TBSAMPLE(1.5)TBSAMPLE"}, {"z", R"TBSAMPLE(1.5)TBSAMPLE"}, {"ms", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_Straggle[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_Straggle[] = {
     {"outMs", R"TBSAMPLE(7)TBSAMPLE"}, {"rung", R"TBSAMPLE(7)TBSAMPLE"}, {"rungMs", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };
 
-inline constexpr DecisionSampleField kDecisionSamples_WipeMark[] = {
+inline constexpr DecisionSampleField kDecisionSamples_Run_WipeMark[] = {
     {"runMs", R"TBSAMPLE(7)TBSAMPLE"}, {"step", R"TBSAMPLE(7)TBSAMPLE"},
     {nullptr, nullptr},
 };

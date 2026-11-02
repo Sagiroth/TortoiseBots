@@ -808,9 +808,10 @@ def collect_nested_names(model):
     for qualified, entry in list(model.structs.items()) + list(model.enums.items()):
         parts = qualified.split("::")
         kept = [parts[-1]]
-        for part in reversed(parts[:-1]):
-            if part in model.structs or part in model.enums:
-                kept.insert(0, part)
+        for end in range(len(parts) - 2, 0, -1):
+            prefix = "::".join(parts[:end + 1])
+            if prefix in model.structs or prefix in model.enums:
+                kept.insert(0, parts[end])
             else:
                 break
         NESTED_NAMES[qualified] = "::".join(kept)

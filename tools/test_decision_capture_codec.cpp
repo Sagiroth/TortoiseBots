@@ -259,7 +259,8 @@ static void TestSchema()
     CHECK(std::string(kDecisionSchemaText).find("struct Run\n") != std::string::npos);
     CHECK(std::string(kDecisionSchemaText).find("  plan: const DungeonPlan*\n") != std::string::npos);
     CHECK(std::string(kDecisionSchemaText).find("enum Phase: Begin,Gather,Walk") != std::string::npos);
-    CHECK(std::string(kDecisionSchemaText).find("enum CombatDropKind: Unattackable") != std::string::npos);
+    CHECK(std::string(kDecisionSchemaText).find("struct Run::Straggle\n") != std::string::npos);
+    CHECK(std::string(kDecisionSchemaText).find("enum Run::CombatDropKind: Unattackable") != std::string::npos);
 }
 
 // -- 8. realistic sizes --------------------------------------------------
