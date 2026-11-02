@@ -216,7 +216,7 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
             NpcText const* gos = sObjectMgr.GetNpcText(gossip->second.text_id);
             if (gos && gos->Options[0].BroadcastTextID)
             {
-                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbLocaleIndex() : DB_LOCALE_enUS;
                 if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options[0].BroadcastTextID, locale, observer->GetGender()))
                     gossipText += " " + std::string(broadcast);
             }
@@ -229,7 +229,7 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
             NpcText const* gos = sObjectMgr.GetNpcText(textId);
             if (gos && gos->Options[0].BroadcastTextID)
             {
-                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbLocaleIndex() : DB_LOCALE_enUS;
                 if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options[0].BroadcastTextID, locale, observer->GetGender()))
                     gossipText += " " + std::string(broadcast);
             }
