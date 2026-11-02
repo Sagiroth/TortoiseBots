@@ -58,6 +58,7 @@
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
+#include "InstanceLimitText.h"
 #include "RemoteCommanderTasks.h"
 #include "RaidLayoutPolicy.h"
 #include "RezHoldPolicy.h"
@@ -16016,6 +16017,8 @@ struct RejoinBindFacts
     RejoinEntryCheck entry = RejoinEntryCheck::Ok;                // which of the core's entry checks failed
     bool soloBind = false, soloPerm = false, soloIsLeads = false; // the bot's own bind on the map
     bool groupBind = false, groupIsLeads = false;                 // its group's bind on the map
+    std::string botName;                                          // named when the instance limit refused
+    std::uint32_t instanceLimit = 5;                              // instances an account may enter an hour
 };
 enum class RejoinBindPlan
 {
@@ -16045,7 +16048,9 @@ inline bool RejoinBindWrites(RejoinBindPlan p)
 inline std::string RejoinBindRefusal(const RejoinBindFacts& b, std::uint32_t botCopy, std::uint32_t groupCopy)
 {
     std::string reason;
-    if (b.entry != RejoinEntryCheck::Ok)
+    if (b.entry == RejoinEntryCheck::InstanceCount)
+        reason = TortoiseBots::InstanceLimitReason(b.botName, b.instanceLimit);
+    else if (b.entry != RejoinEntryCheck::Ok)
         reason = std::string("entry check: ") + RejoinEntryCheckName(b.entry);
     if (b.groupBind && !b.groupIsLeads)
     {

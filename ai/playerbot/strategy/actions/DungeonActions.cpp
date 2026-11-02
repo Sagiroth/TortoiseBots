@@ -1,5 +1,7 @@
 #include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
+#include "playerbot/HazardEscapePolicy.h"
+#include <vector>
 #include "playerbot/BossTacticsStand.h"
 #include "playerbot/strategy/triggers/DungeonTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
@@ -23,19 +25,20 @@ bool MoveAwayFromHazard::Execute(Event& event)
 {
     const std::list<HazardPosition>& hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
 
-    // Get the closest hazard to move away from
-    const HazardPosition* closestHazard = nullptr;
-    float closestHazardDistance = 9999.0f;
+    // Flee the hazard that contains the bot (the nearest such centre); a nearer hazard that does not reach the
+    // bot must not take the choice (HazardEscapePolicy.h).
+    std::vector<HazardEscapeCandidate> candidates;
+    std::vector<const HazardPosition*> candidateHazards;
     for (const HazardPosition& hazard : hazards)
     {
         const WorldPosition& hazardPosition = hazard.first;
-        const float distance = bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
-        if (distance < closestHazardDistance)
-        {
-            closestHazardDistance = distance;
-            closestHazard = &hazard;
-        }
+        candidates.push_back({ bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ()), hazard.second });
+        candidateHazards.push_back(&hazard);
     }
+
+    const std::size_t chosen = SelectEscapeHazard(candidates);
+    const HazardPosition* closestHazard = chosen == kNoEscapeHazard ? nullptr : candidateHazards[chosen];
+    const float closestHazardDistance = chosen == kNoEscapeHazard ? 9999.0f : candidates[chosen].distance;
 
     if (closestHazard)
     {

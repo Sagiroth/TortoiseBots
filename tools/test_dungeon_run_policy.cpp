@@ -21442,24 +21442,24 @@ static void TestPlanRejoinBind()
     using E = RejoinEntryCheck;
     // (a) the normal case: the group is bound to the lead bot's copy. The group's bind wins over a solo one that is
     // not permanent (Player::GetBoundInstanceSaveForSelfOrGroup), so nothing is written, the stale solo bind included.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, true}) == P::Teleport);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, true}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, true, {}, 5}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, true, {}, 5}) == P::Teleport);
     // (b) the group has no bind (Dire Maul West rf-B-4): only the bot's own solo bind moves.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, false, false}) == P::BindSolo);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, false, false}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, false, false, {}, 5}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, false, false, {}, 5}) == P::BindSolo);
     // (c) the group is bound to another copy: the group's bind would have to change, so it refuses (never rebinds a
     // party), permanent or not.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, false}) == P::GroupElsewhere);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, false}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, false, {}, 5}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, false, {}, 5}) == P::GroupElsewhere);
     // (d) a permanent solo bind to another copy: a saved lockout, refused, also with the group on the lead's copy.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, true, true}) == P::Locked);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, false, false}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, true, true, {}, 5}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, false, false, {}, 5}) == P::Locked);
     // (e) a permanent solo bind to the lead bot's copy: it already wins, nothing is written.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, true, false, false}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, true, false, false, {}, 5}) == P::Teleport);
     // (f) the preflight (the core's own entry checks) failed: refused before anything else, so no bind is touched.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::CanPlayerEnter, true, false, false, false, false}) == P::EntryRefused);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::InstanceCount, false, false, false, true, true}) == P::EntryRefused);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::MapCanEnter, true, true, false, false, false}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::CanPlayerEnter, true, false, false, false, false, {}, 5}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::InstanceCount, false, false, false, true, true, {}, 5}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::MapCanEnter, true, true, false, false, false, {}, 5}) == P::EntryRefused);
     // Only BindSolo writes a bind.
     CHECK(!RejoinBindWrites(P::EntryRefused) && !RejoinBindWrites(P::Locked) && !RejoinBindWrites(P::GroupElsewhere) &&
         !RejoinBindWrites(P::Teleport) && RejoinBindWrites(P::BindSolo));
@@ -21473,22 +21473,31 @@ static void TestRejoinBindReason()
     f.entry = E::CanPlayerEnter;
     CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: can-player-enter)");
     f.entry = E::InstanceCount;
-    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: instance-count)");
+    f.botName = "Bob";
+    f.instanceLimit = 5;
+    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (instance limit: Bob's account entered 5 instances this hour)");
+    f.botName.clear();
+    f.instanceLimit = 5;
     f.entry = E::MapCanEnter;
     CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: map-can-enter)");
     CHECK(RejoinBindRefusal(f, 113, 0) == "entry check: map-can-enter");
+    // The instance limit is named exactly, with the bot (an unnamed one reads "the bot"); the other checks keep their names.
+    f.entry = E::InstanceCount;
+    CHECK(RejoinBindRefusal(f, 113, 0) == "instance limit: the bot's account entered 5 instances this hour");
+    f.entry = E::MapCanEnter;
     CHECK(std::string(RejoinEntryCheckName(E::Ok)) == "ok");
     // The live shape: the instance count refused and the group is bound to the bot's own copy.
     RejoinBindFacts live;
     live.entry = E::InstanceCount;
+    live.botName = "Bot113";
     live.groupBind = true;
     live.groupIsLeads = false;
     CHECK(PlanRejoinBind(live) == RejoinBindPlan::EntryRefused);
     CHECK(RejoinBindVerdictText(live, 113, 113) ==
-        "refused (entry check: instance-count; group bound to the bot's copy 113)");
+        "refused (instance limit: Bot113's account entered 5 instances this hour; group bound to the bot's copy 113)");
     // The group's bind in a third copy: named by its id.
     CHECK(RejoinBindVerdictText(live, 113, 114) ==
-        "refused (entry check: instance-count; group bound to another copy 114)");
+        "refused (instance limit: Bot113's account entered 5 instances this hour; group bound to another copy 114)");
     // The spec's GroupElsewhere on its own: the entry checks pass, the group leads to the bot's copy.
     RejoinBindFacts elsewhere;
     elsewhere.groupBind = true;
