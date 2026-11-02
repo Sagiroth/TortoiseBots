@@ -1038,6 +1038,23 @@ AiPlayerbot.DungeonRunAggroEstimate = 0
 # 6 - default; 1 and up. Only read while AiPlayerbot.DungeonRunAggroEstimate = 1.
 AiPlayerbot.DungeonRunAggroCeiling = 6
 
+# The ring estimate: instead of counting only from where the party stands, the estimate also
+# counts every creature the walk to the pull, the stand and the fight point would wake, and
+# every creature within the ring below of one already counted (a call for help carries: two
+# hops). The count is compared with a pull row's own ceiling (a plan's max_bodies, the target
+# included), else with DungeonRunAggroCeiling + 1. A pull over its ceiling rests once and notes
+# "pull estimate: N bodies over the ceiling M"; the last approach row also notes once how many
+# the coming pull would bring ("ahead: pull N brings ..."). Advice only: no order changes.
+# 0 - off, the estimate as before (Default)
+# 1 - on; only read while AiPlayerbot.DungeonRunAggroEstimate = 1
+AiPlayerbot.DungeonRunAggroWalkRing = 0
+
+# How far a call for help carries in the ring estimate, in yards (the measured wakes were
+# 11.0-19.5 yd; the server's own CreatureFamilyAssistanceRadius is 10). The larger of the two
+# is used.
+# 20 - default; 5 to 40
+AiPlayerbot.DungeonRunAggroRingYd = 20
+
 # The run leader's pack-cleared gate. A `pull` step is done only when nothing of its
 # entries is left: no living unit in its radius, no unit in the band around it
 # (radius + this many yards on the ground, 10 yd of height), no patroller, and no
