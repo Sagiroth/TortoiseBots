@@ -160,13 +160,13 @@ const packRows = [
   { key: "prev-night", session: 4, start: secAt(2026, 10, 28, 23, 0) },
 ];
 assert.deepStrictEqual(F.packNumbers(packRows), [2, 1, 3, 2, 1, 1],
-  "a new run (session) restarts at Pack 1, and so does a new UTC day");
+  "a new run (session) restarts at Pack 1, and so does a new night (06:00 local rollover)");
 assert.deepStrictEqual(F.packNumbers([]), []);
-assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per day");
+assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per night");
 // The rail reads the same numbers: two runs on one night do not continue each other's count.
 const multiRail = F.railCards(packRows, {}, null, null);
 assert.deepStrictEqual(multiRail.map((c) => c.label), ["Pack 2", "Pack 1", "Pack 3", "Pack 2", "Pack 1", "Pack 1"],
-  "the rail's Pack N restarts with the run and the day");
+  "the rail's Pack N restarts with the run and the night");
 
 // ---- the killer: the last hit that is not the dead bot; only self-damage known is "unknown" ------------------------
 const SELF_FIGHT = {

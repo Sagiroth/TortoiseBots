@@ -207,7 +207,7 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/anomalies/totals`: Cumulative session totals for anomalies and action loops.
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
 - `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history. Each fight (live or finished) carries `boss_phase` and `boss_phase_entry`: the fight's boss phase (1 + the entry changes the module saw of his unit) and the entry he reads now, so the Fights panel and the debugger show `phase N (entry E)` after the boss name when N > 1 - a boss a script changes mid-fight keeps being the boss, e.g. Zul'Gurub's Thekal 14599 turning into 14509.
-- `GET /api/v1/combat/history/days?commander=`, `GET /api/v1/combat/history?commander=&day=`, `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's days, one day's fights, and the same pack across runs.
+- `GET /api/v1/combat/history/days?commander=` (add `tz`, e.g. `Europe/Oslo`, and the optional `rollover` hour, default 6), `GET /api/v1/combat/history?commander=` with `day=` (one UTC day) or `night=` (with `tz`: one local night), `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's nights, one night's fights, and the same pack across runs. Without `tz` the days and list answer the old UTC day rows, so old clients keep working.
 - Both fight lists (`/combat/fights` and `/combat/history`) take optional paging and filter params; without them they answer as before. `limit=N` (at most 500) cuts the list, put in start-descending then key-ascending order first, and answers the header `X-More: 1` when rows were left out (a `since` or `before` without `limit` is capped at 500 the same way); `before=<start>[,<key>]` lists only older fights (pass the last row's `start,key` to get the next page); `since=<start>` only fights from that unix second on; `boss=1`, `deaths=1` and `outcome=kill,wipe` filter. With `since` or `before` the history list may leave out `day` and then spans every stored day. A bad param is a 400.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
@@ -217,9 +217,13 @@ Activity counters are periodically saved to `activity-state.json` so statistics 
 
 The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits, within ten seconds: a world-database lookup still running at that point is abandoned, and the log names the fights it left unwritten. A line that cannot be written whole is cut back off the file, and when even that fails the night continues in `<YYYY-MM-DD>-1.jsonl`.
 
+The oldest stored night may be partial: expired day files are deleted while a night spans two of them.
+
 ### The fights rail (Fight debugger)
 
 The Fight debugger's rail on a Commanders card lists the fights of Tonight (or a chosen night), oldest first:
+
+All times on the dashboard are shown in your browser's local time, and nights roll over at 06:00: a fight at 02:17 belongs to the previous evening's night.
 
 - **Default view:** boss fights, wipes, fights with any death and fights that are not clean (a rule the daemon fired, or an opened fight whose checks warn or fail) are full cards; two or more clean trash fights in a row (same leg and run) fold into one line such as "Leg 2 · 12 trash pulls, 0 deaths", which opens in place. The fold that holds the selected fight opens by itself; a fold the reader opened stays open when a new pull joins it.
 - **Show all fights:** the box over the rail lists every fight of the night as a card, as the rail did before. The choice is kept per viewer in this browser (for the page only where the browser blocks storage). A read-only history card never folds.

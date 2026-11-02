@@ -45,9 +45,11 @@ vm.runInContext([
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
+  "var fdNightParams = () => '';",
   "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
+  "var fdNightFights = (fd, bind, night, cb) => { if (cb) cb(null); };",
+  "var FightHistory = { dayOf: () => \"2026-10-29\", nightOf: () => \"2026-10-29\", nightDays: (n) => [n], rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
   "var fdWinFights = (fd, bind, since, cb) => { if (cb) cb(null); };",
-  "var FightHistory = { dayOf: () => \"2026-10-29\", rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -172,7 +174,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   // ---- 2d. a read-only history card opens on its newest stored night (today is Tonight) -------------------------------
   run("cmdFd = {}");
   const fdH = run("fdState('H')");
-  fdH.days = [{ day: "2026-10-29", fights: 3 }, { day: "2026-10-27", fights: 1 }];
+  fdH.days = [{ night: "2026-10-29", fights: 3 }, { night: "2026-10-27", fights: 1 }];
   fdH.daysAt = clock;
   ctx.cmdRaidFights = (b, cb) => cb([]);
   run("fdLoad(card, hbind)", { card, hbind: { commander: "H", history: true, bots: [] } });
@@ -184,7 +186,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   // A past newest night keeps its own value.
   run("cmdFd = {}");
   const fdP = run("fdState('P')");
-  fdP.days = [{ day: "2026-10-27", fights: 1 }];
+  fdP.days = [{ night: "2026-10-27", fights: 1 }];
   fdP.daysAt = clock;
   run("fdLoad(card, hbind)", { card, hbind: { commander: "P", history: true, bots: [] } });
   await settle();

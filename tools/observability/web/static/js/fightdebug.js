@@ -680,23 +680,25 @@
     };
   }
 
-  const utcDay = (t) => {
+  const nightOf = (t) => {
     const n = num(t);
     if (n === null) return "";
     const d = new Date(n * 1000);
-    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (d.getHours() < ((typeof FightHistory !== 'undefined' && FightHistory.NIGHT_ROLLOVER_H) || 6)) day.setDate(day.getDate() - 1);
+    return day.getFullYear() + "-" + ("0" + (day.getMonth() + 1)).slice(-2) + "-" + ("0" + day.getDate()).slice(-2);
   };
 
   // Pack numbers count inside a run, not across the whole list: a night restarts at Pack 1 when the session does (a new bind is
-  // a new run), and so does a new day. rows are newest first, as the daemon lists them; walking them backwards gives the oldest
-  // fight of each group Pack 1.
+  // a new run), and so does a new night (06:00 local rollover). rows are newest first, as the daemon lists them; walking them
+  // backwards gives the oldest fight of each group Pack 1.
   function packNumbers(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const out = new Array(list.length);
     const count = {};
     for (let i = list.length - 1; i >= 0; i--) {
       const r = list[i] || {};
-      const day = utcDay(r.start);
+      const day = nightOf(r.start);
       const run = r.session != null && r.session !== "" ? String(r.session) : "";
       const group = day + "|" + run;
       count[group] = (count[group] || 0) + 1;
@@ -725,7 +727,7 @@
       const waiting = !det && !failed && (i < asked || row.key === (st && st.loadingKey) || row.key === (st && st.sel));
       return {
         key: row.key,
-        // Pack N inside the fight's own day and run: the oldest of that group is Pack 1.
+        // Pack N inside the fight's own night and run: the oldest of that group is Pack 1.
         label: "Pack " + packs[i],
         mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
@@ -744,7 +746,7 @@
         boss: !!row.boss_name,
         wipe: row.outcome === "wipe",
         leg: row.leg != null ? String(row.leg) : "",
-        group: utcDay(row.start) + "|" + (row.session != null && row.session !== "" ? String(row.session) : ""),
+        group: nightOf(row.start) + "|" + (row.session != null && row.session !== "" ? String(row.session) : ""),
         start: num(row.start) || 0,
       };
     });
