@@ -651,7 +651,7 @@
     if (n === null) return "";
     const d = new Date(n * 1000);
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (d.getHours() < 6) day.setDate(day.getDate() - 1);
+    if (d.getHours() < ((typeof FightHistory !== 'undefined' && FightHistory.NIGHT_ROLLOVER_H) || 6)) day.setDate(day.getDate() - 1);
     return day.getFullYear() + "-" + ("0" + (day.getMonth() + 1)).slice(-2) + "-" + ("0" + day.getDate()).slice(-2);
   };
 

@@ -420,11 +420,13 @@ func (s *Store) Days(commander string) []DayCount {
 
 // nightOf is the local night one fight belongs to: the local civil date, or the previous calendar date when the local
 // hour is before the rollover. It reads civil fields, not elapsed hours: across a DST jump six elapsed hours are five
-// or seven civil hours, so subtracting moves the rollover.
+// or seven civil hours, so subtracting moves the rollover; and the previous date is taken at noon, since midnight
+// itself may not exist where DST changes at midnight.
 func nightOf(start int64, loc *time.Location, rollover int) string {
 	t := time.Unix(start, 0).In(loc)
 	if t.Hour() < rollover {
-		t = t.AddDate(0, 0, -1)
+		y, m, d := t.Date()
+		t = time.Date(y, m, d-1, 12, 0, 0, 0, loc)
 	}
 	return t.Format(dayLayout)
 }
@@ -475,7 +477,7 @@ func (s *Store) List(commander, day string) []Row {
 }
 
 // ListNight returns a commander's fights of one local night (the local day it starts, rolling over at the rollover
-// hour), newest first. The night reads the (at most two) UTC day files it spans.
+// hour), newest first, from the in-memory index.
 func (s *Store) ListNight(commander, night string, loc *time.Location, rollover int) []Row {
 	s.mu.RLock()
 	out := make([]Row, 0, 16)
@@ -661,25 +663,26 @@ func hasControl(s string) bool {
 }
 
 // nightParams reads the list's night params: tz (an IANA zone name) and the rollover hour (0-12, default 6). Without tz
-// the routes answer the old UTC shapes; the error names the bad param.
-func nightParams(get func(string) string) (*time.Location, int, string) {
+// the routes answer the old UTC shapes. An unknown zone falls back to those same UTC shapes (fallback true) instead of
+// failing: a build without zone data must still answer. The error names the bad param.
+func nightParams(get func(string) string) (*time.Location, int, string, bool) {
 	tz := get("tz")
 	rollover := 6
 	if s := get("rollover"); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < 0 || n > 12 {
-			return nil, 0, "bad rollover"
+			return nil, 0, "bad rollover", false
 		}
 		rollover = n
 	}
 	if tz == "" {
-		return nil, rollover, ""
+		return nil, rollover, "", false
 	}
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
-		return nil, 0, "bad tz"
+		return time.UTC, rollover, "", true
 	}
-	return loc, rollover, ""
+	return loc, rollover, "", false
 }
 
 // CommandersHandler serves GET /api/v1/combat/history/commanders: the commanders with saved fights, newest first, so the
@@ -702,10 +705,14 @@ func CommandersHandler(s *Store) http.HandlerFunc {
 func DaysHandler(s *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		loc, rollover, paramErr := nightParams(q.Get)
+		loc, rollover, paramErr, fallback := nightParams(q.Get)
 		if paramErr != "" {
 			bad(w, paramErr)
 			return
+		}
+		if fallback {
+			w.Header().Set("X-TZ-Fallback", "utc")
+			loc = nil
 		}
 		if loc != nil {
 			nights := []NightCount{}
@@ -739,7 +746,7 @@ func ListHandler(s *Store) http.HandlerFunc {
 			bad(w, err.Error())
 			return
 		}
-		loc, rollover, paramErr := nightParams(q.Get)
+		loc, rollover, paramErr, fallback := nightParams(q.Get)
 		if paramErr != "" {
 			bad(w, paramErr)
 			return
@@ -758,11 +765,19 @@ func ListHandler(s *Store) http.HandlerFunc {
 			bad(w, "bad day")
 			return
 		}
+
+		if fallback {
+			w.Header().Set("X-TZ-Fallback", "utc")
+		}
 		out := []combat.FightSummary{}
 		if s != nil {
 			var rows []Row
 			if night != "" {
-				rows = s.ListNight(q.Get("commander"), night, loc, rollover)
+				if fallback {
+					rows = s.List(q.Get("commander"), night)
+				} else {
+					rows = s.ListNight(q.Get("commander"), night, loc, rollover)
+				}
 			} else if day != "" {
 				rows = s.List(q.Get("commander"), day)
 			} else {

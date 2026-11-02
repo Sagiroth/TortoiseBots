@@ -217,6 +217,8 @@ Activity counters are periodically saved to `activity-state.json` so statistics 
 
 The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits, within ten seconds: a world-database lookup still running at that point is abandoned, and the log names the fights it left unwritten. A line that cannot be written whole is cut back off the file, and when even that fails the night continues in `<YYYY-MM-DD>-1.jsonl`.
 
+The oldest stored night may be partial: expired day files are deleted while a night spans two of them.
+
 ### The fights rail (Fight debugger)
 
 The Fight debugger's rail on a Commanders card lists the fights of Tonight (or a chosen night), oldest first:

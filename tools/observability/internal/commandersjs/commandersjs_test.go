@@ -336,6 +336,20 @@ func TestDashDatesJS(t *testing.T) {
 	runCheck(t, "dashtime_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
 }
 
+// TestNightParitySantiagoJS runs night_parity_check.js under America/Santiago: FightHistory.nightOf answers the same
+// night as the Go nightOf over the hours around the midnight-DST days (2024-09-09 00:15 is the night of 2024-09-08).
+func TestNightParitySantiagoJS(t *testing.T) {
+	t.Setenv("TZ", "America/Santiago")
+	runCheck(t, "night_parity_check.js", "../../web/static/js/fighthistory.js", filepath.Join("testdata", "night-parity-santiago.json"))
+}
+
+// TestNightParityNewYorkJS runs night_parity_check.js under America/New_York: the same parity over the US spring-forward
+// and fall-back weekends.
+func TestNightParityNewYorkJS(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	runCheck(t, "night_parity_check.js", "../../web/static/js/fighthistory.js", filepath.Join("testdata", "night-parity-newyork.json"))
+}
+
 // TestFdLiveEngagedJS runs fd_live_engaged_check.js: a live fight exists only while a hostile unit is engaged with the
 // group (a hostile mob whose victim is a group member, or damage in the module's 10 s window). A parked raid casting
 // buffs and healing shows no Live card and gets no live pick (so no LIVE checks panel); an engaged mob shows both; and

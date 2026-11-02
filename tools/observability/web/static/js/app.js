@@ -7776,7 +7776,7 @@
       if (t.dataset.fdOpen != null) {
         // The pack table's time: that fight, on its own night.
         fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(t.dataset.fdDay || '', Date.now()) : (t.dataset.fdDay || '');
-        delete fd.hist[fd.day];
+        delete fd.hist['night:' + fd.day];
         fd.sel = fdDecodeKey(t.dataset.fdOpen);
         fd.userSel = true;
         fd.death = null;
@@ -7854,7 +7854,7 @@
       const day = e.target && e.target.matches && e.target.matches('[data-fd-day]');
       if (!day) return;
       fd.day = e.target.value || '';
-      delete fd.hist[fd.day];
+      delete fd.hist['night:' + fd.day];
       fd.sel = null;
       fd.userSel = false;
       fd.death = null;
@@ -8315,18 +8315,20 @@
   // One night's fights from the daemon's night grouping, newest first. A chosen night keeps its list 10 s like a day's
   // did, under 'night:<night>'.
   function fdNightFights(fd, bind, night, cb) {
-    // The night is always a real YYYY-MM-DD (the chosen night, or tonight for Tonight).
+    // The night is always a real YYYY-MM-DD (the chosen night, or tonight for Tonight). Without a browser zone the
+    // night request would carry no tz and the daemon would 400, so fetch that UTC day instead.
     if (!night || typeof FightHistory === 'undefined') { if (cb) cb(null); return; }
+    if (!fdNightParams()) { fdDayFights(fd, bind, night, cb); return; }
     fdHistFetch(fd, bind, 'night:' + night,
       '&night=' + encodeURIComponent(night) + fdNightParams(), cb);
   }
 
   // A chosen past day's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
-  // the 2 s redraw does not ask again.
+  // the 2 s redraw does not ask again. Kept under 'night:<day>' like a night fetch, so one key invalidation covers both.
   function fdDayFights(fd, bind, day, cb) {
     // The day is always a real YYYY-MM-DD (the chosen night, or today for Tonight): the daemon answers an empty day with 400.
     if (!day) { if (cb) cb(null); return; }
-    fdHistFetch(fd, bind, day, '&day=' + encodeURIComponent(day), cb);
+    fdHistFetch(fd, bind, 'night:' + day, '&day=' + encodeURIComponent(day), cb);
   }
 
   // Tonight's window: the stored fights since fdWindowStart (the list's since param spans midnight), cached as 'win:<since>'.
