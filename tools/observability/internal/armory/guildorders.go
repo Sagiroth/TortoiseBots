@@ -65,6 +65,7 @@ type GuildOrder struct {
 	SupplyID    uint32           `json:"supply_item"`
 	SupplyName  string           `json:"supply_name"`
 	SupplyCount uint32           `json:"supply_count"`
+	SupplyVend  bool             `json:"supply_vendor"`
 	FarmZone    uint32           `json:"farm_zone"`
 	FarmItem    string           `json:"farm_item"`
 	FarmChance  uint8            `json:"farm_chance"`
@@ -126,6 +127,7 @@ type GuildOrderTracker struct {
 type itemName struct {
 	name    string
 	quality uint8
+	vendor  bool // sold by a vendor without a stock limit
 }
 
 // NewGuildOrderTracker keeps the step history in file (empty = memory only),
@@ -366,7 +368,7 @@ func (t *GuildOrderTracker) load() ([]GuildOrder, error) {
 		o.Giver = chars[o.giverGUID].name
 		o.Guild = guildNames[o.GuildID]
 		o.ItemName, o.Quality = names[o.ItemID].name, names[o.ItemID].quality
-		o.SupplyName = names[o.SupplyID].name
+		o.SupplyName, o.SupplyVend = names[o.SupplyID].name, names[o.SupplyID].vendor
 		if o.FarmItem != "" {
 			id, _ := strconv.ParseUint(o.FarmItem, 10, 32)
 			o.FarmItem = names[uint32(id)].name
@@ -475,6 +477,21 @@ func (t *GuildOrderTracker) itemNames(ids []uint32) map[uint32]itemName {
 			}
 			t.mu.Unlock()
 			rows.Close()
+			vrows, err := t.svc.db.Query(fmt.Sprintf("SELECT DISTINCT item FROM %s.npc_vendor WHERE maxcount = 0 AND item IN (%s)",
+				t.svc.cfg.WorldDB, ph), args...)
+			if err == nil {
+				t.mu.Lock()
+				for vrows.Next() {
+					var id uint32
+					if vrows.Scan(&id) == nil {
+						n := t.names[id]
+						n.vendor = true
+						t.names[id] = n
+					}
+				}
+				t.mu.Unlock()
+				vrows.Close()
+			}
 		}
 	}
 	t.mu.RLock()

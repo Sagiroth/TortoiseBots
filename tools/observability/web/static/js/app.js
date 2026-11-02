@@ -2931,7 +2931,8 @@
       case 'bags': return `Checking its bags and mail for ${goB(n + item)}.`;
       case 'bank': return `Getting ${goB(n + item)} from the guild bank.`;
       case 'ah': return `Buying ${goB(n + item)} on the auction house.`;
-      case 'farm': return `Farming ${goB(n + item)}${o.farm_zone ? ` in ${goB(getZoneName(o.farm_zone))}` : ''}.`;
+      case 'farm': return o.supply_vendor ? `Buying ${goB(n + item)} from a vendor.`
+        : `Farming ${goB(n + item)}${o.farm_zone ? ` in ${goB(getZoneName(o.farm_zone))}` : ''}.`;
       case 'craft': return `Crafting ${goB(n + item)}.`;
       case 'sub': {
         const k = kids.find(c => c.item_id === o.supply_item && !GO_FINISHED[c.state]);
