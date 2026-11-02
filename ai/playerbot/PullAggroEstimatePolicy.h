@@ -95,6 +95,11 @@ namespace ai
     inline constexpr float kAggroRingYd = 20.0f;
     inline constexpr std::uint32_t kAggroRingHops = 2;
     inline constexpr float kAggroFloorDz = 12.0f;
+    // How close to the pulled creature the tank gets before it pulls back (the glue's engage point).
+    inline constexpr float kAggroEngageYd = 30.0f;
+    // The most samples of a party walk an estimate reads (the spacing grows with the path so a long
+    // walk still fits, and its end is always kept).
+    inline constexpr std::size_t kAggroWalkSamples = 64;
     // The sight budget of one estimate (one estimate per row, not per tick): past it the
     // remaining pairs count as seen, so a big room goes high, never slow.
     inline constexpr std::uint32_t kAggroRayBudget = 400;
@@ -141,6 +146,63 @@ namespace ai
         AggroPoint fight;                 // the camp of a camp pull, else the stand
         std::vector<AggroPoint> drag;     // a camp pull's drag polyline, every 4 yd
     };
+
+    // Where the tank stands as it pulls back: the party's spot, or kAggroEngageYd short of the creature
+    // along the line creature -> party. The pull row and the look-ahead share it, so both read one geometry.
+    inline AggroPoint EngagePoint(float fromX, float fromY, float fromZ, AggroPoint const& target, float awayYd)
+    {
+        float const k = awayYd > kAggroEngageYd ? kAggroEngageYd / awayYd : 1.0f;
+        return AggroPoint{target.x + (fromX - target.x) * k, target.y + (fromY - target.y) * k,
+            target.z + (fromZ - target.z) * k};
+    }
+
+    namespace detail
+    {
+        inline float PathDist(AggroPoint const& a, AggroPoint const& b)
+        {
+            float const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+    }
+
+    // The party's walk, sampled every `stepYd` of its polyline (the first point is the party's spot): the
+    // spacing grows with the path so the whole walk fits `maxSamples`, and the last point is always kept.
+    // A walk that would not fit at 2 yd is what read past its end before (a 150 yd walk stopped at 126).
+    inline std::vector<AggroPoint> SampleAggroWalk(std::vector<AggroPoint> const& path,
+        std::size_t maxSamples = kAggroWalkSamples, float stepYd = 2.0f)
+    {
+        std::vector<AggroPoint> out;
+        if (path.empty() || maxSamples == 0)
+            return out;
+        out.push_back(path.front());
+        float total = 0.0f;
+        for (std::size_t i = 1; i < path.size(); ++i)
+            total += detail::PathDist(path[i - 1], path[i]);
+        if (total < 0.0001f || maxSamples < 2)
+            return out;
+        float const spacing = std::max(stepYd, total / static_cast<float>(maxSamples - 1));
+        float travelled = 0.0f;
+        float next = spacing;
+        for (std::size_t i = 1; i < path.size(); ++i)
+        {
+            AggroPoint const& from = path[i - 1];
+            AggroPoint const& to = path[i];
+            float const seg = detail::PathDist(from, to);
+            if (seg < 0.0001f)
+                continue;
+            float const end = travelled + seg;
+            while (next < end - 0.0001f && out.size() + 1 < maxSamples)
+            {
+                float const t = (next - travelled) / seg;
+                out.push_back(AggroPoint{from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t,
+                    from.z + (to.z - from.z) * t});
+                next += spacing;
+            }
+            travelled = end;
+        }
+        out.push_back(path.back());
+        return out;
+    }
 
     // Why one creature comes (the member list's reason).
     enum class AggroWhy : std::uint8_t { Target, Pack, Walk, TankWalk, Stand, Fight, Ring1, Ring2, Drag };
@@ -349,14 +411,19 @@ namespace ai
             }
         };
 
+        // A null callback reads no ray at all: only a real sight call spends the budget.
         inline bool MobSees(SightBudget& budget, AggroEstimateParams const& p, std::size_t mob, AggroPoint const& point)
         {
-            return budget.Out() || !p.mobSees || p.mobSees(mob, point);
+            if (!p.mobSees)
+                return true;
+            return budget.Out() || p.mobSees(mob, point);
         }
 
         inline bool MobsSee(SightBudget& budget, AggroEstimateParams const& p, std::size_t from, std::size_t to)
         {
-            return budget.Out() || !p.mobsSee || p.mobsSee(from, to);
+            if (!p.mobsSee)
+                return true;
+            return budget.Out() || p.mobsSee(from, to);
         }
 
         inline float PointDist(AggroMob const& m, AggroPoint const& p)
@@ -364,15 +431,17 @@ namespace ai
             return Dist3(m.x, m.y, m.z, p.x, p.y, p.z);
         }
 
-        // The pack closure, marking what it adds as Pack.
+        // The pack closure, marking what it adds as Pack (`added`, when given, gets every index it added).
         inline void PackClosureMark(std::vector<AggroMob> const& mobs, std::vector<AggroLink> const& links,
-            std::vector<char>& in, std::vector<AggroMember>* members)
+            std::vector<char>& in, std::vector<AggroMember>* members, std::vector<std::size_t>* added = nullptr)
         {
             auto add = [&](std::size_t i)
             {
                 in[i] = 1;
                 if (members)
                     members->push_back(AggroMember{i, AggroWhy::Pack});
+                if (added)
+                    added->push_back(i);
             };
             bool grew = true;
             while (grew)
@@ -400,19 +469,15 @@ namespace ai
         }
 
         inline std::uint32_t RingCount(std::vector<AggroMob> const& mobs, std::size_t target,
-            AggroGeometry const& g, AggroEstimateParams const& p, bool leavePatrolsOut, SightBudget& budget,
+            AggroGeometry const& g, AggroEstimateParams const& p, SightBudget& budget,
             std::vector<AggroMember>* members)
         {
             std::size_t const n = mobs.size();
             if (target >= n)
                 return 0;
-            auto absent = [&](std::size_t i)
-            {
-                return leavePatrolsOut && i != target && mobs[i].patroller && mobs[i].groupId == 0;
-            };
             std::vector<AggroLink> links;
             for (AggroLink const& l : p.links)
-                if (l.from < n && l.to < n && !absent(l.from) && !absent(l.to))
+                if (l.from < n && l.to < n)
                     links.push_back(l);
             std::vector<char> in(n, 0);
             auto add = [&](std::size_t i, AggroWhy why)
@@ -447,7 +512,7 @@ namespace ai
                 spots.push_back(Spot{g.fight, g.standSpreadYd, AggroWhy::Fight});
             for (std::size_t i = 0; i < n; ++i)
             {
-                if (in[i] || absent(i) || mobs[i].noAggro)
+                if (in[i] || mobs[i].noAggro)
                     continue;
                 float const reach = AggroRadius(mobs[i], p.lowestPartyLevel, p.aggroRate);
                 if (reach <= 0.0f)
@@ -482,7 +547,7 @@ namespace ai
                 for (std::size_t from : callers)
                     for (std::size_t i = 0; i < n; ++i)
                     {
-                        if (in[i] || absent(i) || mobs[i].noAssist || mobs[i].noAggro ||
+                        if (in[i] || mobs[i].noAssist || mobs[i].noAggro ||
                             mobs[i].faction != mobs[from].faction)
                             continue;
                         if (std::fabs(mobs[i].z - mobs[from].z) > p.floorDz)
@@ -494,8 +559,12 @@ namespace ai
                         if (add(i, reason))
                             called.push_back(i);
                     }
-                PackClosureMark(mobs, links, in, members);
-                callers.swap(called); // hop 2's callers are what hop 1 added
+                // Hop 2's callers are what hop 1 added, the pack members it dragged in
+                // included (Arlokk: G12 calls G15, G15's pack mate is the only bridge on).
+                std::vector<std::size_t> packed;
+                PackClosureMark(mobs, links, in, members, &packed);
+                called.insert(called.end(), packed.begin(), packed.end());
+                callers.swap(called);
             }
 
             // 7. The drag sweep: every drag sample calls what stands within ringYd of
@@ -504,7 +573,8 @@ namespace ai
             {
                 for (std::size_t i = 0; i < n; ++i)
                 {
-                    if (in[i] || absent(i) || mobs[i].noAssist || mobs[i].noAggro)
+                    // The dragged pack calls its own faction template on, as a ring hop does.
+                    if (in[i] || mobs[i].noAssist || mobs[i].noAggro || mobs[i].faction != mobs[target].faction)
                         continue;
                     if (PointDist(mobs[i], sample) > ring || std::fabs(mobs[i].z - sample.z) > p.floorDz)
                         continue;
@@ -531,9 +601,11 @@ namespace ai
     {
         AggroEstimate e;
         detail::SightBudget budget;
-        e.bodies = detail::RingCount(mobs, target, geometry, params, false, budget, &e.members);
+        e.bodies = detail::RingCount(mobs, target, geometry, params, budget, &e.members);
         e.joiners = e.bodies > 0 ? e.bodies - 1 : 0;
-        e.bodiesIfPatrolsPass = detail::RingCount(mobs, target, geometry, params, true, budget, nullptr);
+        // No second pass with the patrols left out: the ring path never waits a patrol out (a
+        // patroller counts at its position), so its body count and the sight budget it spent are
+        // the one read. `bodiesIfPatrolsPass` stays 0.
         e.losBudgetSpent = budget.spent;
         return e;
     }
@@ -544,6 +616,54 @@ namespace ai
     inline std::uint32_t PullCeilingBodies(std::uint32_t planBodies, std::uint32_t configJoiners)
     {
         return planBodies ? planBodies : (configJoiners ? configJoiners + 1 : 0);
+    }
+
+    // One creature the look-ahead's pull row lists.
+    struct AheadPick
+    {
+        std::uint32_t entry = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+    };
+
+    // The look-ahead's pick: among the pull row's own entries only, the best kill_first rank
+    // first, then the nearest to the walk's end point. npos (no listed creature): the estimate
+    // is not read; never an unrelated hostile.
+    inline std::size_t PickAheadTarget(std::vector<AheadPick> const& mobs, std::vector<std::uint32_t> const& entries,
+        std::vector<std::uint32_t> const& killFirst, float x, float y, float z)
+    {
+        std::size_t const npos = static_cast<std::size_t>(-1);
+        std::size_t chosen = npos;
+        int bestRank = -1;
+        float bestDist = 0.0f;
+        for (std::size_t i = 0; i < mobs.size(); ++i)
+        {
+            if (std::find(entries.begin(), entries.end(), mobs[i].entry) == entries.end())
+                continue;
+            int rank = -1;
+            auto const it = std::find(killFirst.begin(), killFirst.end(), mobs[i].entry);
+            if (it != killFirst.end())
+                rank = static_cast<int>(it - killFirst.begin());
+            float const d = detail::Dist3(mobs[i].x, mobs[i].y, mobs[i].z, x, y, z);
+            bool better = chosen == npos;
+            if (!better)
+            {
+                bool const listed = rank >= 0;
+                bool const bestListed = bestRank >= 0;
+                if (listed != bestListed)
+                    better = listed;
+                else if (listed && rank != bestRank)
+                    better = rank < bestRank;
+                else
+                    better = d < bestDist;
+            }
+            if (better)
+            {
+                chosen = i;
+                bestRank = rank;
+                bestDist = d;
+            }
+        }
+        return chosen;
     }
 
     // The run leader's question: do more joiners than `ceiling` come? 0 for
