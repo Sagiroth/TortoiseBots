@@ -74,6 +74,10 @@ namespace ai
         return masterlessRandom && !hasRealPlayerMaster && !inGroup && botLevel >= 4;
     }
 
+    // A roaming elite (patrol or wander) that comes this close makes a solo
+    // pool bot step away, and no mob this close to it is picked to grind.
+    constexpr float ROAMING_ELITE_AVOID_YD = 30.0f;
+
     inline bool EliteCampDangerous(bool eliteSpawnNear, int eliteLevelMax, std::uint32_t botLevel)
     {
         return eliteSpawnNear && eliteLevelMax >= (int)botLevel - 2;

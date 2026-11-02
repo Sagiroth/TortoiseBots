@@ -2099,8 +2099,6 @@ void PlayerbotAI::OnDeath()
         SET_AI_VALUE(ObjectGuid, "explicit attack target", ObjectGuid());
         SET_AI_VALUE(LootObject, "loot target", LootObject());
         SET_AI_VALUE(time_t, "combat start time", 0);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", false);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near graveyard", false);
         // A corpse cannot hold an anchor, and the dead engine is no place to
         // keep one: the tank would come back from the spirit healer still
         // parked on the stay that pull placed it on, instead of following.

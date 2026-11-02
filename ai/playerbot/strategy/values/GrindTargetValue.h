@@ -27,4 +27,14 @@ namespace ai
         Unit* FindIdleFallbackTarget();
         uint32 lastIdleFallbackMs = 0;
     };
+
+    // The nearest live hostile elite in sight that a solo pool bot must not
+    // fight (same band or above). Spawn data misses patrolling elites, so this
+    // reads where they are now.
+    class DangerousEliteValue : public UnitCalculatedValue
+    {
+    public:
+        DangerousEliteValue(PlayerbotAI* ai, std::string name = "dangerous elite") : UnitCalculatedValue(ai, name, 1) {}
+        Unit* Calculate() override;
+    };
 }

@@ -74,6 +74,9 @@ static constexpr int64 kWaitForMasterTimeoutSec = 90;
 static constexpr uint32 kSpiritHealerStallSec = 60;
 static constexpr float kSpiritHealerStallProgressYd = 5.0f;
 
+// How far a ghost steps off the spirit healer before reviving there.
+static constexpr float kSpiritStepYd = 10.0f;
+
 
 // The door into the corpse's map whose destination lies nearest the corpse
 // (CorpseEntrancePolicy.h): a map with several doors (Scarlet Monastery's four
@@ -828,6 +831,24 @@ bool SpiritHealerAction::Execute(Event& event)
             ai->TellPlayerNoFacing(requester, "Cannot find any spirit healer nearby");
         }
 
+
+        // Step off the spirit healer first: a revived bot eats and drinks where it
+        // stands, so every revive piled up on the same spot. The ghost walks a few
+        // yards (each bot its own direction) and revives there; nothing interrupts
+        // a ghost. Capped at 15 s so an unwalkable spot never delays the revive.
+        WorldPosition const stepSpot = WorldPosition(grave) + WorldPosition(0,
+            kSpiritStepYd * cos(bot->GetGUIDLow() * 2.4f), kSpiritStepYd * sin(bot->GetGUIDLow() * 2.4f), 0.0f);
+        time_t const now = time(nullptr);
+        time_t stepStart = AI_VALUE2(time_t, "manual time", "spirit step start");
+        if (stepStart < corpse->GetGhostTime())
+        {
+            stepStart = now;
+            SET_AI_VALUE2(time_t, "manual time", "spirit step start", now);
+        }
+        if (now - stepStart < 15 && WorldPosition(bot).fDist(stepSpot) > 3.0f &&
+            MoveTo(stepSpot.getMapId(), stepSpot.getX(), stepSpot.getY(),
+                bot->GetMap()->GetHeight(stepSpot.getX(), stepSpot.getY(), stepSpot.getZ() + 5.0f), false, false, false, true))
+            return true;
 
         sLog.outDetail("Bot #%d %s:%d <%s> revives at spirit healer", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
         PlayerbotChatHandler ch(bot);
