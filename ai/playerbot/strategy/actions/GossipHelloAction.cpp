@@ -96,7 +96,7 @@ void GossipHelloAction::TellGossipText(Player* requester, uint32 textId)
             if (!broadcastId)
                 continue;
 
-            int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+            int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbLocaleIndex() : DB_LOCALE_enUS;
             if (char const* broadcast = sObjectMgr.GetBroadcastText(broadcastId, locale, bot->GetGender()))
                 ai->TellPlayerNoFacing(requester, broadcast);
         }
