@@ -27597,6 +27597,637 @@ static void TestRaidGuardRoundRobinsTheOffTanks()
     CHECK(!r.guardReturn && r.guardOrders == 2);
 }
 
+// AiPlayerbot.DungeonRunRaidHealerGuard in a raid trash fight (RaidTrashFight): with the main tank holding its current
+// target, an add on a healer goes to the nearest ranged dps in reach of it, as in a boss fight, and the off-tanks keep
+// their post.
+static void TestRaidTrashHealerGuardSendsTheNearestRangedDps()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only; the main tank holds its current target
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50001, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd, MidDps 8
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50001 NearDps");
+    CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
+    CHECK(r.offTankTurn == 0); // the off-tanks untouched
+}
+
+// The off-tank holding its own add (its victim) is not pulled away from it: the healer's add goes to the free off-tank
+// instead. With none free it waits where it hits: the main tank holds its target and is never sent at it.
+static void TestRaidTrashHealerGuardKeepsTheOffTankOnItsOwnAdd()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    f.members = {tank}; // no ranged dps free
+    UnitFact own = TankHeld(41, 12129, 30);
+    own.victimName = "Brun"; // Brun holds its own add
+    UnitFact add = Hitter(50002, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {own, add};
+    CHECK(GuardTick(r, f) == "attack 50002 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 11368 off the healer") != std::string::npos);
+    // Only the off-tank holding its own add is left: no order, and none counted, until an off-tank is free.
+    DungeonPlan plan2;
+    Facts g = RaidTrashFacts();
+    g.raid.healerGuard = true;
+    g.leadHasAttacker = true;
+    g.leadHit = true;
+    g.raid.offTanksAlive = {"Brun"};
+    Run q = StartRaidTrashFight(plan2, g);
+    g.members = {tank};
+    UnitFact own2 = TankHeld(42, 12129, 30);
+    own2.victimName = "Brun";
+    UnitFact add2 = Hitter(50004, 11368, 20, true);
+    add2.x = 20.0f;
+    g.partyAttackers = {own2, add2};
+    for (int k = 0; k < 6; ++k)
+        CHECK(GuardTick(q, g).empty());
+    CHECK(q.guardOrders == 0 && q.fightOrders == 0 && q.guardUnitOrders.empty());
+    g.partyAttackers = {add2}; // Brun's own add dies: Brun is free for the healer's
+    CHECK(GuardTick(q, g) == "attack 50004 Brun");
+}
+
+// An add the ranged dps already have costs no pick-up order: the guard's own orders count separately
+// (healerGuardOrders). Repeating the pick-up every spacing spent guardOrders, fightOrders and the unit's orders on a
+// covered add, which then blocked the off-tanks for a later healer's add.
+static void TestRaidTrashHealerGuardCoveredAddCostsNoOrder()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50011, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50011 NearDps");
+    f.members[1].targetGuid = 50011;
+    CHECK(GuardTick(r, f).empty()); // the order spacing
+    CHECK(GuardTick(r, f) == "attack 50011 MidDps");
+    f.members[2].targetGuid = 50011; // the add has its two
+    for (int k = 0; k < 8; ++k)
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.guardOrders == 0);
+    CHECK(r.fightOrders == 0);
+    CHECK(r.guardUnitOrders.size() == 1 && r.guardUnitOrders[50011] == 2); // the guard's own two, no pick-ups
+    CHECK(r.healerGuardOrders == 2);
+    // A later add on another healer still goes to an off-tank: the covered add spent none of the pick-up budget.
+    UnitFact later = Hitter(50012, 11368, 18, true);
+    later.x = 19.0f;
+    f.partyAttackers = {add, later};
+    CHECK(GuardTick(r, f) == "attack 50012 Brun");
+    CHECK(r.guardOrders == 1 && r.guardUnitOrders[50012] == 1);
+}
+
+// The trash healer guard never sends the main tank at an add on a healer while the tank holds a plan boss, whether an
+// off-tank is free or there is none (its last resort is for a trash mob only: TestRaidTrashHealerGuardMainTankLastResort).
+// The fight runs on a pull step with a boss step behind it, so the tank's own mob is a plan boss.
+static void TestRaidTrashHealerGuardNeverSendsTheMainTank()
+{
+    auto const startWithBoss = [](DungeonPlan& plan, Facts& f)
+    {
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 12129;
+        ai::NormalizePlanStep(boss);
+        plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {12129}), boss};
+        Run r = Start(&plan);
+        Tick(r, f);
+        CHECK(r.step == 1);
+        f.units = {Unit(31, 12129, 40)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        return r;
+    };
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only
+    Run r = startWithBoss(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    f.members = {tank}; // no ranged dps
+    f.raid.offTanksAlive = {"Brun"};
+    f.leadAttacker = Hitter(60, 12129, 5);
+    f.leadAttacker.victimLead = true;
+    UnitFact own = TankHeld(43, 12129, 30);
+    own.victimName = "Brun"; // the one off-tank holds its own add
+    UnitFact add = Hitter(50021, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {own, add};
+    CHECK(GuardTick(r, f) == "attack 60 Tanky"); // the engage on the boss it holds
+    f.leadStaying = false;                        // the order took it off the stay
+    for (int k = 0; k < 8; ++k)
+    {
+        std::string const o = GuardTick(r, f);
+        CHECK(o.find("Tanky") == std::string::npos);
+        CHECK(o.empty());
+    }
+    // No off-tank at all: still no order for the tank while it holds the boss.
+    DungeonPlan plan2;
+    Facts g = RaidTrashFacts(false);
+    g.raid.healerGuard = true;
+    g.leadHasAttacker = true;
+    g.leadHit = true;
+    Run q = startWithBoss(plan2, g);
+    g.members = {tank};
+    g.leadAttacker = Hitter(61, 12129, 5);
+    g.leadAttacker.victimLead = true;
+    UnitFact add2 = Hitter(50022, 11368, 20, true);
+    add2.x = 20.0f;
+    g.partyAttackers = {add2};
+    CHECK(GuardTick(q, g) == "attack 61 Tanky");
+    g.leadStaying = false;
+    for (int k = 0; k < 8; ++k)
+        CHECK(GuardTick(q, g).empty());
+}
+
+// With the key off the trash fight keeps today's behaviour: the off-tanks take the healer's add in turn, and the
+// ranged dps are not sent.
+static void TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = false;
+    f.leadHasAttacker = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    // The fight's first order is the arrival engage, the main tank's: unchanged, and it ends the tank's stay.
+    f.leadAttacker = Hitter(61, 12129, 5);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    UnitFact add = Hitter(50003, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after the arrival engage
+    CHECK(Tick(r, f) == "attack 50003 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.healerGuardDps.empty());
+}
+
+// With the key off the pick stays today's round robin over every living off-tank, busy ones included: the free
+// (not-holding) filter is the healer guard's alone. Without it the pick skipped both and sent the main tank.
+static void TestRaidTrashHealerGuardOffKeepsTheBusyOffTankInTurn()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = false;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50031, 11368, 20, true);
+    // The fight's first order is the arrival engage, the main tank's: unchanged.
+    f.leadAttacker = Hitter(61, 12129, 5);
+    f.leadHasAttacker = true;
+    f.partyAttackers = {ownB, ownI};
+    CHECK(GuardTick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    f.partyAttackers = {ownB, ownI, add};
+    CHECK(GuardTick(r, f).empty()); // kGuardRepeatMs after the arrival engage
+    CHECK(GuardTick(r, f) == "attack 50031 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.offTankTurn == 1);
+    // The next loose mob goes to the next off-tank, also busy: the round robin never passes one over.
+    UnitFact heldByBrun = TankHeld(50031, 11368, 20);
+    heldByBrun.victimName = "Brun";
+    UnitFact add2 = Hitter(50032, 11368, 21, true);
+    f.partyAttackers = {ownB, ownI, heldByBrun, add2};
+    CHECK(GuardTick(r, f).empty()); // the order spacing
+    CHECK(GuardTick(r, f) == "attack 50032 Irelanthe");
+}
+
+// With the key on and every off-tank holding its own add a loose mob that is no healer's gets no order: the main tank
+// holds its current target and is never sent at it.
+static void TestRaidTrashHealerGuardOnLeavesALooseMobWhenEveryOffTankIsBusy()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50041, 12130, 20); // on the party, not on a healer
+    f.partyAttackers = {ownB, ownI, add};
+    for (int k = 0; k < 8; ++k)
+    {
+        std::string const o = GuardTick(r, f);
+        CHECK(o.find("Tanky") == std::string::npos);
+        CHECK(o.empty());
+    }
+    CHECK(r.guardOrders == 0 && r.fightOrders == 0 && r.guardUnitOrders.empty());
+}
+
+// With the key on and every off-tank busy an add on a healer still goes to the nearest ranged dps in reach.
+static void TestRaidTrashHealerGuardOnSendsTheRangedDpsWhenEveryOffTankIsBusy()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true; // the glue's state while a mob is on the main tank: GuardPick then sees healer adds only
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50051, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd
+    f.partyAttackers = {ownB, ownI, add};
+    CHECK(GuardTick(r, f) == "attack 50051 NearDps");
+    CHECK(r.offTankTurn == 0); // the busy off-tanks untouched
+}
+
+// A covered nearer add must not hold a farther one back: the trash guard's off-tank fallback loops every add on a
+// healer (GuardPickHealerAdd), so the add the ranged dps do not cover goes to a free off-tank though the nearer one is
+// theirs.
+static void TestRaidTrashHealerGuardTakesTheFartherUncoveredAdd()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact covered = Hitter(50061, 11368, 20, true);
+    covered.x = 22.0f; // NearDps 2 yd, MidDps 8
+    f.partyAttackers = {covered};
+    CHECK(GuardTick(r, f) == "attack 50061 NearDps");
+    f.members[1].targetGuid = 50061;
+    CHECK(GuardTick(r, f).empty()); // the order spacing
+    CHECK(GuardTick(r, f) == "attack 50061 MidDps");
+    f.members[2].targetGuid = 50061; // the near add has its two
+    UnitFact farther = Hitter(50062, 11368, 25, true);
+    farther.x = 26.0f; // out of the reach of both dps, both taken anyway
+    f.partyAttackers = {covered, farther};
+    std::string got;
+    for (int k = 0; k < 8 && got.empty(); ++k)
+        got = GuardTick(r, f);
+    CHECK(got == "attack 50062 Brun");
+    CHECK(r.guardOrders == 1 && r.guardUnitOrders[50062] == 1);
+    CHECK(r.healerGuardOrders == 2);
+}
+
+// With no free off-tank and no ranged dps in reach an add on a healer waits for the main tank's last resort: after
+// kRaidHealerGuardLastResortMs the main tank takes it, but only while its own target is a trash mob it may leave. On a
+// plan boss, and on the fight's kill_first focus, it stays.
+static void TestRaidTrashHealerGuardMainTankLastResort()
+{
+    {
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts(false); // no off-tank at all
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)}; // no ranged dps
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact add = Hitter(50071, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        // The fight's first order is the engage on the tank's own target; then the add waits.
+        CHECK(GuardTick(r, f) == "attack 60 Tanky");
+        f.leadStaying = false; // the order took it off the stay
+        // The add went loose on the next tick and its clock ran through the spacing after the engage: 8 s on the 9th tick.
+        for (int k = 0; k < 7; ++k)
+            CHECK(GuardTick(r, f).empty());
+        CHECK(GuardTick(r, f) == "attack 50071 Tanky");
+        CHECK(r.note == "fighting: no ranged dps and no off-tank free: the main tank takes 11368 off the healer (20.0 yd)");
+    }
+    {
+        // Its own target is a plan boss of the plan: it stays on it.
+        DungeonPlan plan;
+        PlanStep boss = Step(PlanStepKind::Boss, 10);
+        boss.entry = 12129;
+        ai::NormalizePlanStep(boss);
+        plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {12129}), boss};
+        Facts f = RaidTrashFacts(false);
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = Start(&plan);
+        Tick(r, f);
+        CHECK(r.step == 1);
+        f.units = {Unit(31, 12129, 40)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12129, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact add = Hitter(50072, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 60 Tanky");
+        f.leadStaying = false;
+        for (int k = 0; k < 20; ++k)
+            CHECK(GuardTick(r, f).empty());
+    }
+    {
+        // Its own target is the fight's kill_first focus: the run's order keeps it there.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts(false);
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        f.killFirst = {f.leadAttacker};
+        r.focusGuid = 60;
+        UnitFact add = Hitter(50073, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 60 Tanky");
+        f.leadStaying = false;
+        for (int k = 0; k < 20; ++k)
+            CHECK(GuardTick(r, f).empty());
+    }
+}
+
+// The last resort is not held by the guard's budgets: with guardOrders at kGuardOrdersPerFight and fightOrders at
+// kGuardOrdersFightCap (both spent by earlier pick-ups), a loose healer add still goes to the main tank 8 s after it
+// went loose. Before the fix the budget exit returned first and the clock never ran, so the add stayed on the healer.
+static void TestRaidTrashHealerGuardLastResortAfterBudgetsSpent()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false); // no off-tank at all
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)}; // no ranged dps
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    r.guardOrders = kGuardOrdersPerFight;
+    r.fightOrders = kGuardOrdersFightCap;
+    UnitFact add = Hitter(50091, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    for (int k = 0; k < 7; ++k) // the add goes loose on the first of these ticks; the 7th leaves it 7 s loose
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLooseMs == 7 * kTickMs);
+    CHECK(GuardTick(r, f) == "attack 50091 Tanky"); // 8 s
+    CHECK(r.note == "fighting: no ranged dps and no off-tank free: the main tank takes 11368 off the healer (20.0 yd)");
+    CHECK(r.healerGuardLastResortGuids.count(50091) == 1);
+}
+
+// The last resort's clock is the add's own uninterrupted time, so a pick-up that went out right before does not push the
+// order back: the add goes loose on tick 2 and the main tank takes it on tick 9, 8 s later, while the spacing window
+// (kGuardRepeatMs) after that pick-up is still open. The pick-up is set up as CheckGuard leaves the state after an order.
+static void TestRaidTrashHealerGuardLastResortIgnoresSpacing()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky"); // tick 1
+    f.leadStaying = false;
+    UnitFact add = Hitter(50092, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f).empty()); // tick 2: loose from here, 1 s
+    CHECK(GuardTick(r, f).empty()); // tick 3: 2 s
+    r.guardOrders = 1; // another pick-up just went out
+    r.fightOrders = 1;
+    r.guardSinceOrderMs = 0;
+    for (int k = 0; k < 5; ++k) // ticks 4 to 8: 3 s to 7 s, inside the spacing window for the first two
+        CHECK(GuardTick(r, f).empty());
+    CHECK(GuardTick(r, f) == "attack 50092 Tanky"); // tick 9: 8 s
+}
+
+// The last resort's own budget: one order an add (a repeat on the same add, still loose, gets none), and
+// kRaidHealerGuardLastResortsPerFight a fight (the fourth loose add waits on the healer).
+static void TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    const std::uint64_t adds[] = {50101, 50102, 50103, 50104};
+    for (int i = 0; i < 3; ++i)
+    {
+        UnitFact add = Hitter(adds[i], 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(adds[i]) + " Tanky");
+        for (int k = 0; k < 10; ++k) // the same add, still loose: no second order
+            CHECK(GuardTick(r, f).empty());
+    }
+    UnitFact fourth = Hitter(adds[3], 11368, 20, true);
+    fourth.x = 20.0f;
+    f.partyAttackers = {fourth};
+    for (int k = 0; k < 12; ++k) // the fight's three last resorts are spent
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
+}
+
+// The last resort leaves the ordinary counters alone (Codex HIGH, 2026-11-02): three saves move neither guardOrders,
+// fightOrders nor guardUnitOrders, so the ordinary budget is whole after them.
+static void TestRaidTrashHealerGuardLastResortLeavesOrdinaryCountersAlone()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    auto const guardOrders = r.guardOrders;
+    auto const fightOrders = r.fightOrders;
+    auto const unitOrders = r.guardUnitOrders.size();
+    const std::uint64_t adds[] = {50101, 50102, 50103};
+    for (std::uint64_t guid : adds)
+    {
+        UnitFact add = Hitter(guid, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(guid) + " Tanky");
+        CHECK(r.guardOrders == guardOrders);
+        CHECK(r.fightOrders == fightOrders);
+        CHECK(r.guardUnitOrders.size() == unitOrders);
+        CHECK(r.guardUnitOrders.count(guid) == 0);
+    }
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
+}
+
+// An add the fight already saw, held back once the last resort's three saves were spent, gets the ordinary off-tank
+// pick-up as soon as an off-tank is free: the saves left guardOrders whole (at 3 they spent kGuardOrdersPerFight).
+static void TestRaidTrashHealerGuardLastResortLeavesAPickUpForASeenAdd()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    const std::uint64_t adds[] = {50101, 50102, 50103};
+    for (std::uint64_t guid : adds)
+    {
+        UnitFact add = Hitter(guid, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(guid) + " Tanky");
+    }
+    UnitFact fourth = Hitter(50104, 11368, 20, true);
+    fourth.x = 20.0f;
+    f.partyAttackers = {fourth};
+    for (int k = 0; k < 12; ++k) // seen loose, held: the fight's three last resorts are spent
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
+    f.raid.offTanksAlive = {"Brun"};
+    std::string got;
+    for (int k = 0; k < 8 && got.empty(); ++k)
+        got = GuardTick(r, f);
+    CHECK(got == "attack 50104 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.guardUnitOrders.at(50104) == 1);
+}
+
+// The trash guard stays on for the fight once the main tank's current target turned it on (Run::trashHealerGuard):
+// a tick where that target is gone neither hands a loose mob to an off-tank nor sends the main tank, and the guard's
+// clock keeps running.
+static void TestRaidTrashHealerGuardLatchesForTheFight()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12129, 5);
+    f.leadAttacker.victimLead = true;
+    UnitFact add = Hitter(50081, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 60 Tanky"); // the engage on its own target turns the guard on
+    CHECK(r.trashHealerGuard);
+    CHECK(RaidHealerGuardOn(r, f, true));
+    // The main tank's target is gone for a tick: no main-tank order, nothing for the free off-tanks, the clock runs.
+    f.leadHasAttacker = false;
+    f.leadHit = false;
+    f.partyAttackers = {Hitter(50082, 12130, 20)}; // a loose mob on the party, no healer's
+    std::uint64_t const clock = r.healerGuardClockMs;
+    for (int k = 0; k < 10; ++k)
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardClockMs > clock);
+    CHECK(RaidHealerGuardOn(r, f, true)); // the latch, not leadHasAttacker
+}
+
+// A healer guard order spaces the pick-up that follows it: the guard's own order counts in healerGuardOrders, which
+// CheckGuard's spacing reads too. Without it a guard order and an off-tank pick-up on another add went out on
+// consecutive ticks (neither guardOrders nor fightOrders counted the guard's own).
+static void TestRaidTrashHealerGuardOrderSpacesThePickUp()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    UnitFact covered = Hitter(60001, 11368, 20, true);
+    covered.x = 22.0f;
+    f.partyAttackers = {covered};
+    CHECK(GuardTick(r, f) == "attack 60001 NearDps");
+    f.members[1].targetGuid = 60001;
+    UnitFact far = Hitter(60002, 11368, 10, true);
+    far.x = -40.0f; // 64 yd from NearDps: no ranged dps in reach of it
+    f.partyAttackers = {covered, far};
+    CHECK(GuardTick(r, f).empty()); // kGuardRepeatMs after the guard's own order
+    CHECK(GuardTick(r, f) == "attack 60002 Brun");
+    CHECK(r.guardOrders == 1 && r.healerGuardOrders == 1);
+}
+
 static void TestRaidGuardOnABossStepSendsTheMainTank()
 {
     DungeonPlan plan;
@@ -29862,6 +30493,23 @@ int main()
     TestRaidHoldRegroupGathers();
     TestRaidMainTankHelpsOnAMobAnOffTankHolds();
     TestRaidGuardRoundRobinsTheOffTanks();
+    TestRaidTrashHealerGuardSendsTheNearestRangedDps();
+    TestRaidTrashHealerGuardKeepsTheOffTankOnItsOwnAdd();
+    TestRaidTrashHealerGuardCoveredAddCostsNoOrder();
+    TestRaidTrashHealerGuardNeverSendsTheMainTank();
+    TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp();
+    TestRaidTrashHealerGuardOffKeepsTheBusyOffTankInTurn();
+    TestRaidTrashHealerGuardOnLeavesALooseMobWhenEveryOffTankIsBusy();
+    TestRaidTrashHealerGuardOnSendsTheRangedDpsWhenEveryOffTankIsBusy();
+    TestRaidTrashHealerGuardTakesTheFartherUncoveredAdd();
+    TestRaidTrashHealerGuardMainTankLastResort();
+    TestRaidTrashHealerGuardLastResortAfterBudgetsSpent();
+    TestRaidTrashHealerGuardLastResortIgnoresSpacing();
+    TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight();
+    TestRaidTrashHealerGuardLastResortLeavesOrdinaryCountersAlone();
+    TestRaidTrashHealerGuardLastResortLeavesAPickUpForASeenAdd();
+    TestRaidTrashHealerGuardLatchesForTheFight();
+    TestRaidTrashHealerGuardOrderSpacesThePickUp();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
     TestRaidTrashOffTanksPickUpWithTheLeadDead();

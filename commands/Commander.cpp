@@ -8343,8 +8343,9 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
             fact.victimTank = tankVictim;
-            if (raidBoss && !petVictim)
-                fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss
+            if ((raidBoss || raidTrashOffTanks) && !petVictim)
+                fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
+                                                     // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
             fact.attackable = GroupCanAttack(anchor, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
