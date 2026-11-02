@@ -60,6 +60,24 @@ struct ReagentTotals
     uint32_t extShort = 0;
 };
 
+// The mailbox stock a walk may spend. The ladder drops the mail leg for an
+// item it could not fetch from the mailbox for ten minutes; that mail is not
+// a source, so letting the walk subtract it makes the shortfall collapse to
+// zero while the ladder itself asks for the whole branch.
+inline uint32_t SpentMail(uint32_t inMail, bool mailLegSkipped)
+{
+    return mailLegSkipped ? 0 : inMail;
+}
+
+// The count the ladder sources for one base reagent. The whole-tree walk
+// spends each stock once across every branch, so its total can come out below
+// the shortfall of the branch the ladder stands on; that branch is still
+// short, so the larger of the two is the count.
+inline uint32_t WholeTreeCount(uint32_t treeCount, uint32_t branchShortfall)
+{
+    return treeCount > branchShortfall ? treeCount : branchShortfall;
+}
+
 // Eight levels cover every vanilla craft chain (ore -> bar -> tube -> casing
 // -> item) and the deep chains a sub-crafted kit adds on top; past it the
 // walk treats the item as a leaf instead of trusting a recipe cycle to

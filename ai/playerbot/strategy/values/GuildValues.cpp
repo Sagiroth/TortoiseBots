@@ -223,18 +223,22 @@ std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, Supp
 }
 
 // Whole-tree aggregates behind one snapshot: the three counts the ladder
-// needs, one row per base reagent.
+// needs, one row per base reagent. A mailbox leg the ladder skips is dead
+// stock here too, or the totals answer a need the ladder will not take mail
+// for and the order parks asking for zero.
 std::vector<ReagentTotals> ReagentTotalsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
-    uint32_t itemId, uint32_t count)
+    uint32_t itemId, uint32_t count, OrderRecord const* order)
 {
     SnapshotRecipes recipes{ bot, &snap };
     auto bags = [ai, &snap](uint32_t bagsId)
     {
         return SnapshotBags(ai, snap, bagsId);
     };
-    auto mail = [bot, &snap](uint32_t mailId)
+    auto mail = [bot, &snap, order](uint32_t mailId)
     {
-        return SnapshotMail(bot, snap, mailId);
+        bool skipped = order &&
+            MailLegSkipped(mailId, order->mailEmptyItemId, snap.nowMs, order->mailEmptyMs);
+        return TortoiseBots::GuildOrders::SpentMail(SnapshotMail(bot, snap, mailId), skipped);
     };
     return TortoiseBots::GuildOrders::CollectReagentTotals(itemId, count, recipes, bags, mail);
 }
@@ -251,6 +255,8 @@ enum class ReagentAggregate
 // A leaf candidate asks for the whole order's need for that reagent, not the
 // share of the branch the walk happened to reach first: a sub-order, a bank
 // withdrawal or an auction buy then covers the tree instead of half of it.
+// The branch's own count stays the floor: three walks over shared stock can
+// leave the tree total below the branch it is standing on.
 uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals, uint32_t depth,
     uint32_t itemId, uint32_t fallback, ReagentAggregate aggregate)
 {
@@ -259,7 +265,9 @@ uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals,
     auto found = totals.find(itemId);
     if (found == totals.end())
         return fallback;
-    return aggregate == ReagentAggregate::BagShort ? found->second.bagShort : found->second.extShort;
+    uint32_t treeCount = aggregate == ReagentAggregate::BagShort ? found->second.bagShort
+                                                                 : found->second.extShort;
+    return TortoiseBots::GuildOrders::WholeTreeCount(treeCount, fallback);
 }
 
 // Every reagent the bot still needs for `count` casts of the output, one
@@ -307,7 +315,7 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
     std::unordered_map<uint32_t, ReagentTotals> treeTotals;
     if (!totals)
     {
-        for (ReagentTotals const& row : ReagentTotalsFromTree(ai, bot, snap, itemId, count))
+        for (ReagentTotals const& row : ReagentTotalsFromTree(ai, bot, snap, itemId, count, order))
             treeTotals[row.itemId] = row;
         totals = &treeTotals;
     }

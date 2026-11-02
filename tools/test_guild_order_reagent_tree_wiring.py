@@ -3,8 +3,9 @@
 CollectMissingReagents and FindSupplyCandidate both take their numbers from
 runtime/GuildOrderReagentTree.h: the need list sums every branch, a leaf
 candidate on the supply ladder asks for the order's total need for that item
-(bags and mail short), the mailbox leg asks for the bag shortfall, and both
-views stop at the header's single depth constant.
+(bags and mail short), the mailbox leg asks for the bag shortfall, the totals
+ignore mail whose leg is on cooldown, no count drops below the branch's own
+shortfall, and both views stop at the header's single depth constant.
 """
 import pathlib
 import unittest
@@ -44,10 +45,23 @@ class GuildOrderReagentTreeWiringTest(unittest.TestCase):
     def test_mailbox_stage_asks_for_the_bag_shortfall(self):
         body = slice_between(VALUES, "\nbool FindSupplyCandidate(", "\n// Farmable verdict")
         mail = slice_between(body, "if (inMail && inBags < required)", "uint32_t owned = inBags + inMail;")
-        # The mail fills what the bags leave short; the external need would
-        # fetch one mailbox worth too little.
+        # The mail fills what the bags leave short; the external need stores a
+        # count one mailbox worth short of the branch (the take moves the whole
+        # stack regardless).
         self.assertIn("ReagentAggregate::BagShort", mail)
         self.assertNotIn("ReagentAggregate::ExtShort", mail)
+
+    def test_tree_totals_do_not_spend_skipped_mail(self):
+        body = slice_between(VALUES, "std::vector<ReagentTotals> ReagentTotalsFromTree(",
+                             "\n// Which whole-tree count")
+        self.assertIn("MailLegSkipped(", body)
+        self.assertIn("SpentMail(", body)
+        ladder = slice_between(VALUES, "\nbool FindSupplyCandidate(", "\n// Farmable verdict")
+        self.assertIn("ReagentTotalsFromTree(ai, bot, snap, itemId, count, order)", ladder)
+
+    def test_leaf_count_never_undercuts_the_branch(self):
+        body = slice_between(VALUES, "uint32_t TreeTotalFor(", "\n// Every reagent")
+        self.assertIn("WholeTreeCount(", body)
 
     def test_depth_cap_uses_the_shared_constant(self):
         body = slice_between(VALUES, "\nbool FindSupplyCandidate(", "\n// Farmable verdict")

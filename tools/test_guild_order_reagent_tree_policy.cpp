@@ -81,6 +81,21 @@ std::vector<ReagentTotals> WalkTotals(Table const& table, std::unordered_map<uin
     return CollectReagentTotals(itemId, count, bag, bag, mail);
 }
 
+// The ladder's second look at the mailbox, for the item whose mail leg is on
+// cooldown: the same walk, with that item's mail taken off the books.
+std::vector<ReagentTotals> WalkTotalsSkippingMail(Table const& table,
+    std::unordered_map<uint32_t, uint32_t> inBags, std::unordered_map<uint32_t, uint32_t> inMail,
+    uint32_t skippedMailItemId, uint32_t itemId, uint32_t count)
+{
+    Bag bag{ &table, std::move(inBags) };
+    Bag mail{ &table, std::move(inMail) };
+    auto readableMail = [&mail, skippedMailItemId](uint32_t mailId)
+    {
+        return SpentMail(mail(mailId), mailId == skippedMailItemId);
+    };
+    return CollectReagentTotals(itemId, count, bag, bag, readableMail);
+}
+
 Table SharedTree()
 {
     Table table;
@@ -140,7 +155,8 @@ int main()
     CHECK(CountOf(needs, 4000) == 1);
 
     // Depth cap: a base reagent seven recipes down is aggregated, not treated
-    // as a leaf at the old six-level stop (5007 is the row, not 5006).
+    // as a leaf (5007 is the row, not 5006). The ladder already walked eight
+    // levels; the old need list had no depth cap and stopped one level down.
     Table deep;
     for (uint32_t itemId = 5000; itemId < 5007; ++itemId)
         deep[itemId] = { 1, { { itemId + 1, 1 } }, {} };
@@ -191,6 +207,31 @@ int main()
         CHECK(totals[0].required == 10);
         CHECK(totals[0].bagShort == 0);
         CHECK(totals[0].extShort == 0);
+    }
+
+    // A mailbox leg on cooldown is not a source: 20 of the 13 needed sit in
+    // mail the ladder will not fetch, so the external shortfall stays at the
+    // branch's 13 and the count the ladder sources is 13, not 0.
+    Table mailbox;
+    mailbox[8000] = { 1, { { 9000, 13 } }, {} };
+    totals = WalkTotalsSkippingMail(mailbox, {}, { { 9000, 20 } }, 9000, 8000, 1);
+    CHECK(totals.size() == 1);
+    if (totals.size() == 1)
+    {
+        CHECK(totals[0].required == 13);
+        CHECK(totals[0].bagShort == 13);
+        CHECK(totals[0].extShort == 13);
+        CHECK(WholeTreeCount(totals[0].extShort, 13) == 13);
+    }
+
+    // Reachable mail does answer the external need; the branch the ladder
+    // stands on is still 13 short, and its count is the floor.
+    totals = WalkTotals(mailbox, {}, { { 9000, 20 } }, 8000, 1);
+    CHECK(totals.size() == 1);
+    if (totals.size() == 1)
+    {
+        CHECK(totals[0].extShort == 0);
+        CHECK(WholeTreeCount(totals[0].extShort, 13) == 13);
     }
 
     // A held intermediate shrinks the bag shortfall, not the whole-tree total.
