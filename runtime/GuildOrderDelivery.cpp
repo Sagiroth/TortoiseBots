@@ -5,10 +5,13 @@
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderRefundPolicy.h"
 #include "GuildOrderRefundQueue.h"
+#include "GuildOrderRelistPolicy.h"
+#include "GuildOrderRelistQueue.h"
 #include "GuildOrderSupplyQueue.h"
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/GuildOrderCraft.h"
 #include "../ai/playerbot/TravelMgr.h"
+#include "../host/ModuleLog.h"
 #include "PlayerbotAIStorage.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -699,6 +702,120 @@ private:
     }
 };
 
+// The relist ledger as a bank trip writes it: the store's checked row writes.
+struct RelistLedgerWrites
+{
+    bool Save(RelistLedgerEntry const& row) { return SaveRelistRow(row); }
+    bool Delete(RelistLedgerEntry const& row) { return DeleteRelistRow(row.botGuidLow, row.seq); }
+};
+
+// The guild bank as one row's trip sees it: gold and bag items go in through
+// the bank handler, the same path the order drains use.
+class RelistBankWrites
+{
+public:
+    RelistBankWrites(Player* bot, Guild* guild, Unit* banker, uint32_t itemId)
+        : m_bot(bot), m_guild(guild), m_banker(banker), m_itemId(itemId) {}
+
+    RelistMoved Deposit(uint32_t gold, uint32_t items)
+    {
+        RelistMoved moved;
+        if (gold)
+        {
+            uint32_t before = m_bot->GetMoney();
+            std::ostringstream message;
+            message << "DepositMoney:" << gold;
+            m_guild->_Bank->HandleAddonMessages(message.str(), m_bot);
+            uint32_t after = m_bot->GetMoney();
+            if (after < before)
+                moved.gold = before - after;
+        }
+        if (items)
+            moved.items = DepositPass(m_bot, m_guild, m_banker, m_itemId, 0, items);
+        return moved;
+    }
+
+private:
+    Player* m_bot;
+    Guild* m_guild;
+    Unit* m_banker;
+    uint32_t m_itemId;
+};
+
+// Pays collected relist value back to the guild bank. Runs on the world
+// thread like the other drains: the bank handler keeps the acting player in
+// member fields. Each row's trip saves the planned value off the row before
+// the bank is asked (see RelistBankTrip), so a row with no banker in reach
+// waits for the next visit and a row whose guild the bot left is dropped.
+class RelistDrain
+{
+public:
+    static RelistDrain& Instance()
+    {
+        static RelistDrain instance;
+        return instance;
+    }
+
+    void Update()
+    {
+        for (PendingRelistDeposit const& request : RelistQueue::Instance().TakeAll())
+            RunOne(request);
+    }
+
+private:
+    void RunOne(PendingRelistDeposit const& request)
+    {
+        std::vector<RelistLedgerEntry> entries = RelistDeposits(request.botGuidLow);
+        if (entries.empty())
+            return;
+        Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, request.botGuidLow));
+        if (!bot || !bot->IsInWorld())
+            return;
+        uint32_t const guildId = bot->GetGuildId();
+        Guild* guild = guildId ? sGuildMgr.GetGuildById(guildId) : nullptr;
+        Unit* banker = nullptr;
+        if (guild && guild->_Bank && bot->IsAlive() && !bot->IsInCombat())
+            banker = FindNearbyGuildBanker(bot, ::PlayerbotAIStorage::Instance().GetAI(bot));
+
+        bool const atBank = banker != nullptr;
+        ObjectGuid oldSelection = bot->GetSelectionGuid();
+        if (atBank)
+            bot->SetSelectionGuid(banker->getObjectGuid());
+        for (RelistLedgerEntry const& entry : entries)
+        {
+            RelistTripBot const view{ guildId, atBank, bot->GetMoney(), bot->GetItemCount(entry.itemId) };
+            RelistBankWrites bank(bot, guild, banker, entry.itemId);
+            RelistLedgerWrites ledger;
+            LogTripOutcome(request.botGuidLow, entry,
+                RelistBankTrip(entry, view, ledger, bank));
+        }
+        if (atBank)
+            bot->SetSelectionGuid(oldSelection);
+    }
+
+    static void LogTripOutcome(uint32_t botGuidLow, RelistLedgerEntry const& entry,
+        RelistTripOutcome outcome)
+    {
+        switch (outcome)
+        {
+        case RelistTripOutcome::Dropped:
+            TB_LOG_BASIC("TortoiseBots: bot %u left guild %u; dropping its relist row (item %u x%u, seq %u).",
+                botGuidLow, entry.guildId, entry.itemId, entry.count, entry.seq);
+            break;
+        case RelistTripOutcome::Refused:
+            TB_LOG_BASIC("TortoiseBots: relist ledger write failed for bot %u (item %u, seq %u); no deposit this pass, the row stays.",
+                botGuidLow, entry.itemId, entry.seq);
+            break;
+        case RelistTripOutcome::Lost:
+            TB_LOG_BASIC("TortoiseBots: bank took less than planned for bot %u (item %u, seq %u) and the rest could not be written back; that value is lost.",
+                botGuidLow, entry.itemId, entry.seq);
+            break;
+        default:
+            break;
+        }
+    }
+};
+
 
 } // namespace
 
@@ -715,6 +832,11 @@ void UpdateSupplyWithdrawals()
 void UpdateGoldRefunds()
 {
     RefundDrain::Instance().Update();
+}
+
+void UpdateRelistDeposits()
+{
+    RelistDrain::Instance().Update();
 }
 
 void OnDeliveryOrderGone(uint32_t botGuidLow)

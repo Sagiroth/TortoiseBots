@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include "GuildOrderContract.h"
 
 namespace TortoiseBots
 {
@@ -155,13 +156,60 @@ inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool 
     return workedNoGainSec >= limit;
 }
 
-// Reported progress never drops: offline (or not yet re-seen) bots keep
-// max(delivered, last reported).
-inline uint32_t ReportedHave(uint32_t delivered, uint32_t bagCount, bool botOnline, uint32_t reportedHave)
+// The row's have count is what reached the guild (bank deposit or the mail
+// hand-over), never what the bot still carries: progress never drops, so a
+// row keeps max(delivered, last reported). Bags and mail are reported apart
+// (ReportedCarry) so a working row cannot read 2/2 with nothing deposited.
+inline uint32_t ReportedHave(uint32_t delivered, uint32_t reportedHave)
 {
-    uint32_t have = delivered + (botOnline ? bagCount : 0);
-    uint32_t floor = delivered > reportedHave ? delivered : reportedHave;
-    return have > floor ? have : floor;
+    return delivered > reportedHave ? delivered : reportedHave;
+}
+
+// What the bot carries and has not delivered yet: the live bag and mailbox
+// count on a scan, the last figure on off-cadence passes and while offline.
+// Unlike ReportedHave this legitimately drops: a deposit empties the bags.
+inline uint32_t ReportedCarry(bool scanned, bool botOnline, uint32_t bagCount, uint32_t mailboxCount,
+    uint32_t reportedCarry)
+{
+    return scanned && botOnline ? bagCount + mailboxCount : reportedCarry;
+}
+
+// The have count a pass reports: a stocked row shows the bank stock the last
+// look saw (owned counting means nothing there), every other row shows what
+// reached the guild. Read off the row on every pass, not only off a scan, so
+// the line after a deposit reports it even when no scan runs.
+inline uint32_t ReportedHaveThisPass(bool stocked, bool bankChecked, uint32_t bankCount,
+    uint32_t stockTarget, uint32_t delivered, uint32_t reportedHave)
+{
+    if (!stocked)
+        return ReportedHave(delivered, reportedHave);
+    if (!bankChecked)
+        return reportedHave;
+    return bankCount > stockTarget ? stockTarget : bankCount;
+}
+
+// The carry a pass reports: what the bot still holds for the order. Only a
+// successful hand-off (done after the bank deposit, mailed) empties it - the
+// stack left the bags for the guild. Every other row, a cant one with the
+// stack still in the bags included, keeps the last scanned figure, so the
+// final line and the row write agree with the list.
+inline uint32_t ReportedCarryThisPass(OrderState state, bool scanned, bool botOnline, uint32_t bagCount,
+    uint32_t mailboxCount, uint32_t reportedCarry)
+{
+    if (HandOffSucceeded(state))
+        return 0;
+    return ReportedCarry(scanned, botOnline, bagCount, mailboxCount, reportedCarry);
+}
+
+// The carry a list reply shows: a terminal row's stored figure, online or
+// not - the row is over, so its last scan is the answer and reading the live
+// bags would count items that are no longer for it. A row that still runs
+// reads its bags and mailbox; otherwise the last carry Tick put on the row,
+// because an offline bot's bags cannot be read and zero would claim it
+// carries nothing.
+inline uint32_t ListedCarry(bool terminal, bool botOnline, uint32_t liveCarry, uint32_t reportedCarry)
+{
+    return terminal || !botOnline ? reportedCarry : liveCarry;
 }
 
 // A real rise in bag count seen while online on consecutive updates resets

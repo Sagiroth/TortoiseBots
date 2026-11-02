@@ -23,6 +23,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderAuctionPolicy.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
 #include "runtime/GuildOrderTelemetryPolicy.h"
@@ -180,9 +181,13 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
     if (record->supplyStep == SupplyStep::AuctionHouse && purposeKey == "guild order" &&
         !bankerSearch)
     {
-        if (!atLimit(SupplyStep::AuctionHouse, record->supplyItemId))
+        // One search per auction leg: the first empty or rejected auctioneer
+        // search moves down the ladder instead of parking for three tries.
+        uint32_t const fails = NoteSupplySearchFailed(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
+            record->supplyItemId);
+        if (!AuctionSearchMovesLadder(fails))
             return false;
-        AdvanceGuildOrderAfterAuction(ai, bot, *record);
+        AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer);
         return true;
     }
     if (record->supplyStep == SupplyStep::Bags && purposeKey == "guild order" && !bankerSearch)
@@ -2731,7 +2736,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
             auto planFor = [&](uint32_t planItem)
             {
-                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm);
+                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm,
+                    true);
             };
 
             // The planned zone only changes when it runs dry (the plan no

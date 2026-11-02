@@ -3894,3 +3894,41 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   .cov-head { gap: 4px 6px; }
   .cov-summary { gap: 4px 8px; }
 }
+
+/* ---- Guild orders ---------------------------------------------------------- */
+#go-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+.go-order { padding: 6px 0; }
+.go-row { padding: 10px 18px; }
+.go-row + .go-row { border-top: 1px solid var(--border-color); }
+.go-child { padding-left: 46px; background: var(--bg-card-subtle); }
+.go-fin .go-sentence, .go-fin .go-what { opacity: 0.65; }
+.go-line { display: flex; align-items: center; gap: 12px; cursor: pointer; flex-wrap: wrap; }
+.go-chev { color: var(--text-dim); width: 10px; font-size: 0.8em; }
+.go-what { font-weight: 600; font-size: 1.02em; }
+.go-child .go-what { font-weight: 500; font-size: 0.95em; }
+.go-who { font-weight: 500; }
+.go-prog { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.go-bar { display: inline-block; width: 110px; height: 6px; border-radius: 3px; background: var(--bg-input); overflow: hidden; }
+.go-bar span { display: block; height: 100%; background: var(--accent-green-bright); }
+.go-count { color: var(--text-muted); font-size: 0.9em; min-width: 36px; text-align: right; }
+.go-pill { font-size: 0.75em; font-weight: 600; padding: 2px 9px; border-radius: 10px; }
+.go-s-work { background: rgba(56, 139, 253, 0.15); color: var(--accent-blue-bright); }
+.go-s-wait { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
+.go-s-done { background: rgba(46, 160, 67, 0.15); color: var(--accent-green-bright); }
+.go-s-fail { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+.go-flag { font-size: 0.72em; color: var(--accent-yellow); border: 1px solid rgba(210, 153, 34, 0.4); padding: 1px 6px; border-radius: 8px; }
+.go-sentence { margin: 4px 0 0 22px; color: var(--text-main); font-size: 0.95em; }
+.go-child .go-sentence { color: var(--text-muted); }
+.go-details { margin: 10px 0 4px 22px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--bg-input); }
+.go-facts { font-size: 0.9em; margin-bottom: 10px; }
+.go-muted { color: var(--text-muted); }
+.go-kpi-warn { color: var(--accent-yellow); }
+.go-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .go-cols { grid-template-columns: 1fr; } }
+.go-cols h4 { margin: 0 0 4px; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.go-hist { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 0.88em; }
+.go-hist li { display: flex; gap: 10px; padding: 3px 0; }
+.go-time { color: var(--text-dim); min-width: 92px; font-variant-numeric: tabular-nums; }
+.go-plan { font-size: 0.88em; margin-bottom: 10px; }
+.go-plan-now { color: var(--accent-blue-bright); font-weight: 600; }
+.go-plan-past { color: var(--text-dim); text-decoration: line-through; }

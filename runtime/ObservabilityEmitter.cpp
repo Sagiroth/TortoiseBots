@@ -145,6 +145,8 @@ bool IsActivityEvent(std::string const& event)
         // vendor / trainer / repair / auction
         "SellAction", "BuyAction", "RepairAllAction", "TrainerAction", "NearbyService",
         "AhAction", "AhBidAction",
+        // guild orders: auction buys and relists for the guild, mail taken
+        "GuildAhBuy", "GuildAhRelist", "GuildAhRelistFailed", "MailAction",
         // deaths, revives (ghost time) and give-ups
         "BotDeath", "ReviveFromCorpseAction", "ReviveFromSpiritHealerAction", "RepopAction",
         "LongStuckFallback", "ReachGiveUp",
