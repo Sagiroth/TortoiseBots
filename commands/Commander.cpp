@@ -7895,14 +7895,16 @@ void ReadMemberEngaged(Player* lead, Player* judge, Player* bot, TortoiseBots::D
     member.engagedRead = true;
 }
 
-// The glue's participation clock for DungeonRun::MemberParticipates: per bot guid, when the run last
-// saw it attack or cast at a hostile unit, and (a healer) when its heal began and when it last ended (the last
-// moment it can land). A guid unseen for kParticipationForgetMs is dropped once the map grows past its bound.
+// The glue's progress clock for DungeonRun::MemberParticipates: per bot guid, when the run last saw the bot make
+// actual combat progress, and the cast and swing state that told it so. A guid unseen for kParticipationForgetMs
+// is dropped once the map grows past its bound.
 struct MemberParticipation
 {
     std::uint32_t actMs = 0;
-    std::uint32_t healMs = 0;
-    bool healing = false;
+    std::uint32_t spellId = 0;
+    std::uint32_t baseTimer = 0;
+    std::uint32_t rangedTimer = 0;
+    bool observed = false;
 };
 constexpr std::uint32_t kParticipationForgetMs = 60000;
 constexpr std::size_t kParticipationClocksMax = 64;
@@ -7913,25 +7915,32 @@ std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
     return clocks;
 }
 
-// A heal the unit is casting now (DungeonRun::MemberParticipates: a healer's heal): a direct heal or a heal over
-// time, the effects the combat monitor reads a heal by (CombatMonitorAdapter).
-bool CastingHeal(Unit* unit)
+// Whether the bot made actual combat progress since the last read: a spell being cast or channelled now (a cast
+// started, or is still running), a cast that started or finished (the current spell differs), or a melee or ranged
+// swing (the attack timer runs down to the swing and the swing resets it, so an increase means one landed). A swing
+// reset is never under 100 ms: Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a
+// victim out of reach, so that shove alone is no swing. Its selected target and its place on a threat list are
+// never read: holding a target it cannot reach is no progress.
+bool MemberProgressed(Player* bot, MemberParticipation& clock)
 {
-    Spell* const spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-    SpellEntry const* const info = spell ? spell->m_spellInfo : nullptr;
-    if (!info)
-        return false;
-    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
-        if (info->Effect[i] == SPELL_EFFECT_HEAL || info->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL)
-            return true;
-    return false;
+    bool const inFight = bot->IsInCombat();
+    std::uint32_t const spell = inFight ? CurrentSpellId(bot) : 0;
+    std::uint32_t const baseTimer = bot->GetAttackTimer(BASE_ATTACK);
+    std::uint32_t const rangedTimer = bot->GetAttackTimer(RANGED_ATTACK);
+    bool const baseSwing = baseTimer > 100 && baseTimer > clock.baseTimer;
+    bool const rangedSwing = rangedTimer > 100 && rangedTimer > clock.rangedTimer;
+    bool const progress = inFight && (spell || (clock.observed &&
+        (spell != clock.spellId || baseSwing || rangedSwing)));
+    clock.spellId = spell;
+    clock.baseTimer = baseTimer;
+    clock.rangedTimer = rangedTimer;
+    clock.observed = true;
+    return progress;
 }
 
-// Fills DungeonRun::MemberFact::targetGuid, healer, actedMs and healMs (DungeonRun::MemberParticipates) from what
-// the bot holds now: its target (else its victim), a hostile unit it casts at or holds engaged with it and can
-// attack, and a healer's heal at a party member. An attack's clock is the tick it happened on; a heal's is set when
-// the cast begins and again when it ends, so a heal that just landed still counts.
-void ReadMemberParticipation(Player* lead, Player* bot, bool healer, TortoiseBots::DungeonRun::MemberFact& member)
+// Fills DungeonRun::MemberFact::targetGuid (the selected target, a fact no rule reads for participation) and
+// actedMs (DungeonRun::MemberParticipates) from the bot's own combat state, read here each run tick.
+void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)
 {
     ObjectGuid const targetGuid = bot->GetTargetGuid();
     if (!targetGuid.IsEmpty())
@@ -7941,28 +7950,14 @@ void ReadMemberParticipation(Player* lead, Player* bot, bool healer, TortoiseBot
     std::uint32_t const now = WorldTimer::getMSTime();
     if (ParticipationClocks().size() >= kParticipationClocksMax)
         for (auto it = ParticipationClocks().begin(); it != ParticipationClocks().end();)
-            if (WorldTimer::getMSTimeDiff(it->second.actMs, now) > kParticipationForgetMs &&
-                WorldTimer::getMSTimeDiff(it->second.healMs, now) > kParticipationForgetMs)
+            if (WorldTimer::getMSTimeDiff(it->second.actMs, now) > kParticipationForgetMs)
                 it = ParticipationClocks().erase(it);
             else
                 ++it;
     MemberParticipation& clock = ParticipationClocks()[bot->GetObjectGuid().GetRawValue()];
-    Unit* const target =
-        targetGuid.IsEmpty() || !bot->IsInWorld() || !bot->GetMap() ? nullptr : bot->GetMap()->GetUnit(targetGuid);
-    bool const hostile = target && !sServerFacade.IsFriendlyTo(target, lead);
-    bool engagedTarget = false;
-    for (TortoiseBots::DungeonRun::UnitFact const& u : member.engaged)
-        if (u.guid && u.guid == member.targetGuid && u.attackable)
-            engagedTarget = true;
-    if (engagedTarget || (CurrentSpellId(bot) && hostile))
+    if (MemberProgressed(bot, clock))
         clock.actMs = now;
-    bool const healCast = healer && target && !hostile && CastingHeal(bot);
-    if (healCast || clock.healing)
-        clock.healMs = now;
-    clock.healing = healCast;
-    member.healer = healer;
     member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;
-    member.healMs = clock.healMs ? WorldTimer::getMSTimeDiff(clock.healMs, now) : 0xFFFFFFFF;
 }
 
 // Carries out the run's combat drops (DungeonRun::Run::combatDrops) after Tick: a living bound bot of the party
@@ -7999,9 +7994,9 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
                 for (Unit* attacker : nowPet->GetAttackers())
                     if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
                         ++wedgedAttackers;
-        // ... and in no fight there: a member attacking or healing from another floor keeps its combat
-        // (DungeonRun::MemberParticipates, the same facts the run's own wedged test reads).
-        ReadMemberParticipation(lead, bot, !PlayerbotAI::IsTank(bot) && PlayerbotAI::IsHeal(bot), now);
+        // ... and in no fight there: a member casting, swinging or healing from another floor keeps its combat
+        // (DungeonRun::MemberParticipates, the same progress the run's own wedged test reads).
+        ReadMemberParticipation(bot, now);
         bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,
             TortoiseBots::DungeonRun::MemberParticipates(now));
         if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&
@@ -9229,9 +9224,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.inCombat = fighting;
         // In combat: the units engaged with it and its pet (DungeonRun::CombatDropTick).
         ReadMemberEngaged(lead, judge, bot, member);
-        // ... and what it fights now: a member in the fight where it stands is never wedged, whatever the floor
+        // ... and what it fights now: a member making progress where it stands is never wedged, whatever the floor
         // under it (DungeonRun::MemberParticipates).
-        ReadMemberParticipation(lead, bot, isHeal, member);
+        ReadMemberParticipation(bot, member);
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));

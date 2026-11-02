@@ -138,10 +138,26 @@ class UnattackableFightWiringTest(unittest.TestCase):
         # summons a wedged raid member before the guard looks and before the runaway.
         policy = (ROOT / "runtime" / "DungeonRunPolicy.h").read_text()
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
-        self.assertIn("ReadMemberParticipation(lead, bot, !PlayerbotAI::IsTank(bot) && PlayerbotAI::IsHeal(bot), now);",
-                      drop)
+        self.assertIn("ReadMemberParticipation(bot, now);", drop)
         self.assertIn("bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
                       "            TortoiseBots::DungeonRun::MemberParticipates(now));", drop)
+        # The participation clock is actual progress only: the bot's own cast and swing state, never its selected
+        # target or its place on a threat list (a wedged bot keeps a target it cannot reach).
+        part = body(CODE, "void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)")
+        self.assertIn("if (MemberProgressed(bot, clock))\n        clock.actMs = now;", part)
+        self.assertIn("member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;", part)
+        self.assertNotIn("member.engaged", part)
+        progress = body(CODE, "bool MemberProgressed(Player* bot, MemberParticipation& clock)")
+        self.assertIn("bool const inFight = bot->IsInCombat();", progress)
+        self.assertIn("inFight ? CurrentSpellId(bot) : 0", progress)
+        self.assertIn("bot->GetAttackTimer(BASE_ATTACK)", progress)
+        self.assertIn("bot->GetAttackTimer(RANGED_ATTACK)", progress)
+        self.assertNotIn("GetTargetGuid", progress)
+        self.assertNotIn("member.engaged", progress)
+        participates = body(policy, "inline bool MemberParticipates(const MemberFact& m)\n{")
+        self.assertIn("return m.actedMs < kParticipateMs;", participates)
+        self.assertNotIn("targetGuid", participates)
+        self.assertNotIn("healMs", participates)
         self.assertIn("float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;", drop)
         self.assertIn("for (Unit* attacker : bot->GetAttackers())", drop)
         self.assertIn("for (Unit* attacker : nowPet->GetAttackers())", drop)

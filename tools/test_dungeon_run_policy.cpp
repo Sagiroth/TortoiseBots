@@ -26402,11 +26402,11 @@ static void TestWedgedNeverOffThePlanMapOrInAnotherCopy()
     CHECK(r.wedgedSummons == 0);
 }
 
-// T11: a stationary ranged member 15 yd above the lead bot, attacking a mob that targets the tank
-// (attackers 0, so the drop took it for wedged), is in the fight where it stands: no drop and no summon for 20 s.
-// With the target gone but an attack 3 s ago, the same; 5 s after it, idle on the floor, the drop lands and the
-// summon follows.
-static void TestWedgedParticipationKeepsAFightingMember()
+// T11: a stationary ranged member 15 yd above the lead bot, in combat with an attackable mob it has selected
+// (attackers 0: the mob hits the tank), but with no cast, swing or damage for 20 s. Selecting a target is no
+// participation (the glue's clock reads the bot's own cast and swing state, never its target), so it is wedged:
+// its combat is dropped and it is summoned.
+static void TestWedgedSelectedTargetIsNoParticipation()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 2000)};
@@ -26417,25 +26417,21 @@ static void TestWedgedParticipationKeepsAFightingMember()
     MemberFact& m = f.members[2];
     m.inCombat = true;
     m.ranged = true;
-    m.targetGuid = 4242; // the mob it attacks, which holds it on its threat list (ReadMemberEngaged)
+    m.targetGuid = 4242; // the mob it has selected, engaged with it and attackable: still no progress
     m.engaged = {Unit(4242, 12129, 12.0f)};
-    for (int i = 0; i < 40; ++i) // 20 s: wedged by the clock, but in the fight
+    // The still watch opens X's clock on the first sighting and CombatDropTick reads last tick's watch, so the drop
+    // lands two ticks after kWedgedMs (T1's counts).
+    for (int i = 0; i < 2; ++i)
     {
         WalkOn(f);
-        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
-        CHECK(r.combatDrops.empty());
+        Tick(r, f);
     }
-    CHECK(r.wedgedSummons == 0);
-    m.targetGuid = 0; // the mob died; it attacked 3 s ago
-    m.engaged.clear();
-    m.actedMs = 3000;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 14; ++i)
     {
         WalkOn(f);
-        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        Tick(r, f);
         CHECK(r.combatDrops.empty());
     }
-    m.actedMs = kParticipateMs + 1000; // idle past the window
     WalkOn(f);
     Tick(r, f);
     CHECK(r.combatDrops == std::vector<std::string>{"X"});
@@ -26446,30 +26442,53 @@ static void TestWedgedParticipationKeepsAFightingMember()
     CHECK(r.wedgedSummons == 1);
 }
 
-// MemberParticipates: the target it attacks (an engaged, attackable unit), an attack or a healer's heal inside
-// kParticipateMs, and nothing else.
+// T12: the same member dealing damage every 2 s is in the fight where it stands: its progress clock never runs
+// past kParticipateMs, so no drop and no summon for 20 s. Once the progress stops, the drop lands and the summon
+// follows.
+static void TestWedgedDamageEveryTwoSecondsKeepsAMember()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, 15.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    MemberFact& m = f.members[2];
+    m.inCombat = true;
+    m.ranged = true;
+    m.targetGuid = 4242; // it keeps the mob selected the whole time
+    m.engaged = {Unit(4242, 12129, 12.0f)};
+    for (int i = 0; i < 40; ++i) // 20 s of a swing or cast every 2 s
+    {
+        WalkOn(f);
+        m.actedMs = 2000;
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        CHECK(r.combatDrops.empty());
+    }
+    CHECK(r.wedgedSummons == 0);
+    m.actedMs = kParticipateMs + 1000; // the progress stopped: idle past the window
+    WalkOn(f);
+    Tick(r, f);
+    CHECK(r.combatDrops == std::vector<std::string>{"X"});
+    CHECK(r.note.find("wedged 15.0 yd above") != std::string::npos);
+    m.inCombat = false;
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.wedgedSummons == 1);
+}
+
+// MemberParticipates: actual progress inside kParticipateMs, and nothing else. A selected target, even an
+// attackable unit engaged with the bot, is not progress.
 static void TestMemberParticipatesFacts()
 {
     MemberFact m;
-    CHECK(!MemberParticipates(m));
+    CHECK(!MemberParticipates(m)); // 0xFFFFFFFF: no progress since the glue's clock saw it
     m.targetGuid = 7;
     m.engaged = {Unit(7, 12129, 1.0f)};
-    CHECK(MemberParticipates(m));
-    m.engaged[0].attackable = false; // the group cannot attack it: no fight
     CHECK(!MemberParticipates(m));
-    m.targetGuid = 0;
-    m.engaged.clear();
     m.actedMs = kParticipateMs - 1;
     CHECK(MemberParticipates(m));
     m.actedMs = kParticipateMs;
-    CHECK(!MemberParticipates(m));
-    m.healer = true;
-    m.healMs = kParticipateMs - 1;
-    CHECK(MemberParticipates(m));
-    m.healMs = kParticipateMs;
-    CHECK(!MemberParticipates(m));
-    m.healer = false; // not a healer: its heal clock is nothing
-    m.healMs = 0;
     CHECK(!MemberParticipates(m));
 }
 
@@ -27207,7 +27226,8 @@ int main()
     TestWedgedSummonCapAndStepReset();
     TestWedgedBudgetSurvivesASameStepReset();
     TestWedgedNeverOffThePlanMapOrInAnotherCopy();
-    TestWedgedParticipationKeepsAFightingMember();
+    TestWedgedSelectedTargetIsNoParticipation();
+    TestWedgedDamageEveryTwoSecondsKeepsAMember();
     TestMemberParticipatesFacts();
     TestWedgedDropRecheckTable();
     TestPartyRulesUnchanged();

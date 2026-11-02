@@ -711,13 +711,13 @@ struct MemberFact
     float dz = 0.0f;        // height difference to the lead bot (another floor)
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
-    // Its current attack or cast target (the bot's own, else its victim's: the glue) and how long ago it last
-    // attacked or cast at a hostile unit; a healer's last heal (its cast at a party member) apart. Unread
-    // 0xFFFFFFFF: no participation since the glue's clock saw it (DungeonRun::MemberParticipates).
+    // Its current attack or cast target (the bot's own, else its victim's: the glue). Selecting a target is no
+    // participation by itself (MemberParticipates never reads it): a bot that keeps a target it cannot reach is
+    // still wedged.
     std::uint64_t targetGuid = 0;
+    // How long ago the glue last saw actual combat progress from the bot: a spell cast started or finished, a melee
+    // or ranged swing (DungeonRun::MemberParticipates). 0xFFFFFFFF: none since the glue's clock saw the bot.
     std::uint32_t actedMs = 0xFFFFFFFF;
-    bool healer = false; // a healer (PlayerbotAI::IsHeal, not a tank): its heal is its participation
-    std::uint32_t healMs = 0xFFFFFFFF;
     bool ranged = false;    // a ranged bot or a healer: it stands behind the tank in a hold (HoldStands)
     bool core = false;      // a tank or a healer (the raid's gather waits for every one of them)
     // With Facts::directJoinRead: the glue's own direct-step test for this bot (the one `cmd move ... direct`
@@ -3173,23 +3173,19 @@ inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (use
 
 constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
 constexpr std::uint32_t kWedgedSummonsPerStep = 2;  // per step, all bots together (like kRunawaySummonsPerStep)
-// Attacked or cast at a hostile unit this recently (a healer: healed a party member): the member is in the fight
-// where it stands, whatever the floor under it (MemberParticipates).
+// Made actual combat progress this recently (MemberFact::actedMs): a spell cast started or finished, a swing, a
+// heal: the member is in the fight where it stands, whatever the floor under it (MemberParticipates).
 constexpr std::uint32_t kParticipateMs = 5000;
 
-// A member that still fights where it stands: its current attack or cast target is an attackable
-// unit engaged with it (MemberFact::engaged: its attackers, its victim, the units holding it on their threat
-// lists), or it attacked or cast within kParticipateMs, or it is a healer whose last heal is that recent. A
-// stationary member on another floor showing this is in the fight, not wedged: ZG walks 23-25, a ranged member
-// above or below the Jeklik path attacking a mob that targets the tank (attackers 0) fought on and was summoned
-// away mid-fight. The glue's drop re-check tests the same thing (WedgedDropRecheck).
+// A member that still fights where it stands: it made actual combat progress within kParticipateMs. Selecting a
+// target or standing on a hostile's threat list is NOT progress: a bot that keeps a target it cannot reach is
+// wedged all the same, which is the case this rescue exists for. A stationary member on another floor showing
+// progress is in the fight, not wedged: ZG walks 23-25, a ranged member above or below the Jeklik path attacking a
+// mob that targets the tank (attackers 0) fought on and was summoned away mid-fight. The glue's drop re-check tests
+// the same thing (WedgedDropRecheck).
 inline bool MemberParticipates(const MemberFact& m)
 {
-    if (m.targetGuid)
-        for (const UnitFact& u : m.engaged)
-            if (u.guid == m.targetGuid && u.attackable)
-                return true;
-    return m.actedMs < kParticipateMs || (m.healer && m.healMs < kParticipateMs);
+    return m.actedMs < kParticipateMs;
 }
 
 // A raid member on another floor (fell off a ledge, stands still under or over the raid, follow and reach spell
@@ -3207,8 +3203,8 @@ inline bool WedgedOnOtherFloor(const MemberFact& m, std::uint32_t stillMs)
 // The glue's re-check in DropUnattackableCombat before it drops a bot's combat (Commander.cpp): the same shape as
 // the policy's own test, without the still clock (the glue drops what the run named; it re-checks the bot still
 // stands wedged). True when the bot stands more than kGatherYd out, more than kStragglerDzYd up or down, with
-// nothing on it and in no fight there (MemberParticipates, read again by the glue from the bot's own target and
-// its participation clock).
+// nothing on it and in no fight there (MemberParticipates, read again by the glue from the bot's own progress
+// clock).
 inline bool WedgedDropRecheck(float yd, float dz, std::uint32_t attackers, bool participates)
 {
     return yd > kGatherYd && std::fabs(dz) > kStragglerDzYd && attackers == 0 && !participates;
