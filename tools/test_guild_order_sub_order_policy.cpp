@@ -102,20 +102,29 @@ int main()
     CHECK(SubOrderCandidateRank(queued) < 0);
     CHECK(SubOrderCandidateRank(useless) < 0);
 
+    // Fold the candidates of one slice into the state carried across the
+    // scan, the way PlaceSubOrders does between attempts.
+    auto foldSlice = [](SubOrderScanBest best, SubOrderCandidate const* candidates, size_t count)
+    {
+        for (size_t i = 0; i < count; ++i)
+            NoteSubOrderCandidate(best, candidates[i]);
+        return best;
+    };
+
     // Makers beat farmers; first of equal kind wins.
     {
         SubOrderCandidate both[] = { farmer, maker };
-        bool queuedOut = false;
-        CHECK(PickSubOrderCandidate(both, 2, queuedOut) == 1);
-        CHECK(!queuedOut);
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, both, 2);
+        CHECK(best.guid == maker.botGuidLow);
+        CHECK(best.canMake);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::Take);
     }
     {
         SubOrderCandidate secondMaker = maker;
         secondMaker.botGuidLow = 7;
         SubOrderCandidate both[] = { maker, secondMaker };
-        bool queuedOut = false;
-        CHECK(PickSubOrderCandidate(both, 2, queuedOut) == 0);
-        CHECK(!queuedOut);
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, both, 2);
+        CHECK(best.guid == maker.botGuidLow);
     }
     // A gatherer beats a maker for a raw material.
     {
@@ -124,34 +133,62 @@ int main()
         gatherer.gathers = true;
         CHECK(SubOrderCandidateRank(gatherer) == 3);
         SubOrderCandidate both[] = { maker, gatherer };
-        bool queuedOut = false;
-        CHECK(PickSubOrderCandidate(both, 2, queuedOut) == 1);
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, both, 2);
+        CHECK(best.guid == gatherer.botGuidLow);
+        CHECK(!best.canMake);
     }
     // Offline and unable candidates are invisible: no candidate at all.
     {
         SubOrderCandidate none[] = { offline, useless };
-        bool queuedOut = false;
-        CHECK(PickSubOrderCandidate(none, 2, queuedOut) == 2);
-        CHECK(!queuedOut);
-        CHECK(ClassifySubOrderPick(2, 2, queuedOut) == SubOrderPick::None);
+        CHECK(ClassifySubOrderScan(foldSlice(SubOrderScanBest{}, none, 2)) == SubOrderPick::None);
     }
     // Only busy candidates: keep the request queued for a retry.
     {
         SubOrderCandidate onlyBusy[] = { busy, queued };
-        bool queuedOut = false;
-        size_t picked = PickSubOrderCandidate(onlyBusy, 2, queuedOut);
-        CHECK(picked == 2);
-        CHECK(queuedOut);
-        CHECK(ClassifySubOrderPick(picked, 2, queuedOut) == SubOrderPick::Queued);
+        CHECK(ClassifySubOrderScan(foldSlice(SubOrderScanBest{}, onlyBusy, 2)) ==
+            SubOrderPick::Queued);
     }
     // A free candidate wins over busy ones without queueing.
     {
         SubOrderCandidate mixed[] = { busy, farmer };
-        bool queuedOut = false;
-        size_t picked = PickSubOrderCandidate(mixed, 2, queuedOut);
-        CHECK(picked == 1);
-        CHECK(!queuedOut);
-        CHECK(ClassifySubOrderPick(picked, 2, queuedOut) == SubOrderPick::Take);
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, mixed, 2);
+        CHECK(best.guid == farmer.botGuidLow);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::Take);
+    }
+
+    // The roster is looked at in slices: what an early slice learned decides
+    // the request when the last slice holds nothing usable. A busy bot that
+    // could still make the item keeps the request queued instead of failing
+    // it, so its verdict must survive into the slices after it.
+    {
+        SubOrderCandidate sliceOne[] = { busy };
+        SubOrderCandidate lastSlice[] = { offline, useless };
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, sliceOne, 1);
+        best = foldSlice(best, lastSlice, 2);
+        CHECK(best.guid == 0);
+        CHECK(best.sawBusyUsable);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::Queued);
+    }
+    // A farmer in the first slice does not win by arriving first: a maker in
+    // a later slice outranks it, and the pick is placed at scan completion.
+    {
+        SubOrderCandidate sliceOne[] = { farmer };
+        SubOrderCandidate lastSlice[] = { offline, maker };
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, sliceOne, 1);
+        CHECK(best.guid == farmer.botGuidLow);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::Take);
+        best = foldSlice(best, lastSlice, 2);
+        CHECK(best.guid == maker.botGuidLow);
+        CHECK(best.canMake);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::Take);
+    }
+    // Nothing usable anywhere in the roster fails the request.
+    {
+        SubOrderCandidate sliceOne[] = { offline, useless };
+        SubOrderCandidate lastSlice[] = { useless };
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, sliceOne, 2);
+        best = foldSlice(best, lastSlice, 1);
+        CHECK(ClassifySubOrderScan(best) == SubOrderPick::None);
     }
     // A fresh request is due at once whatever the world uptime: the signed
     // difference wraps past 2^31 ms and would park it for the session.
@@ -252,15 +289,6 @@ int main()
         SubOrderScanCursor cursor = AdvanceSubOrderScan(nullptr, 0, plan, 0, 0);
         CHECK(cursor.complete);
     }
-
-    // A take found before the budget ran out is placed at once; only a
-    // request without one retries on an unfinished scan.
-    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::Take, false));
-    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::Take, true));
-    CHECK(SubOrderRetriesAfterScan(SubOrderPick::None, true));
-    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::None, false));
-    CHECK(SubOrderRetriesAfterScan(SubOrderPick::Queued, false));
-    CHECK(SubOrderRetriesAfterScan(SubOrderPick::Queued, true));
 
     // Parallel pick: first missing item with no running or queued cover.
     {

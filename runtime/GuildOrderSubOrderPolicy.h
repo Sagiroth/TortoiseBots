@@ -21,9 +21,10 @@ inline constexpr uint32_t kSubOrderRetryMs = 45000;
 // Planner evaluations per PlaceSubOrders tick: each SubOrderCandidateUsable
 // call may walk the source index, so a tick with many due requests shares
 // the budget instead of stalling the world thread. A request whose scan hit
-// the budget keeps the candidates it already found (a take is placed at
-// once) and otherwise retries with the scan resumed after the last member it
-// looked at.
+// the budget keeps the best candidate and the busy verdict it already found
+// and retries with the scan resumed after the last member it looked at; the
+// sub-order is placed once the walk has covered the whole roster, so the
+// pick ranks every member rather than just the current slice.
 inline constexpr size_t kSubOrderPlannerEvalsPerTick = 8;
 
 // Whether a queued request is due. A request without a retry time is due at
@@ -157,46 +158,51 @@ inline int SubOrderCandidateRank(SubOrderCandidate const& candidate)
     return -1;
 }
 
-// Index of the chosen candidate, or candidateCount when none is free.
-// queuedOut is set when only busy candidates remain: the request stays
-// queued for a later retry instead of landing on the need list.
-inline size_t PickSubOrderCandidate(SubOrderCandidate const* candidates, size_t candidateCount,
-    bool& queuedOut)
+// Verdict of a roster scan so far, carried between attempts because one
+// attempt only looks at part of the roster: the best free candidate seen in
+// any slice, and whether a busy bot that could still take the item was
+// seen. The store clears it only when a new full scan starts; dropping the
+// busy flag between slices fails a request whose only usable member sits in
+// an early slice.
+struct SubOrderScanBest
 {
-    queuedOut = false;
-    if (!candidates || candidateCount == 0)
-        return candidateCount;
-    size_t best = candidateCount;
-    int bestRank = -1;
-    bool sawBusy = false;
-    for (size_t i = 0; i < candidateCount; ++i)
+    uint32_t guid = 0;         // best free candidate so far
+    int rank = -1;             // its rank, -1 while none is free
+    bool canMake = false;      // that candidate crafts it (else farms it)
+    bool sawBusyUsable = false; // a busy bot could still make or farm it
+};
+
+// Fold one evaluated candidate into the running scan: a busy bot that could
+// take the item keeps the request worth retrying, a free candidate replaces
+// the best only when it ranks higher, so the first of equal rank wins as it
+// does inside one slice.
+inline void NoteSubOrderCandidate(SubOrderScanBest& best, SubOrderCandidate const& candidate)
+{
+    if (!candidate.online)
+        return;
+    if (candidate.hasOrder || candidate.queuedBusy)
     {
-        SubOrderCandidate const& candidate = candidates[i];
-        if (!candidate.online)
-            continue;
-        if (candidate.hasOrder || candidate.queuedBusy)
-        {
-            if (candidate.canMake || candidate.canFarm)
-                sawBusy = true;
-            continue;
-        }
-        int rank = SubOrderCandidateRank(candidate);
-        if (rank > bestRank)
-        {
-            bestRank = rank;
-            best = i;
-        }
+        if (candidate.canMake || candidate.canFarm)
+            best.sawBusyUsable = true;
+        return;
     }
-    if (best == candidateCount && sawBusy)
-        queuedOut = true;
-    return best;
+    int const rank = SubOrderCandidateRank(candidate);
+    if (rank > best.rank)
+    {
+        best.rank = rank;
+        best.guid = candidate.botGuidLow;
+        best.canMake = candidate.canMake;
+    }
 }
 
-inline SubOrderPick ClassifySubOrderPick(size_t picked, size_t candidateCount, bool queued)
+// Verdict once the scan has looked at the whole roster: a free candidate is
+// placed, only busy usable ones keep the request queued for a fresh scan,
+// and no usable candidate at all fails it onto the need list.
+inline SubOrderPick ClassifySubOrderScan(SubOrderScanBest const& best)
 {
-    if (picked < candidateCount)
+    if (best.guid && best.rank >= 0)
         return SubOrderPick::Take;
-    return queued ? SubOrderPick::Queued : SubOrderPick::None;
+    return best.sawBusyUsable ? SubOrderPick::Queued : SubOrderPick::None;
 }
 
 // One attempt's share of a roster scan, in guids rather than roster
@@ -276,18 +282,6 @@ inline SubOrderScanCursor AdvanceSubOrderScan(uint32_t const* guids, size_t coun
         cursor.lastGuid = guids[(plan.begin + capped - 1) % count];
     cursor.complete = capped == plan.remaining;
     return cursor;
-}
-
-// Whether one drained request waits for another tick. A take found inside
-// the planner budget is placed even when the scan stopped early: more
-// members were never evaluated, but the take already answers the request.
-// Discarding it re-queued every request after the budget ran out, so no
-// guild with more members than the budget ever received a child order.
-inline bool SubOrderRetriesAfterScan(SubOrderPick pick, bool scanStoppedEarly)
-{
-    if (pick == SubOrderPick::Take)
-        return false;
-    return scanStoppedEarly || pick == SubOrderPick::Queued;
 }
 
 } // namespace GuildOrders
