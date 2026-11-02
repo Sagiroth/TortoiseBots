@@ -310,18 +310,18 @@ bool FindStep(PlayerbotAI* ai, Player* bot, const WorldPosition& from, float ang
 }
 } // namespace
 
-bool RaidBombRunoutAction::Execute(Event& event)
+// Run from the raid's centre, not from one person: anchoring on the master or the nearest member could send a
+// carrier through the other side of the raid. Move once to a point that clears every living same-map member by the
+// runout radius, then stay there; the trigger keeps firing while the aura lasts, but a clear carrier does nothing.
+// `requireHealer` is the flee_on_aura row's rule: prefer an end point that keeps a living healer within
+// kFleeHealerReachYd (BombRunoutPolicy.h). The hard-coded bomb runout passes false, so its behaviour is unchanged.
+bool ai::RunOutFromGroup(MovementAction& mover, PlayerbotAI* ai, Player* bot, float radius, bool requireHealer)
 {
-    (void)event;
-    // Run from the raid's centre, not from one person: anchoring on the
-    // master or the nearest member could send a carrier through the other
-    // side of the raid. Move once to a point that clears every living
-    // same-map member by the runout radius, then stay there; the trigger
-    // keeps firing while the aura lasts, but a clear carrier does nothing.
     Group* group = bot->GetGroup();
     if (!group)
         return false;
     std::vector<DebuffAnchor> members;
+    std::vector<DebuffAnchor> healers;
     for (Player* member : LiveGroupMembers(group))
     {
         if (!member || member == bot || !sServerFacade.IsAlive(member))
@@ -332,8 +332,10 @@ bool RaidBombRunoutAction::Execute(Event& event)
         anchor.x = member->GetPositionX();
         anchor.y = member->GetPositionY();
         members.push_back(anchor);
+        if (requireHealer && PlayerbotAI::IsHeal(member))
+            healers.push_back(anchor);
     }
-    const float runout = sPlayerbotAIConfig.bombRunoutDistance;
+    const float runout = radius > 0.0f ? radius : sPlayerbotAIConfig.bombRunoutDistance;
     const float botX = bot->GetPositionX();
     const float botY = bot->GetPositionY();
     float centreX = 0.0f, centreY = 0.0f, nearestDist = 0.0f;
@@ -349,18 +351,27 @@ bool RaidBombRunoutAction::Execute(Event& event)
     const float angles[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
     for (float d : angles)
     {
-        const float step = BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size());
+        const float step = requireHealer
+            ? BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size(),
+                             healers.data(), healers.size())
+            : BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size());
         if (FindStep(ai, bot, botPos, away + d, step, out) &&
-            MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+            mover.MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, mover.IsReaction(), false, true))
         {
             // Hold the reaction until the carrier arrives, so it is not
             // re-planned every tick on the way out.
-            if (IsReaction())
-                WaitForReach(step);
+            if (mover.IsReaction())
+                mover.WaitForReach(step);
             return true;
         }
     }
     return false;
+}
+
+bool RaidBombRunoutAction::Execute(Event& event)
+{
+    (void)event;
+    return RunOutFromGroup(*this, ai, bot, sPlayerbotAIConfig.bombRunoutDistance, false);
 }
 
 bool FourHorsemenRotateAction::Execute(Event& event)

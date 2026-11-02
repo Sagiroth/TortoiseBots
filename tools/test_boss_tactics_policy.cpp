@@ -1,7 +1,9 @@
 // Standalone check for ai/playerbot/BossTacticsPolicy.h:
 //   g++ -std=c++17 -Wall -Wextra tools/test_boss_tactics_policy.cpp -o /tmp/test_boss_tactics_policy && /tmp/test_boss_tactics_policy
 #include "../ai/playerbot/BossTacticsPolicy.h"
+#include "../ai/playerbot/BombRunoutPolicy.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <iostream>
@@ -14,6 +16,8 @@
 } while (0)
 
 using namespace ai;
+
+static bool Near(float a, float b) { return std::fabs(a - b) < 0.01f; }
 
 static BossTacticRow Row(std::uint32_t map, std::uint32_t boss, BossTacticKind kind, std::uint32_t target = 0,
                          std::uint32_t spell = 0, std::uint8_t priority = 0, float param = 0.0f)
@@ -1201,6 +1205,65 @@ int main()
         const int first = std::min(deathTick[0], std::min(deathTick[1], deathTick[2]));
         const int last = std::max(deathTick[0], std::max(deathTick[1], deathTick[2]));
         CHECK(last - first <= 7);
+    }
+
+    // freeze_on_aura: nothing but the freeze itself runs, the heals included (healing threat reaches every enemy in
+    // combat with the healer, and Mandokir's Gaze allows no threat at all).
+    {
+        // Failing case: a heal action runs while the aura is on.
+        CHECK(!FreezeHoldsAction(true, false));
+        CHECK(FreezeHoldsAction(true, true));
+        CHECK(FreezeHoldsAction(false, false));
+        CHECK(FreezeHoldsAction(false, true));
+    }
+
+    // flee_on_aura, healer reach: an end point more than kFleeHealerReachYd from the only healer is not accepted.
+    {
+        DebuffAnchor healer;
+        healer.x = 0.0f;
+        healer.y = 0.0f;
+        CHECK(FleePointHealable(0.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(FleePointHealable(35.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(FleePointHealable(0.0f, 36.0f, &healer, 1, kFleeHealerReachYd));
+        // The failing case: 40 yd away is accepted (mutation: a 60 yd reach must fail here).
+        CHECK(!FleePointHealable(40.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(!FleePointHealable(0.0f, -40.0f, &healer, 1, kFleeHealerReachYd));
+        // No living healer: nothing can pass the reach test, and the action falls back to today's escape.
+        CHECK(!FleePointHealable(0.0f, 0.0f, nullptr, 0, kFleeHealerReachYd));
+    }
+
+    // flee_on_aura, the step: the old overload is the no-healer case, so its answer never changes; a healer within
+    // reach of a later clear step moves the carrier one step further out to keep it reachable.
+    {
+        DebuffAnchor raid[4];
+        raid[0].x = 5.0f;  raid[0].y = 0.0f;
+        raid[1].x = -5.0f; raid[1].y = 0.0f;
+        raid[2].x = 0.0f;  raid[2].y = 5.0f;
+        raid[3].x = 0.0f;  raid[3].y = -5.0f;
+        float cx, cy, nearest;
+        std::size_t nearestIdx;
+        CHECK(BombRunoutCentre(8.0f, 0.0f, raid, 4, cx, cy, nearest, nearestIdx));
+        const float oldStep = BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4);
+        CHECK(Near(oldStep, 29.0f));
+        CHECK(Near(BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, nullptr, 0), oldStep));
+
+        // A healer behind the raid is out of reach of every step: the old answer stands (an escape still escapes).
+        DebuffAnchor behind;
+        behind.x = -40.0f;
+        behind.y = 0.0f;
+        CHECK(Near(BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &behind, 1), oldStep));
+
+        // A healer at (75, 0): the old first clear step lands 38 yd away and fails the reach test, the next step
+        // lands 36 yd away. The healer-aware search takes that one.
+        DebuffAnchor far;
+        far.x = 75.0f;
+        far.y = 0.0f;
+        const float healStep = BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &far, 1);
+        CHECK(healStep > oldStep);
+        CHECK(Near(healStep, 31.0f));
+        CHECK(FleePointHealable(8.0f + healStep, 0.0f, &far, 1, kFleeHealerReachYd));
+        CHECK(!FleePointHealable(8.0f + oldStep, 0.0f, &far, 1, kFleeHealerReachYd));
+        CHECK(DebuffEscapeClearance(8.0f + healStep, 0.0f, raid, 4) >= 30.0f + kBombRunoutMarginYd);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

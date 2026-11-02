@@ -15,6 +15,13 @@
 
 namespace ai
 {
+    class MovementAction;
+
+    // The move body of a carrier's escape (DungeonActions.cpp): the universal bomb runout and the flee_on_aura row
+    // both call it. Declared here so it can plan a move through MovementAction's route API without that API becoming
+    // public (the friend below).
+    bool RunOutFromGroup(MovementAction& mover, PlayerbotAI* ai, Player* bot, float radius, bool requireHealer);
+
     class MovementAction : public Action
     {
     public:
@@ -37,6 +44,9 @@ namespace ai
         static std::atomic<uint32_t> routeReuseCount;
         static std::atomic<uint32_t> routeRebuildCount;
     protected:
+        friend bool RunOutFromGroup(MovementAction& mover, PlayerbotAI* ai, Player* bot, float radius,
+                                    bool requireHealer);
+
         static bool MoveOnTransport(PlayerbotAI* ai, GenericTransport* transport, bool doTeleport);
         static bool MoveOffTransport(PlayerbotAI* ai, WorldPosition exitPos, bool doTeleport);
 

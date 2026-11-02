@@ -33,6 +33,25 @@ namespace ai
     constexpr float kBombRunoutMarginYd = 2.0f;
     constexpr float kBombRunoutStepYd = 2.0f;
 
+    // A flee_on_aura escape keeps a healer within reach of its end point when one can: 40 yd spell range minus a
+    // margin, so the healer can still heal the carrier on the way out.
+    constexpr float kFleeHealerReachYd = 36.0f;
+
+    // Whether a point lies within `reach` of at least one living group healer. No healer at all: not healable.
+    inline bool FleePointHealable(float x, float y, const DebuffAnchor* healers, std::size_t count, float reach)
+    {
+        if (!healers || count == 0)
+            return false;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            float const dx = x - healers[i].x;
+            float const dy = y - healers[i].y;
+            if (dx * dx + dy * dy <= reach * reach)
+                return true;
+        }
+        return false;
+    }
+
     // Centroid of the members and the bot's distance to the nearest one.
     // False when there is nobody to run from.
     inline bool BombRunoutCentre(float botX, float botY, const DebuffAnchor* members, std::size_t count,
@@ -87,9 +106,12 @@ namespace ai
     // How far to run along `angle`: the donor's `radius - nearest` first,
     // then 2yd longer at a time until the end point clears every member by
     // radius + margin. Capped at twice the radius; past that the longest
-    // tried step with the best clearance is returned.
+    // tried step with the best clearance is returned. With `healers` the
+    // first clear step that also lands within kFleeHealerReachYd of one of
+    // them wins; when no clear step is healable the old answer stands (the
+    // first clear step, else the best clearance), so an escape still escapes.
     inline float BombRunoutStep(float botX, float botY, float angle, float nearestDist, float radius,
-        const DebuffAnchor* members, std::size_t count)
+        const DebuffAnchor* members, std::size_t count, const DebuffAnchor* healers, std::size_t nHealers)
     {
         float step = radius - nearestDist;
         if (step < kBombRunoutStepYd)
@@ -97,19 +119,32 @@ namespace ai
         const float cap = radius * 2.0f;
         float bestStep = step;
         float bestClear = -1.0f;
+        float clearStep = -1.0f;
         for (; step <= cap; step += kBombRunoutStepYd)
         {
             float x = botX + std::cos(angle) * step;
             float y = botY + std::sin(angle) * step;
             float clear = DebuffEscapeClearance(x, y, members, count);
             if (clear >= radius + kBombRunoutMarginYd)
-                return step;
+            {
+                if (FleePointHealable(x, y, healers, nHealers, kFleeHealerReachYd))
+                    return step;
+                if (clearStep < 0.0f)
+                    clearStep = step;
+            }
             if (clear > bestClear)
             {
                 bestClear = clear;
                 bestStep = step;
             }
         }
-        return bestStep;
+        return clearStep >= 0.0f ? clearStep : bestStep;
+    }
+
+    // The hard-coded bomb runout's rule, unchanged: no healer to keep in reach.
+    inline float BombRunoutStep(float botX, float botY, float angle, float nearestDist, float radius,
+        const DebuffAnchor* members, std::size_t count)
+    {
+        return BombRunoutStep(botX, botY, angle, nearestDist, radius, members, count, nullptr, 0);
     }
 } // namespace ai
