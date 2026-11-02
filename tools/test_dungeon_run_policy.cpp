@@ -15339,6 +15339,89 @@ static void TestAheadNoteOnceOnTheChainsMoveRow()
     CHECK(q.note == "walking" && q.aheadNotedStep == 1);
 }
 
+// The look-ahead estimate is prefixed on a stand-pull row's hold note too (that row returns before the
+// plain walk note), it carries the sight budget, and the row is noted once.
+static void TestAheadNoteOnTheStandPullRow()
+{
+    DungeonPlan plan;
+    PlanStep approach = Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(60.0f, {4852}, ai::kPlanFlagStandPull);
+    plan.steps = {approach, pull};
+    Facts f = Party(0);
+    f.seen = true;
+    f.standPullPreCc = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    f.aheadLosBudget = true;
+    f.holdAheadRead = true;
+    f.holdAheadKnown = true;
+    f.holdAheadX = 20.0f;
+    f.holdAheadY = 0.0f;
+    f.holdAheadZ = 0.0f;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 2 brings 14 (ceiling 7)") == 0);
+    CHECK(r.note.find("(LOS budget spent); to the hold point") != std::string::npos);
+    CHECK(r.aheadNotedStep == 0 && r.aheadNotedPass == r.stepPass);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+}
+
+// The row is noted only when the ahead note survives the tick: a walk that ends the row sets "arrived",
+// and the estimate was not said.
+static void TestAheadNotMarkedWhenTheWalkEndsTheRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f), BodiesPullStep(20.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "arrived");
+    CHECK(r.aheadNotedStep != 0);
+}
+
+// The pull row's ring estimate is kept per (row, unit): a later tick refills the facts from it, and a
+// new row starts over.
+static void TestPullEstimateCacheKeepsOneReadPerRow()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& first = cache.At(3, 31);
+    CHECK(!first.read && first.bodies == 0);
+    first.read = true;
+    first.bodies = 5;
+    first.guids = {31, 32};
+    PullUnitEstimate const* again = cache.Find(3, 31);
+    CHECK(again && again->bodies == 5 && again->guids.size() == 2);
+    CHECK(&cache.At(3, 31) == &first);
+    CHECK(cache.Find(3, 32) == nullptr);
+    cache.At(4, 31);
+    CHECK(cache.step == 4 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 31) == nullptr && cache.Find(4, 31) != nullptr);
+}
+
+// The pull order's note says the bodies the ring estimate expects.
+static void TestRingPullNoteSaysBodiesExpected()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.note == "pulling 4852; 27 bodies expected");
+}
+
 static void TestWalkRingKeyOffKeepsJoinerNotes()
 {
     // AiPlayerbot.DungeonRunAggroWalkRing off: the old joiners and the config
@@ -29641,6 +29724,10 @@ int main()
     TestConfigCeilingInBodiesWhenNoPlanCeiling();
     TestEstimateNoteListsAtMostEightGuids();
     TestAheadNoteOnceOnTheChainsMoveRow();
+    TestAheadNoteOnTheStandPullRow();
+    TestAheadNotMarkedWhenTheWalkEndsTheRow();
+    TestPullEstimateCacheKeepsOneReadPerRow();
+    TestRingPullNoteSaysBodiesExpected();
     TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
