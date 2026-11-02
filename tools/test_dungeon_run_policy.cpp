@@ -23683,6 +23683,231 @@ static void TestRaidBossMainTankOnStayEngagesItsOwnMob()
     CHECK(next == "attack 45201 Offy");
 }
 
+// ZG walk 24 Jeklik (step 41, 169 s, 26/26 frames `stay`): the main tank Orlara on stay held nothing while the boss
+// sat on the off-tank Rageshield, and the boss fight's guard (RaidGuardTick) only hands adds to off-tanks, so she
+// was never sent anywhere. RaidBossLeadJoin sends her at the boss after the off-tank's wait (kRaidAssistWaitMs).
+static void TestRaidBossMainTankIdleJoinsBossOnOffTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    CHECK(r.note == "fighting: the main tank takes boss 10184 back from Off (20.0 yd)");
+    CHECK(r.guardReturn);
+}
+// Two plan bosses (one entry, two spawns) whose distances trade places every tick: the boss picked first keeps the
+// wait (raidBossJoinGuid), so one join order comes after kRaidAssistWaitMs and the other boss is not picked at all.
+static void TestRaidBossMainTankJoinSticksToItsBossWhenDistancesAlternate()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact a = Hitter(0xF1300027C8000001ull, 10184, 20);
+    a.victimTank = true;
+    a.victimName = "Off";
+    UnitFact b = Hitter(0xF1300027C8000002ull, 10184, 30);
+    b.victimTank = true;
+    b.victimName = "Off";
+    std::string const orderA = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky";
+    int orders = 0;
+    std::string first;
+    for (std::uint32_t ms = kTickMs; ms <= kRaidAssistWaitMs + kTickMs; ms += kTickMs)
+    {
+        bool const swapped = (ms / kTickMs) % 2 == 0;
+        a.distLead = swapped ? 30.0f : 20.0f;
+        b.distLead = swapped ? 20.0f : 30.0f;
+        f.partyAttackers = {a, b};
+        std::string const order = Tick(r, f);
+        if (!order.empty())
+        {
+            ++orders;
+            if (first.empty())
+                first = order;
+        }
+    }
+    CHECK(orders == 1);
+    CHECK(first == orderA);
+}
+static void TestRaidBossMainTankHoldingTheBossIsNotSent()
+{
+    // The lead bot already holds the boss: no join order, and the fight's guard never draws it off her either.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries = {10184};
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (int k = 0; k < 8; ++k)
+        CHECK(Tick(r, f).empty());
+}
+
+static void TestRaidBossMainTankJoinSkipsAnEvadingBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    boss.evading = true;
+    f.partyAttackers = {boss};
+    for (int k = 0; k < 8; ++k)
+        CHECK(Tick(r, f).empty());
+}
+
+static void TestRaidBossMainTankJoinStaysInRange()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 101);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (int k = 0; k < 8; ++k)
+        CHECK(Tick(r, f).empty());
+}
+
+static void TestRaidBossMainTankJoinNeedsStay()
+{
+    // Off stay the main tank's own AI is already fighting: no join order.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadStaying = false;
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (int k = 0; k < 8; ++k)
+        CHECK(Tick(r, f).empty());
+}
+
+static void TestRaidBossMainTankJoinKeyOffKeepsRaidGuard()
+{
+    // Key off: the boss fight keeps the party guard, and the add goes to the main tank.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.raid.bossRules = false;
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+static void TestRaidBossMainTankJoinRearmsAfterTwentySeconds()
+{
+    // One join per boss guid until kRaidGuardRearmMs after the last one, and only while staying and holding nothing.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    // Still staying, boss still on the off-tank: no second order before the re-arm.
+    f.leadStaying = true;
+    for (std::uint32_t ms = 0; ms < kRaidGuardRearmMs - kTickMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    std::string order;
+    for (std::uint32_t ms = 0; ms < kRaidAssistWaitMs + kTickMs && order.empty(); ms += kTickMs)
+        order = Tick(r, f);
+    CHECK(order == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    // Off stay it is left to its own AI even past the re-arm.
+    Run q = RaidBossRun(plan);
+    Facts g = f;
+    for (int k = 0; k < 4; ++k)
+        Tick(q, g);
+    g.leadStaying = false;
+    for (int k = 0; k < 30; ++k)
+        CHECK(Tick(q, g).empty());
+}
+
+static void TestRaidBossMainTankJoinLeavesAddsToTheOffTank()
+{
+    // The join waits its off-tank's wait while a healer's add goes at once; the join lands on a later tick and only
+    // when due (RaidGuardTick still runs around it).
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss, Hitter(45311, 11262, 20, true)};
+    CHECK(Tick(r, f) == "attack 45311 Offy");
+    std::string join;
+    for (int k = 0; k < 8 && join.empty(); ++k)
+        join = Tick(r, f);
+    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+static void TestRaidBossMainTankJoinRestartsAfterTheStayEnds()
+{
+    // A join wait broken by the stay ending starts over: the main tank does not go at a part-accrued wait.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms < kRaidAssistWaitMs - kTickMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = false;
+    for (int k = 0; k < 3; ++k)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = true;
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+static void TestRaidBossMainTankJoinRestartsAfterHoldingTheBoss()
+{
+    // The same when the main tank takes the boss itself in between: once it holds nothing again the wait starts over.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms < kRaidAssistWaitMs - kTickMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    f.leadHeldEntries = {10184};
+    for (int k = 0; k < 3; ++k)
+        CHECK(Tick(r, f).empty());
+    f.leadHeldEntries.clear();
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
 static void TestRaidBossBossOffANonTankWithTheLeadDead()
 {
     DungeonPlan plan;
@@ -29470,6 +29695,17 @@ int main()
     TestRaidBossAddWaitsTheGuardDwell();
     TestRaidBossGuardUnchangedOutsideARaid();
     TestRaidBossGuardKeyOffSendsTheMainTank();
+    TestRaidBossMainTankIdleJoinsBossOnOffTank();
+    TestRaidBossMainTankJoinSticksToItsBossWhenDistancesAlternate();
+    TestRaidBossMainTankHoldingTheBossIsNotSent();
+    TestRaidBossMainTankJoinSkipsAnEvadingBoss();
+    TestRaidBossMainTankJoinStaysInRange();
+    TestRaidBossMainTankJoinNeedsStay();
+    TestRaidBossMainTankJoinKeyOffKeepsRaidGuard();
+    TestRaidBossMainTankJoinRearmsAfterTwentySeconds();
+    TestRaidBossMainTankJoinLeavesAddsToTheOffTank();
+    TestRaidBossMainTankJoinRestartsAfterTheStayEnds();
+    TestRaidBossMainTankJoinRestartsAfterHoldingTheBoss();
     TestStragglerLadderWalksThenSummonsBeforeThePause();
     TestStragglerLadderClocks();
     TestStragglerWalkRefusedSummonsNext();
