@@ -2872,7 +2872,10 @@
     needitems: 'needs items from you', bankdenied: 'the guild bank refused', nobanker: 'cannot reach a guild banker',
     noauctioneer: 'cannot reach an auctioneer'
   };
-  const GO_HOW = { bags: 'bags/mail', bank: 'guild bank', ah: 'auction house', farm: 'farming', craft: 'crafting', sub: 'another bot', need: 'asked you', deliver: 'delivery' };
+  const GO_HOW = {
+    bags: 'Looked in its bags and mail for', bank: 'Took from the guild bank:', ah: 'Bought on the auction house:',
+    farm: 'Farmed', craft: 'Crafted', sub: 'Asked another bot for', need: 'Asked you for', deliver: 'Took it to the guild bank'
+  };
 
   function goFetch() {
     const seq = ++gord.seq;
@@ -2965,7 +2968,7 @@
       const s = g.end;
       const what = s.state === 'done' ? 'Delivered to the guild bank'
         : s.state === 'mailed' ? 'Mailed to the guild master'
-        : s.step && s.step !== '-' ? `${esc(GO_HOW[s.step] || s.step)}${s.item_name ? `: ${goB(s.item_name)}` : ''}${s.step === 'farm' && s.farm_zone ? ` in ${esc(getZoneName(s.farm_zone))}` : ''}`
+        : s.step && s.step !== '-' ? `${esc(GO_HOW[s.step] || s.step)}${s.item_name && s.step !== 'deliver' ? ` ${goB(s.item_name)}` : ''}${s.step === 'farm' && s.farm_zone ? ` in ${esc(getZoneName(s.farm_zone))}` : ''}`
         : s.state === 'waiting' ? `Waiting${s.reason && s.reason !== '-' ? ` (${esc(GO_REASON[s.reason] || s.reason)})` : ''}` : 'Started';
       const notes = [];
       if (s.delivered > g.start.delivered) notes.push(`+${s.delivered - g.start.delivered} delivered`);
