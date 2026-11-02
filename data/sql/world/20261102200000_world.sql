@@ -15,10 +15,10 @@
 -- below param % the hold ends and the ordinary pick burns the lowest, so the three die together inside the 7 s timer.
 -- priority 1 is the group id, so map 309 can carry another linked group later; param 3.0 is the hold percent.
 --
--- Idempotent: the DELETE is scoped to the anchor's own boss entry, so re-running replaces these two rows and leaves any
--- other Thekal tactic row alone. Never edit this file once applied; add a newer migration.
+-- Idempotent: the DELETE is scoped to the anchor's linked_death rows, so re-running replaces these two rows and
+-- leaves any other Thekal tactic row alone. Never edit this file once applied; add a newer migration.
 
-DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14599);
+DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14599) AND `kind` = 'linked_death';
 INSERT INTO `ai_boss_tactic` (`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment`) VALUES
 (309, 14599, 'linked_death', 11347, 0, 1, 3.0, 'Thekal: Zealot Lor''Khan is raised to full health 7 s after a death while a sibling lives; all three must die inside that window, so the hold is 3 %'),
 (309, 14599, 'linked_death', 11348, 0, 1, 3.0, 'Thekal: Zealot Zath is raised to full health 7 s after a death while a sibling lives; all three must die inside that window, so the hold is 3 %');

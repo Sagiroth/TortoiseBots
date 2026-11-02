@@ -173,6 +173,25 @@ bool HeldUnitNear(PlayerbotAI* ai, Unit* around, const BossTacticsFight& fight,
     return HeldSubjectNear(ai, around, fight, countNear, nullptr) != HoldReason::None;
 }
 
+// The held member of a linked_death group within `maxDistance` of `around` (the action's target, or the bot itself),
+// or null. While the group is held, an area cast that lands next to the held member takes it as well and a DoT on it
+// ticks on after the hold: both damage a member that still has to live to the burn. The reach is the hold_kill veto's
+// kHoldKillAoeNearYd; the member pick is BossTacticsPolicy's LinkedDeathHeldIndex.
+Unit* LinkedDeathHeldNear(PlayerbotAI* ai, Unit* around, const BossLinkedDeathScan& scan, float maxDistance)
+{
+    if (!ai || !around || !scan.active)
+        return nullptr;
+    std::vector<float> distance(scan.members.size(), std::numeric_limits<float>::infinity());
+    for (std::size_t i = 0; i < scan.units.size() && i < distance.size(); ++i)
+    {
+        Unit* unit = scan.units[i];
+        if (unit && unit->IsAlive())
+            distance[i] = around->GetDistance(unit);
+    }
+    const int index = LinkedDeathHeldIndex(scan.param, scan.members, distance, maxDistance);
+    return index < 0 ? nullptr : scan.units[index];
+}
+
 // One bot_events.csv row per hold decision, at most one per bot per kHoldKillLogGapMs: the multiplier runs on every
 // action of every tick and the action on every tick a blocker lives, while the walk that reads the rows needs the
 // decision, not the repetition. The buckets are per bot AND kind: a bot whose hold-kill action fires every tick must
@@ -610,18 +629,23 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     const bool aoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;
     const bool attackerDebuff = dynamic_cast<CastRangedDebuffSpellOnAttackerAction*>(action) != nullptr;
     const bool other = !dpsAssist && !tankAssist && !aoe && !attackerDebuff;
-    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill or one_at_a_time row: a
-    // map with only kill_first or interrupt rows (every other raid) pays for no scan here.
-    if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()))
+    // The linked_death clause is opt-in like its pick: without the key or the strategy the rows are inert.
+    const bool linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
+    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time or
+    // linked_death row: a map with only kill_first or interrupt rows (every other raid) pays for no scan here.
+    if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&
+        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())))
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
-    // The area test (a dynamic_cast and a spell lookup) only runs for a map that has a hold_kill or one_at_a_time row
-    // in the fight: on any other map, and for any other action class, the clause below is dead weight.
+    // The area test (a dynamic_cast and a spell lookup) only runs for a fight whose rows can hold a member: on any
+    // other fight, and for any other action class, the clause below is dead weight.
     bool holdsRows = false;
     for (const BossTacticRow* row : fight.rows)
     {
-        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
+        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime ||
+            (linkedDeath && row->kind == BossTacticKind::LinkedDeath))
         {
             holdsRows = true;
             break;
@@ -653,6 +677,22 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         {
             LogHoldKillVeto(ai, bot, held == HoldReason::Sole ? "sole" : veto, subject);
             return 0.0f;
+        }
+        // The same veto for a linked_death group: an area cast on another member that stands beside a held one takes
+        // the held member too, and a DoT on it ticks on after the hold. The burn phase releases the group, so the
+        // area casts are allowed again and the members die together.
+        if (linkedDeath)
+        {
+            const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
+            const float reach = attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd;
+            Unit* linkedHeld = LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach);
+            if (!linkedHeld && area)
+                linkedHeld = LinkedDeathHeldNear(ai, bot, scan, reach);
+            if (linkedHeld)
+            {
+                LogHoldKillVeto(ai, bot, veto, linkedHeld);
+                return 0.0f;
+            }
         }
     }
     // Nothing but the three target-choosing actions goes further: a heal, an area cast or a DoT has no kill_first

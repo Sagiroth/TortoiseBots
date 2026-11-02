@@ -670,6 +670,9 @@ int main()
         CHECK(table.Size() == 2);
         table.Seal();
         CHECK(table.HasMap(309));
+        CHECK(table.HasLinkedDeathMap(309));
+        CHECK(!table.HasLinkedDeathMap(70));
+        CHECK(!table.HasHoldMap(309));  // a linked group is not a hold_kill budget: each map flag answers its own kind
     }
 
     // The group: the anchor and every partner its rows list, resolved from either.
@@ -720,6 +723,26 @@ int main()
         CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
         members = { Linked(1, 50), Linked(2, 3) };
         CHECK(!LinkedDeathReleased(3.0f, members));  // one above param: not released (the hold runs)
+    }
+
+    // Area veto: a held member at the threshold beside the action's target is in the blast, so the area cast or the
+    // DoT is vetoed. `distance[1]` is the target itself (an above-threshold member), `distance[0]` the held one.
+    {
+        const float near = kHoldKillAoeNearYd;
+        const float anywhere = std::numeric_limits<float>::max();
+        std::vector<LinkedMember> held = { Linked(1, 3), Linked(2, 60), Linked(3, 50) };
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 5.0f, 0.0f, 30.0f }, near) == 0);   // held next to the target
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 30.0f, 0.0f, 5.0f }, near) == -1);  // held out of the area
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 0.0f, 0.0f, 30.0f }, anywhere) == 0);  // the DoT lands on it
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { std::numeric_limits<float>::infinity(), 0.0f, 5.0f }, anywhere)
+              == -1);  // unresolved: never in reach
+        // Burn phase: every living member at or below param, so the release allows the AoE that kills them together.
+        std::vector<LinkedMember> burn = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(LinkedDeathHeldIndex(3.0f, burn, { 5.0f, 0.0f, 5.0f }, near) == -1);
+        // One member above param keeps the others held, even with no held member near this target.
+        std::vector<LinkedMember> oneAbove = { Linked(1, 3), Linked(2, 2), Linked(3, 60) };
+        CHECK(LinkedDeathHeldIndex(3.0f, oneAbove, { 50.0f, 50.0f, 0.0f }, near) == -1);
+        CHECK(LinkedDeathHeldIndex(3.0f, oneAbove, { 5.0f, 50.0f, 0.0f }, near) == 0);
     }
 
     // Flag off (the key, or the tactics strategy): today's pick stands. A non-linked boss is untouched too.

@@ -615,14 +615,19 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         killFirst = fn.index("FindBossKillFirst(ai, bot, fight) == current")
         self.assertLess(veto, early)
         self.assertLess(early, killFirst)
-        # The scan for a heal, a buff or a move runs only on a map with a hold_kill or one_at_a_time row (a per-map flag,
-        # like HasAvoidCastMap): the gate precedes ScanBossTactics, and it is not the any-row HasMap.
-        self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()))\n        return 1.0f;", fn)
-        self.assertNotIn("HasMap(bot->GetMapId())", fn.replace("HasHoldMap(bot->GetMapId())", ""))
+        # The scan for a heal, a buff or a move runs only on a map with a hold_kill, one_at_a_time or (with its key on)
+        # linked_death row (per-map flags, like HasAvoidCastMap): the gate precedes ScanBossTactics, and it is not the
+        # any-row HasMap.
+        self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
+        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())))", fn)
+        self.assertNotIn("HasMap(bot->GetMapId())",
+                         fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))
         self.assertIn("holdMaps_[row.map] = true;", POLICY)
+        self.assertIn("linkedDeathMaps_[row.map] = true;", POLICY)
         self.assertIn("row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime", POLICY)
         self.assertIn("bool HasHoldMap(std::uint32_t map) const", POLICY)
+        self.assertIn("bool HasLinkedDeathMap(std::uint32_t map) const", POLICY)
         # The area test runs only for a fight with a hold_kill or one_at_a_time row: the rows check precedes it.
         self.assertLess(fn.index("BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime"),
                         fn.index("IsAreaDamageAction(ai, action)"))
@@ -674,6 +679,31 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         free = body(ACTIONS, "bool IsFreeDps(", "\n}\n")
         self.assertIn("if (!IsBattleDps(bot))", free)
 
+    def test_a_held_linked_death_member_vetoes_the_area_cast_and_the_dot(self):
+        # The AoE density filter alone was not enough: a cleave, a chain or a ground AoE centred on another member
+        # still took the held one and started the 7 s raise. The linked group gets the hold_kill rows' area/DoT
+        # clause, on its own per-map flag and with its own opt-in gate.
+        fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach)", fn)
+        self.assertIn("LinkedDeathHeldNear(ai, bot, scan, reach)", fn)
+        self.assertIn("const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);", fn)
+        self.assertIn("attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd", fn)
+        # Only with the key and the strategy: the rows are inert otherwise, like the pick.
+        self.assertIn("sPlayerbotAIConfig.dungeonRunLinkedDeath", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        # The clause sits in the same block as the hold_kill one and above the free-DPS gates: an explicit order does
+        # not lift it either.
+        self.assertLess(fn.index("LinkedDeathHeldNear(ai, action->GetTarget()"),
+                        fn.index("const bool freeDps = IsFreeDps(ai, bot);"))
+        helper = body(ACTIONS, "Unit* LinkedDeathHeldNear(")
+        self.assertIn("LinkedDeathHeldIndex(scan.param, scan.members, distance, maxDistance)", helper)
+        self.assertIn("distance[i] = around->GetDistance(unit);", helper)
+        # The hold rule itself (at or below the param while another member stands above it, released for the burn)
+        # is the policy's, unit-tested with the burn phase in tools/test_boss_tactics_policy.cpp.
+        self.assertIn("inline int LinkedDeathHeldIndex(", POLICY)
+        self.assertIn("LinkedDeathHeldIndex(", POLICY_TEST)
+        self.assertIn("LinkedDeathHeldIndex(3.0f, burn, { 5.0f, 0.0f, 5.0f }, near) == -1", POLICY_TEST)
+
 
 class HoldKillIsLogged(unittest.TestCase):
     """F2 (ZG walk 22): the hold ran in walk 22 but nothing proved it. bot_events.csv had 6 800 rows and zero hold /
@@ -696,7 +726,7 @@ class HoldKillIsLogged(unittest.TestCase):
 
     def test_every_multiplier_zero_logs_its_veto(self):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        self.assertEqual(fn.count("LogHoldKillVeto("), 5)
+        self.assertEqual(fn.count("LogHoldKillVeto("), 6)
         self.assertIn('const char* const veto = dpsAssist || tankAssist ? "assist"', fn)
         self.assertIn(': aoe ? "aoe"', fn)
         self.assertIn(': attackerDebuff ? "dot"', fn)

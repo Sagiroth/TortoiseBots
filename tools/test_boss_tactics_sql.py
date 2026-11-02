@@ -24,7 +24,8 @@ ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
-    r"(?: AND `kind` = '(\w+)' AND `target_entry` = (\d+) AND `spell_id` = (\d+))?;?$"
+    r"(?: AND `kind` = '(\w+)')?"
+    r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?;?$"
 )
 DELETE_LINE = re.compile(r"DELETE\s+FROM\s+`?ai_boss_tactic`?(?=\s|;|$)", re.IGNORECASE)
 
@@ -67,6 +68,36 @@ def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
 
 
+def delete_scope(match):
+    """(map, bosses, single entry, kind, target, spell) of a parsed DELETE, each None when absent."""
+    return (
+        int(match.group(1)),
+        {int(entry) for entry in match.group(2).split(",")} if match.group(2) else None,
+        int(match.group(3)) if match.group(3) else None,
+        match.group(4),
+        int(match.group(5)) if match.group(5) else None,
+        int(match.group(6)) if match.group(6) else None,
+    )
+
+
+def delete_covers(scope, key):
+    """Whether the parsed DELETE removes one (map, boss_entry, kind, target_entry, spell_id) key."""
+    map_id, bosses, entry, kind, target, spell = scope
+    if key[0] != map_id:
+        return False
+    if entry is not None and key[1] != entry:
+        return False
+    if bosses is not None and key[1] not in bosses:
+        return False
+    if kind is not None and key[2] != kind:
+        return False
+    if target is not None and key[3] != target:
+        return False
+    if spell is not None and key[4] != spell:
+        return False
+    return True
+
+
 def effective_rows():
     """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it."""
     live = {}
@@ -75,16 +106,9 @@ def effective_rows():
             live[(int(payload[1]), int(payload[2]), payload[3], int(payload[4]), int(payload[5]))] = payload
             continue
         _name, match = payload
-        map_id = int(match.group(1))
-        if match.group(4):
-            live.pop((map_id, int(match.group(3)), match.group(4), int(match.group(5)), int(match.group(6))), None)
-        elif match.group(2):
-            bosses = {int(entry) for entry in match.group(2).split(",")}
-            for key in [key for key in live if key[0] == map_id and key[1] in bosses]:
-                del live[key]
-        else:
-            for key in [key for key in live if key[0] == map_id]:
-                del live[key]
+        scope = delete_scope(match)
+        for key in [key for key in live if delete_covers(scope, key)]:
+            del live[key]
     return list(live.values())
 
 
@@ -127,14 +151,8 @@ class BossTacticsSql(unittest.TestCase):
                 seen.add(key)
                 continue
             _name, match = payload
-            map_id = int(match.group(1))
-            if match.group(4):
-                seen.discard((map_id, int(match.group(3)), match.group(4), int(match.group(5)), int(match.group(6))))
-            elif match.group(2):
-                bosses = {int(entry) for entry in match.group(2).split(",")}
-                seen -= {key for key in seen if key[0] == map_id and key[1] in bosses}
-            else:
-                seen -= {key for key in seen if key[0] == map_id}
+            scope = delete_scope(match)
+            seen = {key for key in seen if not delete_covers(scope, key)}
 
     def test_deletes_are_map_scoped(self):
         for path in migration_paths():
@@ -293,6 +311,30 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 11347, "linked_death", 14599, 0), live)   # partners are not anchors
         path = os.path.join(ROOT, "data/sql/world/20261102200000_world.sql")
         self.assertTrue(os.path.isfile(path), "the Thekal linked_death migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14599) "
+                      "AND `kind` = 'linked_death';", text)
+
+    def test_the_linked_death_delete_spares_another_kind(self):
+        # The anchor 14599 can carry other tactic rows (a kill_first on a Zealot, an interrupt); re-applying this
+        # migration may only replace its own linked_death rows. The DELETE is parsed and replayed here, so dropping the
+        # kind scope (a boss-wide DELETE) leaves the other row gone and fails.
+        path = os.path.join(ROOT, "data/sql/world/20261102200000_world.sql")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        line = next(line for line in text.splitlines() if DELETE_LINE.match(line))
+        match = DELETE.match(line)
+        self.assertIsNotNone(match, line)
+        self.assertEqual("linked_death", match.group(4))
+        live = {
+            (309, 14599, "linked_death", 11347, 0),
+            (309, 14599, "linked_death", 11348, 0),
+            (309, 14599, "kill_first", 11361, 0),
+        }
+        scope = delete_scope(match)
+        live = {key for key in live if not delete_covers(scope, key)}
+        self.assertEqual(live, {(309, 14599, "kill_first", 11361, 0)})
 
 
 def _sql_statements(text):

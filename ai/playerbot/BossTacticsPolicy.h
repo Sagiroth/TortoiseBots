@@ -130,6 +130,8 @@ namespace ai
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::LinkedDeath)
+                linkedDeathMaps_[row.map] = true;
             ++size_;
             return true;
         }
@@ -152,10 +154,18 @@ namespace ai
         }
 
         // Whether the map has a hold_kill or one_at_a_time row (the hold multiplier's scan for heals, buffs and moves
-        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). False before the seal.
+        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). A linked_death map has
+        // its own flag (HasLinkedDeathMap). False before the seal.
         bool HasHoldMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
+        // Whether the map has a linked_death row (the hold multiplier's area and DoT veto runs there: a map without a
+        // die-together group has no held member to keep at its percent). False before the seal.
+        bool HasLinkedDeathMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && linkedDeathMaps_.find(map) != linkedDeathMaps_.end();
         }
 
         // The rows of one boss entry, or null. Null before the seal.
@@ -177,6 +187,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
+        std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };
@@ -675,6 +686,23 @@ namespace ai
             if (static_cast<float>(member.hpPct) > param)
                 return true;
         return false;
+    }
+
+    // Index of the held member of a linked_death group within `maxDistance` of the action (`distance[i]`, infinity for
+    // one that could not be resolved), or -1. While the group is held, an area cast on another member that stands next
+    // to a held one takes the held member too, and a DoT on it ticks on after the hold: both start the raise the hold
+    // exists to avoid. Once every living member is at or below `param` % the group is released and the burn may AoE.
+    inline int LinkedDeathHeldIndex(float param, const std::vector<LinkedMember>& members,
+                                    const std::vector<float>& distance, float maxDistance)
+    {
+        for (std::size_t i = 0; i < members.size() && i < distance.size(); ++i)
+        {
+            if (distance[i] > maxDistance)
+                continue;
+            if (LinkedDeathHolds(param, members[i].hpPct, members))
+                return static_cast<int>(i);
+        }
+        return -1;
     }
 
     // The gated linked_death pick: -1 when the key (AiPlayerbot.DungeonRunLinkedDeath) or the boss tactics strategy is
