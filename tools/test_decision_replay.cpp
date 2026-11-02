@@ -295,6 +295,18 @@ void TestFixtureStatus()
     CHECK(!fixed.xfail);
 
     fixture.expect.clear();
+    Expect runField;
+    runField.seq = kScenarioPullSeq;
+    runField.run = {{"step", "2"}};
+    fixture.expect.push_back(runField);
+    fixture.status = "fixed";
+    Report exact = Replay(fixture);
+    CHECK(exact.pass);
+    fixture.expect.back().run = {{"step", "999"}};
+    Report wrong = Replay(fixture);
+    CHECK(!wrong.pass);
+
+    fixture.expect.clear();
     Expect satisfied = failing;
     satisfied.orderNot = "an order that never happens";
     fixture.expect.push_back(satisfied);
