@@ -38,6 +38,10 @@ A craft order with several missing components delegates them in parallel: the la
 
 `GuildOrderRequest` rows in `bot_events.csv` carry `travel, step:item, parent|-, orderItem, type`: one row per supply-leg change, and at most one row a minute while a leg lasts, so a sub-order's short legs are not swallowed by the throttle.
 
+## Vendor trips with full bags
+
+A bot whose bags are held full by its order walks to a vendor only for a sale that frees a bag row or gets it under the 85 % line.
+
 ## Bot rank and bank access
 
 Every bot in a guild with at least one real player member holds the guild's bot rank so all bots share one rank the master can open bank tabs to. All-bot pool guilds are out of scope: they keep their own ranks (including a bot guild master, which is never moved), nobody gives orders there, and their bots keep managing themselves. The whole feature is an on/off switch (`AiPlayerbot.GuildOrderBotRank`, default on); when it is off the server applies no ranks and `TBM:ORDER_ACCESS` carries no rank information (`-|-|-|-|0|0`).

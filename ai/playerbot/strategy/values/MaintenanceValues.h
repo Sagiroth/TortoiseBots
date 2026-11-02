@@ -131,7 +131,9 @@ namespace ai
     //actually wants, and no vendor within the near-service radius. True means
     //the bot must request the existing Vendor travel target instead of waiting
     //for one to walk past. False once nothing sellable is left, so a bot cannot
-    //loop on trips that cannot empty its bags.
+    //loop on trips that cannot empty its bags. A bot whose bags are held full
+    //by its running order walks only for a sale that frees a bag row or gets
+    //it under the pressure line, or every looted grey would send it to town.
     bool BagPressureVendorTrip(PlayerbotAI* ai);
 
     //Is there a real reason to walk to a vendor? Stock a vendor pays for and
