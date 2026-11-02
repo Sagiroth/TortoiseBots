@@ -7685,6 +7685,7 @@
         <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
         <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
+        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots</summary><div class="fd-underbody"></div></details></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
@@ -8799,6 +8800,57 @@
     }
     botEl.hidden = !panel;
     fdSet(botEl, fdBotHtml(panel));
+    fdUnderSync(card, bind, fd);
+  }
+
+  // The underperforming bots section: one request per card per 30 s, or one when the window changes, and only while its
+  // box is open. The <details> lives in the static card template, so the 2 s redraw keeps it open and only its body is
+  // painted here. A fight link and the name button need no code: the card's click delegate already opens fights and
+  // profiles.
+  function fdUnderSync(card, bind, fd) {
+    const box = card.querySelector('.fd-underbox'), body = card.querySelector('.fd-underbody');
+    if (!box || !body || typeof Underperf === 'undefined') return;
+    if (!fd.under) fd.under = { qs: '', at: 0, res: null, err: '', pending: false, drawn: false };
+    const st = fd.under;
+    if (!box.dataset.fdBound) {
+      box.dataset.fdBound = '1';
+      box.addEventListener('toggle', () => {
+        if (!box.open) return;
+        st.drawn = false;
+        fdUnderSync(card, bind, fd);
+      });
+      body.addEventListener('change', e => {
+        const sel = e.target && e.target.closest && e.target.closest('select[data-fd-underrun]');
+        if (!sel) return;
+        fd.underPick = sel.value === '' || sel.value === 'all' ? null : sel.value;
+        st.drawn = false;
+        st.at = 0;
+        fdUnderSync(card, bind, fd);
+      });
+    }
+    if (!box.open) return;
+    const paint = () => fdSet(body, Underperf.html(st, {
+      pick: fd.underPick, bindBots: bind.history ? [] : (bind.bots || []), live: !bind.history,
+    }));
+    const qs = Underperf.query(bind, fd, Date.now(), fd.underPick);
+    if (st.pending) return;
+    if (st.qs === qs && Date.now() - st.at < Underperf.POLL_MS) {
+      if (!st.drawn) { st.drawn = true; paint(); }
+      return;
+    }
+    st.pending = true;
+    fetch('/api/v1/combat/underperformers?commander=' + encodeURIComponent(bind.commander) + '&' + qs, { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(json => { st.res = json; st.err = ''; })
+      .catch(e => { st.err = (e && e.message) || 'request failed'; })
+      .then(() => {
+        st.pending = false;
+        st.qs = qs;
+        st.at = Date.now();
+        st.drawn = true;
+        const c = cmdCards.get(bind.commander);
+        if (c && c.classList.contains('fd-on')) paint();
+      });
   }
 
   // The debugger's own header: the prototype's crumbs. The fight verdict counts the loaded details against the whole list, so the
