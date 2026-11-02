@@ -323,7 +323,17 @@ func TestFightPackParityJS(t *testing.T) {
 // (web/static/js/fighthistory.js) and the two builders app.js feeds from them (the day select, the pack rows that open a
 // past fight, the Live card that belongs to Tonight, and every name escaped).
 func TestFightHistoryJS(t *testing.T) {
+	// Nights are local (06:00 rollover), so the picker's absolute nights need a pinned zone; UTC keeps noon inside the night.
+	t.Setenv("TZ", "UTC")
 	runCheck(t, "fighthistory_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
+}
+
+// TestDashDatesJS runs dashtime_check.js under Europe/Oslo: every clock time the dashboard shows is the browser's local
+// time (feeds, incident table, "since HH:MM", pack table), nights roll over at 06:00 local while the server keeps its UTC
+// day files, and the Saved fights list passes the row's unix seconds straight to whenLabel.
+func TestDashDatesJS(t *testing.T) {
+	t.Setenv("TZ", "Europe/Oslo")
+	runCheck(t, "dashtime_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
 }
 
 // TestFdLiveEngagedJS runs fd_live_engaged_check.js: a live fight exists only while a hostile unit is engaged with the

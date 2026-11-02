@@ -2093,7 +2093,7 @@
       `- gear: ${gearDiagLine()}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
-      `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=since ${sm.since_str || '?'} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
+      `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=${counterWindow()} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
     ].join('\n');
   }
 
@@ -3052,29 +3052,18 @@
     return new Date(ts * 1000).toLocaleTimeString();
   }
 
-  // The daemon's wall clock, derived from the counter window it reports as
-  // both an epoch (since) and its own rendering (since_str): re-parsing that
-  // string locally and offsetting by the epoch difference cancels both zones.
-  // Payload fields that carry only an epoch still display the server's hour,
-  // never the viewer's.
-  function daemonClock(ts) {
-    const s = state.activity && state.activity.summary;
-    if (s && s.since && s.since_str) {
-      const parsed = Date.parse(s.since_str.replace(' ', 'T'));
-      if (Number.isFinite(parsed)) {
-        return new Date(ts * 1000 + (parsed - s.since * 1000)).toLocaleTimeString();
-      }
-    }
-    return fmtClock(ts);
+  // A clock time as HH:MM in the viewer's own zone, from a unix epoch: every clock time the dashboard shows is local.
+  function fmtHM(ts) {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
-  // Feed rows carry the daemon's own rendered timestamp (time_str), so every
-  // table on the dashboard shares one time base. Formatting the epoch in the
-  // viewer's zone (the fallback) would make the feeds disagree with the
-  // incident table whenever the browser is not on the server's clock.
+  // Feed rows carry the row's own unix epoch (at): the page formats it in the viewer's zone, so a loot at 21:35 UTC reads
+  // 22:35 in Oslo. The daemon's own rendering (time_str) stays in the payload for older pages, but the page never reads it.
   function feedClock(item) {
-    if (item && item.time_str) return item.time_str.slice(11, 19);
-    return daemonClock(item ? item.at : 0);
+    return fmtClock(item ? item.at : 0);
   }
 
   // Activity counters are session-scoped: they count the current game-server
@@ -3082,12 +3071,12 @@
   // them repeats this window so "19 loot" cannot read as a lifetime total.
   function counterWindow() {
     const s = state.activity && state.activity.summary;
-    return (s && s.since_str) ? `since ${s.since_str.slice(11, 16)}` : 'this session';
+    return (s && s.since) ? `since ${fmtHM(s.since)}` : 'this session';
   }
 
   function counterWindowTitle() {
     const s = state.activity && state.activity.summary;
-    const start = (s && s.since_str) ? ` since ${s.since_str}` : '';
+    const start = (s && s.since) ? ` since ${fmtHM(s.since)}` : '';
     return `Counters cover the current game-server session${start}. They are kept across a dashboard restart and reset when the game server restarts.`;
   }
 
@@ -3436,8 +3425,8 @@
       </div>
       <div class="armory-stat-card" title="${esc(counterWindowTitle())}">
         <div class="stat-card-title">This session (${esc(counterWindow())})</div>
-        ${progressRow('First seen', esc(daemonClock(a.first_seen)))}
-        ${progressRow('Last event', esc(daemonClock(a.last_event)))}
+        ${progressRow('First seen', esc(fmtClock(a.first_seen)))}
+        ${progressRow('Last event', esc(fmtClock(a.last_event)))}
       </div>`;
     }
     const feed = (state.activity && Array.isArray(state.activity.level_feed) ? state.activity.level_feed : [])
@@ -4722,7 +4711,7 @@
     for (const k of Object.keys(t.totals || {})) {
       if (order.indexOf(k) === -1) parts.push(`${k} ${t.totals[k]}`);
     }
-    const since = t.since_str ? ` since ${t.since_str.slice(0, 16)}` : '';
+    const since = t.since ? ` since ${fmtHM(t.since)}` : '';
     const loops = topAction(t, 'ACTION_LOOP');
     const unreach = topAction(t, 'UNREACHABLE_TARGET');
     const extra = [loops, unreach].filter(Boolean).join(' · ');
@@ -4765,7 +4754,7 @@
     const ordered = filtered.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
     el.anomaliesTable.innerHTML = ordered.map(a => {
-      const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
+      const timeStr = a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-';
       const sev = (a.severity || 'info').toLowerCase();
       const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
       return `<tr>
@@ -5497,7 +5486,7 @@
     if (!rows.length) return '';
     const items = rows.map(r => {
       const n = numOr0(r.fights);
-      const when = typeof FightHistory !== 'undefined' && r.last > 0 ? FightHistory.whenLabel(r.last * 1000) : '';
+      const when = typeof FightHistory !== 'undefined' && r.last > 0 ? FightHistory.whenLabel(r.last) : '';
       return `<li><button type="button" class="fd-histcmd" data-fdtab="${esc(encodeURIComponent(r.commander))}" title="Open ${esc(r.commander)}'s saved fights">`
         + `<b>${esc(r.commander)}</b>`
         + `<span>${n} fight${n === 1 ? '' : 's'} · ${numOr0(r.days)} night${numOr0(r.days) === 1 ? '' : 's'}${when ? ' · last ' + esc(when) : ''}</span></button></li>`;
@@ -8310,7 +8299,42 @@
     }).catch(() => { /* the picker keeps whatever it showed; Tonight always works */ });
   }
 
-  // A chosen past night's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
+  // One night's fights: the UTC days it spans (at most two), merged newest first and filtered to the night's own fights
+  // (06:00 local rollover). A chosen night keeps its list 10 s like a day's did, under 'night:<night>'.
+  function fdNightFights(fd, bind, night, cb) {
+    // The night is always a real YYYY-MM-DD (the chosen night, or tonight for Tonight).
+    if (!night || typeof FightHistory === 'undefined') { if (cb) cb(null); return; }
+    const days = FightHistory.nightDays(night);
+    if (!days.length) { if (cb) cb(null); return; }
+    const ck = 'night:' + night;
+    const c = fd.hist[ck];
+    if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
+    if (fd.histPending[ck]) { if (cb) fd.histPending[ck].push(cb); return; }
+    const cbs = fd.histPending[ck] = cb ? [cb] : [];
+    const lists = [];
+    let left = days.length, failed = 0;
+    const done = () => {
+      let rows = [];
+      lists.forEach(l => { if (Array.isArray(l)) rows = rows.concat(l); });
+      if (failed === days.length && !c) rows = null;
+      else {
+        rows = rows.filter(r => r && FightHistory.nightOf(numOr0(r.start) * 1000) === night);
+        rows.sort((a, b) => (numOr0(b.start) - numOr0(a.start)) || (String(a.key) < String(b.key) ? -1 : 1));
+      }
+      fd.hist[ck] = { list: rows, at: Date.now() };
+      delete fd.histPending[ck];
+      cbs.forEach(f => { try { f(rows); } catch (e) { /* a drawing error must not strand the queue */ } });
+    };
+    days.forEach((day, i) => {
+      fdHistFetch(fd, bind, 'day:' + day, '&day=' + encodeURIComponent(day), list => {
+        lists[i] = list;
+        if (!Array.isArray(list)) failed += 1;
+        if (--left === 0) done();
+      });
+    });
+  }
+
+  // A chosen past day's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
   // the 2 s redraw does not ask again.
   function fdDayFights(fd, bind, day, cb) {
     // The day is always a real YYYY-MM-DD (the chosen night, or today for Tonight): the daemon answers an empty day with 400.
@@ -8405,13 +8429,13 @@
     return out;
   }
 
-  // The day a row of "Tonight" belongs to is today (UTC), the daemon's day files are UTC too.
+  // The night "Tonight" is: the current local night (06:00 rollover), e.g. 02:17 on 2 Nov is still the night of 1 Nov.
   function fdTodayDay(nowMs) {
-    return typeof FightHistory !== 'undefined' ? FightHistory.dayOf(nowMs) : '';
+    return typeof FightHistory !== 'undefined' ? FightHistory.nightOf(nowMs) : '';
   }
 
-  // Tonight's rail: today's stored fights and the live list, one row per fight. The day selector's count is that same day's
-  // stored count, so the two never tell different stories again.
+  // Tonight's rail: tonight's stored fights and the live list, one row per fight. The night selector's count is that same
+  // night's stored count, so the two never tell different stories again.
   // With the window on (fd.winSince set, "Show all fights" off) it is the current run plus the last two hours: the window's
   // stored list, the live rows inside it, and any older pages the reader loaded.
   function fdTonightRows(fd, key) {
@@ -8422,8 +8446,8 @@
       const inWin = (Array.isArray(live) ? live : []).filter(r => r && (r.live || numOr0(r.start) >= from));
       return fdMergeRows(fdMergeRows(inWin, fdWinList(fd)), older);
     }
-    const day = fdTodayDay(Date.now());
-    const hist = day && fd.hist[day] ? fd.hist[day].list : null;
+    const night = fdTodayDay(Date.now());
+    const hist = night && fd.hist['night:' + night] ? fd.hist['night:' + night].list : null;
     return older && older.length ? fdMergeRows(fdMergeRows(live, hist), older) : fdMergeRows(live, hist);
   }
 
@@ -8563,18 +8587,18 @@
         fdLoad(card, bind);
       }).catch(failed);
     };
-    // A chosen night lists that day's stored fights; Tonight is today's stored fights with the live list on top.
-    if (fd.day) { fdDayFights(fd, bind, fd.day, gotList); return; }
-    const today = fdTodayDay(Date.now());
-    if (!today) { cmdRaidFights(bind, gotList); return; }
-    // "Show all fights" lists the whole of today (the old rail); otherwise the window: the current run plus the last two hours.
+    // A chosen night lists that night's stored fights; Tonight is tonight's stored fights with the live list on top.
+    if (fd.day) { fdNightFights(fd, bind, fd.day, gotList); return; }
+    const tonight = fdTodayDay(Date.now());
+    if (!tonight) { cmdRaidFights(bind, gotList); return; }
+    // "Show all fights" lists the whole night (the old rail); otherwise the window: the current run plus the last two hours.
     const older = fd.older && fd.older.day === fd.day ? fd.older : null;
     fd.winSince = fd.showAll ? 0 : older && older.since ? older.since : fdWindowStart(bind, Date.now());
     let live = null, hist = null, left = 2;
     // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
     const both = () => { if (--left) return; gotList(live || hist ? fdTonightRows(fd, bind.commander) : null); };
     cmdRaidFights(bind, l => { live = l; both(); });
-    if (fd.showAll) fdDayFights(fd, bind, today, l => { hist = l; both(); });
+    if (fd.showAll) fdNightFights(fd, bind, tonight, l => { hist = l; both(); });
     else fdWinFights(fd, bind, fd.winSince, l => { hist = l; both(); });
   }
 
