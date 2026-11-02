@@ -550,6 +550,10 @@ struct UnitFact
 {
     std::uint64_t guid = 0;
     std::uint32_t entry = 0;
+    // The entry the creature was spawned as when a script changed its entry away from it
+    // (ScriptChangedEntry; 0: none). His guid still carries the spawn's entry, so a boss that
+    // changes entry mid-fight (Thekal 14599 -> 14509) is still the boss.
+    std::uint32_t formOf = 0;
     float distLead = 0.0f;
     float x = 0.0f, y = 0.0f; // hold units and patrollers: where it stands (HoldStands: the side the event comes from)
     float z = 0.0f;           // ... patrollers (OwnedByLaterStep); step units: the unit's real height (the passed-boss pause)
@@ -1060,6 +1064,12 @@ struct Facts
     // lies, not where the plan says he spawns (Revelosh dies 50-60 yd from his spot).
     std::uint64_t bossCorpseGuid = 0;
     float bossCorpseX = 0.0f, bossCorpseY = 0.0f, bossCorpseZ = 0.0f;
+    // boss: the step's own spawn (the spawn row nearest to the step's point), looked up by guid whatever entry it
+    // reads now, lies dead: boss down at once, wherever his corpse is, and the corpse fields above are his. A boss
+    // whose script changed his entry (Thekal's 14599 -> 14509) is found this way: the entries read lists him
+    // only while he reads one of them. bossOwnDeadEntry: the entry he died as (the note says so when it changed).
+    bool bossOwnDead = false;
+    std::uint32_t bossOwnDeadEntry = 0;
     // boss: the instance-wide search for the boss's entry (Run::bossSearchWanted, once per BossAwayWaitMs window):
     // read (bossSearchRead) by the glue on the tick after the policy asked, from the entry's spawns on the lead
     // bot's map, wherever they stand. Alive: one of them lives (where); dead: one lies dead (that corpse).
@@ -1067,6 +1077,9 @@ struct Facts
     // "not found" three times until the corpse decay moved him home 600 s later.
     bool bossSearchRead = false;
     bool bossSearchAlive = false;
+    // ... and the entry he was found alive as, when a script changed it away from the step's: the pause says
+    // ` (as <entry>)`.
+    std::uint32_t bossSearchAliveEntry = 0;
     float bossAliveX = 0.0f, bossAliveY = 0.0f, bossAliveZ = 0.0f;
     bool bossSearchDead = false;
     // ... a spawn of the entry stands in a grid that is not loaded (Map::IsLoaded false): that area was not searched.
@@ -1398,6 +1411,11 @@ struct Run
     std::uint32_t fruitlessPulls = 0;
     std::uint32_t bossWaitMs = 0;   // a boss step: time at the spot with the boss neither alive nor dead in sight
     bool bossSeenAlive = false;     // a boss step: the boss was among the step's living units
+    // The boss steps' entries a fight engaged on an earlier step (IsStepBoss, on any step): his own boss step then
+    // starts with bossSeenAlive true, so his corpse near the lead bot counts as boss down even though that step's own
+    // read never saw him alive (the r1 walk fought Thekal on the move step before his boss step). Never
+    // cleared by ResetStep (the same step across pauses) or a resume; a new run starts it over.
+    std::set<std::uint32_t> bossFoughtEarly;
     // A boss step past BossAwayWaitMs with the boss neither alive nor dead in sight asked the glue for the
     // instance-wide search (Facts::bossSearchRead, next tick); one per window (ResetStep clears it).
     bool bossSearchWanted = false;
@@ -2403,7 +2421,10 @@ inline void ResetStep(Run& r)
     r.openAtLastPull = 0;
     r.fruitlessPulls = 0;
     r.bossWaitMs = 0;
-    r.bossSeenAlive = false;
+    // A boss of this step engaged on an earlier step (Run::bossFoughtEarly) was fought already: this step starts as
+    // if he had been seen alive here, so his corpse near the lead bot is boss down.
+    const PlanStep* const resetStep = Current(r);
+    r.bossSeenAlive = resetStep && resetStep->kind == PlanStepKind::Boss && r.bossFoughtEarly.count(resetStep->entry) != 0;
     r.bossSearchWanted = false;
     // The 600 s is cumulative per step across pauses/resumes and wipe recoveries: Resume (and every wipe path above)
     // calls ResetStep on the SAME step, so the timer stays; NextStep moves on, so a new step starts it over.
@@ -7126,7 +7147,8 @@ inline bool ExactWalkTo(Run& r, const Facts& f, std::size_t idx, std::uint32_t d
 }
 
 // The unit to pull now: hostile, attackable by the group (UnitFact::attackable), not evading, not passed, not
-// stealthed; nearest to the lead bot. When `entry` is not 0 only that entry. Null for none.
+// stealthed; nearest to the lead bot. When `entry` is not 0 only that entry, or the entry a script changed the unit
+// away from (UnitFact::formOf): a boss that changes entry mid-fight is still his own step's pull. Null for none.
 // `hop`: a hop pick (Facts::hopUnits), which also leaves out Run::neverCame and
 // any unit whose entry a gossip step of the plan names (r36 shadowfang_keep slotI:
 // Deathstalker Adamant 3849, the friendly gossip NPC that opens the courtyard door,
@@ -7145,7 +7167,7 @@ inline const UnitFact* PickPull(const Run& r, const std::vector<UnitFact>& units
             continue;
         if (hop && r.plan && ai::PlanNamesEventUnit(*r.plan, u.entry))
             continue;
-        if (entry && u.entry != entry)
+        if (entry && u.entry != entry && u.formOf != entry)
             continue;
         if (!best || u.distLead < best->distLead)
             best = &u;
@@ -7398,6 +7420,38 @@ inline bool SapWait(Run& r, const Facts& f, std::uint32_t dt, std::string& order
     return false;
 }
 
+// The entry a creature was spawned as when a script changed its entry away from it: the guid's
+// entry (the spawn row's first creature id) when it differs from the entry it reads now and that
+// entry is not one of the spawn row's own alternatives (an alternative spawn id is another
+// creature of the same row, not a phase; a creature a script summons has no spawn row, so any
+// change of its entry is a change). 0: unchanged (or no guid entry to compare with).
+inline std::uint32_t ScriptChangedEntry(std::uint32_t guidEntry, std::uint32_t current,
+    const std::vector<std::uint32_t>& spawnIds)
+{
+    if (!guidEntry || current == guidEntry)
+        return 0;
+    return std::find(spawnIds.begin(), spawnIds.end(), current) != spawnIds.end() ? 0 : guidEntry;
+}
+
+// The step's boss: his entry, or the entry a script changed him away from (ScriptChangedEntry).
+inline bool IsStepBoss(const PlanStep& s, const UnitFact& u)
+{
+    return s.entry != 0 && (u.entry == s.entry || u.formOf == s.entry);
+}
+
+// The boss step's own spawn, dead: boss down when it reads the step's entry or a script changed it away from it
+// (the same filter ReadBossInInstance uses). A change back to the boss's own entry reads as the entry itself
+// (ScriptChangedEntry is 0 then); that return is moot within one Thekal fight and not counted as a phase.
+// spawnFromSpotYd: the spawn row's 2D distance from the step's point (only the row nearest to the point counts,
+// within kSeeYd).
+inline bool OwnSpawnIsTheBoss(std::uint32_t currentEntry, std::uint32_t changedFrom, std::uint32_t stepEntry,
+    float spawnFromSpotYd = 0.0f)
+{
+    if (stepEntry == 0 || spawnFromSpotYd > kSeeYd)
+        return false;
+    return currentEntry == stepEntry || (changedFrom != 0 && changedFrom == stepEntry && currentEntry != stepEntry);
+}
+
 // The pack member the run crowd-controls before a pull of `pullGuid`: the
 // best-ranked of the plan's cc entries (cc_priority, then cc_always) among
 // the step's units, never the pull target, not one already done this step.
@@ -7406,11 +7460,12 @@ inline bool SapWait(Run& r, const Facts& f, std::uint32_t dt, std::string& order
 // (20261021174717) name the Geomancer 4853 that Grimlok's step lists and the
 // 7030 of Galgann's, and a polymorphed add of the kill order holds the fight
 // up (turtle-agent remote_cc.go never sheeps the active boss's `first` adds).
-inline bool BossStepUnit(const PlanStep* s, std::uint32_t entry)
+inline bool BossStepUnit(const PlanStep* s, std::uint32_t entry, std::uint32_t formOf)
 {
     if (!s || s->kind != PlanStepKind::Boss)
         return false;
-    return entry == s->entry || std::find(s->entries.begin(), s->entries.end(), entry) != s->entries.end();
+    return entry == s->entry || formOf == s->entry ||
+        std::find(s->entries.begin(), s->entries.end(), entry) != s->entries.end();
 }
 
 // A cc order: the unit, the bot, its spell and the mark. noMarkEntry: a unit
@@ -7467,7 +7522,7 @@ inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
     std::size_t bestSpell = 0;
     for (const UnitFact& u : f.units)
     {
-        if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry) ||
+        if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
             r.plan->KillFirstRank(u.entry) >= 0)
             continue;
         int const rank = r.plan->CcRank(u.entry);
@@ -10778,7 +10833,10 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
                 return FightEnd::NotYet;
         return FightEnd::Cleared;
     }
-    return f.bossDeadNearSpot || (r.bossSeenAlive && f.bossDeadNearLead) ? FightEnd::BossDown : FightEnd::NotYet;
+    // f.bossOwnDead: the step's own spawn (the spawn row nearest to the step's point) lies dead, whatever entry it
+    // reads now: checked before the away-wait, so a boss whose script changed his entry never starts it.
+    return f.bossDeadNearSpot || f.bossOwnDead || (r.bossSeenAlive && f.bossDeadNearLead) ? FightEnd::BossDown
+                                                                                           : FightEnd::NotYet;
 }
 
 // Where a place lies from the lead bot, for a boss step's pause: "N yd from the lead bot (M yd above it)" (or below),
@@ -10893,7 +10951,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         return;
     if (s.kind == PlanStepKind::Boss)
         for (const UnitFact& u : f.units)
-            r.bossSeenAlive = r.bossSeenAlive || u.entry == s.entry;
+            r.bossSeenAlive = r.bossSeenAlive || IsStepBoss(s, u);
     bool patrolHeld = false;
     const UnitFact* pick = PatrolStandPullGate(r, f, s, dt, order, patrolHeld);
     if (patrolHeld)
@@ -11061,8 +11119,12 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         // corpse by its guid (TaskStep), not to the plan's spawn point.
         if (f.bossCorpseGuid)
             r.corpses[s.entry] = CorpseMark{f.bossCorpseGuid, f.bossCorpseX, f.bossCorpseY, f.bossCorpseZ};
+        // The step's own spawn died in an entry a script changed it to: the note names it, so the pause line and the
+        // walk's report say what the fight's last frames showed.
+        std::string const diedAs = f.bossOwnDead && f.bossOwnDeadEntry && f.bossOwnDeadEntry != s.entry
+            ? ": he died as " + std::to_string(f.bossOwnDeadEntry) : std::string();
         bool const fought = r.pulls > 0;
-        NextStep(r, "boss down");
+        NextStep(r, "boss down" + diedAs);
         r.fightForwardDue = fought; // FightForwardTick
     }
     else
@@ -11072,7 +11134,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         // spot lies from the lead bot. Shadowfang Keep r36 slot A step 304: Fenrus behind the Sorcerer's Gate on
         // z 128.8, the party on z 95; 'not at his spot: waiting for him' and 60 s to the same pause, twice.
         for (const UnitFact& u : f.units)
-            if (u.entry == s.entry && u.hostile && r.passed.count(u.guid))
+            if (IsStepBoss(s, u) && u.hostile && r.passed.count(u.guid))
             {
                 auto const tries = r.pullTries.find(u.guid);
                 std::string const noFight = "boss " + std::to_string(s.entry) + " is alive by his spot, " +
@@ -11119,8 +11181,10 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         if (f.bossSearchRead && f.bossSearchAlive)
         {
             // Alive elsewhere: the party is not sent after him (he may be on a patrol, or in another part of the
-            // instance); the pause says where he stands.
-            std::string const aliveAt = "boss " + std::to_string(s.entry) + " is alive at " + Num(f.bossAliveX) + " " + Num(f.bossAliveY) +
+            // instance); the pause says where he stands, and under which entry when a script changed it.
+            std::string const asForm = f.bossSearchAliveEntry && f.bossSearchAliveEntry != s.entry
+                ? " (as " + std::to_string(f.bossSearchAliveEntry) + ")" : std::string();
+            std::string const aliveAt = "boss " + std::to_string(s.entry) + " is alive" + asForm + " at " + Num(f.bossAliveX) + " " + Num(f.bossAliveY) +
                 " " + Num(f.bossAliveZ) + ", " + Num(ai::PlanDistance(f.bossAliveX, f.bossAliveY, f.bossAliveZ, s.x, s.y, s.z)) +
                 " yd from his spot (an instance search after " + std::to_string(awayMs / 1000) + " s), " +
                 FromLeadBot(ai::PlanDistance(f.leadX, f.leadY, f.leadZ, f.bossAliveX, f.bossAliveY, f.bossAliveZ),
@@ -15024,13 +15088,14 @@ inline FightProgress FightProgressTick(Run& r, const Facts& f, std::uint32_t dt)
 // One of the engaged units (read, and one the group can attack) is a boss step's entry, whatever the step: the fight
 // gets the boss ceiling
 // (kBossFightCapMs). Dragonmaw Retreat r25 slot 7 fought Searistrasz 62072 on step 260, a step before his own.
+// A boss a script changed the entry of (IsStepBoss) counts: the ceiling holds through the change.
 inline bool EngagedPlanBoss(const Run& r, const Facts& f)
 {
     if (!r.plan || !f.engagedRead)
         return false;
     for (const UnitFact& u : f.engagedUnits)
         for (const PlanStep& s : r.plan->steps)
-            if (u.attackable && s.kind == PlanStepKind::Boss && s.entry && s.entry == u.entry)
+            if (u.attackable && s.kind == PlanStepKind::Boss && IsStepBoss(s, u))
                 return true;
     return false;
 }
@@ -16135,6 +16200,21 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // raid's own (kRaidBossFightCapMs).
         if (RaidBossRulesFight(r, f))
             r.raidBossFight = true;
+        // A boss of a later boss step engaged on this step is fought early: his own step then counts his corpse near
+        // the lead bot as boss down, though its own read never saw him alive (Run::bossFoughtEarly).
+        if (r.plan && f.engagedRead)
+            for (std::size_t i = r.step + 1; i < r.plan->steps.size(); ++i)
+            {
+                PlanStep const& later = r.plan->steps[i];
+                if (later.kind != PlanStepKind::Boss || !later.entry)
+                    continue;
+                for (const UnitFact& u : f.engagedUnits)
+                    if (u.attackable && IsStepBoss(later, u))
+                    {
+                        r.bossFoughtEarly.insert(later.entry);
+                        break;
+                    }
+            }
         bool const bossStep = s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f) || r.raidBossFight;
         std::uint32_t const cap = event      ? holdCap
                                 : !bossStep ? kFightCapMs

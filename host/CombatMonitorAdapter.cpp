@@ -2,6 +2,7 @@
 // hook returns at once while the monitor is off.
 #include "CombatMonitorAdapter.h"
 #include "../runtime/CombatMonitorService.h"
+#include "CreatureForm.h"
 #include "Player.h"
 #include "Creature.h"
 #include "Spell.h"
@@ -122,12 +123,15 @@ void CombatMonitorUnitAdapter::OnUnitDeath(Unit* unit, Unit* killer)
     {
         char const* killerName = killer ? killer->GetName() : "";
         CombatMonitorService::Instance().OnDeath(unit->GetGUIDLow(), OwnerLow(killer), killerName,
-            unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0);
+            unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0, 0);
         return;
     }
+    // A creature's death carries the entry it died as and the entry its guid was spawned as when a script changed
+    // it: the fight's boss is the spawned one.
     Creature* creature = unit->ToCreature();
     if (creature)
-        CombatMonitorService::Instance().OnDeath(0, OwnerLow(killer), "", 0.0f, 0.0f, 0.0f, unit->GetEntry());
+        CombatMonitorService::Instance().OnDeath(0, OwnerLow(killer), "", 0.0f, 0.0f, 0.0f, unit->GetEntry(),
+            DungeonRun::ScriptChangedFrom(creature));
 }
 
 void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*skipCheck*/)

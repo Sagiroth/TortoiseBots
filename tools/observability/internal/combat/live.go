@@ -51,7 +51,10 @@ type LiveHeader struct {
 	Kind     string `json:"kind"`
 	Boss     uint32 `json:"boss"`
 	BossName string `json:"boss_name"`
-	FightMs  uint32 `json:"fight_ms"`
+	// The boss's phase and the entry he reads now: 1 and the boss entry until a script changes his entry.
+	BossPhase      uint32 `json:"boss_phase"`
+	BossPhaseEntry uint32 `json:"boss_phase_entry"`
+	FightMs        uint32 `json:"fight_ms"`
 }
 
 // EventsDatagram is the COMBAT_EVENTS envelope (wire format 2.1). Fight is
@@ -305,6 +308,7 @@ func (s *Store) fileLiveLocked(commander string, lf *liveFight, outcome string) 
 		Plan: h.Plan, Leg: h.Leg, Step: h.Step, Kind: h.Kind,
 		Start: h.Start, DurMS: dur, Outcome: outcome,
 		Boss: h.Boss, BossName: h.BossName,
+		BossPhase: h.BossPhase, BossPhaseEntry: h.BossPhaseEntry,
 		Bots:   []FightBot{},
 		Deaths: append([]FightDeath(nil), lf.deaths...),
 	}
@@ -326,6 +330,7 @@ func (s *Store) liveSummaryLocked(commander string, lf *liveFight) FightSummary 
 	return FightSummary{
 		ID: lf.id, Key: Key(commander, lf.session, lf.id), Session: lf.session,
 		Start: h.Start, Dur: dur, Outcome: outcome, BossName: h.BossName,
+		BossPhase: h.BossPhase, BossPhaseEntry: h.BossPhaseEntry,
 		Leg: h.Leg, Step: h.Step, Deaths: len(lf.deaths), Live: true,
 	}
 }
@@ -347,6 +352,7 @@ func (s *Store) liveFightLocked(commander string, lf *liveFight) Fight {
 		Plan: h.Plan, Leg: h.Leg, Step: h.Step, Kind: h.Kind,
 		Start: h.Start, DurMS: dur, Outcome: outcome,
 		Boss: h.Boss, BossName: h.BossName,
+		BossPhase: h.BossPhase, BossPhaseEntry: h.BossPhaseEntry,
 		Bots:   []FightBot{},
 		Deaths: append([]FightDeath(nil), lf.deaths...),
 		Debuffs: FightDebuffs{

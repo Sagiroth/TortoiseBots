@@ -208,6 +208,42 @@ func TestStoreCap(t *testing.T) {
 	}
 }
 
+// The module's fight and live payloads carry the boss's phase and the entry he reads now (a script changed Thekal
+// 14599 -> 14509): both keys round-trip into the store's list rows, live and filed.
+func TestStoreReadsBossPhase(t *testing.T) {
+	raw := `{"fight":{"id":"55-9","commander":"Cmdr","commander_guid":3,"group":55,"map":309,"plan":"zul_gurub","leg":"l3","step":274,"kind":"boss","start":9,"dur_ms":25000,"outcome":"kill","boss":14599,"boss_name":"High Priest Thekal","boss_phase":2,"boss_phase_entry":14509,"planned":[11347],"engaged":[{"e":14509,"n":"High Priest Thekal","c":1}],"bots":[],"deaths":[]}}`
+	var dg struct {
+		Fight Fight `json:"fight"`
+	}
+	if err := json.Unmarshal([]byte(raw), &dg); err != nil {
+		t.Fatal(err)
+	}
+	if dg.Fight.BossPhase != 2 || dg.Fight.BossPhaseEntry != 14509 {
+		t.Fatalf("fight: %+v", dg.Fight)
+	}
+	s := NewStore(nil)
+	if !s.Add(9, dg.Fight) {
+		t.Fatal("fight refused")
+	}
+	list := s.List("Cmdr")
+	if len(list) != 1 || list[0].Outcome != "kill" || list[0].BossName != "High Priest Thekal" ||
+		list[0].BossPhase != 2 || list[0].BossPhaseEntry != 14509 {
+		t.Fatalf("list: %+v", list)
+	}
+	// The live row (COMBAT_EVENTS) carries them too, so the card shows the phase while the fight runs.
+	ls := newLiveStore(t)
+	header := liveHeader()
+	header.Boss, header.BossName = 14599, "High Priest Thekal"
+	header.BossPhase, header.BossPhaseEntry = 2, 14509
+	if _, _, accepted := ls.ApplyEvents(liveEvents(header, `{"k":"start","t":0}`), liveNow); !accepted {
+		t.Fatal("a fresh datagram must be accepted")
+	}
+	rows := ls.List("Gbmage")
+	if len(rows) != 1 || rows[0].BossPhase != 2 || rows[0].BossPhaseEntry != 14509 || !rows[0].Live {
+		t.Fatalf("live list: %+v", rows)
+	}
+}
+
 // The store reads the exact bytes the module writes (A8a BuildFightJson):
 // spell counts as [{"n","c"}], death hits as {"a","d","t_ms"}.
 func TestStoreReadsModuleBytes(t *testing.T) {

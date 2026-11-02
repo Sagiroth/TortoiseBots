@@ -7076,6 +7076,202 @@ static void TestBossKilledAwayFromHisSpot()
     CHECK(m.step == 0 && m.note.find("not at his spot") != std::string::npos);
 }
 
+// Zul'Gurub walk 25 r1, slot 4 (#1453): the run leader fought Thekal 14599 on step 273 (a move step, before
+// his boss step 274) and a script changed the same guid's entry to 14509 mid-fight (the core's UpdateEntry). Step
+// 274 then looked only for 14599 -- a creature that reads 14509 is never listed -- so his kill was lost: the step
+// waited 60 s at his spot and paused "not found". The guid carries the spawn's entry, so the step reads him by
+// guid: the own spawn (the spawn row nearest to the step's point) lying dead, in whatever entry, is boss down.
+static void TestBossChangedEntryEarlierStepIsDown()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14599; // High Priest Thekal; his zealots 11347/11348/11361 are the step's entries
+    boss.entries = {11347, 11348, 11361};
+    ai::NormalizePlanStep(boss);
+    plan.steps = {Step(PlanStepKind::Move, 50), boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(50); // the lead bot at the leg's point (step 273 arrived)
+    Facts fight = f;
+    fight.anyInCombat = true;
+    fight.leadInCombat = true;
+    fight.engagedRead = true;
+    std::uint32_t const maxHp = 1000000;
+    Facts changed = fight; // the fight's last tick: his unit reads 14509, formOf says 14599
+    for (std::uint32_t i = 0; i < kFightCapMs / kTickMs + 1; ++i)
+    {
+        UnitFact u = Engaged(Unit(0xF13000390700C09Eull, i ? 14509 : 14599, 12));
+        u.formOf = i ? 14599 : 0;
+        u.health = maxHp - (i / 20) * (maxHp / 100); // 3 % a minute: the fight keeps losing hp
+        u.maxHealth = maxHp;
+        u.partyHits = true;
+        changed = fight;
+        changed.engagedUnits = {u};
+        Tick(r, changed);
+    }
+    // Past the 180 s ceiling with him as a 14509 unit: no pause and no ceiling read past it (the boss ceiling is
+    // 420 s), because EngagedPlanBoss follows him by his guid's entry (the M2 red).
+    bool const ceilingHeld = r.state == State::Running && r.fightMs == kFightCapMs + kTickMs && r.note == "fighting";
+    // The fight ends; the move step finishes and the boss step reads his corpse at once: 14509, 66.9 yd from his
+    // spot (the pullback dragged him), never "not at his spot".
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    Facts dead = f;
+    dead.bossOwnDead = true;
+    dead.bossOwnDeadEntry = 14509;
+    dead.bossCorpseGuid = 0xF13000390700C09Eull;
+    dead.bossCorpseX = -11693.8f;
+    dead.bossCorpseY = -1930.6f;
+    dead.bossCorpseZ = 57.4f;
+    std::string note;
+    for (int i = 0; i < 20 && r.step == 1; ++i)
+    {
+        Tick(r, dead);
+        if (r.step == 2)
+            note = r.note;
+    }
+    CHECK(r.step == 2);
+    CHECK(note == "boss down: he died as 14509");
+    CHECK(r.corpses.count(14599) && r.corpses[14599].guid == 0xF13000390700C09Eull &&
+        r.corpses[14599].x == -11693.8f && r.corpses[14599].y == -1930.6f);
+    CHECK(EngagedPlanBoss(r, changed));
+    CHECK(ceilingHeld);
+}
+
+// The same change read on his own boss step: a unit that reads 14509 with formOf 14599 is the step's boss, so he is
+// pulled and counted as seen alive; his corpse near the lead bot later is boss down.
+static void TestBossChangedEntryAliveIsFought()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14599;
+    boss.entries = {11347, 11348, 11361};
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact bossForm = Unit(5, 14509, 25);
+    bossForm.formOf = 14599;
+    f.units = {bossForm};
+    CHECK(Tick(r, f) == "pullback 5");
+    CHECK(r.bossSeenAlive);
+    f.anyInCombat = true;
+    Tick(r, f);
+    f.anyInCombat = false;
+    f.units.clear();
+    f.bossDeadNearLead = true;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.note == "boss down");
+}
+
+// #1453 D3: the boss fought on an earlier step counts as this boss step's fight (Run::bossFoughtEarly), so his
+// corpse near the lead bot is boss down even though this step's own read never saw him alive. Without that fight
+// the old rule stands: a corpse near the lead bot alone is not enough.
+static void TestBossFoughtEarlyCorpseNearLead()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14599;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {Step(PlanStepKind::Move, 50), boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(50);
+    Facts fight = f;
+    fight.anyInCombat = true;
+    fight.engagedRead = true;
+    fight.engagedUnits = {Engaged(Unit(5, 14599, 20))};
+    Tick(r, fight);
+    CHECK(r.bossFoughtEarly.count(14599));
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(r.bossSeenAlive); // his own step starts with him fought early
+    Facts dead = f;
+    dead.bossDeadNearLead = true; // wherever the fight left his corpse
+    for (int i = 0; i < 20 && r.step == 1; ++i)
+        Tick(r, dead);
+    CHECK(r.step == 2);
+    CHECK(r.note == "boss down");
+    // The same step without that fight: the corpse near the lead bot is not enough (the old rule kept).
+    Run p = Start(&plan);
+    Facts g = Party(50);
+    Tick(p, g);
+    CHECK(p.step == 1 && !p.bossSeenAlive);
+    Tick(p, dead);
+    CHECK(p.step == 1 && p.note.find("not at his spot") != std::string::npos);
+}
+
+// #1453 D1: the entry a creature was spawned as when a script changed its entry (a boss that phases keeps his
+// guid); an alternative spawn id is another creature of the same row, not a phase.
+static void TestScriptChangedEntry()
+{
+    CHECK(ScriptChangedEntry(14599, 14509, {14599}) == 14599);      // Thekal's phase: the zone walk 25 case
+    CHECK(ScriptChangedEntry(14599, 14599, {14599}) == 0);          // unchanged
+    CHECK(ScriptChangedEntry(100, 101, {100, 101}) == 0);           // the row's other creature id: another creature
+    CHECK(ScriptChangedEntry(0, 5, {}) == 0);                       // no guid entry to compare with
+    CHECK(ScriptChangedEntry(7, 8, {}) == 7);                       // summoned (no spawn row): any change is a change
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14599;
+    ai::NormalizePlanStep(boss);
+    UnitFact form = Unit(1, 14509, 10);
+    form.formOf = 14599;
+    CHECK(IsStepBoss(boss, form) && IsStepBoss(boss, Unit(2, 14599, 10)));
+    CHECK(!IsStepBoss(boss, Unit(3, 11347, 10)) && !IsStepBoss(boss, Unit(4, 15068, 10)));
+}
+
+// #1453 item 1 (Codex HIGH/Opus M1): the step's own spawn, dead, is the boss down only when it reads the step's
+// entry or a script changed it away from it; an alternate creature of another entry is not the boss. Item L4: the
+// row counts only within kSeeYd (2D) of the step's point.
+static void TestOwnSpawnIsTheBoss()
+{
+    CHECK(!OwnSpawnIsTheBoss(11347, 0, 14599));              // an alternate creature dead: not the boss
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599));               // the boss's own entry dead: the boss
+    CHECK(OwnSpawnIsTheBoss(14509, 14599, 14599));           // a script-changed form of the boss dead: the boss
+    CHECK(!OwnSpawnIsTheBoss(14509, 0, 14599));              // changed, but not from the boss: not the boss
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 0));                  // no step entry: not the boss
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599, 60.0f));        // the row at the cap still counts
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 14599, 60.1f));       // past it the old search path decides
+    CHECK(!OwnSpawnIsTheBoss(14509, 14599, 14599, 66.9f));   // r1's corpse range is not the row's place
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599, 10.0f));        // the row 10 yd from the step: the boss, though the creature died 80 yd away
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 14599, 90.0f));       // the row 90 yd away: not via the own spawn, though the creature died 5 yd from the step
+}
+
+// The instance search found him alive as a changed form: the pause says so (` (as <entry>)`), so the walk's report
+// and the pause line name what the client's frames showed.
+static void TestBossSearchFindsChangedForm()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14599;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    for (std::uint32_t i = 0; i < kBossSearchMs / kTickMs + 2 && !r.bossSearchWanted && r.state == State::Running; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.bossSearchWanted && r.step == 0);
+    Facts found = f;
+    found.bossSearchRead = true;
+    found.bossSearchAlive = true;
+    found.bossSearchAliveEntry = 14509;
+    found.bossAliveX = 130.0f;
+    CHECK(Tick(r, found).empty());
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("boss 14599 is alive (as 14509) at 130.0 0.0 0.0") == 0);
+    // The same as his own entry: the note says nothing about a form (the old line).
+    Run p = Start(&plan);
+    Facts g = Party(0);
+    for (std::uint32_t i = 0; i < kBossSearchMs / kTickMs + 2 && !p.bossSearchWanted; ++i)
+        Tick(p, g);
+    Facts plain = g;
+    plain.bossSearchRead = true;
+    plain.bossSearchAlive = true;
+    plain.bossSearchAliveEntry = 14599;
+    plain.bossAliveX = 130.0f;
+    CHECK(Tick(p, plain).empty());
+    CHECK(p.note.find("boss 14599 is alive at 130.0 0.0 0.0") == 0 && p.note.find("(as ") == std::string::npos);
+}
+
 // Cold review on #1000: after a wipe the party stands at the entrance and the
 // nearest walk-back point is more than ReactDistance away: it is approached in
 // navmesh hops (as a resume does), not sent as one refused move; with no path
@@ -7540,7 +7736,7 @@ static void TestBossStepNeverCrowdControlsItsAdds()
     Run g = Start(&plan, 0);
     CHECK(PickCc(g, f, 0) == nullptr);
     CHECK(PickCc(g, f, 3) == nullptr);
-    CHECK(BossStepUnit(Current(g), 4853) && BossStepUnit(Current(g), 4854) && !BossStepUnit(Current(g), 7321));
+    CHECK(BossStepUnit(Current(g), 4853, 0) && BossStepUnit(Current(g), 4854, 0) && !BossStepUnit(Current(g), 7321, 0));
     // A listed unit that is not his (a wanderer that joined) is still taken.
     f.units.push_back(Unit(5, 7321, 20));
     const UnitFact* cc = PickCc(g, f, 0);
@@ -7554,7 +7750,7 @@ static void TestBossStepNeverCrowdControlsItsAdds()
     f.units = {Unit(1, 4855, 10), Unit(2, 4853, 15)};
     cc = PickCc(p, f, 1);
     CHECK(cc && cc->guid == 2);
-    CHECK(!BossStepUnit(Current(p), 4853) && !BossStepUnit(nullptr, 4853));
+    CHECK(!BossStepUnit(Current(p), 4853, 0) && !BossStepUnit(nullptr, 4853, 0));
 }
 
 static void TestPullCrowdControlsTheHealer()
@@ -26729,6 +26925,12 @@ int main()
     TestBossAwayWaitIsTheRowsTimeout();
     TestSkipDropsTheRefusedPullTarget();
     TestBossKilledAwayFromHisSpot();
+    TestBossChangedEntryEarlierStepIsDown();
+    TestBossChangedEntryAliveIsFought();
+    TestBossFoughtEarlyCorpseNearLead();
+    TestScriptChangedEntry();
+    TestOwnSpawnIsTheBoss();
+    TestBossSearchFindsChangedForm();
     TestWalkBackFarPointIsApproached();
     TestRefusedPullOnlyForInvalidTarget();
     TestWipeWithTheLeadOnTheGraveyardMap();

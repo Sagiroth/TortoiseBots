@@ -112,10 +112,10 @@ static void TestFightLifecycle()
     b.OnDamage(0, 1, 3000, "Magmadar", 11502, 777, "Magmadar", 7000);
     b.OnDamage(3, 1, 100, "Magey", 0, 0, "", 8000);
     b.OnHeal(2, 2500, 500, 9000);
-    b.NoteBossDied(11501);
+    b.NoteBossDied(11501, 0);
     b.SetInCombat(false, false, 20000);
     CHECK(b.InFight());
-    b.NoteBossDied(11502);
+    b.NoteBossDied(11502, 0);
     b.SetInCombat(false, false, 23000);
     CHECK(!b.InFight());
 
@@ -468,7 +468,7 @@ static void TestMonitorOffIsInert()
     b.OnDeath(1, "Mob", 0.0f, 0.0f, 0.0f, 1000);
     b.SampleDebuffs({"sunder"});
     b.SetInCombat(false, false, 2000);
-    b.NoteBossDied(11502);
+    b.NoteBossDied(11502, 0);
     CHECK(!b.InFight());
     CHECK(b.WindowJson(2000).empty());
     Seq seq;
@@ -622,7 +622,7 @@ static void TestRefinedBossDeathIsKill()
     b.SetMembers(Trio());
     b.Start(0, 1700000000, FightContext{}, 1);
     b.NoteBoss(5, "A");
-    b.NoteBossDied(5);
+    b.NoteBossDied(5, 0);
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
     Seq seq;
@@ -641,8 +641,8 @@ static void TestBossDeathBeforePickIsKill()
     b.SetMembers(Trio());
     b.Start(0, 1700000000, FightContext{}, 1);
     b.OnDamage(1, 0, 500, "Tanky", 11502, 777, "Magmadar", 1000);
-    b.NoteBossDied(11503);   // an add: not the boss picked next
-    b.NoteBossDied(11502);   // the boss, before the sampler had picked one
+    b.NoteBossDied(11503, 0);   // an add: not the boss picked next
+    b.NoteBossDied(11502, 0);   // the boss, before the sampler had picked one
     b.NoteBoss(11502, "Magmadar");
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
@@ -656,7 +656,7 @@ static void TestBossDeathBeforePickIsKill()
     Book other;   // only another creature died: the picked boss is not a kill
     other.SetMembers(Trio());
     other.Start(0, 1700000000, FightContext{}, 1);
-    other.NoteBossDied(11503);
+    other.NoteBossDied(11503, 0);
     other.NoteBoss(11502, "Magmadar");
     other.SetInCombat(false, false, 6000);
     other.SetInCombat(false, false, 9000);
@@ -664,6 +664,73 @@ static void TestBossDeathBeforePickIsKill()
     CHECK(q.size() == 1);
     CHECK(Contains(q[0], "\"boss\":11502"));
     CHECK(Contains(q[0], "\"outcome\":\"end\""));
+}
+
+// Zul'Gurub walk 25 r1 (#1453): the fight's boss is Thekal 14599 and a script changes the same unit's entry to
+// 14509 mid-fight. The fight gains a phase for the change and that unit's death is the boss's death: the core
+// reports the entry it died as (14509) with the guid's spawn entry (14599). Both payloads carry the phase.
+static void TestBossFormDeathIsKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(14599, "High Priest Thekal");
+    CHECK(b.Context().bossPhase == 1 && b.Context().bossPhaseEntry == 14599);
+    b.NoteBossForm(14509);
+    CHECK(b.Context().bossPhase == 2 && b.Context().bossPhaseEntry == 14509);
+    b.NoteBossDied(14509, 14599);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"outcome\":\"kill\""));
+    CHECK(Contains(p[0],
+        "\"boss\":14599,\"boss_name\":\"High Priest Thekal\",\"boss_phase\":2,\"boss_phase_entry\":14509"));
+    // The live payload carries them too (COMBAT_EVENTS, the fight header).
+    EventsFightHeader header;
+    header.inFight = true;
+    header.number = 1;
+    header.startMs = 1000;
+    header.startUnix = 1700000000;
+    header.fightMs = 500;
+    header.ctx = b.Context();
+    std::vector<LiveEvent> events;
+    std::string const live = BuildEventsJson(12, 77, 1, 1793210001, 1793210001000, "Cmdr", 5, 9, 249, header, events, 0);
+    CHECK(Contains(live,
+        "\"boss\":14599,\"boss_name\":\"High Priest Thekal\",\"boss_phase\":2,\"boss_phase_entry\":14509"));
+    // The phase is the changes seen + 1: a change back to his own entry counts as one more, and the same entry
+    // again does not (never decremented).
+    Book forms;
+    forms.SetMembers(Trio());
+    forms.Start(0, 1700000000, FightContext{}, 1);
+    forms.NoteBoss(14599, "High Priest Thekal");
+    forms.NoteBossForm(14509);
+    forms.NoteBossForm(14599);
+    CHECK(forms.Context().bossPhase == 3 && forms.Context().bossPhaseEntry == 14599);
+    forms.NoteBossForm(14599);
+    CHECK(forms.Context().bossPhase == 3);
+    // A fight with no boss keeps phase 0 (and no boss to change).
+    Book plain;
+    plain.SetMembers(Trio());
+    plain.Start(0, 1700000000, FightContext{}, 1);
+    CHECK(plain.Context().bossPhase == 0 && plain.Context().bossPhaseEntry == 0);
+}
+
+// An add's death is no kill (the fight's boss is the only unit whose entry is matched).
+static void TestAddDeathIsNoKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(14599, "High Priest Thekal");
+    b.NoteBossDied(15068, 0); // a Zulian Guardian
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"outcome\":\"end\""));
 }
 
 // The sampler closes a fight its lead left open as unfinished; a boss that
@@ -685,7 +752,7 @@ static void TestCloseUnfinished()
     kill.SetMembers(Trio());
     kill.Start(0, 1700000000, FightContext{}, 1);
     kill.NoteBoss(11502, "Magmadar");
-    kill.NoteBossDied(11502);
+    kill.NoteBossDied(11502, 0);
     kill.CloseUnfinished(20000);
     std::vector<std::string> q = kill.TakeFightPayloads(1, 9, seq.fn(), 1700020000, "Cmdr", 123, 55, 409);
     CHECK(q.size() == 1);
@@ -1154,6 +1221,8 @@ int main()
     TestNoteBossKeepsRunBoss();
     TestRefinedBossDeathIsKill();
     TestBossDeathBeforePickIsKill();
+    TestBossFormDeathIsKill();
+    TestAddDeathIsNoKill();
     TestCloseUnfinished();
     TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();

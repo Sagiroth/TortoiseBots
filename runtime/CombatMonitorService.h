@@ -33,6 +33,10 @@ public:
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
     // world thread: the fight's boss as the sampler picked it from the engaged creatures (once per fight)
     void NoteBoss(uint32_t groupId, uint32_t entry, char const* name);
+    // world thread: the entry the fight's boss unit reads now (the sampler, every tick; a script changed it)
+    void NoteBossForm(uint32_t groupId, uint32_t entry);
+    // world thread: the open fight's boss entry (0: none, or no fight): the sampler follows the boss unit by it
+    uint32_t BossEntry(uint32_t groupId) const;
     // world thread: close the open fight of a binding whose lead stayed away past the bound-group grace
     void CloseUnfinished(uint32_t groupId, uint32_t nowMs);
     // world thread: the open fight's engaged creatures (one row per entry), empty outside a fight
@@ -52,7 +56,7 @@ public:
     void OnHeal(uint32_t healerOwnerGuidLow, uint32_t amount, uint32_t overheal);
     void OnEnterCombat(uint32_t memberGuidLow);
     void OnDeath(uint32_t victimGuidLow, uint32_t killerOwnerGuidLow, char const* killerName, float x, float y, float z,
-                 uint32_t enemyEntryDied);
+                 uint32_t enemyEntryDied, uint32_t enemyFormOf);
     // emitter / telemetry (world thread)
     void TakePayloads(std::vector<std::string>& out, int protocolVersion, uint64_t session,
                       std::function<uint64_t()> const& nextSeq, int64_t ts);
