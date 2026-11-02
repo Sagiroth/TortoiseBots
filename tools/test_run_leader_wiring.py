@@ -876,7 +876,16 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
         self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c)));",
                       clearance)
-        self.assertIn("GrowPullPackByAssistance(inPack, spots, seeds);", clearance)
+        self.assertIn("GrowPullPackByAssistance(inPack, spots, seeds, canAssistPack);", clearance)
+        self.assertIn("if (member && member->IsAlive() && std::find(callers.begin(), callers.end(), member) == "
+                      "callers.end())", clearance)
+        self.assertIn("RunAssistsCreature(c, caller)", clearance)
+        self.assertIn("canAssistPack.push_back(called);", clearance)
+        self.assertIn("helper->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST)", COMMANDS)
+        self.assertIn("helper->HasInvisibilityAura() || helper->IsInEvadeMode()", COMMANDS)
+        self.assertIn("if (helper->GetFactionTemplateId() != caller->GetFactionTemplateId() && "
+                      "!helper->IsFriendlyTo(caller))", COMMANDS)
+        self.assertIn("return caller->IsWithinLOSInMap(helper);", COMMANDS)
         self.assertIn("f.standPackReach.push_back(unit);", clearance)
         self.assertIn("unit.reachYd = ai::AggroRadius(mob, lowest, rate);", clearance)
         self.assertIn("other.patrols = true;", clearance)
@@ -901,6 +910,7 @@ class RunLeaderWiringTest(unittest.TestCase):
                       policy)
         self.assertIn("inline void GrowPullPackByAssistance(std::vector<bool>& pack, "
                       "const std::vector<ai::ApproachPoint>& found,", policy)
+        self.assertIn("const std::vector<ai::ApproachPoint>& seeds, const std::vector<bool>& canAssistPack)", policy)
         self.assertIn("inline float StandPackReachYd(const std::vector<StandPackReach>& pack)", policy)
         self.assertIn("inline const StandPackReach* StandPackBlocker(float x, float y, float z, "
                       "const std::vector<StandPackReach>& pack)", policy)

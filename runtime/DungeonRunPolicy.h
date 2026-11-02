@@ -233,8 +233,9 @@ constexpr float kStandClearSpreadYd = ai::kSpreadSettledDistance;
 constexpr float kStandClearUnreadPathYd = 10.0f;
 constexpr std::size_t kStandClearCandidates = 8;   // stands tried along the lead bot's path, nearest the lead first
 constexpr float kStandClearScanYd = 2.0f * kSeeYd; // the glue reads the other packs this far around the lead bot
-// The core's family assistance radius (ai::kAggroFamilyAssistYd): a creature this near a pulled one is called to the
-// fight, and the next one within it of that one too, so the pull's pack grows by it (GrowPullPackByAssistance).
+// The core's family assistance radius (ai::kAggroFamilyAssistYd): a creature this near a pulled one that can answer
+// its call is called to the fight with it, so the pull's pack grows by it (GrowPullPackByAssistance). One ring: the
+// creatures the call reaches do not call the next.
 constexpr float kStandClearAssistYd = 10.0f;
 // A patrol that refuses every stand is waited for this long to walk clear of the reach's own stand, then the run
 // pauses for the walk or the operator (HoldForShot).
@@ -293,38 +294,32 @@ inline float StandClearanceYd(float x, float y, float z, const StandOther& other
 }
 
 // The pack the pull takes grows by the core's family assistance radius (kStandClearAssistYd): a creature within it of
-// a pack unit is called to the fight with it, and one within it of that creature too. `found` is every scanned
-// creature's spot, `pack` which of them the pull already takes (parallel to `found`), and `seeds` the pack's own
-// units that may stand outside the scan. The creatures the call reaches join `pack`: they are part of the pull, not
-// another pack a stand must keep clear of.
+// a pack unit is called to the fight with it, but only when it can answer that unit's call (`canAssistPack`: the
+// glue's read of the core's CanAssistTo conditions, its faction relation and its line of sight). One ring, not
+// transitive: what such a creature could call in turn is another pack a stand must keep clear of. `found` is every
+// scanned creature's spot, `pack` which of them the pull already takes (parallel to `found`), `canAssistPack` whether
+// the call would take each of them (parallel too), and `seeds` the pack's own units that may stand outside the scan.
+// The creatures the call reaches join `pack`: they are part of the pull, not another pack a stand must keep clear of.
 inline void GrowPullPackByAssistance(std::vector<bool>& pack, const std::vector<ai::ApproachPoint>& found,
-    const std::vector<ai::ApproachPoint>& seeds)
+    const std::vector<ai::ApproachPoint>& seeds, const std::vector<bool>& canAssistPack)
 {
-    bool grew = true;
-    while (grew)
+    std::vector<bool> const pulled = pack; // the ring anchors on the pull's own units, not on what joined this call
+    for (std::size_t i = 0; i < found.size(); ++i)
     {
-        grew = false;
-        for (std::size_t i = 0; i < found.size(); ++i)
-        {
-            if (pack[i])
-                continue;
-            bool called = false;
-            for (const ai::ApproachPoint& seed : seeds)
-                if (ai::PlanDistance(found[i].x, found[i].y, found[i].z, seed.x, seed.y, seed.z) <=
-                    kStandClearAssistYd)
-                {
-                    called = true;
-                    break;
-                }
-            for (std::size_t j = 0; j < found.size() && !called; ++j)
-                called = pack[j] && ai::PlanDistance(found[i].x, found[i].y, found[i].z, found[j].x, found[j].y,
-                    found[j].z) <= kStandClearAssistYd;
-            if (called)
+        if (pack[i] || !canAssistPack[i])
+            continue;
+        bool called = false;
+        for (const ai::ApproachPoint& seed : seeds)
+            if (ai::PlanDistance(found[i].x, found[i].y, found[i].z, seed.x, seed.y, seed.z) <=
+                kStandClearAssistYd)
             {
-                pack[i] = true;
-                grew = true;
+                called = true;
+                break;
             }
-        }
+        for (std::size_t j = 0; j < found.size() && !called; ++j)
+            called = pulled[j] && ai::PlanDistance(found[i].x, found[i].y, found[i].z, found[j].x, found[j].y,
+                found[j].z) <= kStandClearAssistYd;
+        pack[i] = called;
     }
 }
 

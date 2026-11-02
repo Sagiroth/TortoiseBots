@@ -16304,34 +16304,40 @@ static void TestStandClearanceWaitsForTheBlockingPatrol()
     }
 }
 
-// The pull's pack grows by the core's family assistance radius, transitively: a creature within it of a pack unit is
-// called to the same fight, and one within it of that creature too, so neither is an "other" pack a stand keeps clear
-// of. A pack unit outside the scan calls too (a walk back's replay lists the pack without a formation).
+// The pull's pack grows by the core's family assistance radius, one ring: a creature within it of a pack unit joins
+// when it can answer that unit's call (the core's CanAssistTo conditions, its faction relation and the line of sight,
+// which the glue reads as canAssistPack), and what such a creature could call in turn does not join. A neighbour that
+// cannot answer (another faction, no line of sight) stays another pack, and a stand near it is refused.
 static void TestStandClearanceTreatsThePacksAssistanceAsPack()
 {
     using ai::ApproachPoint;
     auto P = [](float x, float y) { ApproachPoint p; p.x = x; p.y = y; return p; };
+    // A pack unit at 0, then 9, 18 and 30 yd along one line. 9 answers the pack's call and joins; 18 stands within
+    // the radius of the joined 9 but not of a pack unit, so it does not (one ring); 30 is out of every call.
     std::vector<ApproachPoint> const found = {P(0, 0), P(9, 0), P(18, 0), P(30, 0)};
     std::vector<bool> pack = {true, false, false, false};
-    GrowPullPackByAssistance(pack, found, {});
-    CHECK(pack[0] && pack[1] && pack[2] && !pack[3]); // 9 yd, then 18 only through it; 30 is out of every call
-    std::vector<bool> seedPack = {false, false};
-    GrowPullPackByAssistance(seedPack, {P(105, 0), P(140, 0)}, {P(100, 0)});
-    CHECK(seedPack[0] && !seedPack[1]);
+    GrowPullPackByAssistance(pack, found, {}, {true, true, true, true});
+    CHECK(pack[0] && pack[1] && !pack[2] && !pack[3]);
+    // Two mutually non-friendly packs within 10 yd: the neighbour at 9 yd cannot answer the pull's call, so it stays
+    // another pack and a stand near it is refused.
+    std::vector<ApproachPoint> const near = {P(0, 0), P(9, 0)};
+    std::vector<bool> split = {true, false};
+    GrowPullPackByAssistance(split, near, {}, {true, false});
+    CHECK(split[0] && !split[1]);
+    std::vector<StandOther> others(1);
+    others[0].x = 9.0f;
+    others[0].clearYd = 15.0f;
+    CHECK(!StandClearAt(9.0f, 0.0f, 0.0f, others));
+    CHECK(StandClearAt(25.0f, 0.0f, 0.0f, others));
+    // The same neighbour, able to answer: it joins, so nothing else is left to refuse the stand.
+    std::vector<bool> joined = {true, false};
+    GrowPullPackByAssistance(joined, near, {}, {true, true});
+    CHECK(joined[0] && joined[1]);
+    // A pack unit outside the scan calls too (a walk back's replay lists the pack without a formation).
+    std::vector<bool> seedPack = {false, false, false};
+    GrowPullPackByAssistance(seedPack, {P(105, 0), P(140, 0), P(160, 0)}, {P(100, 0)}, {true, true, true});
+    CHECK(seedPack[0] && !seedPack[1] && !seedPack[2]);
     CHECK(kStandClearAssistYd == 10.0f);
-    // The scan's others as the glue keeps them, and the stand: only the creature no call reaches refuses one.
-    std::vector<StandOther> others;
-    for (std::size_t i = 1; i < found.size(); ++i)
-        if (!pack[i])
-        {
-            StandOther other;
-            other.x = found[i].x;
-            other.clearYd = 15.0f;
-            others.push_back(other);
-        }
-    CHECK(others.size() == 1 && others.front().x == 30.0f);
-    CHECK(StandClearAt(9.0f, 0.0f, 0.0f, others));
-    CHECK(!StandClearAt(25.0f, 0.0f, 0.0f, others));
 }
 
 // The pull's own pack floors every firing stand: the stand must stay the pack's widest aggro reach from every unit of

@@ -9079,18 +9079,37 @@ bool RunWalksPatrol(Creature* creature)
     return PatrolWalker(creature) != nullptr;
 }
 
+// Whether a creature answers another creature's call for help (Creature::CanAssistTo, and the call's own sight test):
+// it stands free, alive, out of a fight and uncontrolled (not no-assist or no-aggro, not spawning, unselectable or
+// immune to other creatures, not invisible, not evading), it shares the caller's faction template or is friendly to
+// it, and it sees the caller. Anything the glue cannot read (a creature it cannot judge) stays out of the pack.
+bool RunAssistsCreature(Creature* helper, Creature* caller)
+{
+    if (!helper || !caller || helper == caller || !helper->IsAlive() || helper->IsInCombat())
+        return false;
+    if (helper->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST) || helper->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
+        return false;
+    if (helper->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC))
+        return false;
+    if (helper->GetCharmerOrOwnerGuid() || helper->HasInvisibilityAura() || helper->IsInEvadeMode())
+        return false;
+    if (helper->GetFactionTemplateId() != caller->GetFactionTemplateId() && !helper->IsFriendlyTo(caller))
+        return false;
+    return caller->IsWithinLOSInMap(helper);
+}
+
 // The other packs a firing stand must keep clear of (AiPlayerbot.DungeonRunStandClearance, DungeonRun::StandClearAt),
 // and the floor the pull's own pack puts under it (DungeonRun::StandAbovePackReach): living, hostile, out-of-combat
 // creatures within kStandClearScanYd of the lead bot. One of the pack the pull takes (PullPackOf: the step's units and
-// their formations) is no other pack, and neither is one the pack's call for help reaches (the core's family
-// assistance radius, transitively: GrowPullPackByAssistance). Each other carries its identity for the hold's note and
-// its aggro reach (the aggro estimate's own rule: detection range minus the party's level advantage over its level, the
-// widest over the party) plus the party's spread. A waypoint patroller carries the whole loop it walks: sWaypointMgr's
-// path for its walker, the one WaypointMovementGenerator loads, closed, so a stand beside a leg the patrol will walk is
-// refused as well. A loop the host cannot read (a special escorts path) stands in by the unit's spot plus
-// kStandClearUnreadPathYd. The pack's own units carry their reach too (Facts::standPackReach): a stand inside the
-// widest of them is walked into, the pack awake before the shot. One grid search and a map lookup per patroller, on the
-// tick a stand is read.
+// their formations) is no other pack, and neither is one the pack's call for help takes (the core's family assistance
+// radius, one ring: GrowPullPackByAssistance, only a creature that can answer the call of a pack unit). Each other
+// carries its identity for the hold's note and its aggro reach (the aggro estimate's own rule: detection range minus
+// the party's level advantage over its level, the widest over the party) plus the party's spread. A waypoint patroller
+// carries the whole loop it walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed,
+// so a stand beside a leg the patrol will walk is refused as well. A loop the host cannot read (a special escorts path)
+// stands in by the unit's spot plus kStandClearUnreadPathYd. The pack's own units carry their reach too
+// (Facts::standPackReach): a stand inside the widest of them is walked into, the pack awake before the shot. One grid
+// search and a map lookup per patroller, on the tick a stand is read.
 static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,
     TortoiseBots::DungeonRun::Facts& f)
@@ -9121,19 +9140,44 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
         spot.z = c->GetPositionZ();
         spots.push_back(spot);
     }
-    // The pack's own units, wherever they stand (a walk back's replay lists them without a formation), call the
-    // creatures within the family assistance radius of them into the fight, and those call the next.
-    std::vector<ai::ApproachPoint> seeds;
+    // The pull's own units, wherever they stand (a walk back's replay lists them without a formation), are the call's
+    // sources: the scanned creatures the pack takes and the step's members.
+    std::vector<Creature*> callers;
+    for (std::size_t i = 0; i < scanned.size(); ++i)
+        if (inPack[i])
+            callers.push_back(scanned[i]);
     for (Creature* member : members)
-        if (member && member->IsAlive())
-        {
-            ai::ApproachPoint seed;
-            seed.x = member->GetPositionX();
-            seed.y = member->GetPositionY();
-            seed.z = member->GetPositionZ();
-            seeds.push_back(seed);
-        }
-    GrowPullPackByAssistance(inPack, spots, seeds);
+        if (member && member->IsAlive() && std::find(callers.begin(), callers.end(), member) == callers.end())
+            callers.push_back(member);
+    std::vector<ai::ApproachPoint> seeds;
+    for (Creature* caller : callers)
+    {
+        ai::ApproachPoint seed;
+        seed.x = caller->GetPositionX();
+        seed.y = caller->GetPositionY();
+        seed.z = caller->GetPositionZ();
+        seeds.push_back(seed);
+    }
+    // Whether the call would take each scanned creature (GrowPullPackByAssistance): within the family assistance
+    // radius of a unit of the pull, able to answer that unit's call (the core's CanAssistTo conditions, the faction
+    // relation and the line of sight). One that fails any of it stays another pack, and nothing is asked about what it
+    // could call in turn: the pack grows one ring.
+    std::vector<bool> canAssistPack;
+    canAssistPack.reserve(scanned.size());
+    for (Creature* c : scanned)
+    {
+        bool called = false;
+        for (Creature* caller : callers)
+            if (ai::PlanDistance(c->GetPositionX(), c->GetPositionY(), c->GetPositionZ(), caller->GetPositionX(),
+                    caller->GetPositionY(), caller->GetPositionZ()) <= kStandClearAssistYd &&
+                RunAssistsCreature(c, caller))
+            {
+                called = true;
+                break;
+            }
+        canAssistPack.push_back(called);
+    }
+    GrowPullPackByAssistance(inPack, spots, seeds, canAssistPack);
     // Every unit of the pack, its aggro reach the floor under a stand (StandAbovePackReach).
     std::unordered_set<uint64> reached;
     auto addReach = [&](Creature* c)
