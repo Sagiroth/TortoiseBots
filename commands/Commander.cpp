@@ -9705,19 +9705,20 @@ static void ReadPullAhead(DungeonRunSlot const& slot, Player* lead, std::vector<
         cache.ceiling = RowCeilingBodies(*pull, f);
         float const ringYd = sPlayerbotAIConfig.dungeonRunAggroRingYd;
         std::list<Unit*> found;
-        HostileCreaturesAround(lead, std::min(pull->radius + kAggroScanYd + ringYd * ai::kAggroRingHops,
-            2.0f * kSeeYd), found);
+        // The neighbourhood of the pull row (the ring reaches that far past it), scanned from where the lead bot is.
+        HostileCreaturesAround(lead, DistanceTo(lead, pull->x, pull->y, pull->z) + pull->radius + kAggroScanYd +
+            ringYd * ai::kAggroRingHops, found);
         std::vector<Creature*> creatures;
         std::vector<ai::AggroMob> mobs;
+        std::vector<char> ownRow; // its DB spawn lies in the pull row: the pack the pick comes from
         for (Unit* unit : found)
         {
             Creature* const c = unit->ToCreature();
             if (!c || !c->IsAlive() || c->IsInCombat())
                 continue;
             CreatureData const* const data = c->GetCreatureData();
-            if (!data || ai::PlanDistance(data->position.x, data->position.y, data->position.z, pull->x, pull->y,
-                    pull->z) > pull->radius + kSpawnOwnTolYd)
-                continue; // not this row's pack (the scope its own read uses)
+            ownRow.push_back(data && ai::PlanDistance(data->position.x, data->position.y, data->position.z, pull->x,
+                pull->y, pull->z) <= pull->radius + kSpawnOwnTolYd);
             ai::AggroMob m;
             m.guid = c->GetObjectGuid().GetRawValue();
             m.x = c->GetPositionX();
@@ -9770,18 +9771,29 @@ static void ReadPullAhead(DungeonRunSlot const& slot, Player* lead, std::vector<
                     }
                 }
             }
-            // The pick the pull would make: the unit nearest the row this walk ends on.
-            std::size_t target = 0;
-            float best = 0.0f;
-            for (std::size_t i = 0; i < mobs.size(); ++i)
+            // The pick the pull would make: the unit nearest the row this walk ends on, its own pack first
+            // (the row's read scopes a stand-pull row by its formations; a pick outside it only when none
+            // of the pack is listed).
+            auto nearest = [&](bool ownOnly)
             {
-                float const d = ai::PlanDistance(mobs[i].x, mobs[i].y, mobs[i].z, row.x, row.y, row.z);
-                if (i == 0 || d < best)
+                std::size_t chosen = mobs.size();
+                float best = 0.0f;
+                for (std::size_t i = 0; i < mobs.size(); ++i)
                 {
-                    best = d;
-                    target = i;
+                    if (ownOnly && !ownRow[i])
+                        continue;
+                    float const d = ai::PlanDistance(mobs[i].x, mobs[i].y, mobs[i].z, row.x, row.y, row.z);
+                    if (chosen == mobs.size() || d < best)
+                    {
+                        best = d;
+                        chosen = i;
+                    }
                 }
-            }
+                return chosen;
+            };
+            std::size_t target = nearest(true);
+            if (target == mobs.size())
+                target = nearest(false); // mobs is not empty: the nearest of anything
             ai::AggroGeometry geometry;
             geometry.walk = SampleWalkTo(lead, row.x, row.y, row.z);
             geometry.stand = ai::AggroPoint{row.x, row.y, row.z};
