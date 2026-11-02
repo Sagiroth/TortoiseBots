@@ -35,13 +35,31 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("RelistEntries(bot->GetGUIDLow())", take)
         self.assertIn("RelistMatchCount(entries, view, uint64_t(curTime), matched)", take)
         self.assertIn("RelistSettleIndex(entries, view, uint64_t(curTime), matched)", take)
-        self.assertIn("RelistMailMatch(*entry, view, uint64_t(curTime))", take)
+        self.assertIn("RelistMailMatch(entry, view, uint64_t(curTime))", take)
         self.assertIn("relist mail ambiguous", take)
         self.assertIn("match across guilds", take)
-        self.assertIn("RelistNoteMailReceived(*entry, kind, gold, items)", take)
-        self.assertIn("NoteRelistReceived(bot->GetGUIDLow(), entry->seq,", take)
-        self.assertIn("HandleMailTakeMoney(", take)
-        self.assertIn("HandleMailTakeItem(", take)
+        self.assertIn("RelistNoteMailReceived(entry, kind, gold, items)", take)
+        self.assertIn("RelistNoteMailClaimed(claim, mail->messageID, view, kind)", take)
+        self.assertIn("NoteRelistClaimed(bot->GetGUIDLow(), entry.seq,", take)
+        self.assertIn("NoteRelistReceived(bot->GetGUIDLow(), entry.seq, gold, items)", take)
+        helper = body(MAIL, "bool TakeRelistValue(", "void DeleteEmptyRelistMail(")
+        self.assertIn("HandleMailTakeMoney(", helper)
+        self.assertIn("HandleMailTakeItem(", helper)
+        self.assertIn("TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items)", take)
+        # The claim write lands before the take, and the received write after
+        # it: a failed claim leaves the mail untouched, a failed received
+        # write leaves the claim to settle the row.
+        loop = take[take.index("RelistLedgerEntry& entry = entries[matched];"):]
+        claim = loop.index("NoteRelistClaimed(")
+        taken = loop.index("TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items)")
+        received = loop.index("NoteRelistReceived(", taken)
+        self.assertLess(claim, taken)
+        self.assertLess(taken, received)
+        # A claimed row is retried by the mail it names, and a mail a claim
+        # already owns never matches a second row.
+        self.assertIn("RelistClaimedIndex(entries, mail->messageID, claimed)", take)
+        self.assertIn("RelistNoteClaimSettled(entry)", take)
+        self.assertIn("owner->GetMail(entry.claimMailId)", take)
         self.assertIn("MAIL_STATIONERY_AUCTION", MAIL)
         self.assertIn("ParseAuctionSubject(mail->subject", MAIL)
         self.assertIn("ParseAuctionSaleBody(sObjectMgr.GetItemText(mail->itemTextId), view)", MAIL)
@@ -59,7 +77,7 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
     def test_ledger_is_persisted_with_the_order_store(self):
         self.assertIn("tortoise_bots_guild_relist", STORE)
         self.assertIn("FROM `tortoise_bots_guild_relist`", STORE)
-        self.assertIn("`received`, `held_gold`, `held_count`", STORE)
+        self.assertIn("`state`, `claim_mail`, `held_gold`,", STORE)
         migration = (ROOT / "data/sql/character/20261102180000_char.sql").read_text()
         self.assertIn("CREATE TABLE IF NOT EXISTS `tortoise_bots_guild_relist`", migration)
         for column in ("bot_guid", "guild_id", "item_id", "count", "unit_price", "posted_at"):
@@ -67,6 +85,11 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         identity = (ROOT / "data/sql/character/20261102190000_char.sql").read_text()
         for column in ("bid", "buyout", "deposit", "expires_at"):
             self.assertIn("ADD COLUMN `%s`" % column, identity)
+        claim = (ROOT / "data/sql/character/20261102200000_char.sql").read_text()
+        self.assertIn("ADD COLUMN `state`", claim)
+        self.assertIn("ADD COLUMN `claim_mail`", claim)
+        self.assertIn("SET `state` = 2 WHERE `received` = 1", claim)
+        self.assertIn("DROP COLUMN `received`", claim)
         self.assertIn("`bid`, `buyout`, `deposit`, `posted_at`, `expires_at`", STORE)
         self.assertIn("`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`,", STORE)
 
@@ -111,20 +134,31 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         delete = body(STORE, "bool DeleteRelist(", "\n    // The received rows")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", delete)
         self.assertIn("DELETE FROM `tortoise_bots_guild_relist`", delete)
-        # All four ledger writes are checked and synchronous, posting and
+        # Every ledger write is checked and synchronous, posting, claiming and
         # receiving included.
         posted = body(STORE, "void NoteRelistPosted(", "\n    // The bot's ledger rows")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", posted)
         self.assertNotIn("CharacterDatabase.PExecute(", posted)
+        state = body(STORE, "bool WriteRelistState(", "\n    // A matched mail is about to be taken")
+        self.assertIn("if (!CharacterDatabase.DirectPExecute(", state)
+        self.assertIn("UPDATE `tortoise_bots_guild_relist` SET `state`", state)
+        self.assertNotIn("CharacterDatabase.PExecute(", state)
+        claimed = body(STORE, "bool NoteRelistClaimed(", "\n    // A claimed mail was collected")
+        self.assertIn("if (!mailId)", claimed)
+        self.assertIn("WriteRelistState(botGuidLow, seq, RelistState::Claimed, mailId, gold, items)",
+            claimed)
         received = body(STORE, "bool NoteRelistReceived(", "\n    // Writes a ledger row")
-        self.assertIn("if (!CharacterDatabase.DirectPExecute(", received)
-        self.assertNotIn("CharacterDatabase.PExecute(", received)
+        self.assertIn("WriteRelistState(botGuidLow, seq, RelistState::Received, 0, gold, items)",
+            received)
         self.assertNotIn("NoteRelistDeposit", STORE)
         self.assertNotIn("NoteRelistDeposit", DELIVERY)
 
     def test_relist_mail_wakes_the_mail_read(self):
         self.assertIn("RelistEntries(bot->GetGUIDLow())", MAINT)
         self.assertIn("hasRelistLedger && (*itr)->stationery == MAIL_STATIONERY_AUCTION", MAINT)
+        # A claimed row wakes the read even when its mail is already gone:
+        # the read is what settles it.
+        self.assertIn("RelistClaimPending(relistRows)", MAINT)
 
     def test_character_deletion_drops_the_ledger(self):
         cleanup = (ROOT / "runtime/CharacterCleanup.cpp").read_text()

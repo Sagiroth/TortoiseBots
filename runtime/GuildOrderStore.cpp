@@ -198,8 +198,8 @@ public:
         m_relist.clear();
         std::unique_ptr<QueryResult> relists(CharacterDatabase.Query(
             "SELECT `bot_guid`, `seq`, `guild_id`, `item_id`, `count`, `unit_price`, `bid`, "
-            "`buyout`, `deposit`, `posted_at`, `expires_at`, `received`, `held_gold`, `held_count` "
-            "FROM `tortoise_bots_guild_relist`"));
+            "`buyout`, `deposit`, `posted_at`, `expires_at`, `state`, `claim_mail`, `held_gold`, "
+            "`held_count` FROM `tortoise_bots_guild_relist`"));
         size_t relistCount = 0;
         if (relists)
         {
@@ -218,9 +218,10 @@ public:
                 entry.deposit = fields[8].GetUInt32();
                 entry.postedAtSec = fields[9].GetUInt64();
                 entry.expiresAtSec = fields[10].GetUInt64();
-                entry.received = fields[11].GetUInt32() != 0;
-                entry.heldGold = fields[12].GetUInt32();
-                entry.heldCount = fields[13].GetUInt32();
+                entry.state = RelistStateFromDb(fields[11].GetUInt32());
+                entry.claimMailId = fields[12].GetUInt32();
+                entry.heldGold = fields[13].GetUInt32();
+                entry.heldCount = fields[14].GetUInt32();
                 if (!entry.botGuidLow || !entry.seq || !entry.itemId || !entry.count)
                     continue;
                 m_relist[entry.botGuidLow].push_back(entry);
@@ -1381,8 +1382,8 @@ public:
         if (!CharacterDatabase.DirectPExecute(
                 "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
                 "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
-                "`received`, `held_gold`, `held_count`) "
-                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
+                "`state`, `claim_mail`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0', '0')",
                 entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
                 entry.bid, entry.buyout, entry.deposit, static_cast<uint32_t>(entry.postedAtSec),
                 static_cast<uint32_t>(entry.expiresAtSec)))
@@ -1409,37 +1410,33 @@ public:
         return it->second;
     }
 
-    // A matched mail was collected: the value is in the bot's hands. Map
-    // thread only (the mail read); the row write is queued.
-    bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+    // One state change of a ledger row. The checked write lands before memory
+    // changes, so a restart never sees a state the table lost. Map thread only
+    // (the mail read).
+    bool WriteRelistState(uint32_t botGuidLow, uint32_t seq, RelistState state, uint32_t mailId,
+        uint32_t gold, uint32_t items)
     {
-        RelistLedgerEntry updated;
-        bool found = false;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto it = m_relist.find(botGuidLow);
             if (it == m_relist.end())
                 return false;
+            bool found = false;
             for (RelistLedgerEntry const& entry : it->second)
             {
-                if (entry.seq != seq)
-                    continue;
-                updated = entry;
-                updated.received = true;
-                updated.heldGold = entry.heldGold > gold ? entry.heldGold : gold;
-                updated.heldCount = entry.heldCount > items ? entry.heldCount : items;
-                found = true;
-                break;
+                if (entry.seq == seq)
+                {
+                    found = true;
+                    break;
+                }
             }
+            if (!found)
+                return false;
         }
-        if (!found)
-            return false;
-        // Checked first: a row that the table did not record stays unread in
-        // memory too, so a restart cannot forget the debt it never stored.
         if (!CharacterDatabase.DirectPExecute(
-                "UPDATE `tortoise_bots_guild_relist` SET `received` = '1', `held_gold` = '%u', "
-                "`held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
-                updated.heldGold, updated.heldCount, botGuidLow, seq))
+                "UPDATE `tortoise_bots_guild_relist` SET `state` = '%u', `claim_mail` = '%u', "
+                "`held_gold` = '%u', `held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                static_cast<uint32_t>(state), mailId, gold, items, botGuidLow, seq))
             return false;
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_relist.find(botGuidLow);
@@ -1449,12 +1446,30 @@ public:
         {
             if (entry.seq != seq)
                 continue;
-            entry.received = true;
-            entry.heldGold = updated.heldGold;
-            entry.heldCount = updated.heldCount;
+            entry.state = state;
+            entry.claimMailId = mailId;
+            entry.heldGold = gold;
+            entry.heldCount = items;
             break;
         }
         return true;
+    }
+
+    // A matched mail is about to be taken: the row names it and the value it
+    // promises. Map thread only (the mail read).
+    bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+        uint32_t items)
+    {
+        if (!mailId)
+            return false;
+        return WriteRelistState(botGuidLow, seq, RelistState::Claimed, mailId, gold, items);
+    }
+
+    // A claimed mail was collected: the value is in the bot's hands. Map
+    // thread only (the mail read).
+    bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+    {
+        return WriteRelistState(botGuidLow, seq, RelistState::Received, 0, gold, items);
     }
 
     // Writes a ledger row (insert or replace by seq). The table write is
@@ -1465,12 +1480,12 @@ public:
         if (!CharacterDatabase.DirectPExecute(
                 "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
                 "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
-                "`received`, `held_gold`, `held_count`) "
-                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u')",
+                "`state`, `claim_mail`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u')",
                 row.botGuidLow, row.seq, row.guildId, row.itemId, row.count, row.unitPrice,
                 row.bid, row.buyout, row.deposit, static_cast<uint32_t>(row.postedAtSec),
-                static_cast<uint32_t>(row.expiresAtSec), row.received ? 1u : 0u,
-                row.heldGold, row.heldCount))
+                static_cast<uint32_t>(row.expiresAtSec), static_cast<uint32_t>(row.state),
+                row.claimMailId, row.heldGold, row.heldCount))
             return false;
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<RelistLedgerEntry>& rows = m_relist[row.botGuidLow];
@@ -3259,6 +3274,12 @@ void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, ui
 std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
 {
     return OrderStore::Instance().RelistEntries(botGuidLow);
+}
+
+bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+    uint32_t items)
+{
+    return OrderStore::Instance().NoteRelistClaimed(botGuidLow, seq, mailId, gold, items);
 }
 
 bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)

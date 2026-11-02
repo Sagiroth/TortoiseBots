@@ -230,19 +230,19 @@ int main()
         CHECK(RelistMatchCount(rows, SoldMail(kItem, 5100, 4940, 5200, kDeposit), kNow, index) == 1);
         CHECK(index == 0);
         ReadMail(rows[index], SoldMail(kItem, 5100, 4940, 5200, kDeposit));
-        CHECK(rows[0].received && rows[0].heldGold == 5100);
-        CHECK(rows[0].guildId == kGuild && !rows[1].received);
+        CHECK(rows[0].state == RelistState::Received && rows[0].heldGold == 5100);
+        CHECK(rows[0].guildId == kGuild && rows[1].state == RelistState::Posted);
         CHECK(RelistMatchCount(rows, SoldMail(kItem, 5800, 5700, 6000, kDeposit), kNow, index) == 1);
         CHECK(index == 1);
         ReadMail(rows[index], SoldMail(kItem, 5800, 5700, 6000, kDeposit));
-        CHECK(rows[1].received && rows[1].guildId == kOtherGuild);
+        CHECK(rows[1].state == RelistState::Received && rows[1].guildId == kOtherGuild);
 
         std::vector<RelistLedgerEntry> twins{Posted(), Posted(13, 400, kNow, kOtherGuild)};
         CHECK(RelistMatchCount(twins, SoldMail(), kNow, index) == 2);
         // None of the twins is read: an ambiguous mail is left to normal
         // mail handling and no guild is credited.
-        CHECK(!twins[0].received && !twins[1].received);
-        twins[0].received = true;
+        CHECK(twins[0].state == RelistState::Posted && twins[1].state == RelistState::Posted);
+        twins[0].state = RelistState::Received;
         CHECK(RelistMatchCount(twins, SoldMail(), kNow, index) == 1);
         CHECK(index == 1);
         CHECK(RelistMatchCount(twins, SoldMail(kItem + 1), kNow, index) == 0);
@@ -258,7 +258,7 @@ int main()
         CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index));
         CHECK(index == 0);
         ReadMail(rows[index], SoldMail());
-        CHECK(rows[0].received && rows[0].heldGold == 5100);
+        CHECK(rows[0].state == RelistState::Received && rows[0].heldGold == 5100);
         CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index));
         CHECK(index == 1);
         CHECK(!RelistSettleIndex(rows, SoldMail(kItem + 1), kNow, index));
@@ -279,7 +279,86 @@ int main()
         size_t index = 99;
         CHECK(RelistMatchCount(rows, SoldMail(), kNow, index) == 2);
         CHECK(!RelistSettleIndex(rows, SoldMail(), kNow, index));
-        CHECK(!rows[0].received && !rows[1].received);
+        CHECK(rows[0].state == RelistState::Posted && rows[1].state == RelistState::Posted);
+    }
+
+    // A claim names the mail and the value it promises before the take, so a
+    // take whose received write fails is still known from the row.
+    {
+        RelistLedgerEntry sold = Posted();
+        RelistNoteMailClaimed(sold, 77, SoldMail(), RelistMailKind::Sold);
+        CHECK(sold.state == RelistState::Claimed);
+        CHECK(sold.claimMailId == 77);
+        CHECK(sold.heldGold == 5100 && sold.heldCount == 0);
+        CHECK(!RelistNeedsDeposit(sold)); // not in hand yet: no bank trip
+        CHECK(!RelistDepositableNow(sold, 5100, 0));
+        size_t index = 99;
+        CHECK(RelistClaimedIndex({sold}, 77, index) && index == 0);
+        CHECK(!RelistClaimedIndex({sold}, 78, index));
+        CHECK(RelistClaimPending({sold}));
+        // The claimed row is not matched by its terms again: a look-alike
+        // mail of the same guild cannot claim it a second time.
+        CHECK(RelistMatchCount({sold}, SoldMail(), kNow, index) == 0);
+        CHECK(!RelistSettleIndex({sold}, SoldMail(), kNow, index));
+
+        RelistLedgerEntry expired = Posted(13);
+        RelistNoteMailClaimed(expired, 78, ExpiredMail(kItem, 13), RelistMailKind::Expired);
+        CHECK(expired.heldCount == 13 && expired.heldGold == 0);
+    }
+
+    // A claim write that fails leaves the row posted: the mail is not taken
+    // and the next read tries the same mail again.
+    {
+        RelistLedgerEntry entry = Posted();
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        ledger.failWrites = true;
+        RelistLedgerEntry claim = entry;
+        RelistNoteMailClaimed(claim, 77, SoldMail(), RelistMailKind::Sold);
+        CHECK(!ledger.Save(claim));
+        CHECK(ledger.rows[0].state == RelistState::Posted && ledger.rows[0].claimMailId == 0);
+        CHECK(!RelistClaimPending(ledger.rows));
+        size_t index = 99;
+        CHECK(RelistMatchCount(ledger.rows, SoldMail(), kNow, index) == 1);
+        CHECK(index == 0);
+    }
+
+    // The take lands but the received write fails: the row stays claimed with
+    // the promised value. The mail is gone, so the next read (or a reload)
+    // settles the row from the claim and the bank trip pays it.
+    {
+        RelistLedgerEntry entry = Posted();
+        RelistNoteMailClaimed(entry, 77, SoldMail(), RelistMailKind::Sold);
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        ledger.failWrites = true;
+        CHECK(!ledger.Save(entry)); // the received write failed
+        CHECK(ledger.rows[0].state == RelistState::Claimed);
+        ledger.failWrites = false;
+        RelistLedgerEntry loaded = ledger.rows[0];
+        RelistNoteClaimSettled(loaded);
+        CHECK(loaded.state == RelistState::Received && loaded.claimMailId == 0);
+        CHECK(loaded.heldGold == 5100 && RelistNeedsDeposit(loaded));
+        FakeLedger after;
+        after.rows.push_back(loaded);
+        FakeBank bank;
+        CHECK(RelistBankTrip(loaded, AtBank(5100), after, bank) == RelistTripOutcome::Deposited);
+        CHECK(bank.lastGold == 5100 && after.rows.empty());
+    }
+
+    // A claimed row whose mail is still there is retried, not doubled: the
+    // mail never matches a second row, and the retry keeps one value.
+    {
+        RelistLedgerEntry claimed = Posted();
+        RelistNoteMailClaimed(claimed, 77, SoldMail(), RelistMailKind::Sold);
+        std::vector<RelistLedgerEntry> rows{claimed, Posted()};
+        rows[1].seq = 2;
+        size_t index = 99;
+        CHECK(RelistMatchCount(rows, SoldMail(), kNow, index) == 1);
+        CHECK(index == 1); // only the posted row matches; the claim waits by id
+        CHECK(RelistClaimedIndex(rows, 77, index) && index == 0);
+        RelistNoteMailReceived(claimed, RelistMailKind::Sold, 5100, 0);
+        CHECK(claimed.state == RelistState::Received && claimed.heldGold == 5100);
     }
 
     // A banker visit only earns its trip when the bot can hand value over
@@ -301,7 +380,7 @@ int main()
     {
         RelistLedgerEntry entry = Posted();
         ReadMail(entry, SoldMail(kItem, 5100));
-        CHECK(entry.received);
+        CHECK(entry.state == RelistState::Received);
         CHECK(entry.heldGold == 5100);
         CHECK(entry.heldCount == 0);
         CHECK(RelistNeedsDeposit(entry));
@@ -318,7 +397,7 @@ int main()
     {
         RelistLedgerEntry entry = Posted(13);
         ReadMail(entry, ExpiredMail(kItem, 13), kNow + kDurationSec);
-        CHECK(entry.received);
+        CHECK(entry.state == RelistState::Received);
         CHECK(entry.heldCount == 13);
         CHECK(entry.heldGold == 0);
         FakeLedger ledger;
@@ -355,7 +434,7 @@ int main()
         bank.goldLimit = 0;
         CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Returned);
         CHECK(bank.deposits == 1);
-        CHECK(ledger.rows.size() == 1 && ledger.rows[0].received);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].state == RelistState::Received);
         CHECK(ledger.rows[0].heldGold == 5100 && ledger.rows[0].seq == entry.seq);
     }
 
@@ -454,9 +533,12 @@ int main()
     CHECK(RelistEntryStale(Posted(13, 400, kNow - 10 * kRelistStaleSec), kNow));
     {
         RelistLedgerEntry held = Posted(13, 400, kNow - 30 * 24 * 60 * 60);
-        held.received = true;
+        held.state = RelistState::Received;
         held.heldGold = 1;
         CHECK(!RelistEntryStale(held, kNow));
+        RelistLedgerEntry claimed = Posted(13, 400, kNow - 30 * 24 * 60 * 60);
+        RelistNoteMailClaimed(claimed, 77, SoldMail(), RelistMailKind::Sold);
+        CHECK(!RelistEntryStale(claimed, kNow));
     }
 
     if (failures == 0)
