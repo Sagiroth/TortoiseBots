@@ -23,7 +23,7 @@ func TestRunTotalsSumsPerBot(t *testing.T) {
 		{Name: "New", GUID: 4, Class: "rogue", Role: "dps", Sub: 0, Dmg: 5000, Taken: 100, Casts: 5},
 	}
 	in := []RunInput{{Key: "k1", Fight: f1}, {Key: "k2", Fight: f2}}
-	got, more := SumRun(in, 0, RunTotalsCap)
+	got, more := SumRun(in, RunTotalsCap)
 	if more {
 		t.Fatal("more set without a cut")
 	}
@@ -65,28 +65,9 @@ func TestRunTotalsDedupsByKey(t *testing.T) {
 	f.Bots = []FightBot{mkRunBot("Tanky", 1, "tank")}
 	f.Bots[0].Dmg = 1200
 	in := []RunInput{{Key: "k1", Fight: f}, {Key: "k1", Fight: f}}
-	got, _ := SumRun(in, 0, RunTotalsCap)
+	got, _ := SumRun(in, RunTotalsCap)
 	if got.Fights != 1 || got.DurMS != 30000 || len(got.Bots) != 1 || got.Bots[0].Dmg != 1200 {
 		t.Fatalf("totals = %+v, want the fight summed once", got)
-	}
-}
-
-// Only fights started at or after since are summed.
-func TestRunTotalsSinceFilter(t *testing.T) {
-	mk := func(id string, start int64) RunInput {
-		f := Fight{ID: id, Commander: "G", Start: start, DurMS: 10000, Outcome: "kill"}
-		f.Bots = []FightBot{mkRunBot("Tanky", 1, "tank")}
-		f.Bots[0].Dmg = uint64(start)
-		return RunInput{Key: "k" + id, Fight: f}
-	}
-	in := []RunInput{mk("a", 1000), mk("b", 2000)}
-	got, _ := SumRun(in, 2000, RunTotalsCap)
-	if got.Fights != 1 || got.DurMS != 10000 || len(got.Bots) != 1 || got.Bots[0].Dmg != 2000 {
-		t.Fatalf("totals = %+v, want only the fight started at since", got)
-	}
-	got, _ = SumRun(in, 3000, RunTotalsCap)
-	if got.Fights != 0 || len(got.Bots) != 0 {
-		t.Fatalf("totals = %+v, want nothing summed", got)
 	}
 }
 
@@ -95,7 +76,7 @@ func TestRunTotalsSkipsLive(t *testing.T) {
 	live := Fight{ID: "open", Commander: "G", Start: 3000, DurMS: 5000, Outcome: "live"}
 	unfin := Fight{ID: "unfin", Commander: "G", Start: 2500, DurMS: 4000, Outcome: "unfinished"}
 	done := Fight{ID: "f1", Commander: "G", Start: 1000, DurMS: 30000, Outcome: "kill"}
-	got, _ := SumRun([]RunInput{{Key: "k0", Fight: live}, {Key: "ku", Fight: unfin}, {Key: "k1", Fight: done}}, 0, RunTotalsCap)
+	got, _ := SumRun([]RunInput{{Key: "k0", Fight: live}, {Key: "ku", Fight: unfin}, {Key: "k1", Fight: done}}, RunTotalsCap)
 	if got.Fights != 1 || got.DurMS != 30000 {
 		t.Fatalf("totals = %+v, want only the finished fight", got)
 	}
@@ -110,14 +91,14 @@ func TestRunTotalsCap(t *testing.T) {
 		f.Bots[0].Dmg = uint64(1000 + i)
 		in = append(in, RunInput{Key: "k" + f.ID, Fight: f})
 	}
-	got, more := SumRun(in, 0, 2)
+	got, more := SumRun(in, 2)
 	if !more {
 		t.Fatal("more not set when the cap cut fights")
 	}
 	if got.Fights != 2 || got.Bots[0].Dmg != 1003+1004 {
 		t.Fatalf("totals = %+v, want the two newest fights summed", got)
 	}
-	if _, more := SumRun(in, 0, 5); more {
+	if _, more := SumRun(in, 5); more {
 		t.Fatal("more set when nothing was cut")
 	}
 }

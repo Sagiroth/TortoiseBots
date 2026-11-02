@@ -1,8 +1,8 @@
 "use strict";
 // Run by commandersjs_test.go under node: renderFightDebug itself with a finished fight selected, once in "This fight"
-// and once in "Run total" mode (a fake fetch answering the run totals), plus no selection and a live selection.
-// A finished fight must render in both modes (the header chips and the role tables follow the switch); the empty and
-// live selections must render without a fight at all.
+// and once in "Total" mode (a fake fetch answering the run totals), plus no selection and a live selection.
+// A finished fight must render in both modes (the header chips and the role tables follow the switch); the Total title
+// names the server start the session id carries and the checks below keep the picked fight's name.
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -32,7 +32,8 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "fdState", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
   "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
   "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdTotalsSession", "fdTotalsLoad",
-  "fdTotalChipsHtml", "fdTotalsSegHtml", "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
+  "fdTotalChipsHtml", "fdTotalsSegHtml", "fdRunStartText", "fdTotalTitleHtml",
+  "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
   "fdRunModel", "fdRunPct", "fdRunClock", "fdRunT", "fdRunWindow", "fdRunCoverage", "fdRunHtml", "fdRunPlayHtml",
   "fdRunPlaySync", "fdRunSync", "fdRunLoad", "fdRunStop", "fdRunStopAll",
   "fdFightExtra", "fdPrevPackI", "fdFightHist",
@@ -41,7 +42,7 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "fdRolesHtml", "fdLiveTableHtml", "fdBotHtml",
   "fdPackLoad", "fdPackShow", "fdPackHtml", "fdDayOptionsHtml", "paintSeg",
   "fdPlayHtml", "fdPlayNote", "fdPlaySync", "fdLanesHtml", "fdCursorSync", "fdTrackLoad", "fdDayPaint",
-  "FD_TOTALS_KEY", "FD_TOTALS_MS", "FD_SHOWALL_KEY", "FD_WINDOW_S", "FD_DETAIL_TRIES", "FD_EMPTY", "FD_TRACK_WINDOW_S",
+  "FD_TOTALS_KEY", "FD_TOTALS_MS", "FD_TOTALS_CAP", "FD_SHOWALL_KEY", "FD_WINDOW_S", "FD_DETAIL_TRIES", "FD_EMPTY", "FD_TRACK_WINDOW_S",
   "renderFightDebug"];
 
 const newStore = () => {
@@ -53,9 +54,9 @@ const newStore = () => {
   };
 };
 
-// The totals the fake fetch answers in "Run total" mode: the same shape the daemon's route sends.
+// The totals the fake fetch answers in "Total" mode: the same shape the daemon's route sends.
 const TOTALS = {
-  since: 1000, fights: 2, dur_ms: 90000,
+  fights: 2, dur_ms: 90000,
   bots: [
     { name: "Tanky", guid: 1, class: "warrior", role: "tank", dmg: 2000, taken: 8000, casts: 10, deaths: 1,
       spells: { "Sunder Armor": 8, Taunt: 1, "Heroic Strike": 6 }, fight_ms: 90000, fights: 2 },
@@ -66,13 +67,16 @@ const TOTALS = {
   ],
 };
 
-let totalsAnswer = null;
+let totalsAnswer = null, totalsCut = false;
 const fetchLog = [];
 const fetchStub = (url) => {
   fetchLog.push(String(url));
   if (String(url).indexOf("/run-totals") >= 0) {
     const body = JSON.parse(JSON.stringify(totalsAnswer));
-    return Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(body) });
+    return Promise.resolve({
+      status: 200, ok: true, json: () => Promise.resolve(body),
+      headers: { get: (k) => (totalsCut && k === "X-More" ? "1" : null) },
+    });
   }
   return new Promise(() => {}); // the days list, the tracks and the run track: never answer
 };
@@ -102,14 +106,21 @@ vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r)); };
 
+// The game session id is the server start in unix seconds (internal/combat.Key puts it in the fight key).
+const SESSION = 1793210300;
+const startText = new Date(SESSION * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const keyOf = (id) => "G\x00" + SESSION + "\x00" + id;
+
 const fights = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "walk2-fights.json"), "utf8"));
 const F54 = fights.find((f) => f.id === "5-4");
-// Newest first, like GET /api/v1/combat/fights.
+const SEL = keyOf("5-4");
+// Newest first, like GET /api/v1/combat/fights (the key is commander, session, id).
 const ROWS = fights.map((f) => ({
-  key: f.id, session: 7, dur: f.dur_ms, step: f.step, deaths: (f.deaths || []).length, boss_name: f.boss_name, start: f.start,
+  key: keyOf(f.id), session: SESSION, dur: f.dur_ms, step: f.step, deaths: (f.deaths || []).length,
+  boss_name: f.boss_name, start: f.start,
 }));
 const DETAILS = {};
-fights.forEach((f) => { DETAILS[f.id] = { fight: f, warnings: [] }; });
+fights.forEach((f) => { DETAILS[keyOf(f.id)] = { fight: f, warnings: [] }; });
 
 // The card: one remembered node per section the render paints (the rail stays null, so fdRailPatch keeps its early
 // return); anything else the render touches is absent, as on a card missing that box.
@@ -126,7 +137,7 @@ function nodeStub() {
 }
 function makeCard() {
   const nodes = {};
-  [".fd-nofight", ".fd-title", ".fd-chips", ".fd-checklist", ".fd-tanks", ".fd-heals", ".fd-dps",
+  [".fd-nofight", ".fd-title", ".fd-chips", ".fd-checklist", ".fd-checkfor", ".fd-tanks", ".fd-heals", ".fd-dps",
     ".fd-totalsseg", ".fd-bot", ".fd-frames", ".fd-dead", ".fd-ready", "[data-fd-showall]",
     "[data-fd-rt]", ".fd-runtl", ".fd-tl", ".fd-recap", ".fd-play", ".fd-lanes",
   ].forEach((s) => { nodes[s] = nodeStub(); });
@@ -162,13 +173,14 @@ function makeCard() {
   assert.ok(cardB.nodes[".fd-title"].innerHTML.indexOf("Live ·") === 0, "the live title: " + cardB.nodes[".fd-title"].innerHTML);
   assert.ok(cardB.nodes[".fd-tanks"].innerHTML.includes("Live, last 10 s"), "the live table keeps its window");
   assert.strictEqual(cardB.nodes[".fd-totalsseg"].innerHTML, "", "no switch on the live table");
+  assert.strictEqual(cardB.nodes[".fd-checkfor"].innerHTML, "", "no checks caption on the live table");
 
   // ---- a finished fight in "This fight" mode: its own numbers ----------------------------------------------------------
   fetchLog.length = 0;
   run("cmdFd = {}; cmdFightsCache = { G: { list: rows } };", { rows: ROWS });
   run("var fdTotalsMem = null;");
   const fdC = run("fdState('G')");
-  run("fd.sel = '5-4'; fd.userSel = true; fd.details = details;", { fd: fdC, details: DETAILS });
+  run("fd.sel = sel; fd.userSel = true; fd.details = details;", { fd: fdC, sel: SEL, details: DETAILS });
   const fightBind = { commander: "G", bots: F54.bots };
   const cardC = makeCard();
   run("renderFightDebug(card, bind)", { card: cardC, bind: fightBind });
@@ -176,20 +188,23 @@ function makeCard() {
   assert.ok(cardC.nodes[".fd-chips"].innerHTML.includes("raid dps"), "the fight's own chips: " + cardC.nodes[".fd-chips"].innerHTML.slice(0, 160));
   const tanksC = cardC.nodes[".fd-tanks"].innerHTML;
   assert.ok(tanksC.includes("Sunder") && tanksC.includes(">8<"), "the fight's own tanks table: " + tanksC.slice(0, 200));
+  assert.ok(tanksC.includes("✕"), "This fight's Died cell is the single cross: " + tanksC.slice(0, 200));
   const segC = cardC.nodes[".fd-totalsseg"].innerHTML;
-  assert.ok(segC.includes(">This fight<") && segC.includes(">Run total<"), "the switch paints: " + segC.slice(0, 160));
+  assert.ok(segC.includes(">This fight<") && segC.includes(">Total<"), "the switch paints: " + segC.slice(0, 160));
   assert.ok(/data-v="fight"[^>]*class="seg-btn active"|class="seg-btn active"[^>]*data-v="fight"/.test(segC),
     "This fight is the active one: " + segC);
+  assert.strictEqual(cardC.nodes[".fd-checkfor"].innerHTML, "", "no checks caption in This fight");
   assert.ok(!fetchLog.some((u) => u.indexOf("/run-totals") >= 0), "This fight fetches no totals");
 
-  // ---- the same fight in "Run total" mode: the run's sums ----------------------------------------------------------------
+  // ---- the same fight in "Total" mode: the run's sums ----------------------------------------------------------------
   run("fdTotalsSet('run')");
   totalsAnswer = TOTALS;
+  totalsCut = false;
   fetchLog.length = 0;
   const cardD = makeCard();
   run("renderFightDebug(card, bind)", { card: cardD, bind: fightBind });
   await settle(); // the totals fetch answers, then the render runs again with the sums
-  assert.strictEqual(cardD.nodes[".fd-title"].innerHTML, "Run total · 2 fights");
+  assert.strictEqual(cardD.nodes[".fd-title"].innerHTML, "Total · 2 fights since " + startText);
   const chipsD = cardD.nodes[".fd-chips"].innerHTML;
   assert.ok(chipsD.includes("189 raid dps") && chipsD.includes("133 hps") && chipsD.includes("2 fights"),
     "the header chips follow the switch (17000 / 90 s, 12000 / 90 s): " + chipsD);
@@ -197,10 +212,25 @@ function makeCard() {
   assert.ok(healsD.includes("133") && healsD.includes("25%"), "HPS = 12000 / 90 s, Over 25%: " + healsD.slice(0, 200));
   const dpsD = cardD.nodes[".fd-dps"].innerHTML;
   assert.ok(dpsD.includes("500"), "DPS = 15000 / Pew's own 30 s, not the run's 90 s: " + dpsD.slice(0, 300));
+  const tanksD = cardD.nodes[".fd-tanks"].innerHTML;
+  assert.ok(tanksD.includes(">1<") && !tanksD.includes("✕"), "Total shows the summed death count: " + tanksD.slice(0, 300));
+  assert.ok(cardD.nodes[".fd-checkfor"].innerHTML.indexOf("Checks for ") === 0 && cardD.nodes[".fd-checkfor"].innerHTML.length > 11,
+    "the checks below keep the picked fight's name: " + cardD.nodes[".fd-checkfor"].innerHTML);
   const segD = cardD.nodes[".fd-totalsseg"].innerHTML;
   assert.ok(/data-v="run"[^>]*class="seg-btn active"|class="seg-btn active"[^>]*data-v="run"/.test(segD),
-    "Run total is the active one: " + segD);
+    "Total is the active one: " + segD);
   assert.strictEqual(fetchLog.filter((u) => u.indexOf("/run-totals") >= 0).length, 1, "one totals fetch per session");
+  assert.ok(fetchLog.some((u) => u.indexOf("session=" + SESSION) >= 0), "the session is parsed from the selected key: " + fetchLog);
+
+  // ---- a capped answer says so in the title ---------------------------------------------------------------------------
+  totalsCut = true;
+  run("fdTotalsSet('run'); cmdFd = {};");
+  const fdE = run("fdState('G')");
+  run("fd.sel = sel; fd.userSel = true; fd.details = details;", { fd: fdE, sel: SEL, details: DETAILS });
+  const cardE = makeCard();
+  run("renderFightDebug(card, bind)", { card: cardE, bind: fightBind });
+  await settle();
+  assert.strictEqual(cardE.nodes[".fd-title"].innerHTML, "Total · 2 fights since " + startText + " (newest 500 fights)");
 
   console.log("fd_totals_render_check: ok");
 })().catch((e) => { console.error(e); process.exit(1); });

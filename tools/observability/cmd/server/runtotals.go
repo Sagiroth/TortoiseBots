@@ -21,9 +21,9 @@ type historyReader interface {
 
 // runTotalsCache holds one summed run per (commander, session), at most
 // runTotalsCacheCap entries: the live run for ten seconds, an ended run (no
-// new fights in ten minutes) until a newer fight lands. Every hit compares
-// the entry's last-fight marker against the current latest index row for
-// that commander and session and recomputes when it differs.
+// new fights in ten minutes and no fight still running) until a newer fight
+// lands. Every hit compares the entry's freshness marker against the current
+// index rows for that commander and session and recomputes when it differs.
 const runTotalsCacheCap = 256
 
 type runTotalsCache struct {
@@ -40,6 +40,7 @@ type runTotalsEntry struct {
 	more   bool
 	at     time.Time
 	last   int64
+	n      int
 	end    bool
 	prev   *runTotalsEntry
 	next   *runTotalsEntry
@@ -85,7 +86,7 @@ func (c *runTotalsCache) evict(e *runTotalsEntry) {
 	c.len--
 }
 
-func (c *runTotalsCache) get(key string, last int64, now time.Time) (combat.RunTotals, bool, bool) {
+func (c *runTotalsCache) get(key string, last int64, n int, now time.Time) (combat.RunTotals, bool, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
@@ -95,7 +96,7 @@ func (c *runTotalsCache) get(key string, last int64, now time.Time) (combat.RunT
 	if !ok {
 		return combat.RunTotals{}, false, false
 	}
-	if e.last != last {
+	if e.last != last || e.n != n {
 		c.evict(e)
 		return combat.RunTotals{}, false, false
 	}
@@ -107,18 +108,18 @@ func (c *runTotalsCache) get(key string, last int64, now time.Time) (combat.RunT
 	return e.totals, e.more, true
 }
 
-func (c *runTotalsCache) set(key string, totals combat.RunTotals, more bool, last int64, end bool, now time.Time) {
+func (c *runTotalsCache) set(key string, totals combat.RunTotals, more bool, last int64, n int, end bool, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
 		c.entries = map[string]*runTotalsEntry{}
 	}
 	if e, ok := c.entries[key]; ok {
-		e.totals, e.more, e.at, e.last, e.end = totals, more, now, last, end
+		e.totals, e.more, e.at, e.last, e.n, e.end = totals, more, now, last, n, end
 		c.touch(e)
 		return
 	}
-	e := &runTotalsEntry{key: key, totals: totals, more: more, at: now, last: last, end: end}
+	e := &runTotalsEntry{key: key, totals: totals, more: more, at: now, last: last, n: n, end: end}
 	c.entries[key] = e
 	e.next = c.head
 	if c.head != nil {
@@ -162,8 +163,8 @@ func runTotalsHandlerCap(combatStore *combat.Store, historyStore historyReader, 
 		}
 		now := runTotalsNow()
 		key := commander + "\x00" + strconv.FormatUint(session, 10)
-		last := runLastStart(combatStore, historyStore, commander, session)
-		if totals, more, ok := runTotalsLive.get(key, last, now); ok {
+		last, live, n := runMark(combatStore, historyStore, commander, session)
+		if totals, more, ok := runTotalsLive.get(key, last, n, now); ok {
 			if more {
 				w.Header().Set("X-More", "1")
 			}
@@ -171,13 +172,15 @@ func runTotalsHandlerCap(combatStore *combat.Store, historyStore historyReader, 
 			return
 		}
 		in := collectRun(combatStore, historyStore, commander, session, limit)
-		totals, more := combat.SumRun(in, 0, limit)
-		end := last > 0 && now.Unix()-last > 600
+		totals, more := combat.SumRun(in, limit)
+		// No ended entry while a fight of this run is still live: the row it
+		// becomes may land any moment, and the entry would freeze it out.
+		end := last > 0 && !live && now.Unix()-last > 600
 		if last == 0 {
 			writeJSON(w, totals)
 			return
 		}
-		runTotalsLive.set(key, totals, more, last, end, now)
+		runTotalsLive.set(key, totals, more, last, n, end, now)
 		if more {
 			w.Header().Set("X-More", "1")
 		}
@@ -185,42 +188,61 @@ func runTotalsHandlerCap(combatStore *combat.Store, historyStore historyReader, 
 	}
 }
 
-// runLastStart is the newest fight start of the run, from the index rows and
-// the memory list alone: the cache's freshness check opens no fights.
-func runLastStart(combatStore *combat.Store, historyStore historyReader, commander string, session uint64) int64 {
+// runMark is the freshness marker of one run: the newest fight start, whether
+// a fight is still live, and how many finished rows the run holds. From the
+// index rows and the memory list alone: no fight is opened.
+func runMark(combatStore *combat.Store, historyStore historyReader, commander string, session uint64) (int64, bool, int) {
 	var last int64
+	var live bool
+	var n int
 	if combatStore != nil {
 		for _, row := range combatStore.List(commander) {
-			if row.Session == session && row.Start > last {
+			if row.Session != session {
+				continue
+			}
+			if row.Live {
+				live = true
+				continue
+			}
+			n++
+			if row.Start > last {
 				last = row.Start
 			}
 		}
 	}
 	if historyStore != nil {
 		for _, row := range historyStore.ListAll(commander) {
-			if row.Session == session && row.Start > last {
+			if row.Session != session {
+				continue
+			}
+			n++
+			if row.Start > last {
 				last = row.Start
 			}
 		}
 	}
-	return last
+	return last, live, n
 }
 
-// collectRun gathers one run's fights: the memory rows of that session, then
-// the matching history index rows newest first (only those are opened), one
-// past the cap so SumRun learns the cut.
+// collectRun gathers one run's fights: the finished memory rows of that
+// session (no live rows: an ended-but-unfiled row has an outcome and no
+// per-bot numbers, and a still-open one carries a partial window; neither is
+// a finished fight), then the matching history index rows newest first (only
+// those are opened), one past the cap so SumRun learns the cut.
 func collectRun(combatStore *combat.Store, historyStore historyReader, commander string, session uint64, limit int) []combat.RunInput {
 	var in []combat.RunInput
+	seen := map[string]bool{}
 	if combatStore != nil {
 		for _, row := range combatStore.List(commander) {
-			if row.Session != session {
+			if row.Session != session || row.Live {
 				continue
 			}
 			f, _, ok := combatStore.GetKey(row.Key)
-			if !ok {
+			if !ok || len(f.Bots) == 0 {
 				continue
 			}
 			in = append(in, combat.RunInput{Key: row.Key, Fight: f})
+			seen[row.Key] = true
 		}
 	}
 	if historyStore == nil {
@@ -245,11 +267,15 @@ func collectRun(combatStore *combat.Store, historyStore historyReader, commander
 		if opened > limit {
 			break
 		}
+		if seen[row.Key] {
+			continue
+		}
 		f, _, ok := historyStore.Fight(row.Key)
-		if !ok {
+		if !ok || len(f.Bots) == 0 {
 			continue
 		}
 		in = append(in, combat.RunInput{Key: row.Key, Fight: f})
+		seen[row.Key] = true
 		opened++
 	}
 	return in

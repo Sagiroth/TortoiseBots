@@ -7725,7 +7725,7 @@
             <div class="cmd-feed" hidden></div>
             <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
-          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
+          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
           <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         </div>
         <p class="fd-nofight" hidden></p>
@@ -7943,7 +7943,7 @@
       fdReplaySync(key);
     });
     cmdWatchStage(card, key);
-    // The role tables' "This fight | Run total" switch: one seg per card, painted every render. The choice is kept per viewer.
+    // The role tables' "This fight | Total" switch: one seg per card, painted every render. The choice is kept per viewer.
     bindSeg(card.querySelector('.fd-totalsseg'), v => {
       fdTotalsSet(v === 'run' ? 'run' : 'fight');
       fdRender(key);
@@ -8186,8 +8186,9 @@
   const FD_WINDOW_S = 7200;   // Tonight's rail: the current run plus the last 2 hours; "Load older" pages back from there
   const FD_OLDER_PAGE = 50;   // fights per "Load older" page
   const FD_SHOWALL_KEY = 'tbdash.fdShowAll'; // the rail's "Show all fights" box, per viewer (this browser)
-  const FD_TOTALS_KEY = 'tbdash.fdTotals'; // the role tables' "This fight | Run total" switch, per viewer (this browser)
+  const FD_TOTALS_KEY = 'tbdash.fdTotals'; // the role tables' "This fight | Total" switch, per viewer (this browser)
   const FD_TOTALS_MS = 10000; // one run's totals, held as long as tonight's lists
+  const FD_TOTALS_CAP = 500;  // fights one run total sums (the daemon's combat.RunTotalsCap); a cut is titled
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
@@ -8289,8 +8290,8 @@
     try { if (window.localStorage) window.localStorage.setItem(FD_SHOWALL_KEY, on ? '1' : '0'); } catch (e) { /* kept in memory only */ }
   }
 
-  // The role tables' "This fight | Run total" switch, kept per viewer like the "Show all fights" box. Run total sums the
-  // run's finished fights per bot (the daemon's /api/v1/combat/run-totals), held per commander for the shared fights window.
+  // The role tables' "This fight | Total" switch, kept per viewer like the "Show all fights" box. Total sums the run's
+  // finished fights per bot (the daemon's /api/v1/combat/run-totals), held per commander for the shared fights window.
   // A blocked storage (a private window, cleared site data) keeps the choice in memory for this page.
   let fdTotalsMem = null;
 
@@ -8304,44 +8305,64 @@
     try { if (window.localStorage) window.localStorage.setItem(FD_TOTALS_KEY, fdTotalsMem); } catch (e) { /* kept in memory only */ }
   }
 
-  // The run the totals sum: the selected fight's session (a run is one
-  // commander in one session). Live sends the bound run's current session:
-  // the newest row's, or the live list's while no fight ended yet.
-  function fdTotalsSession(bind, fd, list, selRow) {
-    if (selRow && selRow.session != null && selRow.session !== '') return selRow.session;
-    let best = null;
-    (list || []).forEach(r => {
-      if (!r || r.session == null || r.session === '') return;
-      if (best == null || numOr0(r.start) > numOr0(best.start)) best = r;
-    });
-    return best ? best.session : '';
+  // The run the totals sum, parsed from the selected fight's key
+  // (commander, session, id: internal/combat.Key): a run is one commander in
+  // one game session. The key is enough for a fight the list does not hold.
+  function fdTotalsSession(key) {
+    const parts = key != null ? String(key).split('\u0000') : [];
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) return Number(parts[1]);
+    return '';
   }
 
   // One run's totals, fetched once per commander per session: while a fetch is in flight the tables keep the last answer.
+  // Answers the payload plus whether the daemon cut it at 500 fights (X-More):
+  // the cut fights never reach the browser, so the title says newest-first.
   function fdTotalsLoad(card, bind, fd, session) {
     const c = fd.totalsCache;
-    if (c && c.session === String(session) && Date.now() - c.at < FD_TOTALS_MS) return c.json;
-    if (fd.totalsPending) return c && c.session === String(session) ? c.json : null;
-    if (session === '' || session == null) return null;
+    const hit = (c && c.session === String(session)) ? c : null;
+    if (hit && Date.now() - hit.at < FD_TOTALS_MS) return { json: hit.json, more: !!hit.more };
+    if (fd.totalsPending) return { json: hit ? hit.json : null, more: !!(hit && hit.more) };
+    if (session === '' || session == null) return { json: null, more: false };
     fd.totalsPending = true;
     fetch('/api/v1/combat/run-totals?commander=' + encodeURIComponent(bind.commander) + '&session=' + encodeURIComponent(session))
-      .then(jsonOrThrow).then(json => {
-        fd.totalsCache = { at: Date.now(), session: String(session), json: json || null };
+      .then(r => {
+        const more = !!(r && r.headers && r.headers.get && r.headers.get('X-More') === '1');
+        return jsonOrThrow(r).then(json => ({ json: json, more: more }));
+      }).then(got => {
+        fd.totalsCache = { at: Date.now(), session: String(session), json: got.json || null, more: got.more };
       }).catch(() => {
-        fd.totalsCache = { at: Date.now(), session: String(session), json: null };
+        fd.totalsCache = { at: Date.now(), session: String(session), json: null, more: false };
       }).then(() => {
         fd.totalsPending = false;
         if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
       });
-    return c && c.session === String(session) ? c.json : null;
+    return { json: hit ? hit.json : null, more: !!(hit && hit.more) };
   }
 
-  // The switch above the role tables: "This fight" is the picked fight's own numbers, "Run total" the run's sums.
+  // The switch above the role tables: "This fight" is the picked fight's own numbers, "Total" the run's sums.
   function fdTotalsSegHtml(mode) {
     const m = mode === 'run' ? 'run' : 'fight';
     return '<div class="seg" role="group" aria-label="Role table range">'
       + '<button type="button" class="seg-btn' + (m === 'fight' ? ' active' : '') + '" data-v="fight" data-fd-totals="fight">This fight</button>'
-      + '<button type="button" class="seg-btn' + (m === 'run' ? ' active' : '') + '" data-v="run" data-fd-totals="run">Run total</button></div>';
+      + '<button type="button" class="seg-btn' + (m === 'run' ? ' active' : '') + '" data-v="run" data-fd-totals="run">Total</button></div>';
+  }
+
+  // The run's start for the Total title: the game-server start (unix seconds)
+  // the session epoch names, in the reader's own time.
+  function fdRunStartText(session) {
+    const s = +session;
+    if (!(s > 0)) return '';
+    return new Date(s * 1000).toLocaleString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  }
+
+  // The Total title: how many fights, since when, and whether the newest 500
+  // are all the server shows (the run-totals X-More cut).
+  function fdTotalTitleHtml(totals, session, more) {
+    const t = totals || { fights: 0 };
+    const n = numOr0(t.fights);
+    const since = fdRunStartText(session);
+    const cut = more ? ' (newest ' + FD_TOTALS_CAP + ' fights)' : '';
+    return 'Total \u00b7 ' + n + ' fight' + (n === 1 ? '' : 's') + (since ? ' since ' + since : '') + cut;
   }
 
   // The finished-fight header chips from a run total: the run's summed damage and healing over its summed fight time.
@@ -8783,12 +8804,15 @@
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
     const guids = {};
     // The switch above the role tables: the live table keeps the rolling 10 s window (no switch there), "This fight" is the
-    // picked fight's own numbers, "Run total" the same tables from the run's sums (DPS and HPS over each bot's own fight time).
+    // picked fight's own numbers, "Total" the same tables from the run's sums (DPS and HPS over each bot's own fight time).
     const totalsMode = !selLive && fight ? fdTotalsGet() : 'fight';
-    let totalsJson = null, totalsNote = '';
+    let totalsJson = null, totalsNote = '', totalsSession = '', totalsMore = false;
     if (totalsMode === 'run') {
-      totalsJson = fdTotalsLoad(card, bind, fd, fdTotalsSession(bind, fd, list, selRow));
-      if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the run total…' : 'The run total is not available right now.';
+      totalsSession = fdTotalsSession(fd.sel);
+      const loaded = fdTotalsLoad(card, bind, fd, totalsSession);
+      totalsJson = loaded.json;
+      totalsMore = loaded.more;
+      if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the total…' : 'The total is not available right now.';
     }
     let title = 'Fight';
     let chips = '';
@@ -8803,10 +8827,10 @@
       const dmg = (fight.bots || []).reduce((n, b) => n + (b.dmg || 0), 0);
       const heal = (fight.bots || []).reduce((n, b) => n + (b.heal || 0), 0);
       title = (info.label || fight.boss_name || 'trash') + ' · ' + secs.toFixed(1) + ' s · step ' + (fight.step || 0);
-      // The switch above the role tables moves the raid dps and hps chips with it: Run total shows the run's sums.
+      // The switch above the role tables moves the raid dps and hps chips with it: Total shows the run's sums.
       if (totalsMode === 'run' && totalsJson) {
         chips = fdTotalChipsHtml(totalsJson);
-        title = 'Run total · ' + numOr0(totalsJson.fights) + ' fight' + (numOr0(totalsJson.fights) === 1 ? '' : 's');
+        title = fdTotalTitleHtml(totalsJson, totalsSession, totalsMore);
       } else {
         chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
           + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`
@@ -8817,6 +8841,19 @@
     }
     fdSet(card.querySelector('.fd-title'), esc(title));
     fdSet(card.querySelector('.fd-chips'), chips);
+    // Below the header the checks and timeline still describe the picked fight,
+    // even in Total mode: the tables above are the run's sums, the verdict below
+    // names which pull they judge.
+    const checkFor = card.querySelector('.fd-checkfor');
+    if (fight && totalsMode === 'run') {
+      const info = cards.find(c => c.key === fd.sel) || {};
+      const picked = info.label || fight.boss_name || 'trash';
+      if (checkFor) checkFor.hidden = false;
+      fdSet(checkFor, esc('Checks for ' + picked));
+    } else {
+      if (checkFor) checkFor.hidden = true;
+      fdSet(checkFor, '');
+    }
     fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps, guids, fd.bot));
     fdPackShow(card, bind, fd, selRow ? selRow.pack_key || (det && det.pack_key) || '' : '');
 
@@ -8861,7 +8898,7 @@
       fdSet(card.querySelector('.fd-heals'), '');
       fdSet(card.querySelector('.fd-dps'), '');
     } else if (tables) {
-      const three = fdRolesHtml(tables, fd.bot);
+      const three = fdRolesHtml(tables, fd.bot, totalsMode);
       fdSet(card.querySelector('.fd-tanks'), three[0]);
       fdSet(card.querySelector('.fd-heals'), three[1]);
       fdSet(card.querySelector('.fd-dps'), three[2]);
@@ -9428,8 +9465,11 @@
   }
 
   // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.
-  function fdRolesHtml(tables, selBot) {
+  // In Total mode the Died cell is the summed count; one fight's cell is the single cross.
+  function fdRolesHtml(tables, selBot, mode) {
     const t = tables || { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 };
+    const total = mode === 'run';
+    const diedCell = d => total ? (numOr0(d) > 0 ? FightDebug.fmtInt(numOr0(d)) : '') : (d ? '\u2715' : '');
     const row = (on, cells) => `<tr${on ? ' class="sel"' : ''}>${cells.join('')}</tr>`;
     const nameCell = (r, main) => {
       const pressed = r.name === selBot ? 'true' : 'false';
@@ -9442,7 +9482,7 @@
     const tanks = `<table class="data-table fd-table"><caption>Tanks</caption><thead><tr><th>Tank</th><th class="n">Sunder</th><th class="n">Taunts</th><th class="n">Taken</th><th class="n">Died</th></tr></thead><tbody>`
       + (t.tanks || []).map(r => row(r.name === selBot, [nameCell(r, r.main), `<td class="n">${r.sunder || '–'}</td>`,
         `<td class="n">${r.taunts || '–'}</td>`, `<td class="n">${FightDebug.fmtInt(r.taken)}</td>`,
-        `<td class="n">${r.died ? '✕' : ''}</td>`])).join('') + '</tbody></table>';
+        `<td class="n">${diedCell(r.died)}</td>`])).join('') + '</tbody></table>';
     const heals = `<table class="data-table fd-table"><caption>Healers</caption><thead><tr><th>Healer</th><th class="n">HPS</th><th class="n">Over</th><th class="n">Casts</th></tr></thead><tbody>`
       + (t.healers || []).map(r => row(r.name === selBot, [nameCell(r, false),
         `<td class="n">${bar(t.maxHps > 0 ? (r.hps / t.maxHps) * 50 : 0, 'heal')}${FightDebug.fmtInt(Math.round(r.hps))}</td>`,

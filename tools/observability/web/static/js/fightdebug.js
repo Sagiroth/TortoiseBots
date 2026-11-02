@@ -626,12 +626,12 @@
       maxDps: dpsRows.length ? dpsRows[0].dps : 0,
     };
   }
-  // The "Run total" view of the role tables: the same rows as roleTables but
-  // summed over a run (/api/v1/combat/run-totals). DPS and HPS divide by the
-  // bot's own fight time (fight_ms), not the run's: a bot that sat half the
-  // run out still shows its own rate. Deaths are the summed count (no
-  // per-fight death list survives the sum); the Tank table's Sunder and
-  // taunts read the spells map the totals carry.
+  // The Total view of the role tables: the same rows as roleTables but summed
+  // over a run (/api/v1/combat/run-totals). DPS and HPS divide by the bot's own
+  // fight time (fight_ms), not the run's: a bot that sat half the run out still
+  // shows its own rate. Deaths are the summed count (no per-fight death list
+  // survives the sum); the Tank table's Sunder and taunts read the spells map
+  // the totals carry.
   function runRoleTables(totals, layout) {
     totals = totals || {};
     const bots = Array.isArray(totals.bots) ? totals.bots : [];

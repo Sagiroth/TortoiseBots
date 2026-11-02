@@ -34,25 +34,22 @@ type TotalBot struct {
 	Fights  int               `json:"fights"`
 }
 
-// RunTotals is the answer of GET /api/v1/combat/run-totals: the asked since
-// (unix seconds, the domain clock), how many fights were summed, their summed
-// fight time, and one row per bot.
+// RunTotals is the answer of GET /api/v1/combat/run-totals: how many fights
+// were summed, their summed fight time, and one row per bot.
 type RunTotals struct {
-	Since  int64      `json:"since"`
 	Fights int        `json:"fights"`
 	DurMS  uint64     `json:"dur_ms"`
 	Bots   []TotalBot `json:"bots"`
 }
 
-// SumRun sums finished fights per bot. Since is unix seconds, the domain
-// clock (Fight.Start, ListQuery.Since). The rows are sorted newest first
+// SumRun sums finished fights per bot. The rows are sorted newest first
 // (start descending, then key ascending), so past the cap the oldest are
 // dropped no matter what order the caller passed. A fight seen twice under
 // the same key is summed once. A fight still running (outcome "live") or
 // filed unfinished carries no per-bot numbers and is not summed. More
 // reports the cap cut fights. The newest fight's name, class and role win
 // when a guid reappears.
-func SumRun(in []RunInput, since int64, cap int) (RunTotals, bool) {
+func SumRun(in []RunInput, cap int) (RunTotals, bool) {
 	if cap <= 0 || cap > RunTotalsCap {
 		cap = RunTotalsCap
 	}
@@ -64,14 +61,11 @@ func SumRun(in []RunInput, since int64, cap int) (RunTotals, bool) {
 		return rows[i].Key < rows[j].Key
 	})
 	more := false
-	out := RunTotals{Since: since, Bots: []TotalBot{}}
+	out := RunTotals{Bots: []TotalBot{}}
 	seen := map[string]bool{}
 	byGUID := map[uint32]int{}
 	count := 0
 	for _, r := range rows {
-		if r.Fight.Start < since {
-			continue
-		}
 		if r.Fight.Outcome == "live" || r.Fight.Outcome == "unfinished" {
 			continue
 		}

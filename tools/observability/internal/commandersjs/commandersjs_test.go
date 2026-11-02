@@ -90,14 +90,14 @@ func TestFightDebugJS(t *testing.T) {
 	runCheck(t, "fightdebug_check.js", "../../web/static/js/fightdebug.js")
 }
 
-// TestFDTotalsJS runs fd_totals_check.js: the Fight debugger's "This fight | Run total" switch (the .seg above the role
-// tables, the run's sums with per-bot DPS/HPS, the remembered choice) while the live table keeps its 10 s window.
+// TestFDTotalsJS runs fd_totals_check.js: the Fight debugger's "This fight | Total" switch (the .seg above the role
+// tables, the run's sums with per-bot DPS/HPS, the title and the remembered choice) while the live table keeps its 10 s window.
 func TestFDTotalsJS(t *testing.T) {
 	runCheck(t, "fd_totals_check.js", "../../web/static/js/app.js")
 }
 
 // TestFDTotalsRenderJS runs fd_totals_render_check.js: renderFightDebug itself with a finished fight selected, once in
-// "This fight" and once in "Run total" mode (a fake fetch answering the totals), plus no selection and a live one.
+// "This fight" and once in "Total" mode (a fake fetch answering the totals), plus no selection and a live one.
 func TestFDTotalsRenderJS(t *testing.T) {
 	runCheck(t, "fd_totals_render_check.js", "../../web/static/js/app.js")
 }
