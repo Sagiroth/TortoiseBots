@@ -80,6 +80,29 @@ namespace DecisionCapture {
     S(PlanLegNeed, ai::PlanLegNeed) \
     S(PlanStep, ai::PlanStep)
 
+#define TB_DCAP_ENUMVALUES_CcFamily(X) X(0) X(1) X(2) X(3) X(4)
+#define TB_DCAP_ENUMVALUES_LootFfa(X) X(0) X(1) X(2) X(3)
+#define TB_DCAP_ENUMVALUES_MemberFact_OffMapBlock(X) X(0) X(1)
+#define TB_DCAP_ENUMVALUES_Phase(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7)
+#define TB_DCAP_ENUMVALUES_Run_CombatDropKind(X) X(0) X(1) X(2)
+#define TB_DCAP_ENUMVALUES_State(X) X(0) X(1) X(2)
+#define TB_DCAP_ENUMVALUES_RezClass(X) X(0) X(1) X(2) X(3) X(4)
+#define TB_DCAP_ENUMVALUES_BossTacticKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7)
+#define TB_DCAP_ENUMVALUES_LegNeedMode(X) X(0) X(1) X(2) X(3)
+#define TB_DCAP_ENUMVALUES_PlanStepKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14)
+
+#define TB_DCAP_ENUMS(E) \
+    E(CcFamily, TortoiseBots::DungeonRun::CcFamily) \
+    E(LootFfa, TortoiseBots::DungeonRun::LootFfa) \
+    E(MemberFact_OffMapBlock, TortoiseBots::DungeonRun::MemberFact::OffMapBlock) \
+    E(Phase, TortoiseBots::DungeonRun::Phase) \
+    E(Run_CombatDropKind, TortoiseBots::DungeonRun::Run::CombatDropKind) \
+    E(State, TortoiseBots::DungeonRun::State) \
+    E(RezClass, TortoiseBots::RezHold::RezClass) \
+    E(BossTacticKind, ai::BossTacticKind) \
+    E(LegNeedMode, ai::LegNeedMode) \
+    E(PlanStepKind, ai::PlanStepKind)
+
 inline constexpr char kDecisionSchemaText[] = R"TBSCHEMA(struct CorpseMark
   guid: std::uint64_t
   x: float
@@ -1016,19 +1039,19 @@ struct PlanStep
   openProof: bool
   label: std::string
   tacticEntries: std::vector<std::uint32_t>
-enum CcFamily: None,Polymorph,Shackle,Banish,Sap
-enum LootFfa: Idle,Ordered,Looting,Restoring
-enum MemberFact::OffMapBlock: Busy,OpenWorld
-enum Phase: Begin,Gather,Walk,AwaitPull,AwaitTask,Rest,Wait,Hold
-enum Run::CombatDropKind: Unattackable,FarHeld,Wedged
-enum State: Running,Paused,Done
-enum RezClass: None,Priest,Paladin,Shaman,Druid
-enum BossTacticKind: None,Interrupt,KillFirst,Behind,AvoidCast,TankHold,HoldKill,OneAtATime
-enum LegNeedMode: None,Optional,Door,Blocking
-enum PlanStepKind: None,Move,MoveDirect,Pull,Boss,Loot,Open,UseItem,WaitObject,WaitClear,Rest,Ritual,Hold,Gossip,UseOn
+enum CcFamily: None=0,Polymorph=1,Shackle=2,Banish=3,Sap=4
+enum LootFfa: Idle=0,Ordered=1,Looting=2,Restoring=3
+enum MemberFact::OffMapBlock: Busy=0,OpenWorld=1
+enum Phase: Begin=0,Gather=1,Walk=2,AwaitPull=3,AwaitTask=4,Rest=5,Wait=6,Hold=7
+enum Run::CombatDropKind: Unattackable=0,FarHeld=1,Wedged=2
+enum State: Running=0,Paused=1,Done=2
+enum RezClass: None=0,Priest=1,Paladin=2,Shaman=3,Druid=4
+enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7
+enum LegNeedMode: None=0,Optional=1,Door=2,Blocking=3
+enum PlanStepKind: None=0,Move=1,MoveDirect=2,Pull=3,Boss=4,Loot=5,Open=6,UseItem=7,WaitObject=8,WaitClear=9,Rest=10,Ritual=11,Hold=12,Gossip=13,UseOn=14
 )TBSCHEMA";
 
-inline constexpr char kDecisionSchemaHash[] = "d7f2a821c0ee4774";
+inline constexpr char kDecisionSchemaHash[] = "89abf76bb51823a4";
 
 struct DecisionSampleField
 {

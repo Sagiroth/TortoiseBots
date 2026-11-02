@@ -102,11 +102,12 @@ class Struct:
 
 
 class Enum:
-    def __init__(self, name, qualified, scope, enumerators):
+    def __init__(self, name, qualified, scope, enumerators, values):
         self.name = name
         self.qualified = qualified
         self.scope = scope
         self.enumerators = enumerators
+        self.values = values  # the same arithmetic C++ gives: explicit or previous + 1
 
 
 class Model:
@@ -304,6 +305,7 @@ class Parser:
             if c == "#":
                 self.skip_line()
                 continue
+            start = self.pos
             word = self.read_identifier()
             if word is None:
                 self.error(self.pos, "unrecognised statement at namespace scope: %s" % self.snippet(self.pos))
@@ -311,7 +313,7 @@ class Parser:
             if word == "namespace":
                 self.parse_namespace(scope)
             elif word in ("struct", "class", "union"):
-                self.parse_struct(word, scope)
+                self.parse_struct(word, scope, start)
             elif word == "enum":
                 self.parse_enum(scope)
             elif word == "using":
@@ -369,20 +371,21 @@ class Parser:
 
     # -- types -----------------------------------------------------------
 
-    def parse_struct(self, kind, scope):
+    def parse_struct(self, kind, scope, start):
+        if kind == "union":
+            self.error(start, "unrecognised statement: %s" % self.snippet(start))
         self.skip_ws()
         name = self.read_identifier()
         if name is None:
             self.error(self.pos, "%s without a name" % kind)
-        # Skip a base clause or `final` up to the body or the semicolon.
+        # `final` is the only word between the name and the body this parser
+        # takes; a base clause is a member the capture cannot describe.
         self.skip_ws()
-        while self.pos < len(self.text) and self.text[self.pos] not in "{;":
-            if self.text[self.pos] == "(":
-                self.skip_balanced("(", ")")
-                continue
-            self.pos += 1
-        if self.pos >= len(self.text):
-            self.error(self.pos, "unterminated %s %s" % (kind, name))
+        if re.match(r"final\b", self.text[self.pos:]):
+            self.pos += len("final")
+            self.skip_ws()
+        if self.pos >= len(self.text) or self.text[self.pos] not in "{;":
+            self.error(start, "unrecognised statement: %s" % self.snippet(start))
         if self.text[self.pos] == ";":
             self.pos += 1
             return  # forward declaration
@@ -417,7 +420,7 @@ class Parser:
                     self.pos = start
                     word = self.read_identifier()
                     self.skip_ws()
-                    self.parse_struct(word, struct.scope)
+                    self.parse_struct(word, struct.scope, start)
                     continue
                 if head.startswith("enum"):
                     self.pos = start
@@ -426,12 +429,14 @@ class Parser:
                     self.skip_ws()
                     self.parse_enum(struct.scope)
                     continue
-                first_paren = self.top_level_index(header, "(")
-                first_assign = self.top_level_index(header, "=")
-                if first_assign < 0 and first_paren >= 0 and self.text[self.pos] == "{":
-                    # Function with a body (or a constructor's).
+                if brace_is_function_body(header):
                     self.skip_balanced("{", "}")
                     continue
+                colon = initializer_colon(header)
+                if colon >= 0 and not header.rstrip().endswith(")"):
+                    # `S() : x{0}`: the brace initialises a member, which this
+                    # parser cannot tell from a field initialiser.
+                    self.error(start, "unrecognised statement: %s" % self.snippet(start))
                 # Brace initialiser: consume the braces and the rest of the statement.
                 self.skip_balanced("{", "}")
                 self.skip_ws()
@@ -460,6 +465,8 @@ class Parser:
                 continue
             if head.startswith(("struct ", "class ", "union ")):
                 continue  # a forward declaration
+            if re.match(r"(alignas|decltype)\s*\(", head) or head.startswith("[["):
+                self.error(start, "unrecognised statement: %s" % self.snippet(start))
             first_paren = self.top_level_index(header, "(")
             first_assign = self.top_level_index(header, "=")
             if first_paren >= 0 and (first_assign < 0 or first_paren < first_assign):
@@ -496,7 +503,6 @@ class Parser:
                 if c == "{":
                     return self.text[start:self.pos], "brace"
                 if c == "}":
-                    print(self.text)
                     self.error(self.pos, "unexpected '}' in %s" % self.snippet(start))
             self.pos += 1
         self.error(start, "unterminated struct body")
@@ -527,6 +533,7 @@ class Parser:
         return -1
 
     # -- enums -----------------------------------------------------------
+
 
     def parse_enum(self, scope):
         # `self.pos` is just past the `enum` keyword.
@@ -561,19 +568,28 @@ class Parser:
         body = self.text[body_start:self.pos]
         self.pos += 1
         enumerators = []
+        values = []
+        next_value = 0
         for part in split_top_level(body, ","):
             part = part.strip()
             if not part:
                 continue
-            m = re.match(r"([A-Za-z_]\w*)", part)
+            m = re.fullmatch(r"([A-Za-z_]\w*)(?:\s*=\s*(.*))?", part)
             if not m:
                 self.error(body_start, "unrecognised enum entry %s" % part)
-            if "(" in part:
-                self.error(body_start, "enum entry with an initialiser expression: %s" % part)
+            if m.group(2) is None:
+                value = next_value
+            else:
+                try:
+                    value = enum_value(m.group(2))
+                except ValueError:
+                    self.error(body_start, "unrecognised enum entry %s" % part)
             enumerators.append(m.group(1))
+            values.append(value)
+            next_value = value + 1
         if not enumerators:
             self.error(body_start, "enum %s with no enumerators" % name)
-        self.model.add(Enum(name, "::".join(scope + (name,)), scope + (name,), enumerators))
+        self.model.add(Enum(name, "::".join(scope + (name,)), scope + (name,), enumerators, values))
         self.skip_ws()
         if self.pos < len(self.text) and self.text[self.pos] == ";":
             self.pos += 1
@@ -643,6 +659,70 @@ def split_top_level(text, sep):
             start = i + 1
     parts.append(text[start:])
     return parts
+
+
+def brace_is_function_body(header):
+    """Whether the `{` the header stops at opens a function body.
+
+    A constructor's brace member-initialiser (`S() : x{0}`) reads as a
+    function header up to the brace, so after an initialiser list the text
+    before the brace decides: a parameter list ends with `)`, a member
+    initialiser does not (that case is an error, not a body)."""
+    if initializer_colon(header) >= 0:
+        return header.rstrip().endswith(")")
+    return Parser.top_level_index(header, "(") >= 0 and Parser.top_level_index(header, "=") < 0
+
+
+def initializer_colon(header):
+    """The `:` opening a constructor's member-initialiser list, or -1.
+
+    An access specifier (`public: bool f()`) is not one: the text before the
+    colon must carry the parameter list."""
+    colon = top_level_colon(header)
+    if colon < 0:
+        return -1
+    before = header[:colon].strip()
+    if before in ("public", "private", "protected") or "(" not in before:
+        return -1
+    return colon
+
+
+def top_level_colon(text):
+    """The offset of a single top-level `:` (not `::`), or -1."""
+    paren = bracket = angle = 0
+    for i, c in enumerate(text):
+        if c == "(":
+            paren += 1
+        elif c == ")":
+            paren -= 1
+        elif c == "[":
+            bracket += 1
+        elif c == "]":
+            bracket -= 1
+        elif c == "<" and paren == 0 and bracket == 0:
+            angle += 1
+        elif c == ">" and paren == 0 and bracket == 0:
+            angle = max(0, angle - 1)
+        elif c == ":" and paren == 0 and bracket == 0 and angle == 0:
+            if i + 1 < len(text) and text[i + 1] == ":":
+                continue
+            if i > 0 and text[i - 1] == ":":
+                continue
+            return i
+    return -1
+
+
+ENUM_VALUE = re.compile(r"([+-]?)(0[xX][0-9a-fA-F]+|[0-9]+)[uU]?\Z")
+
+
+def enum_value(text):
+    """An enumerator's explicit value: an integer literal only (the schema and
+    the decoder list values, so an expression is a decision, not a guess)."""
+    m = ENUM_VALUE.match(text.strip())
+    if not m:
+        raise ValueError(text)
+    value = int(m.group(2), 0)
+    return -value if m.group(1) == "-" else value
 
 
 def remove_initializer(text):
@@ -940,7 +1020,8 @@ def sample_json(model, node, depth=0):
             return '"s"'
         return "7"
     if kind == "enum":
-        return "1" if len(model.enums[node[1]].enumerators) >= 2 else "0"
+        values = model.enums[node[1]].values
+        return str(values[1] if len(values) >= 2 else values[0])
     if kind == "struct":
         if depth >= 3:
             return "{}"
@@ -953,7 +1034,10 @@ def sample_json(model, node, depth=0):
         return "{" + ",".join(members) + "}"
     # The depth cap counts struct nesting, not containers: a container of a
     # struct is still that struct's sample, so the codec test can compare it.
-    if kind in ("vector", "deque", "set", "unordered_set", "optional"):
+    if kind == "optional":
+        # The codec writes an optional as its element (or null), not as an array.
+        return sample_json(model, node[1], depth)
+    if kind in ("vector", "deque", "set", "unordered_set"):
         return "[" + sample_json(model, node[1], depth) + "]"
     if kind in ("c_array", "array"):
         return "[" + ",".join(sample_json(model, node[1], depth) for _ in range(node[2])) + "]"
@@ -980,7 +1064,8 @@ def schema_text(model, roots=ROOTS):
             lines.append("  %s: %s" % (field.name, field.type_text))
     for qualified in enums:
         enum = enum_table[qualified]
-        lines.append("enum %s: %s" % (schema_name(qualified), ",".join(enum.enumerators)))
+        lines.append("enum %s: %s" % (schema_name(qualified), ",".join(
+            "%s=%d" % (name, value) for name, value in zip(enum.enumerators, enum.values))))
     return "\n".join(lines) + "\n"
 
 
@@ -1020,6 +1105,18 @@ def generate_header(model, roots=ROOTS):
     for index, (struct, _fields) in enumerate(structs):
         tail = " \\" if index + 1 < len(structs) else ""
         out.append("    S(%s, %s)%s" % (mangled(struct.qualified), struct.qualified, tail))
+    out.append("")
+    # The decoder accepts an enum only at a value the enum declares, so the
+    # values travel with the field lists (schema text has them too).
+    for qualified in enums:
+        values = enum_table[qualified].values
+        out.append("#define TB_DCAP_ENUMVALUES_%s(X) %s"
+                   % (mangled(qualified), " ".join("X(%d)" % value for value in values)))
+    out.append("")
+    out.append("#define TB_DCAP_ENUMS(E) \\")
+    for index, qualified in enumerate(enums):
+        tail = " \\" if index + 1 < len(enums) else ""
+        out.append("    E(%s, %s)%s" % (mangled(qualified), qualified, tail))
     out.append("")
     out.append("inline constexpr char kDecisionSchemaText[] = R\"TBSCHEMA(" + text + ")TBSCHEMA\";")
     out.append("")

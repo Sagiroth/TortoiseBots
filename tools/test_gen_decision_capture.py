@@ -31,7 +31,8 @@ PRIVACY_ALLOW = {
     "passed": "pullPassed",
 }
 
-PRIVACY = re.compile(r"pass|secret|token|cred|auth|key|account|ip(addr)?\b|email", re.IGNORECASE)
+PRIVACY = re.compile(r"pass|secret|token|cred|auth|key|account|ip(addr)?\b|email|pwd|pw\b|session|salt",
+                     re.IGNORECASE)
 
 
 def run_scan(source):
@@ -80,9 +81,56 @@ class GeneratorTest(unittest.TestCase):
         reordered = "enum class Kind : std::uint8_t { A, B };\n" \
                     "struct S { Kind k = Kind::A; std::uint32_t x = 0; };\n"
         text = schema_of(base)
-        self.assertIn("enum Kind: A,B", text)
+        self.assertIn("enum Kind: A=0,B=1", text)
         hashes = {gen.fnv1a64(schema_of(variant)) for variant in (base, swapped, retyped, reordered)}
         self.assertEqual(len(hashes), 4)
+
+    def test_enum_values_are_in_the_schema(self):
+        value = "enum class K { A = 1, B = 2 };\nstruct S { K k = K::A; };\n"
+        other = "enum class K { A = 1, B = 5 };\nstruct S { K k = K::A; };\n"
+        self.assertIn("enum K: A=1,B=2", schema_of(value))
+        self.assertNotEqual(gen.fnv1a64(schema_of(value)), gen.fnv1a64(schema_of(other)),
+                            "two enums that differ only in a value must hash differently")
+        self.assertIn("enum K: A=1,B=2,C=3",
+                      schema_of("enum class K { A = 1, B = 2, C };\nstruct S { K k = K::A; };\n"))
+        self.assertIn("enum K: A=0,B=1",
+                      schema_of("enum class K { A, B };\nstruct S { K k = K::A; };\n"))
+
+    def test_enum_value_expression_is_refused(self):
+        result = run_scan("enum class K { A = 1 << 2 };\nstruct S { K k = K::A; };\n")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("unrecognised enum entry", result.stderr)
+
+    def test_base_class_is_an_unrecognised_statement(self):
+        result = run_scan("struct Base {};\nstruct S : Base { int x = 0; };\n")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(":2:", result.stderr)
+        self.assertIn("unrecognised statement", result.stderr)
+
+    def test_constructor_brace_initialiser_is_an_unrecognised_statement(self):
+        result = run_scan("struct S { int x = 0; S() : x{0} {} };\n")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("unrecognised statement", result.stderr)
+
+    def test_alignas_and_decltype_fields_are_unrecognised(self):
+        for source in ("struct S { alignas(8) int x = 0; };\n",
+                       "struct S { decltype(1) x = 0; };\n"):
+            result = run_scan(source)
+            self.assertEqual(result.returncode, 2, source + result.stdout + result.stderr)
+            self.assertIn("unrecognised statement", result.stderr)
+
+    def test_union_is_an_error(self):
+        result = run_scan("union U { int a = 0; float b = 0.0f; };\n")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("union", result.stderr)
+
+    def test_optional_sample_is_the_codec_encoding(self):
+        # The codec writes an optional as its element (or null), not as an array.
+        model = gen.scan_source("struct S { std::optional<int> o; };\n", "<test>")
+        gen.collect_nested_names(model)
+        structs, _enums, _table = gen.captured_graph(model, tuple(model.structs))
+        field = structs[0][1][0]
+        self.assertEqual(gen.sample_json(model, field.node), "7")
 
     def test_header_hash_is_fnv1a_of_the_schema_text(self):
         header = (ROOT / "runtime" / "DecisionCaptureFields.gen.h").read_text(encoding="utf-8")
