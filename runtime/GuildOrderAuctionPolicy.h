@@ -13,9 +13,11 @@ namespace TortoiseBots
 namespace GuildOrders
 {
 
-// The auction leg gets one search. A leg whose auctioneer search comes back
-// empty moves straight down the ladder instead of parking for three tries.
-inline constexpr uint32_t kAuctionSearchMovesLadderAfter = 1;
+// An empty auctioneer search is often transient (the house just visited is
+// cooling down after a mailbox trip), so the leg gets three tries like the
+// bank. "Nothing on the AH" still moves on at once: the buy action hands the
+// leg down the ladder when no listing fits.
+inline constexpr uint32_t kAuctionSearchMovesLadderAfter = 3;
 
 inline bool AuctionSearchMovesLadder(uint32_t failedSearches)
 {

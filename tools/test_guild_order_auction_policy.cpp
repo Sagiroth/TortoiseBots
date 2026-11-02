@@ -12,9 +12,9 @@ static int failures = 0;
 int main()
 {
     // One search per auction leg: the first empty search moves the ladder.
-    CHECK(kAuctionSearchMovesLadderAfter == 1);
+    CHECK(kAuctionSearchMovesLadderAfter == 3);
     CHECK(!AuctionSearchMovesLadder(0));
-    CHECK(AuctionSearchMovesLadder(1));
+    CHECK(!AuctionSearchMovesLadder(2));
     CHECK(AuctionSearchMovesLadder(3));
 
     // Two minutes without an auctioneer in interact range ends the leg.

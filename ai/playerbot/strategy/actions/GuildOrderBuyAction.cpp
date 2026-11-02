@@ -488,7 +488,13 @@ bool GuildOrderBuyAction::Execute(Event& event)
         uint32_t const surplus = BuySurplus(best.count, missing);
         if (surplus)
             NoteRelistSurplus(botGuidLow, itemId, surplus, AuctionUnitPrice(best.buyout, best.count));
-        SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
+        // Still short: buy the next listing on this visit instead of a
+        // mailbox round trip per stack; the mail is collected once covered.
+        if (best.count < missing)
+            SetSupply(botGuidLow, SupplyStep::AuctionHouse, itemId, missing - best.count,
+                stored->supplyReturnStep, stored->reason);
+        else
+            SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
     }
     else
     {
