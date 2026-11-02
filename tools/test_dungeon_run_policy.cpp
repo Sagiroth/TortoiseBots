@@ -24778,6 +24778,61 @@ static void TestRaidHealerGuardPassesOverAHeldUnit()
     CHECK(q.healerGuardDps.empty());
 }
 
+// ... and a member of a live linked_death group (AiPlayerbot.DungeonRunLinkedDeath): the guard sends nobody at it, the
+// same as at a plan boss. An `attack <guid> <bot>` order is an explicit order that outranks the group's pick, so the
+// single ordered dps would kill that member alone and the encounter's raiser would restore it.
+static void TestRaidHealerGuardPassesOverALinkedDeathMember()
+{
+    DungeonPlan plan;
+    plan.map = 309;
+    Run r = RaidBossRun(plan);
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = RaidHealerGuardFacts();
+    f.linkedDeath = true;
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    // Two living group members in the fight: the group is live.
+    f.engagedUnits = {Unit(50030, 11347, 20), Unit(50031, 11348, 12)};
+    UnitFact zealot = Hitter(50030, 11347, 20, true);
+    zealot.x = 22.0f;
+    f.partyAttackers = {zealot};
+    for (int k = 0; k < 5; ++k)
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardDps.empty());
+    CHECK(r.offTankTurn == 0);
+    // A non-member add on the healer is still the guard's.
+    UnitFact add = Hitter(50032, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50032 NearDps");
+    // With the key off the member is ordered as before (the mutation: a guard that ignores the group kills it alone).
+    Run q = RaidBossRun(plan);
+    q.liveTactics = &table;
+    Facts g = RaidHealerGuardFacts();
+    g.linkedDeath = false;
+    g.members = f.members;
+    g.engagedUnits = f.engagedUnits;
+    g.partyAttackers = {zealot};
+    CHECK(GuardTick(q, g) == "attack 50030 NearDps");
+}
+
 // The per-unit cap of the off-tank path: a unit that had kGuardOrdersPerUnit orders gets no more until
 // kRaidGuardRearmMs after its last one, then it is re-armed and the nearest ranged dps is picked again.
 static void TestRaidHealerGuardCapsAndRearmsOneAdd()
@@ -30018,9 +30073,157 @@ static void TestPartyRulesUnchanged()
     CHECK(r.state == State::Running && r.regroup && r.wipes == 0 && r.nearWipes == 1);
 }
 
+// The run line of a linked_death boss fight: the group's engaged members and the highest health, in 5 % brackets;
+// nothing outside a boss step, without a row of the kind, or with fewer than two members engaged.
+static void TestLinkedDeathNoteFollowsTheGroupHealth()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    UnitFact thekal = Unit(1, 14599, 10);
+    thekal.health = 133250;
+    thekal.maxHealth = 133250;
+    UnitFact lor = Unit(2, 11347, 12);
+    lor.health = 51282;
+    lor.maxHealth = 85470;
+    UnitFact zath = Unit(3, 11348, 9);
+    zath.health = 96138;
+    zath.maxHealth = 106820;
+    UnitFact tiger = Unit(4, 11361, 7);   // not a member: never in the line
+    tiger.health = 5000;
+    tiger.maxHealth = 5000;
+    f.engagedUnits = {thekal, lor, zath, tiger};
+    int bracket = -1;
+    bool death = false;
+    const std::string withOrder = " (burn 11347>11348>14599)";
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 100 %" + withOrder);
+    CHECK(bracket == 20 && !death);
+    f.engagedUnits[2].health = 42728;      // 40 %
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 100 %" + withOrder);
+    CHECK(bracket == 20 && !death);
+    f.engagedUnits[0].health = 26650;      // 20 %: the highest is 60 % now
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 60 %" + withOrder);
+    CHECK(bracket == 12 && !death);
+    // A member dies: its first death time goes into the line (the walk can then tell the 15 s window from the 7 s one),
+    // and the read reports the death even though the bracket did not move.
+    r.fightMs = 12000;
+    f.engagedUnits.erase(f.engagedUnits.end() - 2, f.engagedUnits.end() - 1); // Zath died; Thekal keeps its 20 %
+    CHECK(f.engagedUnits.size() == 3 && f.engagedUnits[0].health == 26650);
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599/11347 at 60 % (burn 11347>11348>14599; 11348 fell at 12 s)");
+    CHECK(death);
+    CHECK(bracket == 12);
+    // The next read has no new death, and the time is not recorded twice.
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599/11347 at 60 % (burn 11347>11348>14599; 11348 fell at 12 s)");
+    CHECK(!death);
+    // One member left: still the line (the group may be finishing), and the second death is recorded too.
+    f.engagedUnits = {f.engagedUnits[0]};
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599 at 20 % (burn 11347>11348>14599; 11348 fell at 12 s; 11347 fell at 12 s)");
+    CHECK(death);
+    // The key off: no line at all.
+    f.engagedUnits = {thekal, lor, zath};
+    f.linkedDeath = false;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    CHECK(bracket == -1 && !death);
+    f.linkedDeath = true;
+    // Not a boss step, no live table, no row of the kind: no line.
+    r.step = 1;
+    plan.steps.push_back(Step(PlanStepKind::Rest));
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    r.step = 0;
+    r.liveTactics = nullptr;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    ai::BossTacticTable plain;
+    ai::BossTacticRow kill;
+    kill.map = 309;
+    kill.bossEntry = 14599;
+    kill.kind = ai::BossTacticKind::KillFirst;
+    kill.targetEntry = 11347;
+    CHECK(plain.Add(kill));
+    plain.Seal();
+    r.liveTactics = &plain;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+}
+
+// The run line: the linked line is appended to what the line already says (never replacing the "fighting" clause), and
+// it stays there across quiet ticks; a bracket move or a member's death updates it.
+static void TestLinkedDeathNoteIsAppendedToTheFightLine()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {HpUnit(0xF130000000000001ull, 14599, 133250, 133250),
+                      HpUnit(0xF130000000000002ull, 11347, 51282, 85470),
+                      HpUnit(0xF130000000000003ull, 11348, 96138, 106820)};
+    const std::string expected = "linked 14599/11347/11348 at 100 % (burn 11347>11348>14599)";
+    Tick(r, f);
+    CHECK(r.note.find("fighting; " + expected) == 0);
+    // A quiet tick keeps the line (the stored text is appended again, not dropped).
+    Tick(r, f);
+    CHECK(r.note.find("fighting; " + expected) == 0);
+    CHECK(r.note.find(expected) != std::string::npos);
+    // 5 % down: the bracket moves and the line has the new percentage.
+    f.engagedUnits[0].health = 106600; // Thekal 80 %; Zath at 90 % is now the highest
+    Tick(r, f);
+    CHECK(r.note.find("at 90 %") != std::string::npos);
+    // A member dies: the line carries its death time.
+    f.engagedUnits = {f.engagedUnits[0], f.engagedUnits[1]};
+    Tick(r, f);
+    CHECK(r.note.find("11348 fell at ") != std::string::npos);
+}
+
 int main()
 {
     TestRunGossipStepOfReadsTheCurrentStep();
+    TestLinkedDeathNoteFollowsTheGroupHealth();
+    TestLinkedDeathNoteIsAppendedToTheFightLine();
     TestRunArmsAMoveTriggerUntilItFired();
     TestPatrollerOutsideTheRadiusIsWaitedForThenPulled();
     TestPatrollerWaitIsBounded();
@@ -30690,6 +30893,7 @@ int main()
     TestRaidHealerGuardPassesOverAPlanBossOnAHealer();
     TestRaidHealerGuardPassesOverAnAddWithCcInFlight();
     TestRaidHealerGuardPassesOverAHeldUnit();
+    TestRaidHealerGuardPassesOverALinkedDeathMember();
     TestRaidHealerGuardCapsAndRearmsOneAdd();
     TestRaidHealerGuardPrunesMarksWithTheAddAndTheBot();
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();

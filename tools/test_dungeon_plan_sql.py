@@ -4906,14 +4906,20 @@ class DungeonPlanSql(unittest.TestCase):
             for block in re.findall(r"INSERT INTO `ai_boss_tactic` \(([^)]*)\) VALUES(.*?);\n", text, re.S):
                 cols = [c.strip(" `") for c in block[0].split(",")]
                 map_at, entry_at = cols.index("map"), cols.index("boss_entry")
-                for row in re.findall(r"(?m)^\((\d+), (\d+), '", block[1]):
-                    inserted.add((row[0], row[1]))
+                for row in re.findall(r"(?m)^\((\d+), (\d+), '(\w+)'", block[1]):
+                    inserted.add((row[0], row[1], row[2]))
             whole = set(re.findall(r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+);", text))
             scoped = {}
-            for map_id, entries in re.findall(r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+) AND `boss_entry` IN \(([\d, ]+)\);", text):
-                scoped.setdefault(map_id, set()).update(e.strip() for e in entries.split(","))
-            missing = sorted((m, e) for m, e in (inserted & seen) if not (m in whole or e in scoped.get(m, set())))
-            self.assertFalse(missing, "%s: tactic INSERTs with no DELETE of the same (map, boss_entry): %s" % (name, missing))
+            for map_id, entries, kind in re.findall(
+                    r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+) AND `boss_entry` IN \(([\d, ]+)\)"
+                    r"(?: AND `kind` = '(\w+)')?;", text):
+                for entry in entries.split(","):
+                    scoped.setdefault((map_id, entry.strip()), set()).add(kind or "*")
+            def deleted(map_id, entry, kind):
+                return map_id in whole or kind in scoped.get((map_id, entry), ()) \
+                    or "*" in scoped.get((map_id, entry), ())
+            missing = sorted(key for key in (inserted & seen) if not deleted(*key))
+            self.assertFalse(missing, "%s: tactic INSERTs with no DELETE of the same (map, boss_entry, kind): %s" % (name, missing))
             seen |= inserted
 
 

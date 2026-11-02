@@ -23,6 +23,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics hold kill",
         NextAction::array(0, new NextAction("boss tactics hold kill", ACTION_HIGH + 2), NULL)));
 
+    // A linked_death group is held: a DPS bot on another member takes the equalise pick, so the raid spreads its damage
+    // instead of leaving one member to die and be raised.
+    triggers.push_back(new TriggerNode(
+        "boss tactics linked death",
+        NextAction::array(0, new NextAction("boss tactics linked death", ACTION_HIGH + 3), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

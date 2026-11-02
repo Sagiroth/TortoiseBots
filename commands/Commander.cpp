@@ -10048,6 +10048,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     }
     f.directJoinSupported = true; // a direct order waits a tick for the read (DungeonRun::HoldForDirectJoin)
     f.directJoinRead = joinWanted;
+    // The boss tactics' linked_death groups (AiPlayerbot.DungeonRunLinkedDeath): the raid guard leaves their members
+    // alone and the run line reads the group's health and deaths.
+    f.linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath;
     // Task A5: a raid binding with AiPlayerbot.DungeonRunRaid scales the run's gather, wipe level and rest floor.
     if (raid && sPlayerbotAIConfig.dungeonRunRaid)
     {
