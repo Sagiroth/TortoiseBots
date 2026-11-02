@@ -25,15 +25,15 @@ def tick_body():
 class GuildOrderStatusHonestyTest(unittest.TestCase):
     def test_have_counts_delivered_only(self):
         body = tick_body()
-        idx = body.index("out.reportedHave = in.scanned ?")
+        idx = body.index("out.reportedHave = ReportedHaveThisPass(")
         window = body[idx:body.index("out.reportedCarry", idx)]
-        self.assertIn("ReportedHave(record.delivered, record.reportedHave)", window)
+        self.assertIn("record.stockTarget, record.delivered, record.reportedHave)", window)
         for token in ("ownedNow", "in.bagCount", "in.mailboxCount"):
             self.assertNotIn(token, window)
 
     def test_carry_counts_bags_and_mail(self):
         self.assertIn(
-            "ReportedCarry(in.scanned, in.botOnline, in.bagCount, in.mailboxCount,",
+            "ReportedCarryThisPass(terminal, in.scanned, in.botOnline, in.bagCount,",
             tick_body())
 
     def test_have_keeps_its_never_drop_floor(self):
@@ -66,7 +66,7 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
         # announced: a bot can log out inside the progress-throttle window,
         # and the list then reads what the row holds.
         body = tick_body()
-        scan = body.index("if (in.scanned && carryChanged)")
+        scan = body.index("if ((in.scanned || terminal) && carryChanged)")
         send = body.index("if (out.sendLine)")
         persist = body.index("out.persist = TakeDirtyLocked(stored, out.persistRecord);", send)
         self.assertLess(scan, send)

@@ -458,6 +458,7 @@ public:
                 it->second.record.needItems.clear();
                 it->second.record.needWhispered = false;
                 it->second.record.reportedHave = 0;
+                it->second.record.reportedCarry = 0;
                 MarkDirtyLocked(it->second);
                 park = true;
             }
@@ -610,6 +611,9 @@ public:
             it->second.record.needItems.clear();
             it->second.record.needWhispered = false;
             it->second.record.needBankDenied = false;
+            // A terminal row holds nothing for the order: the final line and
+            // the stored row say zero, not the last pre-delivery scan.
+            it->second.record.reportedCarry = 0;
             // Unspent guild gold outlives the order: the row parks instead
             // of disappearing, and the refund drain pays it from any banker
             // visit before FinishRepaid clears the row.
@@ -1650,18 +1654,25 @@ public:
         // never the bags. It still never drops: offline (or not yet re-seen)
         // bots keep max(delivered, last reported). A stocked order reports
         // the bank stock the last look saw: owned counting means nothing
-        // there. Off-scan passes hold the last reported counts: the zeros
-        // above are unscheduled, not a lost bag.
-        out.reportedHave = in.scanned ? ReportedHave(record.delivered, record.reportedHave) :
-            (record.state == OrderState::Stocked && in.bankChecked ?
-                (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
-        out.reportedCarry = ReportedCarry(in.scanned, in.botOnline, in.bagCount, in.mailboxCount,
-            record.reportedCarry);
+        // there. Both counts are read off the row every pass, so a deposit
+        // reports itself without waiting for the next scan.
+        bool stocked = record.state == OrderState::Stocked;
+        // A terminal row holds nothing for the order any more: the stack was
+        // banked or mailed, or the order ended without it. Reported before
+        // the line and the row write below, so neither repeats the last
+        // pre-delivery scan.
+        bool terminal = IsFinished(record.state) && !stocked;
+        out.reportedHave = ReportedHaveThisPass(stocked, in.bankChecked, in.bankCount,
+            record.stockTarget, record.delivered, record.reportedHave);
+        out.reportedCarry = ReportedCarryThisPass(terminal, in.scanned, in.botOnline, in.bagCount,
+            in.mailboxCount, record.reportedCarry);
         // A fresh scan is the row's carry truth: fold it in and mark the row
         // dirty at once, so a bot that logs out before the next progress line
-        // still lists what it carried. Only the line waits for the throttle.
+        // still lists what it carried. A terminal row's zero is truth too and
+        // reaches the row although no scan runs for it. Only the line waits
+        // for the throttle.
         bool carryChanged = out.reportedCarry != record.reportedCarry;
-        if (in.scanned && carryChanged)
+        if ((in.scanned || terminal) && carryChanged)
         {
             record.reportedCarry = out.reportedCarry;
             MarkDirtyLocked(stored);

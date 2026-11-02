@@ -173,6 +173,33 @@ inline uint32_t ReportedCarry(bool scanned, bool botOnline, uint32_t bagCount, u
     return scanned && botOnline ? bagCount + mailboxCount : reportedCarry;
 }
 
+// The have count a pass reports: a stocked row shows the bank stock the last
+// look saw (owned counting means nothing there), every other row shows what
+// reached the guild. Read off the row on every pass, not only off a scan, so
+// the line after a deposit reports it even when no scan runs.
+inline uint32_t ReportedHaveThisPass(bool stocked, bool bankChecked, uint32_t bankCount,
+    uint32_t stockTarget, uint32_t delivered, uint32_t reportedHave)
+{
+    if (!stocked)
+        return ReportedHave(delivered, reportedHave);
+    if (!bankChecked)
+        return reportedHave;
+    return bankCount > stockTarget ? stockTarget : bankCount;
+}
+
+// The carry a pass reports: what the bot still holds for the order. A
+// terminal row (a stocked row keeps its quota for the next round) holds
+// nothing for it any more - the stack went to the bank or the mail, or the
+// order ended without it - so the final line and the row write never repeat
+// the last pre-delivery scan.
+inline uint32_t ReportedCarryThisPass(bool terminal, bool scanned, bool botOnline, uint32_t bagCount,
+    uint32_t mailboxCount, uint32_t reportedCarry)
+{
+    if (terminal)
+        return 0;
+    return ReportedCarry(scanned, botOnline, bagCount, mailboxCount, reportedCarry);
+}
+
 // The carry a list reply shows: a live bot's bags and mailbox, else the last
 // carry Tick put on the row. An offline bot's bags cannot be read, and zero
 // would claim it carries nothing.
