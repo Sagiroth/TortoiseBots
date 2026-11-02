@@ -361,6 +361,8 @@ namespace ai
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathAction(ai); };
             creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastAction(ai); };
+            creators["boss tactics freeze"] = [](PlayerbotAI* ai) { return new BossTacticsFreezeAction(ai); };
+            creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeAction(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };

@@ -25,6 +25,7 @@
 #include "EnemyAreaSpell.h"
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/PartyMemberToHeal.h"
 
 using namespace ai;
 
@@ -640,6 +641,249 @@ BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTa
         }
     }
     return danger;
+}
+
+namespace
+{
+// One bot's freeze_on_aura episode: from the rising edge to the aura's end. maxDrift is how far it moved since the
+// freeze caught it, the walk's proof that the hold kept it inside Mandokir's 2 yd.
+struct FreezeEpisode
+{
+    bool active = false;
+    std::uint32_t aura = 0;
+    std::uint32_t startMs = 0;
+    float startX = 0.0f;
+    float startY = 0.0f;
+    float maxDrift = 0.0f;
+    bool stopped = false;
+};
+
+std::mutex g_freezeMutex;
+std::unordered_map<uint64, FreezeEpisode> g_freezeEpisodes;
+
+// The episode's row: the aura, how long it held the bot and how far the bot drifted.
+//   info1 = "aura=<id>"
+//   info2 = "ms=<duration>,moved_yd=<max drift>"
+void LogFreeze(PlayerbotAI* ai, const FreezeEpisode& episode, std::uint32_t nowMs)
+{
+    char info1[32];
+    snprintf(info1, sizeof(info1), "aura=%u", episode.aura);
+    char info2[64];
+    snprintf(info2, sizeof(info2), "ms=%u,moved_yd=%.2f", nowMs - episode.startMs, episode.maxDrift);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsFreeze", info1, info2);
+}
+
+// The flee action's row, throttled per bot and aura (a walk takes several ticks): where the carrier stood when it
+// was sent, the clearance it needs and whether a walk started.
+constexpr uint32 kFleeLogGapMs = 2000;
+std::mutex g_fleeLogMutex;
+std::unordered_map<uint64, uint32> g_fleeLog;
+
+bool FleeLogDue(Player* bot, std::uint32_t aura)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return false;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 key = bot->GetObjectGuid().GetRawValue() ^ (static_cast<uint64>(aura) << 32);
+    std::lock_guard<std::mutex> lock(g_fleeLogMutex);
+    uint32& last = g_fleeLog[key];
+    if (last != 0 && nowMs - last < kFleeLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+inline const char* FleeModeName(TacticMode mode)
+{
+    return mode == TacticMode::ToTank ? "to_tank" : "away";
+}
+
+//   info1 = "aura=<id>,mode=<away|to_tank>"
+//   info2 = "ally_yd=<d|none>,radius=<d>,walk=<started|none>"
+void LogFlee(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, float allyYd, float radius, bool started)
+{
+    if (!FleeLogDue(bot, row.spellId))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "aura=%u,mode=%s", row.spellId, FleeModeName(row.mode));
+    char info2[96];
+    if (allyYd >= 0.0f)
+        snprintf(info2, sizeof(info2), "ally_yd=%.1f,radius=%.1f,walk=%s", allyYd, radius, started ? "started" : "none");
+    else
+        snprintf(info2, sizeof(info2), "ally_yd=none,radius=%.1f,walk=%s", radius, started ? "started" : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsFlee", info1, info2);
+}
+}
+
+std::uint32_t ai::FreezeAuraOnBot(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FreezeOnAura && row->spellId != 0 && bot->HasAura(row->spellId))
+            return row->spellId;
+    }
+    return 0;
+}
+
+void ai::FreezeEpisodeTick(PlayerbotAI* ai, Player* bot, std::uint32_t aura)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const float x = bot->GetPositionX();
+    const float y = bot->GetPositionY();
+    const uint64 guid = bot->GetObjectGuid().GetRawValue();
+    FreezeEpisode ended;
+    bool logEnded = false;
+    {
+        std::lock_guard<std::mutex> lock(g_freezeMutex);
+        auto it = g_freezeEpisodes.find(guid);
+        if (aura == 0)
+        {
+            if (it != g_freezeEpisodes.end())
+            {
+                if (it->second.active)
+                {
+                    ended = it->second;
+                    logEnded = true;
+                }
+                g_freezeEpisodes.erase(it);
+            }
+        }
+        else if (it == g_freezeEpisodes.end() || !it->second.active || it->second.aura != aura)
+        {
+            FreezeEpisode& state = g_freezeEpisodes[guid];
+            state = FreezeEpisode();
+            state.active = true;
+            state.aura = aura;
+            state.startMs = nowMs;
+            state.startX = x;
+            state.startY = y;
+        }
+        else
+        {
+            const float dx = x - it->second.startX;
+            const float dy = y - it->second.startY;
+            const float drift = std::sqrt(dx * dx + dy * dy);
+            if (drift > it->second.maxDrift)
+                it->second.maxDrift = drift;
+        }
+    }
+    if (logEnded && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        LogFreeze(ai, ended, nowMs);
+}
+
+bool ai::FreezeStopDue(PlayerbotAI* ai, Player* bot, std::uint32_t aura)
+{
+    (void)ai;
+    if (aura == 0)
+        return false;
+    std::lock_guard<std::mutex> lock(g_freezeMutex);
+    auto it = g_freezeEpisodes.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_freezeEpisodes.end() || !it->second.active || it->second.aura != aura || it->second.stopped)
+        return false;
+    it->second.stopped = true;
+    return true;
+}
+
+const BossTacticRow* ai::ActiveFleeRow(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FleeOnAura && row->spellId != 0 && bot->HasAura(row->spellId))
+            return row;
+    }
+    return nullptr;
+}
+
+bool ai::FleeRowListsAura(PlayerbotAI* ai, Player* bot, std::uint32_t spellId)
+{
+    if (!spellId || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FleeOnAura && row->spellId == spellId)
+            return true;
+    }
+    return false;
+}
+
+bool BossTacticsFreezeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
+    if (!aura)
+        return false;
+    FreezeEpisodeTick(ai, bot, aura);
+    // Once on the rising edge: the multiplier keeps every other action down, so repeating these each tick would only
+    // re-break a cast the bot cannot start anyway.
+    if (FreezeStopDue(ai, bot, aura))
+    {
+        bot->AttackStop();
+        bot->CastStop();
+        bot->StopMoving();
+    }
+    return true;
+}
+
+bool BossTacticsFleeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const BossTacticRow* row = ActiveFleeRow(ai, bot, fight);
+    if (!row)
+        return false;
+    const bool toTank = row->mode == TacticMode::ToTank;
+    const float radius = row->param > 0.0f ? row->param : (toTank ? 5.0f : sPlayerbotAIConfig.bombRunoutDistance);
+    float allyYd = -1.0f;
+    bool started = false;
+    if (toTank)
+    {
+        // The mark already moves the tank's own add; a tank carrier has nothing to bring to itself.
+        if (PlayerbotAI::IsTank(bot))
+            return false;
+        Player* tank = GetRaidTankRoles(ai).MainTank();
+        if (!tank || tank == bot || !sServerFacade.IsAlive(tank) || tank->GetMapId() != bot->GetMapId())
+            return false;
+        allyYd = bot->GetDistance2d(tank);
+        if (allyYd > radius)
+            started = MoveTo(tank, radius);
+    }
+    else
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !sServerFacade.IsAlive(member) || member->GetMapId() != bot->GetMapId())
+                continue;
+            const float distance = bot->GetDistance2d(member);
+            if (allyYd < 0.0f || distance < allyYd)
+                allyYd = distance;
+        }
+        started = RunOutFromGroup(*this, ai, bot, radius, true);
+    }
+    LogFlee(ai, bot, *row, allyYd, radius, started);
+    return started;
+}
+
+float BossTacticsFreezeMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return 1.0f;
+    if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return 1.0f;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    if (fight.rows.empty())
+        return 1.0f;
+    const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
+    const bool isFreeze = dynamic_cast<BossTacticsFreezeAction*>(action) != nullptr;
+    return FreezeHoldsAction(aura != 0, isFreeze) ? 1.0f : 0.0f;
 }
 
 bool BossTacticsInterruptAction::Execute(Event& event)

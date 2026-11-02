@@ -54,6 +54,23 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This bot carries a freeze_on_aura row's aura: it stands still and starts nothing until the aura ends.
+    class BossTacticsFreezeTrigger : public Trigger
+    {
+    public:
+        BossTacticsFreezeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics freeze", 1) {}
+        bool IsActive() override;
+    };
+
+    // This bot carries a flee_on_aura row's aura: `away` needs it clear of every living group member by the row's
+    // radius, `to_tank` needs it near the main tank (a tank carrier has nothing to do).
+    class BossTacticsFleeTrigger : public Trigger
+    {
+    public:
+        BossTacticsFleeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics flee", 1) {}
+        bool IsActive() override;
+    };
+
     // A creature in the fight casts a spell an avoid_cast row lists and this bot (not a tank) stands inside its radius.
     class BossTacticsAvoidCastTrigger : public Trigger
     {

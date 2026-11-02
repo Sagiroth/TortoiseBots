@@ -2,7 +2,9 @@
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
 using namespace ai;
@@ -94,6 +96,53 @@ bool BossTacticsFrontTrigger::IsActive()
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     return !fight.rows.empty() && FindBossFrontDanger(ai, bot, fight) != nullptr;
+}
+
+bool BossTacticsFreezeTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+    {
+        // The aura may have ended without another freeze read (the strategy left, the bot left the map): still write
+        // the held window's row.
+        FreezeEpisodeTick(ai, bot, 0);
+        return false;
+    }
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
+    FreezeEpisodeTick(ai, bot, aura);
+    return aura != 0;
+}
+
+bool BossTacticsFleeTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const BossTacticRow* row = ActiveFleeRow(ai, bot, fight);
+    if (!row)
+        return false;
+    if (row->mode == TacticMode::ToTank)
+    {
+        if (PlayerbotAI::IsTank(bot))
+            return false;
+        Player* tank = GetRaidTankRoles(ai).MainTank();
+        if (!tank || tank == bot || !sServerFacade.IsAlive(tank) || tank->GetMapId() != bot->GetMapId())
+            return false;
+        const float radius = row->param > 0.0f ? row->param : 5.0f;
+        return bot->GetDistance2d(tank) > radius;
+    }
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    const float radius = row->param > 0.0f ? row->param : sPlayerbotAIConfig.bombRunoutDistance;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member) || member->GetMapId() != bot->GetMapId())
+            continue;
+        if (bot->GetDistance2d(member) < radius)
+            return true;
+    }
+    return false;
 }
 
 bool BossTacticsAvoidCastTrigger::IsActive()
