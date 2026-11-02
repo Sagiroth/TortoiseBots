@@ -43,8 +43,9 @@ bool Give(OrderRecord record);
 std::vector<OrderRecord> All();
 
 // Remove the bot's order (cancel, character deleted, guild left). Cancelling
-// a parent removes its whole branch; children keep what they gathered (the
-// bank deposit path stands alone per order).
+// a parent removes its whole branch; a child removed with its quota in the
+// bags keeps its row as a live top-level delivery instead, and the normal
+// bank deposit path stands alone per order.
 bool Cancel(uint32_t botGuidLow);
 // True when the item is reserved for the bot's unfinished order: the order
 // item, the current supply item, or (craft orders) a known-recipe reagent

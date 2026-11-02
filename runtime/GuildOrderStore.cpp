@@ -2,6 +2,7 @@
 #include "GuildOrderStoreColumns.h"
 
 #include "GuildOrderAuctionPolicy.h"
+#include "GuildOrderCancelDepositPolicy.h"
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
@@ -112,6 +113,29 @@ public:
         static OrderStore instance;
         return instance;
     }
+    // A branch cancel (or a parent ending) that removes a child row with its
+    // quota already in the bags: detach the child as a live top-level order
+    // set to delivering, so the bank deposit path (travel, banker, drain)
+    // still runs and the guild keeps the finished items. World thread only,
+    // with the store mutex held; the bag count is read before the lock (the
+    // world thread owns player lookups, the mutex never covers them).
+    static bool DetachChildDepositLocked(OrderRecord& record, uint32_t bagCount)
+    {
+        if (record.parentBotGuidLow == 0 || record.cancelled || !record.itemId || !record.amount)
+            return false;
+        if (!CancelledChildDeposits(record.state, record.reason, record.delivered, bagCount, 0, record.amount))
+            return false;
+        record.parentBotGuidLow = 0;
+        record.state = OrderState::Delivering;
+        record.reason = OrderReason::None;
+        record.supplyStep = SupplyStep::Deliver;
+        record.supplyItemId = record.itemId;
+        record.supplyCount = 0;
+        record.supplyGoldCount = 0;
+        record.supplyReturnStep = SupplyStep::None;
+        return true;
+    }
+
 
     // Row write outside the store mutex (the caller snapshotted it out of
     // Tick): a failed write re-marks the row dirty for the next pass.
@@ -462,17 +486,34 @@ public:
     {
         if (!botGuidLow)
             return false;
-        bool park = false;
+        uint32_t bagCount = 0;
+        {
+            std::optional<OrderRecord> row = Find(botGuidLow);
+            if (!row)
+                return false;
+            if (row->itemId)
+                if (Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, botGuidLow)))
+                    bagCount = bot->GetItemCount(row->itemId);
+        }
+        bool parked = false;
+        bool detachedDeposit = false;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto it = m_orders.find(botGuidLow);
             if (it == m_orders.end())
                 return false;
-            // Unspent guild gold must reach the bank first: the row parks as
-            // a stub so the refund drain can still find the debt after a
-            // restart. Nothing else runs on it: travel, give-up and progress
-            // all check the flag first.
-            if (it->second.record.guildGoldHeld > 0)
+            // A child removed with its quota in the bags keeps its row as a
+            // live top-level delivery instead of ending with the stack in
+            // its bags: the bank deposit path (travel, banker, drain) runs
+            // per order, so the guild keeps the finished items.
+            if (DetachChildDepositLocked(it->second.record, bagCount))
+            {
+                it->second.record.reportedHave = 0;
+                MarkDirtyLocked(it->second);
+                ClearQueuedSubOrdersLocked(botGuidLow);
+                detachedDeposit = true;
+            }
+            else if (it->second.record.guildGoldHeld > 0)
             {
                 it->second.record.cancelled = true;
                 it->second.record.state = OrderState::Working;
@@ -487,13 +528,16 @@ public:
                 it->second.record.needBankDenied = false;
                 it->second.record.reportedHave = 0;
                 MarkDirtyLocked(it->second);
-                park = true;
+                parked = true;
+                ClearQueuedSubOrdersLocked(botGuidLow);
             }
             else
+            {
                 m_orders.erase(it);
-            ClearQueuedSubOrdersLocked(botGuidLow);
+                ClearQueuedSubOrdersLocked(botGuidLow);
+            }
         }
-        if (park)
+        if (parked || detachedDeposit)
             return true;
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
@@ -2447,6 +2491,8 @@ private:
     bool m_initialized = false;
 };
 
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry);
+
 std::string ZoneName(uint32_t zoneId)
 {
     if (!zoneId)
@@ -2581,7 +2627,6 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. One guild_member query per guild per
 // tick shared across due requests; planner evaluations share a per-tick
@@ -2976,14 +3021,34 @@ bool Cancel(uint32_t botGuidLow)
     bool gone = OrderStore::Instance().Cancel(botGuidLow);
     if (gone)
     {
-        OnDeliveryOrderGone(botGuidLow);
-        OnSupplyOrderGone(botGuidLow);
-        ExpireGuildOrderTarget(botGuidLow);
+        // A row that detached into a final top-level delivery keeps its
+        // travel target and queue state: the delivery path still runs.
+        if (std::optional<OrderRecord> live = Find(botGuidLow))
+        {
+            OrderStore::Instance().WriteAndRescue(*live);
+            Player* liveBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, botGuidLow));
+            SendOrderLine(*live, live->reportedHave, Carry(liveBot, *live));
+        }
+        else
+        {
+            OnDeliveryOrderGone(botGuidLow);
+            OnSupplyOrderGone(botGuidLow);
+            ExpireGuildOrderTarget(botGuidLow);
+        }
         for (uint32_t child : branch)
         {
             if (child == botGuidLow)
                 continue;
             OrderStore::Instance().Cancel(child);
+            // A child that detached into a final top-level delivery keeps
+            // its row (and its target): only reaped rows drop theirs.
+            if (std::optional<OrderRecord> live = Find(child))
+            {
+                OrderStore::Instance().WriteAndRescue(*live);
+                Player* liveBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, child));
+                SendOrderLine(*live, live->reportedHave, Carry(liveBot, *live));
+                continue;
+            }
             OnDeliveryOrderGone(child);
             OnSupplyOrderGone(child);
             ExpireGuildOrderTarget(child);
@@ -3528,7 +3593,9 @@ void Update(uint32_t diff)
     {
         // A finished sub-order that did not deliver fails the parent: the
         // full cancel path reaps its branch (queues, travel target) and
-        // puts the item on the parent's need list.
+        // puts the item on the parent's need list. A child holding its
+        // quota detaches into a final top-level delivery instead, through
+        // the same cancel path.
         if (!snapshot.parentBotGuidLow || snapshot.state == OrderState::Done)
             continue;
         if (!IsFinished(snapshot.state))

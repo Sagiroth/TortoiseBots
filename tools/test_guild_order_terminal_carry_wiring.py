@@ -69,8 +69,9 @@ class GuildOrderTerminalCarryWiringTest(unittest.TestCase):
         self.assertEqual(branch.count("reportedCarry = 0;"), 1)
 
     def test_cancel_stub_keeps_the_carry(self):
-        cancel = STORE[STORE.index("bool Cancel(uint32_t botGuidLow)"):]
-        cancel = cancel[:cancel.index("if (park)")]
+        start = STORE.index("    bool Cancel(uint32_t botGuidLow)")
+        cancel = STORE[start:]
+        cancel = cancel[:cancel.index("if (parked")]
         self.assertNotIn("reportedCarry", cancel)
 
     def test_the_seam_clears_only_a_successful_hand_off(self):
