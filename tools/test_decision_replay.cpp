@@ -234,7 +234,7 @@ void TestTamperedOrderNamesItsTick()
     std::string err;
     CHECK(LoadFixture(Variant("tampered").string(), fixture, err));
     fixture.status = "fixed";
-    fixture.reproduce = "all";
+    // No expectation: before-first-mark must still mean every tick.
     Report const report = Replay(fixture);
     CHECK(!report.pass);
     bool named = false;
