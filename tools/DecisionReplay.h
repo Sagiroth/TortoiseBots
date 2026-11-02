@@ -184,9 +184,36 @@ struct Capture
     ai::DungeonPlan plan;
     ai::BossTacticTable tactics;
     bool tacticsSet = false;
+    std::string planHash, tacticsHash; // set by the first header; later headers must match
     std::vector<TickRec> ticks;
     std::vector<std::string> notes;
 };
+
+// The seq of the last record loaded; a record may only follow it or skip ahead
+// past a hole that a `gap` record announced.
+struct SeqState
+{
+    bool have = false;
+    std::uint64_t last = 0;
+};
+
+inline bool FollowSeq(SeqState& seqs, std::uint64_t seq, std::string& err)
+{
+    if (seqs.have && seq <= seqs.last)
+    {
+        err = "seq " + std::to_string(seq) + " repeats or goes back (after seq " + std::to_string(seqs.last) + ")";
+        return false;
+    }
+    if (seqs.have && seq > seqs.last + 1)
+    {
+        err = "tick seq " + std::to_string(seqs.last + 1) + " is missing (seq " + std::to_string(seqs.last) +
+              " then seq " + std::to_string(seq) + ", no gap record between)";
+        return false;
+    }
+    seqs.have = true;
+    seqs.last = seq;
+    return true;
+}
 
 struct LoadState
 {
@@ -278,8 +305,11 @@ inline bool ApplyTick(const MiniJson::Value& value, LoadState& state, TickRec& t
     return true;
 }
 
-inline bool ParseHeader(const MiniJson::Value& value, Capture& capture, bool& seenHeader, bool& planBodySeen,
-                        bool& tacticsSeen, std::string& err)
+// One header line. Every header carries the whole plan and tactics, so each is
+// decoded and hashed here. The first header fixes the capture's identity; a
+// later header must carry the same capture id, plan and tactics, or it belongs
+// to another capture.
+inline bool ParseHeader(const MiniJson::Value& value, Capture& capture, bool& seenHeader, std::string& err)
 {
     std::uint64_t const version = NumOr(value, "v", 0);
     if (version != 1)
@@ -294,46 +324,79 @@ inline bool ParseHeader(const MiniJson::Value& value, Capture& capture, bool& se
         return false;
     }
     bool const firstHeader = !seenHeader;
-    if (firstHeader)
-    {
-        capture.schema = schema;
-        capture.captureId = StrOr(value, "capture", "");
-        seenHeader = true;
-    }
-    else if (capture.schema != schema)
+    if (!firstHeader && capture.schema != schema)
     {
         err = "schema changed inside one capture: " + capture.schema + " then " + schema;
         return false;
     }
 
-    const MiniJson::Value* plan = value.Find("plan");
-    if (firstHeader && !planBodySeen && plan && plan->kind == MiniJson::Value::Object)
+    ai::DungeonPlan plan;
+    std::string planHash;
+    const MiniJson::Value* planValue = value.Find("plan");
+    if (planValue && planValue->kind == MiniJson::Value::Object)
     {
-        const MiniJson::Value* body = plan->Find("body");
-        if (body)
+        if (planValue->Find("body"))
         {
             std::string planError;
-            if (!DecisionCapture::DecodePlan(*plan, capture.plan, planError))
+            if (!DecisionCapture::DecodePlan(*planValue, plan, planError))
             {
                 err = "header plan: " + planError;
                 return false;
             }
-            planBodySeen = true;
+            planHash = DecisionCapture::PlanHash(plan);
         }
         else
-            capture.plan.name = StrOr(*plan, "name", "");
+            plan.name = StrOr(*planValue, "name", "");
     }
 
-    const MiniJson::Value* tactics = value.Find("tactics");
-    if (firstHeader && !tacticsSeen && tactics)
+    // The first header decodes into the capture; a later one into a scratch table
+    // (a table is not movable, so it is never copied over the capture's).
+    ai::BossTacticTable scratch;
+    ai::BossTacticTable& tactics = firstHeader ? capture.tactics : scratch;
+    bool tacticsSet = false;
+    std::string tacticsHash;
+    const MiniJson::Value* tacticsValue = value.Find("tactics");
+    if (tacticsValue)
     {
         std::string tacticsError;
-        if (!DecisionCapture::DecodeTactics(*tactics, capture.tactics, capture.tacticsSet, tacticsError))
+        if (!DecisionCapture::DecodeTactics(*tacticsValue, tactics, tacticsSet, tacticsError))
         {
             err = "header tactics: " + tacticsError;
             return false;
         }
-        tacticsSeen = true;
+        tacticsHash = DecisionCapture::Hex64(
+            DecisionCapture::Fnv1a64(DecisionCapture::EncodeTactics(tacticsSet ? &tactics : nullptr, plan.map)));
+    }
+
+    if (firstHeader)
+    {
+        seenHeader = true;
+        capture.schema = schema;
+        capture.captureId = StrOr(value, "capture", "");
+        capture.plan = std::move(plan);
+        capture.planHash = planHash;
+        capture.tacticsSet = tacticsSet;
+        capture.tacticsHash = tacticsHash;
+        return true;
+    }
+    std::string const captureId = StrOr(value, "capture", "");
+    if (captureId != capture.captureId)
+    {
+        err = "capture id " + captureId + " differs from the first segment's " + capture.captureId +
+              "; the segment belongs to another capture";
+        return false;
+    }
+    if (planHash != capture.planHash)
+    {
+        err = "plan differs from the first segment's plan (hash " + planHash + ", first segment " +
+              capture.planHash + ")";
+        return false;
+    }
+    if (tacticsHash != capture.tacticsHash)
+    {
+        err = "tactics differ from the first segment's tactics (hash " + tacticsHash + ", first segment " +
+              capture.tacticsHash + ")";
+        return false;
     }
     return true;
 }
@@ -343,41 +406,62 @@ inline bool LoadLines(const std::vector<std::pair<std::string, std::string>>& li
                       std::string const& source = std::string())
 {
     LoadState state;
+    SeqState seqs;
     bool seenHeader = false;
-    bool planBodySeen = false;
-    bool tacticsSeen = false;
+    bool haveSeg = false;
+    std::uint64_t lastSeg = 0;
     for (std::size_t i = 0; i < lines.size(); ++i)
     {
         std::string const& line = lines[i].first;
         if (line.find_first_not_of(" \t\r\n") == std::string::npos)
             continue;
+        // Errors name the file the line came from (or the caller's source).
+        std::string const where = source.empty() ? lines[i].second : source;
+        std::string const prefix = where.empty() ? std::string() : where + ": ";
         MiniJson::Value value;
         std::string parseError;
         if (!MiniJson::Parse(line, value, parseError))
         {
-            err = (source.empty() ? std::string() : source + ": ") + "line " + std::to_string(i + 1) + ": " +
-                  parseError;
+            err = prefix + "line " + std::to_string(i + 1) + ": " + parseError;
             return false;
         }
         std::string const kind = StrOr(value, "k", "");
         if (kind == "hdr")
         {
-            if (!ParseHeader(value, out, seenHeader, planBodySeen, tacticsSeen, err))
+            std::uint64_t const seg = NumOr(value, "seg", 0);
+            if (haveSeg && seg != lastSeg + 1)
             {
-                if (!source.empty())
-                    err = source + ": " + err;
+                if (seg == lastSeg)
+                    err = prefix + "segment " + std::to_string(seg) + " appears twice";
+                else if (seg < lastSeg)
+                    err = prefix + "segment " + std::to_string(seg) + " comes after segment " +
+                          std::to_string(lastSeg);
+                else
+                    err = prefix + "segment " + std::to_string(lastSeg + 1) + " is missing (seg " +
+                          std::to_string(lastSeg) + " then seg " + std::to_string(seg) + ")";
                 return false;
             }
+            if (!ParseHeader(value, out, seenHeader, err))
+            {
+                err = prefix + err;
+                return false;
+            }
+            haveSeg = true;
+            lastSeg = seg;
             state.requireKey = true;
-            out.notes.push_back("hdr seg " + std::to_string(NumOr(value, "seg", 0)) + " schema " + out.schema);
+            out.notes.push_back("hdr seg " + std::to_string(seg) + " schema " + out.schema);
         }
         else if (kind == "tick")
         {
+            if (!FollowSeq(seqs, NumOr(value, "seq", 0), err))
+            {
+                err = prefix + err;
+                return false;
+            }
             TickRec tick;
             if (!ApplyTick(value, state, tick, err))
             {
-                if (!source.empty())
-                    err = source + ": " + err;
+                err = prefix + err;
                 return false;
             }
             if (tick.kind == "undecodable")
@@ -386,14 +470,30 @@ inline bool LoadLines(const std::vector<std::pair<std::string, std::string>>& li
         }
         else if (kind == "stub")
         {
+            if (!FollowSeq(seqs, NumOr(value, "seq", 0), err))
+            {
+                err = prefix + err;
+                return false;
+            }
             state.requireKey = true;
             out.notes.push_back("stub seq " + std::to_string(NumOr(value, "seq", 0)) + " bytes " +
                                 std::to_string(NumOr(value, "bytes", 0)));
         }
         else if (kind == "gap")
         {
+            // The gap's seq is the next record's seq: the seqs before it were
+            // dropped (and counted in `dropped`), so the hole is announced.
+            std::uint64_t const seq = NumOr(value, "seq", 0);
+            if (seq == 0 || (seqs.have && seq <= seqs.last))
+            {
+                err = prefix + "gap at seq " + std::to_string(seq) + " does not follow seq " +
+                      std::to_string(seqs.last);
+                return false;
+            }
+            seqs.have = true;
+            seqs.last = seq - 1;
             state.requireKey = true;
-            out.notes.push_back("gap seq " + std::to_string(NumOr(value, "seq", 0)) + " dropped " +
+            out.notes.push_back("gap seq " + std::to_string(seq) + " dropped " +
                                 std::to_string(NumOr(value, "dropped", 0)));
         }
         else if (kind == "end")
@@ -404,8 +504,7 @@ inline bool LoadLines(const std::vector<std::pair<std::string, std::string>>& li
         }
         else
         {
-            err = (source.empty() ? std::string() : source + ": ") + "line " + std::to_string(i + 1) +
-                  ": unknown record kind \"" + kind + "\"";
+            err = prefix + "line " + std::to_string(i + 1) + ": unknown record kind \"" + kind + "\"";
             return false;
         }
     }
@@ -417,12 +516,19 @@ inline bool LoadLines(const std::vector<std::pair<std::string, std::string>>& li
     return true;
 }
 
+// Loads a capture's segment files. The order comes from each file's header
+// (its `seg`), not from the path: the names are the caller's, the header is the
+// capture's. Two files with the same segment number are an error.
 inline bool LoadSegments(const std::vector<std::string>& files, Capture& out, std::string& err)
 {
-    std::vector<std::string> ordered = files;
-    std::sort(ordered.begin(), ordered.end()); // seg-0001, seg-0002, ... in capture order
-    std::vector<std::pair<std::string, std::string>> lines;
-    for (const std::string& file : ordered)
+    struct Segment
+    {
+        std::uint64_t seg = 0;
+        std::string path;
+        std::vector<std::pair<std::string, std::string>> lines;
+    };
+    std::vector<Segment> segments;
+    for (const std::string& file : files)
     {
         std::string text;
         std::string readError;
@@ -431,18 +537,64 @@ inline bool LoadSegments(const std::vector<std::string>& files, Capture& out, st
             err = readError;
             return false;
         }
+        Segment segment;
+        segment.path = file;
+        std::string first;
+        bool haveFirst = false;
         std::size_t start = 0;
         while (start <= text.size())
         {
             std::size_t end = text.find('\n', start);
             if (end == std::string::npos)
                 end = text.size();
-            lines.emplace_back(text.substr(start, end - start), file);
+            std::string const line = text.substr(start, end - start);
+            if (!haveFirst && line.find_first_not_of(" \t\r\n") != std::string::npos)
+            {
+                first = line;
+                haveFirst = true;
+            }
+            segment.lines.emplace_back(line, file);
             if (end == text.size())
                 break;
             start = end + 1;
         }
+        if (!haveFirst)
+        {
+            err = file + ": no header line";
+            return false;
+        }
+        MiniJson::Value value;
+        std::string parseError;
+        if (!MiniJson::Parse(first, value, parseError))
+        {
+            err = file + ": first line: " + parseError;
+            return false;
+        }
+        if (StrOr(value, "k", "") != "hdr")
+        {
+            err = file + ": does not start with its header line";
+            return false;
+        }
+        segment.seg = NumOr(value, "seg", 0);
+        segments.push_back(std::move(segment));
     }
+
+    std::stable_sort(segments.begin(), segments.end(), [](const Segment& a, const Segment& b) {
+        return a.seg != b.seg ? a.seg < b.seg : a.path < b.path;
+    });
+    for (std::size_t i = 1; i < segments.size(); ++i)
+    {
+        if (segments[i].seg == segments[i - 1].seg)
+        {
+            err = "segment " + std::to_string(segments[i].seg) + " is in both " + segments[i - 1].path + " and " +
+                  segments[i].path;
+            return false;
+        }
+    }
+
+    std::vector<std::pair<std::string, std::string>> lines;
+    for (const Segment& segment : segments)
+        lines.insert(lines.end(), segment.lines.begin(), segment.lines.end());
     return LoadLines(lines, out, err);
 }
 
@@ -1219,7 +1371,24 @@ struct ExtractOptions
     std::string status = "open";
     std::string outDir;
     std::string segment;
+    bool overwrite = false; // replace an existing fixture of the same name
 };
+
+// A fixture name is one filename component: letters, digits, '.', '_' or '-',
+// no leading dot. So the fixture stays directly under its out dir.
+inline bool SafeFixtureName(const std::string& name)
+{
+    if (name.empty() || name[0] == '.')
+        return false;
+    for (char c : name)
+    {
+        bool const ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
+                        c == '_' || c == '-';
+        if (!ok)
+            return false;
+    }
+    return true;
+}
 
 inline MiniJson::Value TickObject(const TickRec& tick, bool first, const FieldMap& previousFacts,
                                   const FieldMap& previousPost)
@@ -1275,6 +1444,19 @@ inline bool Extract(const Capture& capture, const ExtractOptions& options, std::
     if (options.name.empty())
     {
         err = "a fixture needs a name";
+        return false;
+    }
+    if (!SafeFixtureName(options.name))
+    {
+        err = "fixture name \"" + options.name +
+              "\" must be one file name: letters, digits, '.', '_' or '-', no leading dot";
+        return false;
+    }
+    std::filesystem::path const dir(options.outDir);
+    fixturePath = (dir / (options.name + ".json")).string();
+    if (!options.overwrite && std::filesystem::exists(fixturePath))
+    {
+        err = fixturePath + " already exists; pass --overwrite to replace it";
         return false;
     }
     if (options.fromSeq == 0 || options.toSeq < options.fromSeq)
@@ -1349,7 +1531,6 @@ inline bool Extract(const Capture& capture, const ExtractOptions& options, std::
         return false;
     }
 
-    std::filesystem::path const dir(options.outDir);
     std::string const planPath = (dir / planFile).string();
     MiniJson::Value planRoot = VObject();
     Set(planRoot, "plan", ParseText(DecisionCapture::EncodePlan(capture.plan)));
@@ -1369,7 +1550,6 @@ inline bool Extract(const Capture& capture, const ExtractOptions& options, std::
     }
 
     std::filesystem::create_directories(dir);
-    fixturePath = (dir / (options.name + ".json")).string();
     std::ofstream output(fixturePath, std::ios::binary);
     if (!output)
     {

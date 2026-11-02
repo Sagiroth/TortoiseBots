@@ -65,7 +65,7 @@ bool ParseArgs(int argc, char** argv, int start, Args& args, std::string& err)
                 }
                 args.values[arg] = argv[++i];
             }
-            else if (arg == "--facts" || arg == "--run" || arg == "--post" || arg == "--verbose")
+            else if (arg == "--facts" || arg == "--run" || arg == "--post" || arg == "--verbose" || arg == "--overwrite")
                 args.flags.push_back(arg);
             else
             {
@@ -214,7 +214,7 @@ int ExtractCommand(const Args& args)
 {
     if (args.positional.empty())
     {
-        std::cerr << "usage: replay_decisions extract <seg...> --from N --to N --name NAME [--mode M] [--out-dir D]\n";
+        std::cerr << "usage: replay_decisions extract <seg...> --from N --to N --name NAME [--mode M] [--out-dir D] [--overwrite]\n";
         return 2;
     }
     if (!args.values.count("--from") || !args.values.count("--to") || !args.values.count("--name"))
@@ -233,6 +233,7 @@ int ExtractCommand(const Args& args)
     options.mode = Value(args, "--mode", "independent");
     options.outDir = Value(args, "--out-dir", "tools/fixtures/decisions");
     options.segment = std::filesystem::path(args.positional.front()).filename().string();
+    options.overwrite = Has(args, "--overwrite");
 
     std::string path, err;
     if (!Extract(capture, options, path, err))
@@ -384,6 +385,7 @@ int Synth(const Args& args)
     options.mode = "independent";
     options.status = "fixed";
     options.outDir = outDir;
+    options.overwrite = true; // this regenerates the committed synthetic fixture
     options.segment = "seg-0001.jsonl";
     std::string path;
     if (!Extract(capture, options, path, err))

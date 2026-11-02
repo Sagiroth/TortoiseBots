@@ -173,6 +173,146 @@ void TestSegmentFile()
     CHECK(!capture.ticks.back().key);
 }
 
+std::string ScenarioText()
+{
+    MemSink sink;
+    RecordScenario(sink);
+    std::string text;
+    for (const auto& line : sink.lines)
+        text += line.first + "\n";
+    return text;
+}
+
+std::string FirstLine(const std::string& text)
+{
+    return text.substr(0, text.find('\n'));
+}
+
+// Replaces the line holding `marker` with `replacement` (dropped when empty).
+std::string ReplaceLine(std::string text, const std::string& marker, const std::string& replacement)
+{
+    std::size_t const at = text.find(marker);
+    if (at == std::string::npos)
+        return text;
+    std::size_t const begin = text.rfind('\n', at);
+    std::size_t const start = begin == std::string::npos ? 0 : begin + 1;
+    std::size_t end = text.find('\n', at);
+    end = end == std::string::npos ? text.size() : end + 1;
+    text.replace(start, end - start, replacement.empty() ? std::string() : replacement + "\n");
+    return text;
+}
+
+const char* const kScenarioCapture = "\"capture\":\"20261102T161939Z-synthetic-Fionaa\"";
+
+void TestSegmentsLoadInHeaderOrder()
+{
+    std::string const text = ScenarioText();
+    std::string const header = FirstLine(text);
+    CHECK(header.find("\"k\":\"hdr\"") != std::string::npos);
+    std::string const second = ReplaceOnce(header, "\"seg\":1,", "\"seg\":2,");
+    CHECK(second != header);
+
+    // The path order is the reverse of the segment order.
+    std::filesystem::path const dir = gRoot / "order";
+    CHECK(WriteText(dir / "a-later.jsonl", second + "\n"));
+    CHECK(WriteText(dir / "z-first.jsonl", text));
+    Capture capture;
+    std::string err;
+    CHECK(LoadSegments({(dir / "a-later.jsonl").string(), (dir / "z-first.jsonl").string()}, capture, err));
+    CHECK(capture.notes.front().compare(0, 10, "hdr seg 1 ") == 0);
+    CHECK(capture.ticks.size() == kScenarioTicks);
+}
+
+void TestSegmentsOfTwoCapturesRefused()
+{
+    std::string const text = ScenarioText();
+    std::string const other = ReplaceOnce(text, kScenarioCapture, "\"capture\":\"20261102T170000Z-other-Fionaa\"");
+    CHECK(other != text);
+    std::filesystem::path const dir = gRoot / "two-captures";
+    CHECK(WriteText(dir / "seg-0001.jsonl", text));
+    CHECK(WriteText(dir / "seg-0002.jsonl", ReplaceOnce(other, "\"seg\":1,", "\"seg\":2,")));
+    Capture capture;
+    std::string err;
+    CHECK(!LoadSegments({(dir / "seg-0001.jsonl").string(), (dir / "seg-0002.jsonl").string()}, capture, err));
+    CHECK(err.find("another capture") != std::string::npos);
+    CHECK(err.find("seg-0002.jsonl") != std::string::npos);
+}
+
+void TestMissingSegmentNamesIt()
+{
+    std::string const text = ScenarioText();
+    std::filesystem::path const dir = gRoot / "missing-segment";
+    CHECK(WriteText(dir / "seg-0001.jsonl", text));
+    CHECK(WriteText(dir / "seg-0003.jsonl", ReplaceOnce(FirstLine(text), "\"seg\":1,", "\"seg\":3,") + "\n"));
+    Capture capture;
+    std::string err;
+    CHECK(!LoadSegments({(dir / "seg-0001.jsonl").string(), (dir / "seg-0003.jsonl").string()}, capture, err));
+    CHECK(err.find("segment 2 is missing") != std::string::npos);
+}
+
+void TestMissingTickNamesItsSeq()
+{
+    std::string const text = ScenarioText();
+    std::filesystem::path const dir = gRoot / "hole";
+    CHECK(WriteText(dir / "dropped.jsonl", ReplaceLine(text, "\"k\":\"tick\",\"seq\":5,", "")));
+    Capture capture;
+    std::string err;
+    CHECK(!LoadSegments({(dir / "dropped.jsonl").string()}, capture, err));
+    CHECK(err.find("tick seq 5 is missing") != std::string::npos);
+
+    // The same hole, announced by a gap record for the seq after it, loads.
+    CHECK(WriteText(dir / "declared.jsonl",
+                    ReplaceLine(text, "\"k\":\"tick\",\"seq\":5,", "{\"k\":\"gap\",\"seq\":6,\"dropped\":1}")));
+    Capture declared;
+    CHECK(LoadSegments({(dir / "declared.jsonl").string()}, declared, err));
+    CHECK(declared.ticks.size() == kScenarioTicks - 1);
+    bool sawGap = false;
+    for (const std::string& note : declared.notes)
+        sawGap = sawGap || note == "gap seq 6 dropped 1";
+    CHECK(sawGap);
+}
+
+void TestExtractNameAndOverwrite()
+{
+    MemSink sink;
+    RecordScenario(sink);
+    Capture capture;
+    std::string err;
+    CHECK(LoadLines(sink.lines, capture, err));
+
+    std::filesystem::path const guard = gRoot / "guard";
+    ExtractOptions options;
+    options.fromSeq = 1;
+    options.toSeq = kScenarioTicks;
+    options.outDir = guard.string();
+    options.segment = "scenario";
+    std::string path;
+    for (const char* name : {"../escape", ".hidden", "a/b", "sp ace", ""})
+    {
+        options.name = name;
+        CHECK(!Extract(capture, options, path, err));
+        CHECK(err.find("name") != std::string::npos);
+    }
+    CHECK(!std::filesystem::exists(gRoot / "escape.json"));
+
+    options.name = "guard-pull";
+    CHECK(Extract(capture, options, path, err));
+    CHECK(path == (guard / "guard-pull.json").string());
+    std::string before, after;
+    CHECK(ReadWholeFile(path, before, err));
+
+    options.status = "fixed";
+    CHECK(!Extract(capture, options, path, err));
+    CHECK(err.find("already exists") != std::string::npos);
+    CHECK(ReadWholeFile(path, after, err));
+    CHECK(after == before);
+
+    options.overwrite = true;
+    CHECK(Extract(capture, options, path, err));
+    CHECK(ReadWholeFile(path, after, err));
+    CHECK(after != before);
+}
+
 void TestIndependentReplay()
 {
     Fixture fixture;
@@ -539,6 +679,11 @@ int main()
 
     TestRecordAndExtract();
     TestSegmentFile();
+    TestSegmentsLoadInHeaderOrder();
+    TestSegmentsOfTwoCapturesRefused();
+    TestMissingSegmentNamesIt();
+    TestMissingTickNamesItsSeq();
+    TestExtractNameAndOverwrite();
     {
         Fixture fixture;
         std::string err;
