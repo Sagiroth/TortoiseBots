@@ -418,10 +418,15 @@ func (s *Store) Days(commander string) []DayCount {
 	return out
 }
 
-// nightOf is the local night one fight belongs to: the local day it starts, rolling over at the rollover hour (a fight
-// at 02:17 local belongs to the night before).
+// nightOf is the local night one fight belongs to: the local civil date, or the previous calendar date when the local
+// hour is before the rollover. It reads civil fields, not elapsed hours: across a DST jump six elapsed hours are five
+// or seven civil hours, so subtracting moves the rollover.
 func nightOf(start int64, loc *time.Location, rollover int) string {
-	return time.Unix(start, 0).In(loc).Add(-time.Duration(rollover) * time.Hour).Format(dayLayout)
+	t := time.Unix(start, 0).In(loc)
+	if t.Hour() < rollover {
+		t = t.AddDate(0, 0, -1)
+	}
+	return t.Format(dayLayout)
 }
 
 // Nights groups a commander's fights by local night, newest first, with the fights each night holds.

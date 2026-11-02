@@ -63,8 +63,8 @@ assert.strictEqual(pack.rows[0].when, "1 Nov 22:35", "the pack table reads local
 assert.ok(/const timeStr = a\.ts \? new Date\(a\.ts \* 1000\)\.toLocaleTimeString\(\) : '-'/.test(src),
   "the incident table formats the row's unix field");
 assert.ok(!/a\.time_str \|\|/.test(src), "the incident table never reads the daemon's string");
-// The night labels come from fixed English tables, never a locale API.
-assert.ok(!/toLocale|Intl\.|localeCompare/.test(histSrc), "no locale API in the night labels");
+// The night labels come from fixed English tables, never a locale API; only the grouping reads the zone (Intl parts).
+assert.ok(!/toLocale|localeCompare/.test(histSrc), "no locale API in the night labels");
 
 // ---- 3. nights are grouped by the daemon from the page's own zone ---------------------------------------------------
 // A fight at 02:17 local on 2 Nov belongs to the night of 1 Nov; at 07:00 it belongs to 2 Nov.
@@ -88,8 +88,20 @@ assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-11-05", fig
 assert.strictEqual(FH.rowDay("2026-11-01", NIGHT0217 * 1000), "", "a fight of tonight opens the current list");
 assert.strictEqual(FH.rowDay("2026-10-31", NIGHT0217 * 1000), "2026-10-31", "an older night keeps its night");
 const goHistory = fs.readFileSync(path.join(__dirname, "../history/history.go"), "utf8");
-assert.ok(/time\.Unix\(start, 0\)\.In\(loc\)\.Add\(-time\.Duration\(rollover\) \* time\.Hour\)/.test(goHistory), "the server groups the nights");
+assert.ok(/time\.Unix\(start, 0\)\.In\(loc\)/.test(goHistory) && !/Duration\(rollover\)/.test(goHistory), "the server groups the nights in civil time, not elapsed hours");
 assert.ok(/time\.Unix\(start, 0\)\.UTC\(\)\.Format\(dayLayout\)/.test(goHistory), "the server still files nights as UTC days");
+assert.ok(!/3600000\)/.test(histSrc), "the page never subtracts elapsed hours for the night");
+// ---- 4. the night is civil time across DST --------------------------------------------------------------------------
+// 2027-03-28 springs forward (02:00 -> 03:00), 2026-10-25 falls back (03:00 -> 02:00): six elapsed hours are five or
+// seven civil hours there, so epoch arithmetic moves the 06:00 rollover. This file runs under TZ=Europe/Oslo, so a Date
+// built from wall fields is Oslo civil time.
+const osloMs = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi, 0).getTime();
+assert.strictEqual(FH.nightOf(osloMs(2027, 3, 28, 5, 59)), "2027-03-27", "spring 05:59 belongs to the night before");
+assert.strictEqual(FH.nightOf(osloMs(2027, 3, 28, 6, 0)), "2027-03-28", "spring 06:00 belongs to its own night");
+assert.strictEqual(FH.nightOf(osloMs(2027, 3, 28, 6, 59)), "2027-03-28", "spring 06:59 belongs to its own night");
+assert.strictEqual(FH.nightOf(osloMs(2026, 10, 25, 5, 59)), "2026-10-24", "fall 05:59 belongs to the night before");
+assert.strictEqual(FH.nightOf(osloMs(2026, 10, 25, 6, 0)), "2026-10-25", "fall 06:00 belongs to its own night");
+assert.strictEqual(FH.nightOf(osloMs(2026, 10, 25, 6, 59)), "2026-10-25", "fall 06:59 belongs to its own night");
 (async () => {
   // fdNightFights asks the daemon for the one night; the grouping already happened server-side.
   const rowsByNight = {

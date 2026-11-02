@@ -182,6 +182,6 @@ assert.ok(!run("fdRailHtml([], live, null, '2026-10-28')", { live: LIVE }).inclu
 
 // ---- the source stays free of the browser's locale tables --------------------------------------------------------
 const histSrc = fs.readFileSync(histPath, "utf8");
-assert.ok(!/toLocale|Intl\.|localeCompare/.test(histSrc), "the labels come from fixed English tables, never a locale API");
+assert.ok(!/toLocale|localeCompare/.test(histSrc), "the labels come from fixed English tables, never a locale API");
 
 console.log("fight history ok");

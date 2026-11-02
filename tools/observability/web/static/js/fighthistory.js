@@ -30,13 +30,40 @@
     return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
   }
 
-  // The night one instant belongs to: the local day it starts, rolling over at 06:00 local. A fight at 02:17 local on
-  // 2 Nov belongs to the night of 1 Nov; one at 07:00 belongs to 2 Nov.
+  // The page's own zone: the same name it sends the daemon, so the page and the server group by the same nights.
+  function zone() {
+    try {
+      const tz = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (typeof tz === "string" && tz) return tz;
+    } catch (e) { /* the runtime names no zone: the parts below fall back to its local one */ }
+    return undefined;
+  }
+
+  // The civil date and hour of one instant in the page's zone. Numeric parts only: the labels still come from the
+  // fixed English tables, never the runtime's locale.
+  function civilParts(t) {
+    const out = {};
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone(), year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(t)).forEach((p) => { out[p.type] = p.value; });
+    return out;
+  }
+
+  // The night one instant belongs to: the local civil date, or the previous calendar date when the local hour is
+  // before the rollover. Civil parts, not elapsed hours: across a DST jump six elapsed hours are five or seven civil
+  // hours, so subtracting moves the rollover. 2 Nov at 02:17 belongs to the night of 1 Nov; one at 07:00 belongs
+  // to 2 Nov.
   function nightOf(msValue) {
     const t = ms(msValue);
     if (t === null) return "";
-    const d = new Date(t - NIGHT_ROLLOVER_H * 3600000);
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    const p = civilParts(t);
+    const y = parseInt(p.year, 10), m = parseInt(p.month, 10), d = parseInt(p.day, 10), h = parseInt(p.hour, 10);
+    if (!isFinite(y) || !isFinite(m) || !isFinite(d) || !isFinite(h) || m < 1 || m > 12 || d < 1 || d > 31) return "";
+    if (h % 24 < NIGHT_ROLLOVER_H) {
+      const prev = new Date(y, m - 1, d - 1, 12, 0, 0); // noon sidesteps a DST jump at midnight
+      return prev.getFullYear() + "-" + pad2(prev.getMonth() + 1) + "-" + pad2(prev.getDate());
+    }
+    return y + "-" + pad2(m) + "-" + pad2(d);
   }
 
   // The night fetch of a daemon that predates the night grouping: the night runs 06:00 local to next 06:00 local, which

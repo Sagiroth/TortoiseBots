@@ -94,3 +94,41 @@ func TestListNightSpansTwoUTCDays(t *testing.T) {
 		t.Errorf("night with default rollover: %d %s, want b and a", code, b)
 	}
 }
+
+// Six elapsed hours are not six civil hours across a DST jump: the night is the local civil date (or the previous
+// calendar date before the rollover hour), on the 23-hour spring-forward night and the 25-hour fall-back night alike.
+func TestNightOfAcrossDST(t *testing.T) {
+	oslo, err := time.LoadLocation("Europe/Oslo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		start time.Time
+		want  string
+	}{
+		{"spring 05:59", time.Date(2027, 3, 28, 5, 59, 0, 0, oslo), "2027-03-27"},
+		{"spring 06:00", time.Date(2027, 3, 28, 6, 0, 0, 0, oslo), "2027-03-28"},
+		{"spring 06:59", time.Date(2027, 3, 28, 6, 59, 0, 0, oslo), "2027-03-28"},
+		{"fall 05:59", time.Date(2026, 10, 25, 5, 59, 0, 0, oslo), "2026-10-24"},
+		{"fall 06:00", time.Date(2026, 10, 25, 6, 0, 0, 0, oslo), "2026-10-25"},
+		{"fall 06:59", time.Date(2026, 10, 25, 6, 59, 0, 0, oslo), "2026-10-25"},
+	} {
+		if got := nightOf(c.start.Unix(), oslo, 6); got != c.want {
+			t.Errorf("%s: nightOf = %s, want %s", c.name, got, c.want)
+		}
+	}
+
+	// The grouping follows: a 06:30 fight on the spring-forward day belongs to that morning's night.
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: t.TempDir(), Now: clock.Now})
+	early := time.Date(2027, 3, 28, 5, 30, 0, 0, oslo).Unix()
+	late := time.Date(2027, 3, 28, 6, 30, 0, 0, oslo).Unix()
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("early", "Glacienne", early), At: clock.Now()})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("late", "Glacienne", late), At: clock.Now()})
+	nights := s.Nights("Glacienne", oslo, 6)
+	if len(nights) != 2 || nights[0].Night != "2027-03-28" || nights[0].Fights != 1 ||
+		nights[1].Night != "2027-03-27" || nights[1].Fights != 1 {
+		t.Fatalf("Nights = %+v, want 2027-03-28 and 2027-03-27 with one fight each", nights)
+	}
+}

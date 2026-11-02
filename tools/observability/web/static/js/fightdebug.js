@@ -649,8 +649,10 @@
   const nightOf = (t) => {
     const n = num(t);
     if (n === null) return "";
-    const d = new Date(n * 1000 - 6 * 3600000);
-    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    const d = new Date(n * 1000);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (d.getHours() < 6) day.setDate(day.getDate() - 1);
+    return day.getFullYear() + "-" + ("0" + (day.getMonth() + 1)).slice(-2) + "-" + ("0" + day.getDate()).slice(-2);
   };
 
   // Pack numbers count inside a run, not across the whole list: a night restarts at Pack 1 when the session does (a new bind is
