@@ -225,15 +225,17 @@ inline PartialNeedVerdict PartialNeedVerdictFor(bool supplyableLeft, bool subOrd
     return PartialNeedVerdict::Supply;
 }
 
-// A parent is waiting on work, not idle, only while it has no supply leg of
-// its own: the ladder returned WaitOnSubOrders (step None) and a child row is
-// still unfinished. Then the no-progress clock, the farm give-up and the zone
+// A parent is waiting on work, not idle, while it has no supply leg of its
+// own and a child row is still unfinished: the ladder returned
+// WaitOnSubOrders (step None), or the sub step stays on while the placed
+// child works. Then the no-progress clock, the farm give-up and the zone
 // move all stay paused. A parent working its own leg (bank, farm, auction,
-// craft, or placing sub-orders) keeps every clock, so a stalled leg of its
-// own still ends the round and hands over to the ladder.
+// craft) keeps every clock, so a stalled leg of its own still ends the round
+// and hands over to the ladder; a request that never became a running row
+// stops counting as a child after its staleness window.
 inline bool PauseOrderClocks(SupplyStep step, int unfinishedChildren)
 {
-    return step == SupplyStep::None && unfinishedChildren > 0;
+    return (step == SupplyStep::None || step == SupplyStep::Sub) && unfinishedChildren > 0;
 }
 
 // The player hears about a list once, as soon as it exists, on a working row
