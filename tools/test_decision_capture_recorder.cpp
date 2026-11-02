@@ -294,7 +294,11 @@ static void TestGlueWriteIsRunDeltaOnly()
     Recorder recorder(Header(), limits, sink);
     Run run;
     Facts facts;
-    Tick(recorder, run, facts, 2000);
+    // Tick 1 changes the run itself (pre "before", post "after").
+    run.note = "before";
+    recorder.BeforeTick(run, facts, 1000, 2000);
+    run.note = "after";
+    recorder.AfterTick(run, "");
     // The glue's write between the ticks.
     run.leadWalkReset = true;
     Tick(recorder, run, facts, 2001);
@@ -303,8 +307,10 @@ static void TestGlueWriteIsRunDeltaOnly()
     MiniJson::Value const tick = ParseLine(sink.lines[2]);
     CHECK(Str(tick, "k") == "tick");
     CHECK(!Flag(tick, "key"));
+    // The pre-tick delta is the glue's write alone, not tick 1's own change.
     const MiniJson::Value* delta = tick.Find("run");
     CHECK(delta && delta->kind == MiniJson::Value::Object);
+    CHECK(delta->obj.size() == 1);
     const MiniJson::Value* written = delta->Find("leadWalkReset");
     CHECK(written && written->kind == MiniJson::Value::Bool && written->b);
     const MiniJson::Value* post = tick.Find("post");
