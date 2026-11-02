@@ -15542,23 +15542,6 @@ static void TestPullJoinersReported()
         CHECK(Has(StatusParts(r).note, "joiners 0"));
     }
 
-    // The 10 s window starts with the fight, not the pullback: a target dragged into combat 15 s after the pull
-    // still reports the joiner it drew (the quiet ticks spent none of the window).
-    {
-        Run r = Start(&plan);
-        Facts f = Party(0);
-        f.units = {Unit(31, 4852, 40.0f)};
-        CHECK(Tick(r, f) == "pullback 31");
-        for (int i = 0; i < 15; ++i)
-            Tick(r, f);
-        CHECK(!Has(StatusParts(r).note, "joiners"));
-        f.anyInCombat = true;
-        f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(41, 5000, 8.0f)};
-        for (int i = 0; i < 10; ++i)
-            Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 5000 x1)"));
-    }
-
     // A unit already engaged when the pullback went out fights its own fight: it is no joiner of this pull.
     {
         Run r = Start(&plan);
@@ -15573,6 +15556,26 @@ static void TestPullJoinersReported()
         CHECK(Has(StatusParts(r).note, "joiners 1 (entry 6001 x1)"));
         CHECK(!Has(StatusParts(r).note, "6000"));
     }
+}
+
+// The 10 s joiner window starts on the first tick the party is in combat after the pullback, not at the pullback:
+// a target dragged into the fight 15 s later still reports the joiner it drew (the quiet ticks spent none of it).
+static void TestPullJoinerWindowStartsWithTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4852})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(31, 4852, 40.0f)};
+    CHECK(Tick(r, f) == "pullback 31");
+    for (int i = 0; i < 15; ++i)
+        Tick(r, f);
+    CHECK(!Has(StatusParts(r).note, "joiners"));
+    f.anyInCombat = true;
+    f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(41, 5000, 8.0f)};
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(Has(StatusParts(r).note, "joiners 1 (entry 5000 x1)"));
 }
 
 // The glue's read of a stand for the unit the policy asked for (Run::shotStandFor).
@@ -29660,6 +29663,7 @@ int main()
     TestBothKeysOffChangeNothing();
     TestPullNoteCarriesTheJoinerCount();
     TestPullJoinersReported();
+    TestPullJoinerWindowStartsWithTheFight();
     TestPullShootsFromStand();
     TestPullWaitsForStillTank();
     TestPullWalksToStandOutOfRange();
