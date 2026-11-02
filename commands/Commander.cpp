@@ -9394,8 +9394,31 @@ static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vec
     Map* const map = lead->GetMap();
     if (!map)
         return;
+    // The pack's entries: the row's entries and its primary target (a boss row's entry is the boss), as the step-fact
+    // read lists a step's (ReadRunFacts: step->entries, then step->entry).
+    std::vector<uint32> entries = next->entries;
+    if (next->entry)
+        entries.push_back(next->entry);
     std::unordered_set<uint64> pack;
-    for (uint32 entry : next->entries)
+    // A boss row's own spawn, found by guid whatever entry it reads now (the rule ReadRunFacts uses): alive under the
+    // entry a script changed him to, he is listed with the rest and his formation is the pack, though the spawn table
+    // still lists him under the row's entry.
+    if (next->kind == ai::PlanStepKind::Boss)
+        if (Creature* const own = OwnBossSpawnCreature(lead, *next))
+            if (own->IsAlive() && TortoiseBots::DungeonRun::ScriptChangedFrom(own) == next->entry)
+            {
+                CreatureData const* const row = own->GetCreatureData();
+                float const rowX = row ? row->position.x : own->GetPositionX();
+                float const rowY = row ? row->position.y : own->GetPositionY();
+                float const rowZ = row ? row->position.z : own->GetPositionZ();
+                if (ai::PlanDistance(rowX, rowY, rowZ, next->x, next->y, next->z) <= next->radius + kSpawnOwnTolYd)
+                {
+                    pack.insert(RunFormationOf(own));
+                    if (std::find(entries.begin(), entries.end(), own->GetEntry()) == entries.end())
+                        entries.push_back(own->GetEntry());
+                }
+            }
+    for (uint32 entry : entries)
         for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))
         {
             CreatureData const* const data = sObjectMgr.GetCreatureData(low);

@@ -1019,6 +1019,15 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))", hold)
         self.assertIn("pack.insert(RunFormationOf(member));", hold)
         self.assertIn("pack.count(RunFormationOf(c)) == 0", hold)
+        # The pack's entries are the row's entries AND its primary target (a boss row's entry), as ReadRunFacts lists
+        # them; a boss row's own spawn a script changed away from its entry joins the pack by guid.
+        self.assertIn("std::vector<uint32> entries = next->entries;", hold)
+        self.assertIn("entries.push_back(next->entry);", hold)
+        self.assertIn("for (uint32 entry : entries)", hold)
+        self.assertNotIn("for (uint32 entry : next->entries)", hold)
+        self.assertIn("if (next->kind == ai::PlanStepKind::Boss)", hold)
+        self.assertIn("ScriptChangedFrom(own) == next->entry", hold)
+        self.assertIn("pack.insert(RunFormationOf(own));", hold)
         self.assertIn("reach.reachYd = ai::AggroRadius(mob, lowest, rate);", hold)
         self.assertIn("f.holdAheadRead = true;", hold)
         # The path's destination is the current move row's point (the authored approach); the next row names the
