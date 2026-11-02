@@ -2996,6 +2996,19 @@
     return s + '.';
   }
 
+  // The fixed order a bot tries for each material; the current one is lit, so
+  // it is plain what comes next when this way fails.
+  const GO_LADDER = [['bags', 'bags & mail'], ['bank', 'guild bank'], ['ah', 'auction house'],
+    ['farm', 'farm / craft'], ['sub', 'another guild bot'], ['need', 'ask you'], ['deliver', 'deliver']];
+  function goPlan(o) {
+    if (GO_FINISHED[o.state]) return '';
+    const cur = o.step === 'craft' ? 'farm' : o.step;
+    const at = GO_LADDER.findIndex(([k]) => k === cur);
+    const what = o.supply_name && o.step !== 'deliver' ? ` for ${goB(o.supply_name)}` : '';
+    return `<div class="go-plan"><span class="go-muted">Plan${what}:</span> ${GO_LADDER.map(([k, label], i) =>
+      `<span class="${i === at ? 'go-plan-now' : i < at ? 'go-plan-past' : ''}">${esc(label)}</span>`).join(' <span class="go-muted">→</span> ')}</div>`;
+  }
+
   function goDetails(o) {
     const facts = [
       `Given by ${goB(o.parent || o.giver || '?')}${o.parent ? ' (sub-order)' : ''} ${esc(goAgo(o.created_at))}`,
@@ -3004,6 +3017,7 @@
     ];
     return `<div class="go-details">
       <div class="go-facts">${goWhere(o)}<br><span class="go-muted">${facts.join(' · ')}</span></div>
+      ${goPlan(o)}
       <div class="go-cols"><div><h4>Steps</h4>${goHistory(o)}</div><div><h4>Looted and bought</h4>${goLoot(o)}</div></div>
     </div>`;
   }

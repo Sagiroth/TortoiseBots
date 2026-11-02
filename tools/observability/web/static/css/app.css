@@ -3927,3 +3927,6 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .go-hist { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 0.88em; }
 .go-hist li { display: flex; gap: 10px; padding: 3px 0; }
 .go-time { color: var(--text-dim); min-width: 92px; font-variant-numeric: tabular-nums; }
+.go-plan { font-size: 0.88em; margin-bottom: 10px; }
+.go-plan-now { color: var(--accent-blue-bright); font-weight: 600; }
+.go-plan-past { color: var(--text-dim); text-decoration: line-through; }
