@@ -55,12 +55,27 @@
 // is the estimate with every patroller that is in no pack (and not the target)
 // left out, so the caller can tell "a patrol is the whole reason".
 //
+// THE RING ESTIMATE (EstimateAggroRing, AiPlayerbot.DungeonRunAggroWalkRing) models
+// what the walk to the pull wakes, not only where the party stands:
+//   5. Proximity to every sample of the party's walk to the pull, and to the stand
+//      and the fight point, each widened by its own spread (3 yd party, 10 yd raid
+//      for the stand and the fight point, 1.5 yd for a camp pull's tank-only walk).
+//   6. Call for help: every creature already in the set calls every same-faction
+//      creature within max(CreatureFamilyAssistanceRadius, ringYd) of ITS OWN
+//      position, in line of sight and within kAggroFloorDz vertically, for up to
+//      kAggroRingHops hops (hop 2's callers are what hop 1 added).
+//   7. The drag sweep of a camp pull: the engaged set is moved along the drag
+//      samples and every creature within ringYd of a sample is called once.
+// The measured reason for the 20 yd ring is the 11.0-19.5 yd spawn pairs of the
+// Arlokk terrace that wake each other while the core's assist radius is 10.
+//
 // Core-free, so tools/test_pull_aggro_estimate_policy.cpp includes it directly.
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace ai
@@ -73,10 +88,21 @@ namespace ai
     inline constexpr int kAggroMaxLevelDiff = 25;
     // Smallest aggro radius, as the core floors it: min(detection, 5 yd).
     inline constexpr float kAggroMinReachYd = 5.0f;
+    // The ring estimate: how far a call for help carries (AiPlayerbot.DungeonRunAggroRingYd; the
+    // measured wakes were 11.0-19.5 yd while the core's own assist radius is 10), how many hops
+    // (a constant: three or more over-counts the whole terrace), and how far vertically a call
+    // reaches (the one Arlokk hop that came crossed dz 11).
+    inline constexpr float kAggroRingYd = 20.0f;
+    inline constexpr std::uint32_t kAggroRingHops = 2;
+    inline constexpr float kAggroFloorDz = 12.0f;
+    // The sight budget of one estimate (one estimate per row, not per tick): past it the
+    // remaining pairs count as seen, so a big room goes high, never slow.
+    inline constexpr std::uint32_t kAggroRayBudget = 400;
 
     // One living, hostile creature near the pull.
     struct AggroMob
     {
+        std::uint64_t guid = 0;                // carried, not used by the rules
         float x = 0.0f, y = 0.0f, z = 0.0f;
         std::uint32_t level = 0;
         float detectionYd = kAggroDetectionYd; // Creature::GetDetectionRange (0 = never wakes by proximity)
@@ -96,6 +122,35 @@ namespace ai
         std::size_t from = 0, to = 0;
     };
 
+    struct AggroPoint
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+    };
+
+    // Where the party and the tank go around a pull (the glue samples the walk and
+    // the drag; the pure rules only read the points).
+    struct AggroGeometry
+    {
+        std::vector<AggroPoint> walk;     // the party's walk to the pull, every 2 yd
+        float walkSpreadYd = 3.0f;
+        std::vector<AggroPoint> tankWalk; // a camp pull's walk-out and tag spot (tank only)
+        float tankSpreadYd = 1.5f;
+        AggroPoint stand;                 // where the pull goes out from
+        float standSpreadYd = 3.0f;       // 10 for a raid (ai::kSpreadSettledDistance)
+        bool hasFight = false;
+        AggroPoint fight;                 // the camp of a camp pull, else the stand
+        std::vector<AggroPoint> drag;     // a camp pull's drag polyline, every 4 yd
+    };
+
+    // Why one creature comes (the member list's reason).
+    enum class AggroWhy : std::uint8_t { Target, Pack, Walk, TankWalk, Stand, Fight, Ring1, Ring2, Drag };
+
+    struct AggroMember
+    {
+        std::size_t index = 0; // into the mobs list
+        AggroWhy why = AggroWhy::Target;
+    };
+
     struct AggroEstimateParams
     {
         float engageX = 0.0f, engageY = 0.0f, engageZ = 0.0f; // where the party stands as the pull starts
@@ -104,6 +159,16 @@ namespace ai
         float aggroRate = 1.0f;                               // Rate.Creature.Aggro
         float familyAssistYd = kAggroFamilyAssistYd;
         std::vector<AggroLink> links;
+        // The ring estimate: a call for help carries max(familyAssistYd, ringYd), for
+        // ringHops hops, and only within floorDz of the caller vertically.
+        float ringYd = kAggroRingYd;
+        std::uint32_t ringHops = kAggroRingHops;
+        float floorDz = kAggroFloorDz;
+        // Line of sight, when the caller can read it (a null callback: always seen).
+        // mobSees: from the creature to a point of the geometry; mobsSee: from one
+        // creature to another (the caller to the called).
+        std::function<bool(std::size_t mob, AggroPoint const&)> mobSees;
+        std::function<bool(std::size_t from, std::size_t to)> mobsSee;
     };
 
     struct AggroEstimate
@@ -112,6 +177,8 @@ namespace ai
         std::uint32_t joiners = 0;           // bodies - 1
         std::uint32_t bodiesIfPatrolsPass = 0; // the same with the lone patrollers left out
         bool patrolIsTheCause = false;       // a patrol alone makes the difference (see JoinersOverCeiling)
+        std::vector<AggroMember> members;    // EstimateAggroRing only: every body with its reason, insertion order
+        bool losBudgetSpent = false;         // ... the sight budget ran out: the count is high side
     };
 
     // Creature::GetAttackDistance for one creature against a party member of
@@ -241,6 +308,224 @@ namespace ai
         e.joiners = e.bodies > 0 ? e.bodies - 1 : 0;
         e.bodiesIfPatrolsPass = detail::Count(mobs, target, params, true);
         return e;
+    }
+
+    namespace detail
+    {
+        // The sight budget of one estimate: kAggroRayBudget rays, then every pair
+        // counts as seen (high side) and the estimate says the budget was spent.
+        struct SightBudget
+        {
+            std::uint32_t rays = 0;
+            bool spent = false;
+
+            bool Out()
+            {
+                if (rays >= kAggroRayBudget)
+                {
+                    spent = true;
+                    return true;
+                }
+                ++rays;
+                return false;
+            }
+        };
+
+        inline bool MobSees(SightBudget& budget, AggroEstimateParams const& p, std::size_t mob, AggroPoint const& point)
+        {
+            return budget.Out() || !p.mobSees || p.mobSees(mob, point);
+        }
+
+        inline bool MobsSee(SightBudget& budget, AggroEstimateParams const& p, std::size_t from, std::size_t to)
+        {
+            return budget.Out() || !p.mobsSee || p.mobsSee(from, to);
+        }
+
+        inline float PointDist(AggroMob const& m, AggroPoint const& p)
+        {
+            return Dist3(m.x, m.y, m.z, p.x, p.y, p.z);
+        }
+
+        // The pack closure, marking what it adds as Pack.
+        inline void PackClosureMark(std::vector<AggroMob> const& mobs, std::vector<AggroLink> const& links,
+            std::vector<char>& in, std::vector<AggroMember>* members)
+        {
+            auto add = [&](std::size_t i)
+            {
+                in[i] = 1;
+                if (members)
+                    members->push_back(AggroMember{i, AggroWhy::Pack});
+            };
+            bool grew = true;
+            while (grew)
+            {
+                grew = false;
+                for (std::size_t i = 0; i < mobs.size(); ++i)
+                {
+                    if (!in[i])
+                        continue;
+                    if (mobs[i].groupId != 0)
+                        for (std::size_t k = 0; k < mobs.size(); ++k)
+                            if (!in[k] && mobs[k].groupId == mobs[i].groupId)
+                            {
+                                add(k);
+                                grew = true;
+                            }
+                }
+                for (AggroLink const& l : links)
+                    if (in[l.from] && !in[l.to])
+                    {
+                        add(l.to);
+                        grew = true;
+                    }
+            }
+        }
+
+        inline std::uint32_t RingCount(std::vector<AggroMob> const& mobs, std::size_t target,
+            AggroGeometry const& g, AggroEstimateParams const& p, bool leavePatrolsOut, SightBudget& budget,
+            std::vector<AggroMember>* members)
+        {
+            std::size_t const n = mobs.size();
+            if (target >= n)
+                return 0;
+            auto absent = [&](std::size_t i)
+            {
+                return leavePatrolsOut && i != target && mobs[i].patroller && mobs[i].groupId == 0;
+            };
+            std::vector<AggroLink> links;
+            for (AggroLink const& l : p.links)
+                if (l.from < n && l.to < n && !absent(l.from) && !absent(l.to))
+                    links.push_back(l);
+            std::vector<char> in(n, 0);
+            auto add = [&](std::size_t i, AggroWhy why)
+            {
+                if (in[i])
+                    return false;
+                in[i] = 1;
+                if (members)
+                    members->push_back(AggroMember{i, why});
+                return true;
+            };
+            add(target, AggroWhy::Target);
+            PackClosureMark(mobs, links, in, members);
+
+            // 5. Proximity to the walk, the tank's walk, the stand and the fight
+            //    point. Only the nearest sample inside reach (plus its spread) is
+            //    ray-tested: one ray per creature, not one a sample.
+            struct Spot
+            {
+                AggroPoint point;
+                float spread;
+                AggroWhy why;
+            };
+            std::vector<Spot> spots;
+            spots.reserve(g.walk.size() + g.tankWalk.size() + 2);
+            for (AggroPoint const& w : g.walk)
+                spots.push_back(Spot{w, g.walkSpreadYd, AggroWhy::Walk});
+            for (AggroPoint const& w : g.tankWalk)
+                spots.push_back(Spot{w, g.tankSpreadYd, AggroWhy::TankWalk});
+            spots.push_back(Spot{g.stand, g.standSpreadYd, AggroWhy::Stand});
+            if (g.hasFight)
+                spots.push_back(Spot{g.fight, g.standSpreadYd, AggroWhy::Fight});
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                if (in[i] || absent(i) || mobs[i].noAggro)
+                    continue;
+                float const reach = AggroRadius(mobs[i], p.lowestPartyLevel, p.aggroRate);
+                if (reach <= 0.0f)
+                    continue;
+                Spot const* best = nullptr;
+                float bestDist = 0.0f;
+                for (Spot const& s : spots)
+                {
+                    float const d = PointDist(mobs[i], s.point);
+                    if (d <= reach + s.spread && (!best || d < bestDist))
+                    {
+                        best = &s;
+                        bestDist = d;
+                    }
+                }
+                if (best && MobSees(budget, p, i, best->point))
+                    add(i, best->why);
+            }
+            PackClosureMark(mobs, links, in, members);
+
+            // 6. Call for help: every member calls its same-faction neighbours, one
+            //    hop at a time, and each hop's calls come with their packs.
+            float const ring = std::max(p.familyAssistYd, p.ringYd);
+            std::vector<std::size_t> callers;
+            for (std::size_t i = 0; i < n; ++i)
+                if (in[i])
+                    callers.push_back(i);
+            for (std::uint32_t hop = 1; hop <= p.ringHops && !callers.empty(); ++hop)
+            {
+                AggroWhy const reason = hop == 1 ? AggroWhy::Ring1 : AggroWhy::Ring2;
+                std::vector<std::size_t> called;
+                for (std::size_t from : callers)
+                    for (std::size_t i = 0; i < n; ++i)
+                    {
+                        if (in[i] || absent(i) || mobs[i].noAssist || mobs[i].noAggro ||
+                            mobs[i].faction != mobs[from].faction)
+                            continue;
+                        if (std::fabs(mobs[i].z - mobs[from].z) > p.floorDz)
+                            continue;
+                        if (Dist3(mobs[i].x, mobs[i].y, mobs[i].z, mobs[from].x, mobs[from].y, mobs[from].z) > ring)
+                            continue;
+                        if (!MobsSee(budget, p, from, i))
+                            continue;
+                        if (add(i, reason))
+                            called.push_back(i);
+                    }
+                PackClosureMark(mobs, links, in, members);
+                callers.swap(called); // hop 2's callers are what hop 1 added
+            }
+
+            // 7. The drag sweep: every drag sample calls what stands within ringYd of
+            //    it (the call a dragged creature makes along the way back).
+            for (AggroPoint const& sample : g.drag)
+            {
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    if (in[i] || absent(i) || mobs[i].noAssist || mobs[i].noAggro)
+                        continue;
+                    if (PointDist(mobs[i], sample) > ring || std::fabs(mobs[i].z - sample.z) > p.floorDz)
+                        continue;
+                    if (!MobSees(budget, p, i, sample))
+                        continue;
+                    add(i, AggroWhy::Drag);
+                }
+                PackClosureMark(mobs, links, in, members);
+            }
+
+            std::uint32_t count = 0;
+            for (std::size_t i = 0; i < n; ++i)
+                if (in[i])
+                    ++count;
+            return count;
+        }
+    }
+
+    // The ring estimate: the same question as EstimateAggro, with the walk, the
+    // stand and the fight point, the calls for help of every member and the drag
+    // sweep. `members` lists every body with its reason, in insertion order.
+    inline AggroEstimate EstimateAggroRing(std::vector<AggroMob> const& mobs, std::size_t target,
+        AggroGeometry const& geometry, AggroEstimateParams const& params)
+    {
+        AggroEstimate e;
+        detail::SightBudget budget;
+        e.bodies = detail::RingCount(mobs, target, geometry, params, false, budget, &e.members);
+        e.joiners = e.bodies > 0 ? e.bodies - 1 : 0;
+        e.bodiesIfPatrolsPass = detail::RingCount(mobs, target, geometry, params, true, budget, nullptr);
+        e.losBudgetSpent = budget.spent;
+        return e;
+    }
+
+    // The row's ceiling in bodies: the plan's own (the pull row's `item`, a
+    // deliberately sized pull) wins, else the config ceiling in joiners + 1.
+    // 0: no ceiling at all.
+    inline std::uint32_t PullCeilingBodies(std::uint32_t planBodies, std::uint32_t configJoiners)
+    {
+        return planBodies ? planBodies : (configJoiners ? configJoiners + 1 : 0);
     }
 
     // The run leader's question: do more joiners than `ceiling` come? 0 for
