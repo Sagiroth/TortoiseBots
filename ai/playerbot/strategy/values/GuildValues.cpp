@@ -10,6 +10,7 @@
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderReagentTree.h"
 #include "runtime/GuildOrderSubOrderPolicy.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include "runtime/GuildOrderRefundPolicy.h"
@@ -27,6 +28,7 @@ namespace
 {
 
 using TortoiseBots::GuildOrders::NeedItem;
+using TortoiseBots::GuildOrders::ReagentTotals;
 using TortoiseBots::GuildOrders::BankLegSkipped;
 using TortoiseBots::GuildOrders::OrderRecord;
 using TortoiseBots::GuildOrders::OrderReason;
@@ -179,6 +181,105 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
         !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto);
 }
 
+// Recipe view of the bot's known recipes for the whole-tree walk: the spell
+// map snapshot names the craft spell, its create-item effect carries the
+// guaranteed yield, and a vendor-unlimited item stays a leaf (bought, never
+// made), exactly as the ladder treats it.
+struct SnapshotRecipes
+{
+    Player* bot;
+    SupplySnapshot* snap;
+
+    bool operator()(uint32_t itemId, TortoiseBots::GuildOrders::Recipe& out) const
+    {
+        uint32_t spellId = SnapshotCraftSpell(bot, *snap, itemId);
+        if (!spellId || IsUnlimitedVendorItem(itemId))
+            return false;
+        SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+        if (!spell)
+            return false;
+        uint32_t effect = ai::FindCraftEffectFor(spellId, itemId);
+        out.yieldPerCast = TortoiseBots::CraftOrderPolicy::MinYieldPerCast(spell->EffectBasePoints[effect],
+            spell->EffectBaseDice[effect], spell->EffectDieSides[effect]);
+        for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        {
+            if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+                continue;
+            out.reagents.push_back({ uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]) });
+        }
+        if (!sPlayerbotAIConfig.craftToolsAlways)
+            for (uint32_t totem : spell->Totem)
+                if (totem)
+                    out.tools.push_back(totem);
+        return true;
+    }
+};
+
+// Whole-tree totals behind one snapshot: base reagents summed over every
+// branch, each id once, with bags and mail spent once across the walk.
+std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
+    uint32_t itemId, uint32_t count)
+{
+    SnapshotRecipes recipes{ bot, &snap };
+    auto held = [ai, bot, &snap](uint32_t heldId)
+    {
+        return SnapshotBags(ai, snap, heldId) + SnapshotMail(bot, snap, heldId);
+    };
+    std::vector<NeedItem> needs;
+    for (TortoiseBots::GuildOrders::ReagentNeed const& need :
+        TortoiseBots::GuildOrders::CollectBaseReagents(itemId, count, recipes, held))
+        needs.push_back(NeedItem{ need.itemId, need.count });
+    return needs;
+}
+
+// Whole-tree aggregates behind one snapshot: the three counts the ladder
+// needs, one row per base reagent. A mailbox leg the ladder skips is dead
+// stock here too, or the totals answer a need the ladder will not take mail
+// for and the order parks asking for zero.
+std::vector<ReagentTotals> ReagentTotalsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
+    uint32_t itemId, uint32_t count, OrderRecord const* order)
+{
+    SnapshotRecipes recipes{ bot, &snap };
+    auto bags = [ai, &snap](uint32_t bagsId)
+    {
+        return SnapshotBags(ai, snap, bagsId);
+    };
+    auto mail = [bot, &snap, order](uint32_t mailId)
+    {
+        bool skipped = order &&
+            MailLegSkipped(mailId, order->mailEmptyItemId, snap.nowMs, order->mailEmptyMs);
+        return TortoiseBots::GuildOrders::SpentMail(SnapshotMail(bot, snap, mailId), skipped);
+    };
+    return TortoiseBots::GuildOrders::CollectReagentTotals(itemId, count, recipes, bags, mail);
+}
+
+// Which whole-tree count a ladder step asks for. The mailbox leg fills in what
+// the bags leave short, so it must not see the smaller external need; a bank,
+// auction or farm leg sources only what neither bags nor mail hold.
+enum class ReagentAggregate
+{
+    BagShort,
+    ExtShort
+};
+
+// A leaf candidate asks for the whole order's need for that reagent, not the
+// share of the branch the walk happened to reach first: a sub-order, a bank
+// withdrawal or an auction buy then covers the tree instead of half of it.
+// The branch's own count stays the floor: three walks over shared stock can
+// leave the tree total below the branch it is standing on.
+uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals, uint32_t depth,
+    uint32_t itemId, uint32_t fallback, ReagentAggregate aggregate)
+{
+    if (!depth)
+        return fallback;
+    auto found = totals.find(itemId);
+    if (found == totals.end())
+        return fallback;
+    uint32_t treeCount = aggregate == ReagentAggregate::BagShort ? found->second.bagShort
+                                                                 : found->second.extShort;
+    return TortoiseBots::GuildOrders::WholeTreeCount(treeCount, fallback);
+}
+
 // Every reagent the bot still needs for `count` casts of the output, one
 // entry per reagent: the need list and its whisper name them all at once
 // instead of asking the player again after each delivery.
@@ -192,6 +293,8 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
     uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
+    // A farm or buy order's item has no recipe: bags and mailbox are the
+    // whole stock, as before.
     if (!spellId || IsUnlimitedVendorItem(itemId))
     {
         uint32_t owned = SnapshotBags(ai, snap, itemId) + SnapshotMail(bot, snap, itemId);
@@ -199,83 +302,50 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
             out.push_back(NeedItem{ itemId, count - owned });
         return;
     }
-    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
-    if (!spell)
-        return;
-    uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
-    // Shared base reagents add up across sibling components: the walk below
-    // names each craftable sibling once with its own shortfall, so the
-    // delegated (or farmed) count must cover the whole tree, not the first
-    // sibling that needs it. Each sibling's casts come from its own
-    // shortfall, not the parent's.
-    std::unordered_map<uint32_t, uint32_t> shared;
-    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
-            continue;
-        uint32_t reagentId = uint32_t(spell->Reagent[i]);
-        uint32_t spellFor = SnapshotCraftSpell(bot, snap, reagentId);
-        if (!spellFor || IsUnlimitedVendorItem(reagentId))
-            continue;
-        SpellEntry const* sub = sServerFacade.LookupSpellInfo(spellFor);
-        if (!sub)
-            continue;
-        uint32_t owned = SnapshotBags(ai, snap, reagentId) + SnapshotMail(bot, snap, reagentId);
-        uint32_t need = spell->ReagentCount[i] * casts;
-        if (owned >= need)
-            continue;
-        uint32_t subCasts = ai::CraftCastsForRemaining(spellFor, reagentId, need - owned);
-        for (uint8_t j = 0; j < MAX_SPELL_REAGENTS; ++j)
-        {
-            if (!sub->ReagentCount[j] || sub->Reagent[j] <= 0)
-                continue;
-            shared[uint32_t(sub->Reagent[j])] += sub->ReagentCount[j] * subCasts;
-        }
-    }
-    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
-            continue;
-        uint32_t reagentId = uint32_t(spell->Reagent[i]);
-        uint32_t need = spell->ReagentCount[i] * casts;
-        auto sharedNeed = shared.find(reagentId);
-        if (sharedNeed != shared.end() && sharedNeed->second > need)
-            CollectMissingReagents(ai, bot, reagentId, sharedNeed->second, out, &snap);
-        else
-            CollectMissingReagents(ai, bot, reagentId, need, out, &snap);
-    }
-    if (!sPlayerbotAIConfig.craftToolsAlways)
-        for (uint32_t totem : spell->Totem)
-            if (totem && !SnapshotBags(ai, snap, totem) && !SnapshotMail(bot, snap, totem))
-                out.push_back(NeedItem{ totem, 1 });
+    // The whole tree, not one level of siblings: a base reagent shared by
+    // two intermediates, or sitting three recipes down, is one row with the
+    // summed need, and an intermediate in the bags shrinks its subtree.
+    for (NeedItem const& need : MissingReagentsFromTree(ai, bot, snap, itemId, count))
+        out.push_back(need);
 }
 
 bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
     std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out, OrderRecord const* order = nullptr,
-    SupplySnapshot* snapshot = nullptr)
+    SupplySnapshot* snapshot = nullptr, std::unordered_map<uint32_t, ReagentTotals> const* totals = nullptr)
 {
     if (!ai || !bot || !itemId || !count)
         return false;
-    if (depth >= 8 || std::find(path.begin(), path.end(), itemId) != path.end())
-    {
-        out = { itemId, count, false };
-        return true;
-    }
-
     SupplySnapshot local;
     SupplySnapshot& snap = snapshot ? *snapshot : local;
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
+    // One whole-tree aggregate per ladder pass: every leaf candidate below
+    // asks for the order's full need, not the first branch's share, and the
+    // mailbox leg asks for the larger bag shortfall.
+    std::unordered_map<uint32_t, ReagentTotals> treeTotals;
+    if (!totals)
+    {
+        for (ReagentTotals const& row : ReagentTotalsFromTree(ai, bot, snap, itemId, count, order))
+            treeTotals[row.itemId] = row;
+        totals = &treeTotals;
+    }
+    if (depth >= TortoiseBots::GuildOrders::kReagentTreeMaxDepth ||
+        std::find(path.begin(), path.end(), itemId) != path.end())
+    {
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+        return true;
+    }
+
     uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
     if (!spellId || IsUnlimitedVendorItem(itemId))
     {
-        out = { itemId, count, false };
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
         return true;
     }
     SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
     if (!spell)
     {
-        out = { itemId, count, false };
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
         return true;
     }
 
@@ -308,7 +378,11 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         if (inMail && inBags < required)
         {
             path.pop_back();
-            out = { reagentId, required - inBags, false, true };
+            // The mailbox leg brings in what the bags do not cover; how much
+            // it can move is bounded by the mail, not by its target.
+            out = { reagentId,
+                TreeTotalFor(*totals, depth + 1, reagentId, required - inBags, ReagentAggregate::BagShort),
+                false, true };
             return true;
         }
         uint32_t owned = inBags + inMail;
@@ -319,7 +393,8 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
             continue;
         }
         SupplyCandidate nested;
-        if (!FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap))
+        if (!FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap,
+                totals))
         {
             outcomes.push_back(MaterialOutcome::Owned);
             results.push_back(SupplyCandidate{ reagentId, required - owned, false });
