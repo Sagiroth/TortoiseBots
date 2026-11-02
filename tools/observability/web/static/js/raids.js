@@ -17,6 +17,7 @@
       || members.find((m) => m && m.role === "tank" && !m.dead && !m.offline && m.state !== "dead");
     const bind = {
       commander: g.key || ("raid#" + g.group),
+      cardKey: "raid:" + (r.key || "") + ":" + (g.key || ("raid#" + g.group)),
       observed: true,
       raidKey: r.key || "",
       group: g.group || 0,
@@ -53,7 +54,12 @@
   function listRows(run) {
     const groups = ((run && run.groups) || []).slice();
     const fighting = (g) => !!(g && (g.combat || (g.members || []).some((m) => m && m.state === "combat")));
-    groups.sort((a, b) => ((fighting(b) ? 1 : 0) - (fighting(a) ? 1 : 0)) || String(a.key || "") < String(b.key || "") ? -1 : 1);
+    groups.sort((a, b) => {
+      const fa = fighting(a) ? 0 : 1, fb = fighting(b) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      const ka = String(a && a.key || ""), kb = String(b && b.key || "");
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
     return groups;
   }
 

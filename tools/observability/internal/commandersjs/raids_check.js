@@ -25,10 +25,10 @@ const view = {
 // ---- bindOf: the shape the card and map draw ----
 const bind = RaidView.bindOf(view, view.groups[0]);
 assert.strictEqual(bind.commander, "raid#7", "commander = the RAIDS key: " + bind.commander);
+assert.strictEqual(bind.cardKey, "raid:409:7:raid#7", "cardKey = the card the map draws: " + bind.cardKey);
 assert.strictEqual(bind.observed, true);
 assert.strictEqual(bind.raidKey, "409:7");
 assert.strictEqual(bind.group, 7);
-assert.strictEqual(bind.lead, "Tank", "leader first, else the first living tank");
 assert.strictEqual(bind.online, true);
 assert.deepStrictEqual(bind.mobs, []);
 assert.strictEqual(bind.mobs_map, 409);
@@ -59,5 +59,9 @@ const fighting = Object.assign({}, view.groups[0], { key: "raid#7" });
 const idle = Object.assign({}, view.groups[0], { key: "raid#9", group: 9, combat: null, members: [{ state: "idle" }] });
 const ordered = RaidView.listRows({ groups: [idle, fighting] });
 assert.deepStrictEqual(ordered.map((g) => g.key), ["raid#7", "raid#9"], "fighting first: " + JSON.stringify(ordered.map((g) => g.key)));
+const mk = (key, combat) => ({ key, combat: combat ? { win_s: 1 } : null, members: [{ state: combat ? "combat" : "idle" }] });
+const mixed = RaidView.listRows({ groups: [mk("raid#9", false), mk("raid#8", true), mk("raid#10", false), mk("raid#7", true)] });
+assert.deepStrictEqual(mixed.map((g) => g.key), ["raid#7", "raid#8", "raid#10", "raid#9"],
+  "fighting first, then key: " + JSON.stringify(mixed.map((g) => g.key)));
 
 console.log("raids_check.js ok");

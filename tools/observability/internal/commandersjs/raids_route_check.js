@@ -49,23 +49,33 @@ vm.runInContext([
   grab("cmdLiveBinds"),
   "var cmdAllBinds = () => commanders.concat(state.dungeons.binds, state.raids.binds);",
   grab("cmdFindBind"),
+  grab("cmdBindForCard"),
+  grab("cmdRaidShownTwice"),
+  grab("cmdDebugBinds"),
   grab("fdTabsModel"),
   "var FdTabs = { sortBinds: (l) => l.slice().sort((a, b) => String(a.commander) < String(b.commander) ? -1 : 1), stateOf: (b, w) => w || 'idle', deadCount: () => 0, model: (rows) => rows };",
   "var CmdView = { stateWord: () => 'idle', context: () => ({}) };",
   "var cmdNowFor = () => 100; var cmdPlace = () => ''; var cmdFightsCache = {}; var fdPageSeen = {}; var cmdTracker = {}; var fdPage = { gone: {} };",
 ].join("\n"), ctx2);
 Object.assign(ctx2, {
-  state: { dungeons: { binds: [] }, raids: { binds: [] } },
+  state: { commanders: { list: [] }, dungeons: { binds: [] }, raids: { binds: [] } },
   commanders: [],
 });
 const run2 = (expr) => vm.runInContext(expr, ctx2);
 run2("commanders = [{ commander: 'Hypeer' }]");
-run2("state.raids.binds = [{ commander: 'raid#7', observed: true, bots: [] }]");
+run2("state.commanders.list = commanders");
+run2("state.raids.binds = [{ commander: 'raid#7', cardKey: 'raid:409:7:raid#7', observed: true, bots: [] }]");
 assert.strictEqual(run2("cmdFindBind('raid#7').commander"), "raid#7", "the open card resolves through cmdFindBind");
+assert.strictEqual(run2("cmdBindForCard('raid:409:7:raid#7').commander"), "raid#7", "the Raids card resolves through cardKey");
 assert.deepStrictEqual(JSON.parse(JSON.stringify(run2("cmdLiveBinds().map(b => b.commander)"))), ["Hypeer"],
   "the Commanders Live list does not contain the observed raid");
-assert.deepStrictEqual(JSON.parse(JSON.stringify(run2("fdTabsModel(commanders.concat(state.dungeons.binds, state.raids.binds)).map(r => r.key)"))),
+assert.deepStrictEqual(JSON.parse(JSON.stringify(run2("cmdDebugBinds().map(b => b.commander)"))),
+  ["Hypeer", "raid#7"], "the debugger list does contain it");
+assert.deepStrictEqual(JSON.parse(JSON.stringify(run2("fdTabsModel(cmdDebugBinds()).map(r => r.key)"))),
   ["Hypeer", "raid#7"], "the debugger tab strip does contain it");
+run2("state.raids.binds = [{ commander: 'Hypeer', cardKey: 'raid:409:7:Hypeer', observed: true, bound: true, bots: [] }]");
+assert.deepStrictEqual(JSON.parse(JSON.stringify(run2("cmdDebugBinds().map(b => b.commander)"))),
+  ["Hypeer"], "a bound raid shows once, under its commander binding");
 
 // ---- the Fights button builds #/commanders/<key>/fight ----
 assert.ok(/function raidFightHash\(groupKey, fightKey\)/.test(src), "raidFightHash builds the debugger link");

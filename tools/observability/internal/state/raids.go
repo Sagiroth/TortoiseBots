@@ -16,10 +16,10 @@ import (
 const RaidsStaleAfter = 12 * time.Second
 
 // Bounds on what one datagram may put in the store; a datagram past them is
-// trimmed, not rejected.
+// trimmed, not rejected. Groups rotate past 40 on the module side.
 const (
-	maxRaidsGroups = 20
-	maxRaidsParts  = 20
+	maxRaidsGroups = 40
+	maxRaidsParts = 20
 )
 
 // raidsState is the latest RAIDS payload. It has its own lock so a 2 s

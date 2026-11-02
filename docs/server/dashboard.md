@@ -118,6 +118,7 @@ The **Raids** tab lists every live raid instance copy with bots in it, one row p
 - **Groups:** One card per group with the leader, offline members and the live combat window. The party, map and fights reuse the Commanders renderers unchanged: subgroup blocks, threat and deaths panels, and `mountFightPanel` under the group key.
 - **Observed vs roster only:** A live `RAIDS` report marks the group `observed` (leader, offline members, fight numbers); without one the card says `roster only` (the server sends no RAIDS: `AiPlayerbot.ObservabilityRaids = 0`). A bound group shows `bound · <commander>` linking to its Commanders card and carries the run line; fights are the same list under the commander name.
 - **Ungrouped:** Units of the copy with no group read as one muted "Not in a group" block.
+- **Known limit:** past 40 raid groups the module rotates which groups it reports, so the tab cycles through them instead of showing all at once.
 - **Polling:** The page refetches `/api/v1/raids` on each snapshot only while the tab is on screen and the last `raids` event is older than 5 s, else once per 30 s. The WebSocket hub broadcasts `raids` after every applied RAIDS datagram.
 
 ### Commanders Maps

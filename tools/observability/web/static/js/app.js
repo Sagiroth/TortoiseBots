@@ -1522,7 +1522,7 @@
     const off = state.bots.filter(b => b.map !== 0 && b.map !== 1);
     if (el.worldOffmap) {
       el.worldOffmap.innerHTML = off.length
-        ? `${off.length} in instances or other maps — the live ones on the <a href="#/dungeons">Dungeons</a> tab, the rest in the <a href="#/bots">Bots</a> list.`
+        ? `${off.length} in instances or other maps — the live ones on the <a href="#/dungeons">Dungeons</a> and <a href="#/raids">Raids</a> tabs, the rest in the <a href="#/bots">Bots</a> list.`
         : '';
       el.worldOffmap.classList.toggle('offmap-note', off.length > 0);
     }
@@ -3768,7 +3768,7 @@
     const hit = state.raids.byMember.get(guid);
     if (!hit) return '';
     const label = dgnRunName(hit.run) + (hit.group ? ` · ${hit.group.key}` : '');
-    const qs = hit.group ? `run=${encodeURIComponent(hit.run.key)}&group=${encodeURIComponent(hit.group.key)}` : `run=${encodeURIComponent(hit.run.key)}`;
+    const qs = hit.group ? `run=${encodeURIComponent(hit.run.key)}&group=${encodeURIComponent(String(hit.group.group))}` : `run=${encodeURIComponent(hit.run.key)}`;
     return kv('Raid', `<a class="card-link" href="#/raids?${qs}" title="Open the raid group's live view">${esc(label)}</a>`);
   }
 
@@ -5470,7 +5470,7 @@
 
   function fdGridPaint() {
     if (cmdPageMode() !== 'debug' || fdPage.open) return;
-    const all = cmdAllBinds().filter(b => !b.dungeon);
+    const all = cmdDebugBinds();
     const tabs = fdTabsModel(all);
     fdTabPaint(tabs, 'debug');
     const grid = document.getElementById('cmd-overview');
@@ -5693,7 +5693,8 @@
   const cmdDemoMs = () => Math.max(CMD_DEMO_MS, refreshGate.interval() * 1000);
   // A binding the page remembers: commanders (and the demo) plus, for the Dungeons tab (issue #895), one pseudo-binding per live
   // dungeon run — the same card DOM and the same map renderer draw it (drawCmdMap reads cmdFindBind), only the header and the party
-  // rows are the Dungeons tab's own.
+  // rows are the Dungeons tab's own. Raid groups keep bind.commander as the fight key and carry the card key in
+  // bind.cardKey ('raid:' + run key + ':' + group key), so card lookups resolve through cmdBindForCard.
   const cmdAllBinds = () => {
     let commanders = state.commanders.list;
     if (cmdDemo.on) {
@@ -5703,6 +5704,8 @@
     return commanders.concat(state.dungeons.binds, state.raids.binds);
   };
   const cmdFindBind = key => cmdAllBinds().find(b => b.commander === key);
+  const cmdBindForCard = key => key && key.indexOf('raid:') === 0
+    ? cmdAllBinds().find(b => b.cardKey === key) : cmdFindBind(key);
   const cmdNowFor = bind => (bind && bind.demo ? Date.now() / 1000 : cmdServerNow());
 
   function cmdDemoTick() {
@@ -5970,11 +5973,18 @@
   }
 
   // A live fight opened, ended or finished: the fights list changed. Its own gate key, so it never replaces a pending report.
+  // A fight key also resets the raid card showing that fight (its card key rides bind.cardKey).
   function cmdLiveFightChanged(commander, summary) {
     if (!commander) return;
     delete cmdFightsCache[commander];
     const card = cmdCards.get(commander);
     if (card) card.dataset.fightState = '';
+    cmdAllBinds().forEach(b => {
+      if (b && b.commander === commander && b.cardKey) {
+        const raidCard = cmdCards.get(b.cardKey);
+        if (raidCard) raidCard.dataset.fightState = '';
+      }
+    });
     refreshGate.submit('cmd-fights', renderCommanders);
   }
 
@@ -7220,7 +7230,7 @@
 
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
-    const liveBind = cmdFindBind(key);
+    const liveBind = cmdBindForCard(key); // the card key resolves through cardKey; cmdFindBind keeps the fight key
     const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
     // Live: the positions are interpolated between samples (no glide during a fight replay, which has its own track).
     const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : Glide.apply(liveBind, cmdGlide[key] || (cmdGlide[key] = Glide.create()), performance.now());
@@ -7523,7 +7533,7 @@
     const stage = card.querySelector('.cmd-stage'), tip = card.querySelector('.cmd-tip');
     const u = ms.tip && ms.units ? ms.units[ms.tip.id] : null;
     if (!u) { tip.hidden = true; if (ms.tip) ms.tip = null; return; }
-    const bind = cmdFindBind(key);
+    const bind = cmdBindForCard(key);
     const facts = bind ? cmdMapFacts(bind) : null;
     if (!facts) { tip.hidden = true; return; }
     const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs,
@@ -7658,7 +7668,7 @@
       if (btn.dataset.act === 'follow') {
         m.follow = !m.follow;
       } else if (btn.dataset.act === 'whole') {
-        const bind = cmdFindBind(key), bots = (bind && bind.bots) || [];
+        const bind = cmdBindForCard(key), bots = (bind && bind.bots) || [];
         const pts = m.pick
           ? [{ x: m.pick.x, y: m.pick.y }, { x: m.pick.x + m.pick.w, y: m.pick.y + m.pick.h }]
           : bots.map(b => CmdView.project(b.x, b.y));
@@ -7976,6 +7986,17 @@
   function cmdLiveBinds() {
     return cmdAllBinds().filter(b => !b.dungeon && !b.observed);
   }
+  // A bound raid shows once, under its commander binding: skip an observed raid bind whose bound flag is set or whose
+  // fight key is already a COMMANDERS binding.
+  function cmdRaidShownTwice(bind) {
+    if (!bind || !bind.observed) return false;
+    if (bind.bound) return true;
+    return (state.commanders.list || []).some(b => b && b.commander === bind.commander);
+  }
+  // The debugger's list: commanders plus observed raids, minus the bound-raid double.
+  function cmdDebugBinds() {
+    return cmdAllBinds().filter(b => !b.dungeon).filter(b => !cmdRaidShownTwice(b));
+  }
 
   function renderCommanders() {
     const c = state.commanders;
@@ -8002,9 +8023,10 @@
 
     // Only the commanders' cards live in #cmd-list; the Dungeons and Raids tabs draw their own (the shared cmdCards map holds all).
     // The debugger strip keeps observed raids; the Live list (cmdLiveBinds) does not.
-    // Live draws the commanders; the debugger draws commanders plus observed raids.
+    // Live draws the commanders; the debugger draws commanders plus observed raids, except a bound raid: it shows once,
+    // under its commander binding, not again as an observed raid copy.
     const live = cmdLiveBinds();
-    const all = cmdAllBinds().filter(b => !b.dungeon);
+    const all = cmdDebugBinds();
     fdTabsSync(all);
     cmdPaintPageMode(mode);
     const tabs = fdTabsModel(mode === 'debug' ? all : live);
@@ -9845,7 +9867,7 @@
     const runs = state.raids.runs;
     const openRun = state.raids.openKey != null ? runs.find(r => r.key === state.raids.openKey) : null;
     const open = openRun && state.raids.openGroup != null
-      ? (openRun.groups || []).find(g => String(g.key) === String(state.raids.openGroup)) || null
+      ? (openRun.groups || []).find(g => String(g.group) === String(state.raids.openGroup)) || null
       : null;
     listEl.style.display = open ? 'none' : '';
     viewEl.style.display = open ? '' : 'none';
@@ -9875,7 +9897,7 @@
           const bots = members.filter(m => !m.player).length;
           const players = members.filter(m => m.player).map(m => m.name);
           const down = members.filter(m => m.dead || m.offline).length;
-          return `<tr class="raid-run-row" data-run="${esc(run.key)}" data-group="${esc(group.key)}" title="Open the live view of this group">
+          return `<tr class="raid-run-row" data-run="${esc(run.key)}" data-group="${esc(String(group.group))}" title="Open the live view of this group">
             <td>${esc(dgnRunName(run))}</td>
             <td>${esc(group.key)}${group.bound && group.commander ? ' <span class="cell-muted">bound</span>' : ''}${group.observed ? '' : ' <span class="cell-muted">roster</span>'}</td>
             <td>${group.leader ? esc(group.leader) : '<span class="cell-muted">–</span>'}</td>
@@ -9884,8 +9906,8 @@
             <td><span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span></td>
             <td>${esc(DgnView.seenText(run.seen_sec))}</td>
           </tr>`;
-        }).join('') + '</tbody></table>'
-      : '';
+        }).join('') + '</tbody></table>' + runs.map(r => raidUngroupedListHtml(r)).join('')
+      : runs.map(r => raidUngroupedListHtml(r)).join('');
     if (!host._wired) {
       host._wired = true;
       host.addEventListener('click', e => {
@@ -9893,6 +9915,14 @@
         if (row) go({ tab: 'raids', run: row.dataset.run, group: row.dataset.group });
       });
     }
+  }
+
+  // The list's muted block for a run's units with no group.
+  function raidUngroupedListHtml(run) {
+    const solo = (run && run.ungrouped) || [];
+    if (!solo.length) return '';
+    const names = solo.map(m => m && m.name ? esc(m.name) : '').filter(Boolean).join(', ');
+    return `<div class="raid-ungrouped muted">${esc(dgnRunName(run))} &middot; Not in a group &middot; ${solo.length}: ${names}</div>`;
   }
 
   // One shared card per group, rebuilt and drawn like a commander's: the header names the instance, leader and
@@ -9936,15 +9966,25 @@
       + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}">${esc(rb.text)}</span>` : ''));
     card.querySelector('.cmd-orders').parentElement.querySelector('.cmd-h').style.display = 'none';
     setHtml(card.querySelector('.cmd-orders'), '');
-    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind));
+    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind) + raidUngroupedHtml(run));
     setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
     setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
     setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
-    const fightsBtn = `<div class="raid-fights"><a class="btn" href="${esc(raidFightHash(group.key, null))}">Fights</a></div>`;
+    const fightsBtn = `<div class="raid-fights"><a class="btn" href="${esc(raidFightHash(bind.commander, null))}">Fights</a></div>`;
     const fightsHost = card.querySelector('.cmd-fights');
     if (fightsHost) setHtml(fightsHost, fightsBtn);
     mountFightPanel(card, bind);
     drawCmdMap(key);
+  }
+
+  // The copy's units with no group: one muted block, as the list shows. A copy with only ungrouped bots shows this,
+  // not a blank party.
+  function raidUngroupedHtml(run) {
+    const solo = (run && run.ungrouped) || [];
+    if (!solo.length) return '';
+    const names = solo.map(m => m && m.name ? esc(m.name) : '').filter(Boolean).join(', ');
+    return `<h4 class="cmd-subgroup cmd-ungrouped">Not in a group &middot; ${solo.length} up</h4>`
+      + `<div class="cmd-row cmd-ungrouped-row"><span class="cmd-who muted">${names}</span></div>`;
   }
 
   // Fight debugger links for an observed group: the debugger resolves the bind through cmdFindBind.
