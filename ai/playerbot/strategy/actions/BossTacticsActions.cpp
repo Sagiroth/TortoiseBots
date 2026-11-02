@@ -25,6 +25,9 @@
 #include "EnemyAreaSpell.h"
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "Objects/Totem.h"
+#include "Spells/SpellMgr.h"
+#include "Database/DBCStores.h"
 
 using namespace ai;
 
@@ -457,6 +460,27 @@ void ai::CollectDispelAuras(Unit* member, uint32 dispelType, std::vector<AuraOnM
     }
 }
 
+void ai::CollectAllDispelAuras(Unit* member, std::vector<AuraOnMember>& out)
+{
+    if (!member)
+        return;
+    for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
+    {
+        Unit::AuraList const& auras = member->GetAurasByType((AuraType)type);
+        for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            const SpellEntry* entry = (*itr)->GetSpellProto();
+            if (entry && entry->Dispel != DISPEL_NONE)
+            {
+                AuraOnMember aura;
+                aura.spellId = entry->Id;
+                aura.dispelType = entry->Dispel;
+                out.push_back(aura);
+            }
+        }
+    }
+}
+
 float ai::NearestGroupMemberYd(Unit* member)
 {
     if (!member)
@@ -774,6 +798,12 @@ bool BossTacticsInterruptAction::Execute(Event& event)
     return scan.caster && ai->CastSpell(std::string(scan.spell), scan.caster);
 }
 
+bool BossTacticsDispelSweepAction::Execute(Event& event)
+{
+    (void)event;
+    return SweepBossDispelCures(ai, bot, true);
+}
+
 bool BossTacticsKillFirstAction::Execute(Event& event)
 {
     (void)event;
@@ -1003,51 +1033,195 @@ bool IsDispelAreaCure(const std::string& spell)
            spell == "poison cleansing totem" || spell == "stoneform";
 }
 
-// The dispel types a cure action removes, from the spell it casts: 1.12 has a typed action class for the party cures
-// only; the self, totem and Stoneform cures are plain casts. Returns how many types were written (0: not a cure).
-int CureDispelTypes(const std::string& spell, uint32 types[3])
+void AddDispelType(std::vector<uint32>& out, int32 type)
 {
-    if (spell == "dispel magic")
+    if (type < 0)  // DISPEL_ALL: every type a friendly cure can remove
     {
-        types[0] = DISPEL_MAGIC;
-        return 1;
+        for (int32 t = DISPEL_MAGIC; t <= DISPEL_POISON; ++t)
+            AddDispelType(out, t);
+        return;
     }
-    if (spell == "remove curse" || spell == "remove lesser curse")
-    {
-        types[0] = DISPEL_CURSE;
-        return 1;
-    }
-    if (spell == "cure disease" || spell == "abolish disease" || spell == "disease cleansing totem")
-    {
-        types[0] = DISPEL_DISEASE;
-        return 1;
-    }
-    if (spell == "cure poison" || spell == "abolish poison" || spell == "poison cleansing totem")
-    {
-        types[0] = DISPEL_POISON;
-        return 1;
-    }
-    if (spell == "purify")
-    {
-        types[0] = DISPEL_DISEASE;
-        types[1] = DISPEL_POISON;
-        return 2;
-    }
-    if (spell == "cleanse")
-    {
-        types[0] = DISPEL_MAGIC;
-        types[1] = DISPEL_DISEASE;
-        types[2] = DISPEL_POISON;
-        return 3;
-    }
-    if (spell == "stoneform")
-    {
-        types[0] = DISPEL_DISEASE;
-        types[1] = DISPEL_POISON;
-        return 2;
-    }
-    return 0;
+    if (type == DISPEL_NONE || std::find(out.begin(), out.end(), static_cast<uint32>(type)) != out.end())
+        return;
+    out.push_back(static_cast<uint32>(type));
 }
+
+// The dispel types a spell removes, read from its effects: a dispel effect names its type, and an immunity that strips
+// auras on application (Stoneform) names the types it strips. A periodic trigger is followed one step, so a cleansing
+// totem's passive aura yields the type its pulse removes. Empty when the spell removes nothing.
+void CollectSpellDispelTypes(SpellEntry const* entry, std::vector<uint32>& out, int depth = 0)
+{
+    if (!entry)
+        return;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (entry->Effect[i] == SPELL_EFFECT_DISPEL)
+            AddDispelType(out, entry->EffectMiscValue[i]);
+        else if (entry->EffectApplyAuraName[i] == SPELL_AURA_DISPEL_IMMUNITY &&
+                 (entry->AttributesEx & SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY))
+            AddDispelType(out, entry->EffectMiscValue[i]);
+        else if (depth == 0 && entry->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_TRIGGER_SPELL)
+            CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(entry->EffectTriggerSpell[i]), out, depth + 1);
+    }
+}
+
+// The dispel types the spell an action casts removes, resolved by name the way the action resolves it.
+std::vector<uint32> ActionDispelTypes(PlayerbotAI* ai, const std::string& spell)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 const spellId = AI_VALUE2(uint32, "spell id", spell);
+    std::vector<uint32> types;
+    CollectSpellDispelTypes(sServerFacade.LookupSpellInfo(spellId), types);
+    return types;
+}
+
+// The fight's dispel rows only: a map without one has nothing to rank, and the scan is not paid for.
+ActiveBossRows DispelRows(const BossTacticsFight& fight)
+{
+    ActiveBossRows rows;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::DispelPriority)
+            rows.push_back(row);
+    }
+    return rows;
+}
+
+// The living group members a cure can reach, the bot included.
+std::vector<Unit*> DispelSweepMembers(Player* bot)
+{
+    std::vector<Unit*> members;
+    members.push_back(bot);
+    Group* group = bot->GetGroup();
+    if (!group)
+        return members;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            continue;
+        members.push_back(member);
+    }
+    return members;
+}
+
+// The radius a totem's pulse reaches: the dispel effect of the spell it triggers, or the safety radius when the data
+// names none.
+float TotemDispelRadius(SpellEntry const* totemSpell)
+{
+    if (!totemSpell)
+        return kDispelSafetyYd;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (totemSpell->EffectApplyAuraName[i] != SPELL_AURA_PERIODIC_TRIGGER_SPELL)
+            continue;
+        SpellEntry const* pulse = sSpellMgr.GetSpellEntry(totemSpell->EffectTriggerSpell[i]);
+        if (!pulse)
+            continue;
+        for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        {
+            if (pulse->Effect[j] != SPELL_EFFECT_DISPEL)
+                continue;
+            float const radius = pulse->GetSpellRadius(sSpellRadiusStore.LookupEntry(pulse->EffectRadiusIndex[j]));
+            if (radius > 0.0f)
+                return radius;
+        }
+    }
+    return kDispelSafetyYd;
+}
+
+// What an already-running area cure would do to a protected aura: the Abolish aura a bot cast on a member (removed
+// server-side, only auras cast by our bots), and the bot's own cleansing totem of the type (destroyed). With `apply`
+// false the scan only reports whether there is anything to do.
+bool SweepDispelCures(PlayerbotAI* ai, Player* bot, const ActiveBossRows& rows, float defaultClearYd, bool apply)
+{
+    bool swept = false;
+    const std::vector<Unit*> members = DispelSweepMembers(bot);
+    for (Unit* member : members)
+    {
+        // Collected first: the removal below mutates the holder map.
+        std::vector<std::pair<uint32, ObjectGuid>> doomed;
+        for (const auto& held : member->GetSpellAuraHolderMap())
+        {
+            SpellAuraHolder* aura = held.second;
+            if (!aura)
+                continue;
+            std::vector<uint32> types;
+            CollectSpellDispelTypes(aura->GetSpellProto(), types);
+            if (types.empty())
+                continue;
+            ObjectGuid const casterGuid = aura->GetCasterGuid();
+            Player* caster = sObjectMgr.GetPlayer(casterGuid);
+            if (!caster || !GET_PLAYERBOT_AI(caster))
+                continue;
+            for (uint32 type : types)
+            {
+                const DispelVerdict verdict = DispelMemberState(member, type, rows, defaultClearYd);
+                // The aura that decided is the protected one itself: never remove that.
+                if (!verdict.excluded || verdict.auraId == aura->GetId())
+                    continue;
+                doomed.push_back(std::make_pair(aura->GetId(), casterGuid));
+                break;
+            }
+        }
+        for (const auto& entry : doomed)
+        {
+            member->RemoveAurasByCasterSpell(entry.first, entry.second);
+            swept = true;
+        }
+    }
+
+    for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+    {
+        Totem* totem = bot->GetTotem(TotemSlot(slot));
+        if (!totem || !totem->IsAlive())
+            continue;
+        SpellEntry const* totemSpell = sSpellMgr.GetSpellEntry(totem->GetSpell());
+        std::vector<uint32> types;
+        CollectSpellDispelTypes(totemSpell, types);
+        if (types.empty())
+            continue;
+        float const radius = TotemDispelRadius(totemSpell);
+        bool destroy = false;
+        for (Unit* member : members)
+        {
+            if (sServerFacade.GetDistance2d(totem, member) > radius)
+                continue;
+            for (uint32 type : types)
+            {
+                if (DispelMemberState(member, type, rows, defaultClearYd).excluded)
+                {
+                    destroy = true;
+                    break;
+                }
+            }
+            if (destroy)
+                break;
+        }
+        if (!destroy)
+            continue;
+        if (apply)
+            totem->UnSummon();
+        swept = true;
+    }
+    return swept;
+}
+}
+
+// The sweep an already-running area cure needs: a protected aura applied after the cure started would be removed by
+// its next tick or pulse, so the bot-cast Abolish aura is removed and the bot's own cleansing totem destroyed. Gated
+// by AiPlayerbot.DungeonRunAuraTactics, the map's dispel rows and the "boss tactics" strategy.
+bool ai::SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
+    if (rows.empty())
+        return false;
+    return SweepDispelCures(ai, bot, rows, sPlayerbotAIConfig.bombRunoutDistance, apply);
 }
 
 float BossTacticsDispelHoldMultiplier::GetValue(Action* action)
@@ -1060,74 +1234,45 @@ float BossTacticsDispelHoldMultiplier::GetValue(Action* action)
         return 1.0f;
 
     // A cure action, by its typed target (a party cure) or by the spell it casts (a self, totem or Stoneform cure).
+    // The hold judges every type the cast spell removes, not only the one that triggered it: a poison-triggered
+    // Cleanse also strips magic and disease, and the core picks one of the spell's types at random.
     CurePartyMemberAction* partyCure = dynamic_cast<CurePartyMemberAction*>(action);
     CastSpellAction* cast = partyCure ? nullptr : dynamic_cast<CastSpellAction*>(action);
-    uint32 types[3] = {0, 0, 0};
-    int typeCount = 0;
-    bool areaCure = false;
-    if (partyCure)
-    {
-        types[0] = partyCure->GetDispelType();
-        typeCount = 1;
-    }
-    else if (cast)
-    {
-        const std::string& spell = cast->GetSpellName();
-        typeCount = CureDispelTypes(spell, types);
-        if (typeCount == 0)
-            return 1.0f;
-        areaCure = IsDispelAreaCure(spell);
-    }
-    else
+    if (!partyCure && !cast)
         return 1.0f;
+    const std::string& spell = partyCure ? partyCure->GetSpellName() : cast->GetSpellName();
+    const std::vector<uint32> types = ActionDispelTypes(ai, spell);
+    if (types.empty())
+        return 1.0f;
+    bool const areaCure = !partyCure && IsDispelAreaCure(spell);
 
-    // The fight's dispel rows only: a map without one has nothing to rank, and the scan is not paid for.
-    const BossTacticsFight fight = ScanBossTactics(ai, bot);
-    ActiveBossRows rows;
-    for (const BossTacticRow* row : fight.rows)
-    {
-        if (row->kind == BossTacticKind::DispelPriority)
-            rows.push_back(row);
-    }
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
     if (rows.empty())
         return 1.0f;
     const float defaultClearYd = sPlayerbotAIConfig.bombRunoutDistance;
+
+    const auto veto = [&](Unit* member)
+    {
+        std::vector<AuraOnMember> auras;
+        CollectAllDispelAuras(member, auras);
+        float const allyYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(member)
+                                                                 : std::numeric_limits<float>::max();
+        const DispelVerdict verdict = DispelCureVerdict(rows, auras, types, allyYd, defaultClearYd);
+        if (!verdict.excluded)
+            return false;
+        LogDispelExcluded(ai, bot, verdict, member, allyYd);
+        return true;
+    };
 
     if (partyCure)
     {
         // The chosen member: a cure on an excluded one would remove the aura that must stay (the core picks one of
         // the type at random), so the action is stood down and the predicate offers somebody else.
         Unit* target = action->GetTarget();
-        if (!target)
-            return 1.0f;
-        for (int i = 0; i < typeCount; ++i)
-        {
-            float allyYd = 0.0f;
-            const DispelVerdict verdict = DispelMemberState(target, types[i], rows, defaultClearYd, &allyYd);
-            if (verdict.excluded)
-            {
-                LogDispelExcluded(ai, bot, verdict, target, allyYd);
-                return 0.0f;
-            }
-        }
-        return 1.0f;
+        return target && veto(target) ? 0.0f : 1.0f;
     }
 
     // A self cure judges the bot itself; an area or periodic cure judges every living group member it can reach.
-    const auto veto = [&](Unit* member)
-    {
-        for (int i = 0; i < typeCount; ++i)
-        {
-            float allyYd = 0.0f;
-            const DispelVerdict verdict = DispelMemberState(member, types[i], rows, defaultClearYd, &allyYd);
-            if (verdict.excluded)
-            {
-                LogDispelExcluded(ai, bot, verdict, member, allyYd);
-                return true;
-            }
-        }
-        return false;
-    };
     if (!areaCure)
         return veto(bot) ? 0.0f : 1.0f;
     if (veto(bot))

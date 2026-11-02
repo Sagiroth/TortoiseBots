@@ -13,6 +13,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics interrupt",
         NextAction::array(0, new NextAction("boss tactics interrupt", ACTION_INTERRUPT + 1), NULL)));
 
+    // A protected aura applied after an area cure started: the cure's next tick or pulse would remove it, so the
+    // bot-cast Abolish aura is removed and the bot's own cleansing totem destroyed before that.
+    triggers.push_back(new TriggerNode(
+        "boss tactics dispel sweep",
+        NextAction::array(0, new NextAction("boss tactics dispel sweep", ACTION_HIGH + 4), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));

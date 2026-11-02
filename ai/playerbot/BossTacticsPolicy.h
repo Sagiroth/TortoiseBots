@@ -493,6 +493,22 @@ namespace ai
         return verdict;
     }
 
+    // The first excluded verdict among the types a cure removes, or a default (not excluded) one. The caller passes
+    // every type the cast spell removes, not only the one that triggered it: a poison-triggered Cleanse also strips
+    // magic and disease, and the core picks one of the spell's types at random.
+    inline DispelVerdict DispelCureVerdict(const ActiveBossRows& active, const std::vector<AuraOnMember>& auras,
+                                          const std::vector<std::uint32_t>& types, float nearestAllyYd,
+                                          float defaultClearYd)
+    {
+        for (std::uint32_t type : types)
+        {
+            DispelVerdict const verdict = DispelMemberVerdict(active, auras, type, nearestAllyYd, defaultClearYd);
+            if (verdict.excluded)
+                return verdict;
+        }
+        return DispelVerdict();
+    }
+
     // Order of two cure candidates: rank first, the target tier only on a tie. A rank-0 aura is cured before a rank-2
     // one even when the latter stands in cast range and the former needs a short walk.
     inline bool DispelCandidateBetter(int rankA, int tierA, int rankB, int tierB)

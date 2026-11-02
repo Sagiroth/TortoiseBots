@@ -29,6 +29,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A protected aura was applied after an area cure started: the bot-cast Abolish aura or the bot's own cleansing
+    // totem of that type would remove it on the next tick or pulse.
+    class BossTacticsDispelSweepTrigger : public Trigger
+    {
+    public:
+        BossTacticsDispelSweepTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dispel sweep", 1) {}
+        bool IsActive() override;
+    };
+
     // A kill_first creature is alive and this DPS bot is not on it.
     class BossTacticsKillFirstTrigger : public Trigger
     {
