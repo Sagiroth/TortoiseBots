@@ -41,6 +41,11 @@ int main()
 {
     CHECK(kSubOrderDefaultDepth == 3);
     CHECK(kSubOrderRetryMs == 45000);
+    // An unfinished scan retries on the next tick, not on the busy timer:
+    // waiting 45 s for each slice would stall a branch on a big roster.
+    CHECK(kSubOrderSliceRetryMs == 1000);
+    CHECK(kSubOrderSliceRetryMs < kSubOrderRetryMs);
+    CHECK(kSubOrderBusyScanLimit == 10);
     // The per-tick planner budget is small: sub-order ticks stay bounded
     // while the retry timer drains the rest.
     CHECK(kSubOrderPlannerEvalsPerTick > 0 && kSubOrderPlannerEvalsPerTick <= 16);
@@ -148,12 +153,67 @@ int main()
         CHECK(ClassifySubOrderScan(foldSlice(SubOrderScanBest{}, onlyBusy, 2)) ==
             SubOrderPick::Queued);
     }
+    // A keep holder parked at its stock target never frees up: it is busy,
+    // but it cannot take the sub-order, so it must not keep the request
+    // alive. A normal busy bot next to it still does.
+    {
+        SubOrderCandidate keepHolder = busy;
+        keepHolder.botGuidLow = 9;
+        keepHolder.keepHolder = true;
+        SubOrderCandidate onlyKeep[] = { keepHolder };
+        SubOrderScanBest keepBest = foldSlice(SubOrderScanBest{}, onlyKeep, 1);
+        CHECK(!keepBest.sawBusyUsable);
+        CHECK(ClassifySubOrderScan(keepBest) == SubOrderPick::None);
+        SubOrderCandidate keepAndBusy[] = { keepHolder, busy };
+        SubOrderScanBest mixedBest = foldSlice(SubOrderScanBest{}, keepAndBusy, 2);
+        CHECK(mixedBest.sawBusyUsable);
+        CHECK(ClassifySubOrderScan(mixedBest) == SubOrderPick::Queued);
+    }
+    // A busy-only roster gives up after the limit instead of rescanning
+    // forever: the item lands on the parent's need list.
+    {
+        SubOrderCandidate onlyBusy[] = { busy };
+        SubOrderScanBest best = foldSlice(SubOrderScanBest{}, onlyBusy, 1);
+        CHECK(ClassifySubOrderScan(best, kSubOrderBusyScanLimit - 1) == SubOrderPick::Queued);
+        CHECK(ClassifySubOrderScan(best, kSubOrderBusyScanLimit) == SubOrderPick::None);
+        // A free candidate still wins on the last allowed retry.
+        SubOrderCandidate freeOne[] = { farmer };
+        SubOrderScanBest freeBest = foldSlice(SubOrderScanBest{}, freeOne, 1);
+        CHECK(ClassifySubOrderScan(freeBest, kSubOrderBusyScanLimit) == SubOrderPick::Take);
+    }
     // A free candidate wins over busy ones without queueing.
     {
         SubOrderCandidate mixed[] = { busy, farmer };
         SubOrderScanBest best = foldSlice(SubOrderScanBest{}, mixed, 2);
         CHECK(best.guid == farmer.botGuidLow);
         CHECK(ClassifySubOrderScan(best) == SubOrderPick::Take);
+    }
+
+    // The carried candidate is re-checked just before placement: a member
+    // that went offline, left the guild, lost its durable pool or picked up
+    // an order while the scan ran must not have the order placed over it.
+    {
+        SubOrderRecheck ok;
+        ok.found = true;
+        ok.inWorld = true;
+        ok.sameGuild = true;
+        ok.durable = true;
+        CHECK(SubOrderRecheckPasses(ok));
+        SubOrderRecheck gone;
+        gone.found = true;
+        gone.sameGuild = true;
+        gone.durable = true;
+        CHECK(!SubOrderRecheckPasses(gone)); // not in world
+        SubOrderRecheck otherGuild = ok;
+        otherGuild.sameGuild = false;
+        CHECK(!SubOrderRecheckPasses(otherGuild));
+        SubOrderRecheck notDurable = ok;
+        notDurable.durable = false;
+        CHECK(!SubOrderRecheckPasses(notDurable));
+        SubOrderRecheck busyNow = ok;
+        busyNow.hasOrder = true;
+        CHECK(!SubOrderRecheckPasses(busyNow));
+        CHECK(!SubOrderRecheckPasses(SubOrderRecheck{}));
     }
 
     // The roster is looked at in slices: what an early slice learned decides
@@ -200,6 +260,39 @@ int main()
     CHECK(!SubOrderRequestDue(5000, 4999));
     CHECK(!SubOrderRequestDue(5000, 4000));
     CHECK(SubOrderRequestDue(450000, 495000));
+
+    // Two requests due together: the drain starts with the first key, and
+    // the next tick starts after the request that spent the budget, so the
+    // second one gets its evaluations instead of starving behind the first.
+    {
+        uint32_t parents[] = { 10, 10 };
+        uint32_t items[] = { 100, 200 };
+        CHECK(SubOrderDrainOffset(parents, items, 2, 0, 0) == 0);
+        CHECK(SubOrderDrainOffset(parents, items, 2, 10, 100) == 1);
+        CHECK(SubOrderDrainOffset(parents, items, 2, 10, 200) == 0);
+        // A drained key that is no longer due does not park the rotation.
+        CHECK(SubOrderDrainOffset(parents, items, 2, 5, 0) == 0);
+        CHECK(SubOrderDrainOffset(parents, items, 2, 20, 0) == 0);
+        CHECK(SubOrderDrainOffset(nullptr, nullptr, 0, 0, 0) == 0);
+    }
+    // With a one-evaluation budget, the second request still progresses: the
+    // tick after the first request worked starts at the other one.
+    {
+        uint32_t parents[] = { 10, 20 };
+        uint32_t items[] = { 100, 200 };
+        bool progressed[2] = { false, false };
+        uint32_t lastParent = 0;
+        uint32_t lastItem = 0;
+        for (int tick = 0; tick < 2; ++tick)
+        {
+            size_t const begin = SubOrderDrainOffset(parents, items, 2, lastParent, lastItem);
+            progressed[begin] = true;
+            lastParent = parents[begin];
+            lastItem = items[begin];
+        }
+        CHECK(progressed[0]);
+        CHECK(progressed[1]);
+    }
 
     // The member scan is a guid walk over the ordered roster: over retries it
     // looks at each member once, in order, and only finishes back at its

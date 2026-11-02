@@ -18,6 +18,15 @@ namespace GuildOrders
 inline constexpr uint32_t kSubOrderDefaultDepth = 3;
 // Busy-only queued requests retry on this interval, not every world tick.
 inline constexpr uint32_t kSubOrderRetryMs = 45000;
+// An unfinished roster slice retries on the next tick instead: the planner
+// budget ran out (or the carried candidate went stale) while a scan was
+// already under way, and waiting the full busy interval would stall the
+// branch for no reason.
+inline constexpr uint32_t kSubOrderSliceRetryMs = 1000;
+// Consecutive busy-only full scans before the request gives up onto the
+// parent's need list: bots cycling their own orders must not hold a
+// component forever.
+inline constexpr uint32_t kSubOrderBusyScanLimit = 10;
 // Planner evaluations per PlaceSubOrders tick: each SubOrderCandidateUsable
 // call may walk the source index, so a tick with many due requests shares
 // the budget instead of stalling the world thread. A request whose scan hit
@@ -35,6 +44,21 @@ inline bool SubOrderRequestDue(uint32_t nextTryMs, uint32_t nowMs)
     if (!nextTryMs)
         return true;
     return int32_t(nextTryMs - nowMs) <= 0;
+}
+
+// Drain order for due requests, keys ascending by (parent, item): the first
+// request after the last one the drain served leads this time, so a request
+// that spent the planner budget on one tick does not lead every tick.
+// Returns 0 when nothing follows that key (wrap to the start).
+inline size_t SubOrderDrainOffset(uint32_t const* parents, uint32_t const* items,
+    size_t count, uint32_t lastParent, uint32_t lastItem)
+{
+    if (!parents || !items || !count || (!lastParent && !lastItem))
+        return 0;
+    for (size_t i = 0; i < count; ++i)
+        if (parents[i] > lastParent || (parents[i] == lastParent && items[i] > lastItem))
+            return i;
+    return 0;
 }
 
 // Remaining spend for one ancestor pair (the store walks the whole branch):
@@ -69,6 +93,7 @@ struct SubOrderCandidate
     bool online = false;       // candidate resolvable right now
     bool hasOrder = false;     // candidate already carries an order
     bool queuedBusy = false;   // a sub-order already queued for this bot waits
+    bool keepHolder = false;   // that order is a keep watch parked at its target
     bool canMake = false;      // knows the recipe and meets the skill
     bool canFarm = false;      // the source finder names a usable farm plan
     bool gathers = false;      // farms it by its own gathering skill (skin, herb, ore, fish)
@@ -182,7 +207,9 @@ inline void NoteSubOrderCandidate(SubOrderScanBest& best, SubOrderCandidate cons
         return;
     if (candidate.hasOrder || candidate.queuedBusy)
     {
-        if (candidate.canMake || candidate.canFarm)
+        // A keep holder parked at its stock target never frees up: counting
+        // it would keep the request queued against a bot that cannot take it.
+        if (!candidate.keepHolder && (candidate.canMake || candidate.canFarm))
             best.sawBusyUsable = true;
         return;
     }
@@ -196,13 +223,18 @@ inline void NoteSubOrderCandidate(SubOrderScanBest& best, SubOrderCandidate cons
 }
 
 // Verdict once the scan has looked at the whole roster: a free candidate is
-// placed, only busy usable ones keep the request queued for a fresh scan,
-// and no usable candidate at all fails it onto the need list.
-inline SubOrderPick ClassifySubOrderScan(SubOrderScanBest const& best)
+// placed, busy usable ones keep the request queued for a fresh scan, and no
+// usable candidate at all fails it onto the need list. `busyScans` counts
+// the busy-only scans in the current streak including this one: the limit
+// turns a roster that never frees up into a need-list entry as well.
+inline SubOrderPick ClassifySubOrderScan(SubOrderScanBest const& best,
+    uint32_t busyScans = 0)
 {
     if (best.guid && best.rank >= 0)
         return SubOrderPick::Take;
-    return best.sawBusyUsable ? SubOrderPick::Queued : SubOrderPick::None;
+    if (!best.sawBusyUsable || busyScans >= kSubOrderBusyScanLimit)
+        return SubOrderPick::None;
+    return SubOrderPick::Queued;
 }
 
 // One attempt's share of a roster scan, in guids rather than roster
@@ -249,6 +281,9 @@ inline SubOrderScanPlan PlanSubOrderScan(uint32_t const* guids, size_t count,
         // A fresh scan starts at the member it resumes from. A scan whose
         // start member left the guild is bounded the same way: the walk
         // still ends instead of re-reading the same tail every attempt.
+        // It can take an extra lap over ground an earlier slice already
+        // covered (the remainder is the whole roster again), which is
+        // cheaper than skipping members the shrunk roster still holds.
         startIdx = begin;
         startGuid = guids[begin];
     }
@@ -256,6 +291,23 @@ inline SubOrderScanPlan PlanSubOrderScan(uint32_t const* guids, size_t count,
     plan.startGuid = startGuid;
     plan.remaining = begin >= startIdx ? (count - begin) + startIdx : startIdx - begin;
     return plan;
+}
+
+// Pre-Give re-check of the candidate a scan carried across slices: the bot
+// must still be the same live, same-guild, durable member with no order
+// waiting, or Give would REPLACE whatever order it took in the meantime.
+struct SubOrderRecheck
+{
+    bool found = false;     // player resolves now
+    bool inWorld = false;   // and is in the world
+    bool sameGuild = false; // and still in the parent's guild
+    bool durable = false;   // and still a durable order bot
+    bool hasOrder = false;  // and carries a running order by the placement rule
+};
+
+inline bool SubOrderRecheckPasses(SubOrderRecheck const& state)
+{
+    return state.found && state.inWorld && state.sameGuild && state.durable && !state.hasOrder;
 }
 
 struct SubOrderScanCursor
