@@ -1795,5 +1795,67 @@ class RunTestSpeedWiringTest(unittest.TestCase):
         self.assertLess(clear.index("EraseAllRunSlots();"), clear.index("SyncRunSpeed();"))
 
 
+class UnitsHoldResetToGossipWiringTest(unittest.TestCase):
+    """A units hold reads a script reset only when its plan row sets kPlanFlagResetToGossip (16384), and only when
+    the gossip that started the event is the step to go back to. The loader refuses the flag on any other kind and
+    on a hold with a done flag; the hold step and the wipe re-arm both go through UnitsHoldResetSeen."""
+
+    POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+    PLAN = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
+
+    def test_flag_is_the_next_free_bit(self):
+        self.assertIn("constexpr std::uint32_t kPlanFlagResetToGossip = 16384;", self.PLAN)
+
+    def test_loader_refuses_the_flag_off_a_units_hold(self):
+        norm = body(strip_comments(self.PLAN), "inline PlanStepRefusal NormalizePlanStep(", "if (step.exactLaunch")
+        self.assertIn("(step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold", norm)
+        hold = body(strip_comments(self.PLAN), "bool const byData = (step.flags & kPlanFlagDoneData) != 0;", "default:")
+        self.assertIn("resetToGossip && (byData || byObject)", hold)
+
+    def test_reset_needs_the_flag_and_a_gossip_to_go_back_to(self):
+        check = body(strip_comments(self.POLICY), "inline bool UnitsHoldResetSeen(", "\n}\n")
+        self.assertIn("!(s.flags & ai::kPlanFlagResetToGossip)", check)
+        self.assertIn("EventStartStep(r)", check)
+        self.assertIn("PlanStepKind::Gossip", check)
+
+    def test_both_reset_paths_go_through_the_check(self):
+        policy = strip_comments(self.POLICY)
+        self.assertEqual(policy.count("UnitsHoldResetSeen(r, f, s)"), 1)  # the hold step
+        self.assertEqual(policy.count("UnitsHoldResetSeen(r, f, *s)"), 1)  # the wipe re-arm
+
+
+class DeadGossipOkWiringTest(unittest.TestCase):
+    """A units hold whose starting gossip row counted a dead NPC as done (kPlanFlagDeadGossipOk, 32768) ends when no unit
+    of it is hostile: at once when all lie dead, with a note when only friendly survivors are left. The gossip step
+    latches its own step (Run::startNpcDeadStep), and the hold reads it against EventStartStep, so a run resumed at the
+    hold itself never saw the note and waits as before. The loader refuses the flag on any other kind, on a hold with a
+    done flag and on a hold with kPlanFlagResetToGossip."""
+
+    POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+    PLAN = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
+
+    def test_flag_is_the_next_free_bit(self):
+        self.assertIn("constexpr std::uint32_t kPlanFlagDeadGossipOk = 32768;", self.PLAN)
+        self.assertIn("constexpr std::uint32_t kPlanFlagResetToGossip = 16384;", self.PLAN)
+
+    def test_loader_refuses_the_flag_off_a_units_hold(self):
+        norm = body(strip_comments(self.PLAN), "inline PlanStepRefusal NormalizePlanStep(", "if (step.exactLaunch")
+        self.assertIn("(step.flags & kPlanFlagDeadGossipOk) && step.kind != PlanStepKind::Hold", norm)
+        hold = body(strip_comments(self.PLAN), "bool const byData = (step.flags & kPlanFlagDoneData) != 0;", "default:")
+        self.assertIn("deadGossipOk && (byData || byObject || resetToGossip)", hold)
+
+    def test_gossip_dead_note_latches_the_step(self):
+        gossip = body(strip_comments(self.POLICY), "inline bool GossipDeadIsDone(", "\n}\n")
+        self.assertIn("r.startNpcDeadStep = r.step;", gossip)
+        # The latch names the step that was counted done, before NextStep moves on.
+        self.assertLess(gossip.index("r.startNpcDeadStep = r.step;"), gossip.index("NextStep(r,"))
+
+    def test_hold_reads_the_latch_against_the_start_step(self):
+        check = body(strip_comments(self.POLICY), "if ((s.flags & ai::kPlanFlagDeadGossipOk)", "if (r.eventUp)")
+        self.assertIn("r.startNpcDeadStep == EventStartStep(r)", check)
+        self.assertIn("u.hostile", check)
+        self.assertIn("no unit of it is hostile", check)
+
+
 if __name__ == "__main__":
     unittest.main()

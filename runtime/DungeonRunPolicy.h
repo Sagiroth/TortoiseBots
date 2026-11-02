@@ -618,6 +618,11 @@ constexpr std::uint32_t kEventStartMs = 30000;    // an encounter hold whose dat
 // awake one, corpses in sight): it ends this long after the first look at the spot, on a tick with the spot in sight (HoldStep; ZF r15-19z33: Bly's crew
 // killed by the troll waves, "4 of 4 down" held the whole 300 s).
 constexpr std::uint32_t kHoldAllDeadMs = 10000;
+// A units hold (no done flag) that the script reset: it started (a unit was seen awake) and then the whole radius
+// went friendly again with the first entry's unit alive, no fight. This long so (with the spot in sight), the hold
+// goes back to the step that started it, not into its timeout (ZF Farraki Arena: a wipe or an evade turns Razjal,
+// Kath'zen and Juthza friendly and faction 35 again and restores the gossip).
+constexpr std::uint32_t kUnitsHoldResetMs = 5000;
 constexpr float kGossipWalkYd = 30.0f;            // a gossip step walks to its point first when the lead bot is farther than this
 constexpr std::uint32_t kRitualNoReplyMs = 5000;  // a ritual whose bots are free again with no answer this long: pause
 constexpr std::uint32_t kEventResetWaitMs = 60000; // before a ritual: an encounter still in progress or failed (a boss
@@ -2308,7 +2313,15 @@ struct Run
     std::uint32_t eventResetWaitMs = 0; // a ritual waiting for its encounter to reset (kEventResetWaitMs)
     std::uint32_t eventMs = 0;
     bool eventStarted = false;   // the done data left "not started", or an event unit was seen awake
+    // A kPlanFlagResetToGossip hold's event was seen awake this run. ResetStep does not clear it: a wipe clears
+    // eventStarted and the reset read must still see that the event had started (a second wipe, a regroup tick
+    // with the spot out of sight). Cleared when the gossip that starts the event is answered: that is a new attempt.
+    bool resetHoldStarted = false;
     bool holdUnitSeen = false;   // a units hold (no done flag): a unit of it stood alive in the radius at some tick of this hold
+    std::uint32_t unitsResetMs = 0; // a units hold: how long its spot has shown every unit friendly again with the first entry's unit alive, no fight (UnitsHoldResetSeen)
+    // kPlanFlagDeadGossipOk: the gossip step before the hold that counted its dead NPC as done (GossipDeadIsDone set it); the
+    // units hold then ends when no unit of it is hostile (all dead, or only friendly survivors the script can never turn).
+    std::size_t startNpcDeadStep = static_cast<std::size_t>(-1);
     bool holdArrived = false;    // the party stood on the hold spot once
     // The party's places on the hold spot (HoldStands), set once the lead bot
     // stands there out of a fight and again after each fight; the glue places
@@ -2959,6 +2972,7 @@ inline void ResetStep(Run& r)
     r.eventMs = 0;
     r.eventStarted = false;
     r.holdUnitSeen = false;
+    r.unitsResetMs = 0;
     r.holdArrived = false;
     r.eventIdleMs = 0;
     r.eventUp = r.eventDown = r.eventTotal = 0;
@@ -6230,6 +6244,9 @@ inline bool GossipDeadIsDone(Run& r, const PlanStep* s, const std::string& answe
     std::string const entry = " (" + std::to_string(s->entry) + ")";
     if (name.size() > entry.size() && name.compare(name.size() - entry.size(), entry.size(), entry) == 0)
         name.erase(name.size() - entry.size());
+    // The units hold after this row reads it: kPlanFlagDeadGossipOk ends the hold when no unit of it is hostile (a live latch,
+    // per run; a resume that starts at the hold itself never passes through here).
+    r.startNpcDeadStep = r.step;
     NextStep(r, "gossip " + std::to_string(s->entry) + ": " + name + " lies dead, nothing to talk to: the step is counted done "
         "(the plan marks a dead NPC as done)");
     return true;
@@ -12926,6 +12943,9 @@ inline void GossipStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t 
     }
     if (f.taskReply == 1)
     {
+        // The answer starts a new attempt: a flagged hold's reset latch starts over (an intro that never turned
+        // hostile is no reset), and the event's own units set it again when they wake.
+        r.resetHoldStarted = false;
         NextStep(r, what + " done");
         return;
     }
@@ -13098,19 +13118,14 @@ inline void CountEvent(Run& r, const Facts& f, const PlanStep& s)
     // awake, and the hold waited 300 s twice with the crew dead ("3 of 3
     // down"). A data or object hold keeps its own start rule (HoldStep).
     if (up && !(s.flags & (ai::kPlanFlagDoneData | ai::kPlanFlagDoneObject)))
+    {
         r.eventStarted = true;
+        if (s.flags & ai::kPlanFlagResetToGossip)
+            r.resetHoldStarted = true;
+    }
     // A unit alive in the radius at any tick (friendly or not) rules out the "all dead before the hold" end (HoldStep).
     if (!f.units.empty())
         r.holdUnitSeen = true;
-}
-
-// "2 of 4 down, 1 awake", or "" before any unit of the event was seen.
-inline std::string EventProgress(const Run& r)
-{
-    if (!r.eventTotal)
-        return std::string();
-    return std::to_string(r.eventDown) + " of " + std::to_string(r.eventTotal) + " down" +
-        (r.eventUp ? ", " + std::to_string(r.eventUp) + " awake" : std::string());
 }
 
 // The step that started the event a hold waits on: the nearest ritual, open,
@@ -13130,6 +13145,47 @@ inline std::size_t EventStartStep(const Run& r)
             break;
     }
     return static_cast<std::size_t>(-1);
+}
+
+// A units hold that the script reset (no done flag, kPlanFlagResetToGossip):
+// the event started (a unit was seen awake, Run::resetHoldStarted; ResetStep
+// clears eventStarted on a wipe, the latch is what makes a second wipe or a
+// regroup tick that saw nothing still read the reset) and the spot then shows
+// no hostile unit at all (eventUp 0), at least one unit of the FIRST entry
+// alive in the radius and friendly, and the party is in no fight. Zul'Farrak's
+// Farraki Arena: a wipe or an evade makes Razjal, Kath'zen and Juthza friendly
+// (faction 35) again and restores the gossip; the first entry (Razjal) is the
+// event's named mob that stays friendly through the 13 s intro, so an intro
+// alone is not a reset (it never started; the gossip's answer clears the
+// latch for a new attempt). The in-fight test is the hold code's own
+// (Facts::anyInCombat).
+//
+// Only a hold whose plan row sets the flag reads a reset: other units holds
+// (Bly's, the Sunken Temple and Stratholme holds) have a first entry that
+// counts while still friendly, and a crew that evades or drops hostility
+// would otherwise be read as a reset and pause the run. The step to go back to
+// must be the gossip that started the event: a flagged hold without one has
+// nowhere to restart and reads no reset.
+inline bool UnitsHoldResetSeen(const Run& r, const Facts& f, const PlanStep& s)
+{
+    if (!(s.flags & ai::kPlanFlagResetToGossip) || !r.resetHoldStarted || r.eventUp || f.anyInCombat || s.entries.empty())
+        return false;
+    std::size_t const start = EventStartStep(r);
+    if (start == static_cast<std::size_t>(-1) || r.plan->steps[start].kind != PlanStepKind::Gossip)
+        return false;
+    for (const UnitFact& u : f.units)
+        if (!u.hostile && u.entry == s.entries.front())
+            return true;
+    return false;
+}
+
+// "2 of 4 down, 1 awake", or "" before any unit of the event was seen.
+inline std::string EventProgress(const Run& r)
+{
+    if (!r.eventTotal)
+        return std::string();
+    return std::to_string(r.eventDown) + " of " + std::to_string(r.eventTotal) + " down" +
+        (r.eventUp ? ", " + std::to_string(r.eventUp) + " awake" : std::string());
 }
 
 // The event reset (or never started): the run goes back to the step that
@@ -13168,16 +13224,36 @@ inline bool RearmEventOnWipe(Run& r, const Facts& f)
     const PlanStep* s = Current(r);
     if (!s || s->kind != PlanStepKind::Hold)
         return false;
-    if (!(s->flags & ai::kPlanFlagDoneData) || !(s->flags & ai::kPlanFlagEncounter))
+    bool const dataHold = (s->flags & ai::kPlanFlagDoneData) && (s->flags & ai::kPlanFlagEncounter);
+    // A units hold has no instance data to read: it re-arms when the script
+    // reset it (every unit friendly again with the first entry's unit alive:
+    // UnitsHoldResetSeen, which only a hold with kPlanFlagResetToGossip reads),
+    // the same way, without waiting kUnitsHoldResetMs.
+    bool const unitsHold = !(s->flags & (ai::kPlanFlagDoneData | ai::kPlanFlagDoneObject));
+    if (!dataHold && !unitsHold)
         return false;
-    // Only a RESET encounter: NOT_STARTED (0) or FAIL (2). IN_PROGRESS (1) is a
-    // live event (a wipe with the fight still on, a boss walking home between
-    // waves): dropping it and sending the ritual into a running event breaks
-    // the event, so the run holds on the spot as it does today. DONE (the
-    // hold's param) ends the step before this; -1 is no instance data at all.
-    if (f.eventData != static_cast<long long>(ai::kPlanEncounterNotStarted) &&
-        f.eventData != static_cast<long long>(ai::kPlanEncounterFail))
-        return false;
+    if (dataHold)
+    {
+        // Only a RESET encounter: NOT_STARTED (0) or FAIL (2). IN_PROGRESS (1) is a
+        // live event (a wipe with the fight still on, a boss walking home between
+        // waves): dropping it and sending the ritual into a running event breaks
+        // the event, so the run holds on the spot as it does today. DONE (the
+        // hold's param) ends the step before this; -1 is no instance data at all.
+        if (f.eventData != static_cast<long long>(ai::kPlanEncounterNotStarted) &&
+            f.eventData != static_cast<long long>(ai::kPlanEncounterFail))
+            return false;
+    }
+    else
+    {
+        // The wipe regroup branch calls this before the step dispatch does, so
+        // r.eventUp is the previous tick's (the fight's units, hostile). The
+        // reset must be read from THIS tick's facts: count the event's units
+        // here first (a units hold's RESET SEEN reads them; a data hold reads
+        // f.eventData, already this tick's).
+        CountEvent(r, f, *s);
+        if (!UnitsHoldResetSeen(r, f, *s))
+            return false;
+    }
     std::size_t const start = EventStartStep(r);
     if (start == static_cast<std::size_t>(-1) || r.eventRearmed.count(start))
         return false;
@@ -13458,6 +13534,33 @@ inline void HoldStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
     }
     else
     {
+        // A units hold the script reset (kPlanFlagResetToGossip) goes back to
+        // the gossip that started it instead of waiting out its timeout:
+        // kUnitsHoldResetMs of ticks with the whole radius friendly again
+        // (UnitsHoldResetSeen), with the spot in sight (this code runs only
+        // then). A wipe recovery re-arms at once instead (RearmEventOnWipe).
+        r.unitsResetMs = UnitsHoldResetSeen(r, f, s) ? r.unitsResetMs + dt : 0;
+        if (r.unitsResetMs >= kUnitsHoldResetMs)
+        {
+            EventFailed(r, "every unit of it is back to friendly: the event reset");
+            return;
+        }
+        // The gossip row before this hold counted its dead starting NPC as done (kPlanFlagDeadGossipOk): the script can never
+        // turn the units hostile from that NPC's own update, so the hold ends as soon as no unit of it is hostile (all dead, or
+        // only friendly survivors left). A unit that is hostile somehow is fought as today. A hold entered without that
+        // gossip row (a run resumed at it) has no startNpcDeadStep; "no start step" must not match it (both are npos).
+        if ((s.flags & ai::kPlanFlagDeadGossipOk) && r.startNpcDeadStep != static_cast<std::size_t>(-1) &&
+            r.startNpcDeadStep == EventStartStep(r))
+        {
+            bool awake = false;
+            for (const UnitFact& u : f.units)
+                awake = awake || u.hostile;
+            if (!awake)
+            {
+                NextStep(r, "event done: the NPC that starts it was dead and no unit of it is hostile" + tail);
+                return;
+            }
+        }
         if (r.eventUp)
             r.eventStarted = true;
         if (r.eventStarted && f.units.empty())
