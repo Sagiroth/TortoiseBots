@@ -459,6 +459,7 @@ void FillLiveUnitSnapshot(Player* unit, BotTelemetrySnapshot& snap)
     snap.groupId = group ? group->GetId() : 0;
     snap.subgroupId = unit->GetSubGroup();
     snap.instanceId = unit->GetMap() ? unit->GetMap()->GetInstanceId() : 0;
+    snap.raidMap = unit->GetMap() && unit->GetMap()->IsRaid();
     if (unit->InBattleGround())
     {
         snap.pvp = "bg";
@@ -573,6 +574,14 @@ void ObservabilityEmitter::Initialize()
     m_dungeonRunOffset = 0;
     m_dungeonMobsTiming = DungeonMobsTiming();
 
+    // Spec dash-raids-tab: off by default (a new feature); either file can turn it on. Gates the RAIDS datagram and the
+    // observed-raid combat sampler.
+    m_raidsEnabled = sPlayerbotAIConfig.observabilityRaids ||
+                     sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+    m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
+
     // The live fight stream and the cast poller; a `.reload config` re-reads them.
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
     m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
@@ -673,6 +682,10 @@ void ObservabilityEmitter::Shutdown()
     }
 
     m_enabled = false;
+    m_raidsEnabled = false;
+    m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
@@ -740,11 +753,20 @@ void ObservabilityEmitter::ReloadRealtimeKeys()
     m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
         sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
     m_posClock.Set(m_posCadence);
+    // Spec dash-raids-tab: the RAIDS feed and the observed-raid sampler follow `.reload config`.
+    m_raidsEnabled = sPlayerbotAIConfig.observabilityRaids ||
+                     sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
 {
     m_dungeonMobProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetRaidProvider(std::function<void(std::vector<Player*> const&, std::vector<Player*> const&,
+                                                                 std::vector<RaidTelemetry::GroupInfo>&)> provider)
+{
+    m_raidProvider = std::move(provider);
 }
 
 void ObservabilityEmitter::SendDatagram(std::string const& payload)
@@ -1343,6 +1365,8 @@ void ObservabilityEmitter::Update(uint32 diff)
     CollectOnlinePlayers(onlinePlayers);
     EmitSnapshotCycle(activeBots, onlinePlayers, diff);
     EmitCommanders();
+    // Raids tab (spec dash-raids-tab): after the roster batches and the commanders of this cycle's seq.
+    EmitRaids(activeBots, onlinePlayers);
     if (m_combatProvider)
     {
         m_combatPayloads.clear();
@@ -1602,8 +1626,11 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"guild\":\"" << EscapeJson(b.guild) << "\""
                 << ",\"map\":" << b.mapId
                 << ",\"zone\":" << b.zoneId
-                << ",\"instance\":" << b.instanceId
-                << ",\"subgroup\":" << b.subgroupId
+                << ",\"instance\":" << b.instanceId;
+            // Additive (spec dash-raids-tab D7): only a raid map carries the key at all.
+            if (b.raidMap)
+                bss << ",\"raid\":true";
+            bss << ",\"subgroup\":" << b.subgroupId
                 << ",\"x\":" << std::fixed << std::setprecision(1) << b.x
                 << ",\"y\":" << b.y
                 << ",\"z\":" << b.z
@@ -1771,6 +1798,64 @@ void ObservabilityEmitter::EmitDungeonMobs(std::vector<Player*> const& bots, std
             t.maxRuns, t.maxMobs, t.maxCandidates);
         t = DungeonMobsTiming();
     }
+}
+
+void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players)
+{
+    using namespace RaidTelemetry;
+    // One empty list after the last group ends (the DUNGEON_MOBS / COMMANDERS convention), then nothing.
+    if (!m_raidsEnabled)
+    {
+        if (m_raidsSent)
+            SendDatagram(BuildRaidsPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), NowUnixMs(), {}));
+        m_raidsSent = false;
+        m_raidOffset = 0;
+        return;
+    }
+    if (!m_raidProvider)
+        return;
+    m_raidProvider(bots, players, m_raidGroups);
+    if (m_raidGroups.empty())
+    {
+        if (m_raidsSent)
+            SendDatagram(BuildRaidsPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), NowUnixMs(), {}));
+        m_raidsSent = false;
+        m_raidOffset = 0;
+        return;
+    }
+
+    std::vector<size_t> const window = RotationWindow(m_raidGroups.size(), m_raidOffset);
+    if (m_raidGroups.size() > kMaxRaidGroupsPerCycle)
+        m_raidOffset = (m_raidOffset + kMaxRaidGroupsPerCycle) % m_raidGroups.size();
+    else
+        m_raidOffset = 0;
+    // Whole groups only, in rotation order; a cycle that sends every group needs no copy.
+    std::vector<GroupInfo> rotated;
+    std::vector<GroupInfo> const* listed = &m_raidGroups;
+    if (window.size() != m_raidGroups.size())
+    {
+        rotated.reserve(window.size());
+        for (size_t const index : window)
+            rotated.push_back(m_raidGroups[index]);
+        listed = &rotated;
+    }
+
+    std::vector<TrimEvent> trims;
+    time_t const now = time(nullptr);
+    std::vector<std::string> const parts = BuildRaidsParts(kProtocolVersion, m_sessionId, m_snapshotSeq, now,
+        NowUnixMs(), *listed, &trims);
+    for (std::string const& payload : parts)
+        SendDatagram(payload);
+    for (TrimEvent const& trim : trims)
+    {
+        int64_t& loggedAt = m_raidTrimLoggedAt[trim.groupId];
+        if (loggedAt && now - loggedAt < 60)
+            continue;
+        loggedAt = now;
+        TB_LOG_BASIC("TortoiseBots: RAIDS group %u ('%s') did not fit one datagram; its %s were left out",
+            trim.groupId, trim.key.c_str(), TrimSectionName(trim.level));
+    }
+    m_raidsSent = true;
 }
 
 void ObservabilityEmitter::EmitCommanders()

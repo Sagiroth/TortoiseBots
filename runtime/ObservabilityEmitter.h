@@ -4,6 +4,7 @@
 #include "PlayerLagWindow.h"
 #include "CommanderTelemetry.h"
 #include "DungeonMobTelemetry.h"
+#include "RaidTelemetry.h"
 #include "RealtimeCadence.h"
 #include <cstdint>
 #include <ctime>
@@ -50,6 +51,9 @@ struct BotTelemetrySnapshot
     // unit's raid subgroup (Player::GetSubGroup()) rides along for the
     // Dungeons tab.
     uint32 instanceId = 0;
+    // The unit's map is a raid map (the core's MapEntry instance type, spec dash-raids-tab D7): the dashboard splits the
+    // Dungeons and Raids tabs on it. Not behind a flag; absent means "not a raid map" (or an older module).
+    bool raidMap = false;
     uint32 subgroupId = 0;
     float x = 0.0f;
     float y = 0.0f;
@@ -201,6 +205,12 @@ public:
     // The mobs of every dungeon run (issue #1101) for the dashboard's Dungeons tab, filled by the commands layer on the world
     // thread once per snapshot cycle for the runs the emitter groups (see EmitDungeonMobs).
     void SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider);
+    // The raid groups of every raid map copy (spec dash-raids-tab) for the dashboard's Raids tab, filled by the commands
+    // layer on the world thread once per snapshot cycle for the groups the emitter rotates in (see EmitRaids).
+    void SetRaidProvider(std::function<void(std::vector<Player*> const&, std::vector<Player*> const&,
+                                                std::vector<RaidTelemetry::GroupInfo>&)> provider);
+    // AiPlayerbot.ObservabilityRaids on an enabled emitter: the RAIDS datagram and the observed-raid combat sampler.
+    bool RaidsEnabled() const { return m_enabled && m_raidsEnabled; }
 
 private:
     ObservabilityEmitter();
@@ -235,6 +245,15 @@ private:
         uint32 maxCandidates = 0;
     };
     DungeonMobsTiming m_dungeonMobsTiming;
+    // RAIDS datagram (spec dash-raids-tab): one set per snapshot cycle while a raid group stands, and one empty list when
+    // the last one ends. Nothing while AiPlayerbot.ObservabilityRaids is 0.
+    void EmitRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players);
+    std::function<void(std::vector<Player*> const&, std::vector<Player*> const&, std::vector<RaidTelemetry::GroupInfo>&)> m_raidProvider;
+    std::vector<RaidTelemetry::GroupInfo> m_raidGroups; // reused between cycles
+    bool m_raidsEnabled = false;
+    bool m_raidsSent = false;        // the last RAIDS datagram listed at least one group
+    size_t m_raidOffset = 0;         // rotation start when more than kMaxRaidGroupsPerCycle groups stand
+    std::unordered_map<uint32_t, int64_t> m_raidTrimLoggedAt; // group id -> unix seconds its trim was last logged
     // COMMANDERS datagram: one per snapshot cycle while a binding stands, and
     // one empty list when the last binding ends. Nothing otherwise.
     void EmitCommanders();

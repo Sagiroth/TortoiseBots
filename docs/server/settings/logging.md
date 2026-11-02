@@ -38,6 +38,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.RunTrace.Dir`](#aiplayerbotruntracedir) | `traces` | Folder for run traces and their summaries (relative to `LogsDir`). |
 | [`AiPlayerbot.RunTrace.MaxFileMb`](#aiplayerbotruntracemaxfilemb) | `64` | Size cap of one run trace file in megabytes. |
 | [`AiPlayerbot.ObservabilityDungeonMobs`](#aiplayerbotobservabilitydungeonmobs) | `1` | Sends the mobs, threat and target lines of every dungeon run to the dashboard's Dungeons tab. |
+| [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) | `0` | Sends the raid groups of every raid map copy (leader, offline members, live fight window) to the dashboard's Raids tab without a commander bind. |
 | [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) | `1` | Streams the bound groups' fight events (deaths, pulls, taunts, interrupts, casts, kill/wipe) to the dashboard as they happen. |
 | [`AiPlayerbot.ObservabilityRealtime.Events`](#aiplayerbotobservabilityrealtimeevents) | `1` | Turns the fight-event stream on or off without touching the rest of the realtime feed. |
 | [`AiPlayerbot.ObservabilityRealtime.EventGapMs`](#aiplayerbotobservabilityrealtimeeventgapms) | `250` | Minimum milliseconds between two event datagrams of one commander (100..2000). |
@@ -245,6 +246,19 @@ Sends the mobs of every dungeon run (with their threat and the bots' target line
 Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on. Setting it to `0` in either `modules/tortoise_bots.conf` or `aiplayerbot.conf` switches it off.
 
 Once per 2 s telemetry cycle the server sends a `DUNGEON_MOBS` datagram built from the run members' own victims, attackers and cached lists, without a world scan: up to 48 mobs per party run and 64 per raid run, fewer when many runs share the 384-mob cycle budget, packed by whole runs into parts of at most 96 mobs and 8 runs. The limits live in `runtime/DungeonMobTelemetry.h` ([#1101](https://github.com/Sagiroth/TortoiseBots/issues/1101)).
+
+</details>
+
+### `AiPlayerbot.ObservabilityRaids`
+Sends the raid groups of every raid map copy to the dashboard's Raids tab, without a commander bind.
+**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on, and setting it to `0` in either `modules/tortoise_bots.conf` or `aiplayerbot.conf` switches it off.
+
+The tab needs no flag for its instances, groups, member rows, map, mobs and the link to a bound commander: the roster and `DUNGEON_MOBS` carry those. This key adds the leader, the offline members, and the live fight window and finished fights of unbound groups (the window also needs `AiPlayerbot.CombatMonitor = 1`). Once per 2 s cycle the server sends a `RAIDS` datagram with one row per qualifying group (guid and subgroup per member, a name and an offline flag for members not online, the window raw JSON while the group fights); a group whose row would pass the datagram cap first loses the window, then the offline names, then members, and says so in `trimmed`. The same flag turns on a 1 Hz combat sample of those groups, so a fight pulled without a bind is recorded under the key `raid#<group id>`. The limits live in `runtime/RaidTelemetry.h`.
 
 </details>
 
