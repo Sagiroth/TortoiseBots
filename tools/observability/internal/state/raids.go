@@ -135,6 +135,13 @@ func (st *raidsState) applyListLocked(list []model.RaidGroupRow, p *model.RaidsP
 	for _, r := range list {
 		out = append(out, r)
 	}
+	// Own each row's members and keep them ordered: published rows are
+	// shared with concurrent views, which may only read them.
+	for i := range out {
+		m := append([]model.RaidMemberRef(nil), out[i].Members...)
+		sort.Slice(m, func(a, b int) bool { return m[a].GUID < m[b].GUID })
+		out[i].Members = m
+	}
 	st.session, st.ts, st.at, st.list = p.Session, p.TS, now, out
 	if p.Seq > st.seq {
 		st.seq = p.Seq
@@ -343,7 +350,6 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 		if row.Commander != "" {
 			g.Commander = row.Commander
 		}
-		sort.Slice(row.Members, func(i, j int) bool { return row.Members[i].GUID < row.Members[j].GUID })
 		for _, ref := range row.Members {
 			if byGUID[ref.GUID] {
 				continue

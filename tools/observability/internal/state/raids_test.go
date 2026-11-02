@@ -1,6 +1,8 @@
 package state
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -228,5 +230,66 @@ func TestIsRaidRun(t *testing.T) {
 	}
 	if IsRaidRun(nil, false) {
 		t.Fatal("empty run: not a raid")
+	}
+}
+
+// Concurrent Raids() views must not race the listener's ApplyRaids updates:
+// the stored rows are shared read-only once published.
+func TestRaidsConcurrentViewAndUpdate(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	row := raidsRow(7, "raid#7", "Celindra", 3, nil)
+	row.Members = []model.RaidMemberRef{
+		{GUID: 5, Name: "Five", Sub: 0, Offline: true},
+		{GUID: 3, Name: "Celindra", Sub: 0, Offline: true},
+		{GUID: 4, Name: "Four", Sub: 0, Offline: true},
+	}
+	if !s.ApplyRaids(raidsPayload(9, 1, c.now.Unix(), row)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	var wg sync.WaitGroup
+	var seq atomic.Uint64
+	seq.Store(2)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ts := c.now.Unix()
+			for range 25 {
+				s.ApplyRaids(raidsPayload(9, seq.Add(1), ts, row))
+				view := s.Raids()
+				for _, run := range view.Runs {
+					for _, g := range run.Groups {
+						for _, m := range g.Members {
+							_ = m.GUID
+						}
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	for i, ref := range row.Members {
+		want := []uint32{5, 3, 4}[i]
+		if ref.GUID != want {
+			t.Fatalf("writer row must stay untouched, got %+v", row.Members)
+		}
+	}
+	g := s.Raids().Runs[0].Groups[0]
+	seen := map[uint32]bool{}
+	for _, m := range g.Members {
+		if m.Offline {
+			seen[m.GUID] = true
+		}
+	}
+	if len(seen) != 3 || !seen[3] || !seen[4] || !seen[5] {
+		t.Fatalf("stored offline members wrong: %+v", g.Members)
 	}
 }
