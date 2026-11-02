@@ -71,11 +71,10 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
 
     def test_carry_is_persisted_with_the_row(self):
         self.assertIn("`updated_at`, `carried`", STORE)
-        self.assertIn("record.reportedCarry = fields[41].GetUInt32();", STORE)
-        self.assertIn("`reported`, `carried`, `farm_rest`", STORE)
-        self.assertIn("`reported` = '%u', `carried` = '%u'", STORE)
-        self.assertIn("record.reportedHave, record.reportedCarry,", STORE)
-        self.assertIn("record.reportedHave,\n                record.reportedCarry, record.farmRest", STORE)
+        self.assertIn("record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();", STORE)
+        self.assertIn("`updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u'", STORE)
+        self.assertIn("record.updatedAt),\n                record.reportedCarry))", STORE)
+        self.assertIn("record.updatedAt), record.reportedCarry, record.botGuidLow", STORE)
 
     def test_the_stored_carry_is_its_own_column(self):
         migration = ROOT / "data/sql/character/20261102150000_char.sql"

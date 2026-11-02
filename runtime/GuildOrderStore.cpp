@@ -1,4 +1,5 @@
 #include "GuildOrderStore.h"
+#include "GuildOrderStoreColumns.h"
 
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
@@ -152,62 +153,58 @@ public:
 
         m_orders.clear();
 
-        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
-            "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `carried`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
-            "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
-            "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-            "`created_at`, `updated_at`, `carried` "
-            "FROM `tortoise_bots_guild_order`"));
+        std::string select = "SELECT ";
+        select += StoreColumns::SelectList();
+        select += " FROM `tortoise_bots_guild_order`";
+        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(select.c_str()));
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
                 OrderRecord record;
-                record.botGuidLow = fields[0].GetUInt32();
-                record.guildId = fields[1].GetUInt32();
-                record.giverGuidLow = fields[2].GetUInt32();
-                record.parentBotGuidLow = fields[3].GetUInt32();
-                record.rootGiverGuidLow = fields[4].GetUInt32();
-                ParseType(fields[5].GetCppString(), record.type);
-                record.itemId = fields[6].GetUInt32();
-                record.amount = fields[7].GetUInt32();
-                record.hours = fields[8].GetUInt32();
-                record.delivered = fields[9].GetUInt32();
-                ParseState(fields[10].GetCppString(), record.state);
-                ParseReason(fields[11].GetCppString(), record.reason);
-                record.farmZoneId = fields[12].GetUInt32();
-                record.farmChance = static_cast<uint8_t>(fields[13].GetUInt32());
-                record.farmItemId = fields[14].GetUInt32();
-                record.zoneIndex = fields[15].GetUInt32();
-                record.deathsInZone = fields[16].GetUInt32();
-                record.workedSinceNewItemSec = fields[17].GetUInt32();
-                record.workedTotalSec = fields[18].GetUInt32();
-                record.workedNoGainSec = fields[19].GetUInt32();
-                record.reportedHave = fields[20].GetUInt32();
-                record.farmRest = fields[21].GetUInt32() != 0;
-                record.keep = fields[22].GetUInt32() != 0;
-                record.goldCap = fields[23].GetUInt32();
-                record.hasGoldCap = fields[24].GetUInt32() != 0;
-                record.guildGoldWithdrawn = fields[25].GetUInt32();
-                record.guildGoldHeld = fields[26].GetUInt32();
-                record.cancelled = fields[27].GetUInt32() != 0;
-                ParseSupplyStep(fields[28].GetCppString(), record.supplyStep);
-                ParseSupplyStep(fields[29].GetCppString(), record.supplyReturnStep);
-                record.supplyItemId = fields[30].GetUInt32();
-                record.supplyCount = fields[31].GetUInt32();
-                record.supplyGoldCount = fields[32].GetUInt32();
-                record.needItems = ParseNeedItems(fields[33].GetCppString());
-                record.needWhispered = fields[34].GetUInt32() != 0;
-                record.lastNeedWhisper = fields[35].GetCppString();
-                record.needBankDenied = fields[36].GetUInt32() != 0;
-                record.stockTarget = fields[37].GetUInt32();
-                record.lastBankCheckMs = fields[38].GetUInt32();
-                record.createdAt = fields[39].GetUInt64();
-                record.updatedAt = fields[40].GetUInt64();
-                record.reportedCarry = fields[41].GetUInt32();
+                record.botGuidLow = fields[StoreColumns::ColBotGuid].GetUInt32();
+                record.guildId = fields[StoreColumns::ColGuildId].GetUInt32();
+                record.giverGuidLow = fields[StoreColumns::ColGiverGuid].GetUInt32();
+                record.parentBotGuidLow = fields[StoreColumns::ColParentBot].GetUInt32();
+                record.rootGiverGuidLow = fields[StoreColumns::ColRootGiver].GetUInt32();
+                ParseType(fields[StoreColumns::ColType].GetCppString(), record.type);
+                record.itemId = fields[StoreColumns::ColItemId].GetUInt32();
+                record.amount = fields[StoreColumns::ColAmount].GetUInt32();
+                record.hours = fields[StoreColumns::ColHours].GetUInt32();
+                record.delivered = fields[StoreColumns::ColDelivered].GetUInt32();
+                ParseState(fields[StoreColumns::ColState].GetCppString(), record.state);
+                ParseReason(fields[StoreColumns::ColReason].GetCppString(), record.reason);
+                record.farmZoneId = fields[StoreColumns::ColFarmZone].GetUInt32();
+                record.farmChance = static_cast<uint8_t>(fields[StoreColumns::ColFarmChance].GetUInt32());
+                record.farmItemId = fields[StoreColumns::ColFarmItem].GetUInt32();
+                record.zoneIndex = fields[StoreColumns::ColZoneIndex].GetUInt32();
+                record.deathsInZone = fields[StoreColumns::ColDeathsInZone].GetUInt32();
+                record.workedSinceNewItemSec = fields[StoreColumns::ColWorkedSec].GetUInt32();
+                record.workedTotalSec = fields[StoreColumns::ColWorkedTotal].GetUInt32();
+                record.workedNoGainSec = fields[StoreColumns::ColWorkedNoGain].GetUInt32();
+                record.reportedHave = fields[StoreColumns::ColReported].GetUInt32();
+                record.farmRest = fields[StoreColumns::ColFarmRest].GetUInt32() != 0;
+                record.keep = fields[StoreColumns::ColKeep].GetUInt32() != 0;
+                record.goldCap = fields[StoreColumns::ColGoldCap].GetUInt32();
+                record.hasGoldCap = fields[StoreColumns::ColGoldCapSet].GetUInt32() != 0;
+                record.guildGoldWithdrawn = fields[StoreColumns::ColGuildGoldWithdrawn].GetUInt32();
+                record.guildGoldHeld = fields[StoreColumns::ColGuildGoldHeld].GetUInt32();
+                record.cancelled = fields[StoreColumns::ColCancelled].GetUInt32() != 0;
+                ParseSupplyStep(fields[StoreColumns::ColSupplyStep].GetCppString(), record.supplyStep);
+                ParseSupplyStep(fields[StoreColumns::ColSupplyReturnStep].GetCppString(), record.supplyReturnStep);
+                record.supplyItemId = fields[StoreColumns::ColSupplyItem].GetUInt32();
+                record.supplyCount = fields[StoreColumns::ColSupplyCount].GetUInt32();
+                record.supplyGoldCount = fields[StoreColumns::ColSupplyGoldCount].GetUInt32();
+                record.needItems = ParseNeedItems(fields[StoreColumns::ColNeedItems].GetCppString());
+                record.needWhispered = fields[StoreColumns::ColNeedWhispered].GetUInt32() != 0;
+                record.lastNeedWhisper = fields[StoreColumns::ColLastNeedWhisper].GetCppString();
+                record.needBankDenied = fields[StoreColumns::ColNeedBankDenied].GetUInt32() != 0;
+                record.stockTarget = fields[StoreColumns::ColStockTarget].GetUInt32();
+                record.lastBankCheckMs = fields[StoreColumns::ColLastBankCheck].GetUInt32();
+                record.createdAt = fields[StoreColumns::ColCreatedAt].GetUInt64();
+                record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
+                record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -364,10 +361,10 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `carried`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
+                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`) "
+                "`created_at`, `updated_at`, `carried`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
                 "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
@@ -376,7 +373,7 @@ public:
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
-                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.reportedCarry,
+                record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
                 record.farmRest ? 1u : 0u,
                 record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
@@ -385,7 +382,8 @@ public:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
+                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
+                record.reportedCarry))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -1790,24 +1788,24 @@ private:
                 "UPDATE `tortoise_bots_guild_order` SET `giver_guid` = '%u', `parent_bot` = '%u', `root_giver` = '%u', `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
                 "`state` = '%s', `reason` = '%s', "
                 "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
-                "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', `carried` = '%u', "
+                "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', "
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u' "
                 "WHERE `bot_guid` = '%u'",
                 record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
                 record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
                 record.workedSinceNewItemSec, record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
-                record.reportedCarry, record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
+                record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
                 SupplyStepToken(record.supplyStep),
                 SupplyStepToken(record.supplyReturnStep), record.supplyItemId, record.supplyCount, record.supplyGoldCount,
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.updatedAt), record.botGuidLow))
+                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, record.botGuidLow))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
