@@ -7926,6 +7926,71 @@ void ReadMemberEngaged(Player* lead, Player* judge, Player* bot, TortoiseBots::D
     member.engagedRead = true;
 }
 
+// The glue's progress clock for DungeonRun::MemberParticipates: per bot guid, when the run last saw the bot make
+// actual combat progress, and the cast and swing state that told it so. A guid unseen for kParticipationForgetMs
+// is dropped once the map grows past its bound.
+struct MemberParticipation
+{
+    std::uint32_t actMs = 0;
+    std::uint32_t spellId = 0;
+    std::uint32_t baseTimer = 0;
+    std::uint32_t rangedTimer = 0;
+    bool observed = false;
+};
+constexpr std::uint32_t kParticipationForgetMs = 60000;
+constexpr std::size_t kParticipationClocksMax = 64;
+
+std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
+{
+    static std::unordered_map<uint64, MemberParticipation> clocks;
+    return clocks;
+}
+
+// Whether the bot made actual combat progress since the last read: a spell being cast or channelled now (a cast
+// started, or is still running), a cast that started or finished (the current spell differs), or a melee or ranged
+// swing (the attack timer runs down to the swing and the swing resets it, so an increase means one landed). A swing
+// reset is never under 100 ms: Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a
+// victim out of reach, so that shove alone is no swing. Its selected target and its place on a threat list are
+// never read: holding a target it cannot reach is no progress.
+bool MemberProgressed(Player* bot, MemberParticipation& clock)
+{
+    bool const inFight = bot->IsInCombat();
+    std::uint32_t const spell = inFight ? CurrentSpellId(bot) : 0;
+    std::uint32_t const baseTimer = bot->GetAttackTimer(BASE_ATTACK);
+    std::uint32_t const rangedTimer = bot->GetAttackTimer(RANGED_ATTACK);
+    bool const baseSwing = baseTimer > 100 && baseTimer > clock.baseTimer;
+    bool const rangedSwing = rangedTimer > 100 && rangedTimer > clock.rangedTimer;
+    bool const progress = inFight && (spell || (clock.observed &&
+        (spell != clock.spellId || baseSwing || rangedSwing)));
+    clock.spellId = spell;
+    clock.baseTimer = baseTimer;
+    clock.rangedTimer = rangedTimer;
+    clock.observed = true;
+    return progress;
+}
+
+// Fills DungeonRun::MemberFact::targetGuid (the selected target, a fact no rule reads for participation) and
+// actedMs (DungeonRun::MemberParticipates) from the bot's own combat state, read here each run tick.
+void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)
+{
+    ObjectGuid const targetGuid = bot->GetTargetGuid();
+    if (!targetGuid.IsEmpty())
+        member.targetGuid = targetGuid.GetRawValue();
+    else if (Unit* victim = bot->GetVictim())
+        member.targetGuid = victim->GetObjectGuid().GetRawValue();
+    std::uint32_t const now = WorldTimer::getMSTime();
+    if (ParticipationClocks().size() >= kParticipationClocksMax)
+        for (auto it = ParticipationClocks().begin(); it != ParticipationClocks().end();)
+            if (WorldTimer::getMSTimeDiff(it->second.actMs, now) > kParticipationForgetMs)
+                it = ParticipationClocks().erase(it);
+            else
+                ++it;
+    MemberParticipation& clock = ParticipationClocks()[bot->GetObjectGuid().GetRawValue()];
+    if (MemberProgressed(bot, clock))
+        clock.actMs = now;
+    member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;
+}
+
 // Carries out the run's combat drops (DungeonRun::Run::combatDrops) after Tick: a living bound bot of the party
 // (never the commander: `bots` are the group's headless bots) whose engaged units, read again now, are all units
 // the group cannot attack leaves combat, its pet too (CombatStop), and is taken off those units' threat lists
@@ -7947,7 +8012,26 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         ReadMemberEngaged(lead, judge, bot, now);
         // ... or by far units only, with the bot near the lead bot (DungeonRun::HeldByFarUnitsOnly: r36 slot D).
         now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;
-        if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))
+        // ... or wedged on another floor (DungeonRun::WedgedDropRecheck: ZG walks 23-25, Nack/Maevrayah/Elmind wedged
+        // below the Jeklik path): more than kGatherYd out, more than kStragglerDzYd up or down, nothing on it (its
+        // attackers read the same way ReadRunFacts fills MemberFact::attackers: the core's attacker sets, no scan).
+        float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
+        std::uint32_t wedgedAttackers = 0;
+        for (Unit* attacker : bot->GetAttackers())
+            if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                ++wedgedAttackers;
+        if (Pet* const nowPet = bot->GetPet())
+            if (nowPet->IsAlive() && nowPet->IsInWorld())
+                for (Unit* attacker : nowPet->GetAttackers())
+                    if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                        ++wedgedAttackers;
+        // ... and in no fight there: a member casting, swinging or healing from another floor keeps its combat
+        // (DungeonRun::MemberParticipates, the same progress the run's own wedged test reads).
+        ReadMemberParticipation(bot, now);
+        bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,
+            TortoiseBots::DungeonRun::MemberParticipates(now));
+        if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&
+            !wedged)
             continue;
         Pet* const pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
@@ -7957,8 +8041,8 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         }
         sServerFacade.GetHostileRefManager(bot).deleteReferences();
         bot->CombatStop();
-        TB_LOG_DETAIL("TortoiseBots: run leader: %s dropped combat with units the group cannot attack only",
-            bot->GetName());
+        TB_LOG_DETAIL("TortoiseBots: run leader: %s dropped combat with units the group cannot attack only%s",
+            bot->GetName(), wedged ? " (wedged on another floor)" : "");
     }
 }
 
@@ -9694,6 +9778,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.inCombat = fighting;
         // In combat: the units engaged with it and its pet (DungeonRun::CombatDropTick).
         ReadMemberEngaged(lead, judge, bot, member);
+        // ... and what it fights now: a member making progress where it stands is never wedged, whatever the floor
+        // under it (DungeonRun::MemberParticipates).
+        ReadMemberParticipation(bot, member);
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
