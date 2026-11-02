@@ -684,5 +684,13 @@ assert.strictEqual(cutOf(proven3).lvl, "fail"); // ends in a non-listed spell: t
 const short3 = cutMT([{ n: "Heroic Strike", c: 1 }]);
 short3.spells_cut = 3;
 assert.strictEqual(cutOf(short3).lvl, "fail"); // short of the cap: the absence is proof
+// ---- an unknown check is CHECK, never ok; worstIndex counts it like a warn ----------------------------------------
+const onlyUnknown = fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells: [] })] });
+onlyUnknown.truncated = true;
+assert.strictEqual(F.checks(onlyUnknown, MTLAYOUT, []).filter((c) => c.lvl !== "ok").map((c) => c.id).join(","), "mt_sunder");
+assert.strictEqual(F.verdict(onlyUnknown, MTLAYOUT, []), "check");
+const allClean = fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells: [{ n: "Sunder Armor", c: 12 }] })] });
+assert.strictEqual(F.verdict(allClean, MTLAYOUT, []), "ok");
+assert.strictEqual(F.worstIndex([{ fight: allClean, warnings: [] }, { fight: onlyUnknown, warnings: [] }], MTLAYOUT), 1);
 
 console.log("fightdebug_check: ok");

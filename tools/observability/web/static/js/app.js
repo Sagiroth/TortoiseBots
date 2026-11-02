@@ -8975,10 +8975,11 @@
       const v = c.verdict;
       // No verdict yet: say why the card has none instead of loading for ever (a detail that failed twice, or a row the page
       // never asked about).
-      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
+      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'check' ? 'check: incomplete data' : v === 'ok' ? 'clean'
         : c.detail === 'failed' ? 'details not available' : c.detail === 'unasked' ? 'details not loaded' : 'loading';
+      const cls = v === 'check' ? 'warn' : v || 'load';
       const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
-      return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
+      return `<button type="button" class="fd-fight v-${cls}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
         + `<span class="fd-fl">${esc(c.label)}</span>`
         + `<span class="fd-fv">${c.live ? 'live' : word}</span>`
         + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`

@@ -130,6 +130,11 @@ assert.strictEqual((railHtml.match(/<button type="button" class="fd-fight/g) || 
 assert.strictEqual((railHtml.match(/aria-pressed="true"/g) || []).length, 1);
 assert.deepStrictEqual([...railHtml.matchAll(/data-fd-fight="([^"]*)" aria-pressed="true"/g)].map((m) => m[1]), ["5-4"]);
 assert.ok(railHtml.includes(">problem<") && railHtml.includes(">check<") && railHtml.includes(">clean<"), "the verdict words");
+// An unknown-only fight reads as incomplete data, styled like a warn.
+const checkCard = { key: "k", label: "Pack 1", mob: "trash", step: 1, durMs: 60000, dmg: 0, deaths: 0, lenPct: 100, verdict: "check", detail: "ready" };
+const checkHtml = run("fdRailHtml(cards, null, null)", { cards: [checkCard] });
+assert.ok(checkHtml.includes('class="fd-fight v-warn"'), "an unknown-only fight renders like a warn: " + checkHtml.slice(0, 160));
+assert.ok(checkHtml.includes(">check: incomplete data<"), "the label names the incomplete data: " + checkHtml.slice(0, 200));
 // Pack N counts the fights oldest first, the rail reads Pack 1 at the top, the mob is the subtitle.
 assert.deepStrictEqual([...railHtml.matchAll(/<span class="fd-fl">([^<]*)<\/span>/g)].map((m) => m[1]),
   ["Pack 1", "Pack 2", "Pack 3", "Pack 4", "Pack 5"]);

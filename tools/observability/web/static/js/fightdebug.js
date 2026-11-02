@@ -413,9 +413,9 @@
     const list = checks(fight, layout, warnings, extra);
     if (list.some((c) => c.lvl === "fail")) return "fail";
     if (list.some((c) => c.lvl === "warn")) return "warn";
+    if (list.some((c) => c.lvl === "unknown")) return "check";
     return "ok";
   }
-
   // The worst finished fight: most fails, then most warns, then most deaths; ties keep the earliest (the newest fight).
   function worstIndex(details, layout) {
     let best = -1;
@@ -425,7 +425,7 @@
       const list = checks(det.fight, layout, det.warnings || [], det.extra || null);
       const score = [
         list.filter((c) => c.lvl === "fail").length,
-        list.filter((c) => c.lvl === "warn").length,
+        list.filter((c) => c.lvl === "warn" || c.lvl === "unknown").length,
         (det.fight.deaths || []).length,
       ];
       const worse = !bestScore
