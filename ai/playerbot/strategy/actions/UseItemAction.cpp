@@ -1133,6 +1133,13 @@ bool UseAction::HasItemCooldown(uint32 itemId) const
 
                 if (!sServerFacade.IsSpellReady(bot, proto->Spells[i].SpellId, itemId))
                     return true;
+
+                // The core also gates the cast on the spell's own category
+                // (healthstone, mana gem and Dark Rune share one), which an
+                // item-free use starts instead of the item's.
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(proto->Spells[i].SpellId);
+                if (spellInfo && spellInfo->Category && bot->HasSpellCategoryCooldown(spellInfo->Category))
+                    return true;
             }
         }
     }
