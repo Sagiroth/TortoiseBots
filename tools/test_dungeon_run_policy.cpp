@@ -26402,19 +26402,91 @@ static void TestWedgedNeverOffThePlanMapOrInAnotherCopy()
     CHECK(r.wedgedSummons == 0);
 }
 
+// T11: a stationary ranged member 15 yd above the lead bot, attacking a mob that targets the tank
+// (attackers 0, so the drop took it for wedged), is in the fight where it stands: no drop and no summon for 20 s.
+// With the target gone but an attack 3 s ago, the same; 5 s after it, idle on the floor, the drop lands and the
+// summon follows.
+static void TestWedgedParticipationKeepsAFightingMember()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, 15.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    MemberFact& m = f.members[2];
+    m.inCombat = true;
+    m.ranged = true;
+    m.targetGuid = 4242; // the mob it attacks, which holds it on its threat list (ReadMemberEngaged)
+    m.engaged = {Unit(4242, 12129, 12.0f)};
+    for (int i = 0; i < 40; ++i) // 20 s: wedged by the clock, but in the fight
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        CHECK(r.combatDrops.empty());
+    }
+    CHECK(r.wedgedSummons == 0);
+    m.targetGuid = 0; // the mob died; it attacked 3 s ago
+    m.engaged.clear();
+    m.actedMs = 3000;
+    for (int i = 0; i < 4; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        CHECK(r.combatDrops.empty());
+    }
+    m.actedMs = kParticipateMs + 1000; // idle past the window
+    WalkOn(f);
+    Tick(r, f);
+    CHECK(r.combatDrops == std::vector<std::string>{"X"});
+    CHECK(r.note.find("wedged 15.0 yd above") != std::string::npos);
+    m.inCombat = false;
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.wedgedSummons == 1);
+}
+
+// MemberParticipates: the target it attacks (an engaged, attackable unit), an attack or a healer's heal inside
+// kParticipateMs, and nothing else.
+static void TestMemberParticipatesFacts()
+{
+    MemberFact m;
+    CHECK(!MemberParticipates(m));
+    m.targetGuid = 7;
+    m.engaged = {Unit(7, 12129, 1.0f)};
+    CHECK(MemberParticipates(m));
+    m.engaged[0].attackable = false; // the group cannot attack it: no fight
+    CHECK(!MemberParticipates(m));
+    m.targetGuid = 0;
+    m.engaged.clear();
+    m.actedMs = kParticipateMs - 1;
+    CHECK(MemberParticipates(m));
+    m.actedMs = kParticipateMs;
+    CHECK(!MemberParticipates(m));
+    m.healer = true;
+    m.healMs = kParticipateMs - 1;
+    CHECK(MemberParticipates(m));
+    m.healMs = kParticipateMs;
+    CHECK(!MemberParticipates(m));
+    m.healer = false; // not a healer: its heal clock is nothing
+    m.healMs = 0;
+    CHECK(!MemberParticipates(m));
+}
+
 // The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table.
 static void TestWedgedDropRecheckTable()
 {
-    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0));
-    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0));
-    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0)); // the yd boundary: at 20, not out
-    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0));
-    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0)); // the dz boundary: at 8, the same floor
-    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0));
-    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0));
-    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0));
-    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1)); // fighting: never wedged
-    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0));
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false));
+    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0, false));
+    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0, false)); // the yd boundary: at 20, not out
+    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0, false));
+    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0, false)); // the dz boundary: at 8, the same floor
+    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0, false));
+    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0, false));
+    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0, false));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1, false)); // fighting: never wedged
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, true)); // in the fight there: the same participation test
+    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0, false));
 }
 
 static void TestPartyRulesUnchanged()
@@ -27135,6 +27207,8 @@ int main()
     TestWedgedSummonCapAndStepReset();
     TestWedgedBudgetSurvivesASameStepReset();
     TestWedgedNeverOffThePlanMapOrInAnotherCopy();
+    TestWedgedParticipationKeepsAFightingMember();
+    TestMemberParticipatesFacts();
     TestWedgedDropRecheckTable();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();

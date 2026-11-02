@@ -138,7 +138,10 @@ class UnattackableFightWiringTest(unittest.TestCase):
         # summons a wedged raid member before the guard looks and before the runaway.
         policy = (ROOT / "runtime" / "DungeonRunPolicy.h").read_text()
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
-        self.assertIn("bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers);", drop)
+        self.assertIn("ReadMemberParticipation(lead, bot, !PlayerbotAI::IsTank(bot) && PlayerbotAI::IsHeal(bot), now);",
+                      drop)
+        self.assertIn("bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
+                      "            TortoiseBots::DungeonRun::MemberParticipates(now));", drop)
         self.assertIn("float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;", drop)
         self.assertIn("for (Unit* attacker : bot->GetAttackers())", drop)
         self.assertIn("for (Unit* attacker : nowPet->GetAttackers())", drop)
