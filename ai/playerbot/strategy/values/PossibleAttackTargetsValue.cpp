@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleTargetsValue.h"
 
 #include "playerbot/ServerFacade.h"
@@ -126,6 +127,7 @@ bool PossibleAttackTargetsValue::HoldsBreakableCc(PlayerbotAI* ai, Unit* unit, P
 
 bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 {
+    if (IsViscidusShatterTarget(player, target)) return false;
     if (target->IsPolymorphed())
     {
         return true;
@@ -169,6 +171,7 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 
 bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
 {
+    if (IsViscidusShatterTarget(player, target)) return false;
     if (target->HasUnitState(UNIT_STAT_STUNNED))
     {
         return true;

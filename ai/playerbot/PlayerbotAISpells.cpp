@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
 #include "playerbot/GroupMembers.h"
@@ -468,6 +469,12 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
 
 bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
+    if (ViscidusBlocksSpell(this, spellid, target))
+    {
+        if (checkResult) *checkResult = SPELL_FAILED_NOT_READY;
+        return false;
+    }
+
     if (!spellid)
     {
         if (checkResult)
@@ -1045,6 +1052,9 @@ bool PlayerbotAI::CastSpell(std::string name, Unit* target, Item* itemTarget, bo
 
 bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
+    if (ViscidusBlocksSpell(this, spellId, target))
+        return false;
+
     if (!spellId)
         return false;
 
@@ -1670,6 +1680,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
 bool PlayerbotAI::CastPetSpell(uint32 spellId, Unit* target)
 {
+    if (ViscidusBlocksSpell(this, spellId, target))
+        return false;
+
     Pet* pet = bot->GetPet();
     if (pet && spellId && pet->HasSpell(spellId))
     {

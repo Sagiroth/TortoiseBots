@@ -148,6 +148,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/BotAddonAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotPacketAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/RaidBossDiagnostics.cpp"
+    "${TORTOISEBOTS_ROOT}/host/ViscidusDiagnostics.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotPlayerAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/LftFillAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotLfgAdapter.cpp"

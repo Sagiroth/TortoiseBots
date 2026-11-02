@@ -65,6 +65,7 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- New opt-in strategy `viscidus glob focus` (`.bot strategy +viscidus glob focus @all`, off by default, AQ40 only): mages freeze Viscidus with rank-one Frostbolt and stop frost casts once he is frozen, melee and ranged physical damage keep hitting the frozen boss, all damage dealers switch to the glob nearest to merging after the shatter, tanks retake Viscidus when the globs re-form (a spare taunts if none holds him), ranged and healers back out of his melee reach, and every role steps out of the poison cloud.
 - New boss tactic kind `avoid_cast`: bots other than the tank the caster is on walk out of a listed self-centred blast while it is cast (first row: Zul'Gurub's Gurubashi Bat Rider, Unstable Concoction), and each walk-out writes a `BossTacticsAvoidCast` row to `bot_events.csv`.
 - Zul'Gurub leg 0 uses patrol-timed stand pulls and kills the Gurubashi Bat Rider first (walks 1-13).
 - A run leader pull row with the stand_pull flag (8192) now waits at its stand for a patrolling pack to come into the tank's shot while no other patrol is near, and sees the pack's patrol up to 60 yd out instead of calling it cleared.

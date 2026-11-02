@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -401,6 +402,10 @@ namespace
 
 Unit* DpsTargetValue::Calculate()
 {
+    // Opt-in "viscidus glob focus" encounter selection (map 531): ahead of stale
+    // explicit orders and raid marks, inactive everywhere else.
+    if (Unit* viscidus = GetViscidusCombatTarget(ai)) return viscidus;
+
     // Explicit orders and raid marks remain ahead of tank assistance.
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
