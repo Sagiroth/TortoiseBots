@@ -916,7 +916,7 @@ AiPlayerbot.DungeonRunRaid = 0
 # 1 - on
 AiPlayerbot.DungeonRunRaidBossRules = 0
 
-# A raid binding's boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1: an add that attacks a healer goes to the raid's nearest ranged dps within 35 yd of it (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss is never sent at an add. An order refused by its bot counts for nothing (the next ranged dps is tried), and one the bot does not take up (its target is not the add) is over after 6 s. Adds not on a healer are left to the dps. Without boss rules the dungeon guard applies.
+# A raid binding's boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1: an add that attacks a healer goes to the raid's nearest ranged dps within 35 yd of it (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss is never sent at an add. An order refused by its bot counts for nothing (the next ranged dps is tried), and one the bot does not take up (its target is not the add) is over after 6 s: that bot is passed over for the add too. A further order waits 2 s, and the pick passes over a plan boss, an add the run holds (crowd control ordered or in place, or the fight's kill_first focus), a camp caster the tank would walk to, and an add that had two orders this fight until 20 s after its last one. A ranged dps busy with a commander task is not picked. Adds not on a healer are left to the dps. Without boss rules the dungeon guard applies.
 # 0 - off: the off-tanks take the adds, as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunRaidHealerGuard = 0

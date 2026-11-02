@@ -9152,8 +9152,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
         // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
-        // (DungeonRun::RaidHealerGuard).
-        member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);
+        // (DungeonRun::RaidHealerGuard). Never one busy with a commander task, as the off-tank lists are not.
+        member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot) &&
+            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue());
         // Its current target: the unit it has selected (AttackAction sets it), which a healer guard assignment reads
         // to tell a bot that has its add from one that never took it up (DungeonRun::RaidHealerGuard).
         member.targetGuid = bot->GetSelectionGuid().GetRawValue();

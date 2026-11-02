@@ -58,8 +58,12 @@ class RaidConfigWiringTest(unittest.TestCase):
         code = strip_comments(COMMANDER)
         raid = body(code, "    if (raid && sPlayerbotAIConfig.dungeonRunRaid)", "\n    }\n")
         self.assertIn("f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;", raid)
-        # The ranged dps the guard sends and the add's own place, both read by the glue.
-        self.assertIn("member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);", code)
+        # The ranged dps the guard sends (never one busy with a commander task, as the off-tank lists are not) and the
+        # add's own place, both read by the glue.
+        self.assertIn(
+            "member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot) &&\n"
+            "            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue());",
+            code)
         # Its current target: an assignment whose bot never targets the add is over (DungeonRun::RaidHealerGuard).
         self.assertIn("member.targetGuid = bot->GetSelectionGuid().GetRawValue();", code)
         # IssueRunOrder's answer, fed back to the guard: only a taken order is an assignment (HealerGuardOrderTaken).
