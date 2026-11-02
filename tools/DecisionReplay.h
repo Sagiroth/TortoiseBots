@@ -419,8 +419,10 @@ inline bool LoadLines(const std::vector<std::pair<std::string, std::string>>& li
 
 inline bool LoadSegments(const std::vector<std::string>& files, Capture& out, std::string& err)
 {
+    std::vector<std::string> ordered = files;
+    std::sort(ordered.begin(), ordered.end()); // seg-0001, seg-0002, ... in capture order
     std::vector<std::pair<std::string, std::string>> lines;
-    for (const std::string& file : files)
+    for (const std::string& file : ordered)
     {
         std::string text;
         std::string readError;
@@ -649,8 +651,14 @@ inline bool LoadFixture(const std::string& path, Fixture& out, std::string& err)
     std::string planError;
     if (!LoadPlanFile(fixture, fixture.cap.plan, fixture.cap.tactics, fixture.cap.tacticsSet, planError))
     {
-        err = planError;
-        return false;
+        // A plan struct that changed under an old fixture is upgrade's job; the
+        // schema mismatch is reported before any tick is decoded.
+        if (fixture.schema == kDecisionSchemaHash)
+        {
+            err = planError;
+            return false;
+        }
+        fixture.cap.notes.push_back("plan file not decoded under the old schema: " + planError);
     }
 
     fixture.cap.schema = fixture.schema;
