@@ -1990,6 +1990,12 @@ struct Run
         std::uint32_t at = 0;
     };
     std::unordered_map<std::uint64_t, RaidGuardMark> raidGuardUnits;
+    // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules where the main tank (the lead bot) on stay holds
+    // no plan boss (RaidBossLeadJoin): how long the boss an off-tank holds has waited for it (the wait belongs to one
+    // guid: raidBossJoinGuid), and the fight time it was sent at it last, per boss guid (the re-arm, kRaidGuardRearmMs).
+    std::uint32_t raidBossJoinMs = 0;
+    std::uint64_t raidBossJoinGuid = 0;
+    std::unordered_map<std::uint64_t, std::uint32_t> raidBossJoined;
     // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
     // has waited for it (the wait belongs to one mob: raidAssistGuid), and the units it was sent at this fight.
     std::uint32_t raidAssistMs = 0;
@@ -2494,6 +2500,9 @@ inline void ResetStep(Run& r)
     r.offTankTurn = 0;
     r.raidBossFight = false;
     r.raidGuardUnits.clear();
+    r.raidBossJoinMs = 0;
+    r.raidBossJoinGuid = 0;
+    r.raidBossJoined.clear();
     r.raidAssistMs = 0;
     r.raidAssistGuid = 0;
     r.raidAssisted.clear();
@@ -12902,6 +12911,61 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     order = "attack " + std::to_string(pick->guid) + " " + tank;
     return true;
 }
+// ZG walk 24 Jeklik: Orlara on stay 169 s, 9 casts, while Rageshield held her, and RaidGuardTick only hands adds to
+// off-tanks. So in a raid's boss fight under
+// AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at the plan
+// boss an off-tank holds (`attack <guid> <carrier>` ends its stay and its own tank AI taunts it back from there),
+// after the off-tank's wait (kRaidAssistWaitMs). Once per boss guid until kRaidGuardRearmMs after the last one, and
+// only while the lead bot is again staying and holding nothing. Not under fightOrders (like RaidGuardTick); guardOrders
+// and guardUnitOrders are untouched. True when `order` holds it.
+inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
+        LeadHoldsPlanBoss(r, f))
+        return false;
+    const UnitFact* pick = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+            u.distLead > kRaidBossGuardYd)
+            continue;
+        if (!pick || u.distLead < pick->distLead)
+            pick = &u;
+    }
+    if (!pick)
+    {
+        r.raidBossJoinMs = 0;
+        r.raidBossJoinGuid = 0;
+        return false;
+    }
+    if (pick->guid != r.raidBossJoinGuid)
+    {
+        r.raidBossJoinGuid = pick->guid;
+        r.raidBossJoinMs = 0;
+    }
+    auto const joined = r.raidBossJoined.find(pick->guid);
+    if (joined != r.raidBossJoined.end() && r.fightMs - joined->second < kRaidGuardRearmMs)
+    {
+        r.raidBossJoinMs = 0;
+        return false;
+    }
+    r.raidBossJoinMs += dt;
+    if (r.raidBossJoinMs < kRaidAssistWaitMs)
+        return false;
+    r.raidBossJoinMs = 0;
+    r.raidBossJoined[pick->guid] = r.fightMs;
+    if (!r.guardReturn)
+    {
+        r.guardReturn = true; // it leaves its stand, as at a pick-up
+        r.guardX = f.leadStayKnown ? f.leadStayX : f.leadX;
+        r.guardY = f.leadStayKnown ? f.leadStayY : f.leadY;
+        r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
+    }
+    r.note = "fighting: the main tank takes boss " + std::to_string(pick->entry) + " back from " +
+        (pick->victimName.empty() ? "the raid" : pick->victimName) + " (" + Num(pick->distLead) + " yd)";
+    order = "attack " + std::to_string(pick->guid) + " " + f.carrier;
+    return true;
+}
 
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
     bool raidTrash = false)
@@ -13332,7 +13396,11 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         if (RaidBossRulesFight(r, f))
         {
             if (!f.raid.bossOffTanksAlive.empty())
+            {
+                if (RaidBossLeadJoin(r, f, dt, order))
+                    return true;
                 return RaidGuardTick(r, f, dt, order);
+            }
             if (LeadHoldsPlanBoss(r, f))
             {
                 r.guardMs = 0;
@@ -15998,6 +16066,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.offTankTurn = 0;
         r.raidBossFight = false;
         r.raidGuardUnits.clear();
+        r.raidBossJoinMs = 0;
+        r.raidBossJoinGuid = 0;
+        r.raidBossJoined.clear();
         r.raidAssistMs = 0;
         r.raidAssistGuid = 0;
         r.raidAssisted.clear();
