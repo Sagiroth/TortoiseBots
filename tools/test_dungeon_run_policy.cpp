@@ -15454,7 +15454,7 @@ static void TestPullJoinersReported()
         Run r = Start(&plan);
         Facts f = Party(0);
         UnitFact target = Unit(31, 4852, 40.0f);
-        target.packGuids = {33}; // the formation the glue read for it (33 is not in the read)
+        target.packGuids = {33}; // the "aggro together" group the glue read for it (33 is not in the read)
         f.units = {target};
         CHECK(Tick(r, f) == "pullback 31");
         CHECK(Has(StatusParts(r).note, "joiners 0"));
@@ -15468,6 +15468,22 @@ static void TestPullJoinersReported()
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
         CHECK(Has(StatusParts(r).note, "joiners 0"));
+    }
+
+    // A plain formation (no "aggro together"): the glue reads no pack for the target, so its formation partner
+    // entering the fight is a joiner; the target itself is not.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        CHECK(r.joinerPack.count(31));
+        CHECK(!r.joinerPack.count(33));
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(33, 4852, 6.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 4852 x1)"));
     }
 
     // Two packs of the same entry inside the pull's read: the one that is not the target's own joins, and is

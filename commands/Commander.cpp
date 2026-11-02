@@ -9022,8 +9022,8 @@ void ReadStandPatrols(Player* lead, TortoiseBots::DungeonRun::Facts& f)
 constexpr float kPullPackMasterYd = 40.0f;
 
 // The creatures a pull of one of these units brings with it by the core's own grouping
-// (DungeonRun::UnitFact::packGuids): its creature group's members (a formation walks together, an "aggro together"
-// group wakes as one), its creature_linking master where the row makes the slave's aggro wake the master, with that
+// (DungeonRun::UnitFact::packGuids): its creature group's members when the group is "aggro together" (a plain
+// formation walks with its leader but fights apart, so its members are not in the pack), its creature_linking master where the row makes the slave's aggro wake the master, with that
 // master's own group, and the linked slaves of it among the picks where the row makes the master's aggro wake them.
 // A pull's read lists the units of several packs, so the pack a pull draws is this, never the read.
 void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& units,
@@ -9043,7 +9043,9 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     auto addGroup = [](UnitFact& u, Creature* c)
     {
         CreatureGroup* const group = c->GetCreatureGroup();
-        if (!group)
+        // Only an "aggro together" group pulls as one: a plain formation walks with its leader and fights on its own
+        // (the same check ReadPullJoiners makes for the estimate), so its other members are no part of this pack.
+        if (!group || !group->HasGroupFlag(OPTION_AGGRO_TOGETHER))
             return;
         for (auto const& member : group->GetMembers())
             if (member.first != c->GetObjectGuid())
