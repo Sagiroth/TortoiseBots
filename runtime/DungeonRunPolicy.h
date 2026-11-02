@@ -1891,14 +1891,19 @@ struct Run
     std::unordered_map<std::uint64_t, std::uint32_t> joinerSeen;
     // The joiners the pull's own pack did not explain: when a pull goes out its
     // pack is recorded by guid (the target and its own group, PullPackOf: the
-    // read's other packs are not pack), and for kJoinerWindowMs every hostile
-    // engaged with the party outside that set counts once (guid -> entry). The
-    // report rides on the status note until the next pull or the step's reset.
+    // read's other packs are not pack), and for kJoinerWindowMs after the first tick the party is in combat every
+    // hostile engaged with the party outside that set counts once (guid -> entry). A unit already engaged when the
+    // pullback went out is no joiner of it. The report goes on the pull's line once, when the window closes, never
+    // into later status or pause notes.
     std::unordered_set<std::uint64_t> joinerPack;
     std::unordered_map<std::uint64_t, std::uint32_t> joinerAdds;
+    std::unordered_set<std::uint64_t> joinerBefore; // engaged with the party when the pullback went out
     std::uint32_t joinerMs = 0;
     bool joinerWindow = false;
     bool joinerTracked = false;
+    bool joinerCombatSeen = false; // the window's clock has started (the first combat tick after the pullback)
+    bool joinerReported = false;   // the pull's line carries its joiner report (once)
+    bool joinerReportDue = false;  // the window closed: the report goes on this tick's note (Tick's end)
     std::uint32_t walkBackPulls = 0; // pulls on the way of the walk back (not counted in `pulls`)
     // Run-wide (kept across steps).
     std::unordered_set<std::uint64_t> unreachable;   // units given up on: never pulled again this run
@@ -2949,9 +2954,13 @@ inline void ResetStep(Run& r)
     r.joinerSeen.clear();
     r.joinerPack.clear();
     r.joinerAdds.clear();
+    r.joinerBefore.clear();
     r.joinerMs = 0;
     r.joinerWindow = false;
     r.joinerTracked = false;
+    r.joinerCombatSeen = false;
+    r.joinerReported = false;
+    r.joinerReportDue = false;
     r.walkBackPulls = 0;
     r.gatherOrder.clear();
     r.gatherRefusals = 0;
@@ -2973,6 +2982,7 @@ inline void ResetStep(Run& r)
     {
         r.wedgedSummons = 0;
         r.wedgedLastMs = 0;
+        r.wedgedSummoned.clear();
         r.wedgedStep = r.step;
     }
     r.directRefusedOn = false;
@@ -8966,9 +8976,16 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // the read is still pack, and the joiners are read against this set.
     r.joinerPack = PullPackOf(r, u, cc);
     r.joinerAdds.clear();
+    // A unit already engaged when the pullback goes out fights its own fight: it is no joiner of this pull.
+    r.joinerBefore.clear();
+    for (const UnitFact& engaged : f.engagedUnits)
+        r.joinerBefore.insert(engaged.guid);
     r.joinerMs = 0;
     r.joinerWindow = true;
     r.joinerTracked = true;
+    r.joinerCombatSeen = false;
+    r.joinerReported = false;
+    r.joinerReportDue = false;
     r.pullHop = hop;
     r.residuePullGuid = 0; // a residue pull marks its unit after this (PackResidueTick)
     r.reachStopped = false;
@@ -16633,6 +16650,7 @@ inline bool RegroupPlayerWait(Run& r, const Facts& f, std::uint32_t dt)
 
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines);
 inline void EndRetreat(Run& r);
+inline std::string JoinerReport(const Run& r);
 
 inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, const RestLines& lines = RestLines())
 {
@@ -16717,6 +16735,17 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
             EngagedUnitsNote(in) + "): not counted as a fight";
     if (!dropNote.empty())
         r.note += (r.note.empty() ? "" : "; ") + dropNote;
+    // The pull's joiners, measured over its window: one line, appended to the tick's note once the rest of the
+    // tick has written it (a fight note would otherwise replace it), never carried by later status or pause notes.
+    if (r.joinerReportDue)
+    {
+        r.joinerReportDue = false;
+        if (!r.joinerReported)
+        {
+            r.note += (r.note.empty() ? "" : "; ") + JoinerReport(r);
+            r.joinerReported = true;
+        }
+    }
     return order;
 }
 
@@ -17072,23 +17101,7 @@ inline void NoteWipes(Run& r, const Facts& f)
     r.wipeEventOn = eventNow;
 }
 
-// Counts a pull's joiners: every hostile engaged with the party in the first
-// kJoinerWindowMs after its pullback that is not in the pulled pack, once. A
-// unit that comes after the window is no joiner of that pull.
-inline void JoinersTick(Run& r, const Facts& f, std::uint32_t dt)
-{
-    if (!r.joinerTracked || !r.joinerWindow)
-        return;
-    if (f.anyInCombat)
-        for (const UnitFact& u : f.engagedUnits)
-            if (!r.joinerPack.count(u.guid) && !r.joinerAdds.count(u.guid))
-                r.joinerAdds.emplace(u.guid, u.entry);
-    r.joinerMs += dt;
-    if (r.joinerMs >= kJoinerWindowMs)
-        r.joinerWindow = false;
-}
-
-// The pull's joiner report for the status note: "joiners N" and, with any,
+// The pull's joiner report for the pull's line: "joiners N" and, with any,
 // "(entry <entry> x<count>, ...)" in ascending entry order. "" before the first
 // pull of the step.
 inline std::string JoinerReport(const Run& r)
@@ -17111,6 +17124,33 @@ inline std::string JoinerReport(const Run& r)
         text += ")";
     }
     return text;
+}
+
+// Counts a pull's joiners: the kJoinerWindowMs start on the first tick the party is in combat after the pullback
+// (the pull target's drag and the fight's own start take their time: a fight 15 s later still reports its joiners),
+// and every hostile engaged with the party in that window outside the pulled pack counts once. A unit already
+// engaged when the pullback went out is no joiner of it, and neither is one that comes after the window. When the
+// window closes the report goes on the pull's line, once (JoinerReport): later status and pause notes never carry
+// it.
+inline void JoinersTick(Run& r, const Facts& f, std::uint32_t dt)
+{
+    if (!r.joinerTracked || !r.joinerWindow)
+        return;
+    if (!r.joinerCombatSeen)
+    {
+        if (!f.anyInCombat)
+            return; // the window's clock starts with the fight, not with the pullback
+        r.joinerCombatSeen = true;
+    }
+    for (const UnitFact& u : f.engagedUnits)
+        if (!r.joinerPack.count(u.guid) && !r.joinerAdds.count(u.guid) && !r.joinerBefore.count(u.guid))
+            r.joinerAdds.emplace(u.guid, u.entry);
+    r.joinerMs += dt;
+    if (r.joinerMs >= kJoinerWindowMs)
+    {
+        r.joinerWindow = false;
+        r.joinerReportDue = !r.joinerReported; // Tick's end puts the report on the pull's line
+    }
 }
 
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)
@@ -18183,9 +18223,8 @@ inline StatusFields StatusParts(const Run& r)
     f.kind = s ? ai::PlanStepKindName(s->kind) : std::string();
     f.phase = PhaseText(r);
     f.note = r.note;
-    std::string const joiners = JoinerReport(r);
-    if (!joiners.empty())
-        f.note += (f.note.empty() ? "" : "; ") + joiners;
+    // The pull's joiners ride on its own line (JoinersTick, when the window closes), never on every later status or
+    // pause note: a run paused 20 min later still read "joiners 3" from here.
     for (char& c : f.note)
         if (c == '|' || c == '\n' || c == '\r')
             c = ' ';

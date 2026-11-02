@@ -9661,8 +9661,9 @@ constexpr float kPullPackMasterYd = 40.0f;
 // The creatures a pull of one of these units brings with it by the core's own grouping
 // (DungeonRun::UnitFact::packGuids): its creature group's members when the group is "aggro together" (a plain
 // formation walks with its leader but fights apart, so its members are not in the pack), its creature_linking master where the row makes the slave's aggro wake the master, with that
-// master's own group, and the linked slaves of it among the picks where the row makes the master's aggro wake them.
-// A pull's read lists the units of several packs, so the pack a pull draws is this, never the read.
+// master's own group, and the linked slaves of it where the row makes the master's aggro wake them, read off the
+// map too when the pull's read does not list them. A pull's read lists the units of several packs, so the pack a
+// pull draws is this, never the read.
 void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& units,
     std::vector<TortoiseBots::DungeonRun::UnitFact>& patrollers, std::vector<TortoiseBots::DungeonRun::UnitFact>& residue,
     std::vector<TortoiseBots::DungeonRun::UnitFact>& hop)
@@ -9689,14 +9690,25 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
                 u.packGuids.push_back(member.first.GetRawValue());
     };
     // The master a creature_linking row names: its own spawn, else the nearest creature of the master's entry
-    // within the row's search range (0: any).
+    // within the row's search range (0: any). A spawn may carry any of its creature table's entries (a Turtle
+    // spawn variation), so every one of them is tried for the spawn's own creature.
     auto masterOf = [map](Creature* c, CreatureLinkingInfo const* row) -> Creature*
     {
         if (row->masterDBGuid)
         {
             CreatureData const* const data = sObjectMgr.GetCreatureData(row->masterDBGuid);
-            CreatureInfo const* const info = data ? sObjectMgr.GetCreatureTemplate(data->creature_id[0]) : nullptr;
-            return info ? map->GetCreature(ObjectGuid(info->GetHighGuid(), info->entry, row->masterDBGuid)) : nullptr;
+            if (!data)
+                return nullptr;
+            for (std::uint32_t i = 0; i < data->GetCreatureIdCount(); ++i)
+            {
+                CreatureInfo const* const info = sObjectMgr.GetCreatureTemplate(data->creature_id[i]);
+                if (!info)
+                    continue;
+                if (Creature* master = map->GetCreature(
+                        ObjectGuid(info->GetHighGuid(), info->entry, row->masterDBGuid)))
+                    return master;
+            }
+            return nullptr;
         }
         if (!row->masterId)
             return nullptr;
@@ -9709,6 +9721,38 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
                 best = master;
         return best;
     };
+    // A slave's row wakes when this master aggros: the row names the master's spawn, or its entry with the slave
+    // in the row's search range (the core's holder resolves it the same way).
+    auto slaveOf = [](Creature* slave, CreatureLinkingInfo const* row, Creature* master)
+    {
+        if (row->masterDBGuid)
+            return row->masterDBGuid == master->GetGUIDLow();
+        return row->masterId && row->masterId == master->GetEntry() &&
+            (!row->searchRange || slave->GetDistance(master) <= row->searchRange);
+    };
+    // The linked slaves a pulled master wakes (FLAG_AGGRO_ON_AGGRO) that the pull's read does not list: the core
+    // wakes every one of them within the row's range, so they come with the pull and are pack, not joiners. Their
+    // own "aggro together" groups come with them.
+    auto addLinkedSlaves = [&addGroup](UnitFact& u, Creature* master)
+    {
+        std::list<Creature*> nearby;
+        MaNGOS::AllCreaturesInRange check(master, kPullPackMasterYd);
+        MaNGOS::CreatureListSearcher<MaNGOS::AllCreaturesInRange> searcher(nearby, check);
+        Cell::VisitGridObjects(master, searcher, kPullPackMasterYd);
+        for (Creature* slave : nearby)
+        {
+            if (slave == master || !slave->IsAlive())
+                continue;
+            CreatureLinkingInfo const* const row = sCreatureLinkingMgr.GetLinkedTriggerInformation(slave);
+            if (!row || !(row->linkingFlag & FLAG_AGGRO_ON_AGGRO) || !slaveOf(slave, row, master))
+                continue;
+            std::uint64_t const guid = slave->GetObjectGuid().GetRawValue();
+            if (std::find(u.packGuids.begin(), u.packGuids.end(), guid) != u.packGuids.end())
+                continue;
+            u.packGuids.push_back(guid);
+            addGroup(u, slave);
+        }
+    };
     for (auto const& pick : picks)
     {
         UnitFact& u = *pick.second;
@@ -9716,6 +9760,8 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
         if (creature == creatures.end())
             continue;
         addGroup(u, creature->second);
+        // The master's aggro wakes its linked slaves, listed by this read or not.
+        addLinkedSlaves(u, creature->second);
         CreatureLinkingInfo const* const row = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature->second);
         if (!row || !(row->linkingFlag & (FLAG_AGGRO_ON_AGGRO | FLAG_TO_AGGRO_ON_AGGRO)))
             continue;
@@ -10700,9 +10746,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))
         ReadStandPatrols(lead, f);
     // The pack a pull of one of the step's units brings, by guid (the joiner count reads the fight against it): the
-    // target's own creature group and its creature_linking mates, never the whole read.
+    // target's own creature group and its creature_linking mates, never the whole read. Read only on a tick a pull
+    // of the step can go out (the party gathered, or the gather left out, with no fight on) and while the pull's
+    // joiner window is open, not on every tick of the run (a walk, a restore, a fight, a hold or a loot reads no
+    // linking rows or groups).
     if (Map* const map = lead->GetMap())
-        ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);
+        if (slot.run.joinerWindow ||
+            (!f.anyInCombat && (TortoiseBots::DungeonRun::PartyGathered(f) || slot.run.gatherWaived)))
+            ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);
     ReadRunNeedFacts(slot, lead, f);
 }
 // Item-leg skip (spec C2/C2b/C2c, review round 2 Opus 1/2/3): the current leg's need facts, read every tick: the

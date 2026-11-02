@@ -15440,16 +15440,18 @@ static void TestPullNoteCarriesTheJoinerCount()
 }
 
 // The pull's joiners (the server half of turtle-agent #369): the pull records its pack by guid (the target and
-// its own creature group, linked mates and crowd control, UnitFact::packGuids), every hostile engaged with the
-// party outside it in the first 10 s is a joiner, and the status note reports
-// "joiners N (entry <entry> x<count>, ...)". A pull step's read lists the units of several packs, so a second
-// pack that joins is a joiner too.
+// its own creature group, linked mates and crowd control, UnitFact::packGuids), and every hostile engaged with the
+// party outside it in the kJoinerWindowMs that start with the first combat tick after the pullback is a joiner.
+// The report goes on the pull's line once, when the window closes: "joiners N (entry <entry> x<count>, ...)",
+// never into later status or pause notes. A pull step's read lists the units of several packs, so a second pack
+// that joins is a joiner too, and a unit already engaged at the pullback is not.
 static void TestPullJoinersReported()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(40, {4852})};
 
-    // The target and its formation partner fight: no joiner, and the line says so.
+    // The target and its formation partner fight: no joiner. The pull's own line carries no count before the
+    // fight: the window starts with it.
     {
         Run r = Start(&plan);
         Facts f = Party(0);
@@ -15457,7 +15459,7 @@ static void TestPullJoinersReported()
         target.packGuids = {33}; // the "aggro together" group the glue read for it (33 is not in the read)
         f.units = {target};
         CHECK(Tick(r, f) == "pullback 31");
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "joiners")); // read over the fight, not at the pullback
         f.anyInCombat = true;
         f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(33, 4852, 6.0f)};
         for (int i = 0; i < 10; ++i)
@@ -15467,7 +15469,10 @@ static void TestPullJoinersReported()
         // A hostile that joins after the 10 s window is no joiner of that pull.
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "6000")); // the window is over: nothing is counted after it
+        // The report rode on the pull's line only: a later pause note does not carry it.
+        Pause(r, "paused for the test");
+        CHECK(StatusParts(r).note == "paused for the test");
     }
 
     // A plain formation (no "aggro together"): the glue reads no pack for the target, so its formation partner
@@ -15501,8 +15506,8 @@ static void TestPullJoinersReported()
         CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         CHECK(!Has(StatusParts(r).note, "6000"));
+        CHECK(!Has(StatusParts(r).note, "joiners 5"));
     }
 
     // An unrelated pack of the residue band joins: a joiner too.
@@ -15535,6 +15540,38 @@ static void TestPullJoinersReported()
         for (int i = 0; i < 10; ++i)
             Tick(r, f);
         CHECK(Has(StatusParts(r).note, "joiners 0"));
+    }
+
+    // The 10 s window starts with the fight, not the pullback: a target dragged into combat 15 s after the pull
+    // still reports the joiner it drew (the quiet ticks spent none of the window).
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        for (int i = 0; i < 15; ++i)
+            Tick(r, f);
+        CHECK(!Has(StatusParts(r).note, "joiners"));
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(41, 5000, 8.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 5000 x1)"));
+    }
+
+    // A unit already engaged when the pullback went out fights its own fight: it is no joiner of this pull.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        f.engagedUnits = {Unit(51, 6000, 12.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(51, 6000, 12.0f), Unit(31, 4852, 5.0f), Unit(52, 6001, 9.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 6001 x1)"));
+        CHECK(!Has(StatusParts(r).note, "6000"));
     }
 }
 

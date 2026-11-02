@@ -29,6 +29,30 @@ class PullPackAggroTogetherWiringTest(unittest.TestCase):
         block = self.text[start:start + 6000]
         self.assertIn("if (group->HasGroupFlag(OPTION_AGGRO_TOGETHER))", block)
 
+    def test_the_pack_is_read_only_on_pull_ticks_and_in_the_window(self):
+        facts = self.text[self.text.index("void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,"):]
+        call = facts.index("ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);")
+        gate = facts.rindex("if (slot.run.joinerWindow ||", 0, call)
+        block = facts[gate:call]
+        self.assertIn("!f.anyInCombat && (TortoiseBots::DungeonRun::PartyGathered(f) || slot.run.gatherWaived)", block)
+
+    def test_a_pulled_master_brings_its_linked_slaves_outside_the_read(self):
+        start = self.text.index("void ReadPullPacks(")
+        block = self.text[start:start + 9000]
+        # The forward direction (FLAG_AGGRO_ON_AGGRO) is read off the map for every pick, not only for the units the
+        # step's read lists.
+        self.assertIn("addLinkedSlaves(u, creature->second);", block)
+        slaves = block[block.index("auto addLinkedSlaves = "):block.index("for (auto const& pick : picks)")]
+        self.assertIn("Cell::VisitGridObjects(master, searcher, kPullPackMasterYd);", slaves)
+        self.assertIn("if (!row || !(row->linkingFlag & FLAG_AGGRO_ON_AGGRO) || !slaveOf(slave, row, master))", slaves)
+        self.assertIn("u.packGuids.push_back(guid);", slaves)
+        self.assertIn("addGroup(u, slave);", slaves)
+        # The row's master spawn may carry any of the creature table's entries (a spawn variation): every one is
+        # tried, not just creature_id[0].
+        master = block[block.index("auto masterOf = "):block.index("auto slaveOf = ")]
+        self.assertIn("data->GetCreatureIdCount()", master)
+        self.assertNotIn("data->creature_id[0]", master)
+
 
 if __name__ == "__main__":
     unittest.main()
