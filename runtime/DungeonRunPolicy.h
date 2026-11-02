@@ -1533,6 +1533,13 @@ struct Run
     // The plan step the runaway budget belongs to: a pause/resume or a wipe recovery restarts the same step
     // (ResetStep) and keeps its budget; only a new step index clears it.
     std::size_t runawayStep = static_cast<std::size_t>(-1);
+    // A raid member wedged on another floor (WedgedSummon): the step's summons and the run clock of the last one
+    // (kWedgedSummonsPerStep a step, kRunawayResummonMs apart: one clock for the step, not one per bot). Kept and
+    // cleared with the runaway budget below.
+    std::uint32_t wedgedSummons = 0;
+    std::uint64_t wedgedLastMs = 0;
+    // The plan step the wedged budget belongs to: the same rule as the runaway's.
+    std::size_t wedgedStep = static_cast<std::size_t>(-1);
     std::unordered_map<std::string, std::uint64_t> deadSeenMs; // the run clock a bot was last seen dead (NoteDeadSeen), the whole run
     bool directRefusedOn = false;     // this step's direct step was refused too-far (or its gather hit the ceiling) ...
     std::uint64_t directRefusedMs = 0; // ... first at this run clock (DirectPauseDue)
@@ -1905,7 +1912,8 @@ struct Run
     enum class CombatDropKind : std::uint8_t
     {
         Unattackable,
-        FarHeld
+        FarHeld,
+        Wedged
     };
     struct CombatDropState
     {
@@ -2414,6 +2422,12 @@ inline void ResetStep(Run& r)
         r.runawaySummons = 0;
         r.runawayLastMs = 0;
         r.runawayStep = r.step;
+    }
+    if (r.wedgedStep != r.step)
+    {
+        r.wedgedSummons = 0;
+        r.wedgedLastMs = 0;
+        r.wedgedStep = r.step;
     }
     r.directRefusedOn = false;
     r.directRefusedMs = 0;
@@ -3150,7 +3164,28 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
 
 inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (used from RunawaySummon), defined by the fight progress
 
-constexpr std::uint32_t kWedgedMs = 15000;
+constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
+constexpr std::uint32_t kWedgedSummonsPerStep = 2;  // per step, all bots together (like kRunawaySummonsPerStep)
+
+// A raid member on another floor (fell off a ledge, stands still under or over the raid, follow and reach spell
+// fail) that stayed so kWedgedMs: ZG walks 23-25, Nack/Maevrayah/Elmind wedged below the Jeklik path. True when all
+// hold: named, on the plan's map in this copy (FightMember-style), more than kStragglerDzYd up or down, more than
+// kGatherYd out, nothing on it (attackers fight, never wedged), still this long. stillMs is r.still[m.name].ms
+// (UpdateStill, kStillYd 2 yd), not IsStill (its kStillMs is 6 s).
+inline bool WedgedOnOtherFloor(const MemberFact& m, std::uint32_t stillMs)
+{
+    return !m.name.empty() && m.yd < 1000.0f && !m.offPlanMap && !m.otherCopy &&
+        std::fabs(m.dz) > kStragglerDzYd && m.yd > kGatherYd && m.attackers == 0 && stillMs >= kWedgedMs;
+}
+
+// The glue's re-check in DropUnattackableCombat before it drops a bot's combat (Commander.cpp): the same shape as
+// the policy's own test, without the still clock (the glue drops what the run named; it re-checks the bot still
+// stands wedged). True when the bot stands more than kGatherYd out, more than kStragglerDzYd up or down, with
+// nothing on it.
+inline bool WedgedDropRecheck(float yd, float dz, std::uint32_t attackers)
+{
+    return yd > kGatherYd && std::fabs(dz) > kStragglerDzYd && attackers == 0;
+}
 
 // A raid bot left far behind the lead bot with no fight on (a stale follow after a teleport): the gather and the
 // speed leash take turns waiting for it and neither timer runs out, so the run summons it to the lead bot before the
@@ -3196,6 +3231,56 @@ inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string&
     r.note = pick->name +
         (pick->offPlanMap ? std::string(" is on another map") : " is " + Num(pick->yd) + " yd from the lead bot") + " (" +
         std::to_string(r.runawayMs[pick->name] / 1000) + " s out of reach): summoned";
+    return true;
+}
+
+// A raid member wedged on another floor (WedgedOnOtherFloor) is summoned to the lead bot: with a fight on, its
+// combat was dropped first (CombatDropTick), so only a bot out of combat is picked; a summon is no guard order, so
+// it is not under the fight's order cap. The most wedged one goes first (largest |dz|), then the farthest; the step
+// gives kWedgedSummonsPerStep, kRunawayResummonMs after the step's last one. Never on a boss step and never with a
+// plan boss engaged (the summon would drop the bot on the boss), never the lead bot, never toward a lead bot in
+// another part. Raids only: a party run keeps its straggler ladder. ZG walks 23-25: Nack/Maevrayah/Elmind wedged
+// below the Jeklik path while the raid fought on. True: the tick ends with that order.
+inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    (void)dt;
+    const PlanStep* s = Current(r);
+    if (!f.raid.on || !f.leadAlive || LeadInOtherPart(r, f) || r.state != State::Running || !order.empty() || !s ||
+        s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f))
+        return false;
+    const MemberFact* pick = nullptr;
+    std::uint32_t pickStillMs = 0;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.name.empty() || m.name == f.carrier)
+            continue;
+        if (m.inCombat || m.attackers > 0)
+            continue; // never one in a fight or with something on it (cmd summon refuses it too)
+        auto const still = r.still.find(m.name);
+        std::uint32_t const stillMs = still == r.still.end() ? 0 : still->second.ms;
+        if (!WedgedOnOtherFloor(m, stillMs))
+            continue;
+        if (r.wedgedSummons >= kWedgedSummonsPerStep)
+            continue; // the step's summons are spent
+        if (r.wedgedSummons > 0 && r.runMs - r.wedgedLastMs < kRunawayResummonMs)
+            continue; // too soon after the step's last summon, whatever bot it was
+        float const wedged = std::fabs(m.dz);
+        float const best = pick ? std::fabs(pick->dz) : 0.0f;
+        if (!pick || wedged > best || (wedged == best && m.yd > pick->yd))
+        {
+            pick = &m;
+            pickStillMs = stillMs;
+        }
+    }
+    if (!pick)
+        return false;
+    order = "summon " + pick->name;
+    MarkSummoned(r, pick->name);
+    ++r.wedgedSummons;
+    r.wedgedLastMs = r.runMs;
+    r.note = pick->name + " is wedged " + Num(std::fabs(pick->dz)) + " yd " +
+        (pick->dz < 0.0f ? "below" : "above") + " the lead bot (" + Num(pick->yd) + " yd, still " +
+        std::to_string(pickStillMs / 1000) + " s): summoned";
     return true;
 }
 
@@ -14478,7 +14563,13 @@ inline std::string CombatDropTick(Run& r, const Facts& f, std::uint32_t dt)
     r.combatDrops.clear();
     bool const letGo = r.state == State::Running && UnattackableLetGoStep(r);
     bool const farOff = r.state == State::Running && LeadFarFromPlan(r, f);
-    if (!letGo && !farOff)
+    // A raid member wedged on another floor (WedgedOnOtherFloor): raids only (a party run keeps its straggler
+    // ladder), never on a boss step and never with a plan boss engaged (the summon would drop the bot on the boss),
+    // never paused. ZG walks 23-25: Nack/Maevrayah/Elmind wedged below the Jeklik path while the raid fought on.
+    const PlanStep* const step = Current(r);
+    bool const wedgedOn = r.state == State::Running && f.raid.on && step && step->kind != PlanStepKind::Boss &&
+        !EngagedPlanBoss(r, f);
+    if (!letGo && !farOff && !wedgedOn)
     {
         r.combatDrop.clear();
         return std::string();
@@ -14497,14 +14588,20 @@ inline std::string CombatDropTick(Run& r, const Facts& f, std::uint32_t dt)
                 planUnit = true;
         bool const unattackable = letGo && !planUnit && HeldByUnattackable(m);
         bool const farHeld = !unattackable && !planUnit && farOff && HeldByFarUnitsOnly(m);
-        if (!unattackable && !farHeld)
+        std::uint32_t stillMs = 0;
+        auto const still = r.still.find(m.name);
+        if (still != r.still.end())
+            stillMs = still->second.ms;
+        bool const wedged = m.inCombat && wedgedOn && WedgedOnOtherFloor(m, stillMs);
+        if (!unattackable && !farHeld && !wedged)
             continue;
         std::vector<std::uint64_t> set;
         for (const UnitFact& u : m.engaged)
             set.push_back(u.guid);
         std::sort(set.begin(), set.end());
         Run::CombatDropState st;
-        Run::CombatDropKind const kind = farHeld ? Run::CombatDropKind::FarHeld : Run::CombatDropKind::Unattackable;
+        Run::CombatDropKind const kind =
+            wedged ? Run::CombatDropKind::Wedged : farHeld ? Run::CombatDropKind::FarHeld : Run::CombatDropKind::Unattackable;
         auto const it = r.combatDrop.find(m.name);
         if (it != r.combatDrop.end() && it->second.set == set && it->second.kind == kind)
             st = it->second;
@@ -14516,16 +14613,24 @@ inline std::string CombatDropTick(Run& r, const Facts& f, std::uint32_t dt)
         st.ms += dt;
         auto const last = r.combatDroppedAt.find(m.name);
         bool const spaced = last == r.combatDroppedAt.end() || r.runMs >= last->second + kCombatDropRepeatMs;
-        if (st.ms >= (farHeld ? kFarHoldGraceMs : kUnattackableGraceMs) && spaced)
+        bool const due = wedged ? stillMs >= kWedgedMs : st.ms >= (farHeld ? kFarHoldGraceMs : kUnattackableGraceMs);
+        if (due && spaced)
         {
             r.combatDrops.push_back(m.name);
             r.combatDroppedAt[m.name] = r.runMs;
-            std::string units;
-            for (const UnitFact& u : m.engaged)
-                units += (units.empty() ? "entry " : ", entry ") + std::to_string(u.entry) +
-                    (farHeld ? " (" + Num(u.distLead) + " yd away)"
-                         : std::string(m.offPlanMap ? " (outside the instance)" : " (cannot be attacked)"));
-            note += (note.empty() ? "" : "; ") + m.name + " dropped combat with " + units;
+            if (wedged)
+                note += (note.empty() ? "" : "; ") + m.name + " dropped combat: wedged " + Num(std::fabs(m.dz)) +
+                    " yd " + (m.dz < 0.0f ? "below" : "above") + " the lead bot, " + Num(m.yd) + " yd away, still " +
+                    std::to_string(stillMs / 1000) + " s";
+            else
+            {
+                std::string units;
+                for (const UnitFact& u : m.engaged)
+                    units += (units.empty() ? "entry " : ", entry ") + std::to_string(u.entry) +
+                        (farHeld ? " (" + Num(u.distLead) + " yd away)"
+                             : std::string(m.offPlanMap ? " (outside the instance)" : " (cannot be attacked)"));
+                note += (note.empty() ? "" : "; ") + m.name + " dropped combat with " + units;
+            }
         }
         next[m.name] = std::move(st);
     }
@@ -15949,6 +16054,10 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         CheckReach(r, f);
         if (CheckCc(r, f, dt, order))
             return order;
+        // A raid member wedged on another floor (its combat dropped above) is summoned before the guard looks: the
+        // guard would never send it anywhere while it stands there.
+        if (order.empty() && WedgedSummon(r, f, dt, order))
+            return order;
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -16269,6 +16378,10 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     if (WalkBack(r, f, dt, order))
         return order;
 
+    // A raid member wedged on another floor goes before the runaway and the step's own waits: the runaway would
+    // never reach it below its distance, and whichever wait is current cannot take turns with it and leave it there.
+    if (order.empty() && WedgedSummon(r, f, dt, order))
+        return order;
     // A raid bot far behind the lead bot with no fight on is summoned before the step's own wait (the leash, the
     // gather, the ladder), so whichever wait is current cannot take turns with it and leave it there.
     if (RunawaySummon(r, f, dt, order))
