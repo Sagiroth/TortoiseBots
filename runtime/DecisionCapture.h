@@ -20,9 +20,12 @@
 
 #include "DecisionCaptureFiles.h"
 
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -60,12 +63,19 @@ public:
     void AfterTick(std::uint64_t commanderRaw, DungeonRun::Run const& run, std::string const& order);
     void End(std::uint64_t commanderRaw, std::string const& reason);
     void EndAll(std::string const& reason);
-    // Reaps writers whose end marker was handled; world thread.
+    // Reaps writers whose end marker was handled and applies the total cap;
+    // world thread.
     void Update();
     // Server shutdown: ends every capture, then lets busy writers go.
     void Shutdown();
 
+    // The module's log (TB_LOG_BASIC in DecisionCapture.cpp); empty in tests.
+    void SetLog(CaptureLog log) { log_ = std::move(log); }
+
     bool Active() const { return !captures_.empty(); }
+    // A finished capture whose writers are still flushing is not active, but
+    // its sink must stay alive and be polled.
+    bool HasWork() const { return !captures_.empty() || !retired_.empty(); }
     std::string const& lastError() const { return lastError_; }
     DecisionCaptureSettings const& settings() const { return settings_; }
 
@@ -79,9 +89,17 @@ private:
 
     std::string SettingsJson() const;
     void SinkSettings(FileLimits& file, DecisionCapture::Limits& recorder) const;
+    void EnforceTotalCap(bool stopRunning);
+    void Retire(std::unique_ptr<FileSink> sink);
 
     DecisionCaptureSettings settings_;
     std::unordered_map<std::uint64_t, Capture> captures_;
+    // Finished captures whose writers still flush: their sinks must outlive
+    // End() so Poll() can collect the final counts.
+    std::vector<std::unique_ptr<FileSink>> retired_;
+    bool totalCapPending_ = false;
+    bool shuttingDown_ = false;
+    CaptureLog log_;
     std::string lastError_;
 };
 
@@ -143,12 +161,13 @@ inline std::string DecisionCaptureRegistry::Begin(std::uint64_t commanderRaw, st
     info.startedUnixMs = nowUnixMs;
 
     std::string err;
-    std::unique_ptr<FileSink> sink = FileSink::Open(settings_.dir, captureId, info, fileLimits, err);
+    std::unique_ptr<FileSink> sink = FileSink::Open(settings_.dir, captureId, info, fileLimits, err, log_);
     if (!sink)
     {
         lastError_ = err;
         return std::string();
     }
+    sink->SetTotalCapHook([this] { totalCapPending_ = true; });
 
     DecisionCapture::HeaderInfo header;
     header.captureId = captureId;
@@ -162,6 +181,9 @@ inline std::string DecisionCaptureRegistry::Begin(std::uint64_t commanderRaw, st
     capture.recorder = std::make_unique<DecisionCapture::Recorder>(
         std::move(header), recorderLimits, *capture.sink);
     captures_.emplace(commanderRaw, std::move(capture));
+    // At capture open only ended captures may go; a running one is never cut
+    // for a capture that just started.
+    EnforceTotalCap(false);
     return captureId;
 }
 
@@ -196,7 +218,14 @@ inline void DecisionCaptureRegistry::End(std::uint64_t commanderRaw, std::string
     if (it == captures_.end())
         return;
     it->second.sink->Finish(*it->second.recorder, DecisionCaptureNowUnixMs(), reason);
+    Retire(std::move(it->second.sink));
     captures_.erase(it);
+}
+
+inline void DecisionCaptureRegistry::Retire(std::unique_ptr<FileSink> sink)
+{
+    if (sink)
+        retired_.push_back(std::move(sink));
 }
 
 inline void DecisionCaptureRegistry::EndAll(std::string const& reason)
@@ -213,13 +242,153 @@ inline void DecisionCaptureRegistry::Update()
 {
     for (auto& entry : captures_)
         entry.second.sink->Poll();
+    // A capture the total cap stopped has already written its end record; its
+    // recorder and sink leave the active map here.
+    for (auto it = captures_.begin(); it != captures_.end();)
+    {
+        if (it->second.sink->Ended())
+        {
+            Retire(std::move(it->second.sink));
+            it = captures_.erase(it);
+        }
+        else
+            ++it;
+    }
+    for (auto it = retired_.begin(); it != retired_.end();)
+    {
+        (*it)->Poll();
+        if ((*it)->Done())
+            it = retired_.erase(it);
+        else
+            ++it;
+    }
+    if (totalCapPending_ && !shuttingDown_)
+    {
+        // A finished capture whose writer still flushes is not deletable yet;
+        // wait for it rather than stop a running capture in its place.
+        bool flushing = false;
+        for (auto const& sink : retired_)
+            if (!sink->Done())
+            {
+                flushing = true;
+                break;
+            }
+        if (!flushing)
+        {
+            totalCapPending_ = false;
+            EnforceTotalCap(true);
+        }
+    }
 }
 
 inline void DecisionCaptureRegistry::Shutdown()
 {
-    // The `end` record and the final index leave at once; a writer still busy
-    // is detached, so shutdown never waits for the disk.
+    // The `end` record and the "incomplete" index leave at once; writers that
+    // already flushed are reaped (their index turns "complete"), the rest are
+    // detached, so shutdown never waits for the disk.
+    shuttingDown_ = true;
     EndAll("server shutdown");
+    for (std::unique_ptr<FileSink>& sink : retired_)
+    {
+        sink->Poll();
+        sink->Detach();
+    }
+    retired_.clear();
+    totalCapPending_ = false;
+}
+
+// TotalMiB over the whole capture folder, measured on disk. Ended captures
+// nobody owns any more go oldest first; if the running ones alone are over the
+// cap, the largest is stopped (never its files deleted).
+inline void DecisionCaptureRegistry::EnforceTotalCap(bool stopRunning)
+{
+    if (settings_.dir.empty() || settings_.totalMiB == 0)
+        return;
+    std::uint64_t const limit = DecisionCaptureMiB(settings_.totalMiB);
+    std::error_code ec;
+    if (!std::filesystem::is_directory(settings_.dir, ec))
+        return;
+
+    struct Folder
+    {
+        std::string id;
+        std::string path;
+        std::uint64_t startedUnixMs = 0;
+        std::uint64_t bytes = 0;
+        bool ended = false;
+    };
+    std::vector<Folder> folders;
+    std::uint64_t total = 0;
+    for (std::filesystem::directory_iterator it(settings_.dir, ec), end; !ec && it != end; it.increment(ec))
+    {
+        if (!it->is_directory())
+            continue;
+        Folder folder;
+        folder.id = it->path().filename().string();
+        folder.path = it->path().string();
+        folder.bytes = DirectoryBytes(folder.path);
+        CaptureIndexSummary const index = ReadCaptureIndex(folder.path);
+        folder.ended = index.ok && index.ended;
+        folder.startedUnixMs = index.startedUnixMs;
+        total += folder.bytes;
+        folders.push_back(std::move(folder));
+    }
+    if (total <= limit)
+        return;
+
+    auto owned = [this](std::string const& id)
+    {
+        for (auto const& entry : captures_)
+            if (entry.second.sink->CaptureId() == id)
+                return true;
+        for (auto const& sink : retired_)
+            if (sink->CaptureId() == id)
+                return true;
+        return false;
+    };
+
+    std::vector<Folder*> ended;
+    for (Folder& folder : folders)
+        if (folder.ended && !owned(folder.id))
+            ended.push_back(&folder);
+    std::sort(ended.begin(), ended.end(),
+        [](Folder const* a, Folder const* b) { return a->startedUnixMs < b->startedUnixMs; });
+    for (Folder* folder : ended)
+    {
+        if (total <= limit)
+            break;
+        std::error_code removeEc;
+        std::filesystem::remove_all(folder->path, removeEc);
+        if (removeEc)
+            continue;
+        total = total > folder->bytes ? total - folder->bytes : 0;
+    }
+    if (total <= limit || !stopRunning)
+        return;
+
+    FileSink* largest = nullptr;
+    DecisionCapture::Recorder* largestRecorder = nullptr;
+    std::uint64_t largestBytes = 0;
+    for (auto& entry : captures_)
+    {
+        FileSink* sink = entry.second.sink.get();
+        if (sink->Ended())
+            continue;
+        std::uint64_t const bytes = DirectoryBytes(sink->Root());
+        if (bytes > largestBytes)
+        {
+            largestBytes = bytes;
+            largest = sink;
+            largestRecorder = entry.second.recorder.get();
+        }
+    }
+    if (!largest)
+        return;
+    largest->Finish(*largestRecorder, DecisionCaptureNowUnixMs(), "stopped: total cap");
+    if (log_)
+        log_("decision capture " + largest->CaptureId() + ": stopped: total cap (" +
+             std::to_string(largestBytes) + " bytes of " + std::to_string(total) + " in " +
+             settings_.dir + ", limit " + std::to_string(limit) + ")");
 }
 
 class DecisionCaptureService
@@ -245,7 +414,7 @@ public:
     void EndAll(std::string const& reason) { registry_.EndAll(reason); }
     void Update()
     {
-        if (registry_.Active())
+        if (registry_.HasWork())
             registry_.Update();
     }
     void Shutdown()

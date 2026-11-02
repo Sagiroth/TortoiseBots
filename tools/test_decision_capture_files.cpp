@@ -6,6 +6,7 @@
 //   /tmp/t [tmpdir]
 #include "../runtime/DecisionCapture.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -122,6 +123,103 @@ std::uint64_t Number(MiniJson::Value const& object, std::string const& key)
     return std::strtoull(value->text.c_str(), nullptr, 10);
 }
 
+void WriteDummy(std::string const& path, std::size_t bytes)
+{
+    std::string const chunk(1024 * 1024, 'x');
+    std::ofstream out(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    CHECK(out.is_open());
+    while (bytes > 0)
+    {
+        std::size_t const n = std::min(bytes, chunk.size());
+        out.write(chunk.data(), static_cast<std::streamsize>(n));
+        bytes -= n;
+    }
+    CHECK(static_cast<bool>(out));
+}
+
+DecisionCaptureSettings SmallSettings(std::string const& dir, std::uint32_t totalMiB)
+{
+    DecisionCaptureSettings settings;
+    settings.enabled = true;
+    settings.dir = dir;
+    settings.module = "test";
+    settings.segmentMiB = 1;
+    settings.captureMiB = 1;
+    settings.totalMiB = totalMiB;
+    settings.recordKiB = 512;
+    settings.keyframeEvery = 60;
+    return settings;
+}
+
+void WaitRegistryIdle(DecisionCaptureRegistry& registry)
+{
+    for (int attempt = 0; attempt < 400 && registry.HasWork(); ++attempt)
+    {
+        registry.Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(!registry.HasWork());
+}
+
+// Polls the registry until the capture's index says it ended (the total cap
+// runs in Update, after the finished writers have flushed).
+void WaitCaptureEnded(DecisionCaptureRegistry& registry, std::string const& dir, std::string const& id)
+{
+    std::string const path = (std::filesystem::path(dir) / id / "index.json").string();
+    for (int attempt = 0; attempt < 400; ++attempt)
+    {
+        MiniJson::Value value;
+        std::string err;
+        if (std::filesystem::exists(path) && MiniJson::Parse(ReadFile(path), value, err) &&
+            value.kind == MiniJson::Value::Object)
+        {
+            MiniJson::Value const* ended = value.Find("ended");
+            if (ended && ended->kind == MiniJson::Value::String)
+                return;
+        }
+        registry.Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::cerr << "capture never ended: " << id << "\n";
+    std::exit(1);
+}
+
+Facts BigFacts(std::size_t members)
+{
+    Facts facts;
+    facts.members.resize(members);
+    for (std::size_t i = 0; i < members; ++i)
+    {
+        DungeonRun::MemberFact& member = facts.members[i];
+        member.name = "Bot" + std::to_string(i);
+        member.yd = static_cast<float>(i);
+        member.x = static_cast<float>(i);
+        member.y = static_cast<float>(i);
+        member.z = static_cast<float>(i);
+    }
+    return facts;
+}
+
+// Ticks until the capture opens seg-0002; the members vector makes every
+// record large enough that a MiB is a few dozen ticks.
+bool PumpToRotation(DecisionCaptureRegistry& registry, std::uint64_t key, std::string const& dir,
+    std::string const& id, int maxTicks)
+{
+    Run run;
+    Facts facts = BigFacts(400);
+    std::filesystem::path const second = std::filesystem::path(dir) / id / "seg-0002.jsonl";
+    for (int i = 0; i < maxTicks; ++i)
+    {
+        ++run.step;
+        facts.members[0].yd = static_cast<float>(i);
+        registry.BeforeTick(key, run, facts, 1000);
+        registry.AfterTick(key, run, "walk");
+        if (std::filesystem::exists(second))
+            return true;
+    }
+    return false;
+}
+
 struct Harness
 {
     std::unique_ptr<FileSink> sink;
@@ -150,7 +248,8 @@ struct Harness
 };
 
 Harness MakeCapture(std::string const& dir, std::string const& id, std::uint64_t startedUnixMs,
-    std::uint64_t segmentBytes, std::uint64_t captureBytes = 512ull * 1024ull * 1024ull)
+    std::uint64_t segmentBytes, std::uint64_t captureBytes = 512ull * 1024ull * 1024ull,
+    CaptureLog log = {})
 {
     Harness h;
     h.dir = dir;
@@ -170,7 +269,7 @@ Harness MakeCapture(std::string const& dir, std::string const& id, std::uint64_t
     info.plan = "zul_gurub";
     info.startedUnixMs = startedUnixMs;
     std::string err;
-    h.sink = FileSink::Open(dir, id, info, fileLimits, err);
+    h.sink = FileSink::Open(dir, id, info, fileLimits, err, std::move(log));
     if (!h.sink)
     {
         std::cerr << "open failed: " << err << "\n";
@@ -261,11 +360,14 @@ void TestSegmentsAndIndex()
     CHECK(finished->Find("ended") && finished->Find("ended")->kind == MiniJson::Value::String);
     CHECK(finished->Find("ended")->text == "2025-11-01T12:26:44Z");
     CHECK(finished->Find("endReason")->text == "stopped");
+    CHECK(finished->Find("status")->text == "complete");
     CHECK(Number(*finished, "dropped") == 0);
     MiniJson::Value const& segments = *finished->Find("segments");
     CHECK(segments.arr.size() == 3);
     CHECK(Number(segments.arr[0], "firstSeq") == 1);
     CHECK(Number(segments.arr[0], "lastSeq") >= 1);
+    CHECK(Number(segments.arr[0], "records") >= 1);
+    CHECK(Number(segments.arr[0], "bytes") > 0);
     CHECK(segments.arr[2].Find("deleted")->kind == MiniJson::Value::Bool);
     CHECK(!segments.arr[2].Find("deleted")->b);
 
@@ -287,6 +389,7 @@ void TestCaptureRetention()
 
     std::filesystem::path const folder = std::filesystem::path(dir) / h.id;
     auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("status")->text == "complete");
     MiniJson::Value const& segments = *index->Find("segments");
     CHECK(segments.arr.size() == 3);
     CHECK(segments.arr[0].Find("deleted")->b);
@@ -297,43 +400,90 @@ void TestCaptureRetention()
     CHECK(std::filesystem::exists(folder / "seg-0003.jsonl"));
 }
 
-Harness EndedCapture(std::string const& dir, std::string const& id, std::uint64_t startedUnixMs)
+void TestTotalRetentionDeletesFinishedAtRotation()
 {
-    Harness h = MakeCapture(dir, id, startedUnixMs, 1ull * 1024ull * 1024ull);
-    h.Tick();
-    h.Finish("stopped");
-    return h;
+    std::string const dir = (Root() / "total-rotation").string();
+    DecisionCaptureRegistry registry(SmallSettings(dir, 2));
+
+    std::string const oldId = registry.Begin(1, "Fionaa", "old", kStart);
+    CHECK(!oldId.empty());
+    registry.End(1, "stopped");
+    WaitRegistryIdle(registry);
+
+    std::string const activeId = registry.Begin(2, "Fionaa", "active", kStart + kTickMs);
+    CHECK(!activeId.empty());
+    // The finished capture grew after it ended; the running one triggers the
+    // sweep when it rotates.
+    WriteDummy((std::filesystem::path(dir) / oldId / "blob.bin").string(), 3u * 1024u * 1024u);
+
+    CHECK(PumpToRotation(registry, 2, dir, activeId, 400));
+    registry.Update();
+
+    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / oldId));
+    CHECK(std::filesystem::exists(std::filesystem::path(dir) / activeId));
+    registry.Shutdown();
 }
 
-void TestTotalRetention()
+void TestTotalRetentionStopsLargestAtFinish()
 {
-    std::string const dir = (Root() / "total-retention").string();
-    std::filesystem::create_directories(dir);
-    FileLimits limits;
-    limits.totalBytes = 1;
+    std::string const dir = (Root() / "total-finish").string();
+    DecisionCaptureRegistry registry(SmallSettings(dir, 1));
 
-    // Ended before the new capture opens: the oldest one goes.
-    EndedCapture(dir, "20251101T122640Z-old-Fionaa", kStart);
-    // Running while the new capture opens: kept.
-    std::string const active = "20251101T122641Z-active-Fionaa";
-    Harness running = MakeCapture(dir, active, kStart + kTickMs, 1ull * 1024ull * 1024ull);
-    running.Tick();
+    std::string const largestId = registry.Begin(1, "Fionaa", "largest", kStart);
+    std::string const otherId = registry.Begin(2, "Fionaa", "other", kStart + kTickMs);
+    CHECK(!largestId.empty());
+    CHECK(!otherId.empty());
+    WriteDummy((std::filesystem::path(dir) / largestId / "blob.bin").string(), 2u * 1024u * 1024u);
+    WriteDummy((std::filesystem::path(dir) / otherId / "blob.bin").string(), 1u * 1024u * 1024u);
 
-    IndexInfo info;
-    info.captureId = "20251101T122642Z-new-Fionaa";
-    info.commander = "Fionaa";
-    info.plan = "zul_gurub";
-    info.startedUnixMs = kStart + 2 * kTickMs;
-    std::string err;
-    std::unique_ptr<FileSink> sink = FileSink::Open(dir, info.captureId, info, limits, err);
-    CHECK(sink != nullptr);
+    // The finish sweeps the folder once its writer has flushed; running
+    // captures alone are over the cap, so the largest one stops.
+    registry.End(2, "stopped");
+    auto other = IndexObj(dir, otherId);
+    CHECK(other->Find("endReason")->text == "stopped");
 
-    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / "20251101T122640Z-old-Fionaa"));
-    MiniJson::Value kept;
-    CHECK(ReadJson((std::filesystem::path(dir) / active / "index.json").string(), kept));
-    MiniJson::Value fresh;
-    CHECK(ReadJson((std::filesystem::path(dir) / info.captureId / "index.json").string(), fresh));
-    running.Finish();
+    WaitCaptureEnded(registry, dir, largestId);
+    auto largest = IndexObj(dir, largestId);
+    CHECK(largest->Find("ended")->kind == MiniJson::Value::String);
+    CHECK(largest->Find("endReason")->text == "stopped: total cap");
+    registry.Shutdown();
+}
+
+void TestWriterFailureStatus()
+{
+    std::string const dir = (Root() / "writer-failure").string();
+    int logs = 0;
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1ull * 1024ull * 1024ull,
+        512ull * 1024ull * 1024ull, [&logs](std::string const&) { ++logs; });
+    h.Tick();
+    h.Tick();
+    h.sink->SetFailFinalFlushForTest(true);
+    h.Finish();
+
+    auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("status")->text == "failed");
+    MiniJson::Value const& segments = *index->Find("segments");
+    CHECK(Number(segments.arr[0], "bytes") > 0);
+    CHECK(Number(segments.arr[0], "records") >= 2);
+    CHECK(logs == 1);
+}
+
+void TestShutdownLeavesIncomplete()
+{
+    std::string const dir = (Root() / "shutdown").string();
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1ull * 1024ull * 1024ull);
+    h.Tick();
+    h.Tick();
+    h.sink->Finish(*h.recorder, h.now + kTickMs, "server shutdown");
+
+    auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("ended")->kind == MiniJson::Value::String);
+    CHECK(index->Find("status")->text == "incomplete");
+
+    // The writers are let go; nothing rewrites the index after them.
+    h.sink->Detach();
+    auto after = IndexObj(dir, h.id);
+    CHECK(after->Find("status")->text == "incomplete");
 }
 
 void TestOffCreatesNothing()
@@ -370,7 +520,10 @@ int main()
     TestIds();
     TestSegmentsAndIndex();
     TestCaptureRetention();
-    TestTotalRetention();
+    TestTotalRetentionDeletesFinishedAtRotation();
+    TestTotalRetentionStopsLargestAtFinish();
+    TestWriterFailureStatus();
+    TestShutdownLeavesIncomplete();
     TestOffCreatesNothing();
     std::cout << "decision capture files: all checks passed\n";
     return 0;

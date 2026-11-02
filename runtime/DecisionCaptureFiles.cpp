@@ -68,7 +68,6 @@ struct IndexSummary
     bool ok = false;
     bool ended = false;
     std::uint64_t startedUnixMs = 0;
-    std::uint64_t bytes = 0; // of the segments that still exist
 };
 
 IndexSummary ReadIndex(std::string const& path)
@@ -86,63 +85,8 @@ IndexSummary ReadIndex(std::string const& path)
     summary.ended = !ended || ended->kind != MiniJson::Value::Null;
     if (MiniJson::Value const* started = root.Find("startedUnixMs"))
         NumberValue(started, summary.startedUnixMs);
-    if (MiniJson::Value const* segments = root.Find("segments"))
-        if (segments->kind == MiniJson::Value::Array)
-            for (MiniJson::Value const& segment : segments->arr)
-            {
-                MiniJson::Value const* deleted = segment.Find("deleted");
-                if (deleted && deleted->kind == MiniJson::Value::Bool && deleted->b)
-                    continue;
-                if (MiniJson::Value const* bytes = segment.Find("bytes"))
-                {
-                    std::uint64_t count = 0;
-                    if (NumberValue(bytes, count))
-                        summary.bytes += count;
-                }
-            }
     summary.ok = true;
     return summary;
-}
-
-// TotalMiB: the oldest ended captures go until the folder fits. A capture
-// without an index (ours, just made) and a running capture are never touched.
-void ApplyTotalRetention(std::string const& dir, std::string const& keepId, std::uint64_t limit)
-{
-    struct Ended
-    {
-        std::string path;
-        std::uint64_t startedUnixMs = 0;
-        std::uint64_t bytes = 0;
-    };
-    std::vector<Ended> ended;
-    std::uint64_t total = 0;
-    std::error_code ec;
-    for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
-    {
-        if (!it->is_directory())
-            continue;
-        std::string const id = it->path().filename().string();
-        if (id == keepId)
-            continue;
-        IndexSummary const summary = ReadIndex((it->path() / "index.json").string());
-        if (!summary.ok)
-            continue;
-        total += summary.bytes;
-        if (summary.ended)
-            ended.push_back({it->path().string(), summary.startedUnixMs, summary.bytes});
-    }
-    std::sort(ended.begin(), ended.end(),
-        [](Ended const& a, Ended const& b) { return a.startedUnixMs < b.startedUnixMs; });
-    for (Ended const& capture : ended)
-    {
-        if (total <= limit)
-            break;
-        std::error_code removeEc;
-        std::filesystem::remove_all(capture.path, removeEc);
-        if (removeEc)
-            continue;
-        total -= capture.bytes;
-    }
 }
 
 // The record's own seq, for the index: only tick and stub lines carry one.
@@ -160,8 +104,34 @@ bool RecordSeq(std::string const& line, std::uint64_t& seq)
 
 } // namespace
 
-FileSink::FileSink(std::string root, IndexInfo info, FileLimits limits)
-    : root_(std::move(root)), info_(std::move(info)), limits_(limits)
+CaptureIndexSummary ReadCaptureIndex(std::string const& folder)
+{
+    IndexSummary const summary = ReadIndex((std::filesystem::path(folder) / "index.json").string());
+    CaptureIndexSummary out;
+    out.ok = summary.ok;
+    out.ended = summary.ended;
+    out.startedUnixMs = summary.startedUnixMs;
+    return out;
+}
+
+std::uint64_t DirectoryBytes(std::string const& path)
+{
+    std::uint64_t total = 0;
+    std::error_code ec;
+    for (std::filesystem::recursive_directory_iterator it(path, ec), end; !ec && it != end; it.increment(ec))
+    {
+        std::error_code fileEc;
+        if (!it->is_regular_file(fileEc) || fileEc)
+            continue;
+        std::uintmax_t const size = it->file_size(fileEc);
+        if (!fileEc)
+            total += size;
+    }
+    return total;
+}
+
+FileSink::FileSink(std::string root, IndexInfo info, FileLimits limits, CaptureLog log)
+    : root_(std::move(root)), info_(std::move(info)), limits_(limits), log_(std::move(log))
 {
 }
 
@@ -171,7 +141,7 @@ FileSink::~FileSink()
 }
 
 std::unique_ptr<FileSink> FileSink::Open(std::string const& dir, std::string const& captureId,
-    IndexInfo const& info, FileLimits const& limits, std::string& err)
+    IndexInfo const& info, FileLimits const& limits, std::string& err, CaptureLog log)
 {
     std::filesystem::path const root = std::filesystem::path(dir) / captureId;
     std::error_code ec;
@@ -181,8 +151,7 @@ std::unique_ptr<FileSink> FileSink::Open(std::string const& dir, std::string con
         err = "cannot create " + root.string() + ": " + ec.message();
         return nullptr;
     }
-    ApplyTotalRetention(dir, captureId, limits.totalBytes);
-    std::unique_ptr<FileSink> sink(new FileSink(root.string(), info, limits));
+    std::unique_ptr<FileSink> sink(new FileSink(root.string(), info, limits, std::move(log)));
     if (!sink->StartSegment(1, 1, err))
         return nullptr;
     return sink;
@@ -196,12 +165,10 @@ bool FileSink::Push(std::string line)
     std::uint64_t seq = 0;
     bool const record = RecordSeq(line, seq);
     if (!writer_->Push(std::move(line)))
-    {
-        ++dropped_;
         return false;
-    }
     Segment& segment = segments_[openSegment_];
     segment.bytes += size;
+    ++segment.lines;
     if (record)
     {
         ++segment.records;
@@ -230,26 +197,45 @@ void FileSink::Finish(DecisionCapture::Recorder& recorder, std::uint64_t nowUnix
     if (ended_)
         return;
     recorder.End(nowUnixMs, reason);
-    dropped_ = std::max(dropped_, recorder.stats().dropped);
+    recorderDropped_ = recorder.stats().dropped;
     endReason_ = reason;
     endedUnixMs_ = nowUnixMs;
     ended_ = true;
+    // The writers have not flushed yet: this says so until Poll() has reaped
+    // every one of them.
+    status_ = failed_ ? "failed" : "incomplete";
     WriteIndex();
     EndWriter();
+    if (totalCapHook_)
+        totalCapHook_();
 }
 
 void FileSink::Poll()
 {
+    bool changed = false;
     for (auto it = finishing_.begin(); it != finishing_.end();)
     {
-        if ((*it)->Finished())
+        if (!it->writer->Finished())
         {
-            (*it)->Reap();
-            it = finishing_.erase(it);
-        }
-        else
             ++it;
+            continue;
+        }
+        std::string const failure = it->writer->Failure();
+        RunTrace::WriterStats const stats = it->writer->Reap();
+        ApplyWriterResult(*it, stats, failure);
+        it = finishing_.erase(it);
+        changed = true;
     }
+    if (finalized_)
+        return;
+    if (ended_ && !writer_ && finishing_.empty())
+    {
+        status_ = failed_ ? "failed" : "complete";
+        finalized_ = true;
+        changed = true;
+    }
+    if (changed)
+        WriteIndex();
 }
 
 void FileSink::Detach()
@@ -259,9 +245,47 @@ void FileSink::Detach()
         writer_->Detach();
         writer_.reset();
     }
-    for (std::unique_ptr<RunTrace::RunTraceWriter>& writer : finishing_)
-        writer->Detach();
+    for (Finishing& finishing : finishing_)
+        finishing.writer->Detach();
     finishing_.clear();
+}
+
+void FileSink::SetFailFinalFlushForTest(bool fail)
+{
+    if (writer_)
+        writer_->SetFailFinalFlushForTest(fail);
+    for (Finishing& finishing : finishing_)
+        finishing.writer->SetFailFinalFlushForTest(fail);
+}
+
+// The writer's own counters are what reached the disk: its bytes include the
+// newlines, and the lines it lost are the tail of what Push accepted (the
+// writer never drops from the middle of its queue).
+void FileSink::ApplyWriterResult(Finishing& finishing, RunTrace::WriterStats const& stats,
+    std::string const& failure)
+{
+    if (finishing.segment < segments_.size())
+    {
+        Segment& segment = segments_[finishing.segment];
+        std::uint64_t const lost = segment.lines > stats.records ? segment.lines - stats.records : 0;
+        segment.bytes = stats.bytes;
+        segment.records = segment.records > lost ? segment.records - lost : 0;
+        writerDropped_ += lost;
+    }
+    if (!stats.failed && failure.empty())
+        return;
+    failed_ = true;
+    if (status_ == "running" || status_ == "incomplete")
+        status_ = "failed";
+    LogFailureOnce(failure.empty() ? "segment writer failed" : failure);
+}
+
+void FileSink::LogFailureOnce(std::string const& message)
+{
+    if (failureLogged_ || !log_)
+        return;
+    failureLogged_ = true;
+    log_("decision capture " + info_.captureId + ": " + message);
 }
 
 bool FileSink::StartSegment(std::uint32_t seg, std::uint64_t firstSeq, std::string& err)
@@ -292,6 +316,8 @@ bool FileSink::StartSegment(std::uint32_t seg, std::uint64_t firstSeq, std::stri
     }
     writer_ = std::move(writer);
     WriteIndex();
+    if (seg > 1 && totalCapHook_)
+        totalCapHook_();
     return true;
 }
 
@@ -317,6 +343,8 @@ void FileSink::WriteIndex()
     index += ended_ ? "\"" + UtcStamp(endedUnixMs_, true) + "\"" : "null";
     index += ",\"endReason\":";
     index += DecisionCapture::JsonString(endReason_);
+    index += ",\"status\":";
+    index += DecisionCapture::JsonString(status_);
     index += ",\"schema\":\"";
     index += info_.schema;
     index += "\",\"segments\":[";
@@ -340,7 +368,7 @@ void FileSink::WriteIndex()
         index += '}';
     }
     index += "],\"dropped\":";
-    index += std::to_string(dropped_);
+    index += std::to_string(recorderDropped_ + writerDropped_);
     index += '}';
     std::string err;
     RunTrace::WriteFileAtomic(SegmentPath("index.json"), index, err);
@@ -371,8 +399,11 @@ void FileSink::EndWriter()
         return;
     // No end line and no summary: the segment just stops. The capture's `end`
     // record went out through the recorder before this.
-    writer_->PushEnd(RunTrace::EndJob{});
-    finishing_.push_back(std::move(writer_));
+    Finishing finishing;
+    finishing.segment = openSegment_;
+    finishing.writer = std::move(writer_);
+    finishing.writer->PushEnd(RunTrace::EndJob{});
+    finishing_.push_back(std::move(finishing));
     writer_ = nullptr;
 }
 

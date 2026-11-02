@@ -1,6 +1,7 @@
 #include "DecisionCapture.h"
 
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../host/ModuleLog.h"
 #include "../host/ModuleVersion.h"
 
 #include <filesystem>
@@ -35,6 +36,7 @@ DecisionCaptureSettings DecisionCaptureSettingsFromConfig()
 
 DecisionCaptureService::DecisionCaptureService() : registry_(DecisionCaptureSettingsFromConfig())
 {
+    registry_.SetLog([](std::string const& message) { TB_LOG_BASIC("%s", message.c_str()); });
 }
 
 DecisionCaptureService& DecisionCaptureService::Instance()

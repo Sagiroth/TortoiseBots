@@ -41,7 +41,7 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         self.assertLess(read.index("fact.health = other->GetHealth();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.maxHealth = other->GetMaxHealth();"), read.index("out.push_back(fact);"))
         # The watch's clock is the tick's real length.
-        self.assertIn(": TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", CODE)
+        self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", CODE)
 
     def test_the_fight_block_watches_every_fight_tick_before_the_pause(self):
         fight = body(RULES, "    if (f.anyInCombat && !objectDone)\n    {", "\n    }\n")
