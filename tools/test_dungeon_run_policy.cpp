@@ -15389,8 +15389,8 @@ static void TestPullNoteCarriesTheJoinerCount()
         PullUnit(r, f, f.units[0], order);
         CHECK(order == "pullback 31" && r.note == "pulling 4852; 3 joiners expected");
     }
-    // Ceiling 6, the unit was held or out of the glue's index, so no count this step: the note says so,
-    // and it never claims the stale count below.
+    // Ceiling 6, the unit was held or out of the glue's index: the note claims no count (not even the
+    // stale one below); the joiners the pull really draws are reported by the status note instead.
     {
         Run r = Start(&plan);
         UnitFact u = Unit(31, 4852, 40.0f);
@@ -15399,7 +15399,7 @@ static void TestPullNoteCarriesTheJoinerCount()
         f.units = {u};
         order.clear();
         PullUnit(r, f, f.units[0], order);
-        CHECK(order == "pullback 31" && r.note == "pulling 4852; joiners not read");
+        CHECK(order == "pullback 31" && r.note == "pulling 4852");
     }
     // Ceiling on, the pull stand on: the count goes after the stand text.
     {
@@ -15436,6 +15436,52 @@ static void TestPullNoteCarriesTheJoinerCount()
         s.units = {u};
         CHECK(Tick(r, s) == "pullback 11");
         CHECK(r.note == "pulling 4851 0x000000000000000b (order 1; shot from where it stands)");
+    }
+}
+
+// The pull's joiners (the server half of turtle-agent #369): the pull records its pack by guid, every
+// hostile engaged with the party outside it in the first 10 s is a joiner, and the status note reports
+// "joiners N (entry <entry> x<count>, ...)" in place of the old "joiners not read".
+static void TestPullJoinersReported()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4852})};
+
+    // Two units of the pulled pack and three of another pack join in the window: the three are the
+    // joiners, the pack's own units are not.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f), Unit(32, 4852, 44.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        // The pull line reports the joiners (none yet) instead of "joiners not read".
+        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "not read"));
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(32, 4852, 6.0f),
+                          Unit(41, 5000, 8.0f), Unit(42, 5000, 9.0f), Unit(43, 5001, 10.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 3 (entry 5000 x2, 5001 x1)"));
+        // A hostile that joins after the 10 s window is no joiner of that pull.
+        f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
+        Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 3 (entry 5000 x2, 5001 x1)"));
+        CHECK(!Has(StatusParts(r).note, "6000"));
+    }
+
+    // The pulled pack alone fights: no joiner, and the line says so.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(31, 4852, 5.0f)};
+        for (int i = 0; i < 12; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "entry "));
     }
 }
 
@@ -27524,6 +27570,7 @@ int main()
     TestAggroEstimateAndRezHoldDoNotCrossTheirResets();
     TestBothKeysOffChangeNothing();
     TestPullNoteCarriesTheJoinerCount();
+    TestPullJoinersReported();
     TestPullShootsFromStand();
     TestPullWaitsForStillTank();
     TestPullWalksToStandOutOfRange();
