@@ -123,7 +123,7 @@ class GuildOrderPartialNeedWiringTest(unittest.TestCase):
         # A retry keeps the original queue time, so the pause a queued request
         # causes expires like the request, not with each 45-second retry.
         self.assertIn("request.queuedAtMs = WorldTimer::getMSTime();", STORE)
-        self.assertIn("nowMs + kSubOrderRetryMs, request.queuedAtMs)", STORE)
+        self.assertIn("nowMs + kSubOrderRetryMs, request.queuedAtMs,", STORE)
 
     def test_sub_failure_reason_reset_with_leg(self):
         # The dead-end reset sits inside the leg-reset block: a leg that
