@@ -90,6 +90,18 @@ func TestFightDebugJS(t *testing.T) {
 	runCheck(t, "fightdebug_check.js", "../../web/static/js/fightdebug.js")
 }
 
+// TestFDTotalsJS runs fd_totals_check.js: the Fight debugger's "This fight | Total" switch (the .seg above the role
+// tables, the run's sums with per-bot DPS/HPS, the title and the remembered choice) while the live table keeps its 10 s window.
+func TestFDTotalsJS(t *testing.T) {
+	runCheck(t, "fd_totals_check.js", "../../web/static/js/app.js")
+}
+
+// TestFDTotalsRenderJS runs fd_totals_render_check.js: renderFightDebug itself with a finished fight selected, once in
+// "This fight" and once in "Total" mode (a fake fetch answering the totals), plus no selection and a live one.
+func TestFDTotalsRenderJS(t *testing.T) {
+	runCheck(t, "fd_totals_render_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightDebugUIJS runs fightdebug_ui_check.js: the Fight debugger's markup in app.js (frames, rail, checks, timeline,
 // recap, role tables, bot panel, map death marks) with the walk 2 fights and with names that would break the page.
 func TestFightDebugUIJS(t *testing.T) {
@@ -461,6 +473,7 @@ func TestCoverageCSS(t *testing.T) {
 func TestLiveLayoutScrollJS(t *testing.T) {
 	runCheck(t, "live_layout_scroll_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
 }
+
 // TestControlsDebugJS runs controls_debug_check.js: the run controls (pause, resume, skip, stop, status, start, revive, gear)
 // also show in the Fight debugger, under the raid frames, with the same buttons, binding and answer note.
 func TestControlsDebugJS(t *testing.T) {

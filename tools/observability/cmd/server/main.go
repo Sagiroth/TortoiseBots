@@ -695,8 +695,10 @@ func main() {
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
 	// commander, newest first; each fight carries the v1 warnings with it.
 	// The optional combat.ListQuery params (limit, before, since, boss, deaths, outcome) page and filter the list; without
-	// them it answers as it always did. A page cut by limit answers the header X-More: 1.
+	// them it answers as it always did. A page cut by limit answers the header X-More: 1. The run-totals route below sums one
+	// run's fights per bot for the debugger's "Total" view.
 	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
+	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// The detail key is (commander, session, id): fight ids repeat
 		// across commanders and sessions. The list rows carry the composed
