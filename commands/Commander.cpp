@@ -8871,7 +8871,8 @@ inline bool StandThisStep(DungeonRunSlot const& slot)
 
 // The other packs a firing stand must keep clear of (defined with the patrol readers below).
 static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
-    TortoiseBots::DungeonRun::PullPack const& pack, TortoiseBots::DungeonRun::Facts& f);
+    TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,
+    TortoiseBots::DungeonRun::Facts& f);
 // The formation a creature walks in (defined with the patrol readers below): the pull's pack reads it.
 uint64 RunFormationOf(Creature* creature);
 
