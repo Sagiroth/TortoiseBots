@@ -159,6 +159,31 @@ namespace ai
             return it == rows_.end() ? nullptr : &it->second;
         }
 
+        // Every row of one map, sorted by (bossEntry, kind, targetEntry, spellId):
+        // the decision capture stores the table once per capture segment and the
+        // replay rebuilds it from this list, so the order must not depend on the
+        // map's iteration. Empty before the seal.
+        std::vector<BossTacticRow> RowsOnMap(std::uint32_t map) const
+        {
+            std::vector<BossTacticRow> out;
+            if (!sealed_.load(std::memory_order_acquire))
+                return out;
+            for (const auto& entry : rows_)
+                if ((entry.first >> 32) == map)
+                    out.insert(out.end(), entry.second.begin(), entry.second.end());
+            std::sort(out.begin(), out.end(), [](const BossTacticRow& a, const BossTacticRow& b)
+            {
+                if (a.bossEntry != b.bossEntry)
+                    return a.bossEntry < b.bossEntry;
+                if (a.kind != b.kind)
+                    return a.kind < b.kind;
+                if (a.targetEntry != b.targetEntry)
+                    return a.targetEntry < b.targetEntry;
+                return a.spellId < b.spellId;
+            });
+            return out;
+        }
+
     private:
         static std::uint64_t Key(std::uint32_t map, std::uint32_t bossEntry)
         {
