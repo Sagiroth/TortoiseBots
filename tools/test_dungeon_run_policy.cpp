@@ -16456,6 +16456,52 @@ static void TestStandPullNoPreCcPointNote()
     CHECK(r.note == "stand_pull: no pre-cc point for 14532");
 }
 
+// The walk the glue reads the hold from: the party's spot at x 0, nodes at x 10 and x 20, the authored approach at
+// x 40.
+static std::vector<ai::ApproachPoint> HoldAheadWalk()
+{
+    std::vector<ai::ApproachPoint> walk(4);
+    walk[0].x = 0.0f;
+    walk[1].x = 10.0f;
+    walk[2].x = 20.0f;
+    walk[3].x = 40.0f;
+    return walk;
+}
+
+// A pack unit at x `x` with the reach it puts under a stand (with the party's spread and the margin, clear past
+// reach + 11 yd).
+static StandPackReach HoldAheadUnit(float x, float reachYd)
+{
+    StandPackReach unit;
+    unit.x = x;
+    unit.reachYd = reachYd;
+    return unit;
+}
+
+// The hold point is the last point of the walk to the approach that is clear of the pack, here the node before the
+// approach: the pack's reach covers the approach itself.
+static void TestHoldAheadPointStopsBeforeTheApproach()
+{
+    ai::ApproachPoint hold;
+    CHECK(HoldAheadPoint(HoldAheadWalk(), {HoldAheadUnit(40.0f, 5.0f)}, hold));
+    CHECK(hold.x == 20.0f && hold.y == 0.0f && hold.z == 0.0f);
+}
+
+// The approach itself is clear: the hold is the approach, never a point past it.
+static void TestHoldAheadPointIsTheApproachWhenClear()
+{
+    ai::ApproachPoint hold;
+    CHECK(HoldAheadPoint(HoldAheadWalk(), {HoldAheadUnit(200.0f, 1.0f)}, hold));
+    CHECK(hold.x == 40.0f && hold.y == 0.0f && hold.z == 0.0f);
+}
+
+// Every point of the walk is inside the pack's reach: no hold point, the row walks the plan's point as before.
+static void TestHoldAheadPointNoneInsideTheWholeWalk()
+{
+    ai::ApproachPoint hold;
+    CHECK(!HoldAheadPoint(HoldAheadWalk(), {HoldAheadUnit(20.0f, 100.0f)}, hold));
+}
+
 // AiPlayerbot.DungeonRunStandPullPreCc off: today's walk, byte for byte. The hold point the glue offers is ignored (the
 // plan's point is walked at once, no read wait), and the pull row runs as it did before the key: the gate names the
 // units it leaves to the plain pull, the marks go out, the pull goes out. No walk to the approach.
@@ -28170,6 +28216,9 @@ int main()
     TestStandApproachUnreadableWalksThePlanPoint();
     TestStandApproachHoldOnlyBeforeAStandPull();
     TestStandPullNoPreCcPointNote();
+    TestHoldAheadPointStopsBeforeTheApproach();
+    TestHoldAheadPointIsTheApproachWhenClear();
+    TestHoldAheadPointNoneInsideTheWholeWalk();
     TestStandPullPreCcKeyOffWalksAsToday();
     TestStandPullOrdersCcBeforeTheWalkIn();
     TestStandPullWalkInWaitsForTheMarksToLand();

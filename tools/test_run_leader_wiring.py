@@ -1021,12 +1021,19 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("pack.count(RunFormationOf(c)) == 0", hold)
         self.assertIn("reach.reachYd = ai::AggroRadius(mob, lowest, rate);", hold)
         self.assertIn("f.holdAheadRead = true;", hold)
-        self.assertIn("unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd", hold)
+        # The path's destination is the current move row's point (the authored approach); the next row names the
+        # pulled pack only.
+        self.assertIn("const ai::PlanStep& row = slot.run.plan->steps[slot.run.step];", hold)
+        self.assertIn("path.calculate(row.x, row.y, row.z, false);", hold)
+        self.assertIn("if (!HoldAheadPoint(walk, f.holdAheadReach, hold))", hold)
         self.assertIn("path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE", hold)
         # The stand's own read is untouched: its path still starts at the lead bot's position.
         stand = body(COMMANDS, "void ReadPullStand(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("front.x = lead->GetPositionX();", stand)
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        # The hold point is chosen from the walk and the pack alone, outside every unit's reach.
+        self.assertIn("inline bool HoldAheadPoint(std::vector<ai::ApproachPoint> const& walk, std::vector<StandPackReach> const& reach,", policy)
+        self.assertIn("unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd", policy)
         # The point is read once per row: the policy marks the answer, the glue stops reading it.
         self.assertIn("r.holdAheadDone = r.holdAheadDone || f.holdAheadKnown || f.holdAheadRead;",
                       body(policy, "inline void MoveStep(", "\n}\n"))

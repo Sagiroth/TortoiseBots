@@ -9388,6 +9388,9 @@ static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vec
     const ai::PlanStep* next = nullptr;
     if (!NextStandPullStep(slot, next))
         return;
+    // The current move row: its point is the authored approach, the walk whose last clear point is the hold. The next
+    // row names the pulled pack only.
+    const ai::PlanStep& row = slot.run.plan->steps[slot.run.step];
     Map* const map = lead->GetMap();
     if (!map)
         return;
@@ -9432,44 +9435,33 @@ static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vec
     }
     if (f.holdAheadReach.empty())
         return;
-    // The path to the row's point, walked back from its end: the last point outside every unit of the pack.
+    // The path to the authored approach, walked back from its end: the last point outside every unit of the pack.
     PathFinder path(lead);
-    path.calculate(next->x, next->y, next->z, false);
+    path.calculate(row.x, row.y, row.z, false);
     if (path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE)
         return;
     f.holdAheadRead = true; // looked for: no point found is the policy's note, not a read still to come
-    std::vector<ai::ApproachPoint> points;
+    std::vector<ai::ApproachPoint> walk;
     ai::ApproachPoint front;
     front.x = lead->GetPositionX();
     front.y = lead->GetPositionY();
     front.z = lead->GetPositionZ();
-    points.push_back(front);
+    walk.push_back(front);
     for (Vector3 const& p : path.getPath())
     {
         ai::ApproachPoint point;
         point.x = p.x;
         point.y = p.y;
         point.z = p.z;
-        points.push_back(point);
+        walk.push_back(point);
     }
-    for (std::size_t i = points.size(); i-- > 0;)
-    {
-        bool clear = true;
-        for (StandPackReach const& unit : f.holdAheadReach)
-            if (ai::PlanDistance(points[i].x, points[i].y, points[i].z, unit.x, unit.y, unit.z) <
-                unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd)
-            {
-                clear = false;
-                break;
-            }
-        if (!clear)
-            continue;
-        f.holdAheadKnown = true;
-        f.holdAheadX = points[i].x;
-        f.holdAheadY = points[i].y;
-        f.holdAheadZ = points[i].z;
-        break;
-    }
+    ai::ApproachPoint hold;
+    if (!HoldAheadPoint(walk, f.holdAheadReach, hold))
+        return;
+    f.holdAheadKnown = true;
+    f.holdAheadX = hold.x;
+    f.holdAheadY = hold.y;
+    f.holdAheadZ = hold.z;
 }
 
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,

@@ -538,6 +538,30 @@ constexpr float kStandPullMarginYd = 1.0f;
 // plan's point as before, so a glue that does not answer never holds the run.
 constexpr float kHoldAheadMarginYd = 1.0f;
 constexpr std::uint32_t kHoldAheadWaitMs = 3 * kTickMs;
+// The hold point itself: the last point of the walk to the approach (the lead bot's spot first, the approach last)
+// that stands outside every pack unit's wake reach. False when every point is in reach: the row walks the plan's
+// point as before and the note says why (MoveStep). The walk's last point is the approach, so the hold never lies
+// past the authored approach.
+inline bool HoldAheadPoint(std::vector<ai::ApproachPoint> const& walk, std::vector<StandPackReach> const& reach,
+    ai::ApproachPoint& hold)
+{
+    for (std::size_t i = walk.size(); i-- > 0;)
+    {
+        bool clear = true;
+        for (StandPackReach const& unit : reach)
+            if (ai::PlanDistance(walk[i].x, walk[i].y, walk[i].z, unit.x, unit.y, unit.z) <
+                unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd)
+            {
+                clear = false;
+                break;
+            }
+        if (!clear)
+            continue;
+        hold = walk[i];
+        return true;
+    }
+    return false;
+}
 // ... and the pull's crowd control lands on the pack (or this long passes after the last order) before the party
 // walks in: a Polymorph, Shackle Undead or Sap needs its cast time, and a walk that starts before the aura is there
 // wakes the unit the mark was for.
