@@ -476,15 +476,30 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
         std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);
         LinkedDeathLatch& latch = g_linkedDeathLatches[std::make_tuple(bot->GetMapId(), bot->GetInstanceId(),
                                                                       groupScan.anchor, groupScan.groupId)];
+        // A known guid not seen fighting is looked up too: found dead (or a corpse) it is a death; found alive it is an
+        // idle sighting, read only while no member fights (the encounter-end check: an evade has every one back at full
+        // health and out of combat). Never registered as a new member.
         std::vector<std::uint64_t> deadNow;
+        std::vector<LinkedMember> idle;
         for (std::uint64_t guid : LinkedDeathUnseen(latch, groupScan.members))
         {
             Unit* known = ai->GetUnit(ObjectGuid(guid));
             if (known && !known->IsAlive())
+            {
                 deadNow.push_back(guid);
+                continue;
+            }
+            if (!known || !groupScan.members.empty())
+                continue;
+            LinkedMember member;
+            member.guid = guid;
+            member.entry = known->GetEntry();
+            member.hpPct = static_cast<int>(known->GetHealthPercent());
+            member.inCombat = known->IsInCombat();
+            idle.push_back(member);
         }
         groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
-                                                 WorldTimer::getMSTime());
+                                                 WorldTimer::getMSTime(), idle);
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }

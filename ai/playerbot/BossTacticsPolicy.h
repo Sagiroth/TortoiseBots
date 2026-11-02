@@ -687,6 +687,7 @@ namespace ai
         std::uint32_t entry = 0; // the creature entry: the burn order names entries
         int hpPct = 100;
         bool attackable = true;
+        bool inCombat = false; // only read for the idle units of an encounter-end check (LinkedDeathEncounterEnded)
     };
 
     // Whether the group is released: fewer than two living members, or every one of them at or below `param` %. Then
@@ -751,8 +752,15 @@ namespace ai
     //   not seen (out of range, not cached) is never a death. Each death counts once.
     //   Cleared once every known member is confirmed dead, or `kLinkedDeathLatchMs` after the death, so a fight that
     //   cannot finish the trio goes back to the equalise hold instead of burning one member at a time forever.
+    //   Encounter end (no latch): the known set, armed and latch reset when no member fights and either every visible
+    //   member stands out of combat at full health (an evade) or no living member was seen for kLinkedDeathEndMs. So an
+    //   evade or a wipe does not leave old guids to block the next pull's arming; a respawn under new guids starts clean.
+    //   A known guid not seen for kLinkedDeathDropMs while the group is seen (a member despawned) is forgotten too. Within
+    //   those windows an unseen member still blocks the arming (fail safe).
     constexpr std::uint32_t kLinkedDeathLatchMs = 15000;
     constexpr std::uint32_t kLinkedDeathSeenMs = 5000;
+    constexpr std::uint32_t kLinkedDeathEndMs = 30000;
+    constexpr std::uint32_t kLinkedDeathDropMs = 60000;
     struct LinkedDeathKnown
     {
         std::uint64_t guid = 0;
@@ -809,12 +817,51 @@ namespace ai
         return unseen;
     }
 
+    // Whether the group's encounter has ended without a latch: no member of it fights (`members` empty), and either
+    // every visible unit out of combat (`idle`) stands at full health (an evade: the bosses reset), or, with none
+    // visible, no known living guid was seen for kLinkedDeathEndMs. An idle unit below full health, or still in combat,
+    // is a fight.
+    inline bool LinkedDeathEncounterEnded(const LinkedDeathLatch& latch, const std::vector<LinkedMember>& members,
+                                          const std::vector<LinkedMember>& idle, std::uint32_t nowMs)
+    {
+        if (!members.empty())
+            return false;
+        if (!idle.empty())
+        {
+            for (const LinkedMember& member : idle)
+                if (member.inCombat || member.hpPct < 100)
+                    return false;
+            return true;
+        }
+        for (const LinkedDeathKnown& known : latch.known)
+            if (!LinkedDeathHasGuid(latch.dead, known.guid) && nowMs - known.seenMs < kLinkedDeathEndMs)
+                return false;
+        return true;
+    }
+
+    // Forgets each known living guid not seen for kLinkedDeathDropMs: a member that despawned, not one that died (a
+    // dead guid is counted once and never blocks the arming). The caller runs it only while the group is seen.
+    inline void LinkedDeathDropStale(LinkedDeathLatch& latch, std::uint32_t nowMs)
+    {
+        for (auto it = latch.known.begin(); it != latch.known.end();)
+        {
+            if (!LinkedDeathHasGuid(latch.dead, it->guid) && nowMs - it->seenMs >= kLinkedDeathDropMs)
+                it = latch.known.erase(it);
+            else
+                ++it;
+        }
+    }
+
     // One read of the group updates the latch and answers whether it is on. `param`: the hold percent; `members`: the
-    // living members this read saw; `deadNow`: the LinkedDeathUnseen guids the caller found dead; `nowMs`: the world
-    // clock. The sightings are applied first (a member above `param` disarms, a low one re-arms once every other known
-    // member is fresh), then the deaths, and a death latches only when armed both before this read and after it.
+    // living members this read saw, in combat; `deadNow`: the LinkedDeathUnseen guids the caller found dead; `nowMs`:
+    // the world clock; `idle`: the known guids this read did not see fighting but found alive (read only when `members`
+    // is empty; `inCombat` marks one still fighting; a known guid's sighting, never a new registration). The sightings
+    // are applied first (a member above `param` disarms, a low one re-arms once every other known member is fresh), then
+    // the encounter end (resets the latch when it has ended, see LinkedDeathEncounterEnded) and the stale guids, then the
+    // deaths; a death latches only when armed both before this read and after it.
     inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
-                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs)
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
+                                     const std::vector<LinkedMember>& idle = std::vector<LinkedMember>())
     {
         for (const LinkedMember& member : members)
         {
@@ -836,8 +883,29 @@ namespace ai
             // A living member is no death: a raise undoes an earlier one, so its next death counts again.
             latch.dead.erase(std::remove(latch.dead.begin(), latch.dead.end(), member.guid), latch.dead.end());
         }
+        // An idle unit is a sighting of a known guid only (its health and time): an idle unit above param disarms it.
+        for (const LinkedMember& member : idle)
+        {
+            auto known = std::find_if(latch.known.begin(), latch.known.end(),
+                                      [&member](const LinkedDeathKnown& k) { return k.guid == member.guid; });
+            if (known == latch.known.end())
+                continue;
+            known->hpPct = member.hpPct;
+            known->seenMs = nowMs;
+        }
         if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
             latch.latched = false;
+        if (!latch.latched)
+        {
+            // An ended encounter forgets the whole fight (known, dead, armed): the next pull arms on its own guids.
+            if (LinkedDeathEncounterEnded(latch, members, idle, nowMs))
+            {
+                latch = LinkedDeathLatch();
+                return false;
+            }
+            if (!members.empty() || !idle.empty())
+                LinkedDeathDropStale(latch, nowMs);
+        }
         const bool armedBefore = latch.armed;
         std::vector<std::uint64_t> newDeaths;
         for (std::uint64_t guid : deadNow)

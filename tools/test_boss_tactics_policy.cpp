@@ -934,6 +934,77 @@ int main()
         CHECK(LinkedDeathLatchTick(raise, p, two, dead3, 2000 + kLinkedDeathLatchMs + 1000)); // 3 dies again
     }
 
+    // Encounter reset (Codex round 3): a stale guid must not block the arming forever. An evade (every visible member out
+    // of combat at full health) resets the known set, armed and latch, so respawned members under new guids arm on the
+    // next pull; a quiet group (no member seen for kLinkedDeathEndMs) resets too; a guid unseen for kLinkedDeathDropMs
+    // while the group is seen is forgotten (a despawn).
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> nobody;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+        const std::vector<LinkedMember> idleFull = { Linked(1, 100, false), Linked(2, 100, false) };
+
+        // Evade: 1 and 2 low and armed, then both leave combat at full health. The reset clears them.
+        LinkedDeathLatch evade;
+        CHECK(!LinkedDeathLatchTick(evade, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(LinkedDeathArmed(evade, p, 1000));
+        CHECK(!LinkedDeathLatchTick(evade, p, nobody, none, 2000, idleFull));
+        CHECK(evade.known.empty());
+        CHECK(!evade.armed);
+        CHECK(!evade.latched);
+        // The respawn under new guids 4 and 5 arms on the next pull; the death of 4 latches the burn.
+        CHECK(!LinkedDeathLatchTick(evade, p, { Linked(4, 2), Linked(5, 2) }, none, 60000));
+        CHECK(LinkedDeathArmed(evade, p, 60000));
+        CHECK(LinkedDeathLatchTick(evade, p, { Linked(5, 2) }, { 4 }, 61000));
+        CHECK(evade.deadGuid == 4);
+
+        // An idle unit below full health is a fight, not an evade: nothing resets, the known guids stay.
+        LinkedDeathLatch wiped;
+        CHECK(!LinkedDeathLatchTick(wiped, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(wiped, p, nobody, none, 2000, { Linked(1, 2, false), Linked(2, 100, false) }));
+        CHECK(wiped.known.size() == 2);
+        CHECK(!LinkedDeathArmed(wiped, p, 2000)); // 2 is idle at 100 %, a known sighting above param: disarmed
+
+        // A known unit at full health that still fights (out of this bot's view, so not a member) is no evade either.
+        LinkedDeathLatch stillFights;
+        CHECK(!LinkedDeathLatchTick(stillFights, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        std::vector<LinkedMember> fighting = { Linked(1, 100, false), Linked(2, 100, false) };
+        fighting[1].inCombat = true;
+        CHECK(!LinkedDeathLatchTick(stillFights, p, nobody, none, 2000, fighting));
+        CHECK(stillFights.known.size() == 2);
+        CHECK(!LinkedDeathEncounterEnded(stillFights, nobody, fighting, 2000));
+
+        // Quiet group: no member in combat or idle, none seen for kLinkedDeathEndMs: the fight is gone, reset.
+        LinkedDeathLatch quiet;
+        CHECK(!LinkedDeathLatchTick(quiet, p, two, none, 1000));
+        CHECK(!LinkedDeathLatchTick(quiet, p, nobody, none, 1000 + kLinkedDeathEndMs - 1)); // 29 s: still the fight
+        CHECK(quiet.known.size() == 2);
+        CHECK(!LinkedDeathLatchTick(quiet, p, nobody, none, 1000 + kLinkedDeathEndMs));     // 30 s: ended
+        CHECK(quiet.known.empty());
+
+        // Despawn: guid 3 is never seen again while 1 and 2 are. Within kLinkedDeathSeenMs it is not blocking, then it
+        // blocks the arming (fail safe), and only after kLinkedDeathDropMs is it forgotten.
+        LinkedDeathLatch despawn;
+        CHECK(!LinkedDeathLatchTick(despawn, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 6500));                 // 3 out of sight for 5.5 s
+        CHECK(!LinkedDeathArmed(despawn, p, 6500));                                // blocks the arming (fail safe)
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 1000 + kLinkedDeathDropMs - 1));
+        CHECK(!LinkedDeathArmed(despawn, p, 1000 + kLinkedDeathDropMs - 1));       // still blocking at 59.999 s
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 1000 + kLinkedDeathDropMs));
+        CHECK(despawn.known.size() == 2);                                          // 3 forgotten at 60 s
+        CHECK(LinkedDeathArmed(despawn, p, 1000 + kLinkedDeathDropMs));
+        CHECK(LinkedDeathLatchTick(despawn, p, { Linked(2, 2) }, { 1 }, 1000 + kLinkedDeathDropMs + 1000));
+        CHECK(despawn.deadGuid == 1);
+
+        // Fail safe in a real fight: 3 unseen for 5.6 s while 1 dies in the same window. Not armed: no latch.
+        LinkedDeathLatch failsafe;
+        CHECK(!LinkedDeathLatchTick(failsafe, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(failsafe, p, { Linked(2, 2) }, { 1 }, 6600));
+        CHECK(!failsafe.latched);
+    }
+
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
     // dps it is down ~2.2-3 s after the release, and the death order is the row's. The core's raiser rule (7 s, then
     // the 8 s fallback) then sees every corpse's chosen raiser die before its check: no restore. The raid's old

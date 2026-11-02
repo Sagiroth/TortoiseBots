@@ -891,6 +891,14 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("groupScan.order = group.burnOrder;", fn)
         self.assertIn("groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);", fn)
         self.assertIn("LinkedDeathLatchTick(latch, groupScan.param, groupScan.members,", fn)
+        # Encounter end (Codex round 3): the idle sightings are the known guids' lookups, read only while no member fights,
+        # and never a grid search (the one site is HoldKillBlockersValue.cpp).
+        self.assertIn("member.inCombat = known->IsInCombat();", fn)
+        self.assertIn("if (!known || !groupScan.members.empty())", fn)
+        self.assertIn("WorldTimer::getMSTime(), idle);", fn)
+        self.assertIn("inline bool LinkedDeathEncounterEnded(", POLICY)
+        self.assertIn("inline void LinkedDeathDropStale(", POLICY)
+        self.assertIn("LinkedDeathLatch();\n                return false;", POLICY)
         # Deaths are explicit: a known guid this bot did not see living is looked up by guid, and only a unit found dead
         # (or a corpse) counts. A member count drop is never a death, so the count is not passed to the latch.
         self.assertIn("LinkedDeathUnseen(latch, groupScan.members)", fn)
