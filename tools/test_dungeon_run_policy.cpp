@@ -26059,7 +26059,8 @@ static Facts WedgedFacts(float xYd, float xDz)
 }
 
 // T1: X 41 yd out and 9 below the lead bot, in combat with it while the raid fights: no drop for 14 ticks past the
-// watch's first two, the drop on the next, then out of combat the summon on the next tick.
+// watch's first two, the drop on the next, then out of combat the summon on the next tick. The counts are absolute
+// (15 s + the watch's lag): a shorter kWedgedMs must drop inside the empty window and fail here.
 static void TestWedgedBelowInAFightDropsThenSummons()
 {
     DungeonPlan plan;
@@ -26076,7 +26077,7 @@ static void TestWedgedBelowInAFightDropsThenSummons()
         WalkOn(f);
         Tick(r, f);
     }
-    for (std::uint32_t i = 2; i < kWedgedMs / kTickMs + 1; ++i)
+    for (int i = 0; i < 14; ++i)
     {
         WalkOn(f);
         Tick(r, f);
@@ -26093,7 +26094,8 @@ static void TestWedgedBelowInAFightDropsThenSummons()
 }
 
 // T2: X 45 yd out (below the runaway's 100) and 56 above it, out of combat: no summon for 14 ticks past the move,
-// the summon on the next.
+// the summon on the next. The counts are absolute (15 s + the watch's lag): a shorter kWedgedMs must summon inside
+// the empty window and fail here.
 static void TestWedgedOutOfCombatBelowRunawayRangeIsSummoned()
 {
     DungeonPlan plan;
@@ -26102,7 +26104,7 @@ static void TestWedgedOutOfCombatBelowRunawayRangeIsSummoned()
     Facts f = WedgedFacts(45.0f, 56.0f);
     CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
     // The still watch opens X's clock on the move tick, so the summon lands a tick after kWedgedMs.
-    for (std::uint32_t i = 1; i < kWedgedMs / kTickMs; ++i)
+    for (int i = 1; i < 15; ++i)
     {
         WalkOn(f);
         CHECK(Tick(r, f).empty());
