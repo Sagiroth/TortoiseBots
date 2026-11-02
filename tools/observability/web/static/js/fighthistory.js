@@ -3,8 +3,8 @@
 // (GET /api/v1/combat/history/days, /api/v1/combat/history and /api/v1/combat/packs). Pure, no DOM, no fetch, no markup:
 // app.js renders what this returns; unit-tested by internal/commandersjs/fighthistory_check.js under node.
 // Nights are local: a night is the local day it starts, rolling over at 06:00 (a fight at 02:17 local on 2 Nov belongs
-// to the night of 1 Nov). The daemon keeps filing UTC days; the page fetches the UTC days a night spans (at most two)
-// and filters by time. Labels come from fixed English day and month tables, never the browser's locale.
+// to the night of 1 Nov). With tz the daemon groups the days rows by local night; the page sends its own zone and
+// fetches one night per request. Labels come from fixed English day and month tables, never the browser's locale.
 (function (root) {
   const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -39,8 +39,8 @@
     return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
   }
 
-  // The UTC days one local night's fights are filed under: the night runs 06:00 local to next 06:00 local, which always
-  // spans at most two UTC days, so fetching both covers the night.
+  // The night fetch of a daemon that predates the night grouping: the night runs 06:00 local to next 06:00 local, which
+  // always spans at most two UTC day files, so fetching both covers the night.
   function nightDays(night) {
     const p = parts(night);
     if (!p) return [];
@@ -81,15 +81,17 @@
   // The night picker's options: Tonight first, then the stored nights newest first. Tonight is the current local night:
   // the rail draws it with the live list on top, so it is not listed a second time (its count belongs in the label).
   // A future night, or one that is not strict or not real, is skipped; a night is listed once. Labels say "(night)" so a
-  // 02:17 fight reads under the evening it belongs to, e.g. "Sun 1 Nov (night)".
+  // 02:17 fight reads under the evening it belongs to, e.g. "Sun 1 Nov (night)". The rows come from the daemon's night
+  // grouping (tz set) or the old UTC day rows, both read here as nights.
   function dayOptions(daysJson, todayMs) {
     const out = [{ value: "", label: "Tonight" }];
     const tonight = nightOf(todayMs);
-    const list = daysJson && Array.isArray(daysJson.days) ? daysJson.days : [];
+    const list = daysJson && Array.isArray(daysJson.nights) ? daysJson.nights :
+      (daysJson && Array.isArray(daysJson.days) ? daysJson.days : []);
     const seen = {};
     list.forEach((r) => {
       if (!r) return;
-      const day = String(r.day || "");
+      const day = String(r.night || r.day || "");
       if (seen[day]) return;
       seen[day] = true;
       if (tonight && day > tonight) return;
@@ -104,7 +106,7 @@
       if (tonight && (day >= tonight)) return;
       const p = parts(day);
       if (!p) return;
-      const hit = list.find((r) => r && String(r.day || "") === day);
+      const hit = list.find((r) => r && String(r.night || r.day || "") === day);
       const n = num(hit && hit.fights) || 0;
       rows.push({
         value: day,
@@ -168,6 +170,6 @@
     };
   }
 
-  const api = { dayOptions, packTable, whenLabel, dayOf, rowDay, nightOf, nightDays, nightLabel };
+  const api = { dayOptions, packTable, whenLabel, dayOf, rowDay, nightOf, nightDays, nightLabel, NIGHT_ROLLOVER_H };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightHistory = api;
 })(typeof self !== "undefined" ? self : this);

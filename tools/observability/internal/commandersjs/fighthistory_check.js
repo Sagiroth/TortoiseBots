@@ -40,10 +40,10 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 // "Wed 28 Oct (night)": a 02:17 fight belongs to the evening it started. TODAY is noon UTC and the Go test pins TZ=UTC, so
 // tonight is the 29th whatever box runs the suite.
 const TODAY = Date.UTC(2026, 9, 29, 12, 0, 0);
-const DAYS = { days: [
-  { day: "2026-10-29", fights: 9 },
-  { day: "2026-10-28", fights: 12 },
-  { day: "2026-10-27", fights: 1 },
+const DAYS = { nights: [
+  { night: "2026-10-29", fights: 9, first: 1, last: 2 },
+  { night: "2026-10-28", fights: 12, first: 1, last: 2 },
+  { night: "2026-10-27", fights: 1, first: 1, last: 1 },
 ] };
 assert.deepStrictEqual(plain(FH.dayOptions(DAYS, TODAY)), [
   { value: "", label: "Tonight · 9 fights" },
@@ -52,11 +52,11 @@ assert.deepStrictEqual(plain(FH.dayOptions(DAYS, TODAY)), [
 ], "one entry per night, newest first, today's count on Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-30", fights: 2 }, { day: "2026-10-29", fights: 3 }] }, TODAY)),
   [{ value: "", label: "Tonight · 3 fights" }],
-  "a future night is not offered, tonight's is merged into Tonight");
+  "a future night is not offered, tonight's is merged into Tonight (old UTC rows still read as nights)");
 assert.deepStrictEqual(plain(FH.dayOptions(null, TODAY)), [{ value: "", label: "Tonight" }], "a history that is off still offers Tonight");
-assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-13-01", fights: 2 }, { day: "bad", fights: 2 }] }, TODAY)),
+assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-13-01", fights: 2 }, { night: "bad", fights: 2 }] }, TODAY)),
   [{ value: "", label: "Tonight" }], "a malformed night is not offered");
-assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-28", fights: 1 }, { day: "2026-10-28", fights: 4 }] }, TODAY)),
+assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-10-28", fights: 1 }, { night: "2026-10-28", fights: 4 }] }, TODAY)),
   [{ value: "", label: "Tonight" }, { value: "2026-10-28", label: "Wed 28 Oct (night) · 1 fight" }], "a night is listed once");
 
 // A pack row's night as the picker's value: tonight is Tonight (the current live list), an older night keeps its own night.

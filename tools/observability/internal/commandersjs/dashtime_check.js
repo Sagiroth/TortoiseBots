@@ -28,7 +28,7 @@ vm.createContext(ctx);
 vm.runInContext(histSrc, ctx, { filename: "fighthistory.js" });
 assert.ok(ctx.FightHistory && typeof ctx.FightHistory.whenLabel === "function", "fighthistory.js loads as the global FightHistory");
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fmtClock"), grab("feedClock"), grab("counterWindow"), grabOpt("fmtHM"),
-  grab("fdTodayDay"), grab("fdDayFights"), grabOpt("fdNightFights"), grab("fdHistFetch"), "var FD_HIST_MS = 10000;",
+  grab("fdTodayDay"), grab("fdNightParams"), grab("fdNightFights"), grab("fdHistFetch"), "var FD_HIST_MS = 10000;",
   "var state = { activity: { summary: { since: 1793569896, since_str: '2026-11-01 21:51:36' } } };",
   "var FightHistory = this.FightHistory;",
 ].join("\n"), ctx, { filename: "app.js" });
@@ -66,7 +66,7 @@ assert.ok(!/a\.time_str \|\|/.test(src), "the incident table never reads the dae
 // The night labels come from fixed English tables, never a locale API.
 assert.ok(!/toLocale|Intl\.|localeCompare/.test(histSrc), "no locale API in the night labels");
 
-// ---- 3. nights roll over at 06:00 local; the server keeps its UTC day files -----------------------------------------
+// ---- 3. nights are grouped by the daemon from the page's own zone ---------------------------------------------------
 // A fight at 02:17 local on 2 Nov belongs to the night of 1 Nov; at 07:00 it belongs to 2 Nov.
 const NIGHT0217 = Math.floor(Date.UTC(2026, 10, 2, 1, 17, 0) / 1000); // 02:17 Oslo 2 Nov
 const NIGHT0700 = Math.floor(Date.UTC(2026, 10, 2, 6, 0, 0) / 1000); // 07:00 Oslo 2 Nov
@@ -74,51 +74,45 @@ assert.strictEqual(FH.nightOf(NIGHT0217 * 1000), "2026-11-01", "02:17 belongs to
 assert.strictEqual(FH.nightOf(NIGHT0700 * 1000), "2026-11-02", "07:00 belongs to its own night");
 assert.strictEqual(FH.nightOf(NIGHT0700 * 1000 - 3601000), "2026-11-01", "05:59:59 still belongs to the night before");
 assert.strictEqual(FH.nightOf(""), "", "no time is no night");
-// Tonight is the current local night; a past night is labelled "(night)".
-const tonightOpts = plain(FH.dayOptions({ days: [
-  { day: "2026-11-01", fights: 9 },
-  { day: "2026-10-31", fights: 2 },
+// Tonight is the current local night; a past night is labelled "(night)". The rows come from the daemon's night grouping.
+const tonightOpts = plain(FH.dayOptions({ nights: [
+  { night: "2026-11-01", fights: 9, first: NIGHT0217 - 3600, last: NIGHT0217 },
+  { night: "2026-10-31", fights: 2, first: 1, last: 2 },
 ] }, NIGHT0217 * 1000));
 assert.deepStrictEqual(tonightOpts, [
   { value: "", label: "Tonight · 9 fights" },
   { value: "2026-10-31", label: "Sat 31 Oct (night) · 2 fights" },
 ], "Tonight is the local night, labelled so: " + JSON.stringify(tonightOpts));
-assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-11-05", fights: 2 }] }, NIGHT0217 * 1000)),
+assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-11-05", fights: 2 }] }, NIGHT0217 * 1000)),
   [{ value: "", label: "Tonight" }], "a future night is not offered");
 assert.strictEqual(FH.rowDay("2026-11-01", NIGHT0217 * 1000), "", "a fight of tonight opens the current list");
 assert.strictEqual(FH.rowDay("2026-10-31", NIGHT0217 * 1000), "2026-10-31", "an older night keeps its night");
-// A night that spans midnight UTC is fetched as the UTC days it covers; the server files stay UTC days.
-assert.deepStrictEqual(plain(FH.nightDays("2026-11-01")), ["2026-11-01", "2026-11-02"],
-  "the 1 Nov night spans the two UTC days it covers");
-assert.deepStrictEqual(plain(FH.nightDays("bad")), [], "a malformed night fetches nothing");
 const goHistory = fs.readFileSync(path.join(__dirname, "../history/history.go"), "utf8");
+assert.ok(/time\.Unix\(start, 0\)\.In\(loc\)\.Add\(-time\.Duration\(rollover\) \* time\.Hour\)/.test(goHistory), "the server groups the nights");
 assert.ok(/time\.Unix\(start, 0\)\.UTC\(\)\.Format\(dayLayout\)/.test(goHistory), "the server still files nights as UTC days");
-
 (async () => {
-  // fdNightFights asks the daemon for those UTC days, keeps only the night's fights, newest first.
-  const rowsByDay = {
+  // fdNightFights asks the daemon for the one night; the grouping already happened server-side.
+  const rowsByNight = {
     "2026-11-01": [
-      { key: "a", start: Math.floor(Date.UTC(2026, 10, 1, 22, 0, 0) / 1000), dur: 60000 }, // 23:00 local, the night's own
-      { key: "early", start: Math.floor(Date.UTC(2026, 10, 1, 4, 0, 0) / 1000), dur: 60000 }, // 05:00 local, the night before
-    ],
-    "2026-11-02": [
       { key: "b", start: Math.floor(Date.UTC(2026, 10, 2, 3, 0, 0) / 1000), dur: 60000 }, // 04:00 local, still the night
+      { key: "a", start: Math.floor(Date.UTC(2026, 10, 1, 22, 0, 0) / 1000), dur: 60000 }, // 23:00 local, the night's own
     ],
   };
   run("var fetchUrls = [];");
-  run("function fetch(u) { fetchUrls.push(u); const day = /day=(\\d{4}-\\d{2}-\\d{2})/.exec(u)[1]; return Promise.resolve({ ok: true, json: () => Promise.resolve(byDay[day] || []) }); }", { byDay: rowsByDay });
+  run("function fetch(u) { fetchUrls.push(u); const night = /night=(\\d{4}-\\d{2}-\\d{2})/.exec(u)[1]; return Promise.resolve({ ok: true, json: () => Promise.resolve(byNight[night] || []) }); }", { byNight: rowsByNight });
   run("function jsonOrThrow(r) { if (!r || r.ok === false) throw new Error('http'); return r.json(); }");
   run("var FightHistory = this.FightHistory;", {});
   const fd = { hist: {}, histPending: {} };
   let got = "unset";
   run("fdNightFights(fd, { commander: 'G' }, '2026-11-01', (l) => { got = l; })", { fd, got: null });
   for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r));
-  assert.deepStrictEqual(plain(run("fetchUrls")),
-    ["/api/v1/combat/history?commander=G&day=2026-11-01", "/api/v1/combat/history?commander=G&day=2026-11-02"],
-    "one request per UTC day the night spans: " + JSON.stringify(plain(run("fetchUrls"))));
-  assert.deepStrictEqual(plain(run("got")).map((r) => r.key), ["b", "a"],
-    "the night's fights newest first, the neighbour night's early fight filtered out");
+  const urls = plain(run("fetchUrls"));
+  assert.strictEqual(urls.length, 1, "one request for the night: " + JSON.stringify(urls));
+  assert.ok(/night=2026-11-01/.test(urls[0]) && /tz=/.test(urls[0]) && /rollover=6/.test(urls[0]),
+    "the night fetch carries the zone and the rollover: " + urls[0]);
+  assert.deepStrictEqual(plain(run("got")).map((r) => r.key), ["b", "a"], "the night's fights, newest first");
   assert.ok(/fdNightFights\(fd, bind, fd\.day, /.test(src), "a chosen night loads through fdNightFights");
   assert.ok(/fdNightFights\(fd, bind, tonight, /.test(src), "Tonight's whole night loads through fdNightFights");
+  assert.ok(/fdNightParams\(\)/.test(src) && /resolvedOptions\(\)\.timeZone/.test(src), "the page sends its own zone");
   console.log("dashboard dates ok");
 })().catch((e) => { console.error(e); process.exit(1); });

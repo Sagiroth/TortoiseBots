@@ -8281,15 +8281,28 @@
     return Math.max(1, since - (since % 60));
   }
 
+  // The night params every night fetch carries: the browser's zone and the 06:00 rollover, so the daemon groups the
+  // days and the fights by the viewer's own local night. Empty when the browser names no zone: the daemon then answers
+  // the old UTC day rows, which dayOptions reads as nights.
+  function fdNightParams() {
+    let tz = "";
+    try {
+      tz = typeof Intl !== 'undefined' ? (Intl.DateTimeFormat().resolvedOptions().timeZone || '') : '';
+    } catch (e) { tz = ''; }
+    if (typeof tz !== 'string' || !tz) return '';
+    const roll = (typeof FightHistory !== 'undefined' && FightHistory.NIGHT_ROLLOVER_H) || 6;
+    return '&tz=' + encodeURIComponent(tz) + '&rollover=' + encodeURIComponent(roll);
+  }
+
   // The stored nights for the picker: one request per card per 5 min, kept on the card. A chosen night the daemon no longer
   // lists (aged out) hands the picker back to Tonight.
   function fdDaysLoad(fd, bind, onLoaded) {
     const now = Date.now();
     if (fd.daysAt && now - fd.daysAt < FD_DAYS_MS) return;
     fd.daysAt = now;
-    fetch('/api/v1/combat/history/days?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(v => {
-      fd.days = v && Array.isArray(v.days) ? v.days : [];
-      if (fd.day && !fd.days.some(d => d && d.day === fd.day)) {
+    fetch('/api/v1/combat/history/days?commander=' + encodeURIComponent(bind.commander) + fdNightParams()).then(jsonOrThrow).then(v => {
+      fd.days = v && Array.isArray(v.nights) ? v.nights : (v && Array.isArray(v.days) ? v.days : []);
+      if (fd.day && !fd.days.some(d => d && (d.night === fd.day || d.day === fd.day))) {
         fd.day = '';
         fd.sel = null;
         fd.userSel = false;
@@ -8299,39 +8312,13 @@
     }).catch(() => { /* the picker keeps whatever it showed; Tonight always works */ });
   }
 
-  // One night's fights: the UTC days it spans (at most two), merged newest first and filtered to the night's own fights
-  // (06:00 local rollover). A chosen night keeps its list 10 s like a day's did, under 'night:<night>'.
+  // One night's fights from the daemon's night grouping, newest first. A chosen night keeps its list 10 s like a day's
+  // did, under 'night:<night>'.
   function fdNightFights(fd, bind, night, cb) {
     // The night is always a real YYYY-MM-DD (the chosen night, or tonight for Tonight).
     if (!night || typeof FightHistory === 'undefined') { if (cb) cb(null); return; }
-    const days = FightHistory.nightDays(night);
-    if (!days.length) { if (cb) cb(null); return; }
-    const ck = 'night:' + night;
-    const c = fd.hist[ck];
-    if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
-    if (fd.histPending[ck]) { if (cb) fd.histPending[ck].push(cb); return; }
-    const cbs = fd.histPending[ck] = cb ? [cb] : [];
-    const lists = [];
-    let left = days.length, failed = 0;
-    const done = () => {
-      let rows = [];
-      lists.forEach(l => { if (Array.isArray(l)) rows = rows.concat(l); });
-      if (failed === days.length && !c) rows = null;
-      else {
-        rows = rows.filter(r => r && FightHistory.nightOf(numOr0(r.start) * 1000) === night);
-        rows.sort((a, b) => (numOr0(b.start) - numOr0(a.start)) || (String(a.key) < String(b.key) ? -1 : 1));
-      }
-      fd.hist[ck] = { list: rows, at: Date.now() };
-      delete fd.histPending[ck];
-      cbs.forEach(f => { try { f(rows); } catch (e) { /* a drawing error must not strand the queue */ } });
-    };
-    days.forEach((day, i) => {
-      fdHistFetch(fd, bind, 'day:' + day, '&day=' + encodeURIComponent(day), list => {
-        lists[i] = list;
-        if (!Array.isArray(list)) failed += 1;
-        if (--left === 0) done();
-      });
-    });
+    fdHistFetch(fd, bind, 'night:' + night,
+      '&night=' + encodeURIComponent(night) + fdNightParams(), cb);
   }
 
   // A chosen past day's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
@@ -8535,7 +8522,7 @@
     // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
     const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
     const pickDay = () => {
-      const day = fd.days[0].day;
+      const day = fd.days[0].night || fd.days[0].day;
       fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(day, Date.now()) : day;
       fd.sel = null;
       fd.userSel = false;
