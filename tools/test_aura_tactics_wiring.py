@@ -28,6 +28,12 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
+TRIGGERS_H = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.h").read_text()
+ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
+TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
+TACTICS_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
+DPS_TARGET = (ROOT / "ai/playerbot/strategy/values/DpsTargetValue.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -172,6 +178,98 @@ class LinkedDeathWindowWiring(unittest.TestCase):
         self.assertIn("LinkedDeathWindowMs(group.windowSec)", scan)
         # The row's own window reaches the group, never the constant directly.
         self.assertNotIn("kLinkedDeathLatchMs)", scan)
+
+
+class DpsHoldWiring(unittest.TestCase):
+    def test_the_policy_holds_on_edges_and_caps_until_tank(self):
+        self.assertIn("inline bool DpsHoldBlinked(float lastX, float lastY, float x, float y, "
+                      "std::uint32_t dtMs)", POLICY)
+        self.assertIn("constexpr float kDpsHoldBlinkYd = 10.0f;", POLICY)
+        self.assertIn("constexpr std::uint32_t kDpsHoldBlinkMs = 1500;", POLICY)
+        self.assertIn("constexpr std::uint32_t kDpsHoldStaleMs = 600000;", POLICY)
+        tick = body(POLICY, "inline bool DpsHoldTick(", "\n    }\n")
+        # Every trigger is an edge, never a level: a cast that stays visible and an open band that stays open do not
+        # restart the hold on every read.
+        self.assertIn("in.engageEnabled && in.engaged && !state.engageSeen", tick)
+        self.assertIn("in.gateOpen && in.gateEnabled && !state.gateWasOpen", tick)
+        self.assertIn("in.castEnabled && in.castOrAuraSeen && !state.castSeen", tick)
+        self.assertIn("DpsHoldBlinked(state.lastX, state.lastY, in.x, in.y, nowMs - state.lastReadMs)", tick)
+        # until_tank cannot deadlock: the cap is 3 * param from the latest trigger.
+        self.assertIn("state.capMs = nowMs + 3 * holdMs;", tick)
+        self.assertIn("in.untilTank && !in.victimIsTank && nowMs < state.capMs", tick)
+        self.assertIn("CHECK(!DpsHoldTick(tank, in, 12000, nullptr));", POLICY_TEST)
+        self.assertIn("CHECK(!DpsHoldTick(spell, in, 3100, nullptr));", POLICY_TEST)
+
+    def test_the_action_and_trigger_are_registered_above_the_kill_first_pick(self):
+        self.assertIn('creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldAction(ai); };',
+                      ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics dps hold"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsDpsHoldTrigger(ai); };', TRIGGER_CONTEXT)
+        self.assertIn('"boss tactics dps hold",', TACTICS_STRATEGY)
+        self.assertIn('NextAction("boss tactics dps hold", ACTION_HIGH + 4)', TACTICS_STRATEGY)
+        self.assertLess(TACTICS_STRATEGY.index("ACTION_HIGH + 3"),
+                        TACTICS_STRATEGY.index("ACTION_HIGH + 4"))
+        action = body(ACTIONS, "bool BossTacticsDpsHoldAction::Execute(")
+        self.assertIn('AI_VALUE(Unit*, "current target")', action)
+        self.assertIn("!IsDpsHeld(ai, bot, current)", action)
+        # The stop is the hold-kill action's: the kill-first add stays allowed, else the pick is dropped and the
+        # attack stopped.
+        self.assertIn("FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot))", action)
+        self.assertIn('context->GetValue<Unit*>("current target")->Set(nullptr);', action)
+        self.assertIn('context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());', action)
+        self.assertIn("bot->AttackStop();", action)
+        trig = body(TRIGGERS, "bool BossTacticsDpsHoldTrigger::IsActive(")
+        self.assertIn("current && IsDpsHeld(ai, bot, current)", trig)
+        self.assertIn('BossTacticsDpsHoldTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dps hold", 1)',
+                      TRIGGERS_H)
+
+    def test_the_hold_is_gated_by_the_key_and_the_map_flag(self):
+        held = body(ACTIONS, "bool ai::IsDpsHeld(")
+        self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics || "
+                      "!GetBossTactics().HasAuraTacticMap(bot->GetMapId())", held)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !IsFreeDps(ai, bot)', held)
+        self.assertIn("BossTacticKind::DpsHoldAfter", held)
+        self.assertIn("ReadDpsHold(ai, bot, unit, row, bossUnit, &fired)", held)
+        # The target picker consults the hold beside the hold_kill rows, so every dps picker skips the subject.
+        target = body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")
+        self.assertIn("if (IsDpsHeld(ai, bot, unit))", target)
+        self.assertLess(target.index("IsDpsHeld"), target.index("BossTacticKind::HoldKill"))
+
+    def test_the_multiplier_vetoes_area_and_dot_on_a_held_subject(self):
+        self.assertIn("DpsHold,", ACTIONS)
+        helper = body(ACTIONS, "bool DpsHoldSubjectWithin(")
+        self.assertIn("BossTacticKind::DpsHoldAfter", helper)
+        self.assertIn("ReadDpsHold(ai, ai->GetBot(), subjectUnit, *row, bossUnit)", helper)
+        self.assertIn("around->GetDistance(subjectUnit) > maxDistance", helper)
+        held = body(ACTIONS, "HoldReason HeldSubjectWithin(")
+        self.assertIn("DpsHoldSubjectWithin(ai, around, fight, maxDistance, &held)", held)
+        self.assertIn("return HoldReason::DpsHold;", held)
+        multiplier = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(", "\n}\n")
+        self.assertIn("const bool auraHolds = sPlayerbotAIConfig.dungeonRunAuraTactics", multiplier)
+        self.assertIn("BossTacticKind::DpsHoldAfter", multiplier)
+        self.assertIn("const bool area = (holdsRows || dpsHoldRows) && IsAreaDamageAction(ai, action);", multiplier)
+
+    def test_the_hold_logs_one_row_per_trigger_and_bot(self):
+        log = body(ACTIONS, "void LogDpsHold(")
+        self.assertIn("g_dpsHoldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), key)]", log)
+        self.assertIn('snprintf(info1, sizeof(info1), "subject=%u", subject->GetEntry());', log)
+        self.assertIn('"trigger=%s,held_ms=%u"', log)
+        self.assertIn("DpsHoldTriggerName(trigger)", log)
+        read = body(ACTIONS, "bool ReadDpsHold(")
+        self.assertIn("if (held && IsFreeDps(ai, bot))", read)
+        self.assertIn("LogDpsHold(ai, bot, subject, row, lastTrigger, lastTriggerMs, key);", read)
+
+    def test_the_state_is_pruned_on_death_and_staleness(self):
+        prune = body(ACTIONS, "void PruneDpsHolds(")
+        self.assertIn("nowMs - it->second.lastReadMs > kDpsHoldStaleMs", prune)
+        self.assertIn("!subject->IsAlive()", prune)
+        self.assertIn("g_dpsHolds.erase(it)", prune)
+        read = body(ACTIONS, "bool ReadDpsHold(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_dpsHoldMutex);", read)
+        # The key is the map instance, the subject and the row's own key columns: one hold per band.
+        self.assertIn("std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), "
+                      "subject->GetObjectGuid().GetRawValue(),", ACTIONS)
+        self.assertIn("row.bossEntry, row.spellId, row.hpMin, row.hpMax)", ACTIONS)
 
 
 if __name__ == "__main__":
