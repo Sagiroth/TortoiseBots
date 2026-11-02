@@ -96,6 +96,12 @@ func TestFDTotalsJS(t *testing.T) {
 	runCheck(t, "fd_totals_check.js", "../../web/static/js/app.js")
 }
 
+// TestFDTotalsRenderJS runs fd_totals_render_check.js: renderFightDebug itself with a finished fight selected, once in
+// "This fight" and once in "Run total" mode (a fake fetch answering the totals), plus no selection and a live one.
+func TestFDTotalsRenderJS(t *testing.T) {
+	runCheck(t, "fd_totals_render_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightDebugUIJS runs fightdebug_ui_check.js: the Fight debugger's markup in app.js (frames, rail, checks, timeline,
 // recap, role tables, bot panel, map death marks) with the walk 2 fights and with names that would break the page.
 func TestFightDebugUIJS(t *testing.T) {

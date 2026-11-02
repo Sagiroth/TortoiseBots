@@ -8783,7 +8783,14 @@
 
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
     const guids = {};
-    (bind.bots || []).concat((fight && fight.bots) || []).forEach(b => { if (b && b.name && b.guid != null) guids[b.name] = b.guid; });
+    // The switch above the role tables: the live table keeps the rolling 10 s window (no switch there), "This fight" is the
+    // picked fight's own numbers, "Run total" the same tables from the run's sums (DPS and HPS over each bot's own fight time).
+    const totalsMode = !selLive && fight ? fdTotalsGet() : 'fight';
+    let totalsJson = null, totalsNote = '';
+    if (totalsMode === 'run') {
+      totalsJson = fdTotalsLoad(card, bind, fd, fdTotalsSinceMs(bind, fd, Date.now()));
+      if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the run total…' : 'The run total is not available right now.';
+    }
     let title = 'Fight';
     let chips = '';
     if (selLive) {
@@ -8840,14 +8847,6 @@
 
     cmdPaintBosses(card, selLive ? cmdLiveBossPanels(bind) : fight ? cmdFightBossPanels(bind, fight) : []);
 
-    // The switch above the role tables: the live table keeps the rolling 10 s window (no switch there), "This fight" is the
-    // picked fight's own numbers, "Run total" the same tables from the run's sums (DPS and HPS over each bot's own fight time).
-    const totalsMode = !selLive && fight ? fdTotalsGet() : 'fight';
-    let totalsJson = null, totalsNote = '';
-    if (totalsMode === 'run') {
-      totalsJson = fdTotalsLoad(card, bind, fd, fdTotalsSinceMs(bind, fd, Date.now()));
-      if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the run total…' : 'The run total is not available right now.';
-    }
     let tables = null;
     if (!selLive && fight) tables = totalsMode === 'run'
       ? (totalsJson ? FightDebug.runRoleTables(totalsJson, layout) : null)
