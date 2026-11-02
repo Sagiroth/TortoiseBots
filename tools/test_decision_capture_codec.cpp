@@ -14,6 +14,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <new>
 #include <string>
 
 #define CHECK(x) do { \
@@ -603,6 +604,66 @@ static void TestRowsOnMap()
     CHECK(EncodeTactics(nullptr, 309) == "{\"set\":false,\"rows\":[]}");
 }
 
+// A cached tactics text is keyed by the table's revision: a table destroyed and a changed table built at the same address
+// (placement new) must give the new table's text and hash, not the freed table's.
+static void TestTacticsAddressReuse()
+{
+    alignas(ai::BossTacticTable) unsigned char storage[sizeof(ai::BossTacticTable)];
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14517;
+    row.kind = ai::BossTacticKind::KillFirst;
+    row.targetEntry = 14532;
+
+    auto* first = new (storage) ai::BossTacticTable();
+    CHECK(first->Add(row));
+    first->Seal();
+    std::string const before = CachedTacticsText(first, 309);
+    std::string const hashBefore = CachedTacticsHash(first, 309);
+    CHECK(before == EncodeTactics(first, 309));
+    first->~BossTacticTable();
+
+    row.targetEntry = 14533;  // the reloaded table lists another target
+    auto* second = new (storage) ai::BossTacticTable();
+    CHECK(second == first);
+    CHECK(second->Add(row));
+    second->Seal();
+    CHECK(CachedTacticsText(second, 309) == EncodeTactics(second, 309));
+    CHECK(CachedTacticsText(second, 309) != before);
+    CHECK(CachedTacticsHash(second, 309) != hashBefore);
+    CHECK(CachedTacticsHash(second, 309) == Hex64(Fnv1a64(EncodeTactics(second, 309))));
+    second->~BossTacticTable();
+}
+
+// Destroying a plan table moves the generation the plan hash cache keys on; so does sealing (steps are sorted in place).
+// A plan rebuilt in freed memory with other steps is hashed from its own content.
+static void TestPlanTableGeneration()
+{
+    std::uint64_t const start = ai::DungeonPlanTableGeneration().load();
+    alignas(ai::DungeonPlanTable) unsigned char storage[sizeof(ai::DungeonPlanTable)];
+
+    auto* first = new (storage) ai::DungeonPlanTable();
+    CHECK(ai::DungeonPlanTableGeneration().load() == start);
+    CHECK(first->AddPlan("zul_gurub", 309));
+    CHECK(first->AddStep("zul_gurub", Step(PlanStepKind::Move, 1, 2)) == ai::PlanStepRefusal::None);
+    first->Seal();
+    CHECK(ai::DungeonPlanTableGeneration().load() == start + 1);
+    std::string const hashBefore = CachedPlanHash(first->Find("zul_gurub"));
+    CHECK(hashBefore == PlanHash(*first->Find("zul_gurub")));
+    first->~DungeonPlanTable();
+    CHECK(ai::DungeonPlanTableGeneration().load() == start + 2);
+
+    auto* second = new (storage) ai::DungeonPlanTable();
+    CHECK(second->AddPlan("zul_gurub", 309));
+    CHECK(second->AddStep("zul_gurub", Step(PlanStepKind::Move, 1, 3)) == ai::PlanStepRefusal::None);
+    second->Seal();
+    const ai::DungeonPlan* plan = second->Find("zul_gurub");
+    CHECK(plan != nullptr);
+    CHECK(CachedPlanHash(plan) == PlanHash(*plan));
+    CHECK(CachedPlanHash(plan) != hashBefore);
+    second->~DungeonPlanTable();
+}
+
 int main()
 {
     TestSamples();
@@ -616,6 +677,8 @@ int main()
     TestRecorderTickTime();
     TestDecodeErrors();
     TestRowsOnMap();
+    TestTacticsAddressReuse();
+    TestPlanTableGeneration();
     std::cout << "test_decision_capture_codec: ok\n";
     return 0;
 }

@@ -343,9 +343,11 @@ inline std::string PlanHash(const ai::DungeonPlan& plan)
 
 // A plan's hash, computed once per plan object. `run.plan` is encoded on every
 // tick and a plan has hundreds of steps, so hashing it there would be most of
-// the capture's cost; a sealed plan never changes and a reload builds a new
-// table, so the address identifies the content. Name, map and step count guard
-// against a recycled address.
+// the capture's cost. A sealed plan never changes; its address is trusted only
+// while no plan table has been destroyed or sealed since the entry was made
+// (DungeonPlanTableGeneration), because a reload frees the old table's plans and
+// their addresses can come back for a changed plan. Name, map and step count
+// guard the rest (plans not owned by a table, e.g. in tests).
 inline std::string CachedPlanHash(const ai::DungeonPlan* plan)
 {
     if (!plan)
@@ -354,31 +356,34 @@ inline std::string CachedPlanHash(const ai::DungeonPlan* plan)
     struct Entry
     {
         const ai::DungeonPlan* plan;
+        std::uint64_t generation;
         std::string name;
         std::uint32_t map;
         std::size_t steps;
         std::string hash;
     };
     thread_local std::vector<Entry> cache;
+    std::uint64_t const generation = ai::DungeonPlanTableGeneration().load(std::memory_order_acquire);
     for (const Entry& entry : cache)
     {
-        if (entry.plan == plan && entry.map == plan->map && entry.steps == plan->steps.size() &&
-            entry.name == plan->name)
+        if (entry.plan == plan && entry.generation == generation && entry.map == plan->map &&
+            entry.steps == plan->steps.size() && entry.name == plan->name)
             return entry.hash;
     }
 
     std::string hash = PlanHash(*plan);
+    Entry const fresh{plan, generation, plan->name, plan->map, plan->steps.size(), hash};
     for (Entry& entry : cache)
     {
         if (entry.plan == plan)
         {
-            entry = Entry{plan, plan->name, plan->map, plan->steps.size(), hash};
+            entry = fresh;
             return hash;
         }
     }
     if (cache.size() >= 64)
         cache.erase(cache.begin());
-    cache.push_back(Entry{plan, plan->name, plan->map, plan->steps.size(), hash});
+    cache.push_back(fresh);
     return hash;
 }
 
@@ -412,8 +417,9 @@ inline std::string EncodeTactics(const ai::BossTacticTable* table, std::uint32_t
     return out;
 }
 
-// The encoded tactics of one table on one map, computed once per (table, map):
-// the segment header and the per-tick change check share it.
+// The encoded tactics of one table on one map, computed once per (table revision, map):
+// the segment header and the per-tick change check share it. Keyed by revision, not
+// address: a freed table's address can come back for a changed table.
 inline std::string CachedTacticsText(const ai::BossTacticTable* table, std::uint32_t map)
 {
     if (!table)
@@ -421,19 +427,20 @@ inline std::string CachedTacticsText(const ai::BossTacticTable* table, std::uint
 
     struct Entry
     {
-        const ai::BossTacticTable* table;
+        std::uint64_t revision;
         std::uint32_t map;
         std::string text;
     };
     thread_local std::vector<Entry> cache;
+    std::uint64_t const revision = table->Revision();
     for (const Entry& entry : cache)
-        if (entry.table == table && entry.map == map)
+        if (entry.revision == revision && entry.map == map)
             return entry.text;
 
     std::string text = EncodeTactics(table, map);
     if (cache.size() >= 64)
         cache.erase(cache.begin());
-    cache.push_back(Entry{table, map, text});
+    cache.push_back(Entry{revision, map, text});
     return text;
 }
 

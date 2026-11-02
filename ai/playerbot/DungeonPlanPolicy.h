@@ -589,9 +589,20 @@ namespace ai
         return PlanStepRefusal::None;
     }
 
+    // Count of plan tables destroyed so far. A destroyed table's plan objects give their addresses to the next table's,
+    // so the decision capture's address-keyed plan hash cache drops its entries when this moves (DungeonPlanTable's
+    // destructor).
+    inline std::atomic<std::uint64_t>& DungeonPlanTableGeneration()
+    {
+        static std::atomic<std::uint64_t> generation{0};
+        return generation;
+    }
+
     class DungeonPlanTable
     {
     public:
+        ~DungeonPlanTable() { DungeonPlanTableGeneration().fetch_add(1, std::memory_order_acq_rel); }
+
         // Loading only. False after the seal or for a plan name already there
         // (the first row wins, as under the primary key).
         bool AddPlan(const std::string& name, std::uint32_t map)
@@ -756,6 +767,8 @@ namespace ai
                     if (step.kind == PlanStepKind::Boss && step.entry)
                         bossEntries_.insert(BossKey(entry.second.map, step.entry));
             }
+            // Steps were sorted in place: a plan hash cached before the seal (unsorted) must not be served after it.
+            DungeonPlanTableGeneration().fetch_add(1, std::memory_order_acq_rel);
             sealed_.store(true, std::memory_order_release);
         }
 

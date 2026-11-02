@@ -80,9 +80,21 @@ namespace ai
         return row.targetEntry ? row.targetEntry : row.bossEntry;
     }
 
+    // A table's revision: unique for the process, assigned when the table is constructed. A freed table's address can
+    // come back for a changed table, so a cache of the table's content keys on the revision, never on the address.
+    inline std::uint64_t NextBossTacticRevision()
+    {
+        static std::atomic<std::uint64_t> counter{0};
+        return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+
     class BossTacticTable
     {
     public:
+        BossTacticTable() : revision_(NextBossTacticRevision()) {}
+
+        std::uint64_t Revision() const { return revision_; }
+
         // Loading only. False after Seal(), for an unusable row, or when the
         // (map, boss, kind, target, spell) key is already there: the first row
         // wins, as it would under the table's primary key.
@@ -126,7 +138,13 @@ namespace ai
             return true;
         }
 
-        void Seal() { sealed_.store(true, std::memory_order_release); }
+        // The seal opens the table to readers. The revision moves here too, so a content read taken before the seal
+        // (empty rows) is never served for the sealed table.
+        void Seal()
+        {
+            revision_ = NextBossTacticRevision();
+            sealed_.store(true, std::memory_order_release);
+        }
         bool Sealed() const { return sealed_.load(std::memory_order_acquire); }
         std::size_t Size() const { return size_; }
 
@@ -196,6 +214,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> holdMaps_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
+        std::uint64_t revision_;
     };
 
     // Activation gate. The tactics change how bots play, so they are not on for
