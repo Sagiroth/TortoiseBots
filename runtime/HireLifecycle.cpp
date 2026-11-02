@@ -2,6 +2,7 @@
 #include "HireLifecycle.h"
 #include "HireProvisionService.h"
 #include "BotManager.h"
+#include "BotGearService.h"
 #include "BotActivityLease.h"
 #include "CharacterCleanup.h"
 #include "runtime/policy/hire/HireDeletionPolicy.h"
@@ -551,6 +552,7 @@ bool HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
 
     TB_LOG_BASIC("TortoiseBots: hired bot %s dismissed (%s); logging off for deletion",
         record.botGuid.GetString().c_str(), reason ? reason : "released");
+    BotGearService::Instance().UnpinBot(botGuidLow);
     BotManager::Instance().RemoveBot(record.botGuid, false);
     m_dismissing.erase(botGuidLow);
     return deletionDurable;

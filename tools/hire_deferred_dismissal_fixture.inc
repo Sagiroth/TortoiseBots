@@ -97,6 +97,10 @@ struct BotManager {
 #endif
  }
 };
+struct BotGearService {
+ static BotGearService& Instance() { static BotGearService value; return value; }
+ void UnpinBot(unsigned) {}
+};
 bool HireLifecycle::LedgerRow(ObjectGuid, uint32_t& id) const { id = 1; return true; }
 bool HireLifecycle::QueueDeletion(uint32_t, uint32_t, char const*) { return true; }
 // PRODUCTION_METHODS
