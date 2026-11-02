@@ -1121,9 +1121,9 @@ float TotemDispelRadius(SpellEntry const* totemSpell)
         {
             if (pulse->Effect[j] != SPELL_EFFECT_DISPEL)
                 continue;
-            float const radius = pulse->GetSpellRadius(sSpellRadiusStore.LookupEntry(pulse->EffectRadiusIndex[j]));
-            if (radius > 0.0f)
-                return radius;
+            SpellRadiusEntry const* entry = sSpellRadiusStore.LookupEntry(pulse->EffectRadiusIndex[j]);
+            if (entry && entry->Radius > 0.0f)
+                return entry->Radius;
         }
     }
     return kDispelSafetyYd;
