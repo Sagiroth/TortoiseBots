@@ -38,7 +38,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("paintSeg"), grab("bindSeg"),
-  grab("fdTotalsSegHtml"), grab("fdTotalsGet"), grab("fdTotalsSet"), grab("fdTotalsSinceMs"), grab("fdTotalChipsHtml"),
+  grab("fdTotalsSegHtml"), grab("fdTotalsGet"), grab("fdTotalsSet"), grab("fdTotalsSinceMs"), grab("fdTotalsSession"), grab("fdTotalChipsHtml"),
   grab("fdWindowStart"), grab("fdLiveTableHtml"), grab("fdRolesHtml"),
   grabConst("FD_TOTALS_KEY"), grabConst("FD_TOTALS_MS"), grabConst("FD_WINDOW_S"),
   "var fdTotalsMem = null;",
@@ -142,6 +142,15 @@ assert.strictEqual(run("fdTotalsSinceMs(bind, fd, now)", {
 }), 7000 * 1000, "a history card's first fight start");
 assert.ok(run("fdTotalsSinceMs(bind, fd, now)", { bind: { bound_at: 0 }, fd: { day: "2026-10-26", list: [] }, now: NOW }) > 0,
   "an empty past night falls back to the window");
+assert.strictEqual(run("fdTotalsSession(bind, fd, list, sel)", {
+  bind: {}, fd: {}, list: [], sel: { session: 7 },
+}), 7, "the selected fight's session is the run");
+assert.strictEqual(run("fdTotalsSession(bind, fd, list, sel)", {
+  bind: {}, fd: {}, list: [{ session: 7, start: 1000 }, { session: 8, start: 2000 }], sel: null,
+}), 8, "live: the bound run's current session is the newest row's");
+assert.strictEqual(run("fdTotalsSession(bind, fd, list, sel)", {
+  bind: {}, fd: {}, list: [], sel: null,
+}), "", "no rows and no selection: no session to ask for");
 
 // ---- the live table and live chips keep the 10 s window: no switch, no totals ----------------------------------------------
 const liveHtml = run("fdLiveTableHtml(rows, null, 10)", { rows: [{ name: "Pew", dps: 10, hps: 5, casts: 1, last: "Fireball" }] });
@@ -149,6 +158,7 @@ assert.ok(liveHtml.includes("Live, last 10 s"), "the caption is unchanged: " + l
 assert.ok(!liveHtml.includes("data-fd-totals") && !liveHtml.includes("Run total"), "no switch on the live table");
 assert.ok(!/totals/i.test(grab("fdLiveTableHtml")), "the live table builder knows no totals");
 assert.ok(/\/api\/v1\/combat\/run-totals\?commander=/.test(src), "Run total fetches the run-totals route");
+assert.ok(/run-totals\?commander=.*&session=/.test(src), "Run total sends the selected fight's session");
 assert.ok(/fdTotalsSegHtml\(totalsMode\)/.test(src), "the seg paints every render");
 assert.ok(!/fdTotalsSegHtml|fdTotalChipsHtml|runRoleTables/.test(grab("fdLiveTableHtml")), "live rendering stays out of it");
 

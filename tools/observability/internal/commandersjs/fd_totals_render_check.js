@@ -31,7 +31,7 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "cmdBossTable", "cmdBossPanels", "cmdPaintBosses", "cmdLiveBossPanels", "cmdFightBossPanels", "cmdTrashBlockHtml",
   "fdState", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
   "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
-  "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdWindowStart", "fdTotalsSinceMs", "fdTotalsLoad",
+  "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdWindowStart", "fdTotalsSinceMs", "fdTotalsSession", "fdTotalsLoad",
   "fdTotalChipsHtml", "fdTotalsSegHtml", "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
   "fdRunModel", "fdRunPct", "fdRunClock", "fdRunT", "fdRunWindow", "fdRunCoverage", "fdRunHtml", "fdRunPlayHtml",
   "fdRunPlaySync", "fdRunSync", "fdRunLoad", "fdRunStop", "fdRunStopAll",
@@ -106,7 +106,7 @@ const fights = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "walk
 const F54 = fights.find((f) => f.id === "5-4");
 // Newest first, like GET /api/v1/combat/fights.
 const ROWS = fights.map((f) => ({
-  key: f.id, dur: f.dur_ms, step: f.step, deaths: (f.deaths || []).length, boss_name: f.boss_name, start: f.start,
+  key: f.id, session: 7, dur: f.dur_ms, step: f.step, deaths: (f.deaths || []).length, boss_name: f.boss_name, start: f.start,
 }));
 const DETAILS = {};
 fights.forEach((f) => { DETAILS[f.id] = { fight: f, warnings: [] }; });
