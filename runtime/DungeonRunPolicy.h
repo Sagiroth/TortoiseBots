@@ -14021,6 +14021,26 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         (!hold && r.fightOrders >= kGuardOrdersFightCap) ||
         ((r.guardOrders > 0 || (!hold && r.fightOrders > 0)) && r.guardSinceOrderMs < kGuardRepeatMs))
         return false;
+    // A raid trash fight's healer guard add (RaidHealerGuard): the ranged dps take it, and the off-tanks only when
+    // none is free for it (RaidGuardTick's rule). Never the main tank, which holds its target (RaidHealerGuardOn):
+    // with no off-tank free for it the add is left where it hits. Both decisions come before the counters and clocks
+    // below, so an add the dps cover costs no order budget; the guard's own orders count in healerGuardOrders.
+    bool const healerGuardAdd = !hold && u && u->victimHealer && !u->victimLead && RaidHealerGuardOn(r, f, true);
+    if (healerGuardAdd &&
+        (r.healerGuardDps.count(u->guid) || HealerGuardHasFreeDps(r, f, *u, HealerGuardTaken(r))))
+        return false;
+    // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
+    // main tank keeps its stand (no guardReturn): the mob is on a healer or a
+    // DPS, not on the lead bot. An off-tank holding its own add is kept there
+    // (RaidTrashOffTankHolds): the round robin passes it over.
+    bool const trashOffTank = !hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead;
+    std::vector<const std::string*> free;
+    if (trashOffTank)
+        for (const std::string& name : f.raid.offTanksAlive)
+            if (!RaidTrashOffTankHolds(f, name))
+                free.push_back(&name);
+    if (healerGuardAdd && free.empty())
+        return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
     ++r.guardOrders;
@@ -14029,30 +14049,14 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         ++r.fightOrders;
         ++r.guardUnitOrders[u->guid];
     }
-    // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
-    // main tank keeps its stand (no guardReturn): the mob is on a healer or a
-    // DPS, not on the lead bot.
-    if (!hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead)
+    if (trashOffTank && !free.empty())
     {
-        // The healer guard's add: the ranged dps take it, and the off-tanks only when none is free for it
-        // (RaidHealerGuard, RaidGuardTick's rule).
-        if (RaidHealerGuardOn(r, f, true) && u->victimHealer &&
-            (r.healerGuardDps.count(u->guid) || HealerGuardHasFreeDps(r, f, *u, HealerGuardTaken(r))))
-            return false;
-        // An off-tank holding its own add is kept there (RaidTrashOffTankHolds): the round robin passes it over.
-        std::vector<const std::string*> free;
-        for (const std::string& name : f.raid.offTanksAlive)
-            if (!RaidTrashOffTankHolds(f, name))
-                free.push_back(&name);
-        if (!free.empty())
-        {
-            std::string const& offTank = *free[r.offTankTurn++ % free.size()];
-            r.note = "fighting: off-tank " + offTank + " picks up " + std::to_string(u->entry) + " off " +
-                (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) +
-                " yd)" + RefillNote(r);
-            order = "attack " + std::to_string(u->guid) + " " + offTank;
-            return true;
-        }
+        std::string const& offTank = *free[r.offTankTurn++ % free.size()];
+        r.note = "fighting: off-tank " + offTank + " picks up " + std::to_string(u->entry) + " off " +
+            (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) +
+            " yd)" + RefillNote(r);
+        order = "attack " + std::to_string(u->guid) + " " + offTank;
+        return true;
     }
     if (hold)
     {
