@@ -16111,6 +16111,111 @@ static void TestStandClearanceKeepsOffOtherPacksOnly()
     CHECK(InPullPack(alone, 31, 0) && InPullPack(alone, 15, 100) && !InPullPack(alone, 32, 32));
 }
 
+// The clearance on an authored stand-pull step (kPlanFlagStandPull, the Mar'li shape): the glue reads that step's
+// shot range whatever AiPlayerbot.DungeonRunPullStand says (StandThisStep), and a stand read for the step's pull is
+// clearance-checked like any other. The key off: today's pick, the reach's own point, and no other pack read. The
+// policy side: the step's static unit out of the shot leaves the row to the plain pull, and that pull's stand (the
+// pull stand on) is the one the clearance picks; a refused read orders the pull from where the tank stands, with its
+// note.
+static void TestStandClearanceCoversTheAuthoredStandPull()
+{
+    using ai::ApproachPoint;
+    auto P = [](float x, float y) { ApproachPoint p; p.x = x; p.y = y; return p; };
+    ApproachPoint const unit = P(0, 0);
+    auto seesAll = [](const ApproachPoint&) { return true; };
+    float const range = 24.5f;
+    // The tank 70 yd out; the path's first point in shot at P1, the next at P2, both in range and in sight.
+    std::vector<ApproachPoint> const path = {P(-70, 0), P(-24.5f, 0), P(-16.4f, -16.8f), unit};
+    // A patrol the authored step does not take: its loop passes 20.0 yd from P1 and 38.6 yd from P2.
+    StandOther patrol;
+    patrol.x = -33.2f;
+    patrol.y = 18.0f;
+    patrol.path = {P(-33.2f, 18.0f), P(-41.9f, 36.0f)};
+    patrol.clearYd = 20.0f + kStandClearSpreadYd;
+    std::vector<StandOther> const others = {patrol};
+    // The glue's read with the key on (every candidate, the clear test) and off (one candidate, nothing else read).
+    auto const pick = [&](bool clearance, bool& blocked)
+    {
+        return ShotStandOnPathCleared(path, unit, range, seesAll,
+            [&others, clearance](const ShotStand& s)
+            {
+                return !clearance || StandClearAt(s.x, s.y, s.z, others);
+            },
+            blocked, clearance ? kStandClearCandidates : 1);
+    };
+    ShotStand const authored = ShotStandOnPath(path, unit, range, seesAll);
+    CHECK(authored.known && std::fabs(authored.x + 24.5f) < 0.01f && std::fabs(authored.y) < 0.01f);
+    CHECK(!StandClearAt(authored.x, authored.y, authored.z, others));
+    bool offBlocked = false;
+    ShotStand const off = pick(false, offBlocked);
+    CHECK(off.known && off.x == authored.x && off.y == authored.y && off.z == authored.z && !offBlocked);
+    bool onBlocked = false;
+    ShotStand const on = pick(true, onBlocked);
+    CHECK(on.known && std::fabs(on.x + 16.4f) < 0.01f && std::fabs(on.y + 16.8f) < 0.01f && !onBlocked);
+    StandOther close = patrol;
+    close.path.push_back(P(-16.4f, -41.8f)); // a leg 25.0 yd from P2 as well
+    std::vector<StandOther> const all = {close};
+    bool blocked = false;
+    ShotStand const none = ShotStandOnPathCleared(path, unit, range, seesAll,
+        [&all](const ShotStand& s) { return StandClearAt(s.x, s.y, s.z, all); }, blocked);
+    CHECK(!none.known && blocked);
+
+    // The authored stand (the move row) and the stand-pull pull row after it: the tank at the authored stand, its
+    // unit 40 yd out, so the row leaves it to the plain pull and that pull reads the stand.
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    stand.leg = 0;
+    PlanStep pull = PullStep(0.0f, {4851}, ai::kPlanFlagStandPull);
+    pull.leg = 0;
+    plan.steps = {stand, pull};
+    auto const give = [&](Run& r, Facts& f, const ShotStand& s)
+    {
+        f.shotStandGuid = r.shotStandFor;
+        f.shotStandKnown = true;
+        f.shotStandX = s.x;
+        f.shotStandY = s.y;
+        f.shotStandZ = s.z;
+        f.shotStandYd = ai::PlanDistance(s.x, s.y, s.z, 0.0f, 0.0f, 0.0f);
+    };
+    auto const readStand = [&](Run& r, Facts& f)
+    {
+        CHECK(Tick(r, f).empty()); // the static unit out of the shot: the row pulls it as a plain pull
+        CHECK(Has(r.note, "as a plain pull"));
+        CHECK(Tick(r, f).empty() && r.shotStandFor == 11);
+    };
+    // The clearance off: today's stand, and the tank walks there.
+    {
+        Run r = Start(&plan, 1);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f)};
+        readStand(r, f);
+        give(r, f, off);
+        CHECK(Tick(r, f) == "move -24.5 0.0 0.0");
+    }
+    // The clearance on: the first stand clear of the patrol, not today's.
+    {
+        Run r = Start(&plan, 1);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f)};
+        readStand(r, f);
+        give(r, f, on);
+        CHECK(Tick(r, f) == "move -16.4 -16.8 0.0");
+    }
+    // Every stand refused: the pull goes out from where the tank stands, and its note says so.
+    {
+        Run r = Start(&plan, 1);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f)};
+        readStand(r, f);
+        f.shotStandGuid = r.shotStandFor; // read, no clear stand
+        f.shotStandKnown = false;
+        f.shotStandBlocked = true;
+        CHECK(Tick(r, f) == "pullback 11");
+        CHECK(Has(r.note, "(order 1; stand_pull: no clear stand for 4851; plain pull)"));
+        CHECK(r.shotStandTries[11] == kShotStandTries);
+    }
+}
+
 // Uldaman run 4, step 38: a fight past the 180 s ceiling paused the run, the
 // fight ended 15 s later, and the run stayed paused for 470 s. A ceiling pause
 // goes on by itself once the party is out of combat kCeilingQuietMs, once per
@@ -27202,6 +27307,7 @@ int main()
     TestShotStandOnPath();
     TestStandClearancePicksTheFarStand();
     TestStandClearanceKeepsOffOtherPacksOnly();
+    TestStandClearanceCoversTheAuthoredStandPull();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

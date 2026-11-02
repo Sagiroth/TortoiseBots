@@ -8850,7 +8850,8 @@ void ReadRezRoster(Player* lead, std::vector<Player*> const& bots, TortoiseBots:
 // first one clear of every other live pack is taken (ReadStandClearance, DungeonRun::StandClearAt); none clear: no
 // stand is reported and DungeonRun::HoldForShot orders the plain pull.
 // For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
-// leadShotYd and losLead whatever the key says (the key governs ordinary pulls only).
+// leadShotYd and losLead whatever the key says (the key governs ordinary pulls only), and a stand it reads for such a
+// step is clearance-checked like any other.
 // StandThisStep: the current step is such a boss or pull with its stand (the move row right before it in the same leg).
 inline bool StandThisStep(DungeonRunSlot const& slot)
 {

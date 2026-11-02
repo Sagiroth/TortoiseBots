@@ -707,7 +707,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("HostileCreaturesAround(lead, std::max(kStandPullClearMaxYd, f.leadShotYd + kStandPullPathClearYd), found);", patrols)
         self.assertIn("if (!c || !c->IsAlive() || c->IsInCombat() || !RunWalksPatrol(c))", patrols)
         self.assertIn("f.standPatrols.push_back(u);", patrols)
-        formation = body(COMMANDS, "uint64 RunFormationOf(Creature* creature)", "\n}\n")
+        formation = body(COMMANDS, "uint64 RunFormationOf(Creature* creature)\n{", "\n}\n")
         self.assertIn("return group->GetOriginalLeaderGuid().GetRawValue();", formation)
 
     def test_pull_step_patrollers_reach_the_policy(self):

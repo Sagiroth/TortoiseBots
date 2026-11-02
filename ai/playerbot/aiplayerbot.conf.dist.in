@@ -1084,8 +1084,9 @@ AiPlayerbot.DungeonRunRezHold = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunPullStand = 0
 
-# The pull stand keeps clear of other packs (with AiPlayerbot.DungeonRunPullStand = 1). Every firing stand the
-# tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
+# The pull stand keeps clear of other packs. It applies to every firing stand the run leader picks: an authored
+# stand-pull step's (always) and a generic stand pull's (with AiPlayerbot.DungeonRunPullStand = 1). Every firing
+# stand the tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
 # from every other living pack is taken. Far enough is the pack's aggro reach (its detection range minus the
 # party's level advantage over it) plus the party's spread round the stand (10 yd): a pack that patrols is checked
 # along its whole loop, so a stand the loop will walk past is refused too. The pulled pack itself is not checked.
