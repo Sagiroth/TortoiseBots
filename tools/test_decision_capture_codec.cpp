@@ -1,11 +1,12 @@
 // Standalone check for runtime/DecisionCaptureCodec.h (decision capture C1):
-//   g++ -std=c++17 -Wall -Wextra tools/test_decision_capture_codec.cpp -o /tmp/t && /tmp/t
+//   g++ -std=c++17 -O2 -Wall -Wextra tools/test_decision_capture_codec.cpp -o /tmp/t && /tmp/t
 //
 // The samples come from the generated header, one per field: decoding them into
 // a default struct and re-encoding must give the sample text back, field for
 // field. That is the check that no field is silently missing from the encoder
-// or the decoder, whatever the field's type.
-#include "../runtime/DecisionCaptureCodec.h"
+// or the decoder, whatever the field's type. The tick-time check is built at
+// -O2 because the capture's budget (2 ms per tick) is a release-build number.
+#include "../runtime/DecisionCaptureRecorder.h"
 
 #include <chrono>
 #include <cmath>
@@ -228,14 +229,21 @@ static void TestContainerOrder()
 static void TestDeltas()
 {
     Facts facts;
+    MemberFact first;
+    first.name = "Nathil";
+    first.yd = 3.0f;
+    MemberFact second;
+    second.name = "Jinkla";
+    second.yd = 4.0f;
+    facts.members = {first, second};
     FieldMap const base = EncodeFields(facts);
     CHECK(DeltaObject(base, base) == "{}");
 
+    // One element of a vector changes: the whole vector resends, and the other
+    // element survives the apply.
     Facts changed = facts;
-    MemberFact member;
-    member.name = "Nathil";
-    member.yd = 3.0f;
-    changed.members.push_back(member);
+    changed.members[1].yd = 9.0f;
+    changed.members[1].x = 9.0f;
     FieldMap const next = EncodeFields(changed);
     std::string const delta = DeltaObject(base, next);
     MiniJson::Value const parsed = ParseText(delta);
@@ -258,9 +266,9 @@ static void TestSchema()
     CHECK(std::string(kDecisionSchemaText).find("struct Facts\n") != std::string::npos);
     CHECK(std::string(kDecisionSchemaText).find("struct Run\n") != std::string::npos);
     CHECK(std::string(kDecisionSchemaText).find("  plan: const DungeonPlan*\n") != std::string::npos);
-    CHECK(std::string(kDecisionSchemaText).find("enum Phase: Begin,Gather,Walk") != std::string::npos);
+    CHECK(std::string(kDecisionSchemaText).find("enum Phase: Begin=0,Gather=1,Walk=2") != std::string::npos);
     CHECK(std::string(kDecisionSchemaText).find("struct Run::Straggle\n") != std::string::npos);
-    CHECK(std::string(kDecisionSchemaText).find("enum Run::CombatDropKind: Unattackable") != std::string::npos);
+    CHECK(std::string(kDecisionSchemaText).find("enum Run::CombatDropKind: Unattackable=0") != std::string::npos);
 }
 
 // -- 8. realistic sizes --------------------------------------------------
@@ -397,6 +405,88 @@ static void TestRealisticSizes()
     }
 }
 
+// -- 8b. a full recorder tick on a live-size plan -------------------------
+
+struct CountingSink : Sink
+{
+    std::uint64_t bytes = 0;
+    std::uint64_t pushes = 0;
+
+    bool Push(std::string line) override
+    {
+        bytes += line.size();
+        ++pushes;
+        return true;
+    }
+
+    bool NewSegment(std::uint32_t, std::uint64_t) override
+    {
+        return true;
+    }
+};
+
+static void TestRecorderTickTime()
+{
+    DungeonPlan plan;
+    plan.name = "zul_gurub";
+    plan.map = 309;
+    for (int i = 0; i < 400; ++i)
+        plan.steps.push_back(i % 3 == 1 ? PullStep(static_cast<float>(i % 50), {4851, 4852})
+                                        : Step(PlanStepKind::Move, static_cast<float>(i % 50), float(i % 7)));
+    Run run = TortoiseBots::DungeonRun::Start(&plan);
+    run.liveTactics = nullptr;
+
+    Facts facts = Party(0);
+    for (int i = 0; i < 20; ++i)
+        facts.members.push_back(Mem("Bot" + std::to_string(i), 4.0f + static_cast<float>(i)));
+    for (int i = 0; i < 30; ++i)
+        facts.units.push_back(Unit(100 + static_cast<std::uint64_t>(i), 4851, 30.0f + static_cast<float>(i)));
+    facts.patrollers = facts.units;
+    facts.engagedUnits = facts.units;
+    facts.maxMemberYd = 23;
+
+    // The plan field carries the cached hash, and a same-address content change
+    // is noticed rather than served from the cache.
+    FieldMap const runFields = EncodeFields(run);
+    CHECK(*FindField(runFields, "plan") ==
+          "{\"name\":\"zul_gurub\",\"hash\":\"" + PlanHash(plan) + "\"}");
+    std::string const before = CachedPlanHash(&plan);
+    plan.name = "zul_gurub_reloaded";
+    CHECK(CachedPlanHash(&plan) != before);
+    plan.name = "zul_gurub";
+
+    CountingSink sink;
+    Limits limits;
+    HeaderInfo header;
+    header.captureId = "20261102T161939Z-zul_gurub-Fionaa";
+    header.commander = "Fionaa";
+    header.module = "test";
+    Recorder recorder(header, limits, sink);
+
+    int const ticks = 1000;
+    auto const start = std::chrono::steady_clock::now();
+    for (int i = 0; i < ticks; ++i)
+    {
+        // A live run's facts churn every tick: members and units move.
+        facts.members[i % 20].yd = 4.0f + static_cast<float>(i % 7);
+        facts.units[i % 30].distLead = 30.0f + static_cast<float>(i % 11);
+        recorder.BeforeTick(run, facts, 1000, 2000 + static_cast<std::uint64_t>(i));
+        recorder.AfterTick(run, "move 40,0 0,0");
+    }
+    auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - start)
+                        .count();
+    double const perTick = static_cast<double>(us) / ticks;
+    std::cout << "400-step plan, 20 members, 30 units: recorder tick " << perTick << " us ("
+              << sink.bytes / static_cast<std::uint64_t>(ticks) << " B/tick, capUs "
+              << recorder.stats().lastCapUs << ")\n";
+    // The budget is 2 ms per tick. The encode alone must sit well under it:
+    // hashing the 400-step plan on every tick costs about 1.1 ms, which the
+    // full-tick bound would not catch on a fast machine.
+    CHECK(perTick < 2000.0);
+    CHECK(recorder.stats().lastCapUs < 1000);
+}
+
 // -- 9. decode errors ----------------------------------------------------
 
 static void TestDecodeErrors()
@@ -412,15 +502,53 @@ static void TestDecodeErrors()
 
     DungeonPlan plan;
     plan.name = "a";
-    DungeonPlan other;
-    other.name = "b";
+    DungeonPlan sameName;
+    sameName.name = "a"; // same name, different body: only the hash differs
+    sameName.map = 7;
     Run run;
     run.plan = &plan;
     FieldMap const fields = EncodeFields(run);
     MiniJson::Value const runValue = ParseText(FullObject(fields));
     Run decoded;
-    CHECK(!DecodeFields(runValue, decoded, &other, nullptr, error));
+    CHECK(!DecodeFields(runValue, decoded, &sameName, nullptr, error));
     CHECK(error.find("plan") != std::string::npos);
+
+    // A null plan is only valid when the capture has none.
+    {
+        Run nullPlan;
+        Run nullDecoded;
+        MiniJson::Value const value = ParseText(FullObject(EncodeFields(nullPlan)));
+        CHECK(!DecodeFields(value, nullDecoded, &plan, nullptr, error));
+        CHECK(error.find("plan") != std::string::npos);
+        CHECK(DecodeFields(value, nullDecoded, nullptr, nullptr, error));
+    }
+
+    // Integer ranges, enum membership and float overflow are errors, not
+    // silent wraps.
+    {
+        std::uint8_t small = 0;
+        std::int8_t signedSmall = 0;
+        std::uint64_t big = 0;
+        CHECK(!DecodeValue(ParseText("300"), small, DecodeContext{}, error));
+        CHECK(!DecodeValue(ParseText("128"), signedSmall, DecodeContext{}, error));
+        CHECK(!DecodeValue(ParseText("-1"), big, DecodeContext{}, error));
+        CHECK(!DecodeValue(ParseText("18446744073709551616"), big, DecodeContext{}, error));
+        CHECK(DecodeValue(ParseText("255"), small, DecodeContext{}, error));
+
+        Phase phase = Phase::Begin;
+        CHECK(!DecodeValue(ParseText("99"), phase, DecodeContext{}, error));
+        CHECK(error.find("enumerator") != std::string::npos);
+        CHECK(DecodeValue(ParseText("7"), phase, DecodeContext{}, error));
+
+        double huge = 0;
+        CHECK(!DecodeValue(ParseText("1e400"), huge, DecodeContext{}, error));
+        float hugeFloat = 0;
+        CHECK(!DecodeValue(ParseText("1e40"), hugeFloat, DecodeContext{}, error));
+        // A subnormal is not an overflow: the printed form round-trips.
+        float tiny = 0;
+        CHECK(DecodeValue(ParseText("1.40129846e-45"), tiny, DecodeContext{}, error));
+        CHECK(tiny > 0.0f);
+    }
 
     // A whole plan file round-trips, and a wrong hash is refused.
     MiniJson::Value const planValue = ParseText(EncodePlan(plan));
@@ -485,6 +613,7 @@ int main()
     TestDeltas();
     TestSchema();
     TestRealisticSizes();
+    TestRecorderTickTime();
     TestDecodeErrors();
     TestRowsOnMap();
     std::cout << "test_decision_capture_codec: ok\n";

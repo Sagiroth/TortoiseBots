@@ -166,6 +166,10 @@ inline std::string EncodeFloating(double value)
 template <typename T>
 struct StructFields;
 
+// Whether a value is an enumerator of E; each generated enum specialises it.
+template <typename E>
+struct EnumValueList;
+
 inline std::string EncodePlanPointer(const ai::DungeonPlan* plan);
 
 template <typename T>
@@ -337,11 +341,52 @@ inline std::string PlanHash(const ai::DungeonPlan& plan)
     return Hex64(Fnv1a64(EncodeStructObject(plan)));
 }
 
+// A plan's hash, computed once per plan object. `run.plan` is encoded on every
+// tick and a plan has hundreds of steps, so hashing it there would be most of
+// the capture's cost; a sealed plan never changes and a reload builds a new
+// table, so the address identifies the content. Name, map and step count guard
+// against a recycled address.
+inline std::string CachedPlanHash(const ai::DungeonPlan* plan)
+{
+    if (!plan)
+        return std::string();
+
+    struct Entry
+    {
+        const ai::DungeonPlan* plan;
+        std::string name;
+        std::uint32_t map;
+        std::size_t steps;
+        std::string hash;
+    };
+    thread_local std::vector<Entry> cache;
+    for (const Entry& entry : cache)
+    {
+        if (entry.plan == plan && entry.map == plan->map && entry.steps == plan->steps.size() &&
+            entry.name == plan->name)
+            return entry.hash;
+    }
+
+    std::string hash = PlanHash(*plan);
+    for (Entry& entry : cache)
+    {
+        if (entry.plan == plan)
+        {
+            entry = Entry{plan, plan->name, plan->map, plan->steps.size(), hash};
+            return hash;
+        }
+    }
+    if (cache.size() >= 64)
+        cache.erase(cache.begin());
+    cache.push_back(Entry{plan, plan->name, plan->map, plan->steps.size(), hash});
+    return hash;
+}
+
 inline std::string EncodePlanPointer(const ai::DungeonPlan* plan)
 {
     if (!plan)
         return "null";
-    return "{\"name\":" + JsonString(plan->name) + ",\"hash\":\"" + PlanHash(*plan) + "\"}";
+    return "{\"name\":" + JsonString(plan->name) + ",\"hash\":\"" + CachedPlanHash(plan) + "\"}";
 }
 
 inline std::string EncodePlan(const ai::DungeonPlan& plan)
@@ -365,6 +410,36 @@ inline std::string EncodeTactics(const ai::BossTacticTable* table, std::uint32_t
     }
     out += "]}";
     return out;
+}
+
+// The encoded tactics of one table on one map, computed once per (table, map):
+// the segment header and the per-tick change check share it.
+inline std::string CachedTacticsText(const ai::BossTacticTable* table, std::uint32_t map)
+{
+    if (!table)
+        return "{\"set\":false,\"rows\":[]}";
+
+    struct Entry
+    {
+        const ai::BossTacticTable* table;
+        std::uint32_t map;
+        std::string text;
+    };
+    thread_local std::vector<Entry> cache;
+    for (const Entry& entry : cache)
+        if (entry.table == table && entry.map == map)
+            return entry.text;
+
+    std::string text = EncodeTactics(table, map);
+    if (cache.size() >= 64)
+        cache.erase(cache.begin());
+    cache.push_back(Entry{table, map, text});
+    return text;
+}
+
+inline std::string CachedTacticsHash(const ai::BossTacticTable* table, std::uint32_t map)
+{
+    return Hex64(Fnv1a64(CachedTacticsText(table, map)));
 }
 
 inline std::string FullObject(const FieldMap& fields)
@@ -449,14 +524,30 @@ bool DecodeInteger(const MiniJson::Value& value, I& out, std::string& error)
             error = "bad integer '" + value.text + "'";
             return false;
         }
+        if (parsed < static_cast<long long>(std::numeric_limits<I>::min()) ||
+            parsed > static_cast<long long>(std::numeric_limits<I>::max()))
+        {
+            error = "integer '" + value.text + "' is out of range";
+            return false;
+        }
         out = static_cast<I>(parsed);
     }
     else
     {
+        if (!value.text.empty() && value.text[0] == '-')
+        {
+            error = "integer '" + value.text + "' is negative";
+            return false;
+        }
         unsigned long long const parsed = std::strtoull(value.text.c_str(), &end, 10);
         if (errno != 0 || end == value.text.c_str() || *end != '\0')
         {
             error = "bad integer '" + value.text + "'";
+            return false;
+        }
+        if (parsed > static_cast<unsigned long long>(std::numeric_limits<I>::max()))
+        {
+            error = "integer '" + value.text + "' is out of range";
             return false;
         }
         out = static_cast<I>(parsed);
@@ -488,6 +579,7 @@ bool DecodeFloating(const MiniJson::Value& value, F& out, std::string& error)
         return false;
     }
     char* end = nullptr;
+    errno = 0;
     if constexpr (std::is_same_v<F, float>)
         out = std::strtof(value.text.c_str(), &end);
     else
@@ -495,6 +587,11 @@ bool DecodeFloating(const MiniJson::Value& value, F& out, std::string& error)
     if (end == value.text.c_str() || *end != '\0')
     {
         error = "bad float '" + value.text + "'";
+        return false;
+    }
+    if (errno == ERANGE && !std::isfinite(out))
+    {
+        error = "float '" + value.text + "' is out of range";
         return false;
     }
     return true;
@@ -531,8 +628,13 @@ bool DecodeValue(const MiniJson::Value& value, T& out, const DecodeContext& cont
         {
             if (value.kind == MiniJson::Value::Null)
             {
+                if (context.plan)
+                {
+                    error = "plan is null but the capture has a plan";
+                    return false;
+                }
                 out = nullptr;
-                return context.plan == nullptr;
+                return true;
             }
             if (value.kind != MiniJson::Value::Object)
             {
@@ -586,6 +688,11 @@ bool DecodeValue(const MiniJson::Value& value, T& out, const DecodeContext& cont
         I parsed{};
         if (!DecodeInteger(value, parsed, error))
             return false;
+        if (!EnumValueList<U>::Has(static_cast<long long>(parsed)))
+        {
+            error = "value " + value.text + " is not an enumerator";
+            return false;
+        }
         out = static_cast<U>(parsed);
         return true;
     }
@@ -836,6 +943,22 @@ TB_DCAP_STRUCTS(TB_DCAP_DEFINE_STRUCT)
 #undef TB_DCAP_DEFINE_STRUCT
 #undef TB_DCAP_DECODE_FIELD
 #undef TB_DCAP_EACH_FIELD
+
+#define TB_DCAP_ENUM_VALUE(value) || value_ == (value)
+#define TB_DCAP_DEFINE_ENUM(Mangled, Type) \
+    template <> \
+    struct EnumValueList<Type> \
+    { \
+        static bool Has(long long value_) \
+        { \
+            return false TB_DCAP_ENUMVALUES_##Mangled(TB_DCAP_ENUM_VALUE); \
+        } \
+    };
+
+TB_DCAP_ENUMS(TB_DCAP_DEFINE_ENUM)
+
+#undef TB_DCAP_DEFINE_ENUM
+#undef TB_DCAP_ENUM_VALUE
 
 } // namespace DecisionCapture
 } // namespace TortoiseBots
