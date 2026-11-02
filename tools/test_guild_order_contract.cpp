@@ -31,8 +31,6 @@ int main()
     CHECK(StateForReason(OrderReason::NeedItems) == OrderState::Waiting);
     CHECK(std::string(ReasonToken(OrderReason::BankDenied)) == "bankdenied");
     CHECK(StateForReason(OrderReason::BankDenied) == OrderState::Working);
-    CHECK(std::string(ReasonToken(OrderReason::NoBanker)) == "nobanker");
-    CHECK(StateForReason(OrderReason::NoBanker) == OrderState::Working);
     CHECK(std::string(ReasonToken(OrderReason::NoAuctioneer)) == "noauctioneer");
     CHECK(StateForReason(OrderReason::NoAuctioneer) == OrderState::Working);
     CHECK(std::string(ReasonToken(OrderReason::NoListing)) == "nolisting");

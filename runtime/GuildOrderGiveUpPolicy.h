@@ -156,6 +156,18 @@ inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool 
     return workedNoGainSec >= limit;
 }
 
+// A delivering order whose stock is gone (sold, listed or lost after full
+// bags sent it to deliver) has nothing to hand in: it goes back to work
+// instead of waiting forever for a delivery that never starts. Only plain
+// and bags-full deliveries; a timeout or no-progress hand-off ends on its own.
+inline bool DeliveryLostItsStock(OrderState state, OrderReason reason, uint32_t delivered, uint32_t amount,
+    uint32_t heldInBagsAndMail)
+{
+    return state == OrderState::Delivering &&
+        (reason == OrderReason::None || reason == OrderReason::BagsFull) &&
+        delivered < amount && heldInBagsAndMail == 0;
+}
+
 // The row's have count is what reached the guild (bank deposit or the mail
 // hand-over), never what the bot still carries: progress never drops, so a
 // row keeps max(delivered, last reported). Bags and mail are reported apart

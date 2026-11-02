@@ -457,7 +457,13 @@ bool GuildOrderBuyAction::Execute(Event& event)
         uint32_t const surplus = BuySurplus(best.count, missing);
         if (surplus)
             NoteRelistSurplus(botGuidLow, itemId, surplus, AuctionUnitPrice(best.buyout, best.count));
-        SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
+        // Still short: buy the next listing on this visit instead of a
+        // mailbox round trip per stack; the mail is collected once covered.
+        if (best.count < missing)
+            SetSupply(botGuidLow, SupplyStep::AuctionHouse, itemId, missing - best.count,
+                stored->supplyReturnStep, stored->reason);
+        else
+            SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
     }
     else
     {
@@ -530,9 +536,13 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     if (!OrderMailboxItems(bot, itemId))
     {
         ClearMailEmpty(bot->GetGUIDLow());
-        SupplyStep next = stored->supplyReturnStep;
-        SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : itemId, 0,
-            SupplyStep::None, stored->reason);
+        // The mail is picked up: hand back to the ladder through the empty
+        // step, never to the counter with a zero count. The refresh counts
+        // bags plus mail itself, so it routes a still-missing miss onward
+        // without a stale auction leg in between. Delivery needs the items
+        // in the bags, so only the ladder may send the bot to the banker.
+        SetSupply(bot->GetGUIDLow(), SupplyStep::None, 0, 0);
+        return result;
     }
     else if (!result)
     {

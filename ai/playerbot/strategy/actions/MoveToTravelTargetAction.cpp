@@ -307,16 +307,18 @@ static bool FindRescueLanding(Player* bot, WorldPosition const& location, WorldP
 // the exact destination point instead of dropping + parking. Same
 // unwatched-either-end rule as the passive walk hop in MoveTo2, same map
 // only (a walk hop stands in for a walk; cross-map never does), random
-// masterless pool bot only, once per 30 min, never forced. The rescue
-// clears the move budget like a fresh pick so the next tick walks the last
-// yards instead of dropping at once; the event makes it measurable.
+// masterless pool bot only, once per 30 min. The order-vendor leg is picked
+// forced, so its pin is exempt here: the drop below unforces anyway and
+// every re-pick re-forces. The rescue clears the move budget like a fresh
+// pick so the next tick walks the last yards instead of dropping at once;
+// the event makes it measurable.
 bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::string const& purpose)
 {
     if (!ServiceTripIsServicePurpose(purpose))
         return false;
     if (!target->IsMaxRetry(true))
         return false;
-    if (target->IsForced())
+    if (target->IsForced() && !ai::ServiceTripRescueIgnoresForced(purpose))
         return false;
 
     WorldPosition location = *target->getPosition();
@@ -1255,6 +1257,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // only delays the re-pick, which then offers the same forge
             // again. Inside smelt range the bot crafts from where it stands,
             // so only a still-distant drop writes the point off.
+            bool const orderLeg = purpose == "order focus" || purpose == "order vendor";
             bool const orderFocusTrip = purpose == "order focus";
             if (ai::FocusDropMarksSpot(orderFocusTrip, botLocation.distance(location)))
                 ai->MarkUnreachableFocusSpot(location.GetMapId(), location.getX(), location.getY(),
@@ -1277,7 +1280,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,
-                time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : 5 * MINUTE));
+                time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : orderLeg ? TortoiseBots::GuildOrders::kOrderLegParkSeconds : 5 * MINUTE));
         }
     }
     else

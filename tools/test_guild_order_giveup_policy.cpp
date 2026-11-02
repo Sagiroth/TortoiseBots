@@ -147,6 +147,14 @@ int main()
     CHECK(!IsNewItemRise(true, true, 4, 5));
     CHECK(!IsNewItemRise(true, false, 6, 0));
     CHECK(!IsNewItemRise(false, true, 6, 5));
+    // A delivering order with nothing in bags or mail goes back to work.
+    CHECK(DeliveryLostItsStock(OrderState::Delivering, OrderReason::BagsFull, 0, 1, 0));
+    CHECK(DeliveryLostItsStock(OrderState::Delivering, OrderReason::None, 1, 3, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::BagsFull, 0, 1, 1));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::Timeout, 0, 5, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::None, 3, 3, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Working, OrderReason::None, 0, 1, 0));
+
     if (failures == 0)
         std::printf("test_guild_order_giveup_policy ok\n");
     return failures ? 1 : 0;

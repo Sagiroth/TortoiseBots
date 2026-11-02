@@ -86,7 +86,8 @@ int main()
     CHECK(!PauseOrderClocks(SupplyStep::Bank, 2));
     CHECK(!PauseOrderClocks(SupplyStep::AuctionHouse, 1));
     CHECK(!PauseOrderClocks(SupplyStep::Craft, 1));
-    CHECK(!PauseOrderClocks(SupplyStep::Sub, 1));
+    CHECK(PauseOrderClocks(SupplyStep::Sub, 1));
+    CHECK(!PauseOrderClocks(SupplyStep::Sub, 0));
     CHECK(!PauseOrderClocks(SupplyStep::Need, 1));
 
     // The whisper fires as soon as a list exists, once per list.
@@ -155,6 +156,7 @@ int main()
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoSource) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::BankDenied) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoBanker) == OrderReason::None);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoListing) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoRecipe) == OrderReason::NoRecipe);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::None) == OrderReason::None);
 
