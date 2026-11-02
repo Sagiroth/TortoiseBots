@@ -684,12 +684,46 @@ struct UnitFact
     std::uint32_t health = 0;
     std::uint32_t maxHealth = 0;
     bool partyHits = false;
-    // A stand-pull row's units, patrollers and Facts::standPatrols: the formation it walks in (its creature group's
-    // original leader guid; a unit in no group: its own guid). 0: not read.
+    // A pull row's units, a stand-pull row's patrollers and Facts::standPatrols: the formation it walks in (its
+    // creature group's original leader guid; a unit in no group: its own guid). 0: not read.
     std::uint64_t formation = 0;
     // ... and it walks a patrol (its own waypoints, or a formation follower of a living waypoint leader). Not read: false.
     bool patrols = false;
 };
+
+// The pack a pull step takes, as the firing stand's clearance reads it (AiPlayerbot.DungeonRunStandClearance): the
+// step's own units (Facts::units, the row's living matches within its radius) and the formation each walks in, whose
+// members come with the pull. Such a creature is no "other pack" a stand must keep clear of; only the packs the step
+// does not take are.
+struct PullPack
+{
+    std::unordered_set<std::uint64_t> guids;
+    std::unordered_set<std::uint64_t> formations;
+};
+
+inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, std::uint64_t targetFormation)
+{
+    PullPack pack;
+    for (const UnitFact& u : units)
+    {
+        if (u.guid)
+            pack.guids.insert(u.guid);
+        if (u.formation)
+            pack.formations.insert(u.formation);
+    }
+    if (target)
+        pack.guids.insert(target);
+    if (targetFormation)
+        pack.formations.insert(targetFormation);
+    return pack;
+}
+
+// Whether a creature the stand scan found is one of the pack: one of its units, or one walking in their formation.
+// A formation not read (0) tells nothing beyond the guid.
+inline bool InPullPack(const PullPack& pack, std::uint64_t guid, std::uint64_t formation)
+{
+    return pack.guids.count(guid) != 0 || (formation && pack.formations.count(formation) != 0);
+}
 
 // The mage's Polymorph (all ranks and forms): the aura the run waits for after
 // a `cc moon`, and the spell a mage must know to be the run's crowd control.

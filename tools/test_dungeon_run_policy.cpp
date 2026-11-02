@@ -16069,6 +16069,48 @@ static void TestStandClearancePicksTheFarStand()
     }
 }
 
+// The stand clearance's other-packs read (PullPackOf): the step's own units, ungrouped or in any formation, are the
+// pack the pull takes, so no stand keeps clear of them; only the packs outside it can refuse a stand. Reading the
+// pulled unit's formation alone left the rest of a normal pack in the others, so every stand was refused and the
+// pull went plain.
+static void TestStandClearanceKeepsOffOtherPacksOnly()
+{
+    // A pack of five: three ungrouped units (their formation reads as their own guid) and a two-unit formation.
+    std::vector<UnitFact> units = {Unit(11, 500, 12.0f), Unit(12, 500, 13.0f), Unit(13, 500, 14.0f),
+        Unit(14, 501, 15.0f), Unit(15, 501, 16.0f)};
+    for (std::size_t i = 0; i < 3; ++i)
+        units[i].formation = units[i].guid;
+    units[3].formation = 100;
+    units[4].formation = 100;
+    PullPack const pull = PullPackOf(units, 11, 11);
+    CHECK(InPullPack(pull, 12, 12));  // another unit of the row
+    CHECK(InPullPack(pull, 13, 0));   // listed by guid, no formation read
+    CHECK(InPullPack(pull, 15, 100)); // the formation's other member
+    // One patrol outside the pack: neither its guid nor its formation is the pack's.
+    CHECK(!InPullPack(pull, 21, 0));
+    CHECK(!InPullPack(pull, 22, 22));
+    // The scan's others as the glue keeps them: every creature it found that is not in the pack.
+    struct Seen { std::uint64_t guid, formation; };
+    Seen const seen[] = {{11, 11}, {12, 12}, {13, 13}, {14, 100}, {15, 100}, {21, 21}};
+    std::vector<StandOther> others;
+    for (Seen const& s : seen)
+    {
+        if (InPullPack(pull, s.guid, s.formation))
+            continue;
+        StandOther other;
+        other.x = s.guid == 21 ? 20.0f : 0.0f;
+        other.clearYd = 15.0f;
+        others.push_back(other);
+    }
+    CHECK(others.size() == 1);
+    // A stand among the pack's own units is clear (they come with the pull); the patrol refuses one within its reach.
+    CHECK(StandClearAt(0.0f, 0.0f, 0.0f, others));
+    CHECK(!StandClearAt(10.0f, 0.0f, 0.0f, others));
+    // The target's own formation holds even when the read listed only the target (a hop pull's unit).
+    PullPack const alone = PullPackOf({}, 31, 100);
+    CHECK(InPullPack(alone, 31, 0) && InPullPack(alone, 15, 100) && !InPullPack(alone, 32, 32));
+}
+
 // Uldaman run 4, step 38: a fight past the 180 s ceiling paused the run, the
 // fight ended 15 s later, and the run stayed paused for 470 s. A ceiling pause
 // goes on by itself once the party is out of combat kCeilingQuietMs, once per
@@ -27159,6 +27201,7 @@ int main()
     TestStandTicksAreNotFruitlessPulls();
     TestShotStandOnPath();
     TestStandClearancePicksTheFarStand();
+    TestStandClearanceKeepsOffOtherPacksOnly();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

@@ -844,23 +844,32 @@ class RunLeaderWiringTest(unittest.TestCase):
         # candidate and no other pack read; with it on the glue reads the other packs and takes the first clear stand.
         read = body(COMMANDS, "void ReadPullStand(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("bool const clearance = sPlayerbotAIConfig.dungeonRunStandClearance;", read)
-        self.assertIn("if (clearance)\n        ReadStandClearance(lead, bots, unit, f);", read)
+        self.assertIn("PullPack const pack = PullPackOf(f.units, unit->GetObjectGuid().GetRawValue(), "
+                      "RunFormationOf(unit));\n        ReadStandClearance(lead, bots, pack, f);", read)
         self.assertIn("return !clearance || StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers);", read)
         self.assertIn("f.shotStandBlocked = clearance && blocked;", read)
-        clearance = body(COMMANDS, "void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, "
-                                     "Creature* target,\n    TortoiseBots::DungeonRun::Facts& f)\n{", "\n}\n")
+        clearance = body(COMMANDS, "void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,\n"
+                                   "    TortoiseBots::DungeonRun::PullPack const& pack, "
+                                   "TortoiseBots::DungeonRun::Facts& f)\n{", "\n}\n")
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
-        self.assertIn("uint64 const pulled = RunFormationOf(target);", clearance)
-        self.assertIn("c->IsInCombat() || RunFormationOf(c) == pulled", clearance)
+        self.assertIn("InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c))", clearance)
+        self.assertNotIn("RunFormationOf(target)", clearance)
         self.assertIn("other.clearYd = ai::AggroRadius(mob, lowest, rate) + kStandClearSpreadYd;", clearance)
         self.assertIn("sWaypointMgr.GetDefaultPath(walker->GetEntry(), walker->GetGUIDLow())", clearance)
         self.assertIn("other.marginYd = kStandClearUnreadPathYd;", clearance)
+        # The pack's formation is read for every unit of the step's own read (Facts::units).
+        facts_read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
+        self.assertIn("unit.formation = RunFormationOf(creature);", facts_read)
         # The policy: the first clear candidate is taken, and no clear stand sends the plain pull with its note.
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         hold = body(policy, "inline bool HoldForShot(", "\n}\n")
         self.assertIn("r.shotHow = f.shotStandBlocked", hold)
         self.assertIn('"stand_pull: no clear stand for " + std::to_string(u.entry) + "; plain pull"', hold)
         self.assertIn("inline bool StandClearAt(float x, float y, float z, const std::vector<StandOther>& others)", policy)
+        self.assertIn("inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, "
+                      "std::uint64_t targetFormation)", policy)
+        self.assertIn("inline bool InPullPack(const PullPack& pack, std::uint64_t guid, "
+                      "std::uint64_t formation)", policy)
         # The key: code fallback, header member, template and both docs.
         config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
         header = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()

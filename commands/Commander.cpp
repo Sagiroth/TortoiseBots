@@ -8867,8 +8867,10 @@ inline bool StandThisStep(DungeonRunSlot const& slot)
 }
 
 // The other packs a firing stand must keep clear of (defined with the patrol readers below).
-static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, Creature* target,
-    TortoiseBots::DungeonRun::Facts& f);
+static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::PullPack const& pack, TortoiseBots::DungeonRun::Facts& f);
+// The formation a creature walks in (defined with the patrol readers below): the pull's pack reads it.
+uint64 RunFormationOf(Creature* creature);
 
 void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
@@ -8926,7 +8928,11 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
         "the run leader's firing stand keeps to the bots' own ledge rule (owner decision 2026-10-23)");
     bool const clearance = sPlayerbotAIConfig.dungeonRunStandClearance;
     if (clearance)
-        ReadStandClearance(lead, bots, unit, f);
+    {
+        // The step's own pack is what this pull takes: its units (Facts::units) and the formation each walks in.
+        PullPack const pack = PullPackOf(f.units, unit->GetObjectGuid().GetRawValue(), RunFormationOf(unit));
+        ReadStandClearance(lead, bots, pack, f);
+    }
     // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule).
     bool blocked = false;
     ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
@@ -9013,19 +9019,19 @@ bool RunWalksPatrol(Creature* creature)
 }
 
 // The other packs a firing stand must keep clear of (AiPlayerbot.DungeonRunStandClearance, DungeonRun::StandClearAt):
-// living, hostile, out-of-combat creatures that are not in the pulled unit's formation, within kStandClearScanYd of the
-// lead bot, each with its aggro reach (the aggro estimate's own rule: detection range minus the party's level advantage
-// over its level, the widest over the party) plus the party's spread. A waypoint patroller carries the whole loop it
-// walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed, so a stand beside a leg
-// the patrol will walk is refused as well. A loop the host cannot read (a special escorts path) stands in by the unit's
-// spot plus kStandClearUnreadPathYd. One grid search and a map lookup per patroller, on the tick a stand is read.
-static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, Creature* target,
-    TortoiseBots::DungeonRun::Facts& f)
+// living, hostile, out-of-combat creatures that are not in the pack this pull takes (PullPackOf: the step's units and
+// their formations), within kStandClearScanYd of the lead bot, each with its aggro reach (the aggro estimate's own
+// rule: detection range minus the party's level advantage over its level, the widest over the party) plus the party's
+// spread. A waypoint patroller carries the whole loop it walks: sWaypointMgr's path for its walker, the one
+// WaypointMovementGenerator loads, closed, so a stand beside a leg the patrol will walk is refused as well. A loop the
+// host cannot read (a special escorts path) stands in by the unit's spot plus kStandClearUnreadPathYd. One grid search
+// and a map lookup per patroller, on the tick a stand is read.
+static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::PullPack const& pack, TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
     std::list<Unit*> found;
     HostileCreaturesAround(lead, kStandClearScanYd, found);
-    uint64 const pulled = RunFormationOf(target);
     uint32 lowest = lead->GetLevel();
     for (Player* bot : bots)
         if (bot && bot->IsAlive() && bot->GetMapId() == lead->GetMapId() && bot->GetLevel() < lowest)
@@ -9034,7 +9040,8 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, C
     for (Unit* unit : found)
     {
         Creature* c = unit->ToCreature();
-        if (!c || !c->IsAlive() || c == target || c->IsInCombat() || RunFormationOf(c) == pulled)
+        if (!c || !c->IsAlive() || c->IsInCombat() ||
+            InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c)))
             continue;
         if (c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
             continue; // never wakes by proximity
@@ -9638,6 +9645,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.formOf = formOf;
                     unit.distLead = lead->GetDistance(creature);
                     unit.z = creature->GetPositionZ(); // the passed-boss pause reads the unit's real height off it
+                    // The formation it walks in: with the clearance key on, the pull's own pack (DungeonRun::PullPackOf).
+                    unit.formation = RunFormationOf(creature);
                     // Hostile or neutral may be pulled; only a friendly one is left alone.
                     unit.hostile = !sServerFacade.IsFriendlyTo(creature, lead);
                     unit.stealthed = IsStealthed(creature);
@@ -9654,7 +9663,6 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     {
                         unit.x = creature->GetPositionX(); // the pull's way (DungeonRun::PatrolStandPullGate)
                         unit.y = creature->GetPositionY();
-                        unit.formation = RunFormationOf(creature);
                         unit.patrols = RunWalksPatrol(creature);
                         unit.spawnOwned = SpawnOwned(read, step->radius); // the pack's formations (ScopeStandPullFacts)
                     }
