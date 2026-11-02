@@ -149,7 +149,8 @@ bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRo
     if (!ai || !bot || !subject || !subject->IsAlive() || !sPlayerbotAIConfig.dungeonRunAuraTactics)
         return false;
     int const bossHpPct = static_cast<int>((bossUnit ? bossUnit : subject)->GetHealthPercent());
-    bool const gateOpen = RowGateOpen(row, true, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura));
+    bool const botHasAura = row.botAura != 0 && bot->HasAura(row.botAura);
+    bool const gateOpen = RowGateOpen(row, true, bossHpPct, botHasAura);
     uint32 genericId = 0;
     uint32 channeledId = 0;
     CurrentCastIds(subject, genericId, channeledId);
@@ -164,6 +165,7 @@ bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRo
     // on the jump, and a row with a spell on the cast or aura edge.
     in.engageEnabled = row.spellId == 0 && row.mode != TacticMode::Blink;
     in.gateOpen = gateOpen;
+    in.botEligible = row.botAura == 0 || botHasAura;
     in.gateEnabled = row.hpMin != 0 || row.hpMax != 100;
     in.castOrAuraSeen = casting || carrying;
     in.castEnabled = row.spellId != 0;
@@ -262,25 +264,29 @@ bool DpsHoldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFight&
     {
         if (row->kind != BossTacticKind::DpsHoldAfter)
             continue;
-        Unit* subjectUnit = nullptr;
+        // Every live unit of the row's subject entry is read, so each one's trigger edge advances on this tick; the veto
+        // is any of them held within range. The boss unit feeds the health gate (the subject's own health without one).
+        std::vector<Unit*> subjects;
         Unit* bossUnit = nullptr;
         for (Unit* unit : fight.units)
         {
             if (unit->GetEntry() == TacticSubjectEntry(*row))
-                subjectUnit = unit;
+                subjects.push_back(unit);
             if (unit->GetEntry() == row->bossEntry)
                 bossUnit = unit;
         }
-        if (!subjectUnit)
-            continue;
-        if (!bossUnit)
-            bossUnit = subjectUnit;
-        if (!ReadDpsHold(ai, ai->GetBot(), subjectUnit, *row, bossUnit))
-            continue;
-        if (around->GetDistance(subjectUnit) > maxDistance)
+        std::vector<bool> held;
+        std::vector<float> distance;
+        for (Unit* unit : subjects)
+        {
+            held.push_back(ReadDpsHold(ai, ai->GetBot(), unit, *row, bossUnit));
+            distance.push_back(around->GetDistance(unit));
+        }
+        int const hit = DpsHoldVetoIndex(held, distance, maxDistance);
+        if (hit < 0)
             continue;
         if (subject)
-            *subject = subjectUnit;
+            *subject = subjects[hit];
         return true;
     }
     return false;

@@ -1167,6 +1167,10 @@ namespace ai
         // does not apply, and a hold it started does not outlive it.
         bool gateOpen = true;
         bool gateEnabled = false;
+        // Whether this bot is part of the row at all (no `bot_aura`, or it carries it). A read by a bot outside the row
+        // is not a read of the fight: it returns without touching any edge, so an eligible bot's later read still sees
+        // the rising edge the fight had.
+        bool botEligible = true;
         bool castOrAuraSeen = false;
         bool castEnabled = false;
         bool blinkEnabled = false;
@@ -1185,6 +1189,8 @@ namespace ai
     {
         if (fired)
             *fired = DpsHoldTrigger::None;
+        if (!in.botEligible)
+            return false;
         std::uint32_t const holdMs = in.holdSec > 0.0f
             ? static_cast<std::uint32_t>(in.holdSec * 1000.0f + 0.5f)
             : 0;
@@ -1224,6 +1230,19 @@ namespace ai
         if (nowMs < state.untilMs)
             return true;
         return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
+    }
+
+    // The held-subject veto over every live unit of one subject entry: `held[i]` is whether unit i is held after its
+    // read, `distance[i]` its distance from the area's centre. Returns the first held unit within `maxDistance`, or -1.
+    // The caller reads every unit, so any held unit in range vetoes, not only the last one read.
+    inline int DpsHoldVetoIndex(const std::vector<bool>& held, const std::vector<float>& distance, float maxDistance)
+    {
+        for (std::size_t i = 0; i < held.size() && i < distance.size(); ++i)
+        {
+            if (held[i] && distance[i] <= maxDistance)
+                return static_cast<int>(i);
+        }
+        return -1;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

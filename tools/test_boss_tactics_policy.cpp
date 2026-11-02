@@ -1264,6 +1264,48 @@ int main()
         CHECK(!DpsHoldTick(spell, in, 3100, nullptr));              // level, not edge: released at param
     }
 
+    // A read by a bot outside the row (its bot_aura closed) touches no shared edge: the spell an ineligible bot reads
+    // first must not hide the rising edge from an eligible bot, and a band it sees closed must not reset the band edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.gateOpen = false;
+        in.botEligible = false;
+        in.castOrAuraSeen = true;                                   // the ineligible bot reads the active spell
+        CHECK(!DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        in.botEligible = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));                 // the eligible bot sees the rising edge
+        CHECK(fired == DpsHoldTrigger::Spell);
+
+        DpsHoldState band;
+        DpsHoldInputs band_in;
+        band_in.gateEnabled = true;
+        band_in.holdSec = 3.0f;
+        band_in.gateOpen = true;
+        CHECK(DpsHoldTick(band, band_in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        band_in.gateOpen = false;
+        band_in.botEligible = false;                                // an ineligible bot reads the band closed
+        CHECK(!DpsHoldTick(band, band_in, 500, &fired));
+        band_in.gateOpen = true;
+        band_in.botEligible = true;                                 // still open for the eligible bot: no new edge
+        CHECK(DpsHoldTick(band, band_in, 1000, &fired));            // the first hold still runs to 3000
+        CHECK(fired == DpsHoldTrigger::None);
+    }
+
+    // The held-subject veto: any held unit within range vetoes, not only the last unit read.
+    {
+        CHECK(DpsHoldVetoIndex({true, false}, {5.0f, 5.0f}, 10.0f) == 0);    // first held and in range
+        CHECK(DpsHoldVetoIndex({true, false}, {20.0f, 5.0f}, 10.0f) == -1);  // held but out of range; other not held
+        CHECK(DpsHoldVetoIndex({false, true}, {5.0f, 5.0f}, 10.0f) == 1);
+        CHECK(DpsHoldVetoIndex({}, {}, 10.0f) == -1);
+    }
+
     // A blink is a jump of more than 10 yd between two reads at most 1500 ms apart.
     {
         CHECK(!DpsHoldBlinked(0.0f, 0.0f, 9.9f, 0.0f, 500));        // under 10 yd: no blink
