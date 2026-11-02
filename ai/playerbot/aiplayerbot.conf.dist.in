@@ -563,6 +563,38 @@ AiPlayerbot.BotGearPresets = prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20
 # run ends (end reason size_cap) with its end record intact.
 #AiPlayerbot.RunTrace.MaxFileMb = 64
 
+# Decision capture (test servers only): while a dungeon run leader runs and this
+# is on, every tick of its policy is written to a rotating JSONL capture under
+# LogsDir/decisions: the whole facts it read and the whole run it saw, before
+# and after the tick, with the order it decided. A live failure can then be cut
+# into a replay fixture (tools/replay_decisions) and kept as a regression test.
+# One record is roughly 12-40 KB at 1 Hz, so 45-145 MB per hour per run and
+# about 300 MB for a two-hour walk; nothing is written while it is off.
+# Format, files, privacy and the fixture workflow: docs/server/decision-capture.md.
+#AiPlayerbot.DecisionCapture.Enabled = 0
+
+# Where captures are written; a relative path is under LogsDir.
+#AiPlayerbot.DecisionCapture.Dir = decisions
+
+# A segment rotates past this many MiB (clamped to 1..256).
+#AiPlayerbot.DecisionCapture.SegmentMiB = 32
+
+# Segments of one capture past this many MiB are deleted oldest first
+# (clamped to SegmentMiB..4096); the segment being written is never deleted.
+#AiPlayerbot.DecisionCapture.CaptureMiB = 512
+
+# The whole folder past this many MiB drops its oldest ended captures
+# (clamped to CaptureMiB..65536). A running capture is never dropped.
+#AiPlayerbot.DecisionCapture.TotalMiB = 4096
+
+# A record larger than this is written as a stub and the next tick is a
+# keyframe (clamped to 64..4096 KiB).
+#AiPlayerbot.DecisionCapture.RecordKiB = 512
+
+# A full keyframe every this many records, and always at a segment start
+# (clamped to 1..600).
+#AiPlayerbot.DecisionCapture.KeyframeEvery = 60
+
 # Issue #1012: `.bot cmd gossip <npc entry> <bot> <option>` lets a commanded bot
 # talk to an NPC and pick a gossip option (a commander's own order needs AiPlayerbot.RemoteCommander = 1; the run leader's gossip steps need only AiPlayerbot.DungeonSelfClear = 1). A gossip option can do anything its script says (take money,
 # give items, teleport), so a bot talks only to the creature entries listed
