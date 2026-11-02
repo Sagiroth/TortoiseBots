@@ -1332,6 +1332,7 @@ public:
         bool haveRow = false;
         OrderRecord record;
         uint32_t reportedHave = 0;
+        uint32_t reportedCarry = 0;
         bool sendLine = false;
         bool finishedEdge = false;
         bool legChanged = false;
@@ -1415,6 +1416,7 @@ public:
                 record.workedTotalSec = 0;
                 record.workedNoGainSec = 0;
                 record.reportedHave = 0;
+                stored.reportedCarry = 0;
                 stored.lastOwnedCount = 0;
                 stored.lastFarmCount = 0;
                 stored.lastFarmItemId = 0;
@@ -1642,14 +1644,17 @@ public:
             }
         }
 
-        // Reported progress never drops: offline (or not yet re-seen) bots
-        // keep max(delivered, last reported). A stocked order reports the
-        // bank stock the last look saw: owned counting means nothing there.
-        // Off-scan passes hold the last reported count: the zeros above are
-        // unscheduled, not a lost bag.
-        out.reportedHave = in.scanned ? ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave) :
+        // The row's have count is what reached the guild: delivered only,
+        // never the bags. It still never drops: offline (or not yet re-seen)
+        // bots keep max(delivered, last reported). A stocked order reports
+        // the bank stock the last look saw: owned counting means nothing
+        // there. Off-scan passes hold the last reported counts: the zeros
+        // above are unscheduled, not a lost bag.
+        out.reportedHave = in.scanned ? ReportedHave(record.delivered, record.reportedHave) :
             (record.state == OrderState::Stocked && in.bankChecked ?
                 (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
+        out.reportedCarry = ReportedCarry(in.scanned, in.botOnline, in.bagCount, in.mailboxCount,
+            stored.reportedCarry);
 
         std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
@@ -1657,7 +1662,9 @@ public:
                             stored.reportNeed != needToken;
         if (!stored.reportSeen || stored.reportStep != record.supplyStep)
             out.legChanged = true;
-        bool progressDue = out.reportedHave != record.reportedHave &&
+        bool haveChanged = out.reportedHave != record.reportedHave;
+        bool carryChanged = out.reportedCarry != stored.reportedCarry;
+        bool progressDue = (haveChanged || carryChanged) &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
         if (out.sendLine)
@@ -1667,10 +1674,12 @@ public:
             stored.reportReason = record.reason;
             stored.reportStep = record.supplyStep;
             stored.reportNeed = needToken;
-            if (out.reportedHave != record.reportedHave)
+            if (haveChanged || carryChanged)
+                stored.reportMs = in.nowMs;
+            stored.reportedCarry = out.reportedCarry;
+            if (haveChanged)
             {
                 record.reportedHave = out.reportedHave;
-                stored.reportMs = in.nowMs;
                 MarkDirtyLocked(stored);
             }
         }
@@ -1698,6 +1707,7 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
+        uint32_t reportedCarry = 0; // last carry put on the row (bags plus mailbox)
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
         uint32_t needLadderChecks = 0; // slow checks since the row last parked
@@ -1946,7 +1956,7 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-void SendOrderLine(OrderRecord const& order, uint32_t have);
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. One guild_member query per guild per
 // tick shared across due requests; planner evaluations share a per-tick
@@ -2124,7 +2134,10 @@ bool PlaceSubOrders(uint32_t nowMs)
             // depth and item instead of the pre-tick snapshot.
             refreshBranches();
             if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
-                SendOrderLine(*placed, 0);
+            {
+                Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, placed->botGuidLow));
+                SendOrderLine(*placed, 0, Carry(bot, *placed));
+            }
         }
         else if (pick == SubOrderPick::Queued)
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
@@ -2135,13 +2148,13 @@ bool PlaceSubOrders(uint32_t nowMs)
     return placedAny;
 }
 
-void SendOrderLine(OrderRecord const& order, uint32_t have)
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     uint32_t giverLow = order.rootGiverGuidLow ? order.rootGiverGuidLow : order.giverGuidLow;
     Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, giverLow));
     if (!giver || !giver->IsInWorld())
         return;
-    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have));
+    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have, carry));
 }
 
 void SendNeedWhisper(OrderRecord const& order)
@@ -2371,7 +2384,8 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
         OrderStore::Instance().Cancel(newBotGuidLow);
         return false;
     }
-    SendOrderLine(record, row->reportedHave);
+    Player* newBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, record.botGuidLow));
+    SendOrderLine(record, row->reportedHave, Carry(newBot, record));
     return true;
 }
 
@@ -2515,15 +2529,14 @@ void AddDelivered(uint32_t botGuidLow, uint32_t count)
     OrderStore::Instance().AddDelivered(botGuidLow, count);
 }
 
-uint32_t Progress(Player* bot, OrderRecord const& order)
+uint32_t Carry(Player* bot, OrderRecord const& order)
 {
-    uint32_t have = order.delivered;
-    if (bot && bot->IsInWorld() && order.itemId)
-        have += bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
-    return have;
+    if (!bot || !bot->IsInWorld() || !order.itemId)
+        return 0;
+    return bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
 }
 
-std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have)
+std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
@@ -2546,7 +2559,8 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|" +
            BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
-           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems);
+           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems) + "|" +
+           std::to_string(carry);
 }
 
 void Initialize()
@@ -2702,7 +2716,7 @@ void Update(uint32_t diff)
         if (out.persist)
             OrderStore::Instance().WriteAndRescue(out.persistRecord);
         if (out.sendLine)
-            SendOrderLine(out.record, out.reportedHave);
+            SendOrderLine(out.record, out.reportedHave, out.reportedCarry);
         if (out.needWhisper)
             SendNeedWhisper(out.record);
         if (out.legChanged)

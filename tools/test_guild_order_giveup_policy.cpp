@@ -118,12 +118,18 @@ int main()
     CHECK(IsOrderNoProgress(3 * 3600));
     CHECK(IsOrderNoProgress(0xFFFFFFFFu));
 
-    // Reported progress never drops.
-    CHECK(ReportedHave(0, 5, true, 0) == 5);
-    CHECK(ReportedHave(0, 3, true, 5) == 5);
-    CHECK(ReportedHave(4, 0, false, 7) == 7);
-    CHECK(ReportedHave(4, 0, false, 2) == 4);
-    CHECK(ReportedHave(4, 9, true, 7) == 13);
+    // The row's have count is delivered only and never drops; the bags and
+    // mailbox travel in a separate carry count that may fall on deposit.
+    CHECK(ReportedHave(0, 0) == 0);
+    CHECK(ReportedHave(0, 5) == 5);
+    CHECK(ReportedHave(4, 0) == 4);
+    CHECK(ReportedHave(4, 7) == 7);
+    CHECK(ReportedHave(9, 7) == 9);
+    CHECK(ReportedCarry(true, true, 4, 2, 0) == 6);
+    CHECK(ReportedCarry(true, true, 0, 0, 9) == 0);
+    CHECK(ReportedCarry(true, false, 4, 2, 6) == 6);
+    CHECK(ReportedCarry(false, true, 4, 2, 6) == 6);
+    CHECK(ReportedCarry(false, false, 0, 0, 6) == 6);
 
     // Only a real online rise resets the zone-move clock.
     CHECK(IsNewItemRise(true, true, 6, 5));

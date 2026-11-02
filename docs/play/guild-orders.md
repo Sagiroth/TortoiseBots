@@ -79,11 +79,11 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 
 ## States
 
-`.bot order list` shows every order in your guild with have/want counts and the farm zone, including sub-orders (indented under their parent by the addon); the giver also gets live updates while it runs. A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field; other orders show `-` there.
+`.bot order list` shows every order in your guild with delivered/want counts and the farm zone, including sub-orders (indented under their parent by the addon); the giver also gets live updates while it runs. The count is what reached the guild bank (or the guild master by mail), not what the bot is still carrying: the addon can show the bags-and-mail part separately. A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field; other orders show `-` there.
 
 | State | Meaning |
 | :--- | :--- |
-| `working` | Working on the order, with progress (have / want). |
+| `working` | Working on the order, with progress (delivered / want). |
 | `waiting` | The bot is in a player's group; the order resumes when it leaves. |
 | `waiting` with reason `needitems` | The bot needs the listed materials from the giver. It resumes when they appear in its bags, mailbox or accessible guild bank. |
 | `delivering` | Amount reached (or bags full), on the way to the guild banker. |

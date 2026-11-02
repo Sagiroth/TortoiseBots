@@ -22,7 +22,7 @@ Bank messages run through `GuildBank::HandleAddonMessages` on the world thread. 
 
 `needitems` is a waiting state, so its timer and no-progress clock stay stopped. The store checks bags and mailbox each update and checks the guild bank on a ten-second interval; the order becomes working again when a listed missing amount can be supplied. A parked need row also re-runs the ladder about every ten minutes: a vendor-unlimited item the bot can now afford resumes on the vendor leg, a fresh auction listing on the auction leg. The whispered need token is persisted to prevent repeating the same list after another source replan; a resume clears the list without a new whisper.
 
-The `TBM:ORDER` line keeps its existing fields and appends parent, gold cap, step and need. Step and need changes go through the normal world-thread update so list replies and live lines use one formatter.
+The `TBM:ORDER` line keeps its existing fields and appends parent, gold cap, step, need and carry. `<have>` is delivered only (what reached the guild, or the bank stock on a `stocked` row) and keeps its never-drop floor; `<carry>` is the bags-plus-mailbox amount not delivered yet, and the two progress counts are what the live updates compare. Step, need and progress changes go through the normal world-thread update so list replies and live lines use one formatter.
 
 ## Refunds and retry rules
 

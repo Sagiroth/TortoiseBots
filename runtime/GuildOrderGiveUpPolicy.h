@@ -155,13 +155,22 @@ inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool 
     return workedNoGainSec >= limit;
 }
 
-// Reported progress never drops: offline (or not yet re-seen) bots keep
-// max(delivered, last reported).
-inline uint32_t ReportedHave(uint32_t delivered, uint32_t bagCount, bool botOnline, uint32_t reportedHave)
+// The row's have count is what reached the guild (bank deposit or the mail
+// hand-over), never what the bot still carries: progress never drops, so a
+// row keeps max(delivered, last reported). Bags and mail are reported apart
+// (ReportedCarry) so a working row cannot read 2/2 with nothing deposited.
+inline uint32_t ReportedHave(uint32_t delivered, uint32_t reportedHave)
 {
-    uint32_t have = delivered + (botOnline ? bagCount : 0);
-    uint32_t floor = delivered > reportedHave ? delivered : reportedHave;
-    return have > floor ? have : floor;
+    return delivered > reportedHave ? delivered : reportedHave;
+}
+
+// What the bot carries and has not delivered yet: the live bag and mailbox
+// count on a scan, the last figure on off-cadence passes and while offline.
+// Unlike ReportedHave this legitimately drops: a deposit empties the bags.
+inline uint32_t ReportedCarry(bool scanned, bool botOnline, uint32_t bagCount, uint32_t mailboxCount,
+    uint32_t reportedCarry)
+{
+    return scanned && botOnline ? bagCount + mailboxCount : reportedCarry;
 }
 
 // A real rise in bag count seen while online on consecutive updates resets
