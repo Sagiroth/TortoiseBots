@@ -26044,6 +26044,74 @@ static void TestRunawaySummonStepLimits()
     CHECK(at[1] - at[0] == kRunawayResummonMs);
 }
 
+// ZG walks 23-25: Nack, Maevrayah and Elmind fell below the Jeklik path and stood still there while the raid fought
+// on. A raid member still on another floor is wedged: out of a fight it is summoned, in a fight its combat is
+// dropped first and then it is summoned.
+static Facts WedgedFacts(float xYd, float xDz)
+{
+    Facts f = Party(0);
+    f.total = 3;
+    f.alive = 3;
+    f.raid.on = true;
+    f.members = {Mem("Tanky", 0.0f), Mem("Healer", 3.0f), Mem("X", xYd, xDz)};
+    f.maxMemberYd = xYd;
+    return f;
+}
+
+// T1: X 41 yd out and 9 below the lead bot, in combat with it while the raid fights: no drop for 14 ticks past the
+// watch's first two, the drop on the next, then out of combat the summon on the next tick.
+static void TestWedgedBelowInAFightDropsThenSummons()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    // The still watch opens X's clock on the first sighting and CombatDropTick reads last tick's watch, so the drop
+    // lands two ticks after kWedgedMs.
+    for (int i = 0; i < 2; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    for (std::uint32_t i = 2; i < kWedgedMs / kTickMs + 1; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    WalkOn(f);
+    Tick(r, f);
+    CHECK(r.combatDrops == std::vector<std::string>{"X"});
+    CHECK(r.note.find("wedged 9.0 yd below") != std::string::npos);
+    f.members[2].inCombat = false;
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.note.find("X is wedged 9.0 yd below the lead bot (41.0 yd, still ") != std::string::npos);
+}
+
+// T2: X 45 yd out (below the runaway's 100) and 56 above it, out of combat: no summon for 14 ticks past the move,
+// the summon on the next.
+static void TestWedgedOutOfCombatBelowRunawayRangeIsSummoned()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(45.0f, 56.0f);
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    // The still watch opens X's clock on the move tick, so the summon lands a tick after kWedgedMs.
+    for (std::uint32_t i = 1; i < kWedgedMs / kTickMs; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.note.find("X is wedged 56.0 yd above the lead bot (45.0 yd, still ") != std::string::npos);
+}
+
 static void TestPartyRulesUnchanged()
 {
     DungeonPlan plan;
@@ -26752,6 +26820,8 @@ int main()
     TestRunawayNeverOnABossStep();
     TestRunawayNeverWithAPlanBossEngaged();
     TestRunawaySummonStepLimits();
+    TestWedgedBelowInAFightDropsThenSummons();
+    TestWedgedOutOfCombatBelowRunawayRangeIsSummoned();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
     // item 1 until

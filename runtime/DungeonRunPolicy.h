@@ -3150,6 +3150,8 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
 
 inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (used from RunawaySummon), defined by the fight progress
 
+constexpr std::uint32_t kWedgedMs = 15000;
+
 // A raid bot left far behind the lead bot with no fight on (a stale follow after a teleport): the gather and the
 // speed leash take turns waiting for it and neither timer runs out, so the run summons it to the lead bot before the
 // step's own wait looks at it again. Out of reach is kRunawayYd from the lead bot or another map; the farthest one is
