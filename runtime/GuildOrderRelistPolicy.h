@@ -16,6 +16,28 @@ namespace TortoiseBots
 namespace GuildOrders
 {
 
+// Where one ledger row stands. The row is claimed before its mail is taken and
+// received once the value is in the bot's hands: a take that lands without its
+// received write is still known from the claim, so the mail is never emptied
+// ahead of the ledger.
+enum class RelistState : uint8_t
+{
+    Posted,   // the auction house holds the listing; no mail read yet
+    Claimed,  // the settlement mail is being taken: claimMailId names it
+    Received, // the value is in the bot's hands, waiting for the bank trip
+};
+
+// The persisted state of a row (the table's `state` column). Unknown values
+// read as posted, the only state that can still match a fresh mail.
+inline RelistState RelistStateFromDb(uint32_t value)
+{
+    if (value == 1)
+        return RelistState::Claimed;
+    if (value == 2)
+        return RelistState::Received;
+    return RelistState::Posted;
+}
+
 // One posted relist: what the auction house holds for the guild. `seq` is the
 // per-bot row key of the store (the second part of the table's primary key).
 // The listing terms are the identity the core gives back: the sale mail body
@@ -35,7 +57,8 @@ struct RelistLedgerEntry
     uint32_t deposit = 0;    // the deposit the auction house charged
     uint64_t postedAtSec = 0;
     uint64_t expiresAtSec = 0;
-    bool received = false;   // the mail was read: the value is in hand
+    RelistState state = RelistState::Posted;
+    uint32_t claimMailId = 0; // the mail the claim took; 0 unless claimed
     uint32_t heldGold = 0;   // sale copper waiting for the bank trip
     uint32_t heldCount = 0;  // returned items waiting for the bank trip
 };
@@ -99,10 +122,11 @@ inline RelistMailKind RelistMailMatch(RelistLedgerEntry const& entry, RelistMail
     return RelistMailKind::None;
 }
 
-// How many unread rows the mail matches, and the one row's index when it is
+// How many unclaimed rows the mail matches, and the one row's index when it is
 // exactly one. The mail read only settles a single match: with none or more
 // than one the mail is left to normal mail handling, because consuming the
-// wrong auction's value would charge one guild for another's sale.
+// wrong auction's value would charge one guild for another's sale. A claimed
+// row is retried by the mail it names, never matched again by its terms.
 inline size_t RelistMatchCount(std::vector<RelistLedgerEntry> const& rows, RelistMail const& mail,
     uint64_t nowSec, size_t& index)
 {
@@ -110,7 +134,8 @@ inline size_t RelistMatchCount(std::vector<RelistLedgerEntry> const& rows, Relis
     index = 0;
     for (size_t i = 0; i < rows.size(); ++i)
     {
-        if (rows[i].received || RelistMailMatch(rows[i], mail, nowSec) == RelistMailKind::None)
+        if (rows[i].state != RelistState::Posted ||
+            RelistMailMatch(rows[i], mail, nowSec) == RelistMailKind::None)
             continue;
         if (!matches)
             index = i;
@@ -132,7 +157,8 @@ inline bool RelistSettleIndex(std::vector<RelistLedgerEntry> const& rows, Relist
     uint32_t guildId = 0;
     for (size_t i = 0; i < rows.size(); ++i)
     {
-        if (rows[i].received || RelistMailMatch(rows[i], mail, nowSec) == RelistMailKind::None)
+        if (rows[i].state != RelistState::Posted ||
+            RelistMailMatch(rows[i], mail, nowSec) == RelistMailKind::None)
             continue;
         if (!matches)
         {
@@ -154,15 +180,68 @@ inline bool RelistSettleIndex(std::vector<RelistLedgerEntry> const& rows, Relist
     return true;
 }
 
+// The row that already claimed this mail, if any. A claimed row is retried by
+// the mail it names: matching it again by its terms would let a look-alike
+// mail of the same guild take the value the claim is waiting for.
+inline bool RelistClaimedIndex(std::vector<RelistLedgerEntry> const& rows, uint32_t mailId,
+    size_t& index)
+{
+    if (!mailId)
+        return false;
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        if (rows[i].state == RelistState::Claimed && rows[i].claimMailId == mailId)
+        {
+            index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+// A claimed row still waits for its mail: the next read either retries the
+// take or, with the mail gone, settles the row as received.
+inline bool RelistClaimPending(std::vector<RelistLedgerEntry> const& rows)
+{
+    for (RelistLedgerEntry const& row : rows)
+        if (row.state == RelistState::Claimed)
+            return true;
+    return false;
+}
+
 // Nothing returned after three days: the posting can no longer report on the
 // auction house, so the entry stops being a payable debt (the store drops it
-// with a log line).
+// with a log line). A claimed row is not stale: its mail is named and the
+// next read settles it.
 inline constexpr uint64_t kRelistStaleSec = 3 * 24 * 60 * 60;
 
 inline bool RelistEntryStale(RelistLedgerEntry const& entry, uint64_t nowSec)
 {
-    return !entry.received && nowSec > entry.postedAtSec &&
+    return entry.state == RelistState::Posted && nowSec > entry.postedAtSec &&
         nowSec - entry.postedAtSec >= kRelistStaleSec;
+}
+
+// The mail is about to be taken: the row names it and records the value it
+// promises, so a take that lands without its received write is still known.
+// The promised value is what the mail carries now; the returned item count
+// never counts past the posted stack.
+inline void RelistNoteMailClaimed(RelistLedgerEntry& entry, uint32_t mailId, RelistMail const& mail,
+    RelistMailKind kind)
+{
+    entry.state = RelistState::Claimed;
+    entry.claimMailId = mailId;
+    entry.heldGold = kind == RelistMailKind::Sold ? mail.money : 0;
+    entry.heldCount = kind == RelistMailKind::Expired ?
+        (mail.count < entry.count ? mail.count : entry.count) : 0;
+}
+
+// The claim's mail is gone from the box: the take landed, so the value counts
+// as in hand and the bank drain settles the row. The claimed value stays on
+// the row: it is what the mail promised before the take.
+inline void RelistNoteClaimSettled(RelistLedgerEntry& entry)
+{
+    entry.state = RelistState::Received;
+    entry.claimMailId = 0;
 }
 
 // A mail the store matched: the value measured into the bot's hands is now
@@ -171,7 +250,8 @@ inline bool RelistEntryStale(RelistLedgerEntry const& entry, uint64_t nowSec)
 inline void RelistNoteMailReceived(RelistLedgerEntry& entry, RelistMailKind kind, uint32_t gold,
     uint32_t items)
 {
-    entry.received = true;
+    entry.state = RelistState::Received;
+    entry.claimMailId = 0;
     if (kind == RelistMailKind::Sold)
         entry.heldGold = gold;
     else if (kind == RelistMailKind::Expired)
@@ -180,7 +260,7 @@ inline void RelistNoteMailReceived(RelistLedgerEntry& entry, RelistMailKind kind
 
 inline bool RelistNeedsDeposit(RelistLedgerEntry const& entry)
 {
-    return entry.received && (entry.heldGold > 0 || entry.heldCount > 0);
+    return entry.state == RelistState::Received && (entry.heldGold > 0 || entry.heldCount > 0);
 }
 
 // A banker visit only earns its trip when the bot can hand the value over

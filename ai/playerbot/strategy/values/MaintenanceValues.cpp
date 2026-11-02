@@ -779,8 +779,13 @@ bool ShouldGetMailValue::Calculate() {
         !TortoiseBots::GuildOrders::IsFinished(stored->state);
     // A relist still on the auction house collects its sale gold or returned
     // stack by mail: that mail is guild-funded value, so it never waits out
-    // the normal mailbox hibernation below.
-    bool hasRelistLedger = !TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow()).empty();
+    // the normal mailbox hibernation below. A claimed row also wakes the
+    // read: its mail may already be gone, and the read settles it.
+    std::vector<TortoiseBots::GuildOrders::RelistLedgerEntry> relistRows =
+        TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow());
+    bool hasRelistLedger = !relistRows.empty();
+    if (TortoiseBots::GuildOrders::RelistClaimPending(relistRows))
+        return true;
 
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
