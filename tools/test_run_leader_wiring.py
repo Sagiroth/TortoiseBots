@@ -1533,5 +1533,34 @@ class RunTestSpeedWiringTest(unittest.TestCase):
         self.assertLess(clear.index("EraseAllRunSlots();"), clear.index("SyncRunSpeed();"))
 
 
+class UnitsHoldResetToGossipWiringTest(unittest.TestCase):
+    """A units hold reads a script reset only when its plan row sets kPlanFlagResetToGossip (16384), and only when
+    the gossip that started the event is the step to go back to. The loader refuses the flag on any other kind and
+    on a hold with a done flag; the hold step and the wipe re-arm both go through UnitsHoldResetSeen."""
+
+    POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+    PLAN = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
+
+    def test_flag_is_the_next_free_bit(self):
+        self.assertIn("constexpr std::uint32_t kPlanFlagResetToGossip = 16384;", self.PLAN)
+
+    def test_loader_refuses_the_flag_off_a_units_hold(self):
+        norm = body(strip_comments(self.PLAN), "inline PlanStepRefusal NormalizePlanStep(", "if (step.exactLaunch")
+        self.assertIn("(step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold", norm)
+        hold = body(strip_comments(self.PLAN), "bool const byData = (step.flags & kPlanFlagDoneData) != 0;", "default:")
+        self.assertIn("resetToGossip && (byData || byObject)", hold)
+
+    def test_reset_needs_the_flag_and_a_gossip_to_go_back_to(self):
+        check = body(strip_comments(self.POLICY), "inline bool UnitsHoldResetSeen(", "\n}\n")
+        self.assertIn("!(s.flags & ai::kPlanFlagResetToGossip)", check)
+        self.assertIn("EventStartStep(r)", check)
+        self.assertIn("PlanStepKind::Gossip", check)
+
+    def test_both_reset_paths_go_through_the_check(self):
+        policy = strip_comments(self.POLICY)
+        self.assertEqual(policy.count("UnitsHoldResetSeen(r, f, s)"), 1)  # the hold step
+        self.assertEqual(policy.count("UnitsHoldResetSeen(r, f, *s)"), 1)  # the wipe re-arm
+
+
 if __name__ == "__main__":
     unittest.main()

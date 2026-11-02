@@ -906,8 +906,9 @@ static void TestBlyHoldFoughtOnItsFirstTickEnds()
 }
 
 // Zul'Farrak's Farraki Arena (Champion Razjal the Quick 62498): the run
-// leader's rows are `gossip 62498 param 1` then a units hold (no done flag)
-// with entries 62498,62496,62497,62499, radius 35, 600 s. The three champions
+// leader's rows are `gossip 62498 param 1` then a units hold (no done flag,
+// flags 16384 kPlanFlagResetToGossip) with entries 62498,62496,62497,62499,
+// radius 35, 600 s. The three champions
 // stand faction 35 and friendly, then turn hostile 13 s after the gossip. The
 // core script (farraki_arena.cpp ResetArena) makes all three friendly and
 // faction 35 again and restores the gossip on a wipe or an evade: the units
@@ -928,6 +929,7 @@ static PlanStep ArenaHold()
 {
     PlanStep s;
     s.kind = PlanStepKind::Hold;
+    s.flags = ai::kPlanFlagResetToGossip;
     s.timeoutS = 600;
     s.radius = 35.0f;
     s.entries = {62498, 62496, 62497, 62499};
@@ -1063,6 +1065,124 @@ static void TestArenaWipeRearmsTheGossipOnTheTick()
     f.alive = 0;
     Tick(r, f);
     CHECK(r.step == 1); // the wipe recovery re-armed to the gossip
+}
+
+static void TestArenaHoldWithoutTheFlagIsNoReset()
+{
+    // The mutation guard: the same reset ticks on a hold whose row does not set
+    // kPlanFlagResetToGossip leave the hold in place. The flag is what makes
+    // the reset read opt-in, not the shape of the units.
+    PlanStep hold = ArenaHold();
+    hold.flags = 0;
+    CHECK(ai::NormalizePlanStep(hold) == PlanStepRefusal::None);
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), hold};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.step == 2);
+    f = ArenaReset(f);
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+    CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+}
+
+static void TestArenaHoldWithoutAGossipIsNoReset()
+{
+    // The flag alone is not enough: the step to go back to must be the gossip
+    // that started the event. A flagged hold with no gossip before it (or with
+    // a ritual there) reads no reset and waits out its timeout as before.
+    {
+        DungeonPlan plan;
+        plan.steps = {Move(-30), ArenaHold()};
+        Run r = Start(&plan, 1);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(62496, 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.eventStarted && r.step == 1);
+        f = ArenaReset(f);
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 1 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
+    {
+        PlanStep ritual;
+        ritual.kind = PlanStepKind::Ritual;
+        ritual.entry = 1;
+        ritual.param = 3;
+        CHECK(ai::NormalizePlanStep(ritual) == PlanStepRefusal::None);
+        DungeonPlan plan;
+        plan.steps = {Move(-30), ritual, ArenaHold()};
+        Run r = Start(&plan, 2);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(62496, 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.eventStarted && r.step == 2);
+        f = ArenaReset(f);
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 2 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
+}
+
+static void TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets()
+{
+    // Bly's crew, the Sunken Temple and Stratholme holds: units holds whose
+    // first entry counts while still friendly. A crew that evades or drops
+    // hostility and turns friendly again is not a reset without the flag, so
+    // the hold goes on instead of pausing the run.
+    PlanStep bly = BlyHold();
+    PlanStep temple;
+    temple.kind = PlanStepKind::Hold;
+    temple.timeoutS = 300;
+    temple.radius = 30.0f;
+    temple.entries = {8580};
+    CHECK(ai::NormalizePlanStep(temple) == PlanStepRefusal::None);
+    PlanStep stratholme;
+    stratholme.kind = PlanStepKind::Hold;
+    stratholme.timeoutS = 300;
+    stratholme.radius = 68.0f;
+    stratholme.entries = {10440, 10416, 10417};
+    CHECK(ai::NormalizePlanStep(stratholme) == PlanStepRefusal::None);
+    struct Case
+    {
+        PlanStep hold;
+        std::uint32_t gossip;
+    };
+    Case const cases[] = {{bly, 7604}, {temple, 8580}, {stratholme, 10440}};
+    for (const Case& c : cases)
+    {
+        PlanStep gossip;
+        gossip.kind = PlanStepKind::Gossip;
+        gossip.entry = c.gossip;
+        gossip.param = 1;
+        CHECK(ai::NormalizePlanStep(gossip) == PlanStepRefusal::None);
+        DungeonPlan plan;
+        plan.steps = {Move(-30), gossip, c.hold};
+        Run r = Start(&plan, 2);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(c.hold.entries.front(), 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.step == 2 && r.eventStarted);
+        f.anyInCombat = false;
+        f.units = {Unit(c.hold.entries.front(), 5, 0, false)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 2 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
 }
 
 static void TestBlyHoldUnchangedByTheResetRule()
@@ -1325,6 +1445,9 @@ int main()
     TestArenaHoldInFightIsNoReset();
     TestArenaWipeRearmsTheGossipOnce();
     TestArenaWipeRearmsTheGossipOnTheTick();
+    TestArenaHoldWithoutTheFlagIsNoReset();
+    TestArenaHoldWithoutAGossipIsNoReset();
+    TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets();
     TestBlyHoldUnchangedByTheResetRule();
     TestMograineWhitemaneHoldWaitsForValueFour();
     TestCrystalHoldWaitsForActive();

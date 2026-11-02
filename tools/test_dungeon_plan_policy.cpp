@@ -698,6 +698,35 @@ static void TestStandPullFlagOnBossAndPull()
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
 }
 
+static void TestResetToGossipFlagOnlyOnUnitsHold()
+{
+    CHECK(kPlanFlagResetToGossip == 16384);
+    PlanStep hold = Step(0, 33, PlanStepKind::Hold);
+    hold.entries = {62498, 62496, 62497, 62499};
+    hold.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && (hold.flags & kPlanFlagResetToGossip));
+    // A hold done by data or by an object has its own reset rule: refused.
+    PlanStep data = hold;
+    data.entry = 1;
+    data.param = 3;
+    data.flags = kPlanFlagResetToGossip | kPlanFlagDoneData;
+    CHECK(NormalizePlanStep(data) == PlanStepRefusal::BadParam);
+    PlanStep object = hold;
+    object.entry = 124369;
+    object.param = 1;
+    object.flags = kPlanFlagResetToGossip | kPlanFlagDoneObject;
+    CHECK(NormalizePlanStep(object) == PlanStepRefusal::BadParam);
+    // Any other kind is refused, not ignored.
+    PlanStep gossip = Step(0, 34, PlanStepKind::Gossip);
+    gossip.entry = 62498;
+    gossip.param = 1;
+    gossip.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(gossip) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 35, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
+}
+
 static void TestPlainOpenUnchanged()
 {
     // A plain open with a radius, extra entries and no param still loads: none
@@ -800,6 +829,7 @@ int main()
     TestProofCreatureFlagOnlyOnOpenProof();
     TestPlainOpenUnchanged();
     TestStandPullFlagOnBossAndPull();
+    TestResetToGossipFlagOnlyOnUnitsHold();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
     TestKinds();

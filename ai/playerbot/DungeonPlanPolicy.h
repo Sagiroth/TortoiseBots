@@ -150,7 +150,8 @@ namespace ai
     // otherwise deferred when nothing later in the plan needs it gone (runtime/DungeonRunPolicy.h PullMayBeDeferred,
     // DeferUnreachablePack); with this flag it pauses the run as before. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagNoDefer = 1024;
-    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss or a pull).
+    // open_proof only: the proof entry is a creature (alive). The next free bit: 32768 (8192 is kPlanFlagStandPull, a
+    // boss or a pull; 16384 is kPlanFlagResetToGossip, a units hold).
     constexpr std::uint32_t kPlanFlagProofCreature = 2048;
     // boss only: the boss may stand out of the party's reach by design (Stormwrought Ruins' Eldermaw 62661 swims a
     // pool whose bed is the only navmesh, cut off from the shore; specs/sw-eldermaw.md). Where the step would pause on
@@ -162,6 +163,13 @@ namespace ai
     // `param` yd of the lead bot (0: the run leader's default, at most kPlanMaxStandPullClear), and its patrollers are
     // seen farther out (runtime/DungeonRunPolicy.h PatrolStandPullGate).
     constexpr std::uint32_t kPlanFlagStandPull = 8192;
+    // hold only, a units hold (no done flag): the script can reset the event, and the hold then goes back to the
+    // gossip step that started it (runtime/DungeonRunPolicy.h UnitsHoldResetSeen) instead of waiting out its timeout.
+    // Only a hold whose event the script resets on a wipe or an evade sets it (Zul'Farrak's Farraki Arena). Without
+    // it a hold never reads a reset, so a crew that turns friendly again (Bly's, the Sunken Temple and Stratholme
+    // holds, whose first entry counts while still friendly) is not mistaken for one. Any other kind, and a hold with
+    // a done flag, is refused (BadParam).
+    constexpr std::uint32_t kPlanFlagResetToGossip = 16384;
     constexpr std::uint32_t kPlanEncounterNotStarted = 0;
     constexpr std::uint32_t kPlanEncounterFail = 2;
     constexpr std::uint32_t kPlanEncounterMax = 4;
@@ -461,6 +469,8 @@ namespace ai
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagStandPull) && step.kind == PlanStepKind::Pull && step.param > kPlanMaxStandPullClear)
             return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold)
+            return PlanStepRefusal::BadParam;
         if (step.exactLaunch && step.kind != PlanStepKind::MoveDirect)
             return PlanStepRefusal::BadParam;
         if (step.openProof && step.kind != PlanStepKind::Open)
@@ -534,7 +544,10 @@ namespace ai
                 bool const byData = (step.flags & kPlanFlagDoneData) != 0;
                 bool const byObject = (step.flags & kPlanFlagDoneObject) != 0;
                 bool const encounter = (step.flags & kPlanFlagEncounter) != 0;
+                bool const resetToGossip = (step.flags & kPlanFlagResetToGossip) != 0;
                 if ((byData && byObject) || (encounter && !byData))
+                    return PlanStepRefusal::BadParam;
+                if (resetToGossip && (byData || byObject))
                     return PlanStepRefusal::BadParam;
                 if (encounter && step.param > kPlanEncounterMax)
                     return PlanStepRefusal::BadParam;
