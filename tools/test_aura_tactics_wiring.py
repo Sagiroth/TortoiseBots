@@ -233,6 +233,7 @@ class FreezeFleeWiring(unittest.TestCase):
         helper = body(ACTIONS, "bool ai::FleeRowListsAura(")
         self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics", helper)
         self.assertIn("HasAuraTacticMap(bot->GetMapId())", helper)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', helper)
         self.assertIn("BossTacticKind::FleeOnAura", helper)
 
     def test_the_new_kinds_are_read_from_the_key_gated_scan(self):

@@ -802,6 +802,10 @@ bool ai::FleeRowListsAura(PlayerbotAI* ai, Player* bot, std::uint32_t spellId)
         return false;
     if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
         return false;
+    // Only a row the tactics actually run wins: without the strategy (the gate off) the hard-coded runout stays the
+    // carrier's only mover.
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     for (const BossTacticRow* row : fight.rows)
     {
