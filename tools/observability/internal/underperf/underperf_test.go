@@ -2,10 +2,14 @@ package underperf
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"tortoise-observability/internal/combat"
 )
@@ -611,5 +615,181 @@ func TestSpellListCapPinned(t *testing.T) {
 	}
 	if got := defLim().SpellListCap; got != 12 {
 		t.Errorf("SpellListCap = %d, want 12", got)
+	}
+}
+
+type fixtureFight struct {
+	Fight    combat.Fight     `json:"fight"`
+	Warnings []combat.Warning `json:"warnings"`
+}
+
+// warnSet is bot -> rule -> fights, red and yellow warnings only: exactly
+// what the view's rule reasons must say.
+func warnSet(in []Input, judge bool, rules []combat.Rule) map[string]map[string]int {
+	out := map[string]map[string]int{}
+	for _, f := range in {
+		ws := f.Warnings
+		if judge {
+			ws = combat.Judge(f.Fight, rules)
+		}
+		for _, w := range ws {
+			if w.Level != "red" && w.Level != "yellow" {
+				continue
+			}
+			if out[w.Bot] == nil {
+				out[w.Bot] = map[string]int{}
+			}
+			out[w.Bot][w.Rule]++
+		}
+	}
+	return out
+}
+
+func ruleReasonSet(r Report) map[string]map[string]int {
+	out := map[string]map[string]int{}
+	for _, row := range r.Bots {
+		for _, reason := range row.Reasons {
+			if strings.HasPrefix(reason.ID, "rule:") {
+				if out[row.Name] == nil {
+					out[row.Name] = map[string]int{}
+				}
+				out[row.Name][strings.TrimPrefix(reason.ID, "rule:")] = reason.Fights
+			}
+		}
+	}
+	return out
+}
+
+func sameSet(a, b map[string]map[string]int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for bot, rules := range a {
+		if len(rules) != len(b[bot]) {
+			return false
+		}
+		for rule, n := range rules {
+			if b[bot][rule] != n {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func loadFixture(t *testing.T, path string) []Input {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	var raw []fixtureFight
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	out := make([]Input, 0, len(raw))
+	for _, f := range raw {
+		out = append(out, Input{
+			Key: f.Fight.ID, Day: time.Unix(f.Fight.Start, 0).UTC().Format("2006-01-02"), Fight: f.Fight,
+		})
+	}
+	return out
+}
+
+func TestZG24Sample(t *testing.T) {
+	rules := rulesOf(t)
+	saved := loadFixture(t, "testdata/zg24-sample.json")
+	for i := range saved {
+		saved[i].Warnings = combat.Judge(saved[i].Fight, rules)
+	}
+	r := Build("Tacmdbilo", 0, 1<<62, saved, rules, ParseFloors(rules), defLim())
+	want := warnSet(saved, true, rules)
+	got := ruleReasonSet(r)
+	if !sameSet(want, got) {
+		t.Fatalf("rule reasons = %v, want %v", got, want)
+	}
+	if len(want) == 0 {
+		t.Fatalf("the sample judged no rule warnings at all")
+	}
+
+	// The saved warnings were made with the rules table of the walk day. Once
+	// a rules change lands the two differ by design; say so and keep the
+	// re-judged comparison above.
+	var raw []fixtureFight
+	b, err := os.ReadFile("testdata/zg24-sample.json")
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	var savedIn []Input
+	for _, f := range raw {
+		savedIn = append(savedIn, Input{Key: f.Fight.ID, Fight: f.Fight, Warnings: f.Warnings})
+	}
+	savedSet := warnSet(savedIn, false, nil)
+	if !sameSet(want, savedSet) {
+		t.Logf("the fixture's saved warnings were judged with an older rules table; comparing against combat.Judge only")
+	} else if len(savedSet) == 0 {
+		t.Errorf("the fixture carries no red/yellow saved warnings")
+	}
+}
+
+// TestWalkDir is the offline walk match: it reads a walk's saved fights (the
+// directory the lead names), keeps the requested window, and checks that the
+// view's rule reasons equal the warnings combat.Judge makes from those same
+// fights. Opt-in, because it needs the walk files.
+func TestWalkDir(t *testing.T) {
+	dir := os.Getenv("UNDERPERF_WALK_DIR")
+	if dir == "" {
+		t.Skip("set UNDERPERF_WALK_DIR, UNDERPERF_SINCE and UNDERPERF_UNTIL to run the walk match")
+	}
+	since, err := strconv.ParseInt(os.Getenv("UNDERPERF_SINCE"), 10, 64)
+	if err != nil {
+		t.Fatalf("UNDERPERF_SINCE: %v", err)
+	}
+	until, err := strconv.ParseInt(os.Getenv("UNDERPERF_UNTIL"), 10, 64)
+	if err != nil {
+		t.Fatalf("UNDERPERF_UNTIL: %v", err)
+	}
+	rules := rulesOf(t)
+	files, err := filepath.Glob(filepath.Join(dir, "combat-fight-*.json"))
+	if err != nil {
+		t.Fatalf("walk dir: %v", err)
+	}
+	var fights []Input
+	for _, path := range files {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		var ff fixtureFight
+		if err := json.Unmarshal(b, &ff); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if ff.Fight.Start < since || ff.Fight.Start >= until {
+			continue
+		}
+		fights = append(fights, Input{
+			Key: ff.Fight.ID, Day: time.Unix(ff.Fight.Start, 0).UTC().Format("2006-01-02"),
+			Fight: ff.Fight, Warnings: combat.Judge(ff.Fight, rules),
+		})
+	}
+	r := Build("Tacmdbilo", since, until, fights, rules, ParseFloors(rules), defLim())
+	t.Logf("walk %s: %d fights, %d judged, %d runs", dir, r.Fights, r.Judged, len(r.Runs))
+	for _, row := range r.Bots {
+		var reasons []string
+		for _, reason := range row.Reasons {
+			reasons = append(reasons, reason.ID+" x"+itoa(reason.Fights))
+		}
+		main := ""
+		if row.Ratio.Main != nil {
+			main = fmt.Sprintf("%s=%v", row.Main, *row.Ratio.Main)
+		}
+		t.Logf("%-14s %-6s %-28s %s", row.Name, row.Level, strings.Join(reasons, ", "), main)
+	}
+	want := warnSet(fights, false, nil) // Inputs carry Judge's warnings
+	if got := ruleReasonSet(r); !sameSet(want, got) {
+		t.Fatalf("rule reasons = %v, want the warnings over the same fights %v", got, want)
 	}
 }

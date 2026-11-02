@@ -43,6 +43,7 @@ import (
 	"tortoise-observability/internal/ringbuf"
 	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
+	"tortoise-observability/internal/underperf"
 	"tortoise-observability/internal/ws"
 	"tortoise-observability/web"
 )
@@ -732,6 +733,17 @@ func main() {
 	mux.HandleFunc("GET /api/v1/combat/history/commanders", requireAuth(history.CommandersHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/history", requireAuth(history.ListHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/packs", requireAuth(history.PackHandler(historyStore)))
+
+	// The underperforming bots of a window or one of its runs: each flagged bot next to the median of its role peers,
+	// the rules that fired on it and the fights that flagged it. With the history off it answers from memory only; a
+	// typed-nil *history.Store inside the interface would panic, so the interface value stays nil.
+	var histSource underperf.HistSource
+	if historyStore != nil {
+		histSource = historyStore
+	}
+	mux.HandleFunc("GET /api/v1/combat/underperformers", requireAuth(underperf.Handler(underperf.Sources{
+		Mem: combatStore, Hist: histSource, Rules: combatStore.Rules, Specs: armoryService.SpecsFor, Now: time.Now,
+	})))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
 	// {"<commander>": {"<bot guid>": {"map": 209, "pts": [[x, y, unix seconds], ...]}}}, oldest point first. A point where something
