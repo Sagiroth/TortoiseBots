@@ -12915,17 +12915,15 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::string& order)
 // a plan boss (UnitFact::victimName), and one nobody hits comes before one holding an add; in turn among them. With the
 // lead bot dead or no tank, the boss itself on a raid member that is no tank is taken off him at once (one an off-tank
 // holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). With
-// AiPlayerbot.DungeonRunRaidHealerGuard and the main tank holding the boss, RaidHealerGuard has the first word on an
-// add on a healer and the off-tanks take no other add. True when `order` holds it.
+// AiPlayerbot.DungeonRunRaidHealerGuard (CheckGuard, which runs RaidHealerGuard first) the off-tanks take no other
+// add. True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
-    // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to the ranged
-    // dps first; the off-tanks below take only such an add, and only when none is free for it.
-    bool const mainTankHoldsBoss = f.leadAlive && f.leadIsTank && LeadHoldsPlanBoss(r, f);
-    if (mainTankHoldsBoss && RaidHealerGuard(r, f, order))
-        return true;
     if (f.raid.bossOffTanksAlive.empty())
         return false;
+    // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss the off-tanks below take only an add
+    // on a healer, and not one the ranged dps already have (RaidHealerGuard).
+    bool const healerGuardOn = f.leadAlive && f.leadIsTank && f.raid.healerGuard && LeadHoldsPlanBoss(r, f);
     std::vector<const std::string*> free, busy;
     for (const std::string& name : f.raid.bossOffTanksAlive)
     {
@@ -12968,7 +12966,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // The healer guard's off-tank takes only an add on a healer, and not one the ranged dps already have
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
-            if (mainTankHoldsBoss && f.raid.healerGuard && (!u.victimHealer || r.healerGuardDps.count(u.guid)))
+            if (healerGuardOn && (!u.victimHealer || r.healerGuardDps.count(u.guid)))
                 continue;
             if (GuardLeavesCampAlone(u) || capped(u) || CcOrderOut(r, u.guid))
                 continue;
@@ -13431,6 +13429,11 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // but never while the main tank holds a plan boss (LeadHoldsPlanBoss).
         if (RaidBossRulesFight(r, f))
         {
+            // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to
+            // the ranged dps first, with no off-tank in range too (RaidHealerGuard); the off-tanks take such an add
+            // only when none of the ranged dps is free for it (RaidGuardTick).
+            if (f.raid.healerGuard && RaidHealerGuard(r, f, order))
+                return true;
             if (!f.raid.bossOffTanksAlive.empty())
                 return RaidGuardTick(r, f, dt, order);
             if (LeadHoldsPlanBoss(r, f))

@@ -22360,6 +22360,36 @@ static void TestRaidHealerGuardLeavesANonHealerAddAlone()
     CHECK(r.healerGuardDps.empty());
 }
 
+// No living off-tank: the healer guard does not wait for the off-tanks' pick-up, so an add on a healer still goes to
+// the nearest ranged dps (the raid the guard is for, ranged dps and all).
+static void TestRaidHealerGuardRunsWithNoOffTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    f.raid.offTanksAlive.clear();
+    f.raid.bossOffTanksAlive.clear();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50005, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(Tick(r, f) == "attack 50005 NearDps");
+    CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
+    // The second ranged dps, one tick later, and then the add has its two.
+    CHECK(Tick(r, f) == "attack 50005 MidDps");
+    for (int k = 0; k < 5; ++k)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.offTankTurn == 0);
+    CHECK(r.healerGuardDps[50005].size() == kRaidHealerGuardDps);
+}
+
 // Adds that die keep the hp watch losing, but only the plan boss's own loss holds a raid's boss fight through its
 // deaths: a flat boss with whelps dying every 20 s pauses on the first death past the 1200 s ceiling.
 static void TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp()
@@ -26786,6 +26816,7 @@ int main()
     TestRaidHealerGuardFallsBackToAFreeOffTank();
     TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss();
     TestRaidHealerGuardLeavesANonHealerAddAlone();
+    TestRaidHealerGuardRunsWithNoOffTank();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();
