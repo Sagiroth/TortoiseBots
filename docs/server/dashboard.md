@@ -74,7 +74,8 @@ The web interface provides real-time operational visibility into your realm's bo
 | **Commanders** | Who is leading bot groups? | Party health bars, tactical warnings, commander orders, and fight status. |
 | **Progress** | Are bots levelling up smoothly? | XP per hour KPIs, level-up timelines, and average gear item level by level band. |
 | **Activity** | What events have occurred? | Real-time feed of completed quests, rare loot drops, gathered nodes, and kills. |
-| **Dungeons** | What dungeon and raid runs are active? | Live view of active instance copies with bots, member health, and player badges. |
+| **Dungeons** | What dungeon runs are active? | Live view of active dungeon copies with bots, member health, and player badges. |
+| **Raids** | What raid runs are active? | Live view of active raid copies by group, no binding needed: leaders, offline members, live combat window, fight links. |
 | **Dungeon runs** | How do the dungeon runs go? | Success rate, clear and boss kill times, wipes and deaths per dungeon, read from the run trace summaries; optional Overview strip. |
 | **Agent maps** | What did a turtle-agent test run do? | Developer tool for turtle-agent test runs. Hidden unless the daemon is given a maps folder. |
 | **Auction House** | What is currently on the market? | Searchable catalog of all active auction listings posted by bots and players. |
@@ -102,14 +103,22 @@ Clicking any bot name or map marker opens a slide-over profile panel that inspec
 
 ### Dungeons Tab
 
-The **Dungeons** tab provides a dedicated live overview of all active dungeon and raid runs containing bots:
+The **Dungeons** tab provides a dedicated live overview of all active dungeon runs containing bots (raid copies live on the Raids tab):
 
 - **Instance Isolation:** Groups bots by active instance copy (`(map, instance)` pair), distinctly separating multiple concurrent runs of the same dungeon.
 - **Player Highlighting:** Real players in bot parties are visually distinguished with a distinct badge and gold ring indicator.
-- **Raid Subgroups:** Raid encounters display members formatted into compact 5-player subgroup tiles.
 - **Live Run View:** Selecting an active run presents an interactive instance map rendering bot positions and vital health/power bars. The first living tank is the run's lead: the map anchors on it and draws its mark and path.
 - **Mobs and Targets (`DUNGEON_MOBS`):** A module that sends the `DUNGEON_MOBS` datagram (issue #1101; additive, no protocol version bump) adds the mobs the party's bots have seen, each mob's target and every bot's own target; the run's map draws them through the **Enemies**, **Critters**, **Threat colours and lines** and **Target, heal and crowd-control lines** layers (see [Commanders maps](#commanders-maps)). The module caps a run at 24 mobs in a party and 48 in a raid (fewer when many runs are live), and the card says `N of M mobs shown` when the list was cut. Mobs of a copy that leaves the instance vanish within about 8 seconds. `AiPlayerbot.ObservabilityDungeonMobs = 1` (default) turns the feed on, but only while `AiPlayerbot.Observability = 1`; with either off the maps keep working and those layers stay greyed with "it needs the newer module". A mob entry joins a run by map + instance id; when the roster reports no instance at all (a module from before #895), it joins by map plus a shared member guid, never by map alone, and only when exactly one run on that map matches.
 - **Power Bars:** Each member row draws its power bar from the roster's `power`/`max_power`/`power_type`, exactly like the Bots tab, so a module that reports no power and a dead member show none.
+
+### Raids Tab
+
+The **Raids** tab lists every live raid instance copy with bots in it, one row per group (group id, leader, up-count, live combat window, fight links) — no `.bot commander bind` needed. A raid copy is any instance copy where a member's roster row carries `raid: true` (the core's map type) or a fresh `DUNGEON_MOBS` entry carries `raid: true`; an unknown copy stays where it was, so an old module keeps today's Dungeons behaviour.
+
+- **Groups:** One card per group with the leader, offline members and the live combat window. The party, map and fights reuse the Commanders renderers unchanged: subgroup blocks, threat and deaths panels, and `mountFightPanel` under the group key.
+- **Observed vs roster only:** A live `RAIDS` report marks the group `observed` (leader, offline members, fight numbers); without one the card says `roster only` (the server sends no RAIDS: `AiPlayerbot.ObservabilityRaids = 0`). A bound group shows `bound · <commander>` linking to its Commanders card and carries the run line; fights are the same list under the commander name.
+- **Ungrouped:** Units of the copy with no group read as one muted "Not in a group" block.
+- **Polling:** The page refetches `/api/v1/raids` on each snapshot only while the tab is on screen and the last `raids` event is older than 5 s, else once per 30 s. The WebSocket hub broadcasts `raids` after every applied RAIDS datagram.
 
 ### Commanders Maps
 
@@ -196,7 +205,8 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/issues`: Active and historical navigation and combat stall episodes.
 - `GET /api/v1/commanders`: Active remote commander bindings, party member positions, and recent orders.
 - `GET /api/v1/commanders/trails`: Historic movement trails and paths for active commanders.
-- `GET /api/v1/dungeons`: Live view of active instance copies with member states and player indicators; from a module that sends `DUNGEON_MOBS`, each run also carries `mobs`, `mobs_map` and `mobs_total`, and each member `id` and `target`.
+- `GET /api/v1/dungeons`: Live view of active dungeon copies with member states and player indicators; from a module that sends `DUNGEON_MOBS`, each run also carries `mobs`, `mobs_map` and `mobs_total`, and each member `id` and `target`.
+- `GET /api/v1/raids`: Live view of active raid copies: one run per copy, groups by group id with leader, offline members and live combat window, ungrouped units apart; `live` says a RAIDS datagram arrived inside 12 s. `WS /api/v1/stream` event `raids` carries the same view.
 - `GET /api/v1/dungeon-runs`, `GET /api/v1/dungeon-runs/<map>/runs`: Run trace summaries per dungeon and the runs of one map (the Dungeon runs tab).
 - `GET /api/v1/maps/<map id>`: The three picture slots of a map in display order (`kind` worldmap/minimap/navmesh, `floor`, `label`, `available`; a missing slot carries `reason`, an available one `name`, `source`, `url` and the rectangle `x`/`y`/`w`/`h` it covers). Answers 200 also for a map without pictures; 404 only when no map folder is configured.
 - `GET /api/v1/mapfiles/<name>`: One available map picture (`.png`) or its placement (`.json`) from the map folder.
