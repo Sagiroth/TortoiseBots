@@ -221,6 +221,8 @@ The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH
 
 The Fight debugger's rail on a Commanders card lists the fights of Tonight (or a chosen night), oldest first:
 
+All times on the dashboard are shown in your browser's local time, and nights roll over at 06:00: a fight at 02:17 belongs to the previous evening's night.
+
 - **Default view:** boss fights, wipes, fights with any death and fights that are not clean (a rule the daemon fired, or an opened fight whose checks warn or fail) are full cards; two or more clean trash fights in a row (same leg and run) fold into one line such as "Leg 2 · 12 trash pulls, 0 deaths", which opens in place. The fold that holds the selected fight opens by itself; a fold the reader opened stays open when a new pull joins it.
 - **Show all fights:** the box over the rail lists every fight of the night as a card, as the rail did before. The choice is kept per viewer in this browser (for the page only where the browser blocks storage). A read-only history card never folds.
 - **Paging:** Tonight shows the bound run plus the last 2 hours (the list's `since`); **Load older fights** at the top asks the history for the next 50 before the oldest row shown, across days. Once an older page is loaded the window start stops sliding for that night, so no fight falls between the pages and the window. With Show all fights on, Tonight is the whole of today again.
