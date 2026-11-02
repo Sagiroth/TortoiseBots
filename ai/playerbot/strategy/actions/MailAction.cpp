@@ -371,6 +371,66 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
     return taken;
 }
 
+namespace
+{
+// Takes the value one settlement mail carries into the bot's hands: the sale
+// gold or the returned stack. False when the mail gave nothing, so the caller
+// leaves the row as it was.
+bool TakeRelistValue(PlayerbotAI* ai, Player* bot, ObjectGuid mailbox, Mail* mail, uint32_t itemId,
+    TortoiseBots::GuildOrders::RelistMailKind kind, uint32_t& gold, uint32_t& items)
+{
+    if (kind == TortoiseBots::GuildOrders::RelistMailKind::Sold)
+    {
+        uint32_t before = bot->GetMoney();
+        WorldPacket packet;
+        packet << mailbox;
+        packet << mail->messageID;
+        bot->GetSession()->HandleMailTakeMoney(packet);
+        uint32_t after = bot->GetMoney();
+        if (after <= before)
+            return false;
+        gold = after - before;
+        return true;
+    }
+    if (kind != TortoiseBots::GuildOrders::RelistMailKind::Expired)
+        return false;
+    uint32_t itemGuid = 0;
+    for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
+    {
+        if (it->item_template == itemId)
+        {
+            itemGuid = it->item_guid;
+            break;
+        }
+    }
+    if (!itemGuid)
+        return false;
+    uint32_t before = ai->GetInventoryItemsCountWithId(itemId);
+    WorldPacket packet;
+    packet << mailbox;
+    packet << mail->messageID;
+    bot->GetSession()->HandleMailTakeItem(packet);
+    uint32_t after = ai->GetInventoryItemsCountWithId(itemId);
+    if (after <= before)
+        return false;
+    items = after - before;
+    return true;
+}
+
+void DeleteEmptyRelistMail(PlayerbotAI* ai, MasterPlayer* owner, ObjectGuid mailbox,
+    uint32_t messageId)
+{
+    Mail* current = owner->GetMail(messageId);
+    if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
+    {
+        WorldPacket delPacket;
+        delPacket << mailbox;
+        delPacket << messageId;
+        ai->GetBot()->GetSession()->HandleMailDelete(delPacket);
+    }
+}
+} // namespace
+
 // Settles the guild relist ledger against the waiting auction mail. A sale
 // mail pays its gold into the bot's hands, an expired listing returns the
 // stack; the ledger row then waits for the bank trip the relist drain makes.
@@ -395,6 +455,39 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
     using namespace TortoiseBots::GuildOrders;
     uint32_t settled = 0;
     time_t curTime = time(nullptr);
+
+    // A claimed row names the mail it is taking. A mail that is gone or empty
+    // means the take landed: the value is in the bot, so the row is received
+    // and the bank drain settles it. A mail that still carries value is taken
+    // again. A claimed row is never matched by its terms a second time.
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        RelistLedgerEntry& entry = entries[i];
+        if (entry.state != RelistState::Claimed)
+            continue;
+        Mail* mail = owner->GetMail(entry.claimMailId);
+        if (!mail || mail->state == MAIL_STATE_DELETED || (!mail->money && !mail->has_items))
+        {
+            if (TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq,
+                    entry.heldGold, entry.heldCount))
+            {
+                RelistNoteClaimSettled(entry);
+                ++settled;
+            }
+            continue;
+        }
+        RelistMailKind const kind = mail->money ? RelistMailKind::Sold : RelistMailKind::Expired;
+        uint32_t gold = 0;
+        uint32_t items = 0;
+        if (!TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items))
+            continue;
+        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq, gold, items))
+            continue;
+        RelistNoteMailReceived(entry, kind, gold, items);
+        ++settled;
+        DeleteEmptyRelistMail(ai, owner, mailbox, mail->messageID);
+    }
+
     for (PlayerMails::iterator itr = owner->GetMailBegin(); itr != owner->GetMailEnd(); ++itr)
     {
         Mail* mail = *itr;
@@ -402,11 +495,15 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
             continue;
         if (!mail->money && !mail->has_items)
             continue;
+        // A claimed row already owns this mail: its retry pass takes it.
+        size_t claimed = 0;
+        if (RelistClaimedIndex(entries, mail->messageID, claimed))
+            continue;
         RelistMail view = MakeRelistMailView(mail, owner);
         if (!view.auction)
             continue;
         // A mail settles a row only when its item, listing terms and timing
-        // identify an unread row. Look-alike rows of one guild settle as the
+        // identify a posted row. Look-alike rows of one guild settle as the
         // oldest: that guild is credited either way. Rows of different guilds
         // leave the mail to normal mail handling, because the ledger never
         // pays one guild another auction's value.
@@ -420,62 +517,28 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
                     view.subjectItemId, matches);
             continue;
         }
-        std::vector<RelistLedgerEntry>::iterator entry = entries.begin() + matched;
+        RelistLedgerEntry& entry = entries[matched];
+        RelistMailKind const kind = RelistMailMatch(entry, view, uint64_t(curTime));
 
-        RelistMailKind const kind = RelistMailMatch(*entry, view, uint64_t(curTime));
+        // Claim before the take: the row names the mail and the value it
+        // promises, so a take whose received write fails is still known. A
+        // failed claim write leaves the mail untouched for the next read.
+        RelistLedgerEntry claim = entry;
+        RelistNoteMailClaimed(claim, mail->messageID, view, kind);
+        if (!TortoiseBots::GuildOrders::NoteRelistClaimed(bot->GetGUIDLow(), entry.seq,
+                claim.claimMailId, claim.heldGold, claim.heldCount))
+            continue;
+        entry = claim;
+
         uint32_t gold = 0;
         uint32_t items = 0;
-        if (kind == RelistMailKind::Sold)
-        {
-            uint32_t before = bot->GetMoney();
-            WorldPacket packet;
-            packet << mailbox;
-            packet << mail->messageID;
-            bot->GetSession()->HandleMailTakeMoney(packet);
-            uint32_t after = bot->GetMoney();
-            if (after <= before)
-                continue;
-            gold = after - before;
-        }
-        else if (kind == RelistMailKind::Expired)
-        {
-            uint32_t itemGuid = 0;
-            for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
-            {
-                if (it->item_template == entry->itemId)
-                {
-                    itemGuid = it->item_guid;
-                    break;
-                }
-            }
-            if (!itemGuid)
-                continue;
-            uint32_t before = ai->GetInventoryItemsCountWithId(entry->itemId);
-            WorldPacket packet;
-            packet << mailbox;
-            packet << mail->messageID;
-            bot->GetSession()->HandleMailTakeItem(packet);
-            uint32_t after = ai->GetInventoryItemsCountWithId(entry->itemId);
-            if (after <= before)
-                continue;
-            items = after - before;
-        }
-        else
+        if (!TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items))
             continue;
-
-        RelistNoteMailReceived(*entry, kind, gold, items);
-        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry->seq,
-                entry->heldGold, entry->heldCount))
+        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq, gold, items))
             continue;
+        RelistNoteMailReceived(entry, kind, gold, items);
         ++settled;
-        Mail* current = owner->GetMail(mail->messageID);
-        if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
-        {
-            WorldPacket delPacket;
-            delPacket << mailbox;
-            delPacket << mail->messageID;
-            bot->GetSession()->HandleMailDelete(delPacket);
-        }
+        DeleteEmptyRelistMail(ai, owner, mailbox, mail->messageID);
     }
     return settled;
 }

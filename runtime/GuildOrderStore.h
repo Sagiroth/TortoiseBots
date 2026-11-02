@@ -200,9 +200,14 @@ void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, ui
     uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec);
 // The bot's ledger rows, oldest first. Any thread.
 std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
-// A matched relist mail was collected: the gold or the item is in hand. Same
-// checked write: false means the table did not take the change and the row
-// stays unread. Map thread only (the mail read).
+// A matched relist mail is about to be taken: the row names the mail and the
+// value it promises. Same checked write: false means the table did not take
+// the change, so the mail must not be taken. Map thread only (the mail read).
+bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+    uint32_t items);
+// A claimed mail was collected: the gold or the item is in hand. Same checked
+// write: false means the table did not take the change and the row stays
+// claimed. Map thread only (the mail read).
 bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items);
 // Writes one ledger row to the table and to memory. Returns false, with memory
 // untouched, when the table write failed. World thread only (the relist drain).
