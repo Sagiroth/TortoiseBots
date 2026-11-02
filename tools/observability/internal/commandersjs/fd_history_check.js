@@ -115,8 +115,8 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =
   await settle();
   assert.deepStrictEqual(plain(run("fetchUrls")), ["/api/v1/combat/history?commander=Glacienne&day=2026-10-30"]);
   assert.ok(!/day=(&|$)/.test(run("fetchUrls[0]")), "no empty day param");
-  assert.ok(/fdDayFights\(fd, bind, today, /.test(src) && /fdDayFights\(fd, bind, fd\.day, /.test(src),
-    "both callers pass a real day (today for Tonight, the chosen night otherwise)");
+  assert.ok(/fdNightFights\(fd, bind, tonight, /.test(src) && /fdNightFights\(fd, bind, fd\.day, /.test(src),
+    "both callers pass a real night (tonight for Tonight, the chosen night otherwise)");
 
   console.log("fd history ok");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -46,8 +46,9 @@ vm.runInContext([
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
   "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
+  "var fdNightFights = (fd, bind, night, cb) => { if (cb) cb(null); };",
   "var fdWinFights = (fd, bind, since, cb) => { if (cb) cb(null); };",
-  "var FightHistory = { dayOf: () => \"2026-10-29\", rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
+  "var FightHistory = { dayOf: () => \"2026-10-29\", nightOf: () => \"2026-10-29\", nightDays: (n) => [n], rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };

@@ -59,7 +59,9 @@ const items = F.railItems(cards, { showAll: false, open: {}, sel: null });
 const shape = items.map((it) => (it.kind === "fold" ? "fold" + it.n + ":" + it.leg : it.card.key));
 deq(shape, ["fold3:1", "d3", "t4", "fold2:1", "boss", "fold2:2"],
   "only clean trash folds: a fight with a fired rule (t4) is not clean and stays a card: " + JSON.stringify(shape));
-const DAY = "1970-01-02|7";
+// The fold id carries the fight's local night (06:00 rollover), derived here the same way so the check holds in any zone.
+const nightOf = (t) => { const d = new Date(t * 1000 - 6 * 3600000); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
+const DAY = nightOf(T) + "|7";
 deq(items.filter((it) => it.kind === "fold").map((it) => it.id), ["fold:" + DAY + "|1|t2", "fold:" + DAY + "|1|t6", "fold:" + DAY + "|2|t9"],
   "a fold's id is its run, its leg and its NEWEST fight's key");
 assert.ok(items.every((it) => it.kind === "card" || !it.open), "folds start closed");
@@ -77,7 +79,7 @@ deq(F.railItems(F.railCards([row("a", 2, { deaths: 1 }), row("b", 1), row("c", 0
   ["card", "card", "card"]);
 // Another run (session) starts a new fold.
 const twoRuns = F.railCards([row("s2b", 3, { session: 8 }), row("s2a", 2, { session: 8 }), row("s1b", 1), row("s1a", 0)], {}, null, { asked: 0 });
-deq(F.railItems(twoRuns, {}).map((it) => it.id), ["fold:" + DAY + "|1|s1b", "fold:1970-01-02|8|1|s2b"], "one fold per run");
+deq(F.railItems(twoRuns, {}).map((it) => it.id), ["fold:" + DAY + "|1|s1b", "fold:" + nightOf(T) + "|8|1|s2b"], "one fold per run");
 
 // Opened in place: the fold line stays, its cards follow it; the selected fight's fold opens by itself, an explicit close wins.
 const midId = "fold:" + DAY + "|1|t6", firstId = "fold:" + DAY + "|1|t2";
@@ -124,8 +126,8 @@ assert.ok(src.includes("fd.showAll = fdShowAllGet() || !!bind.history;") && src.
   "the render folds by fd.showAll, which a history card always sets");
 assert.ok(src.includes('<input type="checkbox" data-fd-showall> Show all fights'), "the rail offers the box");
 assert.ok(/matches\('\[data-fd-showall\]'\)\) \{\s*\n[^\n]*\n\s*fdShowAllSet\(!!e\.target\.checked\);/.test(src), "the box saves the choice");
-assert.ok(/if \(fd\.showAll\) fdDayFights\(fd, bind, today, /.test(src) && /else fdWinFights\(fd, bind, fd\.winSince, /.test(src),
-  "show all lists the whole of today, otherwise the two-hour window");
+assert.ok(/if \(fd\.showAll\) fdNightFights\(fd, bind, tonight, /.test(src) && /else fdWinFights\(fd, bind, fd\.winSince, /.test(src),
+  "show all lists the whole night, otherwise the two-hour window");
 
 // ---- the summary verdicts ----------------------------------------------------------------------------------------------
 const railAll = run("fdRailHtml(cards, null, null)", { cards });
