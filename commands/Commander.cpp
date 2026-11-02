@@ -8012,6 +8012,7 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         bot->CombatStop();
         TB_LOG_DETAIL("TortoiseBots: run leader: %s dropped combat with units the group cannot attack only%s",
             bot->GetName(), wedged ? " (wedged on another floor)" : "");
+    }
 }
 
 // The plan's kill_first units of this fight, from the bots' cached
