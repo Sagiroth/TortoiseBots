@@ -398,6 +398,19 @@ namespace ai
         virtual uint32 GetItemId() override { return 13455; }
     };
 
+    // Thistle Tea: a rogue's energy refill, only at the level cap.
+    class UseThistleTeaAction : public UseItemIdAction
+    {
+    public:
+        UseThistleTeaAction(PlayerbotAI* ai) : UseItemIdAction(ai, "thistle tea") {}
+        virtual bool isUseful() override
+        {
+            return UseItemIdAction::isUseful() && bot->GetClass() == CLASS_ROGUE && bot->GetLevel() >= 60;
+        }
+
+        virtual uint32 GetItemId() override { return 7676; }
+    };
+
     class UseBgBannerAction : public UseItemIdAction
     {
     public:
@@ -598,7 +611,8 @@ namespace ai
                         return false;
             }
 
-            return bot->GetHealth() > 1000;
+            // Endgame drop (Scholomance, Stratholme) with no level requirement.
+            return bot->GetLevel() >= 50 && bot->GetHealth() > 1000;
         }
 
         virtual uint32 GetItemId() override { return 20520; }

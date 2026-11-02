@@ -264,6 +264,7 @@ namespace ai
             creators["goblin sapper"] = [](PlayerbotAI* ai) { return new UseGoblinSapperChargeAction(ai); };
             creators["oil of immolation"] = [](PlayerbotAI* ai) { return new UseOilOfImmolationAction(ai); };
             creators["stoneshield potion"] = [](PlayerbotAI* ai) { return new UseStoneshieldPotionAction(ai); };
+            creators["thistle tea"] = [](PlayerbotAI* ai) { return new UseThistleTeaAction(ai); };
             creators["dark rune"] = [](PlayerbotAI* ai) { return new UseDarkRuneAction(ai); };
             creators["throw grenade"] = [](PlayerbotAI* ai) { return new ThrowGrenadeAction(ai); };
             creators["bg banner"] = [](PlayerbotAI* ai) { return new UseBgBannerAction(ai); };
