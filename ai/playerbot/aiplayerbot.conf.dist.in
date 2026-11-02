@@ -1089,9 +1089,12 @@ AiPlayerbot.DungeonRunPullStand = 0
 # stand the tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
 # from every other living pack is taken. Far enough is the pack's aggro reach (its detection range minus the
 # party's level advantage over it) plus the party's spread round the stand (10 yd): a pack that patrols is checked
-# along its whole loop, so a stand the loop will walk past is refused too. The pulled pack itself is not checked.
-# With no clear stand the pull goes out from where the tank stands (the plain pull) and the order's note reads
-# "stand_pull: no clear stand for <entry>; plain pull".
+# along its whole loop, so a stand the loop will walk past is refused too. A creature the pulled pack's call for
+# help reaches (the core's 10 yd family assistance radius, transitively) is part of the pulled pack. The stand must
+# also stay the pulled pack's widest aggro reach away from every unit of it, so the party does not wake it on the way.
+# With no clear stand a patrolling pack that blocks it alone is waited for up to 60 s to walk clear (then the stand is
+# walked to); otherwise, or once the 60 s are spent, the run pauses and its note reads
+# "stand_pull: no clear stand for <entry> (blocked by <entry> at <yd>)".
 # 0 - off, the stand is picked as before (Default)
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
