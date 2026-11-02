@@ -2198,6 +2198,18 @@ public:
             out.legChanged = true;
             MarkDirtyLocked(stored);
         }
+        if (!wasFinished && in.scanned && in.botOnline &&
+            DeliveryLostItsStock(record.state, record.reason, record.delivered, record.amount, ownedNow))
+        {
+            record.state = OrderState::Working;
+            record.reason = OrderReason::None;
+            record.supplyStep = SupplyStep::None;
+            record.supplyItemId = 0;
+            record.supplyCount = 0;
+            record.supplyGoldCount = 0;
+            out.legChanged = true;
+            MarkDirtyLocked(stored);
+        }
 
         out.record = record;
         out.finishedEdge = !wasFinished && IsFinished(record.state);
