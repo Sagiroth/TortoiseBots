@@ -43,7 +43,6 @@
 #include <cstdint>
 #include <ctime>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -99,32 +98,6 @@ inline bool VendorSellsUnlimited(uint32_t itemId)
 // Worked seconds live in memory; the database sees them at most this often.
 inline constexpr uint32_t kWorkedFlushMs = 60000;
 inline constexpr uint32_t kNeedBankCheckMs = 10000;
-
-std::vector<NeedItem> ParseNeedItems(std::string const& token)
-{
-    std::vector<NeedItem> out;
-    if (token.empty() || token == "-")
-        return out;
-    std::istringstream entries(token);
-    std::string entry;
-    while (std::getline(entries, entry, ';'))
-    {
-        size_t colon = entry.find(':');
-        if (colon == std::string::npos)
-            continue;
-        try
-        {
-            unsigned long itemId = std::stoul(entry.substr(0, colon));
-            unsigned long count = std::stoul(entry.substr(colon + 1));
-            if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
-                out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
-        }
-        catch (...)
-        {
-        }
-    }
-    return out;
-}
 
 class OrderStore
 {
@@ -457,6 +430,7 @@ public:
                 it->second.record.supplyReturnStep = SupplyStep::None;
                 it->second.record.needItems.clear();
                 it->second.record.needWhispered = false;
+                it->second.record.needBankDenied = false;
                 it->second.record.reportedHave = 0;
                 MarkDirtyLocked(it->second);
                 park = true;
@@ -481,7 +455,8 @@ public:
         uint32_t parentBotGuidLow = 0;
         uint32_t itemId = 0;
         uint32_t count = 0;
-        uint32_t nextTryMs = 0; // world uptime ms before this request retries
+        uint32_t nextTryMs = 0;  // world uptime ms before this request retries
+        uint32_t queuedAtMs = 0; // world uptime ms the request first queued
     };
 
     struct QueuedSubOrderKey
@@ -516,7 +491,14 @@ public:
                 queued->second.count = count;
             return true;
         }
-        m_queued.emplace(key, QueuedSubOrder{ parentBotGuidLow, itemId, count });
+        QueuedSubOrder request;
+        request.parentBotGuidLow = parentBotGuidLow;
+        request.itemId = itemId;
+        request.count = count;
+        // Stamp the queue time once: a retry keeps it, so the clock pause a
+        // queued request causes expires with the request, not with each retry.
+        request.queuedAtMs = WorldTimer::getMSTime();
+        m_queued.emplace(key, request);
         return true;
     }
 
@@ -535,7 +517,8 @@ public:
         return out;
     }
 
-    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs)
+    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs,
+        uint32_t queuedAtMs)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
@@ -547,6 +530,7 @@ public:
         if (count > queued.count)
             queued.count = count;
         queued.nextTryMs = nextTryMs;
+        queued.queuedAtMs = queuedAtMs;
     }
 
     void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
@@ -651,8 +635,6 @@ public:
         {
             record.state = OrderState::Working;
             record.reason = OrderReason::None;
-            record.needItems.clear();
-            record.needWhispered = false;
         }
         if (record.supplyStep == step && record.supplyItemId == itemId &&
             record.supplyCount == count && record.supplyGoldCount == goldCount &&
@@ -676,11 +658,6 @@ public:
         record.supplyReturnStep = returnStep;
         record.supplyGoldCount = goldCount;
         record.reason = reason;
-        if (step != SupplyStep::Need)
-        {
-            record.needItems.clear();
-            record.needWhispered = false;
-        }
         MarkDirtyLocked(it->second);
         it->second.supplySearch = SupplySearchStreak{};
     }
@@ -692,9 +669,7 @@ public:
         if (it == m_orders.end())
             return;
         OrderRecord& record = it->second.record;
-        bool same = record.needItems.size() == items.size();
-        for (size_t i = 0; same && i < items.size(); ++i)
-            same = record.needItems[i].itemId == items[i].itemId && record.needItems[i].count == items[i].count;
+        bool same = NeedItemsEqual(record.needItems, items);
         if (same && record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems)
         {
             // The denial expired: the bank may have stocked since. A repeat
@@ -708,9 +683,60 @@ public:
         record.supplyStep = SupplyStep::Need;
         record.supplyReturnStep = SupplyStep::None;
         record.supplyGoldCount = 0;
-        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(items);
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, items);
         record.needBankDenied = bankDenied;
         MarkDirtyLocked(it->second);
+    }
+
+    void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state) || it->second.record.cancelled ||
+            !itemId || !count)
+            return;
+        OrderRecord& record = it->second.record;
+        MergeNeedItem(record.needItems, itemId, count);
+        // One denied probe is enough to keep the bank lane off this order:
+        // OR keeps a denial a previous item recorded, so a later candidate
+        // does not re-arm the lane (a full re-list clears it in SetNeedItems,
+        // as do the need-clear and need-resume paths).
+        record.needBankDenied = record.needBankDenied || bankDenied;
+        // A working row was on some other item: dropping the supply leg makes
+        // the ladder re-plan the whole tree around the new need item. The
+        // reason belonged to the leg that produced it, so the next candidate
+        // does not inherit a dead end (a vendor/farm/bank leg it would skip).
+        if (record.state == OrderState::Working)
+        {
+            record.reason = ResetDeadEndReasonOnWorking(record.reason);
+            record.supplyStep = SupplyStep::None;
+            record.supplyItemId = 0;
+            record.supplyCount = 0;
+            record.supplyGoldCount = 0;
+            record.supplyReturnStep = SupplyStep::None;
+        }
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
+        MarkDirtyLocked(it->second);
+    }
+
+    bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+        std::vector<NeedItem> const& items)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state))
+            return false;
+        OrderRecord& record = it->second.record;
+        // Compare-and-set: the prune ran on a snapshot, so a merge or a clear
+        // in between wins and the next refresh re-prunes the live list. The
+        // false return tells the caller the write did not land and the row it
+        // worked from is stale.
+        if (!NeedItemsEqual(record.needItems, expected))
+            return false;
+        record.needItems = items;
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
+        MarkDirtyLocked(it->second);
+        return true;
     }
 
     void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
@@ -898,8 +924,8 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end() ||
-            !((it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems) ||
-              (it->second.record.state == OrderState::Working && it->second.record.supplyStep == SupplyStep::Sub)))
+            !NeedBankLaneEligible(it->second.record.state, it->second.record.reason,
+                it->second.record.supplyStep, !it->second.record.needItems.empty()))
             return false;
         return nowMs - it->second.lastNeedBankCheckMs >= kNeedBankCheckMs;
     }
@@ -920,7 +946,8 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end() ||
-            !(it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems))
+            !NeedLadderLaneEligible(it->second.record.state, it->second.record.reason,
+                !it->second.record.needItems.empty()))
             return false;
         return NeedLadderCheckDue(nowMs, it->second.lastNeedLadderCheckMs);
     }
@@ -1164,9 +1191,40 @@ public:
             }
             out.push_back(row.itemId);
         }
+        // A queued request covers its item only inside the same staleness window
+        // as the clock gate (UnfinishedSubOrderCount): one that never found a
+        // worker must not keep the ladder skipping the item while the clocks run.
+        uint32_t now = WorldTimer::getMSTime();
         for (auto const& [key, queued] : m_queued)
-            if (key.parentBotGuidLow == botGuidLow && key.itemId)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId &&
+                now - queued.queuedAtMs < kQueuedSubOrderStaleMs)
                 out.push_back(key.itemId);
+        return out;
+    }
+    // Direct children that are work in progress, for the parent's clock gate:
+    // a running row (not finished, not cancelled), plus a queued request still
+    // inside its staleness window. A finished row's pending delivery is not
+    // work, and a queued request older than the window never became a running
+    // row, so neither may keep the parent's clocks paused.
+    uint32_t UnfinishedSubOrderCount(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_orders.find(botGuidLow) == m_orders.end())
+            return 0;
+        uint32_t out = 0;
+        for (auto const& [guid, stored] : m_orders)
+        {
+            OrderRecord const& row = stored.record;
+            if (row.parentBotGuidLow != botGuidLow || row.cancelled || !row.itemId)
+                continue;
+            if (!IsFinished(row.state))
+                ++out;
+        }
+        uint32_t now = WorldTimer::getMSTime();
+        for (auto const& [key, queued] : m_queued)
+            if (key.parentBotGuidLow == botGuidLow && key.itemId &&
+                now - queued.queuedAtMs < kQueuedSubOrderStaleMs)
+                ++out;
         return out;
     }
     // Finished direct sub-orders whose delivery still waits for the
@@ -1197,27 +1255,41 @@ public:
             return;
         // The failed sub-order leaves its item on the parent's need list:
         // merge with the items already waiting so parallel sub-orders that
-        // fail together each keep their row. A return through the need state
-        // replaces whatever wait the parent entered first, so every dead
-        // end funnels through this one entry.
+        // fail together each keep their row.
         OrderRecord& record = parent->second.record;
-        bool merged = false;
-        for (NeedItem& need : record.needItems)
+        MergeNeedItem(record.needItems, itemId, count);
+        if (record.type == OrderType::Craft)
         {
-            if (need.itemId != itemId)
-                continue;
-            if (count > need.count)
-                need.count = count;
-            merged = true;
+            if (record.state == OrderState::Working)
+            {
+                // A running sub-order is not the player's item: the row keeps
+                // working, and dropping the supply leg makes the ladder
+                // re-plan the rest of the tree instead of retrying the failed
+                // item. A leg on some other item survives, and a dead-end
+                // reason belongs to the leg that produced it, so both go
+                // together.
+                if (!KeepLegOnNeedClear(record.supplyItemId, record.needItems))
+                {
+                    record.reason = ResetDeadEndReasonOnWorking(record.reason);
+                    record.supplyStep = SupplyStep::None;
+                    record.supplyItemId = 0;
+                    record.supplyCount = 0;
+                    record.supplyGoldCount = 0;
+                    record.supplyReturnStep = SupplyStep::None;
+                }
+            }
         }
-        if (!merged)
-            record.needItems.push_back(NeedItem{ itemId, count });
-        record.state = OrderState::Waiting;
-        record.reason = OrderReason::NeedItems;
-        record.supplyStep = SupplyStep::Need;
-        record.supplyReturnStep = SupplyStep::None;
-        record.supplyGoldCount = 0;
-        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(record.needItems);
+        else
+        {
+            // Partial need is a craft rule: a farm or buy order parks on the
+            // failed item like any other dead end.
+            record.state = OrderState::Waiting;
+            record.reason = OrderReason::NeedItems;
+            record.supplyStep = SupplyStep::Need;
+            record.supplyReturnStep = SupplyStep::None;
+            record.supplyGoldCount = 0;
+        }
+        record.needWhispered = !NeedListNeedsWhisper(record.lastNeedWhisper, record.needItems);
         MarkDirtyLocked(parent->second);
     }
 
@@ -1254,6 +1326,7 @@ public:
             stub.supplyReturnStep = SupplyStep::None;
             stub.needItems.clear();
             stub.needWhispered = false;
+            stub.needBankDenied = false;
             stub.reportedHave = 0;
             m_orders[subOrderBotGuidLow] = Stored{stub};
             MarkDirtyLocked(m_orders[subOrderBotGuidLow]);
@@ -1324,6 +1397,7 @@ public:
         bool needVendorReady = false; // a parked need item is vendor-unlimited and affordable now
         bool needAhReady = false;     // a parked need item is newly listed on the AH
         bool needRetryLadder = false; // a long-parked need row re-runs the whole ladder
+        uint32_t unfinishedSubOrders = 0; // direct children still work in progress
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -1390,6 +1464,30 @@ public:
             out.legChanged = true;
         }
 
+        if (record.state == OrderState::Working && !record.cancelled && !record.needItems.empty() &&
+            (in.needItemInBank || in.needVendorReady || in.needAhReady || in.needRetryLadder))
+        {
+            // A lane hit on a working row clears the whole list and re-plans:
+            // the ladder walks every item again, and one that is still a dead
+            // end comes straight back without a new whisper (the token
+            // already names it). The leg on some other item survives, unless
+            // it sources a listed item.
+            if (!KeepLegOnNeedClear(record.supplyItemId, record.needItems))
+            {
+                record.supplyStep = SupplyStep::None;
+                record.supplyItemId = 0;
+                record.supplyCount = 0;
+                record.supplyReturnStep = SupplyStep::None;
+            }
+            record.needItems.clear();
+            record.needBankDenied = false;
+            stored.needLadderChecks = 0;
+            if (in.needItemInBank)
+                record.bankEmptyItemId = 0;
+            MarkDirtyLocked(stored);
+            out.legChanged = true;
+        }
+
         // Keep watch: a fresh bank look below the stock target re-arms the
         // round (new quota, reset clocks, fresh plan) whether the bot is on
         // or off; the pool logs it back in like any unfinished order.
@@ -1401,6 +1499,13 @@ public:
             {
                 record.state = OrderState::Working;
                 record.reason = OrderReason::None;
+                // A new round is a new conversation: the finished round's need
+                // list is gone, and its whisper state (list, token, bank
+                // denial) must not silence or gate this round's first list.
+                record.needItems.clear();
+                record.needWhispered = false;
+                record.lastNeedWhisper.clear();
+                record.needBankDenied = false;
                 record.amount = missing;
                 record.delivered = 0;
                 record.farmZoneId = 0;
@@ -1449,9 +1554,14 @@ public:
             }
         }
 
-        // A parent parked on a sub-order is waiting, even while its row stays working.
+        // A parent is waiting on work, not idle, only while it has no leg of
+        // its own (the ladder's WaitOnSubOrders return is step None) and a
+        // child row is still unfinished: the clock stays paused then. A parent
+        // working its own leg keeps every clock, so a stalled leg still ends
+        // the round and hands the order back to the ladder.
         if (!wasFinished && in.botOnline && in.botAlive && !in.grouped &&
-            record.state == OrderState::Working && record.supplyStep != SupplyStep::Sub)
+            record.state == OrderState::Working &&
+            !PauseOrderClocks(record.supplyStep, static_cast<int>(in.unfinishedSubOrders)))
         {
             stored.workedCarryMs += in.workedMs;
             if (stored.workedCarryMs >= 1000)
@@ -1628,8 +1738,7 @@ public:
         // flag sets only on a sent line, so an offline giver is retried on a
         // later tick. The giver lookup rides the live-update pass that
         // already carries both players.
-        if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
-            !record.needWhispered)
+        if (NeedWhisperDue(record.state, record.reason, !record.needItems.empty(), record.needWhispered))
         {
             ObjectGuid giverGuid(HIGHGUID_PLAYER, record.giverGuidLow);
             Player* giver = sObjectAccessor.FindPlayer(giverGuid);
@@ -1637,7 +1746,7 @@ public:
             {
                 out.needWhisper = true;
                 record.needWhispered = true;
-                record.lastNeedWhisper = NeedItemsToken(record.needItems);
+                record.lastNeedWhisper = NeedWhisperTokenUnion(record.lastNeedWhisper, record.needItems);
                 MarkDirtyLocked(stored);
             }
         }
@@ -2094,7 +2203,7 @@ bool PlaceSubOrders(uint32_t nowMs)
         if (stoppedEarly)
         {
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
+                request.count, nowMs + kSubOrderRetryMs, request.queuedAtMs);
             continue;
         }
         bool queuedOut = false;
@@ -2116,7 +2225,7 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (!Give(record))
             {
                 OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                    request.count, nowMs + kSubOrderRetryMs);
+                    request.count, nowMs + kSubOrderRetryMs, request.queuedAtMs);
                 continue;
             }
             placedAny = true;
@@ -2128,7 +2237,7 @@ bool PlaceSubOrders(uint32_t nowMs)
         }
         else if (pick == SubOrderPick::Queued)
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
+                request.count, nowMs + kSubOrderRetryMs, request.queuedAtMs);
         else
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
     }
@@ -2411,6 +2520,17 @@ void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool 
     OrderStore::Instance().SetNeedItems(botGuidLow, items, bankDenied);
 }
 
+void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied)
+{
+    OrderStore::Instance().AddNeedItem(botGuidLow, itemId, count, bankDenied);
+}
+
+bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+    std::vector<NeedItem> const& items)
+{
+    return OrderStore::Instance().ReplaceNeedItems(botGuidLow, expected, items);
+}
+
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
 {
     OrderStore::Instance().RecordGuildGoldWithdrawal(botGuidLow, amount);
@@ -2627,26 +2747,42 @@ void Update(uint32_t diff)
             (in.farmItemId ? 0 : in.bagCount);
         in.workedMs = diff;
         in.nowMs = now;
-        if (scanDue && snapshot.state == OrderState::Waiting && snapshot.reason == OrderReason::NeedItems)
+        // Direct children still in progress (a running row, or a queued
+        // request inside its staleness window): only a row with no leg of its
+        // own pauses its clocks for them.
+        in.unfinishedSubOrders = active ? OrderStore::Instance().UnfinishedSubOrderCount(guidLow) : 0;
+        if (scanDue && NeedLadderLaneEligible(snapshot.state, snapshot.reason, !snapshot.needItems.empty()) &&
+            !snapshot.cancelled)
         {
-            for (NeedItem const& need : snapshot.needItems)
+            // Bags and mailbox are the player's delivery lane, so only a
+            // parked row reads them; the bank, vendor and AH lanes below
+            // serve a working row's need list the same way.
+            if (snapshot.state == OrderState::Waiting)
             {
-                if (online && bot->GetItemCount(need.itemId) + MailboxItems(bot, need.itemId) >= need.count)
+                for (NeedItem const& need : snapshot.needItems)
                 {
-                    in.needItemAvailable = true;
-                    break;
+                    if (online && bot->GetItemCount(need.itemId) + MailboxItems(bot, need.itemId) >= need.count)
+                    {
+                        in.needItemAvailable = true;
+                        break;
+                    }
                 }
             }
             if (OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
             {
                 OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
-                for (NeedItem const& need : snapshot.needItems)
-                    if (!snapshot.needBankDenied && BankItemCount(snapshot.guildId, need.itemId) >= need.count)
-                    {
-                        in.needItemAvailable = true;
-                        in.needItemInBank = true;
-                        break;
-                    }
+                // Withdrawing disabled, or a bank that already refused this
+                // order: a stock the bot cannot take must not look like a
+                // lane hit, or the row clears and replans every ten seconds.
+                if (sPlayerbotAIConfig.guildOrderBankWithdraw)
+                    for (NeedItem const& need : snapshot.needItems)
+                        if (!snapshot.needBankDenied &&
+                            BankItemCount(snapshot.guildId, need.itemId) >= need.count)
+                        {
+                            in.needItemAvailable = true;
+                            in.needItemInBank = true;
+                            break;
+                        }
             }
             // A parked need row re-runs the ladder when its facts changed: a
             // vendor-unlimited item the new rule buys, or a fresh AH listing.
@@ -2677,6 +2813,7 @@ void Update(uint32_t diff)
             }
         }
         else if (snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub &&
+            sPlayerbotAIConfig.guildOrderBankWithdraw &&
             OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
         {
             OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
