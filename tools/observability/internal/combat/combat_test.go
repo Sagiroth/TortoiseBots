@@ -238,6 +238,28 @@ func TestStoreReadsModuleBytes(t *testing.T) {
 		t.Fatalf("tail spells: %+v", f.Bots[0].TailSpells)
 	}
 }
+func TestStoreReadsDegradedMarkers(t *testing.T) {
+	newPayload := `{"fight":{"id":"7-3","commander":"Cmdr","commander_guid":3,"group":7,"map":409,"plan":"mc","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"end","boss":1,"boss_name":"B","spells_cut":3,"planned":[1],"engaged":[],"dropped":0,"bots":[{"name":"T","guid":1,"class":"warrior","role":"tank","sub":-1,"dmg":5,"heal":0,"over":0,"taken":1,"casts":2,"heal_casts":0,"deaths":0,"spells":[{"n":"Sunder Armor","c":2}],"tail_spells":[]}],"debuffs":{"sampled_s":3,"up_s":{}},"deaths":[],"truncated":true}}`
+	var dg struct {
+		Fight Fight `json:"fight"`
+	}
+	if err := json.Unmarshal([]byte(newPayload), &dg); err != nil {
+		t.Fatal(err)
+	}
+	if dg.Fight.SpellsCut != 3 || !dg.Fight.Truncated {
+		t.Fatalf("new payload markers: spells_cut=%d truncated=%v", dg.Fight.SpellsCut, dg.Fight.Truncated)
+	}
+	oldPayload := `{"fight":{"id":"7-2","commander":"Cmdr","commander_guid":3,"group":7,"map":409,"plan":"mc","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"end","boss":1,"boss_name":"B","planned":[1],"engaged":[],"bots":[{"name":"T","guid":1,"class":"warrior","role":"tank","sub":-1,"dmg":5,"heal":0,"over":0,"taken":1,"casts":2,"heal_casts":0,"deaths":0,"spells":[{"n":"Sunder Armor","c":2}],"tail_spells":[]}],"debuffs":{"sampled_s":3,"up_s":{}},"deaths":[]}}`
+	var old struct {
+		Fight Fight `json:"fight"`
+	}
+	if err := json.Unmarshal([]byte(oldPayload), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.Fight.SpellsCut != 0 || old.Fight.Truncated {
+		t.Fatalf("old payload without markers: spells_cut=%d truncated=%v", old.Fight.SpellsCut, old.Fight.Truncated)
+	}
+}
 
 // A full build lists every AlwaysListed spell first, so a full 12-spell row
 // without Sunder proves it went uncast: the rule still judges.
