@@ -25856,6 +25856,29 @@ static void TestRaidTrashSwarmRetriedWhenTheFirstTargetDies()
     CHECK(r.raidSwarmTries == 2);
 }
 
+// Codex round 2: a main tank already in combat in the raid fight but still on stay, with no attacker, has not acted
+// on the order: the pending join must not latch, so a dead target is retried.
+static void TestRaidTrashSwarmInCombatOnStayIsNotJoined()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky");
+    f.leadInCombat = true; // in combat, but still on stay and with no attacker
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f).empty());
+    CHECK(!r.raidSwarmJoined);
+    CHECK(Tick(r, f) == "attack 43 Tanky");
+}
+
 // The pending join latches once the main tank leaves stay: no more swarm orders.
 static void TestRaidTrashSwarmLatchedOnceTheTankMoves()
 {
@@ -26964,6 +26987,7 @@ int main()
     TestRaidTrashSwarmOncePerFight();
     TestRaidTrashSwarmNeverOnBossStep();
     TestRaidTrashSwarmRetriedWhenTheFirstTargetDies();
+    TestRaidTrashSwarmInCombatOnStayIsNotJoined();
     TestRaidTrashSwarmLatchedOnceTheTankMoves();
     TestRaidTrashSwarmLatchedAfterThreeTries();
     std::cout << "test_dungeon_run_policy: ok\n";

@@ -13344,19 +13344,9 @@ inline bool RaidSwarmPendingTick(Run& r, const Facts& f, std::uint32_t dt)
 {
     if (r.raidSwarmPendingGuid == 0 || r.raidSwarmJoined)
         return false;
-    auto const looseMob = [](const UnitFact& u)
-    {
-        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
-            !u.victimTank && !u.victimLead;
-    };
-    bool looseFighting = f.leadHasAttacker;
-    for (const UnitFact& u : f.partyAttackers)
-        if (looseMob(u))
-        {
-            looseFighting = true;
-            break;
-        }
-    if (!f.leadStaying || f.leadHasAttacker || (f.leadInCombat && looseFighting))
+    // Only direct evidence latches the join (Codex round 2): the tank left stay or a mob is on it. A tank already
+    // in combat in the raid fight while still on stay has not acted on the order.
+    if (!f.leadStaying || f.leadHasAttacker)
     {
         r.raidSwarmJoined = true;
         r.raidSwarmPendingGuid = 0;
