@@ -332,8 +332,6 @@ inline FieldMap EncodeFields(const DungeonRun::Run& run)
     return EncodeFieldsOf(run);
 }
 
-inline std::string EncodePlanPointer(const ai::DungeonPlan* plan);
-
 inline std::string PlanHash(const ai::DungeonPlan& plan)
 {
     return Hex64(Fnv1a64(EncodeStructObject(plan)));
