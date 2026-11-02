@@ -878,18 +878,15 @@ inline bool InPullPack(const PullPack& pack, std::uint64_t guid, std::uint64_t f
 }
 
 // The boss fight a boss step's firing stand stands inside (AiPlayerbot.DungeonRunStandClearance): the boss the step
-// names and every creature the plan lists for the step or its tactic rows (its adds). The glue adds the creatures
-// the core links to the boss and takes the ones already in the fight by itself. None of them is another pack the
-// stand keeps clear of: they are that fight, and the party is about to be in it anyway.
+// names, and the creatures of his fight the glue can prove from their spawn. An entry alone proves nothing: 11368 is
+// both Jeklik's summoned Bloodseeker Bat and ordinary Zul'Gurub trash, so a trash pack of that entry beside the stand
+// is another pack. The evidence is his own spawn (guid), a creature he summoned, one the core links to him, one
+// walking his formation, or one already in the fight.
 struct BossEncounter
 {
-    std::uint32_t entry = 0;            // the step's boss (0: not a boss step)
-    std::vector<std::uint32_t> entries; // the plan's entries and tactic rows: the boss's adds
-    bool Includes(std::uint32_t unit) const
-    {
-        return unit != 0 &&
-            (unit == entry || std::find(entries.begin(), entries.end(), unit) != entries.end());
-    }
+    std::uint32_t entry = 0;     // the step's boss (0: not a boss step), creature_linking's master entry
+    std::uint64_t guid = 0;      // the boss's own spawn (0: not read, a script summons him)
+    std::uint64_t formation = 0; // the formation the boss walks in (0: not read)
 };
 
 inline BossEncounter BossEncounterOf(const PlanStep* step)
@@ -898,17 +895,32 @@ inline BossEncounter BossEncounterOf(const PlanStep* step)
     if (!step || step->kind != PlanStepKind::Boss)
         return boss;
     boss.entry = step->entry;
-    boss.entries = step->entries;
-    boss.entries.insert(boss.entries.end(), step->tacticEntries.begin(), step->tacticEntries.end());
     return boss;
 }
 
-// Whether the scanned creature is one of the boss encounter: the step's own unit, one the plan lists for it, or one
-// the core links to the boss (the glue's read). A pull step before a boss is not the boss step: nothing of a boss
-// fight is ignored there.
-inline bool BossEncounterUnit(const BossEncounter& boss, std::uint32_t entry, bool linkedToBoss)
+// What the glue read of one creature on the stand scan (RunFormationOf, the boss's summoner, the core's linking row):
+// the spawn-level evidence the boss encounter reads, and the entry the other pack's note carries. A shared entry
+// (11368 is Jeklik's summoned bat and ordinary Zul'Gurub trash) proves nothing, so the entry is not membership.
+struct BossEncounterScan
 {
-    return boss.entry != 0 && (boss.Includes(entry) || linkedToBoss);
+    std::uint64_t guid = 0;
+    std::uint64_t formation = 0;
+    std::uint32_t entry = 0;
+    bool summoned = false;
+    bool linked = false;
+    bool inCombat = false;
+};
+
+// Whether the scanned creature is one of the boss encounter, on spawn-level evidence only (the glue reads the
+// summoner and the linking row): the boss's own spawn, a creature the boss summoned, one the core links to the boss,
+// one walking the boss's formation, or one already in the fight. Its entry never makes it so. A pull step before a
+// boss is not the boss step: nothing of a boss fight is ignored there.
+inline bool BossEncounterUnit(const BossEncounter& boss, const BossEncounterScan& unit)
+{
+    if (boss.entry == 0 || unit.guid == 0)
+        return false;
+    return (boss.guid != 0 && unit.guid == boss.guid) || unit.summoned || unit.linked ||
+        (boss.formation != 0 && unit.formation == boss.formation) || unit.inCombat;
 }
 
 // The mage's Polymorph (all ranks and forms): the aura the run waits for after

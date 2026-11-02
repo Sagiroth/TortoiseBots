@@ -860,7 +860,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("pack.formations.insert(RunFormationOf(member));", read)
         self.assertIn("std::find(members.begin(), members.end(), unit)", read)
         self.assertIn("BossEncounter boss;", read)
-        self.assertIn("boss = BossEncounterOf(&slot.run.plan->steps[slot.run.step]);", read)
+        self.assertIn("boss = BossEncounterOf(&step);", read)
+        self.assertIn("boss.guid = own->GetObjectGuid().GetRawValue();", read)
+        self.assertIn("boss.formation = RunFormationOf(own);", read)
         self.assertIn("ReadStandClearance(lead, bots, pack, members, f, boss, &otherMobs);", read)
         # The other-storey rule: a stand candidate's sight line to a refused unit, on the map.
         self.assertIn("auto const seesOther = [map, leadHeight, &otherMobs](ShotStand const& s, StandOther const& other)",
@@ -880,13 +882,24 @@ class RunLeaderWiringTest(unittest.TestCase):
                                    "    TortoiseBots::DungeonRun::PullPack const& pack, std::vector<Creature*> const& members,\n"
                                    "    TortoiseBots::DungeonRun::Facts& f, TortoiseBots::DungeonRun::BossEncounter const& boss,\n"
                                    "    std::unordered_map<uint64, Creature*>* otherMobs)\n{", "\n}\n")
-        # A boss step's own fight is no other pack, and each other carries its guid for the sight line.
-        self.assertIn("BossEncounterUnit(boss, c->GetEntry(), RunLinkedToBoss(c, boss))", clearance)
-        self.assertIn("other.guid = c->GetObjectGuid().GetRawValue();", clearance)
+        # A boss step's own fight is no other pack: only spawn-level evidence is asked (his spawn, his summons, the
+        # core's link, his formation, the fight), never the creature's entry.
+        self.assertIn("scan.formation = formations[i];", clearance)
+        self.assertIn("scan.summoned = RunSummonedByBoss(c, boss);", clearance)
+        self.assertIn("scan.linked = RunLinkedToBoss(c, boss);", clearance)
+        self.assertIn("if (BossEncounterUnit(boss, scan))", clearance)
+        self.assertIn("other.entry = scan.entry;", clearance)
+        summoner = body(COMMANDS, "bool RunSummonedByBoss(Creature* creature, "
+                                  "TortoiseBots::DungeonRun::BossEncounter const& boss)", "\n}\n")
+        self.assertIn("creature->IsTemporarySummon()", summoner)
+        self.assertIn("static_cast<TemporarySummon*>(creature)->GetSummonerGuid().GetRawValue() == boss.guid", summoner)
+        self.assertIn("creature->GetCharmerOrOwnerGuid().GetRawValue() == boss.guid", summoner)
+        self.assertIn('#include "TemporarySummon.h"', COMMANDS)
+        self.assertIn("other.guid = scan.guid;", clearance)
         self.assertIn("(*otherMobs)[other.guid] = c;", clearance)
         self.assertIn("info->masterId == boss.entry", COMMANDS)
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
-        self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c)));",
+        self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), formations.back()));",
                       clearance)
         self.assertIn("GrowPullPackByAssistance(inPack, spots, seeds, canAssistPack);", clearance)
         self.assertIn("if (member && member->IsAlive() && std::find(callers.begin(), callers.end(), member) == "
@@ -943,8 +956,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("float const spot = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;",
                       policy)
         self.assertIn("inline BossEncounter BossEncounterOf(const PlanStep* step)", policy)
-        self.assertIn("inline bool BossEncounterUnit(const BossEncounter& boss, std::uint32_t entry, bool linkedToBoss)",
-                      policy)
+        self.assertIn("inline bool BossEncounterUnit(const BossEncounter& boss, const BossEncounterScan& unit)", policy)
+        self.assertIn("return (boss.guid != 0 && unit.guid == boss.guid) || unit.summoned || unit.linked ||", policy)
+        self.assertIn("(boss.formation != 0 && unit.formation == boss.formation) || unit.inCombat;", policy)
         self.assertIn("inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, "
                       "std::uint64_t targetFormation)", policy)
         self.assertIn("inline bool InPullPack(const PullPack& pack, std::uint64_t guid, "

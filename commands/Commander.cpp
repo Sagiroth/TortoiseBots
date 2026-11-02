@@ -135,6 +135,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Creature.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "TemporarySummon.h" // a boss's summoned adds carry their summoner's guid
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Spell.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Threat/ThreatManager.h"
@@ -8958,10 +8960,21 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
         pack.formations.insert(RunFormationOf(unit));
         if (std::find(members.begin(), members.end(), unit) == members.end())
             members.push_back(unit);
-        // A boss step's stand stands inside the boss fight: its adds are no other pack there.
+        // A boss step's stand stands inside the boss fight: the step's boss and the spawn-level evidence of his fight
+        // (BossEncounter). His own spawn is the identity the instance read already trusts, whatever entry a script
+        // gives him, and it makes the summoned bats and his formation's creatures provable where entries are not.
         BossEncounter boss;
         if (slot.run.plan && slot.run.step < slot.run.plan->steps.size())
-            boss = BossEncounterOf(&slot.run.plan->steps[slot.run.step]);
+        {
+            ai::PlanStep const& step = slot.run.plan->steps[slot.run.step];
+            boss = BossEncounterOf(&step);
+            if (boss.entry)
+                if (Creature* own = OwnBossSpawnCreature(lead, step))
+                {
+                    boss.guid = own->GetObjectGuid().GetRawValue();
+                    boss.formation = RunFormationOf(own);
+                }
+        }
         ReadStandClearance(lead, bots, pack, members, f, boss, &otherMobs);
     }
     // The other-storey rule's sight line from a candidate stand to one other pack (the Arlokk terrace's storeys): the
@@ -9136,13 +9149,27 @@ bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter
     return info && info->masterId == boss.entry;
 }
 
+// Whether the boss summoned the creature: a temporary summon of his, or one he owns (a charmed add, a pet). The
+// boss's own spawn is no summon of itself. An entry proves nothing here: 11368 is both Jeklik's summoned bat and
+// ordinary Zul'Gurub trash, so only the summoner's guid tells a bat of the fight from the trash beside it.
+bool RunSummonedByBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter const& boss)
+{
+    if (!boss.guid || creature->GetObjectGuid().GetRawValue() == boss.guid)
+        return false;
+    if (creature->IsTemporarySummon() &&
+        static_cast<TemporarySummon*>(creature)->GetSummonerGuid().GetRawValue() == boss.guid)
+        return true;
+    return creature->GetCharmerOrOwnerGuid().GetRawValue() == boss.guid;
+}
+
 // The other packs a firing stand must keep clear of (AiPlayerbot.DungeonRunStandClearance, DungeonRun::StandClearAt),
 // and the floor the pull's own pack puts under it (DungeonRun::StandAbovePackReach): living, hostile, out-of-combat
 // creatures within kStandClearScanYd of the lead bot. One of the pack the pull takes (PullPackOf: the step's units and
 // their formations) is no other pack, and neither is one the pack's call for help takes (the core's family assistance
 // radius, one ring: GrowPullPackByAssistance, only a creature that can answer the call of a pack unit). On a boss
-// step the boss fight is no other pack either (BossEncounter): the units the plan lists for the step, the creature the
-// core links to the boss, and the ones already in a fight (the scan skips those). Each other carries its identity for
+// step the boss fight is no other pack either (BossEncounter): the boss's own spawn, a creature he summoned, one the
+// core links to him or that walks his formation, and the ones already in a fight (the scan skips those). An entry
+// alone is no evidence: 11368 is both Jeklik's summoned bat and ordinary trash. Each other carries its identity for
 // the note and its aggro reach (the aggro estimate's own rule: detection range minus the party's level advantage over
 // its level, the widest over the party) plus kStandClearSpreadYd. A waypoint patroller carries the whole loop it
 // walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed, so a stand beside a leg
@@ -9165,6 +9192,7 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
             lowest = bot->GetLevel();
     float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
     std::vector<Creature*> scanned;
+    std::vector<uint64> formations;
     std::vector<bool> inPack;
     std::vector<ai::ApproachPoint> spots;
     for (Unit* unit : found)
@@ -9175,7 +9203,8 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
         if (c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
             continue; // never wakes by proximity
         scanned.push_back(c);
-        inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), RunFormationOf(c)));
+        formations.push_back(RunFormationOf(c));
+        inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), formations.back()));
         ai::ApproachPoint spot;
         spot.x = c->GetPositionX();
         spot.y = c->GetPositionY();
@@ -9248,14 +9277,21 @@ static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots,
         if (inPack[i])
             continue;
         Creature* const c = scanned[i];
-        if (BossEncounterUnit(boss, c->GetEntry(), RunLinkedToBoss(c, boss)))
+        BossEncounterScan scan;
+        scan.guid = c->GetObjectGuid().GetRawValue();
+        scan.formation = formations[i];
+        scan.entry = c->GetEntry();
+        scan.summoned = RunSummonedByBoss(c, boss);
+        scan.linked = RunLinkedToBoss(c, boss);
+        scan.inCombat = c->IsInCombat();
+        if (BossEncounterUnit(boss, scan))
             continue; // the boss's own fight: not another pack at this step's stand
         ai::AggroMob mob;
         mob.level = c->GetLevel();
         mob.detectionYd = c->GetDetectionRange();
         StandOther other;
-        other.entry = c->GetEntry();
-        other.guid = c->GetObjectGuid().GetRawValue();
+        other.entry = scan.entry;
+        other.guid = scan.guid;
         other.x = c->GetPositionX();
         other.y = c->GetPositionY();
         other.z = c->GetPositionZ();

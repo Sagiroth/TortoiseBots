@@ -16441,31 +16441,55 @@ static void TestStandClearanceMarginIsFourYd()
 }
 
 // A boss step's stand stands inside the boss fight (walk 27: Jeklik's Bloodseeker Bats, 18.0 and 21.8 yd from the
-// stand, paused the run): the units the plan lists for the step, its tactic rows' creatures, and the ones the core
-// links to the boss are no other pack. The scan skips them; a pull step is not the boss step, so nothing is ignored.
+// stand, paused the run): only spawn-level evidence makes a creature part of it, never its entry. 11368 is both
+// Jeklik's summoned bat and ordinary Zul'Gurub trash, so a trash spawn of that entry beside the stand is another pack
+// and still refuses it, while the bat the boss summoned does not. The boss's own spawn, one the core links to him, one
+// walking his formation and the ones already in the fight are no others. A boss whose spawn the host could not read
+// proves only the linking; a pull step is not the boss step, so nothing is ignored there.
 static void TestStandClearanceBossEncounterUnitsAreNoOthers()
 {
     DungeonPlan plan;
-    PlanStep boss = Step(PlanStepKind::Boss);
-    boss.entry = 14517;
-    boss.entries = {11368, 14880};
-    boss.tacticEntries = {14987};
-    plan.steps = {boss};
-    BossEncounter const encounter = BossEncounterOf(&plan.steps[0]);
-    CHECK(encounter.entry == 14517);
-    CHECK(BossEncounterUnit(encounter, 14517, false)); // the boss itself
-    CHECK(BossEncounterUnit(encounter, 11368, false)); // the plan's add
-    CHECK(BossEncounterUnit(encounter, 14880, false)); // ... and a second one
-    CHECK(BossEncounterUnit(encounter, 14987, false)); // a tactic row's creature
-    CHECK(BossEncounterUnit(encounter, 11371, true));  // the core links it to the boss
-    CHECK(!BossEncounterUnit(encounter, 11371, false));
+    PlanStep bossStep = Step(PlanStepKind::Boss);
+    bossStep.entry = 14517;
+    bossStep.entries = {11368, 14880};
+    bossStep.tacticEntries = {14987};
+    plan.steps = {bossStep};
+    // One scan record: an ungrouped creature walks in its own guid's formation.
+    auto const scanOf = [](std::uint64_t guid, std::uint32_t entry, std::uint64_t formation, bool summoned,
+        bool linked, bool inCombat)
+    {
+        BossEncounterScan scan;
+        scan.guid = guid;
+        scan.entry = entry;
+        scan.formation = formation;
+        scan.summoned = summoned;
+        scan.linked = linked;
+        scan.inCombat = inCombat;
+        return scan;
+    };
+    BossEncounter boss = BossEncounterOf(&plan.steps[0]);
+    CHECK(boss.entry == 14517 && boss.guid == 0 && boss.formation == 0);
+    boss.guid = 0x9001;
+    boss.formation = 0x9001;
+    CHECK(BossEncounterUnit(boss, scanOf(0x9001, 14517, 0x9001, false, false, false))); // the boss's own spawn
+    CHECK(BossEncounterUnit(boss, scanOf(0xBABE, 11368, 0xBABE, true, false, false)));  // the bat he summoned
+    CHECK(BossEncounterUnit(boss, scanOf(0xBABF, 11371, 0xBABF, false, true, false)));  // the core links it to him
+    CHECK(BossEncounterUnit(boss, scanOf(0xBAC0, 14880, 0x9001, false, false, false))); // walking his formation
+    CHECK(BossEncounterUnit(boss, scanOf(0xBAC1, 50000, 0xBAC1, false, false, true)));  // already in the fight
+    // The plan's add entries are no evidence at all: an unrelated trash spawn of one is another pack.
+    CHECK(!BossEncounterUnit(boss, scanOf(0x11368, 11368, 0x11368, false, false, false)));
+    CHECK(!BossEncounterUnit(boss, scanOf(0x14880, 14880, 0x14880, false, false, false)));
+    CHECK(!BossEncounterUnit(boss, scanOf(0x14987, 14987, 0x14987, false, false, false)));
     // The scan's others: every creature it found that is neither the pack's nor the boss encounter's.
-    struct Found { std::uint64_t guid; std::uint32_t entry; bool linked; };
-    Found const found[] = {{0x101, 11368, false}, {0x102, 14987, false}, {0x103, 50000, false},
-        {0x104, 50001, true}};
+    struct Found { std::uint64_t guid; std::uint32_t entry; bool summoned; bool linked; bool inCombat; };
+    Found const found[] = {{0x101, 11368, false, false, false}, // trash standing beside his spot
+        {0x102, 11368, true, false, false},                    // ... and the bat he summoned
+        {0x103, 14987, false, false, false},                   // a tactic row's creature, unproven
+        {0x104, 50000, false, false, false},
+        {0x105, 50001, false, true, false}};
     std::vector<StandOther> others;
     for (Found const& c : found)
-        if (!BossEncounterUnit(encounter, c.entry, c.linked))
+        if (!BossEncounterUnit(boss, scanOf(c.guid, c.entry, c.guid, c.summoned, c.linked, c.inCombat)))
         {
             StandOther other;
             other.guid = c.guid;
@@ -16474,17 +16498,26 @@ static void TestStandClearanceBossEncounterUnitsAreNoOthers()
             other.clearYd = 18.0f;
             others.push_back(other);
         }
-    CHECK(others.size() == 1 && others[0].entry == 50000);
-    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, others)); // the unrelated unit still refuses the stand
-    // Counted as an other, the boss's own add refuses the stand: the encounter's skip is what keeps it.
-    StandOther add = others[0];
-    add.entry = 11368;
-    std::vector<StandOther> const withAdd = {add};
-    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, withAdd));
+    CHECK(others.size() == 3 && others[0].entry == 11368 && others[1].entry == 14987 && others[2].entry == 50000);
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, others)); // the unrelated trash still refuses the stand
+    // Counted as an other, the summoned bat would refuse it too: the spawn evidence is what keeps it out.
+    StandOther bat = others[0];
+    bat.entry = 11368;
+    std::vector<StandOther> const withBat = {bat};
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, withBat));
+    // A boss whose own spawn the host could not read (a script summons him): only what a spawn still proves, the
+    // core's linking row. His bat's summoner cannot be matched without his guid (never read: 0), and an unlinked
+    // 11368 stays another pack.
+    BossEncounter const unread = BossEncounterOf(&plan.steps[0]);
+    CHECK(!BossEncounterUnit(unread, scanOf(0x101, 11368, 0x101, false, false, false)));
+    CHECK(!BossEncounterUnit(unread, scanOf(0x102, 11368, 0x102, false, false, false)));
+    CHECK(BossEncounterUnit(unread, scanOf(0x103, 14987, 0x103, false, true, false)));
     // A pull step is not a boss step: nothing of a boss fight is ignored there.
     PlanStep const pull = PullStep(0.0f, {11368});
     BossEncounter const none = BossEncounterOf(&pull);
-    CHECK(none.entry == 0 && !BossEncounterUnit(none, 11368, false) && !BossEncounterUnit(none, 11368, true));
+    CHECK(none.entry == 0 && !BossEncounterUnit(none, scanOf(0x101, 11368, 0x101, false, false, false)) &&
+        !BossEncounterUnit(none, scanOf(0x9001, 14517, 0x9001, false, false, false)) &&
+        !BossEncounterUnit(none, scanOf(0x102, 11368, 0x102, true, true, true)));
 }
 
 // Another storey: a unit more than 8 yd above or below the stand, with no sight line to it, is no other pack the stand
