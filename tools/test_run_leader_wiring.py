@@ -996,6 +996,87 @@ class RunLeaderWiringTest(unittest.TestCase):
         for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
             self.assertIn("AiPlayerbot.DungeonRunStandClearance", (ROOT / doc).read_text())
 
+    def test_stand_pull_pre_cc_is_wired_behind_its_key(self):
+        # AiPlayerbot.DungeonRunStandPullPreCc (default 0): on the row before an authored stand-pull step the glue
+        # reads the next row's pack and the last point of the walk to the plan's approach that stands outside its
+        # wake reach; the policy ends that row there, the pull's CC orders go out and only then the walk to the
+        # approach (category: the marks before the walk in).
+        read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
+        self.assertIn("f.standPullPreCc = sPlayerbotAIConfig.dungeonRunStandPullPreCc;", read)
+        # Read after the stand's own read, which stays the lead bot's position (no stand is precomputed).
+        self.assertLess(read.index("ReadPullStand(slot, lead, bots, f);"),
+                        read.index("ReadStandPullHold(slot, lead, bots, f);"))
+        next_row = body(COMMANDS, "static bool NextStandPullStep(", "\n}\n")
+        self.assertIn("if (row.kind != ai::PlanStepKind::Move || !(after.flags & ai::kPlanFlagStandPull) ||", next_row)
+        self.assertIn("(after.kind != ai::PlanStepKind::Pull && after.kind != ai::PlanStepKind::Boss)", next_row)
+        self.assertIn("after.leg != row.leg", next_row)
+        hold = body(COMMANDS, "static void ReadStandPullHold(", "\n}\n")
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunStandPullPreCc || !lead->IsAlive() || !lead->IsInWorld() ||",
+                      hold)
+        self.assertIn("slot.run.holdAheadDone || slot.run.holdAheadStep != slot.run.step", hold)
+        # The pack is the next row's formations, by spawn in its radius (ScopeStandPullFacts' rule), and its units
+        # carry the aggro reach (the clearance read's rule).
+        self.assertIn("for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))", hold)
+        self.assertIn("pack.insert(RunFormationOf(member));", hold)
+        self.assertIn("pack.count(RunFormationOf(c)) == 0", hold)
+        self.assertIn("reach.reachYd = ai::AggroRadius(mob, lowest, rate);", hold)
+        self.assertIn("f.holdAheadRead = true;", hold)
+        self.assertIn("unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd", hold)
+        self.assertIn("path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE", hold)
+        # The stand's own read is untouched: its path still starts at the lead bot's position.
+        stand = body(COMMANDS, "void ReadPullStand(DungeonRunSlot const& slot,", "\n}\n")
+        self.assertIn("front.x = lead->GetPositionX();", stand)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        # The point is read once per row: the policy marks the answer, the glue stops reading it.
+        self.assertIn("r.holdAheadDone = r.holdAheadDone || f.holdAheadKnown || f.holdAheadRead;",
+                      body(policy, "inline void MoveStep(", "\n}\n"))
+        self.assertIn("inline bool NextStandPull(const Run& r)", policy)
+        self.assertIn("return (next.kind == PlanStepKind::Pull || next.kind == PlanStepKind::Boss) &&\n"
+                      "        (next.flags & ai::kPlanFlagStandPull) && next.leg == s->leg;", policy)
+        move = body(policy, "inline void MoveStep(", "\n}\n")
+        self.assertIn("if (f.standPullPreCc && NextStandPull(r) && !f.holdAheadReach.empty())", move)
+        self.assertIn("if (r.holdAheadMs < kHoldAheadWaitMs)", move)
+        self.assertIn('r.note = "reading the last point outside the pack\'s wake reach";', move)
+        self.assertIn('NextStep(r, "arrived at the hold point outside the pack\'s wake reach (the pull\'s CC goes out here)");',
+                      move)
+        self.assertIn('noPreCcNote = "stand_pull: no pre-cc point for " +', move)
+        self.assertIn('r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;', move)
+        pull = body(policy, "inline void PullUnit(", "\n}\n")
+        # The marks first: the approach walk sits after the CC branch's own return, and the marks are waited for.
+        self.assertLess(pull.index('order = "cc " + ccPick.mark'),
+                        pull.index("if (f.standPullPreCc && !hop && AuthoredStandStep(r) && !r.standApproachReached)"))
+        self.assertIn("if (!r.ccSent.empty() && r.ccOrderMs < kCcPrePullWaitMs && !CcAllHeld(r, f))", pull)
+        self.assertIn('r.note = "stand_pull: waiting for the crowd control to land before the walk in";', pull)
+        self.assertLess(pull.index("if (f.standPullPreCc && !hop && AuthoredStandStep(r)"),
+                        pull.index("HoldForShot(r, f, u, dt, order, hop))"))
+        self.assertIn("if (!WalkTo(r, f, st->x, st->y, st->z, false, dt, order))", pull)
+        self.assertLess(pull.index("r.ccOrderMs = 0;"), pull.index("r.standPullShotGuid = 0; // the pull never went out (the mark goes out first)"))
+        self.assertIn("inline bool CcAllHeld(const Run& r, const Facts& f)", policy)
+        gate = body(policy, "inline const UnitFact* PatrolStandPullGate(", "\n}\n")
+        self.assertIn("ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z) > kArriveYd)\n        return nullptr;",
+                      gate)
+        reset = body(policy, "inline void ResetStep(", "\n}\n")
+        self.assertIn("r.holdAheadStep = static_cast<std::size_t>(-1);", reset)
+        self.assertIn("r.standApproachReached = false;", reset)
+        self.assertIn("r.holdAheadDone = false;", reset)
+        self.assertIn("r.ccOrderMs = 0;", reset)
+        self.assertIn("constexpr float kHoldAheadMarginYd = 1.0f;", policy)
+        self.assertIn("constexpr std::uint32_t kHoldAheadWaitMs = 3 * kTickMs;", policy)
+        self.assertIn("constexpr std::uint32_t kCcPrePullWaitMs = 6000;", policy)
+        self.assertIn("bool standPullPreCc = false;", policy)
+        self.assertIn("bool holdAheadRead = false;", policy)
+        self.assertIn("std::vector<StandPackReach> holdAheadReach;", policy)
+        # The key: code fallback, header member, template and both docs.
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        header = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn('dungeonRunStandPullPreCc = config.GetBoolDefault("AiPlayerbot.DungeonRunStandPullPreCc", false);',
+                      config)
+        self.assertIn("bool dungeonRunStandPullPreCc;", header)
+        self.assertIn("AiPlayerbot.DungeonRunStandPullPreCc = 0", template)
+        for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
+            self.assertIn("AiPlayerbot.DungeonRunStandPullPreCc", (ROOT / doc).read_text())
+
     def test_hold_follows_the_tank_and_dead_gossip_npc_is_named(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         # 1. A hold's fight lets the places go when the tank is off the spot; the glue's existing release

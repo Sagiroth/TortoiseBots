@@ -1105,6 +1105,21 @@ AiPlayerbot.DungeonRunPullStand = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunStandClearance = 0
 
+# The crowd control before the walk in. On a stand-pull step (the plan marks its pull row or boss row stand_pull, with
+# a move row right before it), the run leader walks the party to the plan's approach and pulls from there; that walk
+# can pass inside the pulled pack's own aggro range, and the pack then wakes before the step's Polymorph, Shackle or
+# Sap goes out. With this key the move row before the pull ends at the last point of its walk that stands outside the
+# pack's own wake reach (the widest aggro reach of the pack's living units plus the party's 10 yd spread plus 1 yd),
+# the step's crowd control goes out there, and only then the party walks to the plan's approach and pulls. When no
+# point of the walk is that clear (an approach inside the pack by design) the row walks the plan's point as before,
+# and the note reads "stand_pull: no pre-cc point for <entry>". The row waits up to 3 s for the point to be read,
+# then goes on without it: a read that does not come never holds the run. A stand-pull step whose approach is already
+# clear is unchanged, and so is every other step.
+# 0 - off, the walk in is exactly as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandPullPreCc = 0
+
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
 # e.g. Uldaman, Revelosh's Shaft of Tsol). With 1 the lead bot (it leads the bound group) sets

@@ -16272,6 +16272,337 @@ static void TestAuthoredStandRuleSkipsHopPulls()
     }
 }
 
+// AiPlayerbot.DungeonRunStandPullPreCc: the Mar'li shape. The approach row's point is 16.4 yd from the hold point the
+// glue reads, the pull row's pack is one entry (the three mages polymorph three of its units), the tank's shot 28.5 yd.
+static DungeonPlan StandPullPreCcPlan()
+{
+    DungeonPlan plan;
+    PlanStep approach = Step(PlanStepKind::Move, -12253.0f, -1653.0f, 134.4f);
+    approach.leg = 0;
+    PlanStep pull = PullStep(-12259.0f, {14532}, ai::kPlanFlagStandPull);
+    pull.leg = 0;
+    pull.y = -1640.0f;
+    pull.z = 134.0f;
+    pull.radius = 10.0f;
+    plan.steps = {approach, pull, Step(PlanStepKind::Move, -12240.0f, -1600.0f, 134.0f)};
+    plan.ccPriority = {14532};
+    return plan;
+}
+
+// The party at the start of the approach walk (9.0 yd from the hold point), the row's pack one unit with reach 22,
+// the key on.
+static Facts StandPullPreCcFacts()
+{
+    Facts f = Party(-12240.0f);
+    f.leadY = -1680.0f;
+    f.leadZ = 131.5f;
+    f.standPullPreCc = true;
+    StandPackReach unit;
+    unit.entry = 49254;
+    unit.x = -12253.0f;
+    unit.y = -1613.0f;
+    unit.z = 134.4f;
+    unit.reachYd = 22.0f;
+    f.holdAheadReach = {unit};
+    return f;
+}
+
+// The lead bot at the hold point the row walked to.
+static void AtHold(Facts& f)
+{
+    f.leadX = -12246.2f;
+    f.leadY = -1673.4f;
+    f.leadZ = 132.0f;
+}
+
+// The glue's answer for the row: the hold point it walks to.
+static void HoldAheadGiven(Facts& f, float x, float y, float z)
+{
+    f.holdAheadRead = true;
+    f.holdAheadKnown = true;
+    f.holdAheadX = x;
+    f.holdAheadY = y;
+    f.holdAheadZ = z;
+}
+
+// A pullable unit of the row's pack: in sight of the tank, a humanoid when it is ranked for the CC (14532).
+static UnitFact PreCcUnit(std::uint64_t guid, std::uint32_t entry, float dist)
+{
+    UnitFact u = Typed(guid, entry, dist, kCreatureHumanoid);
+    u.hostile = true;
+    u.attackable = true;
+    u.losLead = true;
+    return u;
+}
+
+// The pull row's three mages and its pack: three ranked units to polymorph (14532, the cc_priority) and the nearest
+// unit to pull (11370, no rank): the CC list takes the three ranked ones, the pull takes 15. Every unit stands out of
+// the 27.5 yd shot from the plan's approach (the Mar'li pack's own shape): the pull's stand is read there.
+static Facts StandPullPreCcPullFacts()
+{
+    Facts f = StandPullPreCcFacts();
+    f.pullStand = true;
+    f.leadShotYd = 28.5f;
+    f.members = {Mem("Tanky", 0), CcMem("Magey", CcFamily::Polymorph), CcMem("Magetwo", CcFamily::Polymorph),
+        CcMem("Magethree", CcFamily::Polymorph)};
+    f.units = {PreCcUnit(15, 11370, 30.0f), PreCcUnit(12, 14532, 32.0f), PreCcUnit(13, 14532, 33.0f),
+        PreCcUnit(14, 14532, 34.0f)};
+    return f;
+}
+
+// The approach row holds at the point the glue read, not at the plan's own point: the first tick only asks for the
+// point, the answer walks there, and the row ends at the hold (the pull's CC goes out from there).
+static void TestStandApproachHoldsOutsideThePackReach()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcFacts();
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.phase == Phase::Begin);
+    CHECK(r.holdAheadStep == 0 && r.holdAheadMs == kTickMs);
+    CHECK(r.note == "reading the last point outside the pack's wake reach");
+    HoldAheadGiven(f, -12246.2f, -1673.4f, 132.0f);
+    CHECK(Tick(r, f) == "move -12246.2 -1673.4 132.0");
+    CHECK(r.note == "to the hold point outside the pack's wake reach");
+    AtHold(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "arrived at the hold point outside the pack's wake reach (the pull's CC goes out here)");
+    CHECK(r.checkpoint == 0);
+}
+
+// A hold point on the row's own point (the approach is already clear): the walk is the plan's point and the row ends
+// as it always did, its note "arrived".
+static void TestStandApproachHoldsAtThePlanPointWhenItIsClear()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcFacts();
+    f.leadX = -12243.0f;
+    f.leadY = -1640.0f;
+    HoldAheadGiven(f, -12253.0f, -1653.0f, 134.4f);
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+    CHECK(r.note == "walking");
+    f.leadX = -12253.0f;
+    f.leadY = -1653.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "arrived");
+}
+
+// No answer for kHoldAheadWaitMs (a glue that does not read it): the plan's point is walked, no longer wait.
+static void TestStandApproachUnreadableWalksThePlanPoint()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcFacts();
+    for (std::uint32_t i = 0; i < kHoldAheadWaitMs / kTickMs; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.note == "reading the last point outside the pack's wake reach");
+    }
+    CHECK(r.holdAheadMs == kHoldAheadWaitMs);
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+    CHECK(r.note == "walking");
+}
+
+// The hold is the approach row's of an authored stand-pull step only: before a plain pull, a rest or a plain move, and
+// before a stand-pull row two steps later or in another leg, the plan's point is walked at once.
+static void TestStandApproachHoldOnlyBeforeAStandPull()
+{
+    auto const plain = [](PlanStepKind kind, std::uint32_t flags, std::uint8_t leg)
+    {
+        DungeonPlan plan;
+        PlanStep approach = Step(PlanStepKind::Move, 50.0f, 0.0f, 0.0f);
+        approach.leg = 0;
+        PlanStep after = kind == PlanStepKind::Pull ? PullStep(60.0f, {4851}, flags) : Step(kind, 60.0f, 0.0f, 0.0f);
+        after.leg = leg;
+        plan.steps = {approach, after, Step(PlanStepKind::Move, 70.0f, 0.0f, 0.0f)};
+        return plan;
+    };
+    for (DungeonPlan const& plan : {plain(PlanStepKind::Pull, 0, 0), plain(PlanStepKind::Rest, 0, 0),
+             plain(PlanStepKind::Move, 0, 0), plain(PlanStepKind::Pull, ai::kPlanFlagStandPull, 1)})
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.standPullPreCc = true;
+        f.holdAheadReach = StandPullPreCcFacts().holdAheadReach;
+        HoldAheadGiven(f, 10.0f, 0.0f, 0.0f);
+        CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+        CHECK(r.note == "walking");
+    }
+    // A stand-pull row two steps later: this row's next step is a move, so it is walked as before.
+    DungeonPlan plan;
+    PlanStep first = Step(PlanStepKind::Move, 50.0f, 0.0f, 0.0f);
+    PlanStep second = Step(PlanStepKind::Move, 55.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(60.0f, {4851}, ai::kPlanFlagStandPull);
+    plan.steps = {first, second, pull};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.standPullPreCc = true;
+    f.holdAheadReach = StandPullPreCcFacts().holdAheadReach;
+    HoldAheadGiven(f, 10.0f, 0.0f, 0.0f);
+    CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+}
+
+// A walk with no point outside the pack's wake reach: the plan's point is walked as before, the note names the row's
+// entry.
+static void TestStandPullNoPreCcPointNote()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcFacts();
+    f.holdAheadRead = true; // read, and nothing was clear
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+    CHECK(r.note == "stand_pull: no pre-cc point for 14532");
+}
+
+// AiPlayerbot.DungeonRunStandPullPreCc off: today's walk, byte for byte. The hold point the glue offers is ignored (the
+// plan's point is walked at once, no read wait), and the pull row runs as it did before the key: the gate names the
+// units it leaves to the plain pull, the marks go out, the pull goes out. No walk to the approach.
+static void TestStandPullPreCcKeyOffWalksAsToday()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcPullFacts();
+    f.standPullPreCc = false;
+    f.pullStand = false;       // the stand keys are off too: the plain pull, as the run shipped
+    f.standClearance = false;
+    HoldAheadGiven(f, -12246.2f, -1673.4f, 132.0f);
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+    CHECK(r.note == "walking" && r.holdAheadStep == static_cast<std::size_t>(-1));
+    f.leadX = -12253.0f;
+    f.leadY = -1653.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "arrived");
+    CHECK(Tick(r, f).empty());
+    CHECK(Has(r.note, "not waiting for units that walk no patrol"));
+    CHECK(Tick(r, f) == "cc moon 12 Magey");
+    CHECK(Tick(r, f) == "cc square 13 Magetwo");
+    CHECK(Tick(r, f) == "cc diamond 14 Magethree");
+    CHECK(Tick(r, f) == "pullback 15");
+    CHECK(r.shotStandFor == 0 && !r.standApproachReached);
+}
+
+// The pull row's CC orders go out at the hold point, then the party walks to the plan's approach and only then the
+// stand is read: no "move ..." before the last mark.
+static void TestStandPullOrdersCcBeforeTheWalkIn()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcPullFacts();
+    CHECK(Tick(r, f).empty()); // the row's read
+    HoldAheadGiven(f, -12246.2f, -1673.4f, 132.0f);
+    CHECK(Tick(r, f) == "move -12246.2 -1673.4 132.0");
+    AtHold(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "cc moon 12 Magey");
+    CHECK(Tick(r, f) == "cc square 13 Magetwo");
+    CHECK(Tick(r, f) == "cc diamond 14 Magethree");
+    // The marks have to land (or kCcPrePullWaitMs pass) before the walk in.
+    std::string order;
+    std::uint32_t ticks = 0;
+    while (order.empty() && ticks < 10)
+    {
+        order = Tick(r, f);
+        ++ticks;
+    }
+    CHECK(order == "move -12253.0 -1653.0 134.4");
+    CHECK(ticks == kCcPrePullWaitMs / kTickMs + 1); // the wait's ticks, then the walk
+    CHECK(f.leadX == -12246.2f); // the walk went out from the hold point, not before the marks
+    f.leadX = -12253.0f;
+    f.leadY = -1653.0f;
+    // At the approach: the gate leaves the static pack to the plain pull (one tick), the way back is read, then the
+    // stand is read from here.
+    CHECK(Tick(r, f).empty());
+    CHECK(Has(r.note, "not waiting for units that walk no patrol"));
+    f.anchorPathRead = true;
+    f.anchorReachable = true;
+    for (int i = 0; i < 3 && r.shotStandFor == 0; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.shotStandFor == 15);
+    CHECK(r.note != "to the stand-pull approach");
+    CHECK(f.leadX == -12253.0f); // the stand is read from the plan's approach
+    GiveStand(f, r, -12261.4f, 22.0f);
+    f.shotStandZ = 134.4f; // the firing stand is on the approach's own floor (GiveStand's z is 0)
+    CHECK(Tick(r, f) == "move -12261.4 0.0 134.4");
+    ClearStand(f);
+    f.leadX = -12261.4f;
+    f.leadY = 0.0f;
+    f.leadZ = 134.4f;
+    f.units[0].distLead = 22.0f;
+    CHECK(Tick(r, f) == "pullback 15");
+}
+
+// The walk in waits for the marks only until they are read held: all three polymorphed ends the wait at once.
+static void TestStandPullWalkInWaitsForTheMarksToLand()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcPullFacts();
+    CHECK(Tick(r, f).empty());
+    HoldAheadGiven(f, -12246.2f, -1673.4f, 132.0f);
+    CHECK(Tick(r, f) == "move -12246.2 -1673.4 132.0");
+    AtHold(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "cc moon 12 Magey");
+    CHECK(Tick(r, f) == "cc square 13 Magetwo");
+    // Two of the three read held: still waiting.
+    f.units[1].polymorphed = true;
+    f.units[2].polymorphed = true;
+    CHECK(Tick(r, f) == "cc diamond 14 Magethree");
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "stand_pull: waiting for the crowd control to land before the walk in");
+    CHECK(r.ccOrderMs == kTickMs);
+    // The last one lands: the walk in goes out on the next tick.
+    f.units[3].polymorphed = true;
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+}
+
+// Once the party stands at the approach the walk there never runs again this step: a second pull of the row (another
+// target) reads its stand from where the tank is.
+static void TestStandPullApproachReachedOnce()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = StandPullPreCcPullFacts();
+    CHECK(Tick(r, f).empty());
+    HoldAheadGiven(f, -12246.2f, -1673.4f, 132.0f);
+    CHECK(Tick(r, f) == "move -12246.2 -1673.4 132.0");
+    AtHold(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "cc moon 12 Magey");
+    CHECK(Tick(r, f) == "cc square 13 Magetwo");
+    CHECK(Tick(r, f) == "cc diamond 14 Magethree");
+    std::string order;
+    for (std::uint32_t ticks = 0; ticks < 10 && order.empty(); ++ticks)
+        order = Tick(r, f);
+    CHECK(order == "move -12253.0 -1653.0 134.4");
+    f.leadX = -12253.0f;
+    f.leadY = -1653.0f;
+    f.anchorPathRead = true;
+    f.anchorReachable = true;
+    for (int i = 0; i < 4 && r.shotStandFor == 0; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.shotStandFor == 15);
+    CHECK(r.standApproachReached);
+    // The tank walked to the stand; the target it was for died, another unit of the pack is nearest now.
+    GiveStand(f, r, -12261.4f, 22.0f);
+    f.shotStandZ = 134.4f;
+    CHECK(Tick(r, f) == "move -12261.4 0.0 134.4");
+    f.leadX = -12261.4f;
+    f.leadY = 0.0f;
+    f.leadZ = 134.4f;
+    ClearStand(f);
+    f.units.erase(f.units.begin());
+    f.units.push_back(PreCcUnit(16, 11370, 30.0f));
+    CHECK(Tick(r, f).empty()); // the gate judges the new unit once (out of shot, no patrol)
+    CHECK(Tick(r, f).empty()); // its stand is read from where the tank stands: no walk back to the approach
+    CHECK(r.shotStandFor == 16);
+    CHECK(r.standApproachReached);
+    CHECK(r.note != "to the stand-pull approach");
+}
+
 // A patrolling pack refuses every firing stand the reach offers: the pull waits for it to walk clear of the reach's own
 // stand (kStandClearWaitMs, 20 s), then walks there and pulls from it. Any other blocker, or the wait spent, walks to
 // the default stand at once with the advisory note: the clearance never pauses or holds a pull past the patrol wait.
@@ -21273,6 +21604,46 @@ static void TestStandPullPullsFromTheStandInShot()
     Run r = Start(&plan, 1);
     Facts f = StandPullFacts(28.0f);
     CHECK(Tick(r, f) == "pullback 9");
+}
+
+// AiPlayerbot.DungeonRunStandPullPreCc on a stand-pull boss row: the row's CC orders and its walk to the approach come
+// before the row's own walk back to the stand (that walk is what wakes the boss's pack). Key off: the walk back first.
+static void TestStandPullPreCcBossRowMarksComeFirst()
+{
+    DungeonPlan plan = StandPullPlan(false);
+    plan.ccPriority = {14532};
+    // The tank at the hold point outside the boss's pack; the boss out of its 29 yd shot, a ranked add out too.
+    auto const facts = [](bool key)
+    {
+        Facts f = StandPullFacts(30.0f);
+        f.leadX = -5862.0f;
+        f.leadY = -3820.0f;
+        f.standPullPreCc = key;
+        f.members = {Mem("Tanky", 0), CcMem("Magey", CcFamily::Polymorph)};
+        f.units.push_back(PreCcUnit(12, 14532, 35.0f));
+        return f;
+    };
+    {
+        Run r = Start(&plan, 1);
+        Facts f = facts(false);
+        CHECK(Tick(r, f) == "move -5842.0 -3807.0 200.7");
+        CHECK(Has(r.note, "back to the stand for boss 3976"));
+        CHECK(!r.standApproachReached);
+    }
+    {
+        Run r = Start(&plan, 1);
+        Facts f = facts(true);
+        CHECK(Tick(r, f) == "cc moon 12 Magey"); // the mark first, at the hold point
+        std::string order;
+        for (std::uint32_t ticks = 0; ticks < 10 && order.empty(); ++ticks)
+            order = Tick(r, f);
+        CHECK(order == "move -5842.0 -3807.0 200.7"); // then the walk to the approach
+        CHECK(!r.standApproachReached);
+        f.leadX = -5842.0f;
+        f.leadY = -3807.0f;
+        CHECK(Tick(r, f).empty());
+        CHECK(r.standApproachReached);
+    }
 }
 
 // In range but out of sight: wait, saying so.
@@ -27794,6 +28165,15 @@ int main()
     TestStandClearanceKeepsOffOtherPacksOnly();
     TestStandClearanceCoversTheAuthoredStandPull();
     TestAuthoredStandRuleSkipsHopPulls();
+    TestStandApproachHoldsOutsideThePackReach();
+    TestStandApproachHoldsAtThePlanPointWhenItIsClear();
+    TestStandApproachUnreadableWalksThePlanPoint();
+    TestStandApproachHoldOnlyBeforeAStandPull();
+    TestStandPullNoPreCcPointNote();
+    TestStandPullPreCcKeyOffWalksAsToday();
+    TestStandPullOrdersCcBeforeTheWalkIn();
+    TestStandPullWalkInWaitsForTheMarksToLand();
+    TestStandPullApproachReachedOnce();
     TestStandClearanceWaitsForTheBlockingPatrol();
     TestStandClearanceTreatsThePacksAssistanceAsPack();
     TestStandClearanceFloorsOnThePacksOwnReach();
@@ -27967,6 +28347,7 @@ int main()
     TestSkipUnreachableBossPassedBySpotEndsNotCleared();
     TestStandPullWaitsAtTheStandOutOfShot();
     TestStandPullPullsFromTheStandInShot();
+    TestStandPullPreCcBossRowMarksComeFirst();
     TestStandPullWaitsWhileOutOfSight();
     TestStandPullWalksBackToTheStand();
     TestStandPullCeilingSkipsWithTheSkipFlag();

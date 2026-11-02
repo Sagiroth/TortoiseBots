@@ -9351,6 +9351,127 @@ void ReadStandPatrols(Player* lead, TortoiseBots::DungeonRun::Facts& f)
     }
 }
 
+// The approach row right before a stand-pull row (DungeonRun::NextStandPull): a move step whose next step, in the
+// same leg, is a stand-pull pull or boss.
+static bool NextStandPullStep(DungeonRunSlot const& slot, ai::PlanStep const*& next)
+{
+    using namespace TortoiseBots::DungeonRun;
+    next = nullptr;
+    const ai::DungeonPlan* const plan = slot.run.plan;
+    if (!plan || slot.run.step + 1 >= plan->steps.size())
+        return false;
+    const ai::PlanStep& row = plan->steps[slot.run.step];
+    const ai::PlanStep& after = plan->steps[slot.run.step + 1];
+    if (row.kind != ai::PlanStepKind::Move || !(after.flags & ai::kPlanFlagStandPull) ||
+        (after.kind != ai::PlanStepKind::Pull && after.kind != ai::PlanStepKind::Boss) || after.leg != row.leg)
+        return false;
+    next = &after;
+    return true;
+}
+
+// AiPlayerbot.DungeonRunStandPullPreCc: the last point of the lead bot's path to the approach row's own point that
+// stands outside the next stand-pull row's pack's wake reach (Facts::holdAheadReach), for the row the policy asked
+// about (Run::holdAheadStep). The row walks there, its CC orders go out, and only then the pull walks to the plan's
+// approach: the pack wakes after the marks, not before them (DungeonRun::NextStandPull, Run::holdAheadStep).
+// The next row's pack is its formations (the rule ScopeStandPullFacts scopes a pull row with): a formation with a
+// member whose DB spawn lies in the row's radius, found by guid on the map alive or dead, wherever its loop has
+// taken it. Each living, hostile, out-of-combat unit of it carries its aggro reach (the clearance read's rule, the
+// party's lowest level). The point's floor is that reach plus the party's own spread (the bots stand around the
+// row's point) and kHoldAheadMarginYd. One hostile search and one path search, on the tick the policy asks.
+static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!sPlayerbotAIConfig.dungeonRunStandPullPreCc || !lead->IsAlive() || !lead->IsInWorld() ||
+        lead->GetTransport() || slot.run.holdAheadDone || slot.run.holdAheadStep != slot.run.step)
+        return;
+    const ai::PlanStep* next = nullptr;
+    if (!NextStandPullStep(slot, next))
+        return;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    std::unordered_set<uint64> pack;
+    for (uint32 entry : next->entries)
+        for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))
+        {
+            CreatureData const* const data = sObjectMgr.GetCreatureData(low);
+            if (!data || ai::PlanDistance(data->position.x, data->position.y, data->position.z, next->x, next->y,
+                    next->z) > next->radius + kSpawnOwnTolYd)
+                continue;
+            if (Creature* const member = map->GetCreature(data->GetObjectGuid(low)))
+                if (member->GetEntry() == entry)
+                    pack.insert(RunFormationOf(member));
+        }
+    if (pack.empty())
+        return;
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMapId() == lead->GetMapId() && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    std::list<Unit*> found;
+    HostileCreaturesAround(lead, kStandClearScanYd, found);
+    for (Unit* unit : found)
+    {
+        Creature* const c = unit->ToCreature();
+        if (!c || !c->IsAlive() || c->IsInCombat() || c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO) ||
+            pack.count(RunFormationOf(c)) == 0)
+            continue;
+        ai::AggroMob mob;
+        mob.level = c->GetLevel();
+        mob.detectionYd = c->GetDetectionRange();
+        StandPackReach reach;
+        reach.entry = c->GetEntry();
+        reach.patrols = RunWalksPatrol(c);
+        reach.x = c->GetPositionX();
+        reach.y = c->GetPositionY();
+        reach.z = c->GetPositionZ();
+        reach.reachYd = ai::AggroRadius(mob, lowest, rate);
+        f.holdAheadReach.push_back(reach);
+    }
+    if (f.holdAheadReach.empty())
+        return;
+    // The path to the row's point, walked back from its end: the last point outside every unit of the pack.
+    PathFinder path(lead);
+    path.calculate(next->x, next->y, next->z, false);
+    if (path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE)
+        return;
+    f.holdAheadRead = true; // looked for: no point found is the policy's note, not a read still to come
+    std::vector<ai::ApproachPoint> points;
+    ai::ApproachPoint front;
+    front.x = lead->GetPositionX();
+    front.y = lead->GetPositionY();
+    front.z = lead->GetPositionZ();
+    points.push_back(front);
+    for (Vector3 const& p : path.getPath())
+    {
+        ai::ApproachPoint point;
+        point.x = p.x;
+        point.y = p.y;
+        point.z = p.z;
+        points.push_back(point);
+    }
+    for (std::size_t i = points.size(); i-- > 0;)
+    {
+        bool clear = true;
+        for (StandPackReach const& unit : f.holdAheadReach)
+            if (ai::PlanDistance(points[i].x, points[i].y, points[i].z, unit.x, unit.y, unit.z) <
+                unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd)
+            {
+                clear = false;
+                break;
+            }
+        if (!clear)
+            continue;
+        f.holdAheadKnown = true;
+        f.holdAheadX = points[i].x;
+        f.holdAheadY = points[i].y;
+        f.holdAheadZ = points[i].z;
+        break;
+    }
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -9365,6 +9486,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
     f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;
+    // The CC before the walk in (DungeonRun::NextStandPull): the approach row holds outside the pack's wake reach.
+    f.standPullPreCc = sPlayerbotAIConfig.dungeonRunStandPullPreCc;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
@@ -10287,6 +10410,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.goodSpotCut = GoodSpotCutOff(lead, slot.run);
     ReadTimeSinkWays(slot, lead, f);
     ReadPullStand(slot, lead, bots, f);
+    ReadStandPullHold(slot, lead, bots, f);
     // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
     // the pack in the tank's shot), not on every tick of the wait. A row that left a unit of the pack to the plain pull
     // (Run::standPullStatic) reads them too: its plain pull still needs the clearance.
