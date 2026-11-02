@@ -749,10 +749,21 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type, b
         ZoneAccum& accum = zones[zoneId];
         accum.spawns += 100;
         accum.chance = std::max(accum.chance, source.chance);
-        if (area->MapId == int32_t(botFishingMap))
+        // The zone's farm point is its FISH_LOCATION spot nearest the bot on
+        // the bot's map, ranked with the same distance as the spawn zones and
+        // routed at its own coordinates. A zone with no spot there keeps
+        // hasNearest false: it has no point to rank or probe, so it ranks
+        // after the zones that do, by score and zone id.
+        WorldPosition spot;
+        float spotDistSq = 0.0f;
+        if (sTravelMgr.FishZoneNearestSpot(zoneId, botPos, spot, spotDistSq) &&
+            (!accum.hasNearest || spotDistSq < accum.nearest))
         {
+            accum.nearest = spotDistSq;
+            accum.nearestX = spot.getX();
+            accum.nearestY = spot.getY();
+            accum.nearestZ = spot.getZ();
             accum.hasNearest = true;
-            accum.nearest = 0.0f;
         }
     }
     for (GuildOrderEntrySource const& source : found->second)

@@ -261,6 +261,50 @@ int main()
         CHECK(allFlagged.size() == 2); // no reachable zone: keep the plan, the order must not read nosource
     }
 
+    // Fishing zones carry their FISH_LOCATION spot as the farm point. Two
+    // zones with spots on the bot's map: the nearer spot wins though the far
+    // zone is richer. Without a spot on the bot's map a zone has no distance
+    // and ranks after every zone that has one, by score then zone id (the old
+    // order among those). No zone is ranked at the origin.
+    {
+        FarmZone nearFish;
+        nearFish.zoneId = 40;
+        nearFish.onBotMap = true;
+        nearFish.distanceSq = 25.0f;
+        nearFish.score = 100.0;
+        FarmZone farFish;
+        farFish.zoneId = 41;
+        farFish.onBotMap = true;
+        farFish.distanceSq = 900.0f;
+        farFish.score = 5000.0;
+
+        std::vector<FarmZone> withSpots { farFish, nearFish };
+        std::sort(withSpots.begin(), withSpots.end(), FarmZoneBefore);
+        CHECK(withSpots[0].zoneId == 40);
+        CHECK(withSpots[1].zoneId == 41);
+
+        FarmZone richNoSpot;
+        richNoSpot.zoneId = 50;
+        richNoSpot.onBotMap = false;
+        richNoSpot.score = 9000.0;
+        FarmZone leanTieHigh;
+        leanTieHigh.zoneId = 52;
+        leanTieHigh.onBotMap = false;
+        leanTieHigh.score = 10.0;
+        FarmZone leanTieLow;
+        leanTieLow.zoneId = 51;
+        leanTieLow.onBotMap = false;
+        leanTieLow.score = 10.0;
+
+        std::vector<FarmZone> mixed { leanTieHigh, richNoSpot, nearFish, leanTieLow };
+        std::sort(mixed.begin(), mixed.end(), FarmZoneBefore);
+        CHECK(mixed.size() == 4);
+        CHECK(mixed[0].zoneId == 40);
+        CHECK(mixed[1].zoneId == 50);
+        CHECK(mixed[2].zoneId == 51);
+        CHECK(mixed[3].zoneId == 52);
+    }
+
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");
     return failures ? 1 : 0;

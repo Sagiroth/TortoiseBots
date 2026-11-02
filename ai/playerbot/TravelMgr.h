@@ -494,6 +494,11 @@ namespace ai
 		// never plans water it has no walkable point in.
 		bool FishZoneHasSpots(uint32 zoneId) const;
 
+		// The fish spot of the zone nearest `from` on from's map, by squared
+		// 3D distance (the planner's farm-point measure). False when the zone
+		// holds no spot on that map.
+		bool FishZoneNearestSpot(uint32 zoneId, WorldPosition const& from, WorldPosition& spot, float& distanceSq) const;
+
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
@@ -585,9 +590,9 @@ namespace ai
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
 		// Zones holding at least one fish spot, built with the destinations
-		// above: the order planner asks per search row, so it reads a set,
-		// never a point walk.
-		std::unordered_set<uint32> fishSpotZones;
+		// above: the order planner asks per search row, so it reads the zone's
+		// spots, never a point walk.
+		std::unordered_map<uint32, std::vector<WorldPosition>> fishSpotsByZone;
 		std::unordered_map<uint32, int32> areaLevels;
 		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
 		// (0 = unresolvable at build, fail closed at use). Built once at startup
