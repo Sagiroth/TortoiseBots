@@ -9154,6 +9154,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
         // (DungeonRun::RaidHealerGuard).
         member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);
+        // Its current target: the unit it has selected (AttackAction sets it), which a healer guard assignment reads
+        // to tell a bot that has its add from one that never took it up (DungeonRun::RaidHealerGuard).
+        member.targetGuid = bot->GetSelectionGuid().GetRawValue();
         // A rogue's pre-pull Sap trigger (SapCcMarkTrigger) fires only for a bot with a live client master and Sap
         // on: without it the run orders no Sap (DungeonRun::PickCcOrder).
         member.canSap = (member.cc & CcBit(CcFamily::Sap)) && memberAi && memberAi->HasRealPlayerMaster() &&
@@ -10831,6 +10834,8 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         it = DungeonRuns().find(commanderRaw);
         if (it == DungeonRuns().end())
             return;
+        // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
+        TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
         if (accepted && captured.movePathRead)
             TortoiseBots::DungeonRun::NoteMovePathType(it->second.run, order, captured.movePathType);
         // A stalled walk's `direct` move refused: the walk goes on without it (DungeonRun::StallDirectRefused).

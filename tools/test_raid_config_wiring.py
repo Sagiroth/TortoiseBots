@@ -60,6 +60,10 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;", raid)
         # The ranged dps the guard sends and the add's own place, both read by the glue.
         self.assertIn("member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);", code)
+        # Its current target: an assignment whose bot never targets the add is over (DungeonRun::RaidHealerGuard).
+        self.assertIn("member.targetGuid = bot->GetSelectionGuid().GetRawValue();", code)
+        # IssueRunOrder's answer, fed back to the guard: only a taken order is an assignment (HealerGuardOrderTaken).
+        self.assertIn("TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);", code)
         read = body(code, "void ReadGuardFacts(Player* lead,", "\n}\n")
         self.assertIn("fact.x = attacker->GetPositionX();", read)
         self.assertIn("fact.y = attacker->GetPositionY();", read)

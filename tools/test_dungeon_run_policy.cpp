@@ -22248,7 +22248,7 @@ static void TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead()
 }
 
 // AiPlayerbot.DungeonRunRaidHealerGuard (flag off by default): in a raid boss fight whose main tank holds the boss
-// (Facts::leadHeldEntries names a plan boss), an add on a healer goes to the nearest ranged dps, up to
+// (Facts::leadHeldEntries names a plan boss), an add on a healer goes to the nearest ranged dps in reach of it, up to
 // kRaidHealerGuardDps of them, one order a tick; the off-tanks keep their post. A ranged bot that is a tank or a
 // healer is no candidate, and neither is a melee dps.
 static Facts RaidHealerGuardFacts()
@@ -22257,6 +22257,16 @@ static Facts RaidHealerGuardFacts()
     f.raid.healerGuard = true;
     f.leadHeldEntries = {10184};
     return f;
+}
+
+// One tick as the glue runs it for the healer guard: Tick, then IssueRunOrder's answer on the order
+// (DungeonRun::HealerGuardOrderTaken).
+static std::string GuardTick(Run& r, const Facts& f, bool accepted = true)
+{
+    std::string const order = Tick(r, f);
+    if (!order.empty())
+        HealerGuardOrderTaken(r, order, accepted);
+    return order;
 }
 
 static void TestRaidHealerGuardSendsTheNearestRangedDps()
@@ -22281,16 +22291,123 @@ static void TestRaidHealerGuardSendsTheNearestRangedDps()
     UnitFact add = Hitter(50001, 11368, 20, true);
     add.x = 22.0f; // NearDps 2 yd, MidDps 8, FarDps 18, Melee 1 (not ranged), Healy 2 (not damage)
     f.partyAttackers = {add};
-    CHECK(Tick(r, f) == "attack 50001 NearDps");
+    CHECK(GuardTick(r, f) == "attack 50001 NearDps");
     CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
     CHECK(r.offTankTurn == 0); // the off-tanks untouched
     CHECK(r.note.find("off-tank") == std::string::npos);
+    f.members[3].targetGuid = 50001; // NearDps takes it up
     // The second nearest, one tick later; then the add has its two and nothing more is sent.
-    CHECK(Tick(r, f) == "attack 50001 MidDps");
+    CHECK(GuardTick(r, f) == "attack 50001 MidDps");
+    f.members[4].targetGuid = 50001;
     CHECK(r.offTankTurn == 0);
     for (int k = 0; k < 5; ++k)
-        CHECK(Tick(r, f).empty());
+        CHECK(GuardTick(r, f).empty());
     CHECK(r.healerGuardDps[50001].size() == kRaidHealerGuardDps);
+}
+
+// The pick is by distance to the add, not to the lead bot: a ranged dps close to the lead bot but out of reach of the
+// add is not picked before one that is near the add (its order would be refused, and the add goes on on the healer).
+static void TestRaidHealerGuardPicksByDistanceToTheAdd()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact nearLead = Mem("NearLead", 10); // 50 yd from the add: out of reach
+    nearLead.ranged = true;
+    nearLead.rangedDps = true;
+    MemberFact nearAdd = Mem("NearAdd", 40); // 20 yd from it
+    nearAdd.ranged = true;
+    nearAdd.rangedDps = true;
+    f.members = {tank, nearLead, nearAdd};
+    UnitFact add = Hitter(50013, 11368, 60, true);
+    add.x = 60.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50013 NearAdd");
+    CHECK(HealerGuardMarked(r.healerGuardDps[50013], "NearAdd"));
+    CHECK(!HealerGuardMarked(r.healerGuardDps[50013], "NearLead"));
+}
+
+// No ranged dps in reach of the add: bots farther than kRaidHealerGuardRangeYd from it are no help (their order is
+// refused beyond sight range, and a covered add blocks the cap), so the off-tank takes it as without the key.
+static void TestRaidHealerGuardIgnoresRangedDpsOutOfReachOfTheAdd()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact far1 = Mem("FarDps", 60);
+    far1.ranged = true;
+    far1.rangedDps = true;
+    MemberFact far2 = Mem("FartherDps", 70);
+    far2.ranged = true;
+    far2.rangedDps = true;
+    f.members = {tank, far1, far2}; // both in the raid, neither in ranged reach of the add
+    UnitFact add = Hitter(50010, 11368, 20, true);
+    add.x = 0.0f; // FarDps 60 yd from it, FartherDps 70
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50010 Offy");
+    CHECK(r.note.find("the off-tank Offy takes 11368 off the healer") != std::string::npos);
+    CHECK(r.healerGuardDps.empty());
+}
+
+// An assignment stands only once the glue reports its order taken: a refused one covers no slot, and the next tick
+// tries the next ranged dps.
+static void TestRaidHealerGuardRecordsOnlyAnAcceptedOrder()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50011, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd, MidDps 8
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f, false) == "attack 50011 NearDps");
+    CHECK(r.healerGuardDps.empty());
+    CHECK(GuardTick(r, f) == "attack 50011 MidDps");
+    CHECK(r.healerGuardDps[50011].size() == 1);
+    CHECK(HealerGuardMarked(r.healerGuardDps[50011], "MidDps"));
+    CHECK(!HealerGuardMarked(r.healerGuardDps[50011], "NearDps"));
+}
+
+// An assignment stands only while its bot targets the add: one the bot never takes up is over after
+// kRaidHealerGuardExpireMs, and its slot is free again (the add had its two, so nothing was sent until then).
+static void TestRaidHealerGuardExpiresAnAssignmentTheBotNeverTakes()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50012, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd, MidDps 8
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50012 NearDps");
+    f.members[2].targetGuid = 50012; // MidDps has the add: its assignment holds
+    CHECK(GuardTick(r, f) == "attack 50012 MidDps");
+    // NearDps never targets it: the add has its two for the wait.
+    for (int k = 0; k < 4; ++k)
+    {
+        CHECK(GuardTick(r, f).empty());
+        CHECK(r.healerGuardDps[50012].size() == kRaidHealerGuardDps);
+    }
+    // ... then its slot is free again and the pick runs.
+    CHECK(GuardTick(r, f) == "attack 50012 NearDps");
+    CHECK(r.healerGuardDps[50012].size() == kRaidHealerGuardDps);
+    CHECK(HealerGuardMarked(r.healerGuardDps[50012], "MidDps"));
 }
 
 // No ranged dps free: the off-tank takes the add on the healer, as without the key.
@@ -22306,7 +22423,7 @@ static void TestRaidHealerGuardFallsBackToAFreeOffTank()
     UnitFact add = Hitter(50002, 11368, 20, true);
     add.x = 20.0f;
     f.partyAttackers = {add};
-    CHECK(Tick(r, f) == "attack 50002 Offy");
+    CHECK(GuardTick(r, f) == "attack 50002 Offy");
     CHECK(r.note.find("the off-tank Offy takes 11368 off the healer") != std::string::npos);
     CHECK(r.healerGuardDps.empty());
 }
@@ -22329,7 +22446,7 @@ static void TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss()
     f.partyAttackers = {boss, add};
     for (int k = 0; k < 10; ++k)
     {
-        std::string const o = Tick(r, f);
+        std::string const o = GuardTick(r, f);
         CHECK(o.empty());
         CHECK(o.find("Offy") == std::string::npos);
     }
@@ -22338,7 +22455,7 @@ static void TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss()
     Run q = RaidBossRun(plan);
     Facts g = f;
     g.raid.bossOffTanksAlive = {"Offy", "Offz"};
-    CHECK(Tick(q, g) == "attack 50003 Offz");
+    CHECK(GuardTick(q, g) == "attack 50003 Offz");
     CHECK(q.note.find("the off-tank Offz takes 11368 off the healer") != std::string::npos);
 }
 
@@ -22355,7 +22472,7 @@ static void TestRaidHealerGuardLeavesANonHealerAddAlone()
     add.x = 20.0f;
     f.partyAttackers = {add};
     for (int k = 0; k < 10; ++k)
-        CHECK(Tick(r, f).empty());
+        CHECK(GuardTick(r, f).empty());
     CHECK(r.offTankTurn == 0);
     CHECK(r.healerGuardDps.empty());
 }
@@ -22380,12 +22497,14 @@ static void TestRaidHealerGuardRunsWithNoOffTank()
     UnitFact add = Hitter(50005, 11368, 20, true);
     add.x = 22.0f;
     f.partyAttackers = {add};
-    CHECK(Tick(r, f) == "attack 50005 NearDps");
+    CHECK(GuardTick(r, f) == "attack 50005 NearDps");
     CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
+    f.members[1].targetGuid = 50005; // NearDps takes it up
     // The second ranged dps, one tick later, and then the add has its two.
-    CHECK(Tick(r, f) == "attack 50005 MidDps");
+    CHECK(GuardTick(r, f) == "attack 50005 MidDps");
+    f.members[2].targetGuid = 50005;
     for (int k = 0; k < 5; ++k)
-        CHECK(Tick(r, f).empty());
+        CHECK(GuardTick(r, f).empty());
     CHECK(r.offTankTurn == 0);
     CHECK(r.healerGuardDps[50005].size() == kRaidHealerGuardDps);
 }
@@ -26813,6 +26932,10 @@ int main()
     TestRaidBossGuardReadModes();
     TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
     TestRaidHealerGuardSendsTheNearestRangedDps();
+    TestRaidHealerGuardPicksByDistanceToTheAdd();
+    TestRaidHealerGuardIgnoresRangedDpsOutOfReachOfTheAdd();
+    TestRaidHealerGuardRecordsOnlyAnAcceptedOrder();
+    TestRaidHealerGuardExpiresAnAssignmentTheBotNeverTakes();
     TestRaidHealerGuardFallsBackToAFreeOffTank();
     TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss();
     TestRaidHealerGuardLeavesANonHealerAddAlone();
