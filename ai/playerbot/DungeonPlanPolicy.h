@@ -150,8 +150,8 @@ namespace ai
     // otherwise deferred when nothing later in the plan needs it gone (runtime/DungeonRunPolicy.h PullMayBeDeferred,
     // DeferUnreachablePack); with this flag it pauses the run as before. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagNoDefer = 1024;
-    // open_proof only: the proof entry is a creature (alive). The next free bit: 32768 (8192 is kPlanFlagStandPull, a
-    // boss or a pull; 16384 is kPlanFlagResetToGossip, a units hold).
+    // open_proof only: the proof entry is a creature (alive). The next free bit: 65536 (8192 is kPlanFlagStandPull, a boss or a
+    // pull; 16384 is kPlanFlagResetToGossip and 32768 kPlanFlagDeadGossipOk, both a units hold).
     constexpr std::uint32_t kPlanFlagProofCreature = 2048;
     // boss only: the boss may stand out of the party's reach by design (Stormwrought Ruins' Eldermaw 62661 swims a
     // pool whose bed is the only navmesh, cut off from the shore; specs/sw-eldermaw.md). Where the step would pause on
@@ -170,6 +170,14 @@ namespace ai
     // holds, whose first entry counts while still friendly) is not mistaken for one. Any other kind, and a hold with
     // a done flag, is refused (BadParam).
     constexpr std::uint32_t kPlanFlagResetToGossip = 16384;
+    // hold only, a units hold (no done flag, not kPlanFlagResetToGossip): the gossip row before it counted its starting NPC as
+    // DEAD (kPlanFlagDeadNpcIsDone on that row), so the script's own update that turns the hold's units hostile can never run
+    // and they cannot be pulled. The run leader then ends the hold as soon as no unit of it is hostile: at once when all lie
+    // dead, with a note when only friendly survivors are left (Zul'Farrak's Bly, whose crew dies in the pyramid event's troll
+    // waves in some runs). Only the run's own tick of that gossip sets the latch (DungeonRunPolicy.h GossipDeadIsDone,
+    // Run::startNpcDeadStep); a run resumed at the hold itself waits for a hostile unit as before. Any other kind, a hold with
+    // a done flag, and a hold with kPlanFlagResetToGossip are refused (BadParam).
+    constexpr std::uint32_t kPlanFlagDeadGossipOk = 32768;
     constexpr std::uint32_t kPlanEncounterNotStarted = 0;
     constexpr std::uint32_t kPlanEncounterFail = 2;
     constexpr std::uint32_t kPlanEncounterMax = 4;
@@ -471,6 +479,8 @@ namespace ai
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold)
             return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagDeadGossipOk) && step.kind != PlanStepKind::Hold)
+            return PlanStepRefusal::BadParam;
         if (step.exactLaunch && step.kind != PlanStepKind::MoveDirect)
             return PlanStepRefusal::BadParam;
         if (step.openProof && step.kind != PlanStepKind::Open)
@@ -545,9 +555,12 @@ namespace ai
                 bool const byObject = (step.flags & kPlanFlagDoneObject) != 0;
                 bool const encounter = (step.flags & kPlanFlagEncounter) != 0;
                 bool const resetToGossip = (step.flags & kPlanFlagResetToGossip) != 0;
+                bool const deadGossipOk = (step.flags & kPlanFlagDeadGossipOk) != 0;
                 if ((byData && byObject) || (encounter && !byData))
                     return PlanStepRefusal::BadParam;
                 if (resetToGossip && (byData || byObject))
+                    return PlanStepRefusal::BadParam;
+                if (deadGossipOk && (byData || byObject || resetToGossip))
                     return PlanStepRefusal::BadParam;
                 if (encounter && step.param > kPlanEncounterMax)
                     return PlanStepRefusal::BadParam;

@@ -1244,6 +1244,91 @@ static PlanStep MograineHold()
     return s;
 }
 
+// #243 round 1: Zul'Farrak's Bly hold done by its units with kPlanFlagDeadGossipOk (32768): the gossip row before it counted its
+// dead NPC as done (dead_is_done, 512), so the crew can never be turned hostile (only Bly's own script does, and he lies dead).
+// The hold then ends as soon as no unit of it is hostile: at once when all four lie dead, and with the same note when only
+// friendly survivors are left. Without the gossip's dead note (a run resumed at the hold) it waits for a hostility as before.
+static const char* const kCrewDeadAnswer =
+    "no-npc: No living NPC of that entry is within 40 yd of the bot: a dead one lies nearby: Sergeant Bly (7604) "
+    "lies dead 3 yd away and respawns in 6 d 23 h (604800 s spawn timer).";
+
+static PlanStep DeadBlyGossip()
+{
+    PlanStep s;
+    s.kind = PlanStepKind::Gossip;
+    s.entry = 7604;
+    s.param = 1;
+    s.flags = ai::kPlanFlagDeadNpcIsDone;
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+static PlanStep BlyHoldDeadGossip()
+{
+    PlanStep s = BlyHold();
+    s.flags = ai::kPlanFlagDeadGossipOk;
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+// The gossip row ran to its dead-NPC "counted done": the run stands on the flagged hold (step 2).
+static Run StartAfterTheDeadGossip(const DungeonPlan* plan)
+{
+    Run r = Start(plan, 1);
+    Facts f = Party();
+    std::string const order = Tick(r, f);
+    CHECK(order.compare(0, 11, "gossip 7604") == 0);
+    OrderRefused(r, order, kCrewDeadAnswer);
+    CHECK(r.state == State::Running && r.step == 2);
+    CHECK(Has(r.note, "counted done"));
+    return r;
+}
+
+static void TestDeadGossipHoldEndsAtOnceWhenAllLieDead()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = StartAfterTheDeadGossip(&plan);
+    Facts f = Party();
+    f.units.clear();
+    f.eventDown = 4; // the four corpses are in sight
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(Has(r.note, "event done: the NPC that starts it was dead and no unit of it is hostile"));
+    CHECK(Has(r.note, "(4 of 4 down)"));
+}
+
+static void TestDeadGossipHoldEndsWithFriendlySurvivors()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = StartAfterTheDeadGossip(&plan);
+    Facts f = Party();
+    // Bly died; Murta and Oro stand friendly (faction 35) and cannot be turned: no pull reaches them.
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(Has(r.note, "event done: the NPC that starts it was dead and no unit of it is hostile"));
+    CHECK(Has(r.note, "(2 of 2 down)"));
+}
+
+static void TestDeadGossipHoldWithoutTheDeadNoteWaits()
+{
+    // The latch is the gossip row's own tick: a run resumed at the hold (Start past the gossip) never saw it, so the flag
+    // alone changes nothing and the hold waits for a unit to turn hostile, as an unflagged units hold does.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    CHECK(!Has(r.note, "the NPC that starts it was dead"));
+}
+
 static void TestMograineWhitemaneHoldWaitsForValueFour()
 {
     DungeonPlan plan;
@@ -1449,6 +1534,9 @@ int main()
     TestArenaHoldWithoutAGossipIsNoReset();
     TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets();
     TestBlyHoldUnchangedByTheResetRule();
+    TestDeadGossipHoldEndsAtOnceWhenAllLieDead();
+    TestDeadGossipHoldEndsWithFriendlySurvivors();
+    TestDeadGossipHoldWithoutTheDeadNoteWaits();
     TestMograineWhitemaneHoldWaitsForValueFour();
     TestCrystalHoldWaitsForActive();
     TestCrystalHoldMissingObject();

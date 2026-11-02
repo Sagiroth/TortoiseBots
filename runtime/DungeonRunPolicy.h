@@ -1868,6 +1868,9 @@ struct Run
     bool eventStarted = false;   // the done data left "not started", or an event unit was seen awake
     bool holdUnitSeen = false;   // a units hold (no done flag): a unit of it stood alive in the radius at some tick of this hold
     std::uint32_t unitsResetMs = 0; // a units hold: how long its spot has shown every unit friendly again with the first entry's unit alive, no fight (UnitsHoldResetSeen)
+    // kPlanFlagDeadGossipOk: the gossip step before the hold that counted its dead NPC as done (GossipDeadIsDone set it); the
+    // units hold then ends when no unit of it is hostile (all dead, or only friendly survivors the script can never turn).
+    std::size_t startNpcDeadStep = static_cast<std::size_t>(-1);
     bool holdArrived = false;    // the party stood on the hold spot once
     // The party's places on the hold spot (HoldStands), set once the lead bot
     // stands there out of a fight and again after each fight; the glue places
@@ -5742,6 +5745,9 @@ inline bool GossipDeadIsDone(Run& r, const PlanStep* s, const std::string& answe
     std::string const entry = " (" + std::to_string(s->entry) + ")";
     if (name.size() > entry.size() && name.compare(name.size() - entry.size(), entry.size(), entry) == 0)
         name.erase(name.size() - entry.size());
+    // The units hold after this row reads it: kPlanFlagDeadGossipOk ends the hold when no unit of it is hostile (a live latch,
+    // per run; a resume that starts at the hold itself never passes through here).
+    r.startNpcDeadStep = r.step;
     NextStep(r, "gossip " + std::to_string(s->entry) + ": " + name + " lies dead, nothing to talk to: the step is counted done "
         "(the plan marks a dead NPC as done)");
     return true;
@@ -12688,6 +12694,20 @@ inline void HoldStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         {
             EventFailed(r, "every unit of it is back to friendly: the event reset");
             return;
+        }
+        // The gossip row before this hold counted its dead starting NPC as done (kPlanFlagDeadGossipOk): the script can never
+        // turn the units hostile from that NPC's own update, so the hold ends as soon as no unit of it is hostile (all dead, or
+        // only friendly survivors left). A unit that is hostile somehow is fought as today.
+        if ((s.flags & ai::kPlanFlagDeadGossipOk) && r.startNpcDeadStep == EventStartStep(r))
+        {
+            bool awake = false;
+            for (const UnitFact& u : f.units)
+                awake = awake || u.hostile;
+            if (!awake)
+            {
+                NextStep(r, "event done: the NPC that starts it was dead and no unit of it is hostile" + tail);
+                return;
+            }
         }
         if (r.eventUp)
             r.eventStarted = true;

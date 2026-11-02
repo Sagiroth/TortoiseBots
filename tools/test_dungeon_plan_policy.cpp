@@ -727,6 +727,42 @@ static void TestResetToGossipFlagOnlyOnUnitsHold()
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
 }
 
+static void TestDeadGossipFlagOnlyOnUnitsHold()
+{
+    // #243 round 1: a units hold whose starting NPC may already be dead (Zul'Farrak's Bly). The run leader only knows the NPC
+    // was dead from the gossip row it counted done, so the flag is read on a units hold alone.
+    CHECK(kPlanFlagDeadGossipOk == 32768);
+    CHECK((kPlanFlagDeadGossipOk & kPlanFlagResetToGossip) == 0);
+    PlanStep hold = Step(0, 33, PlanStepKind::Hold);
+    hold.entries = {7604, 7608, 7606, 7605};
+    hold.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && (hold.flags & kPlanFlagDeadGossipOk));
+    // A hold done by data or by an object ends by that data: refused.
+    PlanStep data = hold;
+    data.entry = 1;
+    data.param = 3;
+    data.flags = kPlanFlagDeadGossipOk | kPlanFlagDoneData;
+    CHECK(NormalizePlanStep(data) == PlanStepRefusal::BadParam);
+    PlanStep object = hold;
+    object.entry = 124369;
+    object.param = 1;
+    object.flags = kPlanFlagDeadGossipOk | kPlanFlagDoneObject;
+    CHECK(NormalizePlanStep(object) == PlanStepRefusal::BadParam);
+    // Never together with reset_to_gossip: a starting NPC already dead starts no event to reset.
+    PlanStep both = hold;
+    both.flags = kPlanFlagDeadGossipOk | kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(both) == PlanStepRefusal::BadParam);
+    // Any other kind is refused, not ignored.
+    PlanStep gossip = Step(0, 34, PlanStepKind::Gossip);
+    gossip.entry = 7604;
+    gossip.param = 1;
+    gossip.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(gossip) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 35, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
+}
+
 static void TestPlainOpenUnchanged()
 {
     // A plain open with a radius, extra entries and no param still loads: none
@@ -830,6 +866,7 @@ int main()
     TestPlainOpenUnchanged();
     TestStandPullFlagOnBossAndPull();
     TestResetToGossipFlagOnlyOnUnitsHold();
+    TestDeadGossipFlagOnlyOnUnitsHold();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
     TestKinds();
