@@ -69,6 +69,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -229,15 +230,17 @@ constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
 // kStandClearSpreadYd: the bots stand at the stand point (the run's own spread places them there), so only the unit's
 // own reach and the line of sight the core needs decide whether it can wake on the stand. `path` is the whole loop a
 // patroller walks; a loop the host cannot read (a special escorts path) stands in by the unit's spot plus
-// kStandClearUnreadPathYd. A unit this far above or below the stand with no sight line to it is on another storey
-// (kStandClearOtherStoreyYd): it is no other pack the stand must keep clear of. A boss step's stand stands inside
+// kStandClearUnreadPathYd. A unit that stays put this far above or below the stand with no sight line to it is on
+// another storey (kStandClearOtherStoreyYd): it is no other pack the stand must keep clear of. A patroller is judged
+// by the loop point nearest the stand instead: its spot may be on another storey while the loop comes down to the
+// stand's, and no sight line is asked of a point it has not reached yet. A boss step's stand stands inside
 // the boss fight (BossEncounter): the step's own units and the creatures the core links to the boss are no other
 // packs either.
 constexpr float kStandClearSpreadYd = 4.0f;
 constexpr float kStandClearUnreadPathYd = 10.0f;
 constexpr std::size_t kStandClearCandidates = 8;   // stands tried along the lead bot's path, nearest the lead first
 constexpr float kStandClearScanYd = 2.0f * kSeeYd; // the glue reads the other packs this far around the lead bot
-constexpr float kStandClearOtherStoreyYd = 8.0f;   // a unit this far above or below the stand, out of sight of it, is on another storey
+constexpr float kStandClearOtherStoreyYd = 8.0f;   // a unit this far from the stand in height (a patroller: the loop point nearest it) is on another storey
 // The core's family assistance radius (ai::kAggroFamilyAssistYd): a creature this near a pulled one that can answer
 // its call is called to the fight with it, so the pull's pack grows by it (GrowPullPackByAssistance). One ring: the
 // creatures the call reaches do not call the next.
@@ -269,34 +272,53 @@ struct StandPackReach
 };
 
 // Point-to-segment distance in 3D: a stand beside a loop's leg is as close to the patrol as one beside a waypoint.
-inline float StandClearSegmentYd(float ax, float ay, float az, float bx, float by, float bz, float px, float py, float pz)
+// The nearest point's height goes to `nearestZ`: the storey rule reads the height of the loop point the clearance
+// fails on.
+inline float StandClearSegmentYd(float ax, float ay, float az, float bx, float by, float bz, float px, float py,
+    float pz, float& nearestZ)
 {
     float const dx = bx - ax, dy = by - ay, dz = bz - az;
     float const len2 = dx * dx + dy * dy + dz * dz;
     float t = len2 > 0.0f ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len2 : 0.0f;
     t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-    return ai::PlanDistance(ax + t * dx, ay + t * dy, az + t * dz, px, py, pz);
+    nearestZ = az + t * dz;
+    return ai::PlanDistance(ax + t * dx, ay + t * dy, nearestZ, px, py, pz);
+}
+
+// How near a point comes to the closed loop a patrol walks; `nearestZ` (when given) is the height of the nearest
+// loop point. A path of fewer than two nodes is no loop: no distance at all.
+inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, float x, float y, float z,
+    float* nearestZ = nullptr)
+{
+    std::size_t const n = path.size();
+    if (n < 2)
+        return std::numeric_limits<float>::max();
+    float best = std::numeric_limits<float>::max();
+    float bestZ = path[0].z;
+    auto const take = [&](const ai::ApproachPoint& a, const ai::ApproachPoint& b)
+    {
+        float segZ = a.z;
+        float const d = StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z, segZ);
+        if (d < best)
+        {
+            best = d;
+            bestZ = segZ;
+        }
+    };
+    for (std::size_t i = 1; i < n; ++i)
+        take(path[i - 1], path[i]);
+    take(path[n - 1], path[0]);
+    if (nearestZ)
+        *nearestZ = bestZ;
+    return best;
 }
 
 // How near a point comes to one other unit: its spot (plus the margin of a loop the host could not read), or the
 // nearest point of the closed loop it walks.
 inline float StandClearanceYd(float x, float y, float z, const StandOther& other)
 {
-    float best = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;
-    std::size_t const n = other.path.size();
-    for (std::size_t i = 1; i < n; ++i)
-    {
-        ai::ApproachPoint const& a = other.path[i - 1];
-        ai::ApproachPoint const& b = other.path[i];
-        best = std::min(best, StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z));
-    }
-    if (n > 1)
-    {
-        ai::ApproachPoint const& a = other.path[n - 1];
-        ai::ApproachPoint const& b = other.path[0];
-        best = std::min(best, StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z));
-    }
-    return best;
+    float const spot = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;
+    return std::min(spot, StandPathClearanceYd(other.path, x, y, z));
 }
 
 // The pack the pull takes grows by the core's family assistance radius (kStandClearAssistYd): a creature within it of
@@ -336,13 +358,21 @@ inline bool StandOnOtherStorey(const StandOther& other, float z, bool los)
     return std::fabs(other.z - z) > kStandClearOtherStoreyYd && !los;
 }
 
-// Whether that unit refuses the stand: inside its clearance, and not on another storey out of its sight. The sight
-// line is asked only for a unit the clearance already refuses: the map ray is the expensive read.
+// Whether that unit refuses the stand: inside its clearance, and not on another storey. A unit that stays put is
+// excused only when it is this far in height and out of its sight; a patroller is judged by the height of the loop
+// point nearest the stand, no sight line asked: its spot may be on another storey while the loop comes down to the
+// stand's, and the map ray is the expensive read, aimed at a point it has not reached yet.
 inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,
     const std::function<bool(const StandOther&)>& los)
 {
     if (StandClearanceYd(x, y, z, other) >= other.clearYd)
         return false;
+    if (other.path.size() > 1)
+    {
+        float nearestZ = other.path[0].z;
+        StandPathClearanceYd(other.path, x, y, z, &nearestZ);
+        return std::fabs(nearestZ - z) <= kStandClearOtherStoreyYd;
+    }
     if (std::fabs(other.z - z) <= kStandClearOtherStoreyYd)
         return true;
     return !StandOnOtherStorey(other, z, los(other));

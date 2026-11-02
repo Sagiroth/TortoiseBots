@@ -16514,6 +16514,54 @@ static void TestStandClearanceIgnoresAnotherStoreyOutOfSight()
     CHECK(StandBlocker(0.0f, 0.0f, 11.0f, others, seen) == &others[0]);
 }
 
+// A patroller's storey is the one its loop comes down to, not the one it stands on now: a patrol on another storey
+// whose loop approaches the stand on the stand's own storey refuses it (otherwise a later waypoint on the stand's
+// floor is what wakes the pack, and the stand is walked into). No sight line is asked for the loop point: the height
+// decides. The exemption stays for a unit that stays put (a spot on another storey, out of sight) and for a patroller
+// whose loop the host could not read (its spot plus the margin).
+static void TestStandClearanceJudgesAPatrolByItsLoopStorey()
+{
+    using ai::ApproachPoint;
+    auto P = [](float x, float y, float z) { ApproachPoint p; p.x = x; p.y = y; p.z = z; return p; };
+    auto const blind = [](const StandOther&) { return false; };
+    auto const seen = [](const StandOther&) { return true; };
+    // The stand on floor 0. The patrol stands 20.6 yd away and 20 yd up (another storey, out of sight), but its loop
+    // comes down across the stand's floor, its nearest point 11.4 yd from the stand at z 5.3.
+    StandOther patrol;
+    patrol.patrols = true;
+    patrol.x = 5.0f;
+    patrol.z = 20.0f;
+    patrol.path = {P(5.0f, 0.0f, 20.0f), P(5.0f, 12.0f, 0.0f), P(15.0f, 12.0f, 0.0f), P(15.0f, 0.0f, 20.0f)};
+    patrol.clearYd = 24.0f;
+    std::vector<StandOther> const others = {patrol};
+    // Inside the clearance, so the storey rule decides: the spot alone would have excused it.
+    CHECK(std::fabs(StandClearanceYd(0.0f, 0.0f, 0.0f, patrol) - 11.44f) < 0.05f);
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, others, blind));
+    CHECK(StandBlocker(0.5f, 0.0f, 0.0f, others, blind) == &others[0]);
+    // Its loop on another storey too: the nearest loop point's height excuses it, with no sight line read.
+    StandOther upstairs = patrol;
+    upstairs.path = {P(5.0f, 0.0f, 20.0f), P(0.0f, 10.0f, 20.0f)};
+    std::vector<StandOther> const above = {upstairs};
+    CHECK(StandClearAt(0.0f, 0.0f, 0.0f, above, blind));
+    CHECK(StandBlocker(0.0f, 0.0f, 0.0f, above, blind) == nullptr);
+    // The band's edge at the loop point: 8 yd up is the stand's own storey, a hair more is not.
+    StandOther edge = upstairs;
+    edge.path = {P(5.0f, 0.0f, 8.0f), P(0.0f, 10.0f, 8.0f)};
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{edge}, blind));
+    edge.path = {P(5.0f, 0.0f, 8.1f), P(0.0f, 10.0f, 8.1f)};
+    CHECK(StandClearAt(0.0f, 0.0f, 0.0f, std::vector<StandOther>{edge}, blind));
+    // A patroller whose loop the host could not read keeps the spot rule: out of sight it is excused, in sight it
+    // refuses the stand.
+    StandOther unread;
+    unread.patrols = true;
+    unread.z = 20.0f;
+    unread.marginYd = kStandClearUnreadPathYd;
+    unread.clearYd = 24.0f;
+    std::vector<StandOther> const unreadOnly = {unread};
+    CHECK(StandClearAt(0.0f, 0.0f, 0.0f, unreadOnly, blind));
+    CHECK(!StandClearAt(0.0f, 0.0f, 0.0f, unreadOnly, seen));
+}
+
 // Uldaman run 4, step 38: a fight past the 180 s ceiling paused the run, the
 // fight ended 15 s later, and the run stayed paused for 470 s. A ceiling pause
 // goes on by itself once the party is out of combat kCeilingQuietMs, once per
@@ -27620,6 +27668,7 @@ int main()
     TestStandClearanceMarginIsFourYd();
     TestStandClearanceBossEncounterUnitsAreNoOthers();
     TestStandClearanceIgnoresAnotherStoreyOutOfSight();
+    TestStandClearanceJudgesAPatrolByItsLoopStorey();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

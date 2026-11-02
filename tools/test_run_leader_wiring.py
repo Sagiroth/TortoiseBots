@@ -935,6 +935,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("constexpr float kStandClearSpreadYd = 4.0f;", policy)
         self.assertIn("constexpr float kStandClearOtherStoreyYd = 8.0f;", policy)
         self.assertIn("inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,", policy)
+        # A patroller's storey is read at the loop point nearest the stand, with no sight line.
+        self.assertIn("inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, "
+                      "float x, float y, float z,", policy)
+        self.assertIn("StandPathClearanceYd(other.path, x, y, z, &nearestZ);", policy)
+        self.assertIn("return std::fabs(nearestZ - z) <= kStandClearOtherStoreyYd;", policy)
+        self.assertIn("float const spot = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;",
+                      policy)
         self.assertIn("inline BossEncounter BossEncounterOf(const PlanStep* step)", policy)
         self.assertIn("inline bool BossEncounterUnit(const BossEncounter& boss, std::uint32_t entry, bool linkedToBoss)",
                       policy)
