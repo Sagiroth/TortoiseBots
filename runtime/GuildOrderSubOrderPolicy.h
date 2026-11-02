@@ -22,7 +22,8 @@ inline constexpr uint32_t kSubOrderRetryMs = 45000;
 // call may walk the source index, so a tick with many due requests shares
 // the budget instead of stalling the world thread. A request whose scan hit
 // the budget keeps the candidates it already found (a take is placed at
-// once) and otherwise retries with the scan resumed at the next member.
+// once) and otherwise retries with the scan resumed after the last member it
+// looked at.
 inline constexpr size_t kSubOrderPlannerEvalsPerTick = 8;
 
 // Whether a queued request is due. A request without a retry time is due at
@@ -198,15 +199,83 @@ inline SubOrderPick ClassifySubOrderPick(size_t picked, size_t candidateCount, b
     return queued ? SubOrderPick::Queued : SubOrderPick::None;
 }
 
-// Where the next attempt resumes scanning a roster of `count` members after
-// one that started at `start` looked at `looked` of them. A guild bigger
-// than one tick's planner budget is covered over retries; without this the
-// scan restarts at the same head every time and the tail is never checked.
-inline size_t NextSubOrderScanStart(size_t start, size_t looked, size_t count)
+// One attempt's share of a roster scan, in guids rather than roster
+// positions: the roster is re-read every attempt, so a position lands on a
+// different member as soon as someone joins or leaves.
+struct SubOrderScanPlan
 {
-    if (!count)
-        return 0;
-    return (start + (looked < count ? looked : count)) % count;
+    size_t begin = 0;       // first roster index to look at
+    size_t remaining = 0;   // ordered entries left before the scan is complete
+    uint32_t startGuid = 0; // member the scan started at
+    bool empty = true;      // roster empty: nothing to look at and nothing to retry
+};
+
+// Resume point over an ordered roster: the first member after `lastGuid`,
+// wrapping once to the roster start. The walk runs forward from there and
+// stops once it has gone all the way round to `startGuid` again, so each
+// member of the roster is looked at once per scan however the attempt is
+// split. A member that joins with a guid below the scan start is looked at
+// on the wrap; one that joins between the scan start and the cursor sits in
+// ground this scan already covered and is not walked a second time.
+// `guids` must be ascending.
+inline SubOrderScanPlan PlanSubOrderScan(uint32_t const* guids, size_t count,
+    uint32_t lastGuid, uint32_t startGuid)
+{
+    SubOrderScanPlan plan;
+    if (!guids || !count)
+        return plan;
+    plan.empty = false;
+    size_t begin = 0;
+    while (begin < count && guids[begin] <= lastGuid)
+        ++begin;
+    if (begin == count)
+        begin = 0;
+    size_t startIdx = count;
+    if (startGuid)
+        for (size_t i = 0; i < count; ++i)
+            if (guids[i] == startGuid)
+            {
+                startIdx = i;
+                break;
+            }
+    if (startIdx == count)
+    {
+        // A fresh scan starts at the member it resumes from. A scan whose
+        // start member left the guild is bounded the same way: the walk
+        // still ends instead of re-reading the same tail every attempt.
+        startIdx = begin;
+        startGuid = guids[begin];
+    }
+    plan.begin = begin;
+    plan.startGuid = startGuid;
+    plan.remaining = begin >= startIdx ? (count - begin) + startIdx : startIdx - begin;
+    return plan;
+}
+
+struct SubOrderScanCursor
+{
+    uint32_t lastGuid = 0;  // member the next attempt resumes after
+    uint32_t startGuid = 0; // member this scan started at
+    bool complete = false;  // the walk came back around to the start member
+};
+
+// Cursor after an attempt that looked at `looked` of the plan's entries: a
+// short walk resumes at the last member it looked at, and only a walk that
+// covered the plan's remainder finishes the scan.
+inline SubOrderScanCursor AdvanceSubOrderScan(uint32_t const* guids, size_t count,
+    SubOrderScanPlan const& plan, uint32_t lastGuid, size_t looked)
+{
+    SubOrderScanCursor cursor;
+    cursor.lastGuid = lastGuid;
+    cursor.startGuid = plan.startGuid;
+    cursor.complete = plan.empty;
+    if (plan.empty)
+        return cursor;
+    size_t const capped = looked < plan.remaining ? looked : plan.remaining;
+    if (capped)
+        cursor.lastGuid = guids[(plan.begin + capped - 1) % count];
+    cursor.complete = capped == plan.remaining;
+    return cursor;
 }
 
 // Whether one drained request waits for another tick. A take found inside

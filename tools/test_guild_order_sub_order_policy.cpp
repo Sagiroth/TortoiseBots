@@ -2,12 +2,40 @@
 // sub-orders: depth limit, branch loop guard, candidate ranking).
 #include "../runtime/GuildOrderSubOrderPolicy.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <vector>
 
 using namespace TortoiseBots::GuildOrders;
 
 static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { ++failures; std::printf("FAIL line %d: %s\n", __LINE__, #cond); } } while (0)
+
+// One PlaceSubOrders attempt over an ordered roster: look at up to `budget`
+// members from where the cursor left off and report who was looked at.
+struct ScanAttempt
+{
+    std::vector<uint32_t> looked;
+    SubOrderScanCursor cursor;
+};
+
+static ScanAttempt RunScanAttempt(std::vector<uint32_t> const& roster, SubOrderScanCursor cursor,
+    size_t budget)
+{
+    SubOrderScanPlan const plan = PlanSubOrderScan(roster.data(), roster.size(), cursor.lastGuid,
+        cursor.startGuid);
+    ScanAttempt attempt;
+    while (attempt.looked.size() < plan.remaining && attempt.looked.size() < budget)
+        attempt.looked.push_back(roster[(plan.begin + attempt.looked.size()) % roster.size()]);
+    attempt.cursor = AdvanceSubOrderScan(roster.data(), roster.size(), plan, cursor.lastGuid,
+        attempt.looked.size());
+    return attempt;
+}
+
+static bool WasLookedAt(std::vector<uint32_t> const& looked, uint32_t guid)
+{
+    return std::find(looked.begin(), looked.end(), guid) != looked.end();
+}
 
 int main()
 {
@@ -136,18 +164,94 @@ int main()
     CHECK(!SubOrderRequestDue(5000, 4000));
     CHECK(SubOrderRequestDue(450000, 495000));
 
-    // The member scan resumes where the budget stopped it: a guild bigger
-    // than one tick's evaluations is covered over retries, not re-scanned
-    // at its head forever.
-    CHECK(NextSubOrderScanStart(0, 8, 28) == 8);
-    CHECK(NextSubOrderScanStart(8, 8, 28) == 16);
-    CHECK(NextSubOrderScanStart(24, 8, 28) == 4);
-    CHECK(NextSubOrderScanStart(0, 0, 28) == 0);
-    CHECK(NextSubOrderScanStart(5, 3, 0) == 0);
-    // A full scan (as many members looked at as the guild holds) restarts at
-    // the same head: the next attempt is a complete round again.
-    CHECK(NextSubOrderScanStart(8, 28, 28) == 8);
-    CHECK(NextSubOrderScanStart(8, 999, 28) == 8);
+    // The member scan is a guid walk over the ordered roster: over retries it
+    // looks at each member once, in order, and only finishes back at its
+    // start member. An index would land on another member as soon as the
+    // roster shifts between attempts.
+    {
+        std::vector<uint32_t> roster = { 100, 200, 300, 400, 500 };
+        SubOrderScanCursor cursor;
+        std::vector<uint32_t> seen;
+        for (int attempt = 0; attempt < 8 && !cursor.complete; ++attempt)
+        {
+            ScanAttempt step = RunScanAttempt(roster, cursor, 2);
+            seen.insert(seen.end(), step.looked.begin(), step.looked.end());
+            cursor = step.cursor;
+        }
+        CHECK(cursor.complete);
+        CHECK(seen.size() == roster.size());
+        for (size_t i = 0; i < seen.size(); ++i)
+            CHECK(seen[i] == roster[i]);
+        CHECK(cursor.startGuid == 100);
+    }
+
+    // Members joining and leaving between attempts: a member that joins
+    // below the scan start is picked up at the end of the walk, one that
+    // leaves is simply never looked at, and the scan cannot report itself
+    // finished while a member the roster still holds was never looked at.
+    {
+        std::vector<uint32_t> roster = { 100, 200, 300, 400, 500 };
+        SubOrderScanCursor cursor;
+        ScanAttempt first = RunScanAttempt(roster, cursor, 2);
+        CHECK(!first.cursor.complete);
+        std::vector<uint32_t> seen = first.looked;
+        cursor = first.cursor;
+        // 300 leaves, 50 joins below the cursor, and the rows come back
+        // reordered (the query orders them again).
+        roster = { 400, 50, 500, 200, 100 };
+        std::sort(roster.begin(), roster.end());
+        for (int attempt = 0; attempt < 8 && !cursor.complete; ++attempt)
+        {
+            ScanAttempt step = RunScanAttempt(roster, cursor, 2);
+            seen.insert(seen.end(), step.looked.begin(), step.looked.end());
+            cursor = step.cursor;
+        }
+        CHECK(cursor.complete);
+        CHECK(cursor.startGuid == 100);
+        for (uint32_t guid : roster)
+            CHECK(WasLookedAt(seen, guid));
+        CHECK(!WasLookedAt(seen, 300));
+    }
+
+    // The member the scan started at leaves mid-scan: the walk is bounded
+    // again instead of re-reading the same tail on every attempt.
+    {
+        std::vector<uint32_t> roster = { 100, 200, 300, 400 };
+        SubOrderScanCursor cursor;
+        cursor = RunScanAttempt(roster, cursor, 2).cursor;
+        CHECK(!cursor.complete);
+        roster = { 200, 300, 400 };
+        int attempts = 0;
+        while (!cursor.complete && attempts < 8)
+        {
+            cursor = RunScanAttempt(roster, cursor, 1).cursor;
+            ++attempts;
+        }
+        CHECK(cursor.complete);
+        CHECK(attempts < 8);
+    }
+
+    // Nothing looked at (the planner budget was already gone): the cursor
+    // stays put and the scan is not reported finished.
+    {
+        std::vector<uint32_t> roster = { 10, 20 };
+        SubOrderScanPlan plan = PlanSubOrderScan(roster.data(), roster.size(), 0, 0);
+        CHECK(!plan.empty);
+        CHECK(plan.remaining == 2);
+        SubOrderScanCursor cursor = AdvanceSubOrderScan(roster.data(), roster.size(), plan, 0, 0);
+        CHECK(!cursor.complete);
+        CHECK(cursor.lastGuid == 0);
+        CHECK(cursor.startGuid == 10);
+    }
+
+    // An empty roster has nothing to look at and nothing to retry.
+    {
+        SubOrderScanPlan plan = PlanSubOrderScan(nullptr, 0, 0, 0);
+        CHECK(plan.empty);
+        CHECK(plan.remaining == 0);
+        SubOrderScanCursor cursor = AdvanceSubOrderScan(nullptr, 0, plan, 0, 0);
+        CHECK(cursor.complete);
+    }
 
     // A take found before the budget ran out is placed at once; only a
     // request without one retries on an unfinished scan.

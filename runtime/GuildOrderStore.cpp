@@ -482,7 +482,8 @@ public:
         uint32_t itemId = 0;
         uint32_t count = 0;
         uint32_t nextTryMs = 0; // world uptime ms before this request retries
-        uint32_t nextMember = 0; // roster index the next attempt resumes the scan at
+        uint32_t lastMember = 0; // last roster member the scan looked at (guid)
+        uint32_t scanStart = 0; // member the running scan started at (guid)
     };
 
     struct QueuedSubOrderKey
@@ -536,7 +537,7 @@ public:
     }
 
     void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs,
-        uint32_t nextMember)
+        uint32_t lastMember, uint32_t scanStart)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
@@ -548,7 +549,8 @@ public:
         if (count > queued.count)
             queued.count = count;
         queued.nextTryMs = nextTryMs;
-        queued.nextMember = nextMember;
+        queued.lastMember = lastMember;
+        queued.scanStart = scanStart;
     }
 
     void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
@@ -2038,8 +2040,11 @@ bool PlaceSubOrders(uint32_t nowMs)
         if (cached == membersByGuild.end())
         {
             std::vector<uint32_t> members;
+            // Ordered: the scan resumes at a guid, so an unordered result
+            // would move the resume point between attempts and skip members.
             std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
-                "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", parent->guildId));
+                "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u' ORDER BY `guid`",
+                parent->guildId));
             if (result)
             {
                 do
@@ -2054,17 +2059,19 @@ bool PlaceSubOrders(uint32_t nowMs)
         }
         std::vector<uint32_t> const& roster = cached->second;
         size_t const rosterSize = roster.size();
-        // The scan resumes where the previous attempt's budget stopped it, so
-        // a guild bigger than one tick's evaluations is covered over retries
-        // instead of re-scanning the same head.
-        size_t const scanStart = NextSubOrderScanStart(request.nextMember, 0, rosterSize);
+        // The scan resumes after the last member it looked at, so a guild
+        // bigger than one tick's evaluations is covered over retries instead
+        // of re-scanning the same head, and a member leaving or joining
+        // between attempts cannot shift the resume point onto another one.
+        SubOrderScanPlan const plan = PlanSubOrderScan(roster.data(), rosterSize,
+            request.lastMember, request.scanStart);
         size_t looked = 0;
         std::vector<SubOrderCandidate> candidates;
-        for (; looked < rosterSize; ++looked)
+        for (; looked < plan.remaining; ++looked)
         {
             if (plannerEvals >= kSubOrderPlannerEvalsPerTick)
                 break;
-            uint32_t guidLow = roster[(scanStart + looked) % rosterSize];
+            uint32_t guidLow = roster[(plan.begin + looked) % rosterSize];
             ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
             Player* bot = sObjectAccessor.FindPlayer(guid);
             if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
@@ -2087,8 +2094,8 @@ bool PlaceSubOrders(uint32_t nowMs)
             candidate.queuedBusy = candidate.hasOrder;
             candidates.push_back(candidate);
         }
-        bool const scanStoppedEarly = looked < rosterSize;
-        size_t const nextScan = NextSubOrderScanStart(scanStart, looked, rosterSize);
+        SubOrderScanCursor const scan = AdvanceSubOrderScan(roster.data(), rosterSize, plan,
+            request.lastMember, looked);
         // A take found inside the budget answers the request even when more
         // members were never looked at; only a request without one retries.
         bool queuedOut = false;
@@ -2110,7 +2117,7 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (!Give(record))
             {
                 OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                    request.count, nowMs + kSubOrderRetryMs, nextScan);
+                    request.count, nowMs + kSubOrderRetryMs, scan.lastGuid, scan.startGuid);
                 continue;
             }
             placedAny = true;
@@ -2120,9 +2127,9 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
                 SendOrderLine(*placed, 0);
         }
-        else if (SubOrderRetriesAfterScan(pick, scanStoppedEarly))
+        else if (SubOrderRetriesAfterScan(pick, !scan.complete))
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs, nextScan);
+                request.count, nowMs + kSubOrderRetryMs, scan.lastGuid, scan.startGuid);
         else
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
     }
