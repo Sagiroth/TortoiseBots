@@ -366,8 +366,8 @@ public:
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
                 "`created_at`, `updated_at`, `carried`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
@@ -1657,6 +1657,16 @@ public:
                 (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
         out.reportedCarry = ReportedCarry(in.scanned, in.botOnline, in.bagCount, in.mailboxCount,
             record.reportedCarry);
+        // A fresh scan is the row's carry truth: fold it in and mark the row
+        // dirty at once, so a bot that logs out before the next progress line
+        // still lists what it carried. Only the line waits for the throttle.
+        bool carryChanged = out.reportedCarry != record.reportedCarry;
+        if (in.scanned && carryChanged)
+        {
+            record.reportedCarry = out.reportedCarry;
+            MarkDirtyLocked(stored);
+        }
+        bool carryToReport = out.reportedCarry != stored.reportCarry;
 
         std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
@@ -1665,8 +1675,7 @@ public:
         if (!stored.reportSeen || stored.reportStep != record.supplyStep)
             out.legChanged = true;
         bool haveChanged = out.reportedHave != record.reportedHave;
-        bool carryChanged = out.reportedCarry != record.reportedCarry;
-        bool progressDue = (haveChanged || carryChanged) &&
+        bool progressDue = (haveChanged || carryToReport) &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
         if (out.sendLine)
@@ -1676,13 +1685,9 @@ public:
             stored.reportReason = record.reason;
             stored.reportStep = record.supplyStep;
             stored.reportNeed = needToken;
-            if (haveChanged || carryChanged)
+            if (haveChanged || carryToReport)
                 stored.reportMs = in.nowMs;
-            if (carryChanged)
-            {
-                record.reportedCarry = out.reportedCarry;
-                MarkDirtyLocked(stored);
-            }
+            stored.reportCarry = out.reportedCarry;
             if (haveChanged)
             {
                 record.reportedHave = out.reportedHave;
@@ -1713,6 +1718,7 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
+        uint32_t reportCarry = 0; // carry the last line announced, not the row's stored carry
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
         uint32_t needLadderChecks = 0; // slow checks since the row last parked

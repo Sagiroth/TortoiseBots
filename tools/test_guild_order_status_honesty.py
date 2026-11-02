@@ -57,9 +57,28 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
 
     def test_carry_change_sends_a_progress_line(self):
         body = tick_body()
-        self.assertIn("bool carryChanged = out.reportedCarry != record.reportedCarry;", body)
-        self.assertIn("(haveChanged || carryChanged) &&", body)
-        self.assertIn("record.reportedCarry = out.reportedCarry;", body)
+        self.assertIn("bool carryToReport = out.reportedCarry != stored.reportCarry;", body)
+        self.assertIn("(haveChanged || carryToReport) &&", body)
+        self.assertIn("stored.reportCarry = out.reportedCarry;", body)
+
+    def test_a_scan_stores_the_newer_carry_before_the_line(self):
+        # The row takes every scanned carry, not only the ones a line
+        # announced: a bot can log out inside the progress-throttle window,
+        # and the list then reads what the row holds.
+        body = tick_body()
+        scan = body.index("if (in.scanned && carryChanged)")
+        send = body.index("if (out.sendLine)")
+        persist = body.index("out.persist = TakeDirtyLocked(stored, out.persistRecord);", send)
+        self.assertLess(scan, send)
+        self.assertLess(send, persist)
+        scanned = body[scan:send]
+        self.assertIn("record.reportedCarry = out.reportedCarry;", scanned)
+        self.assertIn("MarkDirtyLocked(stored);", scanned)
+        self.assertNotIn("record.reportedCarry =", body[send:persist])
+
+    def test_the_progress_line_keeps_its_five_second_throttle(self):
+        self.assertIn("in.nowMs - stored.reportMs >= kProgressReportMs", tick_body())
+        self.assertIn("inline constexpr uint32_t kProgressReportMs = 5000;", STORE)
 
     def test_offline_list_reply_reports_the_stored_carry(self):
         carry = STORE[STORE.index("uint32_t Carry(Player* bot"):]
