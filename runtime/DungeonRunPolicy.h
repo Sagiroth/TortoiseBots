@@ -459,6 +459,9 @@ constexpr std::uint32_t kRaidHealerGuardExpireMs = 6000;
 // resort (CheckGuard), while the main tank's own target is a trash mob it may leave: a healer's add otherwise hits the
 // healer until something frees up (ZG walk 26c's pulls, two off-tanks both on their own bats).
 constexpr std::uint32_t kRaidHealerGuardLastResortMs = 8000;
+// ... the last resort has its own budget, which the guard's ordinary budgets and spacing do not hold back: one order an
+// add at most, and kRaidHealerGuardLastResortsPerFight of them a fight at most (Run::healerGuardLastResortGuids).
+constexpr std::uint32_t kRaidHealerGuardLastResortsPerFight = 3;
 // The kill_first focus (PickKillFirst) sends every bot, the tank too, at its
 // unit. Zul'Farrak r5-19z23 step 27: the camp's witch doctors aggroed on the
 // tank from 20 yd (wipe 1: the focus took it into the camp, next to the north
@@ -2081,6 +2084,8 @@ struct Run
     // tank's last resort (kRaidHealerGuardLastResortMs).
     std::uint64_t healerGuardLooseGuid = 0;
     std::uint32_t healerGuardLooseMs = 0;
+    // ... and the adds the last resort sent the main tank at this fight (one order an add, kRaidHealerGuardLastResortsPerFight a fight).
+    std::unordered_set<std::uint64_t> healerGuardLastResortGuids;
     // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
     // has waited for it (the wait belongs to one mob: raidAssistGuid), and the units it was sent at this fight.
     std::uint32_t raidAssistMs = 0;
@@ -2604,6 +2609,7 @@ inline void ResetStep(Run& r)
     r.trashHealerGuard = false;
     r.healerGuardLooseGuid = 0;
     r.healerGuardLooseMs = 0;
+    r.healerGuardLastResortGuids.clear();
     r.raidAssistMs = 0;
     r.raidAssistGuid = 0;
     r.raidAssisted.clear();
@@ -14100,11 +14106,6 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     if (u)
         r.guardMs += dt;
     std::uint32_t const wait = engage ? 0u : u->victimHealer ? kGuardHealerWaitMs : kGuardWaitMs;
-    if ((u && r.guardMs < wait) || r.guardOrders >= kGuardOrdersPerFight ||
-        (!hold && r.fightOrders >= kGuardOrdersFightCap) ||
-        ((r.guardOrders > 0 || (!hold && r.fightOrders > 0) || r.healerGuardOrders > 0) &&
-            r.guardSinceOrderMs < kGuardRepeatMs))
-        return false;
     // A raid trash fight's healer guard add (RaidHealerGuard): the ranged dps take it, and the off-tanks only when
     // none is free for it (RaidGuardTick's rule). The main tank holds its own target (RaidHealerGuardOn): with no
     // off-tank free for the add it waits, and after kRaidHealerGuardLastResortMs the main tank takes it while its
@@ -14127,7 +14128,8 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             if (!trashGuard || !RaidTrashOffTankHolds(f, name))
                 free.push_back(&name);
     // The last resort's clock: a healer's add no ranged dps took (RaidHealerGuard would have ordered one) and no free
-    // off-tank takes waits for the main tank, kRaidHealerGuardLastResortMs from when it became that add.
+    // off-tank takes waits for the main tank, kRaidHealerGuardLastResortMs from when it became that add. It runs
+    // before the spacing and budget exits below, so a recent order or a spent budget does not hold the clock back.
     if (healerGuardAdd && free.empty())
     {
         if (u->guid != r.healerGuardLooseGuid)
@@ -14142,8 +14144,17 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         r.healerGuardLooseGuid = 0;
         r.healerGuardLooseMs = 0;
     }
+    // The last resort (mainTankLastResort) has its own budget: the add has not had one from the main tank this fight, and
+    // fewer than kRaidHealerGuardLastResortsPerFight adds have. The guard's spacing and ordinary budgets do not hold it.
     bool const mainTankLastResort = healerGuardAdd && free.empty() &&
-        r.healerGuardLooseMs >= kRaidHealerGuardLastResortMs && HealerGuardMainTankMayTake(r, f);
+        r.healerGuardLooseMs >= kRaidHealerGuardLastResortMs && HealerGuardMainTankMayTake(r, f) &&
+        r.healerGuardLastResortGuids.count(u->guid) == 0 &&
+        r.healerGuardLastResortGuids.size() < kRaidHealerGuardLastResortsPerFight;
+    if ((u && r.guardMs < wait) ||
+        (!mainTankLastResort && (r.guardOrders >= kGuardOrdersPerFight || (!hold && r.fightOrders >= kGuardOrdersFightCap) ||
+            ((r.guardOrders > 0 || (!hold && r.fightOrders > 0) || r.healerGuardOrders > 0) &&
+                r.guardSinceOrderMs < kGuardRepeatMs))))
+        return false;
     if (free.empty() && (healerGuardAdd || trashGuard) && !mainTankLastResort)
         return false;
     r.guardMs = 0;
@@ -14187,8 +14198,11 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
     }
     if (mainTankLastResort)
+    {
+        r.healerGuardLastResortGuids.insert(u->guid);
         r.note = "fighting: no ranged dps and no off-tank free: the main tank takes " + std::to_string(u->entry) +
             " off the healer (" + Num(u->distLead) + " yd)";
+    }
     else
         r.note = std::string(hold ? "event" : "fighting") + ": the tank picks up " + std::to_string(u->entry) + " off " +
             (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) + " yd)" +
@@ -16815,6 +16829,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.trashHealerGuard = false;
         r.healerGuardLooseGuid = 0;
         r.healerGuardLooseMs = 0;
+        r.healerGuardLastResortGuids.clear();
         r.raidAssistMs = 0;
         r.raidAssistGuid = 0;
         r.raidAssisted.clear();

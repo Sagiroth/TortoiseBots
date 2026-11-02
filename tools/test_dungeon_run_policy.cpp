@@ -26433,7 +26433,8 @@ static void TestRaidTrashHealerGuardMainTankLastResort()
         // The fight's first order is the engage on the tank's own target; then the add waits.
         CHECK(GuardTick(r, f) == "attack 60 Tanky");
         f.leadStaying = false; // the order took it off the stay
-        for (int k = 0; k < 8; ++k)
+        // The add went loose on the next tick and its clock ran through the spacing after the engage: 8 s on the 9th tick.
+        for (int k = 0; k < 7; ++k)
             CHECK(GuardTick(r, f).empty());
         CHECK(GuardTick(r, f) == "attack 50071 Tanky");
         CHECK(r.note == "fighting: no ranged dps and no off-tank free: the main tank takes 11368 off the healer (20.0 yd)");
@@ -26487,6 +26488,100 @@ static void TestRaidTrashHealerGuardMainTankLastResort()
         for (int k = 0; k < 20; ++k)
             CHECK(GuardTick(r, f).empty());
     }
+}
+
+// The last resort is not held by the guard's budgets: with guardOrders at kGuardOrdersPerFight and fightOrders at
+// kGuardOrdersFightCap (both spent by earlier pick-ups), a loose healer add still goes to the main tank 8 s after it
+// went loose. Before the fix the budget exit returned first and the clock never ran, so the add stayed on the healer.
+static void TestRaidTrashHealerGuardLastResortAfterBudgetsSpent()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false); // no off-tank at all
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)}; // no ranged dps
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    r.guardOrders = kGuardOrdersPerFight;
+    r.fightOrders = kGuardOrdersFightCap;
+    UnitFact add = Hitter(50091, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    for (int k = 0; k < 7; ++k) // the add goes loose on the first of these ticks; the 7th leaves it 7 s loose
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLooseMs == 7 * kTickMs);
+    CHECK(GuardTick(r, f) == "attack 50091 Tanky"); // 8 s
+    CHECK(r.note == "fighting: no ranged dps and no off-tank free: the main tank takes 11368 off the healer (20.0 yd)");
+    CHECK(r.healerGuardLastResortGuids.count(50091) == 1);
+}
+
+// The last resort's clock is the add's own uninterrupted time, so a pick-up that went out right before does not push the
+// order back: the add goes loose on tick 2 and the main tank takes it on tick 9, 8 s later, while the spacing window
+// (kGuardRepeatMs) after that pick-up is still open. The pick-up is set up as CheckGuard leaves the state after an order.
+static void TestRaidTrashHealerGuardLastResortIgnoresSpacing()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky"); // tick 1
+    f.leadStaying = false;
+    UnitFact add = Hitter(50092, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f).empty()); // tick 2: loose from here, 1 s
+    CHECK(GuardTick(r, f).empty()); // tick 3: 2 s
+    r.guardOrders = 1; // another pick-up just went out
+    r.fightOrders = 1;
+    r.guardSinceOrderMs = 0;
+    for (int k = 0; k < 5; ++k) // ticks 4 to 8: 3 s to 7 s, inside the spacing window for the first two
+        CHECK(GuardTick(r, f).empty());
+    CHECK(GuardTick(r, f) == "attack 50092 Tanky"); // tick 9: 8 s
+}
+
+// The last resort's own budget: one order an add (a repeat on the same add, still loose, gets none), and
+// kRaidHealerGuardLastResortsPerFight a fight (the fourth loose add waits on the healer).
+static void TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    const std::uint64_t adds[] = {50101, 50102, 50103, 50104};
+    for (int i = 0; i < 3; ++i)
+    {
+        UnitFact add = Hitter(adds[i], 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(adds[i]) + " Tanky");
+        for (int k = 0; k < 10; ++k) // the same add, still loose: no second order
+            CHECK(GuardTick(r, f).empty());
+    }
+    UnitFact fourth = Hitter(adds[3], 11368, 20, true);
+    fourth.x = 20.0f;
+    f.partyAttackers = {fourth};
+    for (int k = 0; k < 12; ++k) // the fight's three last resorts are spent
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
 }
 
 // The trash guard stays on for the fight once the main tank's current target turned it on (Run::trashHealerGuard):
@@ -28321,6 +28416,9 @@ int main()
     TestRaidTrashHealerGuardOnSendsTheRangedDpsWhenEveryOffTankIsBusy();
     TestRaidTrashHealerGuardTakesTheFartherUncoveredAdd();
     TestRaidTrashHealerGuardMainTankLastResort();
+    TestRaidTrashHealerGuardLastResortAfterBudgetsSpent();
+    TestRaidTrashHealerGuardLastResortIgnoresSpacing();
+    TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight();
     TestRaidTrashHealerGuardLatchesForTheFight();
     TestRaidTrashHealerGuardOrderSpacesThePickUp();
     TestRaidGuardOnABossStepSendsTheMainTank();
