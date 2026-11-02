@@ -5,8 +5,11 @@
 // Header-only and free of core/database types on purpose: exercised
 // standalone in tools/test_guild_order_auction_policy.cpp.
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "GuildOrderContract.h"
 
 namespace TortoiseBots
 {
@@ -131,6 +134,97 @@ inline bool AuctionCoveringBeatsPartials(uint32_t coverBuyout, uint32_t coverCou
     return uint64_t(AuctionUnitPrice(coverBuyout, coverCount)) <= uint64_t(cheapestPartialUnit) * 2;
 }
 
+// One buyable listing as the counter sees it: which auction and item, its
+// whole-stack buyout and its count. The caller has already dropped listings
+// over the budget and ones the bags cannot hold.
+struct AuctionListing
+{
+    uint32_t auctionId = 0;
+    uint32_t itemGuid = 0;
+    uint32_t buyout = 0;
+    uint32_t count = 0;
+};
+
+inline constexpr std::size_t kNoAuctionListing = std::size_t(-1);
+
+// The listing one visit buys, or kNoAuctionListing when nothing on the
+// counter fits the miss. A covering stack only counts while it is worth its
+// surplus (AuctionCoveringBeatsPartials); among winners the smallest stack
+// wins, then the cheaper unit price. With no covering winner the cheapest
+// partial stack is bought. An empty pick ends the leg in the same tick.
+inline std::size_t PickAuctionListing(std::vector<AuctionListing> const& listings, uint32_t missing)
+{
+    if (listings.empty() || !missing)
+        return kNoAuctionListing;
+    std::vector<AuctionQuote> partials;
+    partials.reserve(listings.size());
+    for (AuctionListing const& listing : listings)
+        if (listing.count && listing.buyout && listing.count < missing)
+            partials.push_back(AuctionQuote{ listing.count, listing.buyout });
+    uint32_t cheapestPartialUnit = 0;
+    uint32_t const partialFillCost = PartialFillCost(partials, missing, cheapestPartialUnit);
+    std::size_t cover = kNoAuctionListing;
+    std::size_t partial = kNoAuctionListing;
+    for (std::size_t i = 0; i < listings.size(); ++i)
+    {
+        AuctionListing const& listing = listings[i];
+        if (!listing.count || !listing.buyout)
+            continue;
+        if (listing.count >= missing)
+        {
+            if (!AuctionCoveringBeatsPartials(listing.buyout, listing.count, partialFillCost,
+                    cheapestPartialUnit))
+                continue;
+            if (cover == kNoAuctionListing ||
+                AuctionPickBeats(listing.count, listing.buyout, listings[cover].count,
+                    listings[cover].buyout, missing))
+                cover = i;
+        }
+        else if (partial == kNoAuctionListing ||
+            CheaperPerUnit(listing.buyout, listing.count, listings[partial].buyout,
+                listings[partial].count))
+            partial = i;
+    }
+    return cover != kNoAuctionListing ? cover : partial;
+}
+
+// Per-reagent memory of the auction leg: what stops a hand-off from bouncing
+// straight back to the same counter.
+struct AuctionLegCycle
+{
+    uint32_t itemId = 0;      // reagent these counters belong to
+    uint8_t visits = 0;       // times the leg was entered for it
+    bool ladderEnded = false; // the need stage was reached since the last visit
+};
+
+// One sourcing visit plus one retry: after the retry the reagent's auction
+// leg is spent for this round.
+inline constexpr uint8_t kAuctionVisitsPerReagent = 2;
+
+inline void NoteAuctionLegEntered(AuctionLegCycle& cycle, uint32_t itemId)
+{
+    if (cycle.itemId != itemId)
+        cycle = AuctionLegCycle{ itemId, 0, false };
+    if (cycle.visits < 255)
+        ++cycle.visits;
+    cycle.ladderEnded = false;
+}
+
+// The ladder reached its last source (the need stage) for the reagent: the
+// other sources were tried once, so a second auction visit is earned.
+inline void NoteAuctionLadderEnd(AuctionLegCycle& cycle, uint32_t itemId)
+{
+    if (cycle.itemId == itemId && cycle.visits)
+        cycle.ladderEnded = true;
+}
+
+inline bool AuctionReentryAllowed(AuctionLegCycle const& cycle, uint32_t itemId)
+{
+    if (cycle.itemId != itemId || !cycle.visits)
+        return true;
+    return cycle.ladderEnded && cycle.visits < kAuctionVisitsPerReagent;
+}
+
 // A hand-off during a relist trip must not source the leg's item/count as
 // missing supply: that item is the surplus the order already bought and was
 // about to post. The hand-off drops the relist instead and leaves the stack in
@@ -138,6 +232,17 @@ inline bool AuctionCoveringBeatsPartials(uint32_t coverBuyout, uint32_t coverCou
 inline bool AuctionHandoffLeavesSurplus(bool pendingRelist, uint32_t relistItemId, uint32_t legItemId)
 {
     return pendingRelist && relistItemId && relistItemId == legItemId;
+}
+
+// The reason a listing the leg cannot buy hands off with. A top-up the spending
+// budget cut short is the leg's own dead end (nolisting). A top-up whose retry
+// is blocked keeps the reason the bank already recorded (bankdenied), so the
+// timeline names the real cause. A leg with no recorded reason is nolisting.
+inline OrderReason AuctionTopUpBlockedReason(bool overBudget, OrderReason storedReason)
+{
+    if (overBudget || storedReason == OrderReason::None)
+        return OrderReason::NoListing;
+    return storedReason;
 }
 
 // What an oversized purchase leaves for the auction house.
