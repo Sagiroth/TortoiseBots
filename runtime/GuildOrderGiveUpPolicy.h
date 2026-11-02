@@ -173,6 +173,14 @@ inline uint32_t ReportedCarry(bool scanned, bool botOnline, uint32_t bagCount, u
     return scanned && botOnline ? bagCount + mailboxCount : reportedCarry;
 }
 
+// The carry a list reply shows: a live bot's bags and mailbox, else the last
+// carry Tick put on the row. An offline bot's bags cannot be read, and zero
+// would claim it carries nothing.
+inline uint32_t ListedCarry(bool botOnline, uint32_t liveCarry, uint32_t reportedCarry)
+{
+    return botOnline ? liveCarry : reportedCarry;
+}
+
 // A real rise in bag count seen while online on consecutive updates resets
 // the zone-move clock. A login after an offline gap never counts as new items.
 inline bool IsNewItemRise(bool botOnline, bool sawOnline, uint32_t bagCount, uint32_t lastBagCount)

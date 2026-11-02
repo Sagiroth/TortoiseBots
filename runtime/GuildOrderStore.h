@@ -183,7 +183,8 @@ void NoteBagsFull(uint32_t botGuidLow);
 void AddDelivered(uint32_t botGuidLow, uint32_t count);
 
 // What the bot carries for the order but has not delivered: bags plus
-// mailbox. World thread only (reads the live Player when it is online).
+// mailbox. World thread only. A live Player is read; an offline bot reports
+// the last carry Tick stored on its row, so the list reply never claims zero.
 uint32_t Carry(Player* bot, OrderRecord const& order);
 
 // One TBM:ORDER line for the row (the list reply and live updates share it).

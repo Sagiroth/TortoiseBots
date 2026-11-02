@@ -57,8 +57,32 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
 
     def test_carry_change_sends_a_progress_line(self):
         body = tick_body()
-        self.assertIn("bool carryChanged = out.reportedCarry != stored.reportedCarry;", body)
+        self.assertIn("bool carryChanged = out.reportedCarry != record.reportedCarry;", body)
         self.assertIn("(haveChanged || carryChanged) &&", body)
+        self.assertIn("record.reportedCarry = out.reportedCarry;", body)
+
+    def test_offline_list_reply_reports_the_stored_carry(self):
+        carry = STORE[STORE.index("uint32_t Carry(Player* bot"):]
+        carry = carry[:carry.index("\n}\n")]
+        self.assertIn("ListedCarry(botOnline, liveCarry, order.reportedCarry)", carry)
+        self.assertIn("bool botOnline = bot && bot->IsInWorld();", carry)
+        self.assertEqual(carry.count("GetItemCount(order.itemId)"), 1)
+        self.assertIn("botOnline ? bot->GetItemCount(order.itemId)", carry)
+
+    def test_carry_is_persisted_with_the_row(self):
+        self.assertIn("`updated_at`, `carried`", STORE)
+        self.assertIn("record.reportedCarry = fields[41].GetUInt32();", STORE)
+        self.assertIn("`reported`, `carried`, `farm_rest`", STORE)
+        self.assertIn("`reported` = '%u', `carried` = '%u'", STORE)
+        self.assertIn("record.reportedHave, record.reportedCarry,", STORE)
+        self.assertIn("record.reportedHave,\n                record.reportedCarry, record.farmRest", STORE)
+
+    def test_the_stored_carry_is_its_own_column(self):
+        migration = ROOT / "data/sql/character/20261102150000_char.sql"
+        self.assertTrue(migration.is_file())
+        sql = migration.read_text()
+        self.assertIn("ADD COLUMN `carried` int unsigned NOT NULL DEFAULT 0 AFTER `reported`", sql)
+        self.assertIn("COLUMN_NAME = 'carried'", sql)
 
     def test_addon_documents_carry(self):
         self.assertIn("|<step>\\|<need>\\|<carry>`", ADDON)

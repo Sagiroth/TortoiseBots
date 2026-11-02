@@ -274,6 +274,7 @@ struct OrderRecord
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
     uint32_t reportedHave = 0;   // last reported delivered count; reported have never drops below this
+    uint32_t reportedCarry = 0;  // last reported bags-plus-mailbox count; the list reply uses it while the bot is offline
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;
 };

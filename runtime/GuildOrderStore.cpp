@@ -155,10 +155,10 @@ public:
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
+            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `carried`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
             "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
             "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-            "`created_at`, `updated_at` "
+            "`created_at`, `updated_at`, `carried` "
             "FROM `tortoise_bots_guild_order`"));
         if (result)
         {
@@ -207,6 +207,7 @@ public:
                 record.lastBankCheckMs = fields[38].GetUInt32();
                 record.createdAt = fields[39].GetUInt64();
                 record.updatedAt = fields[40].GetUInt64();
+                record.reportedCarry = fields[41].GetUInt32();
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -363,19 +364,20 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
+                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `carried`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
                 "`created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
+                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
                 "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
-                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.farmRest ? 1u : 0u,
+                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.reportedCarry,
+                record.farmRest ? 1u : 0u,
                 record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
                 SupplyStepToken(record.supplyStep),
@@ -1255,6 +1257,7 @@ public:
             stub.needItems.clear();
             stub.needWhispered = false;
             stub.reportedHave = 0;
+            stub.reportedCarry = 0;
             m_orders[subOrderBotGuidLow] = Stored{stub};
             MarkDirtyLocked(m_orders[subOrderBotGuidLow]);
         }
@@ -1269,6 +1272,7 @@ public:
         moved.farmChance = 0;
         moved.zoneIndex = 0;
         moved.reportedHave = 0;
+        moved.reportedCarry = 0;
         moved.supplyStep = SupplyStep::None;
         moved.supplyReturnStep = SupplyStep::None;
         moved.supplyItemId = 0;
@@ -1416,7 +1420,7 @@ public:
                 record.workedTotalSec = 0;
                 record.workedNoGainSec = 0;
                 record.reportedHave = 0;
-                stored.reportedCarry = 0;
+                record.reportedCarry = 0;
                 stored.lastOwnedCount = 0;
                 stored.lastFarmCount = 0;
                 stored.lastFarmItemId = 0;
@@ -1654,7 +1658,7 @@ public:
             (record.state == OrderState::Stocked && in.bankChecked ?
                 (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
         out.reportedCarry = ReportedCarry(in.scanned, in.botOnline, in.bagCount, in.mailboxCount,
-            stored.reportedCarry);
+            record.reportedCarry);
 
         std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
@@ -1663,7 +1667,7 @@ public:
         if (!stored.reportSeen || stored.reportStep != record.supplyStep)
             out.legChanged = true;
         bool haveChanged = out.reportedHave != record.reportedHave;
-        bool carryChanged = out.reportedCarry != stored.reportedCarry;
+        bool carryChanged = out.reportedCarry != record.reportedCarry;
         bool progressDue = (haveChanged || carryChanged) &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
@@ -1676,7 +1680,11 @@ public:
             stored.reportNeed = needToken;
             if (haveChanged || carryChanged)
                 stored.reportMs = in.nowMs;
-            stored.reportedCarry = out.reportedCarry;
+            if (carryChanged)
+            {
+                record.reportedCarry = out.reportedCarry;
+                MarkDirtyLocked(stored);
+            }
             if (haveChanged)
             {
                 record.reportedHave = out.reportedHave;
@@ -1707,7 +1715,6 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
-        uint32_t reportedCarry = 0; // last carry put on the row (bags plus mailbox)
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
         uint32_t needLadderChecks = 0; // slow checks since the row last parked
@@ -1783,7 +1790,7 @@ private:
                 "UPDATE `tortoise_bots_guild_order` SET `giver_guid` = '%u', `parent_bot` = '%u', `root_giver` = '%u', `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
                 "`state` = '%s', `reason` = '%s', "
                 "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
-                "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', "
+                "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', `carried` = '%u', "
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
@@ -1793,7 +1800,7 @@ private:
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
                 record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
                 record.workedSinceNewItemSec, record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
-                record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
+                record.reportedCarry, record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
                 SupplyStepToken(record.supplyStep),
                 SupplyStepToken(record.supplyReturnStep), record.supplyItemId, record.supplyCount, record.supplyGoldCount,
@@ -2531,9 +2538,11 @@ void AddDelivered(uint32_t botGuidLow, uint32_t count)
 
 uint32_t Carry(Player* bot, OrderRecord const& order)
 {
-    if (!bot || !bot->IsInWorld() || !order.itemId)
+    if (!order.itemId)
         return 0;
-    return bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
+    bool botOnline = bot && bot->IsInWorld();
+    uint32_t liveCarry = botOnline ? bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId) : 0;
+    return ListedCarry(botOnline, liveCarry, order.reportedCarry);
 }
 
 std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry)
