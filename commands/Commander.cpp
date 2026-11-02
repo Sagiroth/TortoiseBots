@@ -8883,6 +8883,13 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
                 unit.estGuids.push_back(mobs[member.index].guid);
             unit.estLosBudget = estimate.losBudgetSpent;
             unit.joiners = estimate.joiners; // the joiner report's expected count
+            // The full list with its reasons, once (the run note keeps at most eight guids).
+            std::string list;
+            for (ai::AggroMember const& member : estimate.members)
+                list += (list.empty() ? "" : ", ") + std::to_string(mobs[member.index].guid) + " " +
+                    ai::AggroWhyName(member.why);
+            TB_LOG_DETAIL("TortoiseBots: run leader: pull estimate for %u: %u bodies, %u joiners%s: %s", unit.entry,
+                estimate.bodies, estimate.joiners, estimate.losBudgetSpent ? ", LOS budget spent" : "", list.c_str());
         }
         else
         {
@@ -9810,8 +9817,16 @@ static void ReadPullAhead(DungeonRunSlot const& slot, Player* lead, std::vector<
             };
             ai::AggroEstimate const estimate = ai::EstimateAggroRing(mobs, target, geometry, params);
             cache.bodies = estimate.bodies;
+            std::string list;
             for (ai::AggroMember const& member : estimate.members)
+            {
                 cache.guids.push_back(mobs[member.index].guid);
+                list += (list.empty() ? "" : ", ") + std::to_string(mobs[member.index].guid) + " " +
+                    ai::AggroWhyName(member.why);
+            }
+            TB_LOG_DETAIL("TortoiseBots: run leader: look-ahead estimate for step %u: %u bodies, ceiling %u%s: %s",
+                static_cast<uint32>(slot.run.step + 1), estimate.bodies, cache.ceiling,
+                estimate.losBudgetSpent ? ", LOS budget spent" : "", list.c_str());
         }
     }
     f.aheadBodies = cache.bodies;

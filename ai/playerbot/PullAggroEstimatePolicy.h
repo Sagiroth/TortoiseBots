@@ -145,6 +145,24 @@ namespace ai
     // Why one creature comes (the member list's reason).
     enum class AggroWhy : std::uint8_t { Target, Pack, Walk, TankWalk, Stand, Fight, Ring1, Ring2, Drag };
 
+    // The reason's word, for the detail log line (the estimate's note carries guids only).
+    inline const char* AggroWhyName(AggroWhy why)
+    {
+        switch (why)
+        {
+            case AggroWhy::Target: return "target";
+            case AggroWhy::Pack: return "pack";
+            case AggroWhy::Walk: return "walk";
+            case AggroWhy::TankWalk: return "tank walk";
+            case AggroWhy::Stand: return "stand";
+            case AggroWhy::Fight: return "fight point";
+            case AggroWhy::Ring1: return "ring 1";
+            case AggroWhy::Ring2: return "ring 2";
+            case AggroWhy::Drag: return "drag";
+        }
+        return "?";
+    }
+
     struct AggroMember
     {
         std::size_t index = 0; // into the mobs list
