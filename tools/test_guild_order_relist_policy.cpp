@@ -562,20 +562,85 @@ int main()
         CHECK(ledger.rows.size() == 1 && RelistNeedsDeposit(ledger.rows[0]));
     }
 
-    // Three days with nothing back drops the row; a row already collected
-    // waits for the bank however long that takes.
-    CHECK(!RelistEntryStale(Posted(), kNow));
-    CHECK(!RelistEntryStale(Posted(13, 400, kNow - kRelistStaleSec + 1), kNow));
-    CHECK(RelistEntryStale(Posted(13, 400, kNow - kRelistStaleSec), kNow));
-    CHECK(RelistEntryStale(Posted(13, 400, kNow - 10 * kRelistStaleSec), kNow));
+    // Age alone never drops a row. Three days with nothing back drops a posted
+    // row only once the bot has been online after the auction ended; a row
+    // already collected waits for the bank however long that takes.
     {
-        RelistLedgerEntry held = Posted(13, 400, kNow - 30 * 24 * 60 * 60);
+        constexpr uint64_t kDay = 24 * 60 * 60;
+        auto Offline = [](uint64_t logoutSec) {
+            RelistBotPresence p;
+            p.logoutSec = logoutSec;
+            return p;
+        };
+        auto Online = [](uint64_t loginSec) {
+            RelistBotPresence p;
+            p.online = true;
+            p.loginSec = loginSec;
+            return p;
+        };
+        uint64_t const postedAt = kNow - 4 * kDay;
+
+        // A bot offline for 4 days (logged out an hour after posting, before the
+        // auction ended) keeps its row, and the sale mail waiting in its box
+        // still settles on login.
+        RelistLedgerEntry offline = Posted(13, 400, postedAt);
+        CHECK(RelistEntryAged(offline, kNow));
+        CHECK(!RelistBotSawMail(offline, Offline(postedAt + 3600), kNow));
+        CHECK(RelistEntryExpiry(offline, Offline(postedAt + 3600), kNow) == RelistExpiry::Keep);
+        CHECK(RelistEntryExpiry(offline, Offline(0), kNow) == RelistExpiry::Keep);
+        // A bot that has just logged in has not read its mail yet.
+        CHECK(RelistEntryExpiry(offline, Online(kNow - 60), kNow) == RelistExpiry::Keep);
+        std::vector<RelistLedgerEntry> rows{ offline };
+        size_t index = 99;
+        CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index) && index == 0);
+        CHECK(RelistMailMatch(offline, SoldMail(), kNow) == RelistMailKind::Sold);
+        ReadMail(rows[0], SoldMail(), kNow);
+        CHECK(rows[0].state == RelistState::Received && rows[0].heldGold == 5100);
+        CHECK(RelistEntryExpiry(rows[0], Offline(0), kNow) == RelistExpiry::Keep);
+        // The expired stack waiting in the box settles on login the same way.
+        CHECK(RelistMailMatch(offline, ExpiredMail(), kNow) == RelistMailKind::Expired);
+
+        // Online long enough after the end and nothing came: the row is stale.
+        CHECK(RelistEntryExpiry(offline, Online(kNow - 2 * 3600), kNow) == RelistExpiry::NoReturn);
+        CHECK(RelistEntryExpiry(offline, Online(postedAt), kNow) == RelistExpiry::NoReturn);
+        CHECK(RelistEntryExpiry(offline, Offline(kNow - 7200), kNow) == RelistExpiry::NoReturn);
+        // Fresh rows are not aged and not stale.
+        CHECK(!RelistEntryAged(Posted(), kNow));
+        CHECK(RelistEntryExpiry(Posted(), Online(0), kNow) == RelistExpiry::Keep);
+        RelistLedgerEntry almost = Posted(13, 400, kNow - kRelistStaleSec + 1);
+        CHECK(RelistEntryExpiry(almost, Online(0), kNow) == RelistExpiry::Keep);
+        CHECK(RelistEntryExpiry(Posted(13, 400, kNow - kRelistStaleSec), Online(0), kNow) ==
+            RelistExpiry::NoReturn);
+
+        // Past the core's mail lifetime the mail itself is gone: dropped even
+        // for a bot that never came back.
+        RelistLedgerEntry old = Posted(13, 400, kNow - kRelistMailLifetimeSec - kDurationSec);
+        CHECK(kRelistMailLifetimeSec == 30 * kDay);
+        CHECK(RelistEntryAged(old, kNow));
+        CHECK(RelistEntryExpiry(old, Offline(0), kNow) == RelistExpiry::MailExpired);
+        CHECK(RelistEntryExpiry(old, Online(kNow - 60), kNow) == RelistExpiry::MailExpired);
+        RelistLedgerEntry justInside = Posted(13, 400, kNow - kRelistMailLifetimeSec);
+        CHECK(RelistEntryExpiry(justInside, Offline(0), kNow) == RelistExpiry::Keep);
+        // Just inside the lifetime, counted from the auction's end.
+        RelistLedgerEntry edge = Posted(13, 400, kNow - kRelistMailLifetimeSec - kDurationSec + 1);
+        CHECK(RelistEntryExpiry(edge, Offline(0), kNow) == RelistExpiry::Keep);
+
+        // A collected row waits for the bank however old.
+        RelistLedgerEntry held = Posted(13, 400, kNow - 90 * kDay);
         held.state = RelistState::Received;
         held.heldGold = 1;
-        CHECK(!RelistEntryStale(held, kNow));
-        RelistLedgerEntry claimed = Posted(13, 400, kNow - 30 * 24 * 60 * 60);
+        CHECK(!RelistEntryAged(held, kNow));
+        CHECK(RelistEntryExpiry(held, Offline(0), kNow) == RelistExpiry::Keep);
+        // A claimed row never ages by days; past the mail lifetime it is dropped
+        // while the bot is offline, and left to the next mail read while online.
+        RelistLedgerEntry claimed = Posted(13, 400, kNow - 10 * kDay);
         RelistNoteMailClaimed(claimed, 77, SoldMail(), RelistMailKind::Sold);
-        CHECK(!RelistEntryStale(claimed, kNow));
+        CHECK(RelistEntryExpiry(claimed, Online(kNow - kDay), kNow) == RelistExpiry::Keep);
+        CHECK(RelistEntryExpiry(claimed, Offline(kNow - kDay), kNow) == RelistExpiry::Keep);
+        RelistLedgerEntry oldClaim = Posted(13, 400, kNow - 90 * kDay);
+        RelistNoteMailClaimed(oldClaim, 77, SoldMail(), RelistMailKind::Sold);
+        CHECK(RelistEntryExpiry(oldClaim, Offline(kNow - 80 * kDay), kNow) == RelistExpiry::MailExpired);
+        CHECK(RelistEntryExpiry(oldClaim, Online(kNow - kDay), kNow) == RelistExpiry::Keep);
     }
 
     if (failures == 0)
