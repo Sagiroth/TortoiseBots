@@ -38,6 +38,7 @@
 
   function spellCount(b, name) {
     const spells = (b && b.spells) || [];
+    if (!Array.isArray(spells)) return num(spells[name]) || 0;
     return spells.reduce((s, x) => s + (x.n === name ? num(x.c) || 0 : 0), 0);
   }
 
@@ -625,6 +626,61 @@
       maxDps: dpsRows.length ? dpsRows[0].dps : 0,
     };
   }
+  // The "Run total" view of the role tables: the same rows as roleTables but
+  // summed over a run (/api/v1/combat/run-totals). DPS and HPS divide by the
+  // bot's own fight time (fight_ms), not the run's: a bot that sat half the
+  // run out still shows its own rate. Deaths are the summed count (no
+  // per-fight death list survives the sum); the Tank table's Sunder and
+  // taunts read the spells map the totals carry.
+  function runRoleTables(totals, layout) {
+    totals = totals || {};
+    const bots = Array.isArray(totals.bots) ? totals.bots : [];
+    const deck = { bots: bots.map((b) => ({ name: b.name, role: b.role, taken: b.taken })) };
+    const mt = mainTank(deck, layout);
+    const mtName = mt ? mt.name : (bots.filter((b) => roleOf(b) === "tank")[0] || {}).name || null;
+    const tanks = bots.filter((b) => roleOf(b) === "tank");
+    const tankRows = tanks.filter((b) => b.name === mtName).concat(tanks.filter((b) => b.name !== mtName)).map((b) => ({
+      name: b.name,
+      guid: b.guid,
+      cls: b.class || "",
+      main: b.name === mtName,
+      sunder: spellCount(b, "Sunder Armor"),
+      taunts: TAUNTS.reduce((s, n) => s + spellCount(b, n), 0),
+      taken: num(b.taken) || 0,
+      died: num(b.deaths) || 0,
+    }));
+    const healerRows = bots.filter((b) => roleOf(b) === "heal").map((b) => {
+      const heal = num(b.heal) || 0;
+      const over = num(b.over) || 0;
+      const secs = Math.max(1, (num(b.fight_ms) || 0) / 1000);
+      return {
+        name: b.name,
+        guid: b.guid,
+        cls: b.class || "",
+        hps: heal / secs,
+        overPct: heal + over > 0 ? Math.round((over / (heal + over)) * 100) : 0,
+        casts: num(b.casts) || 0,
+      };
+    }).sort(byDesc("hps"));
+    const dpsRows = bots.filter((b) => roleOf(b) === "dps").map((b) => {
+      const secs = Math.max(1, (num(b.fight_ms) || 0) / 1000);
+      return {
+        name: b.name,
+        guid: b.guid,
+        cls: b.class || "",
+        dps: (num(b.dmg) || 0) / secs,
+        taken: num(b.taken) || 0,
+        casts: num(b.casts) || 0,
+      };
+    }).sort(byDesc("dps"));
+    return {
+      tanks: tankRows,
+      healers: healerRows,
+      dps: dpsRows,
+      maxHps: healerRows.length ? healerRows[0].hps : 0,
+      maxDps: dpsRows.length ? dpsRows[0].dps : 0,
+    };
+  }
 
   function botPanel(fight, name) {
     const bots = (fight && fight.bots) || [];
@@ -879,7 +935,7 @@
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS, CAST_DEATH_MS,
     roleOf, spellCount, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
-    spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged,
+    spellForHit, deathRecaps, timeline, raidFrames, roleTables, runRoleTables, botPanel, railCards, liveEngaged,
     summaryVerdict, worstSummaryIndex, railFull, railItems, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;

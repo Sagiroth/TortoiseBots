@@ -3441,6 +3441,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-recaptbl td.n { text-align: right; font-variant-numeric: tabular-nums; }
 
 .fd-roles { grid-area: roles; min-width: 0; display: grid; gap: 14px; align-content: start; }
+.fd-totalsseg:empty { display: none; }
 .fd-t, .fd-tanks, .fd-heals, .fd-dps { min-width: 0; }
 .fd-cls { color: var(--text-muted); font-size: 0.7rem; }
 .fd-table { width: 100%; font-size: 0.78rem; }
