@@ -12915,14 +12915,19 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
 // off-tanks. So in a raid's boss fight under
 // AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at the plan
 // boss an off-tank holds (`attack <guid> <carrier>` ends its stay and its own tank AI taunts it back from there),
-// after the off-tank's wait (kRaidAssistWaitMs). Once per boss guid until kRaidGuardRearmMs after the last one, and
-// only while the lead bot is again staying and holding nothing. Not under fightOrders (like RaidGuardTick); guardOrders
-// and guardUnitOrders are untouched. True when `order` holds it.
+// after the off-tank's wait (kRaidAssistWaitMs). The wait is continuous: any break (the lead bot off stay, dead or no
+// tank, holding a plan boss, the rules off, no boss waiting) starts it over. Once per boss guid until kRaidGuardRearmMs
+// after the last one, and only while the lead bot is again staying and holding nothing. Not under fightOrders (like
+// RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when `order` holds it.
 inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
         LeadHoldsPlanBoss(r, f))
+    {
+        r.raidBossJoinMs = 0;
+        r.raidBossJoinGuid = 0;
         return false;
+    }
     const UnitFact* pick = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {

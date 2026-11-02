@@ -22329,6 +22329,50 @@ static void TestRaidBossMainTankJoinLeavesAddsToTheOffTank()
     CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
 }
 
+static void TestRaidBossMainTankJoinRestartsAfterTheStayEnds()
+{
+    // A join wait broken by the stay ending starts over: the main tank does not go at a part-accrued wait.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms < kRaidAssistWaitMs - kTickMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = false;
+    for (int k = 0; k < 3; ++k)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = true;
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+static void TestRaidBossMainTankJoinRestartsAfterHoldingTheBoss()
+{
+    // The same when the main tank takes the boss itself in between: once it holds nothing again the wait starts over.
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Off";
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms < kRaidAssistWaitMs - kTickMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    f.leadHeldEntries = {10184};
+    for (int k = 0; k < 3; ++k)
+        CHECK(Tick(r, f).empty());
+    f.leadHeldEntries.clear();
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
 static void TestRaidBossBossOffANonTankWithTheLeadDead()
 {
     DungeonPlan plan;
@@ -26835,6 +26879,8 @@ int main()
     TestRaidBossMainTankJoinKeyOffKeepsRaidGuard();
     TestRaidBossMainTankJoinRearmsAfterTwentySeconds();
     TestRaidBossMainTankJoinLeavesAddsToTheOffTank();
+    TestRaidBossMainTankJoinRestartsAfterTheStayEnds();
+    TestRaidBossMainTankJoinRestartsAfterHoldingTheBoss();
     TestStragglerLadderWalksThenSummonsBeforeThePause();
     TestStragglerLadderClocks();
     TestStragglerWalkRefusedSummonsNext();
