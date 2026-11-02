@@ -15370,6 +15370,23 @@ static void TestAheadNoteOnTheStandPullRow()
     CHECK(r.note.find("ahead:") == std::string::npos);
 }
 
+// The look-ahead says the estimate is unavailable when the pull row lists no creature on the map, instead
+// of reading an unrelated hostile in the scan.
+static void TestAheadUnavailableNote()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10.0f, 0.0f, 0.0f), BodiesPullStep(30.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadUnavailable = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
+    CHECK(r.note == "ahead: pull 2 estimate unavailable; walking");
+    CHECK(r.aheadNotedStep == 0);
+}
+
 // The row is noted only when the ahead note survives the tick: a walk that ends the row sets "arrived",
 // and the estimate was not said.
 static void TestAheadNotMarkedWhenTheWalkEndsTheRow()
@@ -29725,6 +29742,7 @@ int main()
     TestEstimateNoteListsAtMostEightGuids();
     TestAheadNoteOnceOnTheChainsMoveRow();
     TestAheadNoteOnTheStandPullRow();
+    TestAheadUnavailableNote();
     TestAheadNotMarkedWhenTheWalkEndsTheRow();
     TestPullEstimateCacheKeepsOneReadPerRow();
     TestRingPullNoteSaysBodiesExpected();
