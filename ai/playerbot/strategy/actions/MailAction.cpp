@@ -456,17 +456,21 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
     uint32_t settled = 0;
     time_t curTime = time(nullptr);
 
-    // A claimed row names the mail it is taking. A mail that is gone or empty
-    // means the take landed: the value is in the bot, so the row is received
-    // and the bank drain settles it. A mail that still carries value is taken
-    // again. A claimed row is never matched by its terms a second time.
+    // A claimed row names the mail it is taking. A mail that is gone or that
+    // no longer carries the row's value means the take landed: the value is in
+    // the bot, so the row is received and the bank drain settles it. A mail
+    // that still carries the value is taken again. A claimed row is never
+    // matched by its terms a second time.
     for (size_t i = 0; i < entries.size(); ++i)
     {
         RelistLedgerEntry& entry = entries[i];
         if (entry.state != RelistState::Claimed)
             continue;
         Mail* mail = owner->GetMail(entry.claimMailId);
-        if (!mail || mail->state == MAIL_STATE_DELETED || (!mail->money && !mail->has_items))
+        RelistMail view;
+        if (mail && mail->state != MAIL_STATE_DELETED)
+            view = MakeRelistMailView(mail, owner);
+        if (!RelistClaimMailHoldsValue(entry, view))
         {
             if (TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq,
                     entry.heldGold, entry.heldCount))
@@ -476,7 +480,7 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
             }
             continue;
         }
-        RelistMailKind const kind = mail->money ? RelistMailKind::Sold : RelistMailKind::Expired;
+        RelistMailKind const kind = view.money ? RelistMailKind::Sold : RelistMailKind::Expired;
         uint32_t gold = 0;
         uint32_t items = 0;
         if (!TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items))

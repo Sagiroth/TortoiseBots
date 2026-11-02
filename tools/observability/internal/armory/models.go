@@ -37,6 +37,8 @@ type BotSummary struct {
 	// Autonomous alts and companions are live roster state: the daemon joins
 	// them from telemetry by guid, the DB list cannot see them.
 	Kind string `json:"kind,omitempty"`
+	// Guild is the guild name from the database (empty when guildless).
+	Guild string `json:"guild,omitempty"`
 }
 
 // ItemDetail carries the tooltip-relevant fields from world.item_template:

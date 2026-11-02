@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=17">
+  <link rel="stylesheet" href="/static/css/app.css?v=20">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
 <body>
@@ -75,6 +75,13 @@
       <a class="menu-item" data-tab="activity" href="#/activity" title="Quests, kills, loot, money and the live event stream">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span>Activity</span>
+      </a>
+      <a class="menu-item" data-tab="guildorders" href="#/guild-orders" title="Guild orders: who works on what, how, where it goes and what it gathered">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>Guild orders</span>
+        <span class="menu-badges">
+          <span id="go-count" class="badge badge-info" style="display: none;">0</span>
+        </span>
       </a>
       <a class="menu-item" data-tab="auctions" href="#/auctions" title="What is on the auction house right now (view only)">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 13l-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10"/><path d="M16 16l6-6"/><path d="M8 8l6-6"/><path d="M9 7l8 8"/><path d="M21 11l-8-8"/></svg>
@@ -236,6 +243,7 @@
               <button class="seg-btn" data-v="online">Online</button>
               <button class="seg-btn" data-v="offline">Offline</button>
             </div>
+            <select id="bots-guild" class="input" title="Show only the members of one guild"><option value="">Any guild</option></select>
             <div class="seg" id="bots-kind" role="group" aria-label="Bots or players">
               <button class="seg-btn active" data-v="all">Bots + players</button>
               <button class="seg-btn" data-v="bot">Bots</button>
@@ -270,6 +278,37 @@
       </section>
 
       <!-- TAB: AUCTIONS — read-only auction house view -->
+      <section id="tab-guildorders" class="tab-view" style="display: none;">
+        <div class="kpi-row" id="go-summary"></div>
+
+        <div class="card toolbar-card">
+          <div class="toolbar">
+            <input type="text" id="go-search" placeholder="Bot or item…" class="input grow" autocomplete="off">
+            <div class="seg" id="go-guild" role="group" aria-label="Guild"></div>
+            <div class="seg" id="go-show" role="group" aria-label="Which orders">
+              <button class="seg-btn active" data-v="active">Running</button>
+              <button class="seg-btn" data-v="all">All</button>
+            </div>
+            <span class="card-hint" id="go-polled"></span>
+          </div>
+        </div>
+
+        <div id="go-list"></div>
+
+        <div class="card table-card" id="go-relist-card" style="display: none;">
+          <div class="card-head">
+            <h2 class="card-title">Auction surplus owed to the guild</h2>
+            <span class="card-hint">Extra items bought for an order and put back on the auction house; the sale gold or the returned stack goes to the guild bank</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Bot</th><th>Item</th><th>Count</th><th>Buyout</th><th>Posted</th><th>Status</th></tr></thead>
+              <tbody id="go-relist-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section id="tab-auctions" class="tab-view" style="display: none;">
         <div class="kpi-row" id="ah-summary"></div>
 
@@ -824,6 +863,6 @@
 <script src="/static/js/fighthistory.js?v=1"></script>
 <script src="/static/js/coverage.js?v=1"></script>
 <script src="/static/js/trash.js?v=1"></script>
-<script src="/static/js/app.js?v=31"></script>
+<script src="/static/js/app.js?v=39"></script>
 </body>
 </html>

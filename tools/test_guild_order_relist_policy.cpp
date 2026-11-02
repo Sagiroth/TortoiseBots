@@ -304,6 +304,15 @@ int main()
         RelistLedgerEntry expired = Posted(13);
         RelistNoteMailClaimed(expired, 78, ExpiredMail(kItem, 13), RelistMailKind::Expired);
         CHECK(expired.heldCount == 13 && expired.heldGold == 0);
+
+        // The claim's mail still carries what it promised, so the next read
+        // retries the take; an emptied mail carries nothing and settles.
+        CHECK(RelistClaimMailHoldsValue(sold, SoldMail()));
+        CHECK(!RelistClaimMailHoldsValue(sold, RelistMail()));
+        CHECK(RelistClaimMailHoldsValue(expired, ExpiredMail(kItem, 13)));
+        // Another template's stack in that mail is not this row's value.
+        CHECK(!RelistClaimMailHoldsValue(expired, ExpiredMail(kItem + 1, 13)));
+        CHECK(!RelistClaimMailHoldsValue(expired, RelistMail()));
     }
 
     // A claim write that fails leaves the row posted: the mail is not taken
@@ -346,6 +355,31 @@ int main()
         CHECK(bank.lastGold == 5100 && after.rows.empty());
     }
 
+    // The same for a returned stack: the core keeps the mail's has_items flag
+    // after the take and only empties its item list, so the mail read builds
+    // an empty view and settles the row instead of retrying a mail that can
+    // never hand anything over again.
+    {
+        RelistLedgerEntry entry = Posted(13);
+        RelistNoteMailClaimed(entry, 79, ExpiredMail(kItem, 13), RelistMailKind::Expired);
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        ledger.failWrites = true;
+        CHECK(!ledger.Save(entry)); // the received write failed
+        ledger.failWrites = false;
+        RelistLedgerEntry loaded = ledger.rows[0];
+        CHECK(loaded.state == RelistState::Claimed && loaded.heldCount == 13);
+        CHECK(!RelistClaimMailHoldsValue(loaded, RelistMail())); // the stack is gone
+        RelistNoteClaimSettled(loaded);
+        CHECK(loaded.state == RelistState::Received && loaded.claimMailId == 0);
+        CHECK(loaded.heldCount == 13 && RelistNeedsDeposit(loaded));
+        FakeLedger after;
+        after.rows.push_back(loaded);
+        FakeBank bank;
+        CHECK(RelistBankTrip(loaded, AtBank(0, 13), after, bank) == RelistTripOutcome::Deposited);
+        CHECK(bank.lastItems == 13 && after.rows.empty());
+    }
+
     // A claimed row whose mail is still there is retried, not doubled: the
     // mail never matches a second row, and the retry keeps one value.
     {
@@ -357,8 +391,11 @@ int main()
         CHECK(RelistMatchCount(rows, SoldMail(), kNow, index) == 1);
         CHECK(index == 1); // only the posted row matches; the claim waits by id
         CHECK(RelistClaimedIndex(rows, 77, index) && index == 0);
+        // The mail still holds the promised gold, so the retry takes it.
+        CHECK(RelistClaimMailHoldsValue(claimed, SoldMail()));
         RelistNoteMailReceived(claimed, RelistMailKind::Sold, 5100, 0);
         CHECK(claimed.state == RelistState::Received && claimed.heldGold == 5100);
+        CHECK(!RelistClaimPending({claimed}));
     }
 
     // A banker visit only earns its trip when the bot can hand value over

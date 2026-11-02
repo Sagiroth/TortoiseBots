@@ -60,6 +60,14 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("RelistClaimedIndex(entries, mail->messageID, claimed)", take)
         self.assertIn("RelistNoteClaimSettled(entry)", take)
         self.assertIn("owner->GetMail(entry.claimMailId)", take)
+        # A claim settles once its mail no longer carries the row's value (the
+        # core keeps has_items set after the stack is taken) and is retried
+        # only while it still does.
+        self.assertIn("RelistClaimMailHoldsValue(entry, view)", take)
+        retry = take[take.index("RelistState::Claimed"):]
+        self.assertIn("view = MakeRelistMailView(mail, owner)", retry)
+        self.assertLess(retry.index("view = MakeRelistMailView(mail, owner)"),
+            retry.index("RelistClaimMailHoldsValue(entry, view)"))
         self.assertIn("MAIL_STATIONERY_AUCTION", MAIL)
         self.assertIn("ParseAuctionSubject(mail->subject", MAIL)
         self.assertIn("ParseAuctionSaleBody(sObjectMgr.GetItemText(mail->itemTextId), view)", MAIL)

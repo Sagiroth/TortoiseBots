@@ -1046,3 +1046,14 @@ type CommanderPosFrame struct {
 	Bots      []PosBot `json:"bots"`
 	Mobs      []PosMob `json:"mobs"`
 }
+
+// BotTrailItem is one recent item, trade or death event of a bot, kept per
+// bot for the guild orders view.
+type BotTrailItem struct {
+	At      int64  `json:"at"`
+	Kind    string `json:"kind"`
+	Item    string `json:"item,omitempty"`
+	ItemID  uint32 `json:"item_id,omitempty"`
+	Quality uint32 `json:"quality,omitempty"`
+	ZoneID  uint32 `json:"zone,omitempty"`
+}

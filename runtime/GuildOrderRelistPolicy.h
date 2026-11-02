@@ -209,6 +209,19 @@ inline bool RelistClaimPending(std::vector<RelistLedgerEntry> const& rows)
     return false;
 }
 
+// Whether the mail a claim names still carries what the claim promised. Sale
+// gold is taken whole, so any money left means the take did not land; a
+// returned stack counts only as the row's own item. The core keeps
+// `has_items` set after the stack is taken and only empties the item list, so
+// the view's item fields decide, never the flag alone: an emptied mail reads
+// as settled. Called with an empty view when the mail is gone.
+inline bool RelistClaimMailHoldsValue(RelistLedgerEntry const& entry, RelistMail const& mail)
+{
+    if (mail.money)
+        return true;
+    return mail.hasItems && mail.itemId == entry.itemId;
+}
+
 // Nothing returned after three days: the posting can no longer report on the
 // auction house, so the entry stops being a payable debt (the store drops it
 // with a log line). A claimed row is not stale: its mail is named and the
