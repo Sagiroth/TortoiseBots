@@ -33,7 +33,7 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
 
     def test_carry_counts_bags_and_mail(self):
         self.assertIn(
-            "ReportedCarryThisPass(terminal, in.scanned, in.botOnline, in.bagCount,",
+            "ReportedCarryThisPass(record.state, in.scanned, in.botOnline, in.bagCount,",
             tick_body())
 
     def test_have_keeps_its_never_drop_floor(self):
@@ -66,7 +66,7 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
         # announced: a bot can log out inside the progress-throttle window,
         # and the list then reads what the row holds.
         body = tick_body()
-        scan = body.index("if ((in.scanned || terminal) && carryChanged)")
+        scan = body.index("if ((in.scanned || handOffSucceeded) && carryChanged)")
         send = body.index("if (out.sendLine)")
         persist = body.index("out.persist = TakeDirtyLocked(stored, out.persistRecord);", send)
         self.assertLess(scan, send)
@@ -80,13 +80,14 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
         self.assertIn("in.nowMs - stored.reportMs >= kProgressReportMs", tick_body())
         self.assertIn("inline constexpr uint32_t kProgressReportMs = 5000;", STORE)
 
-    def test_offline_list_reply_reports_the_stored_carry(self):
+    def test_list_reply_reports_the_stored_carry_for_a_terminal_row(self):
         carry = STORE[STORE.index("uint32_t Carry(Player* bot"):]
         carry = carry[:carry.index("\n}\n")]
-        self.assertIn("ListedCarry(botOnline, liveCarry, order.reportedCarry)", carry)
+        self.assertIn("ListedCarry(terminal, botOnline, liveCarry, order.reportedCarry)", carry)
+        self.assertIn("bool terminal = IsTerminal(order.state);", carry)
         self.assertIn("bool botOnline = bot && bot->IsInWorld();", carry)
         self.assertEqual(carry.count("GetItemCount(order.itemId)"), 1)
-        self.assertIn("botOnline ? bot->GetItemCount(order.itemId)", carry)
+        self.assertIn("botOnline && !terminal ?\n        bot->GetItemCount(order.itemId)", carry)
 
     def test_carry_is_persisted_with_the_row(self):
         self.assertIn("`updated_at`, `carried`", STORE)

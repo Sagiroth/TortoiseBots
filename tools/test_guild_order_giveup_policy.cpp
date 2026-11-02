@@ -131,12 +131,15 @@ int main()
     CHECK(ReportedCarry(false, true, 4, 2, 6) == 6);
     CHECK(ReportedCarry(false, false, 0, 0, 6) == 6);
 
-    // A list reply reads a live bot's bags; an offline bot reports the carry
-    // Tick last stored on its row instead of zero.
-    CHECK(ListedCarry(true, 7, 3) == 7);
-    CHECK(ListedCarry(true, 0, 5) == 0);
-    CHECK(ListedCarry(false, 7, 3) == 3);
-    CHECK(ListedCarry(false, 0, 6) == 6);
+    // A list reply reads a live row's bags; a terminal row reports the carry
+    // Tick last stored on it, online or offline, and so does an offline bot
+    // instead of zero.
+    CHECK(ListedCarry(false, true, 7, 3) == 7);
+    CHECK(ListedCarry(false, true, 0, 5) == 0);
+    CHECK(ListedCarry(false, false, 7, 3) == 3);
+    CHECK(ListedCarry(false, false, 0, 6) == 6);
+    CHECK(ListedCarry(true, true, 7, 3) == 3);
+    CHECK(ListedCarry(true, false, 0, 6) == 6);
 
     // Only a real online rise resets the zone-move clock.
     CHECK(IsNewItemRise(true, true, 6, 5));

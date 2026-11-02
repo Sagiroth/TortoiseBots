@@ -458,7 +458,6 @@ public:
                 it->second.record.needItems.clear();
                 it->second.record.needWhispered = false;
                 it->second.record.reportedHave = 0;
-                it->second.record.reportedCarry = 0;
                 MarkDirtyLocked(it->second);
                 park = true;
             }
@@ -611,9 +610,11 @@ public:
             it->second.record.needItems.clear();
             it->second.record.needWhispered = false;
             it->second.record.needBankDenied = false;
-            // A terminal row holds nothing for the order: the final line and
-            // the stored row say zero, not the last pre-delivery scan.
-            it->second.record.reportedCarry = 0;
+            // Only a successful hand-off empties the carry, and the final
+            // line and the stored row must not repeat the last pre-delivery
+            // scan. A cant or noskill row keeps the stack still in the bags.
+            if (HandOffSucceeded(state))
+                it->second.record.reportedCarry = 0;
             // Unspent guild gold outlives the order: the row parks instead
             // of disappearing, and the refund drain pays it from any banker
             // visit before FinishRepaid clears the row.
@@ -1259,7 +1260,6 @@ public:
             stub.needItems.clear();
             stub.needWhispered = false;
             stub.reportedHave = 0;
-            stub.reportedCarry = 0;
             m_orders[subOrderBotGuidLow] = Stored{stub};
             MarkDirtyLocked(m_orders[subOrderBotGuidLow]);
         }
@@ -1657,22 +1657,23 @@ public:
         // there. Both counts are read off the row every pass, so a deposit
         // reports itself without waiting for the next scan.
         bool stocked = record.state == OrderState::Stocked;
-        // A terminal row holds nothing for the order any more: the stack was
-        // banked or mailed, or the order ended without it. Reported before
-        // the line and the row write below, so neither repeats the last
-        // pre-delivery scan.
-        bool terminal = IsFinished(record.state) && !stocked;
+        // A row whose hand-off succeeded (done after the bank deposit, sent
+        // by mail) holds nothing for the order any more. A row that ended
+        // cant or noskill still has the stack in the bags, so it keeps the
+        // figure a scan last found. Reported before the line and the row
+        // write below, so neither invents a figure.
+        bool handOffSucceeded = HandOffSucceeded(record.state);
         out.reportedHave = ReportedHaveThisPass(stocked, in.bankChecked, in.bankCount,
             record.stockTarget, record.delivered, record.reportedHave);
-        out.reportedCarry = ReportedCarryThisPass(terminal, in.scanned, in.botOnline, in.bagCount,
+        out.reportedCarry = ReportedCarryThisPass(record.state, in.scanned, in.botOnline, in.bagCount,
             in.mailboxCount, record.reportedCarry);
         // A fresh scan is the row's carry truth: fold it in and mark the row
         // dirty at once, so a bot that logs out before the next progress line
-        // still lists what it carried. A terminal row's zero is truth too and
-        // reaches the row although no scan runs for it. Only the line waits
-        // for the throttle.
+        // still lists what it carried. The zero after a hand-off is truth
+        // too and reaches the row although no scan runs for it. Only the line
+        // waits for the throttle.
         bool carryChanged = out.reportedCarry != record.reportedCarry;
-        if ((in.scanned || terminal) && carryChanged)
+        if ((in.scanned || handOffSucceeded) && carryChanged)
         {
             record.reportedCarry = out.reportedCarry;
             MarkDirtyLocked(stored);
@@ -2555,9 +2556,11 @@ uint32_t Carry(Player* bot, OrderRecord const& order)
 {
     if (!order.itemId)
         return 0;
+    bool terminal = IsTerminal(order.state);
     bool botOnline = bot && bot->IsInWorld();
-    uint32_t liveCarry = botOnline ? bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId) : 0;
-    return ListedCarry(botOnline, liveCarry, order.reportedCarry);
+    uint32_t liveCarry = botOnline && !terminal ?
+        bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId) : 0;
+    return ListedCarry(terminal, botOnline, liveCarry, order.reportedCarry);
 }
 
 std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry)

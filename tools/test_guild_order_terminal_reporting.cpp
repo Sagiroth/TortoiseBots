@@ -1,8 +1,9 @@
 // Standalone test for the guild order reporting seam
 // (runtime/GuildOrderGiveUpPolicy.h): a row reports the deposited count as
-// have on every pass, and a finished row reports zero carry even when no
-// scan ran after the deposit, so the final line and the stored row agree
-// with the offline list.
+// have on every pass, and only a successful hand-off clears the carry. A row
+// that ends cant with the stack still in the bags keeps the last scanned
+// figure, so the final line, the stored row and both list replies agree.
+#include "../runtime/GuildOrderContract.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 
 #include <cstdio>
@@ -18,7 +19,7 @@ int main()
     // row has delivered nothing yet.
     uint32_t delivered = 0;
     uint32_t reportedHave = 0;
-    uint32_t reportedCarry = ReportedCarryThisPass(false, true, true, 4, 1, 0);
+    uint32_t reportedCarry = ReportedCarryThisPass(OrderState::Working, true, true, 4, 1, 0);
     CHECK(reportedCarry == 5);
     reportedHave = ReportedHaveThisPass(false, false, 0, 0, delivered, reportedHave);
     CHECK(reportedHave == 0);
@@ -29,21 +30,43 @@ int main()
     delivered = 4;
     reportedHave = ReportedHaveThisPass(false, false, 0, 0, delivered, reportedHave);
     CHECK(reportedHave == 4);
-    uint32_t finishedCarry = ReportedCarryThisPass(true, false, false, 0, 0, reportedCarry);
-    CHECK(finishedCarry == 0);
+    bool const banked = HandOffSucceeded(OrderState::Done);
+    CHECK(banked);
+    reportedCarry = ReportedCarryThisPass(OrderState::Done, false, false, 0, 0, reportedCarry);
+    CHECK(reportedCarry == 0);
     // The final line and the row write take exactly these figures.
-    reportedCarry = finishedCarry;
     CHECK(ReportedHave(delivered, reportedHave) == 4);
-    CHECK(ListedCarry(false, 0, reportedCarry) == 0);
+    CHECK(ListedCarry(true, false, 0, reportedCarry) == 0);
+    CHECK(ListedCarry(true, true, 0, reportedCarry) == 0);
 
-    // A cant row with the stack still in the bags goes the same way: the
-    // order ended, so nothing is pending for it.
-    CHECK(ReportedCarryThisPass(true, false, true, 6, 2, 8) == 0);
-    CHECK(ReportedCarryThisPass(true, true, true, 6, 2, 0) == 0);
+    // Mailing the stack is the other successful hand-off: the items left the
+    // bags, so nothing is carried for the row any more.
+    CHECK(HandOffSucceeded(OrderState::Mailed));
+    CHECK(ReportedCarryThisPass(OrderState::Mailed, false, true, 0, 0, 6) == 0);
 
-    // A live row keeps the scanned carry, and an off-cadence pass holds it.
-    CHECK(ReportedCarryThisPass(false, true, true, 6, 2, 8) == 8);
-    CHECK(ReportedCarryThisPass(false, false, true, 0, 0, 8) == 8);
+    // The bank refused and there is no mail receiver: the row ends cant with
+    // the stack still in its bags. That is not a hand-off, so the last
+    // scanned carry stands and the list shows it online and offline alike.
+    CHECK(IsTerminal(OrderState::Cant));
+    CHECK(!HandOffSucceeded(OrderState::Cant));
+    CHECK(!HandOffSucceeded(OrderState::NoSkill));
+    uint32_t cantCarry = ReportedCarryThisPass(OrderState::Cant, false, false, 0, 0, 8);
+    CHECK(cantCarry == 8);
+    CHECK(ListedCarry(true, true, 0, cantCarry) == 8);
+    CHECK(ListedCarry(true, false, 0, cantCarry) == 8);
+
+    // A live row keeps its scanned carry, an off-cadence pass holds it, and
+    // the list reads the live bags while the row runs.
+    CHECK(ReportedCarryThisPass(OrderState::Working, true, true, 6, 2, 8) == 8);
+    CHECK(ReportedCarryThisPass(OrderState::Working, false, true, 0, 0, 8) == 8);
+    CHECK(!IsTerminal(OrderState::Working));
+    CHECK(ListedCarry(false, true, 9, 8) == 9);
+    CHECK(ListedCarry(false, false, 0, 8) == 8);
+
+    // A stocked row is finished but not over: it watches the bank for the
+    // next round, so it is no terminal row and no hand-off by itself.
+    CHECK(!IsTerminal(OrderState::Stocked));
+    CHECK(!HandOffSucceeded(OrderState::Stocked));
 
     // The stocked row reports the bank stock a fresh look saw and holds the
     // last figure when this pass read no bank.

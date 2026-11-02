@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include "GuildOrderContract.h"
 
 namespace TortoiseBots
 {
@@ -187,25 +188,28 @@ inline uint32_t ReportedHaveThisPass(bool stocked, bool bankChecked, uint32_t ba
     return bankCount > stockTarget ? stockTarget : bankCount;
 }
 
-// The carry a pass reports: what the bot still holds for the order. A
-// terminal row (a stocked row keeps its quota for the next round) holds
-// nothing for it any more - the stack went to the bank or the mail, or the
-// order ended without it - so the final line and the row write never repeat
-// the last pre-delivery scan.
-inline uint32_t ReportedCarryThisPass(bool terminal, bool scanned, bool botOnline, uint32_t bagCount,
+// The carry a pass reports: what the bot still holds for the order. Only a
+// successful hand-off (done after the bank deposit, mailed) empties it - the
+// stack left the bags for the guild. Every other row, a cant one with the
+// stack still in the bags included, keeps the last scanned figure, so the
+// final line and the row write agree with the list.
+inline uint32_t ReportedCarryThisPass(OrderState state, bool scanned, bool botOnline, uint32_t bagCount,
     uint32_t mailboxCount, uint32_t reportedCarry)
 {
-    if (terminal)
+    if (HandOffSucceeded(state))
         return 0;
     return ReportedCarry(scanned, botOnline, bagCount, mailboxCount, reportedCarry);
 }
 
-// The carry a list reply shows: a live bot's bags and mailbox, else the last
-// carry Tick put on the row. An offline bot's bags cannot be read, and zero
-// would claim it carries nothing.
-inline uint32_t ListedCarry(bool botOnline, uint32_t liveCarry, uint32_t reportedCarry)
+// The carry a list reply shows: a terminal row's stored figure, online or
+// not - the row is over, so its last scan is the answer and reading the live
+// bags would count items that are no longer for it. A row that still runs
+// reads its bags and mailbox; otherwise the last carry Tick put on the row,
+// because an offline bot's bags cannot be read and zero would claim it
+// carries nothing.
+inline uint32_t ListedCarry(bool terminal, bool botOnline, uint32_t liveCarry, uint32_t reportedCarry)
 {
-    return botOnline ? liveCarry : reportedCarry;
+    return terminal || !botOnline ? reportedCarry : liveCarry;
 }
 
 // A real rise in bag count seen while online on consecutive updates resets
