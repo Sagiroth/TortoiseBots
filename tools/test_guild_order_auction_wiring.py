@@ -138,6 +138,7 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertIn("void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)", STORE)
         set_supply = body(STORE, "void SetSupply(uint32_t botGuidLow", "\n    void SetNeedItems(")
         self.assertIn("NoteAuctionLegEntered(", set_supply)
+        self.assertIn("auctionGoldReturnItemId", set_supply)
         need = body(STORE, "void SetNeedItems(uint32_t botGuidLow", "\n    void AddNeedItem(")
         self.assertIn("MarkAuctionLadderEndLocked(", need)
         add = body(STORE, "void AddNeedItem(uint32_t botGuidLow", "\n    bool ReplaceNeedItems(")

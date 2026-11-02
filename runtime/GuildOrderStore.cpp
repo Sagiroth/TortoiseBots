@@ -764,10 +764,16 @@ public:
         bool const enteringAuction = step == SupplyStep::AuctionHouse &&
             (record.supplyStep != SupplyStep::AuctionHouse || record.supplyItemId != itemId);
         // A relist trip is the same purchase's bookkeeping, not a new
-        // search of the counter, so it earns no auction visit.
+        // search of the counter, and neither is walking back from a gold
+        // top-up: both belong to the visit that is already counted.
         bool const relistEntry = it->second.relistItemId == itemId && it->second.relistCount;
-        if (enteringAuction && !relistEntry)
+        bool const goldReturn = itemId && it->second.auctionGoldReturnItemId == itemId;
+        if (enteringAuction && goldReturn)
+            it->second.auctionGoldReturnItemId = 0;
+        else if (enteringAuction && !relistEntry)
             NoteAuctionLegEntered(it->second.auctionCycles[itemId], itemId);
+        if (step == SupplyStep::Bank && returnStep == SupplyStep::AuctionHouse && goldCount)
+            it->second.auctionGoldReturnItemId = itemId;
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
@@ -2024,6 +2030,7 @@ public:
                 record.farmItemId = 0;
                 record.farmRest = false;
                 it->second.auctionCycles.clear();
+                it->second.auctionGoldReturnItemId = 0;
                 record.deathsInZone = 0;
                 record.searchFailsInZone = 0;
                 record.searchZoneMoves = 0;
@@ -2362,6 +2369,7 @@ private:
         std::string reportNeed;
         OrderStepHistory steps; // memory only: the addon's step timeline
         std::unordered_map<uint32_t, AuctionLegCycle> auctionCycles; // per reagent, memory only
+        uint32_t auctionGoldReturnItemId = 0; // bank gold top-up returning to its auction visit
         uint32_t auctionReachStartedMs = 0; // arrived in the auctioneer's city; 0 = not yet
         uint32_t auctionLegStartedMs = 0;   // auction leg entered; bounds the travel
         uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
