@@ -276,6 +276,21 @@ int Run(const Args& args)
         if (Has(args, "--verbose"))
             for (const TickResult& tick : report.ticks)
                 std::cout << "  seq " << tick.seq << (tick.reproduced ? " reproduced" : " differs") << "\n";
+        for (const Expect& expect : fixture.expect)
+        {
+            std::string why;
+            bool satisfied = false;
+            for (const TickResult& tick : report.ticks)
+                if (tick.seq == expect.seq)
+                {
+                    satisfied = EvaluateExpect(expect, tick.got, tick.post, why);
+                    break;
+                }
+            if (!satisfied && why.empty())
+                why = "no such tick";
+            std::cout << "  seq " << expect.seq << " expectation: " << (satisfied ? "ok" : "failed") <<
+                (why.empty() ? "" : ": " + why) << "\n";
+        }
         for (const std::string& failure : report.failures)
             std::cout << "  " << failure << "\n";
         if (!report.pass)
@@ -365,7 +380,7 @@ int Synth(const Args& args)
     options.mode = "independent";
     options.status = "fixed";
     options.outDir = outDir;
-    options.segment = "scenario";
+    options.segment = "seg-0001.jsonl";
     std::string path;
     if (!Extract(capture, options, path, err))
     {

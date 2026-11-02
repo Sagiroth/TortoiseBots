@@ -1023,6 +1023,16 @@ inline Report Replay(const Fixture& fixture, const Options& options = Options())
         if (tick.kind != "tick")
         {
             result.diffs.push_back("undecodable record");
+            bool const checked = hasExpect ? tick.seq < firstExpect : true;
+            bool const mustReproduce = fixture.reproduce == "all" ? true :
+                                       fixture.reproduce == "before-first-mark" ? checked : false;
+            if (mustReproduce && !(fixture.mode == "chain" && diverged))
+                report.failures.push_back(fixture.name + ": seq " + std::to_string(tick.seq) +
+                                          " is undecodable: no keyframe in reach");
+            for (const Expect& expect : fixture.expect)
+                if (expect.seq == tick.seq)
+                    report.failures.push_back(fixture.name + ": seq " + std::to_string(tick.seq) +
+                                              ": expectation failed: the tick is undecodable");
             report.ticks.push_back(result);
             continue;
         }
