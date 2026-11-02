@@ -1091,6 +1091,141 @@ namespace ai
         return PickLinkedDeath(group.param, members);
     }
 
+    // What (re)started a dps_hold_after hold, for the log row.
+    enum class DpsHoldTrigger : std::uint8_t
+    {
+        None = 0,
+        Engage,  // the first sighting of the subject among a bot's attackers
+        Band,    // the row's health band went from closed to open
+        Spell,   // the subject started casting (or gained) the row's spell
+        Blink,   // the subject jumped more than 10 yd within 1.5 s
+    };
+
+    inline const char* DpsHoldTriggerName(DpsHoldTrigger trigger)
+    {
+        switch (trigger)
+        {
+            case DpsHoldTrigger::Engage:
+                return "engage";
+            case DpsHoldTrigger::Band:
+                return "band";
+            case DpsHoldTrigger::Spell:
+                return "spell";
+            case DpsHoldTrigger::Blink:
+                return "blink";
+            case DpsHoldTrigger::None:
+                break;
+        }
+        return "none";
+    }
+
+    // A blink: the subject moved more than 10 yd between two reads at most 1500 ms apart. A slower read is not
+    // comparable (a walk can cover 12 yd in 2 s), and the hold's other triggers answer a real cast or aura.
+    constexpr float kDpsHoldBlinkYd = 10.0f;
+    constexpr std::uint32_t kDpsHoldBlinkMs = 1500;
+    // A hold state nobody read for 10 minutes is stale (the subject left the fight); the caller drops it.
+    constexpr std::uint32_t kDpsHoldStaleMs = 600000;
+
+    inline bool DpsHoldBlinked(float lastX, float lastY, float x, float y, std::uint32_t dtMs)
+    {
+        if (dtMs > kDpsHoldBlinkMs)
+            return false;
+        float const dx = x - lastX;
+        float const dy = y - lastY;
+        return std::sqrt(dx * dx + dy * dy) > kDpsHoldBlinkYd;
+    }
+
+    // The hold of one subject and row, shared by every bot of the instance (the caller owns the map and its mutex).
+    // `startMs` is the latest trigger, `untilMs` its `param` seconds, `capMs` the until_tank cap (3 * param): the hold
+    // can never outlive it. The gate, cast and engage edges are stored, so a signal that stays true does not restart
+    // the hold; the last position and read time are the blink trigger's other half.
+    struct DpsHoldState
+    {
+        std::uint32_t startMs = 0;
+        std::uint32_t untilMs = 0;
+        std::uint32_t capMs = 0;
+        std::uint32_t lastReadMs = 0;
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool gateWasOpen = false;
+        bool castSeen = false;
+        bool engageSeen = false;
+        bool hasPos = false;
+        // The trigger that last restarted the hold, and when: one log row per trigger and bot reads them.
+        DpsHoldTrigger lastTrigger = DpsHoldTrigger::None;
+        std::uint32_t lastTriggerMs = 0;
+    };
+
+    // One read's facts. `engageEnabled`/`gateEnabled`/`castEnabled`/`blinkEnabled` say which triggers the row uses
+    // (the SQL shape decides, so the rule stays data): engage for a spell-less row that is not a blink, the band for
+    // a row with one, the spell for a row that has one, and blink for mode `blink`.
+    struct DpsHoldInputs
+    {
+        bool engaged = false;
+        bool engageEnabled = false;
+        // The row's whole gate (RowGateOpen): a closed band, the key off or a bot without `bot_aura` means the row
+        // does not apply, and a hold it started does not outlive it.
+        bool gateOpen = true;
+        bool gateEnabled = false;
+        bool castOrAuraSeen = false;
+        bool castEnabled = false;
+        bool blinkEnabled = false;
+        bool untilTank = false;
+        bool victimIsTank = false;
+        float holdSec = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+
+    // Applies one read to the hold and answers whether it is on. A trigger restarts it; a hold lasts `param` seconds
+    // from the latest trigger. With `untilTank`, a subject whose victim is not a tank keeps it on past that, up to
+    // 3 * param. `fired` (optional) names the trigger this read started.
+    inline bool DpsHoldTick(DpsHoldState& state, const DpsHoldInputs& in, std::uint32_t nowMs,
+                            DpsHoldTrigger* fired = nullptr)
+    {
+        if (fired)
+            *fired = DpsHoldTrigger::None;
+        std::uint32_t const holdMs = in.holdSec > 0.0f
+            ? static_cast<std::uint32_t>(in.holdSec * 1000.0f + 0.5f)
+            : 0;
+        DpsHoldTrigger trigger = DpsHoldTrigger::None;
+        if (in.gateOpen && in.engageEnabled && in.engaged && !state.engageSeen)
+        {
+            state.engageSeen = true;
+            trigger = DpsHoldTrigger::Engage;
+        }
+        if (in.gateOpen && in.gateEnabled && !state.gateWasOpen && trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Band;
+        if (in.gateOpen && in.castEnabled && in.castOrAuraSeen && !state.castSeen &&
+            trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Spell;
+        if (in.gateOpen && in.blinkEnabled && state.hasPos &&
+            DpsHoldBlinked(state.lastX, state.lastY, in.x, in.y, nowMs - state.lastReadMs) &&
+            trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Blink;
+        state.gateWasOpen = in.gateOpen;
+        state.castSeen = in.castOrAuraSeen;
+        state.lastX = in.x;
+        state.lastY = in.y;
+        state.lastReadMs = nowMs;
+        state.hasPos = true;
+        if (trigger != DpsHoldTrigger::None)
+        {
+            state.startMs = nowMs;
+            state.untilMs = nowMs + holdMs;
+            state.capMs = nowMs + 3 * holdMs;
+            state.lastTrigger = trigger;
+            state.lastTriggerMs = nowMs;
+            if (fired)
+                *fired = trigger;
+        }
+        if (!in.gateOpen || holdMs == 0)
+            return false;
+        if (nowMs < state.untilMs)
+            return true;
+        return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {

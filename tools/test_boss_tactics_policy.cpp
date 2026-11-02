@@ -1203,6 +1203,114 @@ int main()
         CHECK(last - first <= 7);
     }
 
+    // dps_hold_after: one fight-wide state per subject and row, whose triggers (engage, band opening, a spell or aura
+    // rising edge, a blink) restart a hold of `param` seconds. The hold is what the free DPS bots of the instance obey;
+    // any bot's read feeds the same state, as the linked_death latch does.
+    {
+        // Engage: the first sighting of the subject among the attackers starts the hold, which runs its seconds and no
+        // longer (released at 0 ms, still held after param would both be wrong).
+        DpsHoldState engage;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 4.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(DpsHoldTick(engage, in, 1000, &fired));
+        CHECK(fired == DpsHoldTrigger::Engage);
+        CHECK(engage.startMs == 1000);
+        CHECK(DpsHoldTick(engage, in, 1000 + 3999, nullptr));
+        CHECK(!DpsHoldTick(engage, in, 1000 + 4000, nullptr));  // param seconds: released at the boundary
+        CHECK(!DpsHoldTick(engage, in, 1000 + 9000, nullptr));  // the engage edge fires once, never again
+        CHECK(fired == DpsHoldTrigger::Engage);
+    }
+
+    // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
+    {
+        DpsHoldState band;
+        DpsHoldInputs in;
+        in.gateEnabled = true;
+        in.gateOpen = false;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(band, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 2000, nullptr));               // still inside the first band's hold
+        in.gateOpen = false;                                       // the band closed: 100 + 3000 = 3100
+        CHECK(!DpsHoldTick(band, in, 2100, nullptr));              // the row is not open now
+        CHECK(!DpsHoldTick(band, in, 3100, nullptr));              // and its hold does not come back
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 4000, &fired));                // reopening restarts it
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 6999, nullptr));
+        CHECK(!DpsHoldTick(band, in, 7000, nullptr));
+    }
+
+    // A spell or aura is a rising edge only: a value that stays true (an aura that lasts the whole hold) must not
+    // restart the hold on every read, or the hold would never end.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, in, 0, nullptr));                 // nothing seen yet
+        in.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(DpsHoldTick(spell, in, 3099, nullptr));               // still held, the signal is still true
+        CHECK(!DpsHoldTick(spell, in, 3100, nullptr));              // level, not edge: released at param
+    }
+
+    // A blink is a jump of more than 10 yd between two reads at most 1500 ms apart.
+    {
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 9.9f, 0.0f, 500));        // under 10 yd: no blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 10.1f, 0.0f, 500));
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 12.0f, 0.0f, 2000));      // 12 yd over 2 s: too slow to be a blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1500));       // the 1500 ms read gap is inclusive
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1501));
+        CHECK(!DpsHoldBlinked(5.0f, 5.0f, 5.0f, 5.0f, 10));         // standing still
+    }
+
+    // A blink mode restarts the hold on a jump, and the position is updated on every read.
+    {
+        DpsHoldState blink;
+        DpsHoldInputs in;
+        in.blinkEnabled = true;
+        in.holdSec = 3.0f;
+        in.x = 0.0f;
+        in.y = 0.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(blink, in, 0, nullptr));                 // no previous position: no blink
+        in.x = 12.0f;
+        CHECK(DpsHoldTick(blink, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Blink);
+        in.x = 12.0f;                                               // the same place on the next read
+        CHECK(!DpsHoldTick(blink, in, 3100, nullptr));              // and no second blink from standing there
+    }
+
+    // until_tank keeps the hold after param while the subject is on nobody but a tank's counterpart, and the cap at
+    // 3 * param ends it, so it can never deadlock. A tank victim releases it at param like any other hold.
+    {
+        DpsHoldState tank;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.untilTank = true;
+        in.victimIsTank = false;
+        in.holdSec = 4.0f;
+        CHECK(DpsHoldTick(tank, in, 0, nullptr));
+        CHECK(DpsHoldTick(tank, in, 11999, nullptr));               // the cap is 3 * 4 s = 12 s
+        CHECK(!DpsHoldTick(tank, in, 12000, nullptr));
+
+        DpsHoldState done;
+        in.victimIsTank = true;
+        CHECK(DpsHoldTick(done, in, 0, nullptr));
+        CHECK(!DpsHoldTick(done, in, 4000, nullptr));               // on the tank: released at param
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }
