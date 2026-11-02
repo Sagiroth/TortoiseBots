@@ -4173,7 +4173,12 @@ void RandomItemMgr::BuildPotionCache()
 
                     for (int i = 0 ; i < 3; i++)
                     {
-                        if (spellInfo->Effect[i] == effect)
+                        // Energize also covers rage, energy and pet items (Scooby Snack):
+                        // a failed use never starts the cooldown, so the reaction
+                        // retried and cut the bot's cast every tick.
+                        if (spellInfo->Effect[i] == effect &&
+                            (effect != SPELL_EFFECT_ENERGIZE ||
+                             (spellInfo->EffectMiscValue[i] == POWER_MANA && spellInfo->EffectImplicitTargetA[i] == TARGET_UNIT_CASTER)))
                         {
                             potionCache[level / 10][effect].push_back(itemId);
                             break;
