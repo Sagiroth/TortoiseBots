@@ -9,11 +9,17 @@ const vm = require("vm");
 const jsPath = path.resolve(process.argv[2]);
 const appPath = path.resolve(process.argv[3]);
 const cssPath = path.resolve(process.argv[4]);
+const histPath = path.resolve(process.argv[5]);
 const jsSrc = fs.readFileSync(jsPath, "utf8");
 const appSrc = fs.readFileSync(appPath, "utf8");
 const css = fs.readFileSync(cssPath, "utf8");
 
-const ctx = { console, encodeURIComponent, decodeURIComponent, Date, isFinite, Math, Number, String, JSON };
+// The link's night is the page's local night, so the check runs in a fixed
+// zone: 02:17 on 2 Nov in Oslo is after local midnight but still the night
+// of 1 Nov (the 06:00 rollover).
+process.env.TZ = "Europe/Oslo";
+
+const ctx = { console, encodeURIComponent, decodeURIComponent, Date, Intl, isFinite, Math, Number, String, JSON };
 vm.createContext(ctx);
 vm.runInContext(jsSrc, ctx, { filename: "underperf.js" });
 assert.ok(ctx.Underperf && typeof ctx.Underperf.html === "function", "underperf.js loads as the global Underperf");
@@ -33,29 +39,43 @@ assert.strictEqual(
   "a live bind without a bound time asks the last two hours from the floored minute");
 assert.strictEqual(
   run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, null)"),
-  "day=2026-11-01&run=last",
-  "a chosen night asks that day and its newest run");
+  "day=2026-11-01&run=all",
+  "the empty pick is the whole window, not its newest run");
 const today = new Date(1793547000000).toISOString().slice(0, 10);
 assert.strictEqual(
   run("Underperf.query({commander:'T', history:true}, {day:''}, 1793547000000, null)"),
-  "day=" + today + "&run=last",
-  "a history card on Tonight asks today's UTC day");
+  "day=" + today + "&run=all",
+  "a history card on Tonight asks today's UTC day for the whole night");
 assert.strictEqual(
   run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, '1')"),
   "day=2026-11-01&run=1",
   "the run pick becomes the run parameter");
 assert.strictEqual(
+  run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, 'last')"),
+  "day=2026-11-01&run=last",
+  "its own pick asks the newest run");
+assert.strictEqual(
   run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, null, '&tz=Europe%2FOslo&rollover=6')"),
-  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=last",
+  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=all",
   "with the picker's zone a chosen night asks as a local night");
 ctx.FightHistory = { nightOf: () => "2026-11-01" };
 assert.strictEqual(
   run("Underperf.query({commander:'T', history:true}, {day:''}, 1793547000000, null, '&tz=Europe%2FOslo&rollover=6')"),
-  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=last",
-  "a history card on Tonight asks the current local night");
+  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=all",
+  "a history card on Tonight asks the current local night for the whole night");
 delete ctx.FightHistory;
+vm.runInContext(fs.readFileSync(histPath, "utf8"), ctx, { filename: "fighthistory.js" });
+assert.ok(ctx.FightHistory && typeof ctx.FightHistory.nightOf === "function", "fighthistory.js loads its night rule into the check");
 assert.ok(appSrc.indexOf("Underperf.query(bind, fd, Date.now(), fd.underPick, fdNightParams())") >= 0,
   "app.js hands the picker's night params to the query");
+assert.ok(appSrc.indexOf("sel.value === '' || sel.value === 'all' ? null : sel.value") >= 0,
+  "app.js keeps the whole-window option as no pick");
+assert.ok(appSrc.indexOf("function fdUnderWin(bind, fd)") >= 0, "app.js names the underperf window");
+const winFn = appSrc.slice(appSrc.indexOf("function fdUnderWin(bind, fd)"), appSrc.indexOf("function fdUnderWin(bind, fd)") + 500);
+assert.ok(winFn.indexOf("bind.commander") >= 0 && winFn.indexOf("fd.day") >= 0 && winFn.indexOf("bind.history") >= 0
+  && winFn.indexOf("bound_at") >= 0, "the window key is the binding, the night, live/history and the live since instant");
+assert.ok(/st\.win !== win[\s\S]{0,200}fd\.underPick = null/.test(appSrc),
+  "app.js drops the run pick when the window changes");
 assert.ok(appSrc.indexOf("/api/v1/combat/underperformers?commander=") >= 0, "app.js calls the route");
 assert.ok(appSrc.indexOf("encodeURIComponent(bind.commander)") >= 0, "the commander is URL-encoded");
 
@@ -82,7 +102,7 @@ const REPORT = {
     ],
     causes: [],
     fight_refs: [{
-      key: KEY, day: "2026-11-01", start: 1793547200, step: 40, leg: "high_priestess_jeklik",
+      key: KEY, start: 1793547200, step: 40, leg: "high_priestess_jeklik",
       boss_name: "", outcome: "end", rules: ["dps_no_damage"], low: true,
     }],
   }],
@@ -95,12 +115,64 @@ assert.ok(out.indexOf("<img") < 0, "the bot name from the game server is escaped
 assert.ok(out.indexOf("&lt;img src=x onerror=1&gt;") >= 0, "the escaped name is shown");
 assert.ok(out.indexOf("\u2014") >= 0, "a null peer number renders as an em dash");
 assert.ok(out.indexOf('data-fd-open="' + encodeURIComponent(KEY) + '"') >= 0, "a fight link carries the encoded key");
-assert.ok(out.indexOf('data-fd-day="2026-11-01"') >= 0, "a fight link carries its day");
+assert.ok(out.indexOf('data-fd-day="2026-11-01"') >= 0, "a fight link opens on its local night, from its start");
 assert.ok(out.indexOf('data-fd-profile="861"') >= 0, "the name opens the profile by guid");
 assert.ok(out.indexOf('<option value="1" selected>') >= 0, "the picked run is selected");
 assert.ok(out.indexOf("No fights recorded for: Absent") >= 0, "a bound bot with no fight is named");
 assert.ok(out.indexOf("Range, line of sight and mana are not in the fight data yet") >= 0, "the not-measured note is present");
 assert.ok(out.indexOf("1 flagged") >= 0, "the header counts the flagged bots");
+
+// The picker: the whole window, its own newest run, then every run.
+ctx.opts = { pick: "last", bindBots: [], live: false };
+const lastOut = run("Underperf.html(st, opts)");
+assert.ok(lastOut.indexOf('<option value="last" selected>Last run</option>') >= 0, "the newest run is its own option");
+assert.ok(lastOut.indexOf(">Whole night</option>") >= 0, "a history card labels the whole window Whole night");
+assert.ok(lastOut.indexOf(">This run</option>") < 0, "a history card does not call the window a run");
+ctx.opts = { pick: "", bindBots: [], live: true };
+assert.ok(run("Underperf.html(st, opts)").indexOf(">This run</option>") >= 0, "a live card labels the whole window This run");
+ctx.opts = { pick: "1", bindBots: ["Holyface", "Absent"], live: true };
+
+// A fight after local midnight: 02:17 on 2 Nov in Oslo is the night of 1
+// Nov (the 06:00 rollover) though its UTC day is the 2nd.
+ctx.afterRep = {
+  fights: 1, judged: 1, truncated: false, runs: [],
+  bots: [{
+    name: "After", guid: 9, class: "rogue", role: "dps", level: "red", fights: 1, judged: 1, flagged: 1,
+    reasons: [], causes: [],
+    fight_refs: [{ key: "k2", start: 1793582220, step: 3, boss_name: "", low: true, rules: [] }],
+  }],
+  ok: [],
+};
+ctx.st = { res: ctx.afterRep };
+const nightOut = run("Underperf.html(st, {})");
+assert.ok(nightOut.indexOf('data-fd-day="2026-11-01"') >= 0,
+  "an after-midnight fight opens on its local night, not its UTC day (2 Nov)");
+assert.ok(new Date(1793582220 * 1000).toISOString().slice(0, 10) === "2026-11-02",
+  "the fixture's UTC day really is the 2nd");
+
+// A truncated window says which fights it read.
+ctx.st = { res: { fights: 500, judged: 400, truncated: true, limits: { max_fights: 500 }, bots: [], ok: [], runs: [] } };
+assert.ok(run("Underperf.html(st, {})").indexOf("(newest 500 fights only)") >= 0,
+  "a truncated window says how many fights it read");
+
+// A bot whose role changed is two rows but one bot in the header.
+ctx.st = {
+  res: {
+    fights: 3, judged: 3, truncated: false, runs: [], ok: [],
+    bots: [
+      { name: "Z", guid: 7, role: "dps", level: "red", fights: 2, judged: 2, flagged: 1, reasons: [], causes: [], fight_refs: [] },
+      { name: "Z", guid: 7, role: "healer", level: "yellow", fights: 1, judged: 1, flagged: 1, reasons: [], causes: [], fight_refs: [] },
+    ],
+  },
+};
+assert.ok(run("Underperf.html(st, {})").indexOf("· 1 bots · 2 flagged") >= 0,
+  "a guid seen in two roles counts once in the header");
+
+ctx.st = { res: REPORT, err: "run out of range" };
+const badOut = run("Underperf.html(st, opts)");
+assert.ok(badOut.indexOf('<select data-fd-underrun') >= 0, "a rejected run keeps the picker drawn");
+assert.ok(badOut.indexOf("run out of range") >= 0 && badOut.indexOf("<table") < 0,
+  "the error sits under the picker and no table is drawn from the old answer");
 
 ctx.st = { res: { fights: 12, judged: 12, bots: [], ok: [{ name: "A" }], runs: [] } };
 assert.ok(run("Underperf.html(st, {})").indexOf("No bot underperformed in these 12 fights.") >= 0,

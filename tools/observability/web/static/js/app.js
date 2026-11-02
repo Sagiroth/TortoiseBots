@@ -8803,6 +8803,15 @@
     fdUnderSync(card, bind, fd);
   }
 
+  // The window an underperf answer covers: the binding, its night (or "" for
+  // Tonight / a live card), live or history, and the live since instant. A
+  // run pick belongs to the window it was made in, so a new window starts
+  // again on the whole window rather than on a run index that may be gone.
+  function fdUnderWin(bind, fd) {
+    const bound = Number(bind && bind.bound_at) > 0 ? String(Math.floor(Number(bind.bound_at))) : "";
+    return [bind && bind.commander, (fd && fd.day) || "", bind && bind.history ? "hist" : "live", bound].join("|");
+  }
+
   // The underperforming bots section: one request per card per 30 s, or one when the window changes, and only while its
   // box is open. The <details> lives in the static card template, so the 2 s redraw keeps it open and only its body is
   // painted here. A fight link and the name button need no code: the card's click delegate already opens fights and
@@ -8810,8 +8819,16 @@
   function fdUnderSync(card, bind, fd) {
     const box = card.querySelector('.fd-underbox'), body = card.querySelector('.fd-underbody');
     if (!box || !body || typeof Underperf === 'undefined') return;
-    if (!fd.under) fd.under = { qs: '', at: 0, res: null, err: '', pending: false, drawn: false };
+    if (!fd.under) fd.under = { qs: '', at: 0, res: null, err: '', pending: false, drawn: false, win: '' };
     const st = fd.under;
+    const win = fdUnderWin(bind, fd);
+    if (st.win !== win) {
+      st.win = win;
+      fd.underPick = null;
+      st.err = '';
+      st.drawn = false;
+      st.at = 0;
+    }
     if (!box.dataset.fdBound) {
       box.dataset.fdBound = '1';
       box.addEventListener('toggle', () => {

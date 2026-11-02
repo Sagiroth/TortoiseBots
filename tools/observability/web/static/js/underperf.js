@@ -51,13 +51,13 @@
   // The window the section asks for: the live binding since it began, the
   // last two hours for a live card without a bound time, one night of the
   // rail, or tonight for a read-only history card. `pick` is the run select's
-  // value ("all", null/"" for the default, or an index). `nightQ` is the
-  // picker's tz and rollover params; with them the chosen night is a local
-  // night, as the history list groups it, and without them it is the old UTC
-  // day.
+  // value: "" for the whole window (run=all), "last" for its newest run, or
+  // an index. `nightQ` is the picker's tz and rollover params; with them the
+  // chosen night is a local night, as the history list groups it, and without
+  // them it is the old UTC day.
   function query(bind, fd, nowMs, pick, nightQ) {
     const chosen = pick === null || pick === undefined || pick === "" ? "" : String(pick);
-    const run = "&run=" + encodeURIComponent(chosen || "last");
+    const run = "&run=" + encodeURIComponent(chosen || "all");
     const zone = nightQ || "";
     if (fd && fd.day) {
       if (zone) return "night=" + encodeURIComponent(fd.day) + zone + run;
@@ -68,9 +68,9 @@
       if (night) return "night=" + encodeURIComponent(night) + zone + run;
       return "day=" + utcDay(nowMs) + run;
     }
-    if (bind && Number(bind.bound_at) > 0) return "since=" + Math.floor(Number(bind.bound_at)) + "&run=" + encodeURIComponent(chosen || "all");
+    if (bind && Number(bind.bound_at) > 0) return "since=" + Math.floor(Number(bind.bound_at)) + run;
     const since = Math.floor((Number(nowMs) / 1000 - 7200) / 60) * 60;
-    return "since=" + since + "&run=" + encodeURIComponent(chosen || "all");
+    return "since=" + since + run;
   }
 
   // The bound bots the window has no fight for: neither listed nor in ok.
@@ -86,12 +86,16 @@
     return out;
   }
 
+  // The run picker: the whole window first ("" — the whole night of a
+  // history card, the current binding of a live one), then its newest run
+  // alone ("last"), then each run of the window by index.
   function runSelect(res, opts) {
     const runs = Array.isArray(res.runs) ? res.runs : [];
     const pick = opts.pick === null || opts.pick === undefined || opts.pick === "" ? "" : String(opts.pick);
     const picked = pick || "";
     let out = '<label class="fd-undrunlab">Run <select data-fd-underrun aria-label="Run">';
     out += '<option value=""' + (picked === "" ? " selected" : "") + ">" + (opts.live ? "This run" : "Whole night") + "</option>";
+    out += '<option value="last"' + (picked === "last" ? " selected" : "") + ">Last run</option>";
     runs.forEach((r, i) => {
       const label = clock(r.since) + "-" + clock(r.until) + (r.plan ? " · " + r.plan : "") + " · " + fmtInt(r.fights) + " fights";
       const sel = String(i) === picked ? " selected" : "";
@@ -110,9 +114,21 @@
     return ref.boss_name ? ref.boss_name : "step " + (ref.step || 0);
   }
 
+  // The night a fight link opens: the page's local night of the fight's
+  // start, as the history list groups nights (06:00 rollover), so a fight
+  // after midnight opens on the night it was played in. The answer carries
+  // no day of its own; a fight without a start opens on Tonight.
+  function refNight(ref) {
+    if (ref && ref.start && typeof FightHistory !== "undefined" && FightHistory.nightOf) {
+      const night = FightHistory.nightOf(Number(ref.start) * 1000);
+      if (night) return night;
+    }
+    return "";
+  }
+
   function refLink(ref) {
     return '<button type="button" class="fd-undfight" data-fd-open="' + esc(encodeURIComponent(ref.key)) + '" data-fd-day="'
-      + esc(ref.day || "") + '">' + esc(refLabel(ref)) + "</button>";
+      + esc(refNight(ref)) + '">' + esc(refLabel(ref)) + "</button>";
   }
 
   function row(bot) {
@@ -151,19 +167,52 @@
       + "</tr></thead><tbody>" + bots.map(row).join("") + "</tbody></table></div>";
   }
 
+  // The bots an answer names, each guid once: a bot whose role changed in
+  // the window is two rows, one per role, but still one bot.
+  function botCount(res) {
+    const seen = {};
+    let n = 0;
+    const add = (rows) => (rows || []).forEach((b) => {
+      if (!b) return;
+      const key = b.guid !== null && b.guid !== undefined && b.guid !== "" ? "g" + b.guid : "n" + b.name;
+      if (seen[key]) return;
+      seen[key] = true;
+      n++;
+    });
+    add(res.bots);
+    add(res.ok);
+    return n;
+  }
+
+  // The `truncated` note: the window held more fights than one answer keeps.
+  function truncNote(res) {
+    const cap = res.limits && Number(res.limits.max_fights) > 0 ? fmtInt(res.limits.max_fights) : "";
+    return "(" + (cap ? "newest " + cap + " fights only" : "newest fights only") + ")";
+  }
+
   function html(st, opts) {
     opts = opts || {};
     st = st || {};
-    if (st.err) return '<p class="fd-undlead fd-underr">' + esc(st.err) + "</p>";
-    if (!st.res) return '<p class="fd-undlead">Loading…</p>';
     const res = st.res;
+    // A rejected pick (400: the run went away with the window) keeps the
+    // picker under the error, so another run can be picked; no table is
+    // drawn from the answer of the window before it.
+    if (st.err) {
+      if (!res) return '<p class="fd-undlead fd-underr">' + esc(st.err) + "</p>";
+      return '<div class="fd-undhead">' + runSelect(res, opts) + "</div>"
+        + '<p class="fd-undlead fd-underr">' + esc(st.err) + "</p>";
+    }
+    if (!res) return '<p class="fd-undlead">Loading…</p>';
     if (!res.fights) return '<p class="fd-undlead">No fights recorded in this window.</p>';
     const bots = Array.isArray(res.bots) ? res.bots : [];
     const ok = Array.isArray(res.ok) ? res.ok : [];
     const out = [];
     out.push('<div class="fd-undhead"><span class="fd-undsum">' + fmtInt(res.fights) + " fights, " + fmtInt(res.judged)
-      + " judged · " + fmtInt(bots.length + ok.length) + " bots · " + fmtInt(bots.length) + " flagged</span>"
+      + " judged · " + fmtInt(botCount(res)) + " bots · " + fmtInt(bots.length) + " flagged</span>"
       + runSelect(res, opts) + "</div>");
+    if (res.truncated) {
+      out.push('<p class="fd-undtrunc">' + esc(truncNote(res)) + "</p>");
+    }
     if (!bots.length) {
       out.push('<p class="fd-undlead">No bot underperformed in these ' + fmtInt(res.fights) + " fights.</p>");
     } else {

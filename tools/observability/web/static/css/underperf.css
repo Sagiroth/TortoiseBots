@@ -28,4 +28,5 @@
 .fd-under .fd-undfight { margin: 0 4px 3px 0; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: inherit; font-size: 0.72rem; cursor: pointer; }
 .fd-under .fd-undmore, .fd-under .fd-undmiss, .fd-under .fd-undnote, .fd-under .fd-undoek, .fd-under .fd-undlead { color: var(--text-muted); font-size: 0.74rem; }
 .fd-under .fd-undnote { margin-top: 6px; }
+.fd-under .fd-undtrunc { margin: 2px 0 0; color: var(--text-muted); font-size: 0.74rem; }
 .fd-under .fd-underr { color: var(--fd-fail); }
