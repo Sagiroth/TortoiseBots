@@ -2857,7 +2857,7 @@
   // what the bot does now; the sub-orders it handed out sit right under it.
   // A click opens the details: where the bot is and heads, the steps so far
   // and what it looted or bought. Polled every 5 s while the tab is open.
-  const gord = { data: null, error: null, search: '', guild: '', show: 'active', open: {}, seq: 0 };
+  const gord = { data: null, error: null, search: '', guild: '', show: 'active', open: {}, seq: 0, fetchedAt: 0 };
   const GO_FINISHED = { done: 1, mailed: 1, cant: 1, noskill: 1, stocked: 1 };
   const GO_STATE = {
     working: ['Working', 'go-s-work'], waiting: ['Waiting', 'go-s-wait'], delivering: ['Delivering', 'go-s-work'],
@@ -2878,6 +2878,7 @@
   };
 
   function goFetch() {
+    gord.fetchedAt = Date.now();
     const seq = ++gord.seq;
     fetch('/api/v1/guild-orders')
       .then(jsonOrThrow)
@@ -3109,8 +3110,13 @@
       renderGuildOrders();
     });
     goFetch();
-    setInterval(refreshGate.guard(() => { if (state.activeTab === 'guildorders') goFetch(); }), 5000);
-    setInterval(refreshGate.guard(() => { if (state.activeTab !== 'guildorders') goFetch(); }), 60000);
+  }
+
+  // Polled from the roster snapshot (it follows the refresh rate and pauses
+  // with it): every 5 s while the tab is open, every minute for the badge.
+  function goTick() {
+    const every = state.activeTab === 'guildorders' ? 5000 : 60000;
+    if (Date.now() - gord.fetchedAt >= every) goFetch();
   }
 
   // ---- Auction house (read-only) ---------------------------------------------
@@ -5215,6 +5221,7 @@
       refreshGate.submit('snapshot', () => {
         const prevCount = state.bots.length;
         state.bots = Array.isArray(data.bots) ? data.bots : [];
+        goTick();
         if (data.grinding) state.grinding = data.grinding;
         if (data.info) { state.serverInfo = data.info; renderServerPanel(); applyCommanderTabFlag(); }
         applyIssues(data.issues);
