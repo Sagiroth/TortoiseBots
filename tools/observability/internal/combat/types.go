@@ -148,11 +148,12 @@ type Warning struct {
 
 // Rule is one row of rules.json.
 type Rule struct {
-	ID        string `json:"id"`
-	Level     string `json:"level"`
-	Role      string `json:"role"`
-	Class     string `json:"class"`
-	Text      string `json:"text"`
-	MinFightS int    `json:"min_fight_s"`
-	Condition string `json:"condition"`
+	ID            string `json:"id"`
+	Level         string `json:"level"`
+	Role          string `json:"role"`
+	Class         string `json:"class"`
+	Text          string `json:"text"`
+	MinFightS     int    `json:"min_fight_s"`
+	MinRoleMedian int    `json:"min_role_median"`
+	Condition     string `json:"condition"`
 }

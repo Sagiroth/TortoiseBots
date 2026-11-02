@@ -2,18 +2,20 @@ package combat
 
 import (
 	"encoding/json"
+	"os"
+	"regexp"
 	"testing"
 )
 
-// A fixture fight: a 30 s Molten Core pull. Tanky (warrior tank, no Sunder)
+// A fixture fight: a 60 s Molten Core pull. Tanky (warrior tank, no Sunder)
 // fires tank_no_sunder; Pawswipe (druid tank, casts Maul) fires nothing;
-// Healy (priest, 0 heals) fires healer_no_heals; Pew (mage, 0 damage) fires
-// dps_no_damage.
+// Healy (priest, 0 heals, peer Mendy heals 5000) fires healer_no_heals; Pew
+// (mage, 0 damage, peer Boom deals 6000) fires dps_no_damage.
 func fixtureFight() Fight {
 	return Fight{
 		ID: "55-1", Commander: "Gbmage", CommanderGUID: 9, Group: 55, Map: 409,
 		Plan: "molten_core", Leg: "l1", Step: 3, Kind: "boss",
-		Start: 1700023000, DurMS: 30000, Outcome: "kill",
+		Start: 1700023000, DurMS: 60000, Outcome: "kill",
 		Boss: 11502, BossName: "Magmadar", Planned: []uint32{11502},
 		Engaged: []EngagedEntry{{E: 11502, N: "Magmadar", C: 1}, {E: 11673, N: "Core Hound", C: 2}},
 		Bots: []FightBot{
@@ -22,11 +24,14 @@ func fixtureFight() Fight {
 			{Name: "Pawswipe", GUID: 4, Class: "druid", Role: "tank", Sub: 1, Dmg: 900, Taken: 2500, Casts: 3,
 				Spells: []SpellCount{{N: "Maul", C: 3}}},
 			{Name: "Healy", GUID: 2, Class: "priest", Role: "healer", Sub: 0, Dmg: 0, Heal: 0, Casts: 0},
+			{Name: "Mendy", GUID: 5, Class: "priest", Role: "healer", Sub: 1, Dmg: 0, Heal: 5000, HealCasts: 8, Casts: 8,
+				Spells: []SpellCount{{N: "Heal", C: 8}}},
 			{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: 0, Taken: 400, Casts: 5,
 				Spells: []SpellCount{{N: "Fireball", C: 5}}},
+			{Name: "Boom", GUID: 6, Class: "mage", Role: "dps", Sub: 1, Dmg: 6000, Taken: 100, Casts: 12,
+				Spells: []SpellCount{{N: "Fireball", C: 12}}},
 		},
-		Debuffs: FightDebuffs{SampledS: 10, UpS: map[string]uint64{"sunder5": 6, "faerie_fire": 10}},
-		Deaths:  []FightDeath{},
+		Deaths: []FightDeath{},
 	}
 }
 
@@ -82,7 +87,7 @@ func TestJudgeSkipsDeadWholeFight(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := fixtureFight()
-	f.Bots[3].Deaths = 1
+	f.Bots[4].Deaths = 1
 	f.Deaths = []FightDeath{{Name: "Pew", TMs: 2000, X: 1, Y: 2, Z: 3, Killer: "Magmadar"}}
 	w := Judge(f, rules)
 	for _, x := range w {
@@ -230,5 +235,141 @@ func TestStoreReadsModuleBytes(t *testing.T) {
 	}
 	if len(f.Bots[0].TailSpells) != 1 || f.Bots[0].TailSpells[0].N != "Drink" || f.Bots[0].TailSpells[0].C != 1 {
 		t.Fatalf("tail spells: %+v", f.Bots[0].TailSpells)
+	}
+}
+
+// A warrior tank whose spell list is cut at the module cap may hide Sunder:
+// no verdict on it. One entry short of the cap still judges.
+func TestRuleSkipsTruncatedSpellList(t *testing.T) {
+	mkTank := func(n int) Fight {
+		spells := make([]SpellCount, 0, n)
+		for range n {
+			spells = append(spells, SpellCount{N: "Heroic Strike", C: 1})
+		}
+		return Fight{ID: "t1", Commander: "C", Start: 1, DurMS: 60000,
+			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100, Spells: spells}}}
+	}
+	sunder := `[{"id":"tank_no_sunder","level":"red","role":"tank","class":"warrior","min_fight_s":20,"condition":"spell_count_zero:Sunder Armor","text":"{bot}"}]`
+	rules, err := LoadRules([]byte(sunder))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkTank(11), rules); len(w) != 1 {
+		t.Fatalf("11 listed spells, no Sunder: want 1 warning, got %v", w)
+	}
+	if w := Judge(mkTank(12), rules); len(w) != 0 {
+		t.Fatalf("12 listed spells may hide Sunder: want no warning, got %v", w)
+	}
+}
+
+// The no_damage rule fires only when the peer dps median clears the floor:
+// an idle raid punishes nobody.
+func TestNoDamageNeedsPeerMedian(t *testing.T) {
+	mkFight := func(peerDmg uint64) Fight {
+		return Fight{ID: "d1", Commander: "C", Start: 1, DurMS: 60000,
+			Bots: []FightBot{
+				{Name: "Pew", GUID: 1, Class: "mage", Role: "dps", Dmg: 0},
+				{Name: "Peer", GUID: 2, Class: "mage", Role: "dps", Dmg: peerDmg},
+			}}
+	}
+	idle := `[{"id":"dps_no_damage","level":"red","role":"dps","min_fight_s":0,"condition":"no_damage","text":"{bot}","min_role_median":2000}]`
+	rules, err := LoadRules([]byte(idle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkFight(1000), rules); len(w) != 0 {
+		t.Fatalf("peer median 1000 below the 2000 floor: want no warning, got %v", w)
+	}
+	if w := Judge(mkFight(2000), rules); len(w) != 1 || w[0].Bot != "Pew" {
+		t.Fatalf("peer median 2000 meets the 2000 floor: want Pew warned, got %v", w)
+	}
+	if w := Judge(mkFight(5000), rules); len(w) != 1 || w[0].Bot != "Pew" {
+		t.Fatalf("peer median 5000 clears the 2000 floor: want Pew warned, got %v", w)
+	}
+}
+
+// The no_healing rule fires only when the peer healer median clears the
+// floor: a quiet pull punishes nobody.
+func TestNoHealsNeedsPeerMedian(t *testing.T) {
+	mkFight := func(peerHeal uint64) Fight {
+		return Fight{ID: "h1", Commander: "C", Start: 1, DurMS: 60000,
+			Bots: []FightBot{
+				{Name: "Healy", GUID: 1, Class: "priest", Role: "healer", Heal: 0},
+				{Name: "Peer", GUID: 2, Class: "priest", Role: "healer", Heal: peerHeal},
+			}}
+	}
+	quiet := `[{"id":"healer_no_heals","level":"red","role":"healer","min_fight_s":0,"condition":"no_healing","text":"{bot}","min_role_median":3000}]`
+	rules, err := LoadRules([]byte(quiet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkFight(500), rules); len(w) != 0 {
+		t.Fatalf("peer median 500 below the 3000 floor: want no warning, got %v", w)
+	}
+	if w := Judge(mkFight(3000), rules); len(w) != 1 || w[0].Bot != "Healy" {
+		t.Fatalf("peer median 3000 meets the 3000 floor: want Healy warned, got %v", w)
+	}
+	if w := Judge(mkFight(4000), rules); len(w) != 1 || w[0].Bot != "Healy" {
+		t.Fatalf("peer median 4000 clears the 3000 floor: want Healy warned, got %v", w)
+	}
+}
+
+// A bot dead before half the fight is not judged on output: a death early
+// is not idleness. A death past half still judges.
+func TestDeadInFirstHalfNotJudged(t *testing.T) {
+	mkFight := func(deathMS uint32) Fight {
+		return Fight{ID: "e1", Commander: "C", Start: 1, DurMS: 69000,
+			Bots: []FightBot{
+				{Name: "Pew", GUID: 1, Class: "mage", Role: "dps", Dmg: 0, Deaths: 1},
+				{Name: "Peer", GUID: 2, Class: "mage", Role: "dps", Dmg: 9000},
+			},
+			Deaths: []FightDeath{{Name: "Pew", TMs: deathMS, Killer: "B"}}}
+	}
+	row := `[{"id":"dps_no_damage","level":"red","role":"dps","min_fight_s":0,"condition":"no_damage","text":"{bot}","min_role_median":2000}]`
+	rules, err := LoadRules([]byte(row))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkFight(12000), rules); len(w) != 0 {
+		t.Fatalf("death at 12 s of 69 s: want no warning, got %v", w)
+	}
+	if w := Judge(mkFight(40000), rules); len(w) != 1 || w[0].Bot != "Pew" {
+		t.Fatalf("death at 40 s of 69 s: want Pew warned, got %v", w)
+	}
+}
+
+// The shipped tank_no_sunder row must wait for a 45 s fight, not a 20 s
+// trash pull: at 44 s it warns nothing, at 45 s it judges.
+func TestSunderRuleNeeds45s(t *testing.T) {
+	mkTank := func(dur uint32) Fight {
+		return Fight{ID: "s1", Commander: "C", Start: 1, DurMS: dur,
+			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100,
+				Spells: []SpellCount{{N: "Heroic Strike", C: 3}}}}}
+	}
+	rules, err := LoadRules(DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkTank(44000), rules); len(w) != 0 {
+		t.Fatalf("44 s trash fight: want no warning, got %v", w)
+	}
+	if w := Judge(mkTank(45000), rules); len(w) != 1 {
+		t.Fatalf("45 s fight: want 1 warning, got %v", w)
+	}
+}
+
+// The truncation skip keys on the module's spell-list cap: the pin reads it
+// from runtime/CombatMonitorPolicy.h.
+func TestMaxSpellsPerBotPinnedToModule(t *testing.T) {
+	raw, err := os.ReadFile("../../../../runtime/CombatMonitorPolicy.h")
+	if err != nil {
+		t.Skip("module checkout not above the dashboard")
+	}
+	m := regexp.MustCompile(`kMaxSpellsPerBot\s*=\s*(\d+)`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatal("kMaxSpellsPerBot not found in runtime/CombatMonitorPolicy.h")
+	}
+	if string(m[1]) != "12" {
+		t.Fatalf("kMaxSpellsPerBot = %s, want 12", m[1])
 	}
 }
