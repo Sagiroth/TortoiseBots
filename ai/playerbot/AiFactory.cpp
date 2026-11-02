@@ -845,7 +845,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else
             {
-                combatEngine->addStrategies("balance", "dps assist", "flee", "ranged", NULL);
+                combatEngine->addStrategies("balance", "dps assist", "flee", "ranged", "oom melee", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offheal");
             }
@@ -938,7 +938,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
             if (player->GetClass() == CLASS_DRUID && tab == 2)
             {
-                combatEngine->addStrategies("balance", "ranged", NULL);
+                combatEngine->addStrategies("balance", "ranged", "oom melee", NULL);
                 combatEngine->removeStrategy("close");
             }
 
