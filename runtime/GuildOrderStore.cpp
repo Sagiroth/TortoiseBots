@@ -756,8 +756,10 @@ public:
         }
         if (step != record.supplyStep || itemId != record.supplyItemId)
             record.searchZoneMoves = 0;
-        // The reach deadline belongs to one auction visit: entering the leg
-        // (or changing its item) starts it, leaving the leg clears it.
+        // Two clocks belong to the auction leg: entering it (or changing its
+        // item) starts the travel cap, and the reach deadline starts only when
+        // the bot arrives in the auctioneer's city. Leaving the leg clears
+        // both.
         bool const enteringAuction = step == SupplyStep::AuctionHouse &&
             (record.supplyStep != SupplyStep::AuctionHouse || record.supplyItemId != itemId);
         record.supplyStep = step;
@@ -767,9 +769,15 @@ public:
         record.supplyGoldCount = goldCount;
         record.reason = reason;
         if (enteringAuction)
-            it->second.auctionReachStartedMs = WorldTimer::getMSTime();
-        else if (step != SupplyStep::AuctionHouse)
+        {
             it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = WorldTimer::getMSTime();
+        }
+        else if (step != SupplyStep::AuctionHouse)
+        {
+            it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = 0;
+        }
         MarkDirtyLocked(it->second);
         it->second.supplySearch = SupplySearchStreak{};
     }
@@ -1251,13 +1259,36 @@ public:
             return 0;
         OrderRecord& record = it->second.record;
         record.arrivedAuctionVisits = auctioneerInReach ? 0 : record.arrivedAuctionVisits + 1;
+        // The travel target landed: the reach deadline starts here (and
+        // clears when the arrival already has the auctioneer in reach).
+        if (auctioneerInReach)
+        {
+            it->second.auctionReachStartedMs = 0;
+            it->second.auctionLegStartedMs = 0;
+        }
+        else if (!it->second.auctionReachStartedMs)
+            it->second.auctionReachStartedMs = WorldTimer::getMSTime();
         MarkDirtyLocked(it->second);
         return record.arrivedAuctionVisits;
     }
 
-    // The reach clock starts when the leg is entered (SetSupply) and this
-    // method reports the deadline once. Started here too so a row loaded
-    // with an auction leg on restart gets its full window.
+    // The bot came within sight of an auctioneer of the city it stands in: the
+    // reach deadline starts here, not where the leg was entered.
+    void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return;
+        if (!it->second.auctionReachStartedMs)
+            it->second.auctionReachStartedMs = nowMs;
+    }
+
+    // Either auction clock running out hands the leg back to the ladder: the
+    // reach deadline once the bot arrived in the city, the travel cap while it
+    // is still walking. Neither clock starts at leg entry, so a bot in the
+    // field keeps its whole walk.
     bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1265,21 +1296,19 @@ public:
         if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
             it->second.record.supplyStep != SupplyStep::AuctionHouse)
             return false;
-        uint32_t& started = it->second.auctionReachStartedMs;
-        if (!started)
-        {
-            started = nowMs;
-            return false;
-        }
-        return AuctionUnreachableElapsed(started, nowMs);
+        return AuctionUnreachableElapsed(it->second.auctionReachStartedMs, nowMs) ||
+            AuctionLegTravelCapped(it->second.auctionLegStartedMs, nowMs);
     }
 
     void NoteAuctioneerInReach(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
-        if (it != m_orders.end())
-            it->second.auctionReachStartedMs = 0;
+        if (it == m_orders.end())
+            return;
+        // The walk is over: neither clock has anything left to time.
+        it->second.auctionReachStartedMs = 0;
+        it->second.auctionLegStartedMs = 0;
     }
 
     void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
@@ -1342,21 +1371,32 @@ public:
         entry.expiresAtSec = entry.postedAtSec + durationSec;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            std::vector<RelistLedgerEntry>& rows = m_relist[botGuidLow];
             entry.seq = 1;
-            for (RelistLedgerEntry const& row : rows)
+            for (RelistLedgerEntry const& row : m_relist[botGuidLow])
                 if (row.seq >= entry.seq)
                     entry.seq = row.seq + 1;
-            rows.push_back(entry);
         }
-        CharacterDatabase.PExecute(
-            "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
-            "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
-            "`received`, `held_gold`, `held_count`) "
-            "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
-            entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
-            entry.bid, entry.buyout, entry.deposit, static_cast<uint32_t>(entry.postedAtSec),
-            static_cast<uint32_t>(entry.expiresAtSec));
+        // The checked write lands before the row exists in memory: a failed
+        // insert must not leave a debt only this process knows about.
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
+                "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
+                "`received`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
+                entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
+                entry.bid, entry.buyout, entry.deposit, static_cast<uint32_t>(entry.postedAtSec),
+                static_cast<uint32_t>(entry.expiresAtSec)))
+        {
+            TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u) was posted but its "
+                "ledger row could not be written; the value is not tracked.", botGuidLow, itemId, count);
+            return;
+        }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry>& rows = m_relist[botGuidLow];
+        for (RelistLedgerEntry const& row : rows)
+            if (row.seq == entry.seq)
+                return;
+        rows.push_back(entry);
     }
 
     // The bot's ledger rows, oldest first. Any thread.
@@ -1380,24 +1420,40 @@ public:
             auto it = m_relist.find(botGuidLow);
             if (it == m_relist.end())
                 return false;
-            for (RelistLedgerEntry& entry : it->second)
+            for (RelistLedgerEntry const& entry : it->second)
             {
                 if (entry.seq != seq)
                     continue;
-                entry.received = true;
-                entry.heldGold = entry.heldGold > gold ? entry.heldGold : gold;
-                entry.heldCount = entry.heldCount > items ? entry.heldCount : items;
                 updated = entry;
+                updated.received = true;
+                updated.heldGold = entry.heldGold > gold ? entry.heldGold : gold;
+                updated.heldCount = entry.heldCount > items ? entry.heldCount : items;
                 found = true;
                 break;
             }
         }
         if (!found)
             return false;
-        CharacterDatabase.PExecute(
-            "UPDATE `tortoise_bots_guild_relist` SET `received` = '1', `held_gold` = '%u', "
-            "`held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
-            updated.heldGold, updated.heldCount, botGuidLow, seq);
+        // Checked first: a row that the table did not record stays unread in
+        // memory too, so a restart cannot forget the debt it never stored.
+        if (!CharacterDatabase.DirectPExecute(
+                "UPDATE `tortoise_bots_guild_relist` SET `received` = '1', `held_gold` = '%u', "
+                "`held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                updated.heldGold, updated.heldCount, botGuidLow, seq))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return true;
+        for (RelistLedgerEntry& entry : it->second)
+        {
+            if (entry.seq != seq)
+                continue;
+            entry.received = true;
+            entry.heldGold = updated.heldGold;
+            entry.heldCount = updated.heldCount;
+            break;
+        }
         return true;
     }
 
@@ -1456,21 +1512,8 @@ public:
         return true;
     }
 
-    // Any value collected from a relist mail is due to the guild.
-    bool RelistDepositPending(uint32_t botGuidLow)
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_relist.find(botGuidLow);
-        if (it == m_relist.end())
-            return false;
-        for (RelistLedgerEntry const& entry : it->second)
-            if (RelistNeedsDeposit(entry))
-                return true;
-        return false;
-    }
-
-    // The received rows the bank trip has to pay out, oldest first. World
-    // thread only (the relist drain).
+    // The received rows the bank trip has to pay out, oldest first. Any
+    // thread: the bank action checks what it can pay, the drain pays it.
     std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -2269,7 +2312,8 @@ private:
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
         OrderStepHistory steps; // memory only: the addon's step timeline
-        uint32_t auctionReachStartedMs = 0; // auction leg entered; 0 = reached or not running
+        uint32_t auctionReachStartedMs = 0; // arrived in the auctioneer's city; 0 = not yet
+        uint32_t auctionLegStartedMs = 0;   // auction leg entered; bounds the travel
         uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
         uint32_t relistCount = 0;
         uint32_t relistUnitPrice = 0;
@@ -3185,6 +3229,11 @@ void NoteAuctioneerInReach(uint32_t botGuidLow)
     OrderStore::Instance().NoteAuctioneerInReach(botGuidLow);
 }
 
+void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteAuctionZoneArrival(botGuidLow, nowMs);
+}
+
 void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
 {
     OrderStore::Instance().NoteRelistSurplus(botGuidLow, itemId, count, unitPrice);
@@ -3225,11 +3274,6 @@ bool SaveRelistRow(RelistLedgerEntry const& row)
 bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq)
 {
     return OrderStore::Instance().DeleteRelist(botGuidLow, seq);
-}
-
-bool RelistDepositPending(uint32_t botGuidLow)
-{
-    return OrderStore::Instance().RelistDepositPending(botGuidLow);
 }
 
 std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)

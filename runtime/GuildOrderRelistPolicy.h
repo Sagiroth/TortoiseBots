@@ -119,6 +119,41 @@ inline size_t RelistMatchCount(std::vector<RelistLedgerEntry> const& rows, Relis
     return matches;
 }
 
+// The row a mail may settle. Look-alike rows of one guild (the same terms
+// posted twice, for instance two visits that both posted) are safe to settle
+// as the oldest: that guild is credited either way. Matches spanning guilds
+// stay ambiguous and consume nothing, because one guild would be paid with
+// another auction's value.
+inline bool RelistSettleIndex(std::vector<RelistLedgerEntry> const& rows, RelistMail const& mail,
+    uint64_t nowSec, size_t& index)
+{
+    size_t matches = 0;
+    size_t oldest = 0;
+    uint32_t guildId = 0;
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        if (rows[i].received || RelistMailMatch(rows[i], mail, nowSec) == RelistMailKind::None)
+            continue;
+        if (!matches)
+        {
+            oldest = i;
+            guildId = rows[i].guildId;
+        }
+        else
+        {
+            if (rows[i].guildId != guildId)
+                return false;
+            if (rows[i].seq < rows[oldest].seq)
+                oldest = i;
+        }
+        ++matches;
+    }
+    if (!matches)
+        return false;
+    index = oldest;
+    return true;
+}
+
 // Nothing returned after three days: the posting can no longer report on the
 // auction house, so the entry stops being a payable debt (the store drops it
 // with a log line).
@@ -146,6 +181,13 @@ inline void RelistNoteMailReceived(RelistLedgerEntry& entry, RelistMailKind kind
 inline bool RelistNeedsDeposit(RelistLedgerEntry const& entry)
 {
     return entry.received && (entry.heldGold > 0 || entry.heldCount > 0);
+}
+
+// A banker visit only earns its trip when the bot can hand the value over
+// now: sale gold in its purse, or the returned stack still in its bags.
+inline bool RelistDepositableNow(RelistLedgerEntry const& entry, uint32_t cash, uint32_t bagCount)
+{
+    return RelistNeedsDeposit(entry) && ((entry.heldGold && cash) || (entry.heldCount && bagCount));
 }
 
 // What one bank visit knows about the bot: its guild now, whether a banker is

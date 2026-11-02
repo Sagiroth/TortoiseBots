@@ -164,14 +164,19 @@ void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId);
 // the consecutive count; the caller moves the ladder down at the visit
 // limit. Map thread only (arrival).
 uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach);
-// The auction leg has run this long without an auctioneer in reach: the
-// caller hands off with OrderReason::NoAuctioneer. Starts the clock on the
-// first call after the leg was entered and reports true once the deadline
-// passed. Map thread only (the ladder refresh).
+// Either auction clock ran out: the bot arrived in the auctioneer's city and
+// spent the reach deadline there, or the leg spent its whole travel cap.
+// Entering the leg no longer starts the reach deadline, so a bot in the field
+// keeps its walk. Map thread only (the ladder refresh).
 bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs);
-// An auctioneer came into interact range on the auction leg: the reach clock
-// clears, so a later arrival never trips the deadline. Map thread only.
+// An auctioneer came into interact range on the auction leg: both clocks
+// clear (the walk is over), so a later arrival never trips the deadline.
+// Map thread only.
 void NoteAuctioneerInReach(uint32_t botGuidLow);
+// The bot reached the auctioneer's city (the travel target landed, or it
+// stands within sight of a house): the reach deadline starts now. Never
+// restarts a deadline already running. Map thread only.
+void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs);
 // An oversized listing was bought: remember what has to go back to the
 // auction house. Memory only (a restart leaves the surplus to the delivery
 // leftover path, which is the same fallback as a failed relist).
@@ -186,24 +191,25 @@ void ClearRelistSurplus(uint32_t botGuidLow);
 // back by mail, often after the order is gone, and its value belongs to the
 // guild until the bank trip pays it back.
 // A relist was posted, with the listing terms the auction mail reports back
-// and its duration (the row's expiry is the posting plus that duration).
-// Map thread only (the buy action).
+// and its duration (the row's expiry is the posting plus that duration). The
+// row is written with a checked synchronous execute and only then kept in
+// memory, so the ledger never holds a debt the table lost. Map thread only
+// (the buy action).
 void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
     uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec);
 // The bot's ledger rows, oldest first. Any thread.
 std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
-// A matched relist mail was collected: the gold or the item is in hand.
-// Map thread only (the mail read).
+// A matched relist mail was collected: the gold or the item is in hand. Same
+// checked write: false means the table did not take the change and the row
+// stays unread. Map thread only (the mail read).
 bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items);
 // Writes one ledger row to the table and to memory. Returns false, with memory
 // untouched, when the table write failed. World thread only (the relist drain).
 bool SaveRelistRow(RelistLedgerEntry const& row);
 // Drops one ledger row the same way. World thread only (the relist drain).
 bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq);
-// Value collected from a relist mail is due to the guild bank. Any thread.
-bool RelistDepositPending(uint32_t botGuidLow);
-// The received rows a bank trip has to pay out, oldest first. World thread
-// only (the relist drain).
+// The received rows a bank trip has to pay out, oldest first. Any thread:
+// the bank action checks what the bot can pay now, the drain pays it.
 std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow);
 
 // Drop parked refund stubs whose gold is back. World thread only (Update).

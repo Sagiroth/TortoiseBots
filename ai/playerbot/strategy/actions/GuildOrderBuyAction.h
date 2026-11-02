@@ -25,6 +25,12 @@ Unit* GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot);
 // check). The auction leg's reach clock clears on this, not on the wider
 // arrival radius above.
 Unit* GuildOrderAuctioneerInReach(PlayerbotAI* ai, Player* bot);
+
+// An auctioneer of the city the bot stands in, hostile ones excluded. Hitting
+// this radius (well past the arrival radius) counts as having arrived, so the
+// leg's reach deadline starts there instead of where the leg was entered.
+inline constexpr float kGuildOrderAuctioneerCityYd = 100.0f;
+Unit* GuildOrderAuctioneerWithin(PlayerbotAI* ai, Player* bot, float yards);
 } // namespace ai
 
 namespace ai

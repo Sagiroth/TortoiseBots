@@ -248,6 +248,54 @@ int main()
         CHECK(RelistMatchCount(twins, SoldMail(kItem + 1), kNow, index) == 0);
     }
 
+    // Look-alike rows of one guild settle as the oldest (that guild is
+    // credited either way); the next mail settles the other row.
+    {
+        std::vector<RelistLedgerEntry> rows{Posted(), Posted(13, 400, kNow, kGuild)};
+        rows[1].seq = 2;
+        size_t index = 99;
+        CHECK(RelistMatchCount(rows, SoldMail(), kNow, index) == 2);
+        CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index));
+        CHECK(index == 0);
+        ReadMail(rows[index], SoldMail());
+        CHECK(rows[0].received && rows[0].heldGold == 5100);
+        CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index));
+        CHECK(index == 1);
+        CHECK(!RelistSettleIndex(rows, SoldMail(kItem + 1), kNow, index));
+    }
+    {
+        // Oldest means oldest row, not first in the vector.
+        std::vector<RelistLedgerEntry> rows{Posted(), Posted(13, 400, kNow, kGuild)};
+        rows[0].seq = 5;
+        rows[1].seq = 3;
+        size_t index = 99;
+        CHECK(RelistSettleIndex(rows, SoldMail(), kNow, index));
+        CHECK(index == 1);
+    }
+    {
+        // Matches spanning guilds stay ambiguous: neither row is consumed.
+        std::vector<RelistLedgerEntry> rows{Posted(), Posted(13, 400, kNow, kOtherGuild)};
+        rows[1].seq = 2;
+        size_t index = 99;
+        CHECK(RelistMatchCount(rows, SoldMail(), kNow, index) == 2);
+        CHECK(!RelistSettleIndex(rows, SoldMail(), kNow, index));
+        CHECK(!rows[0].received && !rows[1].received);
+    }
+
+    // A banker visit only earns its trip when the bot can hand value over
+    // now: sale gold in the purse, or the returned stack in the bags.
+    {
+        RelistLedgerEntry sold = Posted();
+        ReadMail(sold, SoldMail(kItem, 5100));
+        CHECK(RelistDepositableNow(sold, 5100, 0));
+        CHECK(!RelistDepositableNow(sold, 0, 13));
+        RelistLedgerEntry expired = Posted(13);
+        ReadMail(expired, ExpiredMail(kItem, 13), kNow + kDurationSec);
+        CHECK(RelistDepositableNow(expired, 0, 13));
+        CHECK(!RelistDepositableNow(expired, 5000, 0));
+        CHECK(!RelistDepositableNow(Posted(), 5000, 13)); // unread: nothing in hand
+    }
+
     // Sold -> the gold is in the bot's hands, the row waits for the bank, and
     // a funded bank trip drops it.
     {

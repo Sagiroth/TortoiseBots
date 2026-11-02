@@ -647,13 +647,16 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     // store no-ops when the keys already match.
     TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
     uint32_t nowMs = WorldTimer::getMSTime();
-    // A leg that cannot reach an auctioneer hands off after two minutes.
-    // The clock belongs to the leg and clears on an auctioneer the bot can
-    // actually interact with.
+    // A leg that cannot reach an auctioneer hands off after two minutes in
+    // the city, or after twenty minutes of walking. The reach clock starts on
+    // arrival, not on entering the leg, and both clocks clear on an
+    // auctioneer the bot can actually interact with.
     if (order.supplyStep == SupplyStep::AuctionHouse)
     {
         if (ai::GuildOrderAuctioneerInReach(ai, bot))
             TortoiseBots::GuildOrders::NoteAuctioneerInReach(order.botGuidLow);
+        else if (ai::GuildOrderAuctioneerWithin(ai, bot, ai::kGuildOrderAuctioneerCityYd))
+            TortoiseBots::GuildOrders::NoteAuctionZoneArrival(order.botGuidLow, nowMs);
         else if (TortoiseBots::GuildOrders::AuctionLegUnreachable(order.botGuidLow, nowMs))
         {
             AdvanceGuildOrderAfterAuction(ai, bot, order, OrderReason::NoAuctioneer);

@@ -406,16 +406,17 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
         if (!view.auction)
             continue;
         // A mail settles a row only when its item, listing terms and timing
-        // identify exactly one unread row. An unrelated auction of the same
-        // item, or two guilds' rows that look alike, leaves the mail to
-        // normal mail handling: the ledger never guesses.
+        // identify an unread row. Look-alike rows of one guild settle as the
+        // oldest: that guild is credited either way. Rows of different guilds
+        // leave the mail to normal mail handling, because the ledger never
+        // pays one guild another auction's value.
         size_t matched = 0;
         size_t const matches = RelistMatchCount(entries, view, uint64_t(curTime), matched);
-        if (matches != 1)
+        if (!matches || !RelistSettleIndex(entries, view, uint64_t(curTime), matched))
         {
             if (matches > 1)
                 TB_LOG_BASIC("TortoiseBots: relist mail ambiguous for bot %u (item %u): %zu ledger "
-                    "rows match; leaving it to normal mail handling.", bot->GetGUIDLow(),
+                    "rows match across guilds; leaving it to normal mail handling.", bot->GetGUIDLow(),
                     view.subjectItemId, matches);
             continue;
         }

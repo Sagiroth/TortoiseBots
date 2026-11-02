@@ -34,8 +34,10 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertNotIn("GuildOrders::Find(", take)
         self.assertIn("RelistEntries(bot->GetGUIDLow())", take)
         self.assertIn("RelistMatchCount(entries, view, uint64_t(curTime), matched)", take)
+        self.assertIn("RelistSettleIndex(entries, view, uint64_t(curTime), matched)", take)
         self.assertIn("RelistMailMatch(*entry, view, uint64_t(curTime))", take)
         self.assertIn("relist mail ambiguous", take)
+        self.assertIn("match across guilds", take)
         self.assertIn("RelistNoteMailReceived(*entry, kind, gold, items)", take)
         self.assertIn("NoteRelistReceived(bot->GetGUIDLow(), entry->seq,", take)
         self.assertIn("HandleMailTakeMoney(", take)
@@ -76,7 +78,9 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("RelistExpireDue(nowSec)", body(STORE, "void Update(uint32_t diff)", "PlaceSubOrders(now)"))
 
     def test_bank_visit_pays_the_ledger(self):
-        self.assertIn("RelistDepositPending(bot->GetGUIDLow())", BANK)
+        self.assertIn("HasPayableRelist(bot)", BANK)
+        self.assertIn("RelistDepositableNow(row, cash,", BANK)
+        self.assertIn("RelistDeposits(bot->GetGUIDLow())", BANK)
         self.assertIn("RelistQueue::Instance().Enqueue(bot->GetGUIDLow())", BANK)
         drain = body(DELIVERY, "class RelistDrain", "\n};")
         self.assertIn("RelistDeposits(request.botGuidLow)", drain)
@@ -104,15 +108,27 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         save = body(STORE, "bool SaveRelist(", "\n    bool DeleteRelist(")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", save)
         self.assertIn("REPLACE INTO `tortoise_bots_guild_relist`", save)
-        delete = body(STORE, "bool DeleteRelist(", "\n    // Any value collected")
+        delete = body(STORE, "bool DeleteRelist(", "\n    // The received rows")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", delete)
         self.assertIn("DELETE FROM `tortoise_bots_guild_relist`", delete)
+        # All four ledger writes are checked and synchronous, posting and
+        # receiving included.
+        posted = body(STORE, "void NoteRelistPosted(", "\n    // The bot's ledger rows")
+        self.assertIn("if (!CharacterDatabase.DirectPExecute(", posted)
+        self.assertNotIn("CharacterDatabase.PExecute(", posted)
+        received = body(STORE, "bool NoteRelistReceived(", "\n    // Writes a ledger row")
+        self.assertIn("if (!CharacterDatabase.DirectPExecute(", received)
+        self.assertNotIn("CharacterDatabase.PExecute(", received)
         self.assertNotIn("NoteRelistDeposit", STORE)
         self.assertNotIn("NoteRelistDeposit", DELIVERY)
 
     def test_relist_mail_wakes_the_mail_read(self):
         self.assertIn("RelistEntries(bot->GetGUIDLow())", MAINT)
         self.assertIn("hasRelistLedger && (*itr)->stationery == MAIL_STATIONERY_AUCTION", MAINT)
+
+    def test_character_deletion_drops_the_ledger(self):
+        cleanup = (ROOT / "runtime/CharacterCleanup.cpp").read_text()
+        self.assertIn("DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u'", cleanup)
 
     def test_docs_describe_the_ledger(self):
         self.assertIn("relist ledger", DOC.lower())

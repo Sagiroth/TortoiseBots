@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <climits>
 #include <sstream>
+#include <vector>
 
 using namespace ai;
 using namespace TortoiseBots::GuildOrders;
@@ -33,11 +34,22 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
 void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order,
     OrderReason reason)
 {
-    if (order.type == OrderType::Buy && !order.farmRest)
-        NoteFarmRest(bot->GetGUIDLow());
+    uint32_t relistItemId = 0, relistCount = 0, relistUnitPrice = 0;
+    bool const relistLeg = PendingRelist(order.botGuidLow, relistItemId, relistCount, relistUnitPrice) &&
+        AuctionHandoffLeavesSurplus(true, relistItemId, order.supplyItemId);
     // Leaving the auction leg ends any relist it still owed: the surplus
     // stays in the bags for the delivery leftover path.
     ClearRelistSurplus(order.botGuidLow);
+    // The relist leg carries the surplus as its item and count: hand it off
+    // without sourcing anything, or the ladder would farm (or sub-order, or
+    // need-list) stock the order already bought.
+    if (relistLeg)
+    {
+        SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
+        return;
+    }
+    if (order.type == OrderType::Buy && !order.farmRest)
+        NoteFarmRest(bot->GetGUIDLow());
 
     SourcePlan plan = ai::PlanGuildOrderSources(bot, order.supplyItemId, OrderType::Farm);
     SupplyOptions options;
@@ -82,7 +94,7 @@ bool GuildOrderBuyAction::isUseful()
     return GuildOrderAuctioneerNear(ai, bot) != nullptr;
 }
 
-Unit* ai::GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot)
+Unit* ai::GuildOrderAuctioneerWithin(PlayerbotAI* ai, Player* bot, float yards)
 {
     std::list<ObjectGuid> npcs =
         ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
@@ -90,11 +102,16 @@ Unit* ai::GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot)
     {
         Creature* npc = ai->GetCreature(guid);
         if (!npc || !npc->IsAlive() || !npc->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_AUCTIONEER) ||
-            npc->IsHostileTo(bot) || bot->GetDistance(npc) > kGuildOrderAuctioneerNearYd)
+            npc->IsHostileTo(bot) || bot->GetDistance(npc) > yards)
             continue;
         return npc;
     }
     return nullptr;
+}
+
+Unit* ai::GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot)
+{
+    return GuildOrderAuctioneerWithin(ai, bot, kGuildOrderAuctioneerNearYd);
 }
 
 Unit* ai::GuildOrderAuctioneerInReach(PlayerbotAI* ai, Player* bot)
@@ -350,7 +367,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
         uint32_t buyout = 0;
         uint32_t count = 0;
     };
-    Candidate best;
+    std::vector<Candidate> candidates;
     uint32_t cash = bot->GetMoney();
     uint32_t heldGuildGold = std::min(stored->guildGoldHeld, cash);
     uint32_t ownedGold = cash - heldGuildGold;
@@ -377,18 +394,51 @@ bool GuildOrderBuyAction::Execute(Event& event)
             if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count) != EQUIP_ERR_OK)
                 continue;
             // A stack bigger than the miss is allowed: the order uses what
-            // it needs and the surplus returns to the AH. The smallest
-            // covering stack wins, then the cheapest per unit.
-            if (!best.auctionId ||
-                AuctionPickBeats(count, auction->buyout, best.count, best.buyout, missing))
-                best = { auction->Id, auction->itemGuidLow, auction->buyout, count };
+            // it needs and the surplus returns to the AH.
+            candidates.push_back({ auction->Id, auction->itemGuidLow, auction->buyout, count });
         }
+    }
+
+    // The miss is bought the cheapest way the listings allow: a covering
+    // stack only wins when it costs no more than the partial stacks that
+    // would fill the miss, so a cheap narrow listing is never passed over
+    // for a dear wide one. Among the winners the smallest covering stack
+    // wins, then the cheaper unit price.
+    Candidate best;
+    if (!candidates.empty())
+    {
+        std::vector<AuctionQuote> partials;
+        for (Candidate const& candidate : candidates)
+            if (candidate.count < missing)
+                partials.push_back(AuctionQuote{ candidate.count, candidate.buyout });
+        uint32_t cheapestPartialUnit = 0;
+        uint32_t const partialFillCost = PartialFillCost(partials, missing, cheapestPartialUnit);
+        Candidate const* cover = nullptr;
+        Candidate const* partial = nullptr;
+        for (Candidate const& candidate : candidates)
+        {
+            if (candidate.count >= missing)
+            {
+                if (!AuctionCoveringBeatsPartials(candidate.buyout, candidate.count,
+                        partialFillCost, cheapestPartialUnit))
+                    continue;
+                if (!cover || AuctionPickBeats(candidate.count, candidate.buyout, cover->count,
+                        cover->buyout, missing))
+                    cover = &candidate;
+            }
+            else if (!partial || CheaperPerUnit(candidate.buyout, candidate.count,
+                    partial->buyout, partial->count))
+                partial = &candidate;
+        }
+        Candidate const* const pick = cover ? cover : partial;
+        if (pick)
+            best = *pick;
     }
 
     if (!best.auctionId)
     {
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -414,7 +464,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             return false;
         }
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -443,7 +493,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     else
     {
         SET_AI_VALUE2(int, "manual int", "order buy failed bid", int(best.auctionId));
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
     }
 
     std::ostringstream out;

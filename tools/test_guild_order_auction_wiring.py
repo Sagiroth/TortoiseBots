@@ -42,6 +42,10 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertLess(check, refresh.index("SupplyRefreshDue(order.botGuidLow, nowMs)"))
         self.assertIn("GuildOrderAuctioneerInReach(ai, bot)", refresh)
         self.assertIn("NoteAuctioneerInReach(order.botGuidLow)", refresh)
+        # The reach deadline starts in the auctioneer's city, not at leg entry.
+        city = refresh.index("GuildOrderAuctioneerWithin(ai, bot, ai::kGuildOrderAuctioneerCityYd)")
+        self.assertLess(city, check)
+        self.assertIn("NoteAuctionZoneArrival(order.botGuidLow, nowMs)", refresh)
         self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, order, OrderReason::NoAuctioneer)",
             refresh)
 
@@ -52,22 +56,60 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertIn("SetSupply(order.botGuidLow, SupplyStep::AuctionHouse,", refresh)
         self.assertIn("relistItemId, relistCount, SupplyStep::None, order.reason", refresh)
 
-    def test_store_clock_starts_on_leg_entry_and_clears_on_reach(self):
+    def test_store_clock_starts_on_arrival_and_the_walk_is_capped(self):
         set_supply = body(STORE, "void SetSupply(uint32_t botGuidLow", "\n    void SetNeedItems(")
         self.assertIn("enteringAuction", set_supply)
-        self.assertIn("auctionReachStartedMs = WorldTimer::getMSTime()", set_supply)
+        # Entering the leg starts the travel cap only; the reach deadline
+        # starts on arrival (NoteAuctionZoneArrival / NoteArrivedAuctionVisit).
+        self.assertIn("auctionLegStartedMs = WorldTimer::getMSTime()", set_supply)
         self.assertIn("auctionReachStartedMs = 0", set_supply)
-        self.assertIn("AuctionUnreachableElapsed(started, nowMs)", STORE)
+        unreachable = body(STORE, "bool AuctionLegUnreachable(", "\n    void NoteAuctioneerInReach(")
+        self.assertIn("AuctionUnreachableElapsed(it->second.auctionReachStartedMs, nowMs)",
+            unreachable)
+        self.assertIn("AuctionLegTravelCapped(it->second.auctionLegStartedMs, nowMs)", unreachable)
+        self.assertNotIn("if (!started)", unreachable)
+        zone = body(STORE, "void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs)",
+            "\n    // Either auction clock")
+        self.assertIn("if (!it->second.auctionReachStartedMs)", zone)
+        arrival = body(STORE, "uint32_t NoteArrivedAuctionVisit(", "\n    // The bot came within sight")
+        self.assertIn("auctionReachStartedMs = WorldTimer::getMSTime()", arrival)
         self.assertIn("void NoteAuctioneerInReach(", STORE)
+        self.assertIn("void NoteAuctionZoneArrival(", STORE)
 
     def test_buy_picks_the_smallest_covering_stack(self):
         execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
-        self.assertIn("AuctionPickBeats(count, auction->buyout, best.count, best.buyout, missing)",
+        # A covering stack is measured against the cheap partials before it
+        # can win; among winners the smallest stack, then the cheaper unit.
+        self.assertIn("PartialFillCost(partials, missing, cheapestPartialUnit)", execute)
+        self.assertIn("AuctionCoveringBeatsPartials(candidate.buyout, candidate.count,",
             execute)
+        self.assertIn("AuctionPickBeats(candidate.count, candidate.buyout, cover->count,",
+            execute)
+        self.assertIn("CheaperPerUnit(candidate.buyout, candidate.count,", execute)
         self.assertNotIn("count > missing", execute)
         self.assertIn("uint32_t const surplus = BuySurplus(best.count, missing);", execute)
         self.assertIn("NoteRelistSurplus(botGuidLow, itemId, surplus, AuctionUnitPrice(best.buyout, best.count));",
             execute)
+
+    def test_relist_handoff_drops_the_surplus_instead_of_sourcing_it(self):
+        advance = body(BUY, "void ai::AdvanceGuildOrderAfterAuction(", "\nbool GuildOrderBuyAction::isUseful(")
+        self.assertIn("PendingRelist(order.botGuidLow, relistItemId, relistCount, relistUnitPrice)",
+            advance)
+        self.assertIn("AuctionHandoffLeavesSurplus(true, relistItemId, order.supplyItemId)", advance)
+        relist = advance[advance.index("if (relistLeg)"):]
+        relist = relist[:relist.index("return;")]
+        self.assertIn("SetSupply(order.botGuidLow, SupplyStep::None, 0, 0)", relist)
+        # The surplus must not reach the source planner at all.
+        self.assertLess(advance.index("ClearRelistSurplus(order.botGuidLow)"),
+            advance.index("if (relistLeg)"))
+        self.assertLess(advance.index("if (relistLeg)"),
+            advance.index("PlanGuildOrderSources("))
+
+    def test_buy_handoffs_keep_the_order_reason(self):
+        execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
+        self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason)"),
+            3)
+        self.assertNotIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored);", execute)
 
     def test_relist_posts_the_surplus_at_the_policy_price(self):
         relist = body(BUY, "uint32_t RelistSurplus(", "\n} // namespace")

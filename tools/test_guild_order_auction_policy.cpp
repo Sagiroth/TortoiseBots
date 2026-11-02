@@ -24,6 +24,14 @@ int main()
     CHECK(AuctionUnreachableElapsed(1000, 1000 + kAuctionUnreachableMs));
     CHECK(AuctionUnreachableElapsed(0xFFFFFF00u, 0x00020000u)); // uptime wrap
 
+    // The walk is capped on its own: 20 minutes from entering the leg, so a
+    // bot in the field is never handed off by the two-minute city deadline.
+    CHECK(kAuctionLegTravelCapMs == 20 * 60 * 1000);
+    CHECK(!AuctionLegTravelCapped(0, 0xFFFFFFFFu)); // never entered
+    CHECK(!AuctionLegTravelCapped(1000, 1000 + kAuctionLegTravelCapMs - 1));
+    CHECK(AuctionLegTravelCapped(1000, 1000 + kAuctionLegTravelCapMs));
+    CHECK(AuctionLegTravelCapped(0xFFFF0000u, 0x0012FFFFu)); // uptime wrap
+
     // A covering stack beats a partial one; the smallest covering stack
     // wins, then the cheaper unit price.
     CHECK(AuctionPickBeats(10, 100, 5, 40, 7));    // 10 covers the miss of 7
@@ -33,6 +41,45 @@ int main()
     CHECK(AuctionPickBeats(10, 90, 10, 100, 7));   // same stack, cheaper per unit
     CHECK(AuctionPickBeats(5, 40, 3, 30, 7));      // no cover: 8/unit beats 10/unit
     CHECK(!AuctionPickBeats(3, 30, 5, 40, 7));
+
+    // A covering stack only wins when it costs no more than filling the miss
+    // from the cheap partial stacks. Two partials fill 7 units for 1900
+    // copper, so a 100 g stack loses and a 1900-copper one ties for the win.
+    {
+        std::vector<AuctionQuote> partials{ { 4, 1000 }, { 3, 900 } };
+        uint32_t cheapestUnit = 0;
+        uint32_t const fill = PartialFillCost(partials, 7, cheapestUnit);
+        CHECK(fill == 1900);
+        CHECK(cheapestUnit == 250);
+        CHECK(!AuctionCoveringBeatsPartials(100000, 20, fill, cheapestUnit));
+        CHECK(AuctionCoveringBeatsPartials(1900, 7, fill, cheapestUnit));
+        CHECK(!AuctionCoveringBeatsPartials(1901, 7, fill, cheapestUnit));
+    }
+    {
+        // The partials cannot fill the miss: only a covering stack within
+        // twice their per-unit price is worth the surplus.
+        std::vector<AuctionQuote> partials{ { 2, 1000 } };
+        uint32_t cheapestUnit = 0;
+        CHECK(PartialFillCost(partials, 7, cheapestUnit) == 0);
+        CHECK(cheapestUnit == 500);
+        CHECK(AuctionCoveringBeatsPartials(20 * 999, 20, 0, cheapestUnit));
+        CHECK(!AuctionCoveringBeatsPartials(20 * 1001, 20, 0, cheapestUnit));
+    }
+    {
+        // Nothing else is listed: the covering stack is the only way to
+        // finish the leg, so it wins whatever it costs.
+        uint32_t cheapestUnit = 0;
+        CHECK(PartialFillCost({}, 7, cheapestUnit) == 0);
+        CHECK(cheapestUnit == 0);
+        CHECK(AuctionCoveringBeatsPartials(100000, 20, 0, 0));
+    }
+
+    // A hand-off during a relist trip drops the surplus instead of sourcing
+    // it: the leg's item is stock the order already bought.
+    CHECK(AuctionHandoffLeavesSurplus(true, 2589, 2589));
+    CHECK(!AuctionHandoffLeavesSurplus(true, 2589, 2590));
+    CHECK(!AuctionHandoffLeavesSurplus(false, 2589, 2589));
+    CHECK(!AuctionHandoffLeavesSurplus(true, 0, 0));
 
     // A 20-stack bought for a miss of 7: 7 used, 13 surplus.
     CHECK(BuySurplus(20, 7) == 13);
