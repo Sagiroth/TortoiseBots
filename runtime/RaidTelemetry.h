@@ -106,13 +106,6 @@ inline bool Qualifies(bool inWorld, bool inBg, bool raidMap, uint32_t instance)
     return inWorld && !inBg && raidMap && instance != 0;
 }
 
-// A group qualifies when one of its members qualifies and the group holds a bot (a player alone is no run, the same rule
-// the Dungeons tab uses). No size threshold, no group-type threshold.
-inline bool GroupQualifies(bool anyMemberQualifies, bool anyBot)
-{
-    return anyMemberQualifies && anyBot;
-}
-
 // Which of `total` groups are sent this cycle: all of them up to `max`, else `max` of them starting at offset (mod total),
 // wrapping. The caller advances the offset by `max` each cycle so every group takes its turn.
 inline std::vector<size_t> RotationWindow(size_t total, size_t offset, size_t max = kMaxRaidGroupsPerCycle)

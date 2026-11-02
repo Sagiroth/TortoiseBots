@@ -86,6 +86,22 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertLess(sampler.index("OnSelectedCopy("), sampler.index("NoteFightBoss("),
                         "the boss anchor is a member of the selected copy")
 
+    def test_collection_files_a_group_under_a_bots_copy(self):
+        # A human standing in a raid copy never names the group: the copy comes from a qualifying bot, so a group whose
+        # only bot is elsewhere is not emitted under the human's copy, and the sampler re-checks that copy before feeding.
+        code = strip_comments(OBSERVED)
+        collect = definition(code, "void CollectObservedRaids(")
+        self.assertIn("SelectCopy(", collect)
+        self.assertIn("if (!copy.found)", collect)
+        self.assertLess(collect.index("SelectCopy("), collect.index("found.push_back("),
+                        "only a bot's copy emits the group")
+        sampler = definition(code, "void UpdateObservedRaids(")
+        self.assertIn("SampleHoldsBot(", sampler)
+        self.assertLess(sampler.index("SampleHoldsBot("), sampler.index("NoteBinding("),
+                        "the bot gate runs before the book is fed")
+        self.assertLess(sampler.index("SampleHoldsBot("), sampler.index("Refresh("),
+                        "no Refresh for a copy without a bot")
+
     def test_off_turn_closes_the_books_it_fed(self):
         # `.reload config` turning the flag off closes the open observed fights at that moment and drops the sampler's
         # groups, instead of leaving a window open on the tab.

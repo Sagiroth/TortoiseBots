@@ -205,10 +205,6 @@ void TestQualification()
     Check(!Qualifies(true, false, false, 7), "T-A6 a dungeon map: no");
     Check(!Qualifies(true, false, true, 0), "T-A6 the open world copy: no");
 
-    Check(GroupQualifies(true, true), "T-A6 a group with a bot qualifies");
-    Check(!GroupQualifies(true, false), "T-A6 a group of real players only does not");
-    Check(!GroupQualifies(false, true), "T-A6 a bot elsewhere does not qualify the copy");
-
     std::vector<GroupInfo> party{ Group(77) };
     party[0].raidGroup = false;
     party[0].members.push_back(Member(1, 0, true));

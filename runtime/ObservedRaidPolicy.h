@@ -1,8 +1,8 @@
 #pragma once
 
-// The observed-raid sampler's rules that hold without a game header (spec dash-raids-tab): which members a group's combat
-// book is fed from, and what the flag's off turn does to the books it fed. Standard library only, so
-// tools/test_observed_raid_policy.cpp compiles it without a game header.
+// The observed-raid sampler's rules that hold without a game header (spec dash-raids-tab): which copy a group is filed
+// under, which members its combat book is fed from, when the copy's sample is live, and what the flag's off turn does to
+// the books it fed. Standard library only, so tools/test_observed_raid_policy.cpp compiles it without a game header.
 
 #include <algorithm>
 #include <cstdint>
@@ -11,6 +11,42 @@
 namespace TortoiseBots {
 namespace ObservedRaid {
 
+// One online member of a group as the collection sees it.
+struct CopyMember
+{
+    bool leader = false;    // the group's leader
+    bool bot = false;       // a module bot
+    bool qualifies = false; // in the world, outside a battleground, on a raid map copy (instance != 0)
+    uint32_t map = 0;
+    uint32_t instance = 0;
+};
+
+// The copy a group is filed under: the leader's when the leader is a qualifying bot, else the first qualifying bot's. A
+// copy only a human stands in never names the group, so a group whose bots are elsewhere is not emitted under it.
+struct CopyChoice
+{
+    bool found = false;
+    uint32_t map = 0;
+    uint32_t instance = 0;
+};
+
+inline CopyChoice SelectCopy(std::vector<CopyMember> const& members)
+{
+    CopyMember const* first = nullptr;
+    for (CopyMember const& member : members)
+    {
+        if (!member.bot || !member.qualifies)
+            continue;
+        if (member.leader)
+            return CopyChoice{ true, member.map, member.instance };
+        if (!first)
+            first = &member;
+    }
+    if (!first)
+        return CopyChoice{};
+    return CopyChoice{ true, first->map, first->instance };
+}
+
 // Whether a sampled unit stands on the group's selected map copy, the map and instance the collection named for the group.
 // A member in another instance copy, on another map or outdoors is not in the raid: its combat never opens or extends the
 // group's fight, its being alive never keeps the fight from closing, and it is never the fight's boss anchor. The selected
@@ -18,6 +54,13 @@ namespace ObservedRaid {
 inline bool OnSelectedCopy(uint32_t selectedMap, uint32_t selectedInstance, uint32_t unitMap, uint32_t unitInstance)
 {
     return selectedInstance != 0 && unitMap == selectedMap && unitInstance == selectedInstance;
+}
+
+// The sampler's gate, re-read every tick: a group's book is fed only while a bot stands on the selected copy. The bot can
+// leave between the 2 s collection and a tick; a copy holding only humans is no run and is not sampled.
+inline bool SampleHoldsBot(uint32_t selectedInstance, bool anyBotOnCopy)
+{
+    return selectedInstance != 0 && anyBotOnCopy;
 }
 
 // The sampler's flag as the last tick read it. TurnedOff is true once, on the enabled -> disabled turn (`.reload config`

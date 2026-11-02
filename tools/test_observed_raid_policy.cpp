@@ -1,6 +1,6 @@
-// Standalone tests for the observed-raid sampler's rules (spec dash-raids-tab): the selected-copy filter that keeps a
-// member in another instance out of its group's fight, and the flag's off turn that closes and forgets the books the
-// sampler fed (`.reload config` turning AiPlayerbot.ObservabilityRaids off).
+// Standalone tests for the observed-raid sampler's rules (spec dash-raids-tab): the bot's copy a group is filed under,
+// the selected-copy filter that keeps a member in another instance out of its group's fight, and the flag's off turn that
+// closes and forgets the books the sampler fed (`.reload config` turning AiPlayerbot.ObservabilityRaids off).
 //
 // The header includes the standard library only, so this file compiles it without a game header.
 //
@@ -140,6 +140,75 @@ void TestSelectedCopy()
           "T-R1 the selected copy opens it");
 }
 
+// T-R3: the group is filed and sampled under a bot's copy, never a human's. A human standing in the raid copy cannot make
+// the group a row when the group's only bot is elsewhere, and the sampler does not feed the copy the bot left.
+void TestBotCopy()
+{
+    auto const member = [](bool leader, bool bot, bool qualifies, uint32_t map, uint32_t instance)
+    {
+        return CopyMember{ leader, bot, qualifies, map, instance };
+    };
+
+    // The sampler's read of a group: the online members on the selected copy, and whether one of them is a bot.
+    struct Tick
+    {
+        size_t onCopy = 0;
+        bool anyBot = false;
+        bool sampled = false;
+    };
+    auto const tick = [](std::vector<CopyMember> const& online, CopyChoice const& copy)
+    {
+        Tick out;
+        for (CopyMember const& m : online)
+        {
+            if (!OnSelectedCopy(copy.map, copy.instance, m.map, m.instance))
+                continue;
+            ++out.onCopy;
+            out.anyBot = out.anyBot || m.bot;
+        }
+        out.sampled = SampleHoldsBot(copy.instance, out.anyBot);
+        return out;
+    };
+
+    // The group's human leader stands in 409/7; the group's only bot is outdoors.
+    std::vector<CopyMember> const humanCopy{ member(true, false, true, 409, 7), member(false, true, false, 0, 0) };
+    CopyChoice const none = SelectCopy(humanCopy);
+    Check(!none.found, "T-R3 a human's copy never emits a group whose only bot is elsewhere");
+    Tick const empty = tick(humanCopy, none);
+    Check(!empty.sampled && empty.onCopy == 0, "T-R3 the copy with no bot is not sampled");
+
+    // A bot stands in that copy: the human leader does not change which copy names the group.
+    std::vector<CopyMember> const botCopy{ member(true, false, true, 409, 7), member(false, true, true, 409, 7) };
+    CopyChoice const chosen = SelectCopy(botCopy);
+    Check(chosen.found && chosen.map == 409 && chosen.instance == 7, "T-R3 a bot in the copy emits the group under it");
+    Tick const live = tick(botCopy, chosen);
+    Check(live.sampled && live.anyBot && live.onCopy == 2, "T-R3 the copy with the bot is sampled");
+
+    // The bot moved out between collections: the same row is no longer sampled, and the humans in the copy feed nothing.
+    std::vector<CopyMember> const left{ member(true, false, true, 409, 7), member(false, true, false, 0, 0) };
+    Tick const gone = tick(left, chosen);
+    Check(gone.onCopy == 1 && !gone.sampled, "T-R3 the copy the bot left is not sampled");
+
+    // A bot outdoors and a bot in another copy: only a qualifying bot names the group, and it is not the humans' copy.
+    std::vector<CopyMember> const mixed{ member(true, false, true, 409, 7), member(false, true, false, 0, 0),
+        member(false, true, true, 409, 9) };
+    CopyChoice const other = SelectCopy(mixed);
+    Check(other.found && other.instance == 9, "T-R3 a bot's own copy names the group, not the humans'");
+
+    // Two bots in two copies: the leader's bot copy wins, else the first bot's.
+    std::vector<CopyMember> const leaderBot{ member(true, true, true, 409, 8), member(false, true, true, 409, 7) };
+    CopyChoice const lead = SelectCopy(leaderBot);
+    Check(lead.found && lead.instance == 8, "T-R3 the leader's bot copy wins");
+    std::vector<CopyMember> const twoBots{ member(true, false, true, 409, 7), member(false, true, true, 409, 7),
+        member(false, true, true, 409, 9) };
+    CopyChoice const first = SelectCopy(twoBots);
+    Check(first.found && first.instance == 7, "T-R3 else the first bot's copy");
+
+    // No bot at all: no copy, no row, nothing sampled.
+    std::vector<CopyMember> const humans{ member(true, false, true, 409, 7), member(false, false, true, 409, 7) };
+    Check(!SelectCopy(humans).found, "T-R3 a group of real players only is not emitted");
+}
+
 // T-R2: the enabled -> disabled turn closes each held fight at the current time, forgets its book and drops the sampler's
 // state; a bound group's book is the bound path's and is left alone.
 void TestOffTurn()
@@ -199,6 +268,7 @@ void TestOffTurn()
 int main()
 {
     TestSelectedCopy();
+    TestBotCopy();
     TestOffTurn();
     if (g_failures)
     {

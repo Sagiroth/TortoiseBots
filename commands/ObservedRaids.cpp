@@ -125,33 +125,29 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
             continue;
         ObjectGuid const leaderGuid = group->GetLeaderGuid();
         Player* const leader = ObjectAccessor::FindPlayer(leaderGuid);
-        bool const leaderQualifies = UnitQualifies(leader);
-        bool anyQualifies = false;
-        bool anyBot = false;
-        uint32_t mapId = 0, instance = 0;
+        // The copy is a bot's: the leader's when the leader is a qualifying bot, else the first qualifying bot's. A human
+        // standing in a raid copy never names the group, so a group whose only bot is elsewhere is not emitted under it.
+        std::vector<ObservedRaid::CopyMember> facts;
+        facts.reserve(group->GetMemberSlots().size());
         for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
             Player* member = ObjectAccessor::FindPlayer(slot.guid);
             if (!member || !member->IsInWorld())
                 continue;
-            if (PlayerbotAIStorage::Instance().GetAI(member))
-                anyBot = true;
-            // The leader's copy names the row when it stands on a raid map; otherwise the first qualifying member's.
-            if (!anyQualifies && !leaderQualifies && UnitQualifies(member))
-            {
-                anyQualifies = true;
-                mapId = member->GetMapId();
-                instance = member->GetMap()->GetInstanceId();
-            }
+            bool const qualifies = UnitQualifies(member);
+            ObservedRaid::CopyMember fact;
+            fact.leader = slot.guid == leaderGuid;
+            fact.bot = PlayerbotAIStorage::Instance().GetAI(member) != nullptr;
+            fact.qualifies = qualifies;
+            fact.map = member->GetMapId();
+            fact.instance = qualifies ? member->GetMap()->GetInstanceId() : 0;
+            facts.push_back(fact);
         }
-        if (leaderQualifies)
-        {
-            anyQualifies = true;
-            mapId = leader->GetMapId();
-            instance = leader->GetMap()->GetInstanceId();
-        }
-        if (!GroupQualifies(anyQualifies, anyBot))
+        ObservedRaid::CopyChoice const copy = ObservedRaid::SelectCopy(facts);
+        if (!copy.found)
             continue;
+        uint32_t const mapId = copy.map;
+        uint32_t const instance = copy.instance;
 
         GroupInfo info;
         info.groupId = groupId;
@@ -261,6 +257,7 @@ void UpdateObservedRaids(uint32_t diff)
         // never keeps the fight from closing.
         SelectedCopy const copy = RaidSet()[groupId];
         std::vector<Player*> members;
+        bool anyBotOnCopy = false;
         for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
             Player* member = ObjectAccessor::FindPlayer(slot.guid);
@@ -271,7 +268,12 @@ void UpdateObservedRaids(uint32_t diff)
                     memberMap->GetInstanceId()))
                 continue;
             members.push_back(member);
+            anyBotOnCopy = anyBotOnCopy || PlayerbotAIStorage::Instance().GetAI(member) != nullptr;
         }
+        // A copy holding only humans is no run: the group's bot left it since the collection (the 2 s cycle has not run
+        // yet), so its book is left alone until the next collection files the group under the bot's own copy.
+        if (!ObservedRaid::SampleHoldsBot(copy.instance, anyBotOnCopy))
+            continue;
         bool anyInCombat = false;
         bool allDead = !members.empty();
         for (Player* member : members)
