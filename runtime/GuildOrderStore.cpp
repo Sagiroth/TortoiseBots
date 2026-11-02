@@ -482,6 +482,7 @@ public:
         uint32_t itemId = 0;
         uint32_t count = 0;
         uint32_t nextTryMs = 0; // world uptime ms before this request retries
+        uint32_t nextMember = 0; // roster index the next attempt resumes the scan at
     };
 
     struct QueuedSubOrderKey
@@ -526,8 +527,7 @@ public:
         std::vector<QueuedSubOrder> out;
         for (auto const& [key, queued] : m_queued)
         {
-            int32_t until = int32_t(queued.nextTryMs - nowMs);
-            if (until <= 0)
+            if (SubOrderRequestDue(queued.nextTryMs, nowMs))
                 out.push_back(queued);
         }
         for (QueuedSubOrder const& due : out)
@@ -535,7 +535,8 @@ public:
         return out;
     }
 
-    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs)
+    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs,
+        uint32_t nextMember)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
@@ -547,6 +548,7 @@ public:
         if (count > queued.count)
             queued.count = count;
         queued.nextTryMs = nextTryMs;
+        queued.nextMember = nextMember;
     }
 
     void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
@@ -2050,15 +2052,19 @@ bool PlaceSubOrders(uint32_t nowMs)
             }
             cached = membersByGuild.emplace(parent->guildId, std::move(members)).first;
         }
-        bool stoppedEarly = false;
+        std::vector<uint32_t> const& roster = cached->second;
+        size_t const rosterSize = roster.size();
+        // The scan resumes where the previous attempt's budget stopped it, so
+        // a guild bigger than one tick's evaluations is covered over retries
+        // instead of re-scanning the same head.
+        size_t const scanStart = NextSubOrderScanStart(request.nextMember, 0, rosterSize);
+        size_t looked = 0;
         std::vector<SubOrderCandidate> candidates;
-        for (uint32_t guidLow : cached->second)
+        for (; looked < rosterSize; ++looked)
         {
             if (plannerEvals >= kSubOrderPlannerEvalsPerTick)
-            {
-                stoppedEarly = true;
                 break;
-            }
+            uint32_t guidLow = roster[(scanStart + looked) % rosterSize];
             ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
             Player* bot = sObjectAccessor.FindPlayer(guid);
             if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
@@ -2073,30 +2079,18 @@ bool PlaceSubOrders(uint32_t nowMs)
             // watches the bank, so only that one keeps the bot busy.
             candidate.hasOrder = existing.has_value() && !existing->cancelled &&
                 (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
-            if (candidate.hasOrder)
-            {
-                bool make = false, farm = false, gathers = false;
-                if (evalUsable(bot, request.itemId, make, farm, gathers))
-                    candidate.queuedBusy = true;
-                else
-                    continue;
-                candidates.push_back(candidate);
-            }
-            else if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
+            if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
                 candidate.gathers))
                 continue;
-            else
-                candidates.push_back(candidate);
+            // A busy candidate keeps the verdicts: only a busy bot that can
+            // make or farm the item makes the request worth retrying.
+            candidate.queuedBusy = candidate.hasOrder;
+            candidates.push_back(candidate);
         }
-        // The planner budget ran out mid-guild: unevaluated members may still
-        // take the request, so requeue instead of failing it. A request that
-        // evaluated every member and found nobody still fails below.
-        if (stoppedEarly)
-        {
-            OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
-            continue;
-        }
+        bool const scanStoppedEarly = looked < rosterSize;
+        size_t const nextScan = NextSubOrderScanStart(scanStart, looked, rosterSize);
+        // A take found inside the budget answers the request even when more
+        // members were never looked at; only a request without one retries.
         bool queuedOut = false;
         size_t picked = PickSubOrderCandidate(candidates.data(), candidates.size(), queuedOut);
         SubOrderPick pick = ClassifySubOrderPick(picked, candidates.size(), queuedOut);
@@ -2116,7 +2110,7 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (!Give(record))
             {
                 OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                    request.count, nowMs + kSubOrderRetryMs);
+                    request.count, nowMs + kSubOrderRetryMs, nextScan);
                 continue;
             }
             placedAny = true;
@@ -2126,9 +2120,9 @@ bool PlaceSubOrders(uint32_t nowMs)
             if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
                 SendOrderLine(*placed, 0);
         }
-        else if (pick == SubOrderPick::Queued)
+        else if (SubOrderRetriesAfterScan(pick, scanStoppedEarly))
             OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
-                request.count, nowMs + kSubOrderRetryMs);
+                request.count, nowMs + kSubOrderRetryMs, nextScan);
         else
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
     }

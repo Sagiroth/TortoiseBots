@@ -20,9 +20,20 @@ inline constexpr uint32_t kSubOrderDefaultDepth = 3;
 inline constexpr uint32_t kSubOrderRetryMs = 45000;
 // Planner evaluations per PlaceSubOrders tick: each SubOrderCandidateUsable
 // call may walk the source index, so a tick with many due requests shares
-// the budget and requeues the rest on the retry timer instead of stalling
-// the world thread.
+// the budget instead of stalling the world thread. A request whose scan hit
+// the budget keeps the candidates it already found (a take is placed at
+// once) and otherwise retries with the scan resumed at the next member.
 inline constexpr size_t kSubOrderPlannerEvalsPerTick = 8;
+
+// Whether a queued request is due. A request without a retry time is due at
+// once: the signed difference wraps once the world uptime passes 2^31 ms,
+// which would park every fresh request for the rest of a long session.
+inline bool SubOrderRequestDue(uint32_t nextTryMs, uint32_t nowMs)
+{
+    if (!nextTryMs)
+        return true;
+    return int32_t(nextTryMs - nowMs) <= 0;
+}
 
 // Remaining spend for one ancestor pair (the store walks the whole branch):
 // the smallest cap remainder wins, uncapped rows do not bind.
@@ -185,6 +196,29 @@ inline SubOrderPick ClassifySubOrderPick(size_t picked, size_t candidateCount, b
     if (picked < candidateCount)
         return SubOrderPick::Take;
     return queued ? SubOrderPick::Queued : SubOrderPick::None;
+}
+
+// Where the next attempt resumes scanning a roster of `count` members after
+// one that started at `start` looked at `looked` of them. A guild bigger
+// than one tick's planner budget is covered over retries; without this the
+// scan restarts at the same head every time and the tail is never checked.
+inline size_t NextSubOrderScanStart(size_t start, size_t looked, size_t count)
+{
+    if (!count)
+        return 0;
+    return (start + (looked < count ? looked : count)) % count;
+}
+
+// Whether one drained request waits for another tick. A take found inside
+// the planner budget is placed even when the scan stopped early: more
+// members were never evaluated, but the take already answers the request.
+// Discarding it re-queued every request after the budget ran out, so no
+// guild with more members than the budget ever received a child order.
+inline bool SubOrderRetriesAfterScan(SubOrderPick pick, bool scanStoppedEarly)
+{
+    if (pick == SubOrderPick::Take)
+        return false;
+    return scanStoppedEarly || pick == SubOrderPick::Queued;
 }
 
 } // namespace GuildOrders

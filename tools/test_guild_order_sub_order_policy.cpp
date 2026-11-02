@@ -125,6 +125,39 @@ int main()
         CHECK(!queuedOut);
         CHECK(ClassifySubOrderPick(picked, 2, queuedOut) == SubOrderPick::Take);
     }
+    // A fresh request is due at once whatever the world uptime: the signed
+    // difference wraps past 2^31 ms and would park it for the session.
+    CHECK(SubOrderRequestDue(0, 0));
+    CHECK(SubOrderRequestDue(0, 1234567));
+    CHECK(SubOrderRequestDue(0, 0x80000000u));
+    CHECK(SubOrderRequestDue(0, 0xFFFFFFFFu));
+    CHECK(SubOrderRequestDue(5000, 5000));
+    CHECK(!SubOrderRequestDue(5000, 4999));
+    CHECK(!SubOrderRequestDue(5000, 4000));
+    CHECK(SubOrderRequestDue(450000, 495000));
+
+    // The member scan resumes where the budget stopped it: a guild bigger
+    // than one tick's evaluations is covered over retries, not re-scanned
+    // at its head forever.
+    CHECK(NextSubOrderScanStart(0, 8, 28) == 8);
+    CHECK(NextSubOrderScanStart(8, 8, 28) == 16);
+    CHECK(NextSubOrderScanStart(24, 8, 28) == 4);
+    CHECK(NextSubOrderScanStart(0, 0, 28) == 0);
+    CHECK(NextSubOrderScanStart(5, 3, 0) == 0);
+    // A full scan (as many members looked at as the guild holds) restarts at
+    // the same head: the next attempt is a complete round again.
+    CHECK(NextSubOrderScanStart(8, 28, 28) == 8);
+    CHECK(NextSubOrderScanStart(8, 999, 28) == 8);
+
+    // A take found before the budget ran out is placed at once; only a
+    // request without one retries on an unfinished scan.
+    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::Take, false));
+    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::Take, true));
+    CHECK(SubOrderRetriesAfterScan(SubOrderPick::None, true));
+    CHECK(!SubOrderRetriesAfterScan(SubOrderPick::None, false));
+    CHECK(SubOrderRetriesAfterScan(SubOrderPick::Queued, false));
+    CHECK(SubOrderRetriesAfterScan(SubOrderPick::Queued, true));
+
     // Parallel pick: first missing item with no running or queued cover.
     {
         uint32_t missing[] = { 100, 200, 300 };
