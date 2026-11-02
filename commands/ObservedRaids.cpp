@@ -1,0 +1,278 @@
+#include "BotCommands.h"
+
+// The Raids tab (spec dash-raids-tab): the raid groups that stand without a commander binding. CollectObservedRaids runs
+// inside the 2 s snapshot cycle and names the groups the RAIDS datagram lists; UpdateObservedRaids feeds their combat books
+// at 1 Hz, so an unbound raid gets the same live window and finished fights a bound group gets. Both read the world on the
+// world thread only.
+
+#include "../runtime/BoundFightPolicy.h"
+#include "../runtime/CombatMonitorService.h"
+#include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/PlayerbotAIStorage.h"
+#include "../runtime/RaidTelemetry.h"
+#include "../host/ModuleLog.h"
+#include "playerbot/PlayerbotAIConfig.h"
+#include "Group.h"
+#include "Log.h"
+#include "Maps/Map.h"
+#include "ObjectAccessor.h"
+#include "ObjectMgr.h"
+#include "Pet.h"
+#include "Player.h"
+#include "World.h"
+
+#include <algorithm>
+#include <chrono>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace TortoiseBots {
+namespace BotCommands {
+
+namespace {
+
+struct ObservedRaid
+{
+    uint32_t map = 0;
+    uint32_t instance = 0;
+};
+
+// The groups the last RAIDS collection found (group id -> its instance copy). The sampler never walks the world itself.
+std::unordered_map<uint32_t, ObservedRaid>& RaidSet()
+{
+    static std::unordered_map<uint32_t, ObservedRaid> set;
+    return set;
+}
+
+// The clock of each observed group that stopped qualifying or vanished, kept until the grace closes its open fight.
+std::unordered_map<uint32_t, BoundFight::LeadAway>& RaidAway()
+{
+    static std::unordered_map<uint32_t, BoundFight::LeadAway> away;
+    return away;
+}
+
+// Whether a unit is on a raid map copy: in the world, outside a battleground, on a raid map (the core's MapEntry instance
+// type), inside an instance copy.
+bool UnitQualifies(Player* unit)
+{
+    if (!unit || !unit->IsInWorld() || unit->InBattleGround())
+        return false;
+    Map* map = unit->GetMap();
+    return RaidTelemetry::Qualifies(unit->IsInWorld(), unit->InBattleGround(), map && map->IsRaid(),
+        map ? map->GetInstanceId() : 0);
+}
+
+// The bound sampler's rule: the member or its living pet is in combat.
+bool MemberFighting(Player* member)
+{
+    Pet* const pet = member->GetPet();
+    return member->IsInCombat() || (pet && pet->IsAlive() && pet->IsInWorld() && pet->IsInCombat());
+}
+
+} // namespace
+
+void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players,
+                          std::vector<RaidTelemetry::GroupInfo>& out)
+{
+    using namespace RaidTelemetry;
+    out.clear();
+    RaidSet().clear();
+
+    // The cycle's own lists are already in hand: a unit on a raid map copy names its group. No extra session walk.
+    std::unordered_set<uint32_t> candidateGroups;
+    std::unordered_set<uint32_t> walked;
+    auto note = [&](Player* unit)
+    {
+        if (!UnitQualifies(unit) || !walked.insert(unit->GetGUIDLow()).second)
+            return;
+        if (Group* group = unit->GetGroup())
+            candidateGroups.insert(group->GetId());
+    };
+    for (Player* bot : bots)
+        note(bot);
+    for (Player* player : players)
+        note(player);
+
+    std::vector<GroupInfo> found;
+    for (uint32_t const groupId : candidateGroups)
+    {
+        Group* group = sObjectMgr.GetGroupById(groupId);
+        if (!group)
+            continue;
+        ObjectGuid const leaderGuid = group->GetLeaderGuid();
+        Player* const leader = ObjectAccessor::FindPlayer(leaderGuid);
+        bool const leaderQualifies = UnitQualifies(leader);
+        bool anyQualifies = false;
+        bool anyBot = false;
+        uint32_t mapId = 0, instance = 0;
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (!member || !member->IsInWorld())
+                continue;
+            if (PlayerbotAIStorage::Instance().GetAI(member))
+                anyBot = true;
+            // The leader's copy names the row when it stands on a raid map; otherwise the first qualifying member's.
+            if (!anyQualifies && !leaderQualifies && UnitQualifies(member))
+            {
+                anyQualifies = true;
+                mapId = member->GetMapId();
+                instance = member->GetMap()->GetInstanceId();
+            }
+        }
+        if (leaderQualifies)
+        {
+            anyQualifies = true;
+            mapId = leader->GetMapId();
+            instance = leader->GetMap()->GetInstanceId();
+        }
+        if (!GroupQualifies(anyQualifies, anyBot))
+            continue;
+
+        GroupInfo info;
+        info.groupId = groupId;
+        info.map = mapId;
+        info.instance = instance;
+        info.raidGroup = group->isRaidGroup();
+        info.leaderGuid = leaderGuid.GetCounter();
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            if (slot.guid == leaderGuid)
+                info.leader = leader ? leader->GetName() : slot.name;
+        info.commander = BoundCommanderNameOfGroup(groupId);
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            MemberRef member;
+            member.guid = slot.guid.GetCounter();
+            member.sub = slot.group;
+            Player* online = ObjectAccessor::FindPlayer(slot.guid);
+            member.online = online && online->IsInWorld();
+            if (!member.online)
+                member.name = slot.name;
+            info.members.push_back(std::move(member));
+        }
+        if (CombatMonitorService::Instance().InFight(groupId))
+            info.combatJson = CombatMonitorService::Instance().WindowJson(groupId);
+        found.push_back(std::move(info));
+    }
+
+    std::sort(found.begin(), found.end(), [](GroupInfo const& a, GroupInfo const& b)
+    {
+        if (a.map != b.map)
+            return a.map < b.map;
+        if (a.instance != b.instance)
+            return a.instance < b.instance;
+        return a.groupId < b.groupId;
+    });
+    for (GroupInfo const& info : found)
+        RaidSet()[info.groupId] = ObservedRaid{info.map, info.instance};
+    out.swap(found);
+}
+
+bool IsObservedRaidGroup(uint32_t groupId)
+{
+    return RaidSet().count(groupId) != 0;
+}
+
+void UpdateObservedRaids(uint32_t diff)
+{
+    if (!ObservabilityEmitter::Instance().RaidsEnabled())
+        return;
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
+    if (!CombatMonitorService::Instance().Enabled())
+        return;
+
+    static uint32_t s_sampleMs = 0;
+    static uint64_t s_samples = 0, s_sumUs = 0, s_maxUs = 0, s_maxGroups = 0;
+    static uint32_t s_loggedAt = 0;
+    s_sampleMs += diff;
+    if (s_sampleMs < BoundFight::kSampleMs)
+        return;
+    s_sampleMs = 0;
+    std::chrono::steady_clock::time_point const started = std::chrono::steady_clock::now();
+    uint32_t const now = WorldTimer::getMSTime();
+
+    // The set the collection found, plus the groups still on a gone-grace clock (the collection dropped them already).
+    std::vector<uint32_t> groups;
+    groups.reserve(RaidSet().size() + RaidAway().size());
+    for (auto const& entry : RaidSet())
+        groups.push_back(entry.first);
+    for (auto const& entry : RaidAway())
+        if (!RaidSet().count(entry.first))
+            groups.push_back(entry.first);
+
+    for (uint32_t const groupId : groups)
+    {
+        // A bound group's book belongs to the bound path: no second Refresh, no context fight. A group the last collection
+        // no longer found is on its gone-grace clock, not sampled.
+        bool const bound = GroupIsBound(groupId);
+        bool const observed = RaidSet().count(groupId) != 0;
+        Group* group = bound || !observed ? nullptr : sObjectMgr.GetGroupById(groupId);
+        bool const usable = bound || group;
+        if (RaidAway()[groupId].Overdue(usable, now))
+        {
+            CombatMonitorService::Instance().CloseUnfinished(groupId, now);
+            CombatMonitorService::Instance().Forget(groupId);
+            RaidSet().erase(groupId);
+            RaidAway().erase(groupId);
+            continue;
+        }
+        if (bound || !group)
+            continue;
+
+        std::vector<Player*> members;
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (!member || !member->IsInWorld())
+                continue;
+            members.push_back(member);
+        }
+        bool anyInCombat = false;
+        bool allDead = !members.empty();
+        for (Player* member : members)
+        {
+            anyInCombat = anyInCombat || MemberFighting(member);
+            allDead = allDead && !member->IsAlive();
+        }
+        CombatMonitor::FightContext ctx;
+        ctx.kind = "raid";
+        uint32_t const mapId = RaidSet()[groupId].map;
+        // The book is filed under "raid#<group id>", the key the RAIDS row carries until a binding stands on the group.
+        CombatMonitorService::Instance().NoteBinding(groupId, "raid#" + std::to_string(groupId), 0, mapId);
+        CombatMonitorService::Instance().Refresh(groupId, CombatMonitorMembersOf(members), anyInCombat, allDead, ctx,
+            {}, now);
+        if (CombatMonitorService::Instance().InFight(groupId) && !members.empty())
+            NoteFightBoss(groupId, members.front());
+    }
+
+    uint64_t const us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - started).count());
+    ++s_samples;
+    s_sumUs += us;
+    s_maxUs = std::max(s_maxUs, us);
+    s_maxGroups = std::max<uint64_t>(s_maxGroups, groups.size());
+    if (now - s_loggedAt >= 60 * BoundFight::kSampleMs)
+    {
+        TB_LOG_DEBUG("TortoiseBots: observed raids 60s: %u samples, %u groups max, avg %llu us max %llu us",
+            static_cast<uint32_t>(s_samples), static_cast<uint32_t>(s_maxGroups),
+            static_cast<unsigned long long>(s_sumUs / std::max<uint64_t>(s_samples, 1)),
+            static_cast<unsigned long long>(s_maxUs));
+        s_loggedAt = now;
+        s_samples = 0;
+        s_sumUs = 0;
+        s_maxUs = 0;
+        s_maxGroups = 0;
+    }
+}
+
+void ClearObservedRaids()
+{
+    RaidSet().clear();
+    RaidAway().clear();
+}
+
+} // namespace BotCommands
+} // namespace TortoiseBots
