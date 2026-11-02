@@ -553,7 +553,7 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 				a2.skillAlive += a
 				var peerSkills []float64
 				for _, p := range f.Bots {
-					if p.GUID == b.GUID || p.Role != b.Role || !judged[p.GUID] || isCut(p, lim.SpellListCap) {
+					if p.GUID == b.GUID || p.Role != b.Role || !strings.EqualFold(p.Class, b.Class) || !judged[p.GUID] || isCut(p, lim.SpellListCap) {
 						continue
 					}
 					peerSkills = append(peerSkills, 10*float64(spellCasts(p, sk.spells))/alive[p.GUID])
