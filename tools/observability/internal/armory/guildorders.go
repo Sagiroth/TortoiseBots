@@ -91,7 +91,7 @@ type GuildRelist struct {
 	Count     uint32 `json:"count"`
 	Buyout    uint32 `json:"buyout"`
 	PostedAt  int64  `json:"posted_at"`
-	Received  bool   `json:"received"`
+	State     uint8  `json:"state"` // 0 listed, 1 mail claimed, 2 value received
 	HeldGold  uint32 `json:"held_gold"`
 	HeldCount uint32 `json:"held_count"`
 }
@@ -504,8 +504,14 @@ func (t *GuildOrderTracker) itemNames(ids []uint32) map[uint32]itemName {
 }
 
 func (t *GuildOrderTracker) loadRelists() ([]GuildRelist, error) {
-	rows, err := t.svc.db.Query(`SELECT bot_guid, guild_id, item_id, count, buyout, posted_at, received, held_gold, held_count
+	// state: 0 posted, 1 mail claimed, 2 value received. Modules before the
+	// claim step only had a received flag (1 = received).
+	rows, err := t.svc.db.Query(`SELECT bot_guid, guild_id, item_id, count, buyout, posted_at, state, held_gold, held_count
 		FROM tortoise_bots_guild_relist ORDER BY posted_at DESC`)
+	if err != nil && strings.Contains(err.Error(), "state") {
+		rows, err = t.svc.db.Query(`SELECT bot_guid, guild_id, item_id, count, buyout, posted_at, received * 2, held_gold, held_count
+			FROM tortoise_bots_guild_relist ORDER BY posted_at DESC`)
+	}
 	if err != nil {
 		return nil, err // older module: no ledger table
 	}
@@ -518,11 +524,9 @@ func (t *GuildOrderTracker) loadRelists() ([]GuildRelist, error) {
 	guids, items := map[uint32]bool{}, map[uint32]bool{}
 	for rows.Next() {
 		var r raw
-		var received uint8
-		if err := rows.Scan(&r.guid, &r.GuildID, &r.item, &r.Count, &r.Buyout, &r.PostedAt, &received, &r.HeldGold, &r.HeldCount); err != nil {
+		if err := rows.Scan(&r.guid, &r.GuildID, &r.item, &r.Count, &r.Buyout, &r.PostedAt, &r.State, &r.HeldGold, &r.HeldCount); err != nil {
 			return nil, err
 		}
-		r.Received = received != 0
 		guids[r.guid], items[r.item] = true, true
 		list = append(list, r)
 	}

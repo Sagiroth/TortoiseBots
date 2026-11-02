@@ -3087,7 +3087,7 @@
     document.getElementById('go-relist-card').style.display = rel.length ? '' : 'none';
     document.getElementById('go-relist-body').innerHTML = rel.map(r => `<tr><td>${esc(r.bot)}</td><td>${esc(r.item_name)}</td><td class="mono">${esc(r.count)}</td>
       <td class="mono">${formatMoney(r.buyout)}</td><td>${esc(goAgo(r.posted_at))}</td>
-      <td>${r.received ? 'Collected, goes to the guild bank next visit' : 'On the auction house'}</td></tr>`).join('');
+      <td>${r.state === 2 ? 'Collected, goes to the guild bank next visit' : r.state === 1 ? 'Sale or return mail being collected' : 'On the auction house'}</td></tr>`).join('');
   }
 
   function initGuildOrders() {
