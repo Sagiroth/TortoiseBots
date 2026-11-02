@@ -358,10 +358,22 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         if (std::find(seen.begin(), seen.end(), entry) != seen.end())
             continue;
         seen.push_back(entry);
-        if (const std::vector<BossTacticRow>* rows = table.Rows(mapId, entry))
+        const std::vector<BossTacticRow>* rows = table.Rows(mapId, entry);
+        if (rows)
         {
+            // The gate reads the health of the boss entry the row hangs on, the unit that activated it, never an add's.
+            int const bossHpPct = static_cast<int>(unit->GetHealthPercent());
+            bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
             for (const BossTacticRow& row : *rows)
+            {
+                // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
+                // an older kind is closed by RowGateOpen instead, so key-off behaviour is exactly the pre-gate one.
+                if (!keyOn && IsAuraTacticKind(row.kind))
+                    continue;
+                if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
+                    continue;
                 fight.rows.push_back(&row);
+            }
         }
     }
     return fight;
@@ -373,8 +385,18 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
     (void)bot;
     for (Unit* unit : fight.units)
     {
-        Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (!spell || !spell->m_spellInfo || !IsInterruptListed(fight.rows, unit->GetEntry(), spell->m_spellInfo->Id))
+        // Either slot: a channelled rotation runs in the channel slot and never the generic one, and the kick on a
+        // channel is the same rule as on a cast. The generic slot is read first, so a listing of the same id in both
+        // resolves the same way for every bot.
+        uint32 genericId = 0;
+        uint32 channeledId = 0;
+        CurrentCastIds(unit, genericId, channeledId);
+        uint32 spellId = 0;
+        if (genericId != 0 && IsInterruptListed(fight.rows, unit->GetEntry(), genericId))
+            spellId = genericId;
+        else if (channeledId != 0 && IsInterruptListed(fight.rows, unit->GetEntry(), channeledId))
+            spellId = channeledId;
+        if (spellId == 0)
             continue;
         for (const char* name : kInterruptSpells)
         {
@@ -484,7 +506,7 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
                 deadNow.push_back(guid);
         }
         groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
-                                                 WorldTimer::getMSTime());
+                                                 WorldTimer::getMSTime(), LinkedDeathWindowMs(group.windowSec));
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }

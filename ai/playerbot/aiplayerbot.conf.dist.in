@@ -904,6 +904,18 @@ AiPlayerbot.DungeonTactics = 0
 # 1 - on
 AiPlayerbot.DungeonRunLinkedDeath = 0
 
+# The aura tactics of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): the dispel_priority,
+# flee_on_aura, freeze_on_aura, dps_hold_after, taunt_after_cast and swap_on_aura kinds, and the shared row gates.
+# A row can gate itself to a boss health band (hp_min/hp_max %) and to bots carrying an aura (bot_aura); only a row
+# the fight scan reads can gate, so the loader skips a gate on hold_kill, tank_hold, one_at_a_time and linked_death.
+# With this key off a gated row is closed and the six kinds are not read at all, so the table behaves exactly as
+# before them. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because the
+# kinds change what every bot does mid-fight. `.reload config` reads it again with the other AiPlayerbot.DungeonRun*
+# keys.
+# 0 - off: no gate is honoured, the six aura kinds are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAuraTactics = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills

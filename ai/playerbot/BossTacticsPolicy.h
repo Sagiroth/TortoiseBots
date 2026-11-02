@@ -45,7 +45,71 @@ namespace ai
         HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
         OneAtATime = 7, // all DPS kill one living unit of `boss_entry` at a time: the lowest health, the lowest guid on a tie
         LinkedDeath = 8, // a group that must die together: equalise its health, hold every member at <= `param` %, then burn
+        DpsHoldAfter = 9,    // hold damage on the row's subject for `param` seconds (see TacticMode)
+        DispelPriority = 10,  // cleanse the row's aura in `priority` order, under the row's TacticMode
+        FleeOnAura = 11,      // a member carrying the row's aura moves out of the group (or to the tank)
+        FreezeOnAura = 12,    // a member carrying the row's aura stands still and does nothing
+        TauntAfterCast = 13,  // the row's tank index taunts the subject back after the row's trigger
+        SwapOnAura = 14,      // the tanks rotate the boss at `param` stacks of the row's aura
     };
+
+    // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
+    // empty word is the kind's own behaviour (Default). The loader skips an Invalid row.
+    enum class TacticMode : std::uint8_t
+    {
+        Default = 0,
+        Now = 1,       // dispel_priority: remove the aura as soon as it lands
+        Clear = 2,     // dispel_priority: remove it once the carrier is clear of the group
+        Never = 3,     // dispel_priority: never remove it
+        Away = 4,      // flee_on_aura: run until no other group member is near
+        ToTank = 5,    // flee_on_aura: walk to the main tank
+        Engage = 6,    // dps_hold_after, taunt_after_cast: the first engagement
+        Blink = 7,     // dps_hold_after, taunt_after_cast: the subject teleported
+        UntilTank = 8, // dps_hold_after, taunt_after_cast: until the subject is on a tank
+        Invalid = 9,
+    };
+
+    inline bool IsAuraTacticKind(BossTacticKind kind)
+    {
+        return kind == BossTacticKind::DpsHoldAfter || kind == BossTacticKind::DispelPriority ||
+            kind == BossTacticKind::FleeOnAura || kind == BossTacticKind::FreezeOnAura ||
+            kind == BossTacticKind::TauntAfterCast || kind == BossTacticKind::SwapOnAura;
+    }
+
+    inline TacticMode ParseTacticMode(BossTacticKind kind, const std::string& text)
+    {
+        if (text.empty())
+            return TacticMode::Default;
+        switch (kind)
+        {
+            case BossTacticKind::DispelPriority:
+                if (text == "now")
+                    return TacticMode::Now;
+                if (text == "clear")
+                    return TacticMode::Clear;
+                if (text == "never")
+                    return TacticMode::Never;
+                break;
+            case BossTacticKind::FleeOnAura:
+                if (text == "away")
+                    return TacticMode::Away;
+                if (text == "to_tank")
+                    return TacticMode::ToTank;
+                break;
+            case BossTacticKind::DpsHoldAfter:
+            case BossTacticKind::TauntAfterCast:
+                if (text == "engage")
+                    return TacticMode::Engage;
+                if (text == "blink")
+                    return TacticMode::Blink;
+                if (text == "until_tank")
+                    return TacticMode::UntilTank;
+                break;
+            default:
+                break;
+        }
+        return TacticMode::Invalid;
+    }
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
     {
@@ -65,6 +129,18 @@ namespace ai
             return BossTacticKind::OneAtATime;
         if (text == "linked_death" || text == "together")
             return BossTacticKind::LinkedDeath;
+        if (text == "dps_hold_after")
+            return BossTacticKind::DpsHoldAfter;
+        if (text == "dispel_priority")
+            return BossTacticKind::DispelPriority;
+        if (text == "flee_on_aura")
+            return BossTacticKind::FleeOnAura;
+        if (text == "freeze_on_aura")
+            return BossTacticKind::FreezeOnAura;
+        if (text == "taunt_after_cast")
+            return BossTacticKind::TauntAfterCast;
+        if (text == "swap_on_aura")
+            return BossTacticKind::SwapOnAura;
         return BossTacticKind::None;
     }
 
@@ -80,7 +156,38 @@ namespace ai
         // linked_death: the release burn's order, a comma list of the group's entries in `burn_order` (the loader
         // fills it). Empty for every other kind and for a group without one.
         std::vector<std::uint32_t> burnOrder;
+        // The row's gates (`hp_min`, `hp_max`, `bot_aura`): the boss's health % band (inclusive) and the aura a bot
+        // must carry. Only a row a fight scan reads may carry one (RowGateSet); 0/100/0 is no gate.
+        std::uint8_t hpMin = 0;
+        std::uint8_t hpMax = 100;
+        std::uint32_t botAura = 0;
+        // The kind's own mode word (`tactic_mode`), parsed by ParseTacticMode.
+        TacticMode mode = TacticMode::Default;
+        // linked_death: the release latch's window in seconds (`window_s`).
+        float windowSec = 7.0f;
     };
+
+    // Whether the row carries a gate at all. Only the scan-read kinds may: hold_kill, tank_hold, one_at_a_time and
+    // linked_death are read straight from the table, so they could never answer it.
+    inline bool RowGateSet(const BossTacticRow& row)
+    {
+        return row.hpMin != 0 || row.hpMax != 100 || row.botAura != 0;
+    }
+
+    // Whether a row is open for this bot right now. `keyOn` is AiPlayerbot.DungeonRunAuraTactics: with it off a
+    // gated row is closed, so the table behaves exactly as before the gates existed. The health band is the row's
+    // boss entry's health (`bossHpPct`, inclusive), never the add's; `botHasGateAura` is whether this bot carries
+    // `botAura`. An ungated row is open whenever the band and the aura allow it.
+    inline bool RowGateOpen(const BossTacticRow& row, bool keyOn, int bossHpPct, bool botHasGateAura)
+    {
+        if (RowGateSet(row) && !keyOn)
+            return false;
+        if (bossHpPct < row.hpMin || bossHpPct > row.hpMax)
+            return false;
+        if (row.botAura != 0 && !botHasGateAura)
+            return false;
+        return true;
+    }
 
     // The creature a row is about.
     inline std::uint32_t TacticSubjectEntry(const BossTacticRow& row)
@@ -108,6 +215,17 @@ namespace ai
                 return false;
             if (row.map == 0 || row.bossEntry == 0 || row.kind == BossTacticKind::None)
                 return false;
+            // A mode word the row's kind does not take (ParseTacticMode) makes the whole row unusable.
+            if (row.mode == TacticMode::Invalid)
+                return false;
+            // The health band is a percentage range, low to high.
+            if (row.hpMin > row.hpMax || row.hpMax > 100)
+                return false;
+            // Only a row a fight scan answers can carry a gate. These four are read straight from the table (the dps
+            // and tank pickers, the linked_death scan), so a gate on one of them would never be consulted.
+            if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
+                    row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath))
+                return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
             if (row.kind == BossTacticKind::Behind && !(row.param > 0.0f))
@@ -129,12 +247,31 @@ namespace ai
             // A linked_death row is one partner of a group, its boss_entry the anchor: a row without a partner lists
             // nobody, and the hold percent has to be a percentage.
             if (row.kind == BossTacticKind::LinkedDeath &&
-                (row.targetEntry == 0 || !(row.param > 0.0f) || row.param > 100.0f))
+                (row.targetEntry == 0 || !(row.param > 0.0f) || row.param > 100.0f || !(row.windowSec > 0.0f)))
+                return false;
+            // dps_hold_after: the hold in seconds, never zero and never longer than the row's own release would take.
+            if (row.kind == BossTacticKind::DpsHoldAfter && (!(row.param > 0.0f) || row.param > 30.0f))
+                return false;
+            // A dispel_priority row ranks one aura of the row's boss.
+            if (row.kind == BossTacticKind::DispelPriority && row.spellId == 0)
+                return false;
+            // flee_on_aura: the aura that sends the carrier away, and (mode away) the distance to keep, never negative.
+            if (row.kind == BossTacticKind::FleeOnAura && (row.spellId == 0 || row.param < 0.0f))
+                return false;
+            if (row.kind == BossTacticKind::FreezeOnAura && row.spellId == 0)
+                return false;
+            // taunt_after_cast: the deadline in seconds and a trigger, a spell or one of the two spell-less modes.
+            if (row.kind == BossTacticKind::TauntAfterCast && (!(row.param > 0.0f) ||
+                    (row.spellId == 0 && row.mode != TacticMode::Blink && row.mode != TacticMode::UntilTank)))
+                return false;
+            // swap_on_aura: the aura and a rotation of at least two tanks (priority is the rotation's size).
+            if (row.kind == BossTacticKind::SwapOnAura && (row.spellId == 0 || row.priority < 2))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
-                if (have.kind == row.kind && have.targetEntry == row.targetEntry && have.spellId == row.spellId)
+                if (have.kind == row.kind && have.targetEntry == row.targetEntry && have.spellId == row.spellId &&
+                    have.hpMin == row.hpMin && have.hpMax == row.hpMax)
                     return false;
             }
             rows.push_back(row);
@@ -143,6 +280,10 @@ namespace ai
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
+            if (IsAuraTacticKind(row.kind))
+                auraTacticMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::DispelPriority)
+                dispelMaps_[row.map] = true;
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -190,6 +331,20 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && linkedDeathMaps_.find(map) != linkedDeathMaps_.end();
         }
 
+        // Whether the map has a row of one of the six aura kinds (dps_hold_after, dispel_priority, flee_on_aura,
+        // freeze_on_aura, taunt_after_cast, swap_on_aura): only there does the new work run. False before the seal.
+        bool HasAuraTacticMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && auraTacticMaps_.find(map) != auraTacticMaps_.end();
+        }
+
+        // Whether the map has a dispel_priority row (the dispel predicate and the dispel hold look there). False before
+        // the seal.
+        bool HasDispelMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && dispelMaps_.find(map) != dispelMaps_.end();
+        }
+
         // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link
         // scan reads these instead of a fight's rows, which under "focus rti targets" are the raid mark's entry only.
         // Empty before the seal or for a map without rows of the kind.
@@ -222,6 +377,8 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
+        std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
+        std::unordered_map<std::uint32_t, bool> dispelMaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
@@ -641,6 +798,9 @@ namespace ai
         std::uint32_t bossEntry = 0;
         std::uint8_t groupId = 0;
         float param = 0.0f;                 // the hold percent
+        // The release latch's window in seconds (the max over the group's rows): 7 s unless the encounter's own
+        // resurrection retry is longer (Thekal's trio: 15 s).
+        float windowSec = 7.0f;
         std::vector<std::uint32_t> entries; // the anchor first, then each partner
         // The release burn's order (`burn_order` of the group's rows, in the encounter's own death order): the first
         // living member of the list is burned, then the next. Empty: the ordinary released pick (the lowest), for a
@@ -660,6 +820,7 @@ namespace ai
             out.bossEntry = row->bossEntry;
             out.groupId = row->priority;
             out.param = row->param;
+            out.windowSec = row->windowSec;
             out.entries.push_back(row->bossEntry);
             for (const BossTacticRow* other : active)
             {
@@ -667,6 +828,7 @@ namespace ai
                     other->priority != row->priority)
                     continue;
                 out.param = std::max(out.param, other->param);
+                out.windowSec = std::max(out.windowSec, other->windowSec);
                 if (std::find(out.entries.begin(), out.entries.end(), other->targetEntry) == out.entries.end())
                     out.entries.push_back(other->targetEntry);
                 if (out.burnOrder.empty() && !other->burnOrder.empty())
@@ -749,10 +911,18 @@ namespace ai
     //   still has it armed. The death is explicit: a known guid the observing bot finds dead or as a corpse
     //   (LinkedDeathUnseen lists the known guids the read did not see living, for the caller to look up). A member merely
     //   not seen (out of range, not cached) is never a death. Each death counts once.
-    //   Cleared once every known member is confirmed dead, or `kLinkedDeathLatchMs` after the death, so a fight that
-    //   cannot finish the trio goes back to the equalise hold instead of burning one member at a time forever.
+    //   Cleared once every known member is confirmed dead, or the group's window (the `window_s` column, 7 s unless the
+    //   encounter's own retry is longer) after the death, so a fight that cannot finish the trio goes back to the
+    //   equalise hold instead of burning one member at a time forever.
     constexpr std::uint32_t kLinkedDeathLatchMs = 15000;
     constexpr std::uint32_t kLinkedDeathSeenMs = 5000;
+
+    // The latch's window in milliseconds from the group's rows: the constant only when a group carries none (the loader
+    // refuses that, so it is the plain fallback).
+    inline std::uint32_t LinkedDeathWindowMs(float windowSec)
+    {
+        return windowSec > 0.0f ? static_cast<std::uint32_t>(windowSec * 1000.0f + 0.5f) : kLinkedDeathLatchMs;
+    }
     struct LinkedDeathKnown
     {
         std::uint64_t guid = 0;
@@ -811,10 +981,11 @@ namespace ai
 
     // One read of the group updates the latch and answers whether it is on. `param`: the hold percent; `members`: the
     // living members this read saw; `deadNow`: the LinkedDeathUnseen guids the caller found dead; `nowMs`: the world
-    // clock. The sightings are applied first (a member above `param` disarms, a low one re-arms once every other known
+    // clock; `windowMs`: how long the latch lasts after the death (LinkedDeathWindowMs of the group's window_s). The sightings are applied first (a member above `param` disarms, a low one re-arms once every other known
     // member is fresh), then the deaths, and a death latches only when armed both before this read and after it.
     inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
-                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs)
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
+                                     std::uint32_t windowMs = kLinkedDeathLatchMs)
     {
         for (const LinkedMember& member : members)
         {
@@ -836,7 +1007,7 @@ namespace ai
             // A living member is no death: a raise undoes an earlier one, so its next death counts again.
             latch.dead.erase(std::remove(latch.dead.begin(), latch.dead.end(), member.guid), latch.dead.end());
         }
-        if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
+        if (latch.latched && nowMs - latch.sinceMs >= windowMs)
             latch.latched = false;
         const bool armedBefore = latch.armed;
         std::vector<std::uint64_t> newDeaths;
