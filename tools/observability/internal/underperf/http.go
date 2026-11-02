@@ -62,10 +62,13 @@ func Handler(src Sources) http.HandlerFunc {
 			writeErr(w, "commander is required")
 			return
 		}
-		since, until, msg := window(q, nowFn())
+		since, until, fallback, msg := window(q, nowFn())
 		if msg != "" {
 			writeErr(w, msg)
 			return
+		}
+		if fallback {
+			w.Header().Set("X-TZ-Fallback", "utc")
 		}
 		runSel := q.Get("run")
 		if runSel == "" {
@@ -102,7 +105,7 @@ func Handler(src Sources) http.HandlerFunc {
 			run := base.Runs[idx]
 			var subset []Input
 			for _, f := range fights {
-				if f.Fight.Start >= run.Since && f.Fight.Start < run.Until {
+				if f.Session == run.Session && f.Fight.Start >= run.Since && f.Fight.Start < run.Until {
 					subset = append(subset, f)
 				}
 			}
@@ -118,44 +121,66 @@ func Handler(src Sources) http.HandlerFunc {
 	}
 }
 
-// window reads the half-open [since, until) the request asks for: one UTC day
-// or an explicit since (until defaulting to now+1).
-func window(q map[string][]string, now time.Time) (int64, int64, string) {
+// window reads the half-open [since, until) the request asks for: one UTC
+// day, one local night (night with the history routes' tz and rollover), or
+// an explicit since (until defaulting to now+1). A night with an unknown
+// zone falls back to that UTC day, as the history list does.
+func window(q map[string][]string, now time.Time) (since, until int64, fallback bool, msg string) {
 	get := func(name string) string {
 		if v := q[name]; len(v) > 0 {
 			return v[0]
 		}
 		return ""
 	}
-	day, sinceS, untilS := get("day"), get("since"), get("until")
+	day, night, sinceS, untilS := get("day"), get("night"), get("since"), get("until")
+	if night != "" {
+		if day != "" || sinceS != "" || untilS != "" {
+			return 0, 0, false, "night and a day window together"
+		}
+		loc, rollover, paramErr, fb := history.NightParams(get)
+		if paramErr != "" {
+			return 0, 0, false, paramErr
+		}
+		if loc == nil {
+			return 0, 0, false, "bad night"
+		}
+		if fb {
+			loc, rollover = time.UTC, 0
+		}
+		start, end, ok := history.NightWindow(night, loc, rollover)
+		if !ok {
+			return 0, 0, false, "bad night"
+		}
+		return start, end, fb, ""
+	}
 	if day != "" && sinceS != "" {
-		return 0, 0, "day and since together"
+		return 0, 0, false, "day and since together"
 	}
 	if day != "" {
 		t, err := time.ParseInLocation("2006-01-02", day, time.UTC)
 		if err != nil || t.Format("2006-01-02") != day {
-			return 0, 0, "bad day"
+			return 0, 0, false, "bad day"
 		}
-		return t.Unix(), t.Unix() + 86400, ""
+		return t.Unix(), t.Unix() + 86400, false, ""
 	}
 	if sinceS == "" {
-		return 0, 0, "day or since is required"
+		return 0, 0, false, "day or since is required"
 	}
 	since, err := strconv.ParseInt(sinceS, 10, 64)
 	if err != nil || since <= 0 {
-		return 0, 0, "bad since"
+		return 0, 0, false, "bad since"
 	}
-	until := now.Unix() + 1
+	until = now.Unix() + 1
 	if untilS != "" {
 		until, err = strconv.ParseInt(untilS, 10, 64)
 		if err != nil {
-			return 0, 0, "bad until"
+			return 0, 0, false, "bad until"
 		}
 	}
 	if until <= since {
-		return 0, 0, "until must be after since"
+		return 0, 0, false, "until must be after since"
 	}
-	return since, until, ""
+	return since, until, false, ""
 }
 
 // candidate is one stored fight before its detail is read. The lists carry

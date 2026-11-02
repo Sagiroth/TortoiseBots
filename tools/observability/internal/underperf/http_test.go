@@ -1,6 +1,7 @@
 package underperf
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -117,6 +118,10 @@ func TestBadParams(t *testing.T) {
 		"/api/v1/combat/underperformers?commander=T&since=100&until=100",
 		"/api/v1/combat/underperformers?commander=T&day=2026-11-01&run=5",
 		"/api/v1/combat/underperformers?commander=T&day=2026-11-01&run=x",
+		"/api/v1/combat/underperformers?commander=T&night=2026-11-01",
+		"/api/v1/combat/underperformers?commander=T&night=2026-11-1&tz=Europe%2FOslo",
+		"/api/v1/combat/underperformers?commander=T&night=2026-11-01&tz=Europe%2FOslo&rollover=13",
+		"/api/v1/combat/underperformers?commander=T&night=2026-11-01&tz=Europe%2FOslo&day=2026-11-01",
 	}
 	for _, target := range cases {
 		rec := get(t, h, target)
@@ -247,4 +252,127 @@ func TestRunLast(t *testing.T) {
 	if r.Since != newF.Start {
 		t.Errorf("since = %d, want the run's start %d", r.Since, newF.Start)
 	}
+}
+
+// nightTestNow keeps the store's retention and write delay off the wall clock: the fights below sit on fixed DST dates.
+var nightTestNow = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+
+// openHistory is a real store, so the night route is checked against the same index the history list reads.
+func openHistory(t *testing.T) *history.Store {
+	t.Helper()
+	s, err := history.Open(history.Config{Dir: t.TempDir(), Now: func() time.Time { return nightTestNow }},
+		func(context.Context, string, combat.Fight) int { return 0 },
+		func(string, combat.Fight) (int64, int64, bool) { return 0, 0, false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close(context.Background()) })
+	return s
+}
+
+// A night is the history list's night: fights across UTC midnight and the
+// 25-hour fall-back night are in it exactly while nightOf puts them there.
+func TestNightWindowMatchesHistoryList(t *testing.T) {
+	oslo, err := time.LoadLocation("Europe/Oslo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := openHistory(t)
+	fights := []struct {
+		id    string
+		start time.Time
+	}{
+		{"early", time.Date(2026, 10, 24, 3, 59, 0, 0, time.UTC)}, // 05:59 CEST, night of 23 Oct
+		{"mid", time.Date(2026, 10, 24, 4, 0, 0, 0, time.UTC)},    // 06:00 CEST, night of 24 Oct
+		{"late", time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC)},  // 02:30 CEST, 24 Oct though the UTC date moved on
+		{"edge", time.Date(2026, 10, 25, 4, 59, 0, 0, time.UTC)},  // 05:59 CET after the fall-back, still 24 Oct
+		{"next", time.Date(2026, 10, 25, 5, 0, 0, 0, time.UTC)},   // 06:00 CET, night of 25 Oct
+	}
+	for _, in := range fights {
+		f := combat.Fight{ID: in.id, Commander: "T", Start: in.start.Unix(), DurMS: 60000,
+			Bots: []combat.FightBot{tb(1, "A", "rogue", "dps", 3000, 0, 10, 0, 0)}}
+		if !st.Enqueue(history.Item{Session: 1, Fight: f, At: nightTestNow.Add(-time.Minute)}) {
+			t.Fatal("enqueue refused")
+		}
+	}
+	st.Flush()
+
+	h := Handler(Sources{Hist: st})
+	want := map[string]int{"2026-10-23": 1, "2026-10-24": 3, "2026-10-25": 1}
+	for night, n := range want {
+		target := "/api/v1/combat/underperformers?commander=T&night=" + night + "&tz=Europe%2FOslo&rollover=6"
+		r := decodeAnswer(t, get(t, h, target))
+		if r.Fights != n {
+			t.Errorf("night %s: fights = %d, want %d", night, r.Fights, n)
+		}
+		if got := len(st.ListNight("T", night, oslo, 6)); r.Fights != got {
+			t.Errorf("night %s: fights = %d, the history night list has %d", night, r.Fights, got)
+		}
+	}
+
+	// An unknown zone falls back to that UTC day, as the history list does.
+	rec := get(t, h, "/api/v1/combat/underperformers?commander=T&night=2026-10-25&tz=Nope%2FZone&rollover=6")
+	if rec.Header().Get("X-TZ-Fallback") != "utc" {
+		t.Errorf("unknown zone: no X-TZ-Fallback: utc header")
+	}
+	r := decodeAnswer(t, rec)
+	if got := len(st.List("T", "2026-10-25")); r.Fights != got || r.Fights != 3 {
+		t.Errorf("unknown zone: fights = %d, want the UTC day's %d", r.Fights, got)
+	}
+	if r.Since != dayOf(2026, 10, 25) || r.Until != dayOf(2026, 10, 26) {
+		t.Errorf("unknown zone: window = [%d, %d), want the UTC day", r.Since, r.Until)
+	}
+}
+
+// A run is one session's fights: an overlapping fight of another session
+// inside the run's time bounds is not part of it.
+func TestRunFilterKeepsOneSession(t *testing.T) {
+	base := dayOf(2026, 11, 1)
+	mk := func(id string, guid uint32, name string, start int64, dur uint32) (string, combat.Fight) {
+		key := combat.Key("T", 1, id)
+		return key, combat.Fight{ID: id, Start: start, DurMS: dur,
+			Bots: []combat.FightBot{tb(guid, name, "rogue", "dps", 3000, 0, 10, 0, 0)}}
+	}
+	a1Key, a1 := mk("a1", 1, "A", base+3600, 60000)
+	b1Key, b1 := mk("b1", 2, "B", base+3630, 30000)
+	a2Key, a2 := mk("a2", 3, "C", base+3900, 30000)
+	mem := &fakeMem{
+		rows: []combat.FightSummary{
+			memRow(a1Key, a1, 1), memRow(b1Key, b1, 2), memRow(a2Key, a2, 1),
+		},
+		fights: map[string]combat.Fight{a1Key: a1, b1Key: b1, a2Key: a2},
+		warns:  map[string][]combat.Warning{a1Key: nil, b1Key: nil, a2Key: nil},
+	}
+	h := Handler(Sources{Mem: mem})
+
+	r := decodeAnswer(t, get(t, h, "/api/v1/combat/underperformers?commander=T&day=2026-11-01&run=0"))
+	if r.Fights != 1 || !onlyNames(r, "A") {
+		t.Errorf("run 0 = %d fights, bots %v + ok %v; want only session 1's A", r.Fights, namesOf(r.Bots), namesOfOK(r.OK))
+	}
+
+	r = decodeAnswer(t, get(t, h, "/api/v1/combat/underperformers?commander=T&day=2026-11-01&run=1"))
+	if r.Fights != 1 || !onlyNames(r, "B") {
+		t.Errorf("run 1 = %d fights, bots %v + ok %v; want only session 2's B", r.Fights, namesOf(r.Bots), namesOfOK(r.OK))
+	}
+}
+
+func onlyNames(r Report, want string) bool {
+	got := append(namesOf(r.Bots), namesOfOK(r.OK)...)
+	return len(got) == 1 && got[0] == want
+}
+
+func namesOf(bots []BotRow) []string {
+	out := make([]string, len(bots))
+	for i := range bots {
+		out[i] = bots[i].Name
+	}
+	return out
+}
+
+func namesOfOK(rows []OKRow) []string {
+	out := make([]string, len(rows))
+	for i := range rows {
+		out[i] = rows[i].Name
+	}
+	return out
 }

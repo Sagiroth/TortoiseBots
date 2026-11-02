@@ -172,7 +172,7 @@ The limits served with every answer:
 | `max_fight_refs` | 20 | fight links per bot, newest first |
 | `spell_list_cap` | 12 | a bot with this many listed spells has a cut list (no skill rate) |
 
-`GET /api/v1/combat/underperformers?commander=<name>&(day=<YYYY-MM-DD>|since=<unix s>[&until=<unix s>])[&run=all|last|<i>]` answers `commander`, `since`, `until`, `run`, `fights`, `judged`, `truncated`, `runs` (each `since`, `until`, `fights`, `plan`, `legs`, `session`), `limits`, `bots` and `ok`; a run pick narrows the fights to that run but `runs` still lists the whole window, and the answer's `since`/`until` become the run's. Every number that cannot be computed is `null`, never NaN. A bad parameter answers 400 with `{"error": "..."}`; the route needs the normal GM login.
+`GET /api/v1/combat/underperformers?commander=<name>&(day=<YYYY-MM-DD>|night=<YYYY-MM-DD>&tz=<IANA zone>[&rollover=0-12]|since=<unix s>[&until=<unix s>])[&run=all|last|<i>]` answers `commander`, `since`, `until`, `run`, `fights`, `judged`, `truncated`, `runs` (each `since`, `until`, `fights`, `plan`, `legs`, `session`), `limits`, `bots` and `ok`; a run pick narrows the fights to that run's session and time bounds but `runs` still lists the whole window, and the answer's `since`/`until` become the run's. `night` is the same local night the fight history lists (tz and the 06:00 rollover, `X-TZ-Fallback: utc` and the night read as a UTC day when the zone is unknown); `day` stays one UTC day. Every number that cannot be computed is `null`, never NaN. A bad parameter answers 400 with `{"error": "..."}`; the route needs the normal GM login.
 
 ### Agent Maps Tab
 

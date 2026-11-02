@@ -44,6 +44,18 @@ assert.strictEqual(
   run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, '1')"),
   "day=2026-11-01&run=1",
   "the run pick becomes the run parameter");
+assert.strictEqual(
+  run("Underperf.query({commander:'T'}, {day:'2026-11-01'}, 1793547000000, null, '&tz=Europe%2FOslo&rollover=6')"),
+  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=last",
+  "with the picker's zone a chosen night asks as a local night");
+ctx.FightHistory = { nightOf: () => "2026-11-01" };
+assert.strictEqual(
+  run("Underperf.query({commander:'T', history:true}, {day:''}, 1793547000000, null, '&tz=Europe%2FOslo&rollover=6')"),
+  "night=2026-11-01&tz=Europe%2FOslo&rollover=6&run=last",
+  "a history card on Tonight asks the current local night");
+delete ctx.FightHistory;
+assert.ok(appSrc.indexOf("Underperf.query(bind, fd, Date.now(), fd.underPick, fdNightParams())") >= 0,
+  "app.js hands the picker's night params to the query");
 assert.ok(appSrc.indexOf("/api/v1/combat/underperformers?commander=") >= 0, "app.js calls the route");
 assert.ok(appSrc.indexOf("encodeURIComponent(bind.commander)") >= 0, "the commander is URL-encoded");
 

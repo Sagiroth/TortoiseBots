@@ -50,12 +50,24 @@
 
   // The window the section asks for: the live binding since it began, the
   // last two hours for a live card without a bound time, one night of the
-  // rail, or today for a read-only history card on Tonight. `pick` is the
-  // run select's value ("all", null/"" for the default, or an index).
-  function query(bind, fd, nowMs, pick) {
+  // rail, or tonight for a read-only history card. `pick` is the run select's
+  // value ("all", null/"" for the default, or an index). `nightQ` is the
+  // picker's tz and rollover params; with them the chosen night is a local
+  // night, as the history list groups it, and without them it is the old UTC
+  // day.
+  function query(bind, fd, nowMs, pick, nightQ) {
     const chosen = pick === null || pick === undefined || pick === "" ? "" : String(pick);
-    if (fd && fd.day) return "day=" + encodeURIComponent(fd.day) + "&run=" + encodeURIComponent(chosen || "last");
-    if (bind && bind.history) return "day=" + utcDay(nowMs) + "&run=" + encodeURIComponent(chosen || "last");
+    const run = "&run=" + encodeURIComponent(chosen || "last");
+    const zone = nightQ || "";
+    if (fd && fd.day) {
+      if (zone) return "night=" + encodeURIComponent(fd.day) + zone + run;
+      return "day=" + encodeURIComponent(fd.day) + run;
+    }
+    if (bind && bind.history) {
+      const night = zone && typeof FightHistory !== "undefined" ? FightHistory.nightOf(nowMs) : "";
+      if (night) return "night=" + encodeURIComponent(night) + zone + run;
+      return "day=" + utcDay(nowMs) + run;
+    }
     if (bind && Number(bind.bound_at) > 0) return "since=" + Math.floor(Number(bind.bound_at)) + "&run=" + encodeURIComponent(chosen || "all");
     const since = Math.floor((Number(nowMs) / 1000 - 7200) / 60) * 60;
     return "since=" + since + "&run=" + encodeURIComponent(chosen || "all");

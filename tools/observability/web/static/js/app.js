@@ -8832,7 +8832,7 @@
     const paint = () => fdSet(body, Underperf.html(st, {
       pick: fd.underPick, bindBots: bind.history ? [] : (bind.bots || []), live: !bind.history,
     }));
-    const qs = Underperf.query(bind, fd, Date.now(), fd.underPick);
+    const qs = Underperf.query(bind, fd, Date.now(), fd.underPick, fdNightParams());
     if (st.pending) return;
     if (st.qs === qs && Date.now() - st.at < Underperf.POLL_MS) {
       if (!st.drawn) { st.drawn = true; paint(); }
