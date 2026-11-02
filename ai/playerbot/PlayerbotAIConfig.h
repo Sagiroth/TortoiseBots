@@ -587,6 +587,10 @@ public:
     // once before a pull that brings more than the ceiling (opt-in; ceiling default 6 joiners).
     bool dungeonRunAggroEstimate;
     uint32 dungeonRunAggroCeiling;
+    // ... the ring estimate (EstimateAggroRing): the walk to the pull, the stand and the fight point wake a pack, and
+    // every member calls for help within dungeonRunAggroRingYd (only read with dungeonRunAggroEstimate).
+    bool dungeonRunAggroWalkRing;
+    float dungeonRunAggroRingYd;
     // The run leader's pack-cleared gate: a pull step is done only when no unit of its entries is left within its
     // radius + this many yards (2D, 10 yd of height), a unit that spawned inside the radius belongs to the step
     // wherever it walks, and a formation follower of a waypoint leader counts as a patroller. 0 turns it off.

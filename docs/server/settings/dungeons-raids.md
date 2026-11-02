@@ -31,6 +31,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BotLfgOnlyWithPlayersOnline`](#aiplayerbotbotlfgonlywithplayersonline) | `1` | Groups form only while at least one real player is online. |
 | [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) | `6` | Joiners above which the run leader rests the party before a pull (needs the estimate on). |
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
+| [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
+| [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
 | [`AiPlayerbot.DungeonRunBotKeysForPlayers`](#aiplayerbotdungeonrunbotkeysforplayers) | `0` | `1`: the bots carry the dungeon keys and open the doors for a party with real players too; `0`: players bring their own key, and the bots stop at the door and ask. |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
@@ -195,6 +197,28 @@ Lets the run leader (`.bot run`) estimate how many creatures a pull would bring 
 <summary>How it works in detail</summary>
 
 **Pull aggro estimate:** before each pack pull the run leader counts the creatures that would come with the pulled one, by the core's own wake-up rules: the pulled creature's whole pack (`creature_groups` that aggro together, `creature_linking` rows), every creature whose aggro radius reaches the spot the party pulls from (detection range 20 yd, widened or narrowed by the level difference to the lowest party member, plus a few yards of drift), and one ring of family assistance (same faction, 10 yd, `CreatureFamilyAssistanceRadius`). When more than [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) would join, the status note reads `N joiners expected` and the party rests to its end lines once for that pull (at most 60 s, not counted toward the step's idle ceiling, at most three a step; after that the note reads `N joiners expected, rest budget used` and the pull goes out). It adds no movement and never skips a pull; the estimate is approximate (it can be high or low); with `0` nothing is estimated. Apart from the estimate, every pull's status note reports the joiners it really drew (`joiners N (entry <entry> x<count>, ...)`, `joiners 0` when none) from the first 10 s of its fight; that needs no key. Only read while `AiPlayerbot.DungeonSelfClear = 1`. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+
+</details>
+
+### `AiPlayerbot.DungeonRunAggroRingYd`
+How far a call for help carries in the ring estimate, in yards.
+**Default:** `20` · **Values:** `5` to `40` · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only read while [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) is `1`. A creature already counted calls every creature of its own faction template within this many yards of itself, for two hops, so a neighbour on the far side of the party's own family-assistance radius still comes. The server's `CreatureFamilyAssistanceRadius` is used instead when it is larger. The measured wakes that needed this were 11.0-19.5 yd apart while the server's radius is 10. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+
+</details>
+
+### `AiPlayerbot.DungeonRunAggroWalkRing`
+Makes the pull aggro estimate count what the party's walk to the pull, the stand and the fight point wake, and lets every creature already counted call its neighbours.
+**Default:** `0` · **Values:** `0` off (today's estimate), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only read while [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) is `1`. The estimate reads the navmesh walk from the lead bot to the pull's firing spot (at most 64 samples, its end always kept), the spot itself and the fight point, each widened by the party's spread (3 yd, 10 yd in a raid), and every creature counted calls its neighbours within [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) for two hops. A pull row's own bodies ceiling (the plan's `max_bodies`, the pulled creature included) replaces the config ceiling for that row, so a deliberately sized pull never rests; over it the note reads `pull estimate: N bodies over the ceiling M (plan|config): 0x...`. On the last move row before a pull the note also says once how many the coming pull would bring (`ahead: pull N brings ...`; `ahead: pull N estimate unavailable` when the row lists no creature on the map). Advice only: no order changes and no pause. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
 
 </details>
 

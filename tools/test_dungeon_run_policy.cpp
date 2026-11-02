@@ -15207,6 +15207,273 @@ static void TestJoinerRestSlotsAreSpentByRealRestsOnly()
     CHECK(notes[4] != notes[5]);
 }
 
+// A pull row's `item` is its own bodies ceiling (the plan's max_bodies); with
+// AiPlayerbot.DungeonRunAggroWalkRing on, the ring estimate's bodies are compared with it.
+static PlanStep BodiesPullStep(float x, std::vector<std::uint32_t> entries, std::uint32_t bodies)
+{
+    PlanStep s = PullStep(x, entries);
+    s.item = bodies;
+    ai::NormalizePlanStep(s);
+    return s;
+}
+
+static UnitFact Estimated(std::uint64_t guid, std::uint32_t entry, float dist, std::uint32_t bodies,
+    std::vector<std::uint64_t> guids = {})
+{
+    UnitFact u = Unit(guid, entry, dist);
+    u.estBodies = bodies;
+    u.estGuids = guids;
+    return u;
+}
+
+static void TestPlanCeilingReplacesTheConfigCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 100;
+    // 27 bodies at a plan ceiling of 27: the row is sized on purpose, the pull
+    // goes out at once and nothing rests.
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.phase == Phase::AwaitPull && !r.joinerRest && r.joinerHeld.empty());
+    // One more body than the plan sized: a rest note with the plan ceiling, not the config one.
+    f.units = {Estimated(31, 4852, 54.7f, 28, {31, 32, 33})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 28 bodies over the ceiling 27 (plan): 0x") == 0);
+    CHECK(over.joinerRest && over.joinerHeld.count(31));
+    CHECK(over.phase != Phase::AwaitPull && over.pulls == 0);
+}
+
+static void TestConfigCeilingInBodiesWhenNoPlanCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 0)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6; // bodies 7
+    f.minHealthPct = 85; // under the end lines: a rest would start
+    f.units = {Estimated(31, 4852, 54.7f, 7, {31})};
+    Run at = Start(&plan);
+    CHECK(Tick(at, f) == "pullback 31");
+    f.units = {Estimated(31, 4852, 54.7f, 8, {31, 32})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 8 bodies over the ceiling 7 (config): 0x") == 0);
+    CHECK(over.joinerRest);
+    // No ceiling at all: nothing is judged.
+    f.joinerCeiling = 0;
+    f.units = {Estimated(31, 4852, 54.7f, 99)};
+    Run off = Start(&plan);
+    f.minHealthPct = 100;
+    CHECK(Tick(off, f) == "pullback 31");
+}
+
+static void TestEstimateNoteListsAtMostEightGuids()
+{
+    std::vector<std::uint64_t> guids;
+    for (std::uint64_t g = 1; g <= 11; ++g)
+        guids.push_back(g);
+    std::string const note = EstimateNote(12, 7, false, guids, false);
+    CHECK(note.compare(0, 56, "pull estimate: 12 bodies over the ceiling 7 (config): 0x") == 0);
+    std::size_t count = 0;
+    for (std::size_t at = note.find("0x"); at != std::string::npos; at = note.find("0x", at + 2))
+        ++count;
+    CHECK(count == 8);
+    CHECK(note.find("(+3 more)") != std::string::npos);
+    // The sight budget is said, and a note without guids ends at the ceiling.
+    std::string const spent = EstimateNote(12, 7, true, guids, true);
+    CHECK(spent.find("(plan)") != std::string::npos);
+    CHECK(spent.find("(LOS budget spent)") != std::string::npos);
+    std::string const bare = EstimateNote(12, 7, true, {}, false);
+    CHECK(bare == "pull estimate: 12 bodies over the ceiling 7 (plan)");
+}
+
+static void TestAheadNoteOnceOnTheChainsMoveRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0),
+        BodiesPullStep(20, {4852}, 7)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.aheadStep = 2;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0");
+    f.leadX = 5.0f;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    // The walk note is prefixed once; the order is the one the key off sends.
+    std::string const order = Tick(r, f);
+    CHECK(order == "move 10.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 3 brings 14 (ceiling 7)") == 0);
+    CHECK(r.aheadNotedStep == 1);
+    std::string const again = Tick(r, f);
+    CHECK(again.empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+    // Key off: the same order, no note.
+    Facts off = f;
+    off.aggroWalkRing = false;
+    off.leadX = 0.0f;
+    Run plain = Start(&plan);
+    Tick(plain, off);
+    off.leadX = 5.0f;
+    Tick(plain, off);
+    CHECK(Tick(plain, off) == "move 10.0 0.0 0.0");
+    CHECK(plain.note == "walking");
+    // At or under the ceiling: the row is noted as done, the walk note is not prefixed.
+    Facts quiet = f;
+    quiet.aheadBodies = 7;
+    quiet.leadX = 0.0f;
+    Run q = Start(&plan);
+    Tick(q, quiet);
+    quiet.leadX = 5.0f;
+    Tick(q, quiet);
+    Tick(q, quiet);
+    CHECK(q.note == "walking" && q.aheadNotedStep == 1);
+}
+
+// The look-ahead estimate is prefixed on a stand-pull row's hold note too (that row returns before the
+// plain walk note), it carries the sight budget, and the row is noted once.
+static void TestAheadNoteOnTheStandPullRow()
+{
+    DungeonPlan plan;
+    PlanStep approach = Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(60.0f, {4852}, ai::kPlanFlagStandPull);
+    plan.steps = {approach, pull};
+    Facts f = Party(0);
+    f.seen = true;
+    f.standPullPreCc = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    f.aheadLosBudget = true;
+    f.holdAheadRead = true;
+    f.holdAheadKnown = true;
+    f.holdAheadX = 20.0f;
+    f.holdAheadY = 0.0f;
+    f.holdAheadZ = 0.0f;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 2 brings 14 (ceiling 7)") == 0);
+    CHECK(r.note.find("(LOS budget spent); to the hold point") != std::string::npos);
+    CHECK(r.aheadNotedStep == 0 && r.aheadNotedPass == r.stepPass);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+}
+
+// The look-ahead says the estimate is unavailable when the pull row lists no creature on the map, instead
+// of reading an unrelated hostile in the scan.
+static void TestAheadUnavailableNote()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10.0f, 0.0f, 0.0f), BodiesPullStep(30.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadUnavailable = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
+    CHECK(r.note == "ahead: pull 2 estimate unavailable; walking");
+    CHECK(r.aheadNotedStep == 0);
+}
+
+// The row is noted only when the ahead note survives the tick: a walk that ends the row sets "arrived",
+// and the estimate was not said.
+static void TestAheadNotMarkedWhenTheWalkEndsTheRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f), BodiesPullStep(20.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "arrived");
+    CHECK(r.aheadNotedStep != 0);
+}
+
+// The pull row's ring estimate is kept per (row, unit): a later tick refills the facts from it, and a
+// new row starts over.
+static void TestPullEstimateCacheKeepsOneReadPerRow()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& first = cache.At(3, 0, 31);
+    CHECK(!first.read && first.bodies == 0);
+    first.read = true;
+    first.bodies = 5;
+    first.guids = {31, 32};
+    PullUnitEstimate const* again = cache.Find(3, 0, 31);
+    CHECK(again && again->bodies == 5 && again->guids.size() == 2);
+    CHECK(&cache.At(3, 0, 31) == &first);
+    CHECK(cache.Find(3, 0, 32) == nullptr);
+    cache.At(4, 0, 31);
+    CHECK(cache.step == 4 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 0, 31) == nullptr && cache.Find(4, 0, 31) != nullptr);
+}
+
+// The same row and unit in a new step pass (a wipe, a resume or a revisit ran ResetStep) is read again:
+// the estimate of the old pass is stale, and reading the new pass drops it.
+static void TestPullEstimateCacheRereadsOnNewStepPass()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& old = cache.At(3, 0, 31);
+    old.read = true;
+    old.bodies = 5;
+    CHECK(cache.Find(3, 0, 31) != nullptr);
+    CHECK(cache.Find(3, 1, 31) == nullptr);
+    PullUnitEstimate& fresh = cache.At(3, 1, 31);
+    CHECK(!fresh.read && fresh.bodies == 0);
+    CHECK(cache.step == 3 && cache.pass == 1 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 0, 31) == nullptr);
+    CHECK(cache.Find(3, 1, 31) == &fresh);
+}
+
+// The pull order's note says the bodies the ring estimate expects.
+static void TestRingPullNoteSaysBodiesExpected()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.note == "pulling 4852; 27 bodies expected");
+}
+
+static void TestWalkRingKeyOffKeepsJoinerNotes()
+{
+    // AiPlayerbot.DungeonRunAggroWalkRing off: the old joiners and the config
+    // ceiling rule, whatever the ring estimate left on the unit.
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = false;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 85;
+    f.units = {Estimated(31, 4852, 54.7f, 99, {31})};
+    f.units[0].joiners = 7;
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "7 joiners expected" && r.joinerRest);
+}
+
 // Both keys on (AiPlayerbot.DungeonRunAggroEstimate and DungeonRunRezHold): a loud pull, a death in its
 // fight, then the regroup, then the next loud pick. The joiner rest is a pull-step thing (cleared by
 // ResetStep, kept by BeginRegroup, which a single death reaches without a ResetStep); the rez hold's clocks
@@ -30118,6 +30385,17 @@ int main()
     TestAggroEstimateHoldsOnceForARest();
     TestJoinerRestsAreBudgetedAndNotIdleTime();
     TestJoinerRestSlotsAreSpentByRealRestsOnly();
+    TestPlanCeilingReplacesTheConfigCeiling();
+    TestConfigCeilingInBodiesWhenNoPlanCeiling();
+    TestEstimateNoteListsAtMostEightGuids();
+    TestAheadNoteOnceOnTheChainsMoveRow();
+    TestAheadNoteOnTheStandPullRow();
+    TestAheadUnavailableNote();
+    TestAheadNotMarkedWhenTheWalkEndsTheRow();
+    TestPullEstimateCacheKeepsOneReadPerRow();
+    TestPullEstimateCacheRereadsOnNewStepPass();
+    TestRingPullNoteSaysBodiesExpected();
+    TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
     TestRezHoldClocks();
