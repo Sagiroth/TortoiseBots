@@ -20,6 +20,7 @@
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "GuildOrderBuyAction.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/HireLifecycle.h"
 #include "runtime/AltBotService.h"
@@ -1156,6 +1157,18 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 PathFinder probe(bot);
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
                 pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
+            }
+            // A guild-order farm trip the mesh cannot reach says so about that
+            // target point: the planner leaves the zone out once another point
+            // in it failed too, so one hole does not cost the zone's other
+            // farm spots.
+            if (purpose == "guild order" && TortoiseBots::GuildOrders::TravelPathUnreachable(pathTag))
+            {
+                AreaTableEntry const* area = location.GetArea();
+                uint32_t const zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+                if (zoneId)
+                    TortoiseBots::GuildOrders::NoteFarmZoneTargetFailed(bot->GetGUIDLow(), zoneId,
+                        location.GetMapId(), location.getX(), location.getY(), location.getZ());
             }
             bool const noPath = pathTag == "nopath";
             failDetail += pathTag;

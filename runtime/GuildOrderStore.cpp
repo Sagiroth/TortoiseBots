@@ -1141,6 +1141,37 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    // Remember a failed farm-leg travel target point, so the planner leaves
+    // the zone out once kFarmZoneFailedTargets different points in it failed
+    // inside the window. Only the zone the order actually farms counts: a
+    // banker or auctioneer leg fails in a city, never in the farm zone, and
+    // must not mark it.
+    void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+        float x, float y, float z)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        if (it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::Farm ||
+            it->second.record.farmZoneId != zoneId)
+            return;
+        RecordFarmZoneTargetFailure(it->second.farmZoneFailures[zoneId],
+            FarmZoneTargetPointAt(mapId, x, y, z), WorldTimer::getMSTime());
+    }
+
+    std::vector<FarmZoneTargetFailure> GetFarmZoneFailures(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return {};
+        auto found = it->second.farmZoneFailures.find(zoneId);
+        return found == it->second.farmZoneFailures.end() ? std::vector<FarmZoneTargetFailure>() :
+            found->second;
+    }
+
     void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -2222,6 +2253,7 @@ private:
         uint32_t lastFarmItemId = 0;
         uint32_t lastFarmCount = 0;
         bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
+        std::unordered_map<uint32_t, std::vector<FarmZoneTargetFailure>> farmZoneFailures; // zone -> mesh-failed farm travel targets
         SupplySearchStreak supplySearch; // empty service-leg searches for the current leg
         OrderProtectedSet kept; // protected item ids for the row's keys (recomputed on the bot's map thread)
         bool sawOnline = false;
@@ -3110,6 +3142,17 @@ void NoteFarmRest(uint32_t botGuidLow)
 void NoteDeath(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteDeath(botGuidLow);
+}
+
+void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+    float x, float y, float z)
+{
+    OrderStore::Instance().NoteFarmZoneTargetFailed(botGuidLow, zoneId, mapId, x, y, z);
+}
+
+std::vector<FarmZoneTargetFailure> FarmZoneFailures(uint32_t botGuidLow, uint32_t zoneId)
+{
+    return OrderStore::Instance().GetFarmZoneFailures(botGuidLow, zoneId);
 }
 
 void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)

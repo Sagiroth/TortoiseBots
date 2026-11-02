@@ -61,7 +61,7 @@ Every bot in a guild with at least one real player in it holds the guild's **bot
 
 | Order | What the bot does |
 | :--- | :--- |
-| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item, in one planned zone. |
+| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item, in the nearest planned zone on its own continent that it can walk to. If walking to two different spots in the zone fails (no path over the terrain), the bot farms the next planned zone and leaves that one alone for half an hour. |
 | Buy | Checks its bags and mailbox, takes what it can from the guild bank, then buys with its own gold first on the auction house. Guild bank money covers the shortfall within the order's cap. Items bought at auction arrive by mail. Anything still missing is farmed. |
 | Craft | Checks bags and mailbox for each missing material, then the guild bank and auction house. It farms, gathers or crafts intermediate materials when it can, then asks a guild bot with a matching profession for a sub-order. Bots always have the recipe tools (Arclight Spanner, Blacksmith Hammer and the like): a missing tool appears in the bags when the bot crafts, and bots never sell or auction tools. |
 

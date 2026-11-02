@@ -3,11 +3,13 @@
 #include "runtime/GuildOrderContract.h"
 #include "runtime/GuildOrderRelistPolicy.h"
 #include "runtime/GuildOrderStepHistoryPolicy.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 class Player;
 struct ItemPrototype;
@@ -222,6 +224,18 @@ void NoteFarmRest(uint32_t botGuidLow);
 
 // The bot died while the order ran. Only deaths in Working count.
 void NoteDeath(uint32_t botGuidLow);
+
+// The farm leg's travel probe found no route to one target point in the
+// planned zone (a mesh hole or a partial path): remember that point per bot
+// and zone, so the plan leaves the zone out once two different points in it
+// failed inside kFarmZoneUnreachableMs. Only the zone the order currently
+// farms and a Farm supply step count. Map thread only (travel move).
+void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+    float x, float y, float z);
+// The failed farm-leg travel targets remembered for the zone, policy-shaped:
+// the planner asks FarmZoneSkipped whether enough of them are still fresh.
+std::vector<FarmZoneTargetFailure> FarmZoneFailures(uint32_t botGuidLow,
+    uint32_t zoneId);
 
 // An order-leg search came back rejected or empty in the planned zone.
 // Counts consecutive failures there; the third moves the order to the next
