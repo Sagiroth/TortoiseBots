@@ -36,6 +36,9 @@ DISPEL_POLICY = (ROOT / "ai/playerbot/policy/heal/DispelTargetPolicy.h").read_te
 PLAYERBOT_AI_H = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
 PLAYERBOT_AI_SPELLS = (ROOT / "ai/playerbot/PlayerbotAISpells.cpp").read_text()
 TACTICS_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
+ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
+TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -243,9 +246,23 @@ class DispelHoldCoversTheAreaCures(unittest.TestCase):
     def test_multiplier_checks_the_party_cure_target(self):
         fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
         self.assertIn("dynamic_cast<CurePartyMemberAction*>(action)", fn)
-        self.assertIn("partyCure->GetDispelType()", fn)
         self.assertIn("verdict.excluded", fn)
         self.assertIn("return 0.0f;", fn)
+
+    def test_the_hold_judges_every_type_the_cast_spell_removes(self):
+        # A poison-triggered Cleanse also strips magic and disease, so the hold must not read only GetDispelType().
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("ActionDispelTypes(ai, spell)", fn)
+        self.assertIn("DispelCureVerdict(rows, auras, types, allyYd, defaultClearYd)", fn)
+        self.assertNotIn("GetDispelType()", fn)
+        # The type set comes from the spell's effects, not a name table.
+        types = body(ACTIONS, "void CollectSpellDispelTypes(")
+        self.assertIn("SPELL_EFFECT_DISPEL", types)
+        self.assertIn("EffectMiscValue[i]", types)
+        self.assertIn("SPELL_AURA_DISPEL_IMMUNITY", types)
+        self.assertIn("SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY", types)
+        self.assertIn("SPELL_AURA_PERIODIC_TRIGGER_SPELL", types)
+        self.assertNotIn("CureDispelTypes", ACTIONS)
 
     def test_area_cures_scan_the_nearby_group(self):
         fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
@@ -257,6 +274,37 @@ class DispelHoldCoversTheAreaCures(unittest.TestCase):
     def test_self_cures_judge_the_bot(self):
         fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
         self.assertLess(fn.index("if (!areaCure)"), fn.index("veto(bot)"))
+
+
+class TheRunningCuresAreSwept(unittest.TestCase):
+    """A protected aura applied after an area cure started would be removed by its next tick or pulse: the bot-cast
+    Abolish aura is removed and the bot's own cleansing totem destroyed, and only those."""
+
+    def test_sweep_removes_only_bot_cast_auras(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("GET_PLAYERBOT_AI(caster)", fn)
+        self.assertIn("RemoveAurasByCasterSpell(entry.first, entry.second)", fn)
+        # The aura that decided the verdict is the protected one itself: never remove that.
+        self.assertIn("verdict.auraId == aura->GetId()", fn)
+
+    def test_sweep_destroys_the_bots_own_totem_in_range(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("bot->GetTotem(TotemSlot(slot))", fn)
+        self.assertIn("TotemDispelRadius(totemSpell)", fn)
+        self.assertIn("totem->UnSummon()", fn)
+        self.assertIn("sServerFacade.GetDistance2d(totem, member) > radius", fn)
+
+    def test_sweep_is_gated_and_registered(self):
+        fn = body(ACTIONS, "bool ai::SweepBossDispelCures(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn("DispelRows(ScanBossTactics(ai, bot))", fn)
+        self.assertIn("SweepBossDispelCures(ai, bot, false)", TRIGGERS)
+        self.assertIn("SweepBossDispelCures(ai, bot, true)", ACTIONS)
+        self.assertIn('"boss tactics dispel sweep"', TACTICS_STRATEGY)
+        self.assertIn('creators["boss tactics dispel sweep"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics dispel sweep"]', TRIGGER_CONTEXT)
 
 
 class TheHardNeverListIsShared(unittest.TestCase):

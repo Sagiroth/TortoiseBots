@@ -1305,6 +1305,24 @@ int main()
         CHECK(!DispelCandidateBetter(1, 0, 0, 3));
     }
 
+    // A cure is judged by every type its spell removes, not only the one that triggered it: a poison-triggered Cleanse
+    // (poison, disease, magic) on a member carrying a protected magic aura is held, while the same member under a
+    // poison-only cure is not.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9007, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(9007, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kPoison, 3, kMagic };
+        std::vector<std::uint32_t> const poisonOnly = { kPoison };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 50.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 9007);
+        CHECK(held.mode == TacticMode::Never);
+        CHECK(!DispelCureVerdict(active, auras, poisonOnly, 50.0f, 30.0f).excluded);
+        // No type excluded: the default verdict, so the cure runs.
+        CHECK(!DispelCureVerdict(active, { Aura(9008, kPoison) }, cleanse, 50.0f, 30.0f).excluded);
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }
