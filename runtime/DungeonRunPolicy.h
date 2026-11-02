@@ -13201,7 +13201,8 @@ inline bool GuardHeldByRun(const Run& r, std::uint64_t guid)
 }
 
 // A raid trash fight's off-tank that holds an add of its own (UnitFact::victimTank, its victim's name): the healer
-// guard keeps it there, and the round robin passes it over (RaidTrashFight, CheckGuard).
+// guard keeps it there, and the round robin passes it over (RaidTrashFight, CheckGuard). Only the guard's pick filters
+// the busy off-tanks; with the key off every living one stays in the round robin, as before.
 inline bool RaidTrashOffTankHolds(const Facts& f, const std::string& name)
 {
     for (const UnitFact& u : f.partyAttackers)
@@ -14031,15 +14032,18 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         return false;
     // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
     // main tank keeps its stand (no guardReturn): the mob is on a healer or a
-    // DPS, not on the lead bot. An off-tank holding its own add is kept there
-    // (RaidTrashOffTankHolds): the round robin passes it over.
+    // DPS, not on the lead bot. Under the healer guard an off-tank holding its
+    // own add is kept there (RaidTrashOffTankHolds), and with every off-tank
+    // busy no order goes out, never the main tank's; the pick with the key off
+    // is today's round robin over every living off-tank, busy ones included.
     bool const trashOffTank = !hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead;
+    bool const trashGuard = trashOffTank && RaidHealerGuardOn(r, f, true);
     std::vector<const std::string*> free;
     if (trashOffTank)
         for (const std::string& name : f.raid.offTanksAlive)
-            if (!RaidTrashOffTankHolds(f, name))
+            if (!trashGuard || !RaidTrashOffTankHolds(f, name))
                 free.push_back(&name);
-    if (healerGuardAdd && free.empty())
+    if (free.empty() && (healerGuardAdd || trashGuard))
         return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;

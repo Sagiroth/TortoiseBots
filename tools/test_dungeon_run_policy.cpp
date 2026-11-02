@@ -26261,6 +26261,90 @@ static void TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp()
     CHECK(r.healerGuardDps.empty());
 }
 
+// With the key off the pick stays today's round robin over every living off-tank, busy ones included: the free
+// (not-holding) filter is the healer guard's alone. Without it the pick skipped both and sent the main tank.
+static void TestRaidTrashHealerGuardOffKeepsTheBusyOffTankInTurn()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = false;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50031, 11368, 20, true);
+    // The fight's first order is the arrival engage, the main tank's: unchanged.
+    f.leadAttacker = Hitter(61, 12129, 5);
+    f.leadHasAttacker = true;
+    f.partyAttackers = {ownB, ownI};
+    CHECK(GuardTick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    f.partyAttackers = {ownB, ownI, add};
+    CHECK(GuardTick(r, f).empty()); // kGuardRepeatMs after the arrival engage
+    CHECK(GuardTick(r, f) == "attack 50031 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.offTankTurn == 1);
+    // The next loose mob goes to the next off-tank, also busy: the round robin never passes one over.
+    UnitFact heldByBrun = TankHeld(50031, 11368, 20);
+    heldByBrun.victimName = "Brun";
+    UnitFact add2 = Hitter(50032, 11368, 21, true);
+    f.partyAttackers = {ownB, ownI, heldByBrun, add2};
+    CHECK(GuardTick(r, f).empty()); // the order spacing
+    CHECK(GuardTick(r, f) == "attack 50032 Irelanthe");
+}
+
+// With the key on and every off-tank holding its own add a loose mob that is no healer's gets no order: the main tank
+// holds its current target and is never sent at it.
+static void TestRaidTrashHealerGuardOnLeavesALooseMobWhenEveryOffTankIsBusy()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50041, 12130, 20); // on the party, not on a healer
+    f.partyAttackers = {ownB, ownI, add};
+    for (int k = 0; k < 8; ++k)
+    {
+        std::string const o = GuardTick(r, f);
+        CHECK(o.find("Tanky") == std::string::npos);
+        CHECK(o.empty());
+    }
+    CHECK(r.guardOrders == 0 && r.fightOrders == 0 && r.guardUnitOrders.empty());
+}
+
+// With the key on and every off-tank busy an add on a healer still goes to the nearest ranged dps in reach.
+static void TestRaidTrashHealerGuardOnSendsTheRangedDpsWhenEveryOffTankIsBusy()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    UnitFact ownB = TankHeld(41, 12129, 30);
+    ownB.victimName = "Brun";
+    UnitFact ownI = TankHeld(42, 12129, 31);
+    ownI.victimName = "Irelanthe";
+    UnitFact add = Hitter(50051, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd
+    f.partyAttackers = {ownB, ownI, add};
+    CHECK(GuardTick(r, f) == "attack 50051 NearDps");
+    CHECK(r.offTankTurn == 0); // the busy off-tanks untouched
+}
+
 static void TestRaidGuardOnABossStepSendsTheMainTank()
 {
     DungeonPlan plan;
@@ -28028,6 +28112,9 @@ int main()
     TestRaidTrashHealerGuardCoveredAddCostsNoOrder();
     TestRaidTrashHealerGuardNeverSendsTheMainTank();
     TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp();
+    TestRaidTrashHealerGuardOffKeepsTheBusyOffTankInTurn();
+    TestRaidTrashHealerGuardOnLeavesALooseMobWhenEveryOffTankIsBusy();
+    TestRaidTrashHealerGuardOnSendsTheRangedDpsWhenEveryOffTankIsBusy();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
     TestRaidTrashOffTanksPickUpWithTheLeadDead();
