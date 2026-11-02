@@ -388,7 +388,7 @@ int main()
         CHECK(EstimateAggroRing(mobs, 0, farGeometry(), three).bodies == 4);
     }
 
-    // Hop 2 calls from what hop 1 added, pack members included: B1 is called directly (15 yd),
+    // TestRingHopTwoCallsFromPackMates: hop 2 calls from what hop 1 added, pack members included: B1 is called directly (15 yd),
     // its pack mate B2 is dragged in by the closure, and only B2 reaches G15 (20 yd).
     {
         std::vector<AggroMob> mobs = {Mob(0.0f, 0.0f), Mob(15.0f, 0.0f), Mob(15.0f, 30.0f), Mob(15.0f, 50.0f)};
@@ -403,7 +403,7 @@ int main()
         CHECK(e.members[3].index == 3 && e.members[3].why == AggroWhy::Ring2);
     }
 
-    // The sight budget charges only a real ray: a null callback reads no sight at all, and the
+    // TestRingSightBudgetOnlyChargesRealRays: the budget charges only a real ray: a null callback reads no sight at all, and the
     // ring path's one count is the one that spends it.
     {
         std::vector<AggroMob> mobs = {Mob(0.0f, 0.0f)};
@@ -420,8 +420,8 @@ int main()
         CHECK(spent.bodies == 501); // past the budget every pair counts as seen
     }
 
-    // A long walk keeps its end: 150 yd at 2 yd would fill 64 samples at 126 yd, and the pack
-    // at the far end would be read as out of reach.
+    // TestLongWalkKeepsItsEnd: a 150 yd walk sampled at 2 yd would fill 64 samples at 126 yd, and the
+    // pack at the far end would be read as out of reach.
     {
         std::vector<AggroPoint> path = {AggroPoint{0.0f, 0.0f, 0.0f}, AggroPoint{150.0f, 0.0f, 0.0f}};
         std::vector<AggroPoint> const walk = ai::SampleAggroWalk(path);
@@ -486,7 +486,7 @@ int main()
         CHECK(e.bodies == 2 && e.members[1].why == AggroWhy::Drag);
         mobs[1] = Mob(0.0f, 25.0f);
         CHECK(EstimateAggroRing(mobs, 0, g, Params()).bodies == 1);
-        // The sweep calls only the dragged pack's own faction template (as a ring hop does).
+        // TestDragSweepStaysInThePacksFaction: only the dragged pack's own faction template is called (as a ring hop does).
         mobs[1] = Mob(0.0f, 15.0f);
         mobs[1].faction = 15;
         CHECK(EstimateAggroRing(mobs, 0, g, Params()).bodies == 1);
@@ -516,7 +516,7 @@ int main()
         CHECK(PullCeilingBodies(0, 0) == 0);
     }
 
-    // The look-ahead's pick: kill_first rank first, then the nearest, among the pull row's
+    // TestAheadPickAndEngagePoint: kill_first rank first, then the nearest, among the pull row's
     // entries only; no listed creature is npos, never an unrelated hostile.
     {
         std::vector<ai::AheadPick> mobs = {{100, 50.0f, 0.0f, 0.0f}, {200, 5.0f, 0.0f, 0.0f},
