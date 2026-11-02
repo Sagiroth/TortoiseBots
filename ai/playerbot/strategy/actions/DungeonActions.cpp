@@ -349,23 +349,23 @@ bool ai::RunOutFromGroup(MovementAction& mover, PlayerbotAI* ai, Player* bot, fl
     const WorldPosition botPos(bot);
     WorldPosition out(botPos);
     const float angles[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
-    for (float d : angles)
-    {
-        const float step = requireHealer
-            ? BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size(),
-                             healers.data(), healers.size())
-            : BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size());
-        if (FindStep(ai, bot, botPos, away + d, step, out) &&
-            mover.MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, mover.IsReaction(), false, true))
-        {
+    // Two passes over all angles (ai::PickRunoutAngle): a healable angle later in the list beats a clear, unhealable
+    // angle before it. Only the first accepted end point is walked to.
+    const int picked = PickRunoutAngle(botX, botY, angles, sizeof(angles) / sizeof(angles[0]), away, nearestDist,
+        runout, members.data(), members.size(), healers.data(), healers.size(),
+        [&](std::size_t idx, float step) {
+            const float angle = away + angles[idx];
+            if (!FindStep(ai, bot, botPos, angle, step, out) ||
+                !mover.MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, mover.IsReaction(), false,
+                              true))
+                return false;
             // Hold the reaction until the carrier arrives, so it is not
             // re-planned every tick on the way out.
             if (mover.IsReaction())
                 mover.WaitForReach(step);
             return true;
-        }
-    }
-    return false;
+        });
+    return picked >= 0;
 }
 
 bool RaidBombRunoutAction::Execute(Event& event)

@@ -1266,6 +1266,61 @@ int main()
         CHECK(DebuffEscapeClearance(8.0f + healStep, 0.0f, raid, 4) >= 30.0f + kBombRunoutMarginYd);
     }
 
+    // flee_on_aura, the angle order: angle 0 (east) is clear from 29 yd but never within reach of the healer at (30, 40);
+    // angle 0.5 is clear and healable. Pass 1 must pick the later healable angle (index 1), not the earlier clear one.
+    {
+        DebuffAnchor raid[4];
+        raid[0].x = 5.0f;  raid[0].y = 0.0f;
+        raid[1].x = -5.0f; raid[1].y = 0.0f;
+        raid[2].x = 0.0f;  raid[2].y = 5.0f;
+        raid[3].x = 0.0f;  raid[3].y = -5.0f;
+        DebuffAnchor healer;
+        healer.x = 30.0f;
+        healer.y = 40.0f;
+        float cx, cy, nearest;
+        std::size_t nearestIdx;
+        CHECK(BombRunoutCentre(8.0f, 0.0f, raid, 4, cx, cy, nearest, nearestIdx));
+        const float offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
+        const std::size_t nOffsets = sizeof(offsets) / sizeof(offsets[0]);
+
+        const BombRunoutSweep east = SweepBombRunout(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &healer, 1);
+        CHECK(east.clear >= 0.0f);
+        CHECK(east.healable < 0.0f);
+        const BombRunoutSweep northEast = SweepBombRunout(8.0f, 0.0f, 0.5f, nearest, 30.0f, raid, 4, &healer, 1);
+        CHECK(northEast.healable >= 0.0f);
+        CHECK(FleePointHealable(8.0f + std::cos(0.5f) * northEast.healable, std::sin(0.5f) * northEast.healable,
+            &healer, 1, kFleeHealerReachYd));
+
+        // Everything accepted: the healable angle wins at once; the clear angle 0 is never offered.
+        std::size_t offered = 0;
+        std::size_t lastIdx = 99;
+        float lastStep = -1.0f;
+        int picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, &healer, 1,
+            [&](std::size_t i, float step) { ++offered; lastIdx = i; lastStep = step; return true; });
+        CHECK(picked == 1);
+        CHECK(offered == 1);
+        CHECK(lastIdx == 1);
+        CHECK(Near(lastStep, northEast.healable));
+
+        // The healable end point is refused (not pathable): pass 2 takes angle 0's clear, unhealable step, the old answer.
+        std::size_t idx0Step = 0;
+        float angle0Step = -1.0f;
+        picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, &healer, 1,
+            [&](std::size_t i, float step) {
+                if (i == 1) return false;
+                if (i == 0) { ++idx0Step; angle0Step = step; return true; }
+                return false;
+            });
+        CHECK(picked == 0);
+        CHECK(idx0Step == 1);
+        CHECK(Near(angle0Step, east.clear));
+
+        // No healer: the old first-accepted order, so angle 0 is taken as before.
+        picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, nullptr, 0,
+            [&](std::size_t, float) { return true; });
+        CHECK(picked == 0);
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }
