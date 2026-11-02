@@ -47,10 +47,25 @@ struct ReagentNeed
     uint32_t count = 0;
 };
 
-// Six levels cover every vanilla craft chain (ore -> bar -> tube -> casing ->
-// item); past it the walk treats the item as a leaf instead of trusting a
-// recipe cycle to terminate.
-inline constexpr uint8_t kReagentTreeMaxDepth = 6;
+// The same base reagent counted three ways, because the supply ladder asks
+// three different questions of it: how much the whole tree needs, how much
+// the bags leave short, and how much the bags and the mailbox together leave
+// short. The mailbox leg brings in what the bags do not cover, while a bank,
+// auction or farm leg must cover only what the mail cannot.
+struct ReagentTotals
+{
+    uint32_t itemId = 0;
+    uint32_t required = 0;
+    uint32_t bagShort = 0;
+    uint32_t extShort = 0;
+};
+
+// Eight levels cover every vanilla craft chain (ore -> bar -> tube -> casing
+// -> item) and the deep chains a sub-crafted kit adds on top; past it the
+// walk treats the item as a leaf instead of trusting a recipe cycle to
+// terminate. The supply ladder stops at the same depth so both views of a
+// chain agree on where it ends.
+inline constexpr uint8_t kReagentTreeMaxDepth = 8;
 
 namespace detail
 {
@@ -159,6 +174,48 @@ inline std::vector<ReagentNeed> CollectBaseReagents(uint32_t itemId, uint32_t co
     detail::ReagentWalker<RecipeFor, Held> walker(recipeFor, held);
     walker.Walk(itemId, count, 0, false);
     return walker.Take();
+}
+
+// Base reagents for `count` more of itemId with all three counts filled, one
+// row per item in first-encounter order. Each aggregate gets its own walk:
+// held stock changes how many casts the tree needs, so the walks cannot share
+// one ledger. bags and mail return the stock in each place; the mailbox walk
+// also spends the bags, exactly as the ladder does.
+template <typename RecipeFor, typename Bags, typename Mail>
+inline std::vector<ReagentTotals> CollectReagentTotals(uint32_t itemId, uint32_t count,
+    RecipeFor recipeFor, Bags bags, Mail mail)
+{
+    std::unordered_map<uint32_t, std::size_t> index;
+    std::vector<ReagentTotals> totals;
+    auto absorb = [&index, &totals](std::vector<ReagentNeed> const& needs, uint32_t ReagentTotals::*field)
+    {
+        for (ReagentNeed const& need : needs)
+        {
+            auto found = index.find(need.itemId);
+            if (found == index.end())
+            {
+                found = index.emplace(need.itemId, totals.size()).first;
+                totals.push_back(ReagentTotals{ need.itemId, 0, 0, 0 });
+            }
+            totals[found->second].*field = need.count;
+        }
+    };
+    auto walk = [&recipeFor, &bags, &mail, itemId, count](bool useBags, bool useMail)
+    {
+        auto held = [&bags, &mail, useBags, useMail](uint32_t heldId) -> uint32_t
+        {
+            uint64_t total = (useBags ? uint64_t(bags(heldId)) : 0) +
+                (useMail ? uint64_t(mail(heldId)) : 0);
+            return total > UINT32_MAX ? UINT32_MAX : uint32_t(total);
+        };
+        detail::ReagentWalker<RecipeFor, decltype(held)> walker(recipeFor, held);
+        walker.Walk(itemId, count, 0, false);
+        return walker.Take();
+    };
+    absorb(walk(false, false), &ReagentTotals::required);
+    absorb(walk(true, false), &ReagentTotals::bagShort);
+    absorb(walk(true, true), &ReagentTotals::extShort);
+    return totals;
 }
 
 } // namespace GuildOrders

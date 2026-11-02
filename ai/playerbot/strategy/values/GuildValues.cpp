@@ -27,6 +27,7 @@ namespace
 {
 
 using TortoiseBots::GuildOrders::NeedItem;
+using TortoiseBots::GuildOrders::ReagentTotals;
 using TortoiseBots::GuildOrders::BankLegSkipped;
 using TortoiseBots::GuildOrders::OrderRecord;
 using TortoiseBots::GuildOrders::OrderReason;
@@ -221,16 +222,44 @@ std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, Supp
     return needs;
 }
 
+// Whole-tree aggregates behind one snapshot: the three counts the ladder
+// needs, one row per base reagent.
+std::vector<ReagentTotals> ReagentTotalsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
+    uint32_t itemId, uint32_t count)
+{
+    SnapshotRecipes recipes{ bot, &snap };
+    auto bags = [ai, &snap](uint32_t bagsId)
+    {
+        return SnapshotBags(ai, snap, bagsId);
+    };
+    auto mail = [bot, &snap](uint32_t mailId)
+    {
+        return SnapshotMail(bot, snap, mailId);
+    };
+    return TortoiseBots::GuildOrders::CollectReagentTotals(itemId, count, recipes, bags, mail);
+}
+
+// Which whole-tree count a ladder step asks for. The mailbox leg fills in what
+// the bags leave short, so it must not see the smaller external need; a bank,
+// auction or farm leg sources only what neither bags nor mail hold.
+enum class ReagentAggregate
+{
+    BagShort,
+    ExtShort
+};
+
 // A leaf candidate asks for the whole order's need for that reagent, not the
 // share of the branch the walk happened to reach first: a sub-order, a bank
 // withdrawal or an auction buy then covers the tree instead of half of it.
-uint32_t TreeTotalFor(std::unordered_map<uint32_t, uint32_t> const& totals, uint32_t depth,
-    uint32_t itemId, uint32_t fallback)
+uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals, uint32_t depth,
+    uint32_t itemId, uint32_t fallback, ReagentAggregate aggregate)
 {
     if (!depth)
         return fallback;
     auto found = totals.find(itemId);
-    return found == totals.end() ? fallback : found->second;
+    if (found == totals.end())
+        return fallback;
+    return aggregate == ReagentAggregate::BagShort ? found->second.bagShort : found->second.extShort;
 }
 
 // Every reagent the bot still needs for `count` casts of the output, one
@@ -264,7 +293,7 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
 
 bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
     std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out, OrderRecord const* order = nullptr,
-    SupplySnapshot* snapshot = nullptr, std::unordered_map<uint32_t, uint32_t> const* totals = nullptr)
+    SupplySnapshot* snapshot = nullptr, std::unordered_map<uint32_t, ReagentTotals> const* totals = nullptr)
 {
     if (!ai || !bot || !itemId || !count)
         return false;
@@ -272,31 +301,33 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
     SupplySnapshot& snap = snapshot ? *snapshot : local;
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
-    // One whole-tree total per ladder pass: every leaf candidate below asks
-    // for the order's full need, not the first branch's share.
-    std::unordered_map<uint32_t, uint32_t> treeTotals;
+    // One whole-tree aggregate per ladder pass: every leaf candidate below
+    // asks for the order's full need, not the first branch's share, and the
+    // mailbox leg asks for the larger bag shortfall.
+    std::unordered_map<uint32_t, ReagentTotals> treeTotals;
     if (!totals)
     {
-        for (NeedItem const& need : MissingReagentsFromTree(ai, bot, snap, itemId, count))
-            treeTotals[need.itemId] = need.count;
+        for (ReagentTotals const& row : ReagentTotalsFromTree(ai, bot, snap, itemId, count))
+            treeTotals[row.itemId] = row;
         totals = &treeTotals;
     }
-    if (depth >= 8 || std::find(path.begin(), path.end(), itemId) != path.end())
+    if (depth >= TortoiseBots::GuildOrders::kReagentTreeMaxDepth ||
+        std::find(path.begin(), path.end(), itemId) != path.end())
     {
-        out = { itemId, TreeTotalFor(*totals, depth, itemId, count), false };
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
         return true;
     }
 
     uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
     if (!spellId || IsUnlimitedVendorItem(itemId))
     {
-        out = { itemId, TreeTotalFor(*totals, depth, itemId, count), false };
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
         return true;
     }
     SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
     if (!spell)
     {
-        out = { itemId, TreeTotalFor(*totals, depth, itemId, count), false };
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
         return true;
     }
 
@@ -327,7 +358,11 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         if (inMail && inBags < required)
         {
             path.pop_back();
-            out = { reagentId, TreeTotalFor(*totals, depth + 1, reagentId, required - inBags), false, true };
+            // The mailbox leg brings in what the bags do not cover; how much
+            // it can move is bounded by the mail, not by its target.
+            out = { reagentId,
+                TreeTotalFor(*totals, depth + 1, reagentId, required - inBags, ReagentAggregate::BagShort),
+                false, true };
             return true;
         }
         uint32_t owned = inBags + inMail;

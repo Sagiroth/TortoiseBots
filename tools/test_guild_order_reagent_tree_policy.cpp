@@ -73,6 +73,14 @@ std::vector<ReagentNeed> Walk(Table const& table, std::unordered_map<uint32_t, u
     return CollectBaseReagents(itemId, count, bag, bag);
 }
 
+std::vector<ReagentTotals> WalkTotals(Table const& table, std::unordered_map<uint32_t, uint32_t> inBags,
+    std::unordered_map<uint32_t, uint32_t> inMail, uint32_t itemId, uint32_t count)
+{
+    Bag bag{ &table, std::move(inBags) };
+    Bag mail{ &table, std::move(inMail) };
+    return CollectReagentTotals(itemId, count, bag, bag, mail);
+}
+
 Table SharedTree()
 {
     Table table;
@@ -131,13 +139,23 @@ int main()
     needs = Walk(cycle, {}, 4000, 1);
     CHECK(CountOf(needs, 4000) == 1);
 
-    // Depth cap: the item at depth 6 is a leaf, nothing below it is walked.
+    // Depth cap: a base reagent seven recipes down is aggregated, not treated
+    // as a leaf at the old six-level stop (5007 is the row, not 5006).
     Table deep;
-    for (uint32_t itemId = 5000; itemId < 5008; ++itemId)
+    for (uint32_t itemId = 5000; itemId < 5007; ++itemId)
         deep[itemId] = { 1, { { itemId + 1, 1 } }, {} };
     needs = Walk(deep, {}, 5000, 1);
     CHECK(needs.size() == 1);
-    CHECK(CountOf(needs, 5006) == 1);
+    CHECK(CountOf(needs, 5007) == 1);
+    CHECK(CountOf(needs, 5006) == 0);
+
+    // The deeper cap still terminates: the item at depth 8 is a leaf.
+    Table deeper;
+    for (uint32_t itemId = 5100; itemId < 5112; ++itemId)
+        deeper[itemId] = { 1, { { itemId + 1, 1 } }, {} };
+    needs = Walk(deeper, {}, 5100, 1);
+    CHECK(needs.size() == 1);
+    CHECK(CountOf(needs, 5108) == 1);
 
     // Depth 1 keeps its old rows: a leaf asks for what is missing, an
     // intermediate already in hand contributes nothing.
@@ -151,6 +169,48 @@ int main()
     CHECK(CountOf(needs, 6100) == 0);
     CHECK(needs.size() == 1);
     CHECK(CountOf(needs, 6300) == 2);
+
+    // Three counts per base reagent: the whole tree asks for 10, the bags leave
+    // 8 short, and the bags plus the mail leave the external 5.
+    Table buyer;
+    buyer[8000] = { 1, { { 9000, 10 } }, {} };
+    std::vector<ReagentTotals> totals = WalkTotals(buyer, { { 9000, 2 } }, { { 9000, 3 } }, 8000, 1);
+    CHECK(totals.size() == 1 && totals[0].itemId == 9000);
+    if (totals.size() == 1)
+    {
+        CHECK(totals[0].required == 10);
+        CHECK(totals[0].bagShort == 8);
+        CHECK(totals[0].extShort == 5);
+    }
+
+    // Mail adds nothing when the bags already cover the need.
+    totals = WalkTotals(buyer, { { 9000, 10 } }, { { 9000, 4 } }, 8000, 1);
+    CHECK(totals.size() == 1);
+    if (totals.size() == 1)
+    {
+        CHECK(totals[0].required == 10);
+        CHECK(totals[0].bagShort == 0);
+        CHECK(totals[0].extShort == 0);
+    }
+
+    // A held intermediate shrinks the bag shortfall, not the whole-tree total.
+    totals = WalkTotals(tree, { { 1200, 2 } }, { { 900, 4 } }, 1000, 1);
+    CHECK(totals.size() == 3);
+    for (ReagentTotals const& row : totals)
+    {
+        if (row.itemId == 800)
+        {
+            CHECK(row.required == 7);
+            CHECK(row.bagShort == 1);
+            CHECK(row.extShort == 1);
+        }
+        if (row.itemId == 900)
+        {
+            CHECK(row.required == 13);
+            CHECK(row.bagShort == 13);
+            CHECK(row.extShort == 9);
+        }
+    }
 
     // A recipe tool listed at two levels is one row, and only while unheld.
     Table tooled;
