@@ -91,6 +91,7 @@ namespace ai
             creators["loot available"] = [](PlayerbotAI* ai) { return new LootAvailableTrigger(ai); };
             creators["no attackers"] = [](PlayerbotAI* ai) { return new NoAttackersTrigger(ai); };
             creators["no target"] = [](PlayerbotAI* ai) { return new NoTargetTrigger(ai); };
+            creators["dangerous elite near"] = [](PlayerbotAI* ai) { return new DangerousEliteNearTrigger(ai); };
             creators["target in sight"] = [](PlayerbotAI* ai) { return new TargetInSightTrigger(ai); };
             creators["not dps target active"] = [](PlayerbotAI* ai) { return new NotDpsTargetActiveTrigger(ai); };
             creators["not dps aoe target active"] = [](PlayerbotAI* ai) { return new NotDpsAoeTargetActiveTrigger(ai); };
@@ -292,7 +293,6 @@ namespace ai
             creators["rpg buy petition"] = [](PlayerbotAI* ai) { return new RpgBuyPetitionTrigger(ai); };
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseTrigger(ai); };
             creators["rpg quest use"] = [](PlayerbotAI* ai) { return new RpgQuestUseTrigger(ai); };
-            creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatTrigger(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellTrigger(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftTrigger(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulTrigger(ai); };

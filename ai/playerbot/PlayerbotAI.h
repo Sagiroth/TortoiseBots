@@ -422,7 +422,6 @@ public:
     size_t DropQueuedMovementOrders();
 	std::string HandleRemoteCommand(std::string command);
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);
-    void QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay = false);
 	void HandleBotOutgoingPacket(const WorldPacket& packet);
     // Issue #382: drop a queued outgoing packet (e.g. the provisioning level-up echo).
     void DropQueuedOutgoingOpcode(uint16 opcode) { botOutgoingPacketHandlers.DropQueuedOpcode(opcode); }
@@ -491,33 +490,6 @@ public:
     bool Yell(std::string msg, bool likePlayer = false);
     bool Say(std::string msg, bool likePlayer = false);
     bool Whisper(std::string msg, std::string receiverName, bool likePlayer = false);
-    // Issue #1108: chat that answers a player who commanded the bot (".bot
-    // speak", a reply to the bot's own master) is functional, not a
-    // broadcast, so it must survive AiPlayerbot.EnableBroadcasts = 0. The
-    // scope marks every chat line produced inside it as commanded; an
-    // unarmed scope changes nothing.
-    class CommandedChatScope
-    {
-    public:
-        CommandedChatScope(PlayerbotAI* ai, bool armed) : ai_(ai), armed_(armed)
-        {
-            if (armed_ && ai_)
-                ai_->commandedChatDepth++;
-        }
-        ~CommandedChatScope()
-        {
-            if (armed_ && ai_)
-                ai_->commandedChatDepth--;
-        }
-    private:
-        PlayerbotAI* ai_;
-        bool armed_;
-    };
-    // True while a commanded chat scope is active.
-    bool IsCommandedChat() const { return commandedChatDepth > 0; }
-    // True when a chat line may be sent: broadcasts are configurable, but a
-    // commanded answer always goes out.
-    bool IsChatAllowed() const;
     bool TellPlayer(Player* player, std::ostringstream &stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false) { return TellPlayer(player, stream.str(), securityLevel, isPrivate, ignoreSilent); }
     bool TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false);
     bool TellPlayerNoFacing(Player* player, std::ostringstream& stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false) { return TellPlayerNoFacing(player, stream.str(), securityLevel, isPrivate, noRepeat, ignoreSilent); }
@@ -632,12 +604,6 @@ public:
 
     std::list<Unit*> GetAllHostileUnitsAroundWO(WorldObject* wo, float distanceAround);
     std::list<Unit*> GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* wo, float distanceAround);
-
-    static void SendDelayedPacket(WorldSession* session, std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
-    // Drain packets produced by optional asynchronous work on the world
-    // thread. The queue is keyed by durable bot GUID, never by a raw session
-    // captured by a worker thread.
-    static void ProcessDelayedPackets();
  public:
     std::vector<Bag*> GetEquippedAnyBags();
     std::vector<Bag*> GetEquippedQuivers();
@@ -1112,18 +1078,12 @@ protected:
     BotState currentState;
     ChatHelper chatHelper;
     std::queue<ChatCommandHolder> chatCommands;
-    std::queue<ChatQueuedReply> chatReplies;
-    std::mutex chatRepliesMutex;
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;
     CompositeChatFilter chatFilter;
     PlayerbotSecurity security;
     std::map<std::string, time_t> whispers;
-    // Issue #1108: depth of the active CommandedChatScope. While it is above
-    // zero the chat is an answer to a player who commanded the bot and is
-    // sent even with AiPlayerbot.EnableBroadcasts = 0.
-    uint32 commandedChatDepth = 0;
     std::pair<ChatMsg, time_t> currentChat;
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
@@ -1173,7 +1133,7 @@ protected:
     // Issue #846: the chat gate last published to PlayerbotAIStorage.
     bool m_chatGatePublished = false;
     bool m_chatGateIgnoreAll = false;
-    bool m_chatGateIgnoreTrade = false;
+    bool m_chatGateOnlyOrders = false;
     time_t m_chatGatePublishedAt = 0;
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;

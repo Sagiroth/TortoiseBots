@@ -66,13 +66,6 @@ private:
     Config& m_config;
 };
 
-struct ParsedUrl {
-    std::string hostname;
-    std::string path;
-    int port;
-    bool https;
-};
-
 class PlayerbotAIConfig
 {
 public:
@@ -703,13 +696,11 @@ public:
     // 1/1 keeps the historic "walk from level 1" behaviour.
     uint32 randomBotStartLevelMin;
     uint32 randomBotStartLevelMax;
-    bool randomBotSayWithoutMaster;
     bool randomBotInvitePlayer;
     bool randomBotGroupNearby;
     bool randomBotRaidNearby;
     bool randomBotGuildNearby;
     bool randomBotFormGuild;
-    bool inviteChat;
     // Opt-in diagnostic logging: when true, [BOT] log lines and per-bot action
     // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
     // off so production servers don't pay disk I/O / branch overhead.
@@ -735,68 +726,6 @@ public:
     std::string defaultFormation;
 
     uint32 guildMaxBotLimit;
-
-    bool enableBroadcasts;
-    uint32 broadcastChanceMaxValue;
-
-    uint32 broadcastToGuildGlobalChance;
-    uint32 broadcastToWorldGlobalChance;
-    uint32 broadcastToGeneralGlobalChance;
-    uint32 broadcastToTradeGlobalChance;
-    uint32 broadcastToLFGGlobalChance;
-    uint32 broadcastToLocalDefenseGlobalChance;
-    uint32 broadcastToWorldDefenseGlobalChance;
-    uint32 broadcastToGuildRecruitmentGlobalChance;
-    uint32 broadcastToSayGlobalChance;
-    uint32 broadcastToYellGlobalChance;
-
-    uint32 broadcastChanceLootingItemPoor;
-    uint32 broadcastChanceLootingItemNormal;
-    uint32 broadcastChanceLootingItemUncommon;
-    uint32 broadcastChanceLootingItemRare;
-    uint32 broadcastChanceLootingItemEpic;
-    uint32 broadcastChanceLootingItemLegendary;
-    uint32 broadcastChanceLootingItemArtifact;
-
-    uint32 broadcastChanceQuestAccepted;
-    uint32 broadcastChanceQuestUpdateObjectiveCompleted;
-    uint32 broadcastChanceQuestUpdateObjectiveProgress;
-    uint32 broadcastChanceQuestUpdateFailedTimer;
-    uint32 broadcastChanceQuestUpdateComplete;
-    uint32 broadcastChanceQuestTurnedIn;
-
-    uint32 broadcastChanceKillNormal;
-    uint32 broadcastChanceKillElite;
-    uint32 broadcastChanceKillRareelite;
-    uint32 broadcastChanceKillWorldboss;
-    uint32 broadcastChanceKillRare;
-    uint32 broadcastChanceKillUnknown;
-    uint32 broadcastChanceKillPet;
-    uint32 broadcastChanceKillPlayer;
-
-    uint32 broadcastChanceLevelupGeneric;
-    uint32 broadcastChanceLevelupTenX;
-    uint32 broadcastChanceLevelupMaxLevel;
-
-    uint32 broadcastChanceSuggestInstance;
-    uint32 broadcastChanceSuggestQuest;
-    uint32 broadcastChanceSuggestGrindMaterials;
-    uint32 broadcastChanceSuggestGrindReputation;
-    uint32 broadcastChanceSuggestSell;
-    uint32 broadcastChanceSuggestSomething;
-
-    uint32 broadcastChanceSuggestSomethingToxic;
-
-    uint32 broadcastChanceSuggestToxicLinks;
-    std::string toxicLinksPrefix;
-    uint32 toxicLinksRepliesChance;
-
-    uint32 broadcastChanceSuggestThunderfury;
-    uint32 thunderfuryRepliesChance;
-
-    uint32 broadcastChanceGuildManagement;
-
-    uint32 guildRepliesRate;
 
     uint32 botAcceptDuelMinimumLevel;
 
@@ -937,13 +866,6 @@ public:
     bool perfMonEnabled;
     bool bExplicitDbStoreSave = false;
 
-    //LM BEGIN
-    std::string llmApiEndpoint, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
-    uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
-    bool llmGlobalContext;
-    ParsedUrl llmEndPointUrl;
-    std::set<uint32> llmBlockedReplyChannels;
-    //LM END
 
     float EatDrinkMinDistance;
     float EatDrinkMaxDistance;
@@ -989,7 +911,6 @@ public:
 
 private:
     void LoadTalentSpecs();
-    void LoadLLMDefaultPrompts(const std::string& fileName);
 
     Config config;
 };

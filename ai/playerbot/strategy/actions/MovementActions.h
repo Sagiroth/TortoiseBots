@@ -222,6 +222,15 @@ namespace ai
         uint32 keepoutNoLandingUntilMs = 0;
     };
 
+    // Steps away from the roaming elite of the "dangerous elite" value.
+    class AvoidEliteAction : public MovementAction
+    {
+    public:
+        AvoidEliteAction(PlayerbotAI* ai) : MovementAction(ai, "avoid elite") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
     class FleeWithPetAction : public MovementAction
     {
     public:

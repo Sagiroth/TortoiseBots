@@ -394,9 +394,3 @@ bool PlayerbotAI::HasPlayerRelation()
 
     return false;
 }
-
-void PlayerbotAI::QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay)
-{
-    std::scoped_lock lock(chatRepliesMutex);
-    chatReplies.push(ChatQueuedReply(msgType, guid1.GetCounter(), guid2.GetCounter(), message, chanName, name, time(0) + (noDelay ? 0 : urand(inCombat ? 15 : 10, inCombat ? 30 : 20))));
-}

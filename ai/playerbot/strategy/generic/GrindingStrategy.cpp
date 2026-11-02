@@ -10,6 +10,12 @@ void GrindingStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
         "no target",
         NextAction::array(0,
         new NextAction("attack anything", 5.0f), NULL)));
+    // A patrolling elite the bot cannot fight: step away before it aggroes.
+    // Above food, loot and travel so the bot does not stand in its path.
+    triggers.push_back(new TriggerNode(
+        "dangerous elite near",
+        NextAction::array(0,
+        new NextAction("avoid elite", 20.0f), NULL)));
     // Idle drift beside the prey rules: a masterless bot with no journey
     // drifts 50 yd to a near reachable point instead of standing through
     // whole parks. Below attack anything (5.0) and every maintenance row,

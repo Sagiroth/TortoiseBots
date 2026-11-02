@@ -12,7 +12,6 @@
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "Transports/Transport.h"
 #include "Maps/PathFinder.h"
-#include "playerbot/PlayerbotLLMInterface.h"
 
 #include "vmap/VMapFactory.h"
 
@@ -22,7 +21,6 @@
 
 #include <iomanip>
 #include <typeindex>
-#include "SayAction.h"
 #include "Maps/MoveMap.h"
 
 using namespace ai;
@@ -52,12 +50,6 @@ bool DebugAction::Execute(Event& event)
         return HandleUnmount(event, requester, text);
     else if (text.find("area") == 0 && isMod)
         return HandleArea(event, requester, text);
-    else if (text.find("llm ") == 0 && isMod)
-        return HandleLLM(event, requester, text);
-    else if (text.find("chatreplydo ") == 0 && isMod)
-        return HandleChatReplyDo(event, requester, text);
-    else if (text.find("monstertalk ") == 0 && isMod)
-        return HandleMonsterTalk(event, requester, text);
     else if (text == "gy" && isMod)
         return HandleGY(event, requester, text);
     else if (text == "grid" && isMod)
@@ -226,7 +218,7 @@ bool DebugAction::HandleDebugHelp(Event& event, Player* requester, const std::st
 
         if (isMod)
         {
-            ai->TellPlayer(requester, "Mod Only: llm, area, avoid, motion, transport, nc, gps");
+            ai->TellPlayer(requester, "Mod Only: area, avoid, motion, transport, nc, gps");
         }
 
         ai->TellPlayer(requester, "");
@@ -473,13 +465,6 @@ bool DebugAction::HandleDebugHelp(Event& event, Player* requester, const std::st
         ai->TellPlayer(requester, "");
         ai->TellPlayer(requester, "Usage: debug gps");
         ai->TellPlayer(requester, "  Shows: X, Y, Z, Map, Area, Zone, Orientation");
-    }
-    else if (cmd == "llm" && isMod)
-    {
-        ai->TellPlayer(requester, "=== debug llm ===");
-        ai->TellPlayer(requester, "LLM interaction (mod only).");
-        ai->TellPlayer(requester, "");
-        ai->TellPlayer(requester, "Usage: debug llm <prompt>");
     }
     else if (cmd == "area" && isMod)
     {
@@ -875,20 +860,6 @@ bool DebugAction::HandleDebugHelp(Event& event, Player* requester, const std::st
         ai->TellPlayer(requester, "Usage: debug sound <soundId>");
     }
     // MOD ONLY - other
-    else if (cmd == "chatreplydo" && isMod)
-    {
-        ai->TellPlayer(requester, "=== debug chatreplydo ===");
-        ai->TellPlayer(requester, "Chat reply action (mod only).");
-        ai->TellPlayer(requester, "");
-        ai->TellPlayer(requester, "Usage: debug chatreplydo <text>");
-    }
-    else if (cmd == "monstertalk" && isMod)
-    {
-        ai->TellPlayer(requester, "=== debug monstertalk ===");
-        ai->TellPlayer(requester, "Monster talk (mod only).");
-        ai->TellPlayer(requester, "");
-        ai->TellPlayer(requester, "Usage: debug monstertalk <text>");
-    }
     else if (cmd == "gy" && isMod)
     {
         ai->TellPlayer(requester, "=== debug gy ===");

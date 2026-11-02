@@ -395,6 +395,15 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             }
         }
 
+        if (Unit* elite = AI_VALUE(Unit*, "dangerous elite"))
+        {
+            if (elite != unit && unit->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD))
+            {
+                logGrind(unit, "ignored (roaming elite near).");
+                continue;
+            }
+        }
+
         if (group)
         {
             Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
@@ -547,6 +556,11 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
             if (highestEliteNear != 0 && ai::EliteCampDangerous(true, (int)highestEliteNear, bot->GetLevel()))
                 continue;
         }
+        if (Unit* elite = AI_VALUE(Unit*, "dangerous elite"))
+        {
+            if (elite != unit && unit->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD))
+                continue;
+        }
 
         if (!WorldPosition(bot).canPathTo(WorldPosition(unit), bot))
             continue;
@@ -579,4 +593,34 @@ int GrindTargetValue::GetTargetingPlayerCount( Unit* unit )
     }
 
     return count;
+}
+
+Unit* DangerousEliteValue::Calculate()
+{
+    if (!ai::EliteCampDangerApplies(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
+        ai->HasRealPlayerMaster(), bot->GetGroup() != nullptr, bot->GetLevel()))
+        return nullptr;
+
+    Unit* closest = nullptr;
+    float closestDist = 0.0f;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+    {
+        Creature* creature = dynamic_cast<Creature*>(ai->GetUnit(guid));
+        if (!creature || !creature->IsAlive() || !creature->GetCreatureInfo())
+            continue;
+        uint32 const rank = creature->GetCreatureInfo()->rank;
+        if (rank != CREATURE_ELITE_ELITE && rank != CREATURE_ELITE_RAREELITE && rank != CREATURE_ELITE_WORLDBOSS)
+            continue;
+        if (!ai::EliteCampDangerous(true, (int)creature->GetLevel(), bot->GetLevel()))
+            continue;
+        if (!sServerFacade.IsHostileTo(creature, bot))
+            continue;
+        float const dist = bot->GetDistance(creature);
+        if (!closest || dist < closestDist)
+        {
+            closest = creature;
+            closestDist = dist;
+        }
+    }
+    return closest;
 }

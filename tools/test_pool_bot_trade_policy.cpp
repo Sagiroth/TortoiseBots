@@ -21,7 +21,6 @@
 } while (0)
 
 using TortoiseBots::PoolBotTradeAllowed;
-using TortoiseBots::PoolBotTradeChatAllowed;
 using TortoiseBots::PoolBotTradeMode;
 using TortoiseBots::PoolBotTradeSettleAllowed;
 using TortoiseBots::ParsePoolBotTradeMode;
@@ -44,7 +43,6 @@ int main()
     // 2. Non-pool (owned/hired) bots never reach the gate: always allowed.
     CHECK(PoolBotTradeAllowed(PoolBotTradeMode::Off, false, false, false, false));
     CHECK(PoolBotTradeSettleAllowed(PoolBotTradeMode::Off, false, true, true));
-    CHECK(PoolBotTradeChatAllowed(false, true, false));
     std::cout << "  [PASS] owned/hired bots bypass the gates\n";
 
     // 3. Off/Trusted: strangers refused, master/group/hire-master pass.
@@ -83,15 +81,6 @@ int main()
     CHECK(!PoolBotTradeSettleAllowed(PoolBotTradeMode::SellOnly, true, true, true));
     CHECK(PoolBotTradeSettleAllowed(PoolBotTradeMode::On, true, true, true));
     std::cout << "  [PASS] settle gate follows the mode\n";
-
-    // 6. Trade channel: pool bots need a direct mention; other channels pass.
-    // Review regression pin: PlayerbotAI applies this ONLY to the Trade
-    // channel (SRC_TRADE via channel id) — General/LFG/Defense/World keep
-    // prior behaviour and never consult this gate.
-    CHECK(!PoolBotTradeChatAllowed(true, true, false));
-    CHECK(PoolBotTradeChatAllowed(true, true, true));
-    CHECK(PoolBotTradeChatAllowed(true, false, false));
-    std::cout << "  [PASS] trade-channel chatter needs a mention\n";
 
     // 7. Excluded prefixes: addon chatter never drives the trade action.
     CHECK(TradeTextExcluded("Questie: need [item]", "Questie"));
