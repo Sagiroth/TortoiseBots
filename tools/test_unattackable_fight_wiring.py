@@ -111,7 +111,7 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertIn("now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;",
                       drop)
         self.assertIn("if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && "
-                      "!TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
+                      "!TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&\n            !wedged)\n            continue;", drop)
         self.assertLess(drop.index("ReadMemberEngaged(lead, judge, bot, now);"), drop.index("now.yd = "))
         self.assertIn("sServerFacade.GetHostileRefManager(pet).deleteReferences();\n            pet->CombatStop();", drop)
         self.assertIn("sServerFacade.GetHostileRefManager(bot).deleteReferences();\n        bot->CombatStop();", drop)
@@ -130,6 +130,25 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertNotIn("member.inCombat = bot->IsInCombat();", facts)
         member = body(CODE, "void ReadMemberEngaged(Player* lead, Player* judge, Player* bot,")
         self.assertIn("if (!MemberInCombat(bot))\n        return;", member)
+
+    def test_combat_drop_rechecks_a_wedged_bot_and_tick_summons_it(self):
+        # ZG walks 23-25: Nack/Maevrayah/Elmind wedged below the Jeklik path while the raid fought on. The glue's
+        # drop re-checks the bot still stands wedged (DungeonRun::WedgedDropRecheck, dz = bot z - lead z, attackers
+        # read the same core attacker sets ReadRunFacts fills MemberFact::attackers with, no scan); the tick
+        # summons a wedged raid member before the guard looks and before the runaway.
+        policy = (ROOT / "runtime" / "DungeonRunPolicy.h").read_text()
+        drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
+        self.assertIn("bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers);", drop)
+        self.assertIn("float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;", drop)
+        self.assertIn("for (Unit* attacker : bot->GetAttackers())", drop)
+        self.assertIn("for (Unit* attacker : nowPet->GetAttackers())", drop)
+        self.assertIn("(wedged on another floor)", drop)
+        tick_body = body(policy, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{",
+                         "\n}\n")
+        guard = tick_body.index("if (CheckGuard(r, f, dt, order))")
+        self.assertLess(tick_body.index("if (order.empty() && WedgedSummon(r, f, dt, order))"), guard)
+        runaway = tick_body.index("if (RunawaySummon(r, f, dt, order))")
+        self.assertLess(tick_body.index("if (order.empty() && WedgedSummon(r, f, dt, order))"), runaway)
 
 
 if __name__ == "__main__":

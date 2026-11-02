@@ -7916,7 +7916,22 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         ReadMemberEngaged(lead, judge, bot, now);
         // ... or by far units only, with the bot near the lead bot (DungeonRun::HeldByFarUnitsOnly: r36 slot D).
         now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;
-        if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))
+        // ... or wedged on another floor (DungeonRun::WedgedDropRecheck: ZG walks 23-25, Nack/Maevrayah/Elmind wedged
+        // below the Jeklik path): more than kGatherYd out, more than kStragglerDzYd up or down, nothing on it (its
+        // attackers read the same way ReadRunFacts fills MemberFact::attackers: the core's attacker sets, no scan).
+        float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
+        std::uint32_t wedgedAttackers = 0;
+        for (Unit* attacker : bot->GetAttackers())
+            if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                ++wedgedAttackers;
+        if (Pet* const nowPet = bot->GetPet())
+            if (nowPet->IsAlive() && nowPet->IsInWorld())
+                for (Unit* attacker : nowPet->GetAttackers())
+                    if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                        ++wedgedAttackers;
+        bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers);
+        if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&
+            !wedged)
             continue;
         Pet* const pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
@@ -7926,9 +7941,8 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         }
         sServerFacade.GetHostileRefManager(bot).deleteReferences();
         bot->CombatStop();
-        TB_LOG_DETAIL("TortoiseBots: run leader: %s dropped combat with units the group cannot attack only",
-            bot->GetName());
-    }
+        TB_LOG_DETAIL("TortoiseBots: run leader: %s dropped combat with units the group cannot attack only%s",
+            bot->GetName(), wedged ? " (wedged on another floor)" : "");
 }
 
 // The plan's kill_first units of this fight, from the bots' cached
