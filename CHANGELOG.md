@@ -107,6 +107,7 @@
 - Raids: a bot left far behind the lead (for example after a teleport) is now summoned to it after about 8 seconds instead of the run's waits taking turns for a minute and a half, at most twice per step.
 - Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
 - Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
+- Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
 - Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.

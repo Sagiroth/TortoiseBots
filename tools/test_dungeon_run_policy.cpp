@@ -25736,6 +25736,93 @@ static void TestRaidWalkJoinYieldsToEngageOnArrival()
     CHECK(!r.raidWalkJoined);
 }
 
+// Task F2: raid trash swarm. Arlokk's terrace, walk 25 (22:00:05-22:00:30): 11 mobs on the party with one off-tank,
+// and CheckGuard sent only "off-tank Merias picks up ..." every 4 s while the rest beat the DPS and the healer. Loose
+// mobs outnumbering what the off-tanks can take (kRaidSwarmMinLoose at least, more than two per off-tank) send the main
+// tank at them once per fight instead.
+static void TestRaidTrashSwarmSendsMainTank()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"}; // one off-tank, as at Arlokk
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky"); // the nearest loose mob
+    CHECK(r.note == "fighting: the main tank joins: 6 loose mobs on the party, 1 off-tank(s) (on 11354, 10.0 yd)");
+    CHECK(r.raidSwarmJoined);
+    CHECK(r.fightOrders == 1);
+    CHECK(r.guardOrders == 0); // not a pick-up
+    CHECK(r.guardReturn);      // it leaves its stand, as at a pick-up
+}
+
+// An ordinary pull stays with the off-tanks: 4 loose mobs are under kRaidSwarmMinLoose and not more than two per
+// off-tank, so the pick-up goes out as before.
+static void TestRaidTrashSwarmBelowThresholdKeepsOffTank()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.raid.offTanksAlive = {"Merias"};
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12), Hitter(44, 11353, 26)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 43 Merias"); // the nearest loose mob, to the off-tank
+    CHECK(!r.raidSwarmJoined);
+    CHECK(r.note.find("the main tank joins") == std::string::npos);
+    CHECK(r.guardOrders == 1);
+    CHECK(!r.guardReturn);
+}
+
+// Once per fight: after the join the main tank's own AI takes the pack, so the rest of the fight's orders stay the
+// off-tanks' (the guard's pick).
+static void TestRaidTrashSwarmOncePerFight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky");
+    int tankOrders = 1;
+    for (std::uint32_t ms = 0; ms < 12000; ms += kTickMs)
+        if (Tick(r, f).find(" Tanky") != std::string::npos)
+            ++tankOrders;
+    CHECK(tankOrders == 1);
+    CHECK(r.raidSwarmJoined);
+}
+
+// Never on a boss step (RaidTrashFight false): the main tank's stay and the boss rules hold as today.
+static void TestRaidTrashSwarmNeverOnBossStep()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10);
+    boss.entry = 12129;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 45 Tanky"); // the guard's pick-up, the carrier's: the boss step's rule
+    CHECK(!r.raidSwarmJoined);
+    CHECK(r.note.find("the main tank joins") == std::string::npos);
+}
+
 // Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
 // (or a boss's fight) and in a party run the guard's order is the main tank's.
 static void TestRaidTrashFightGate()
@@ -26785,6 +26872,11 @@ int main()
     TestRaidWalkJoinLeavesInsideFortyToTheOffTank();
     TestRaidWalkJoinPicksByMobDistance();
     TestRaidWalkJoinYieldsToEngageOnArrival();
+    // item 4 raid trash swarm
+    TestRaidTrashSwarmSendsMainTank();
+    TestRaidTrashSwarmBelowThresholdKeepsOffTank();
+    TestRaidTrashSwarmOncePerFight();
+    TestRaidTrashSwarmNeverOnBossStep();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

@@ -402,6 +402,11 @@ constexpr std::uint32_t kRaidAssistWaitMs = 3000; // a main tank on stay with no
 // every lift's reach. ZG walk 11 step 6: the tank at -11917,-1442, the hurt mobs 38-52 yd behind it, 25 s with no order.
 // SightDistance (60 yd) bounds `attack`, so the read stops at 55 (3D vs 2D distance to spare).
 constexpr float kRaidWalkJoinYd = 55.0f;
+// A raid trash fight's way out of a swarm (RaidSwarmJoin): the main tank joins the loose mobs on the party when they
+// outnumber what the off-tanks can take, this many at least. Arlokk's terrace, walk 25 (22:00:05-22:00:30): 11 mobs on
+// the party with one off-tank, a pick-up every 4 s and the rest on the DPS and the healer. An ordinary 3-4 mob pull
+// against one off-tank stays out of it.
+constexpr std::uint32_t kRaidSwarmMinLoose = 5;
 // A mob hitting the party only by a spell from where it stands (UnitFact::castingAtRange), with a living hostile out of
 // combat within kGuardCampYd of it (UnitFact::campIdle: its own camp, a pack not pulled yet), is not picked up or engaged
 // when the tank would walk more than kGuardNoWalkYd to it (GuardLeavesCampAlone). Scholomance r30 slot C step 16
@@ -2000,6 +2005,9 @@ struct Run
     std::uint32_t raidWalkJoinMs = 0;
     std::uint64_t raidWalkJoinGuid = 0;
     bool raidWalkJoined = false;
+    // A raid trash fight's swarm (RaidSwarmJoin): the loose mobs outnumbered the off-tanks and the main tank joined,
+    // once per fight.
+    bool raidSwarmJoined = false;
     // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
     // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
     bool stopReachDue = false;
@@ -2500,6 +2508,7 @@ inline void ResetStep(Run& r)
     r.raidWalkJoinMs = 0;
     r.raidWalkJoinGuid = 0;
     r.raidWalkJoined = false;
+    r.raidSwarmJoined = false;
     r.stopReachDue = false;
     r.reachStopped = false;
     r.guardEventDown = 0;
@@ -13253,6 +13262,66 @@ inline bool RaidWalkJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& 
     return true;
 }
 
+// A raid trash fight (RaidTrashFight) whose loose mobs outnumber what the off-tanks can take: the main tank, a living
+// tank on stay with no mob of its own, joins them (Arlokk's terrace, walk 25, 22:00:05-22:00:30: 11 mobs on the party
+// with one off-tank, a pick-up every 4 s, the rest on the DPS and the healer, and no lift reaches past kGuardYd). A
+// loose mob is one the off-tank pick can reach (hitting, within kGuardYd of the tank, not held by an off-tank or the lead
+// bot, not one the guard leaves to the DPS, no run cc on it): kRaidSwarmMinLoose of them at least, and more than two per
+// living off-tank. The pick is a healer's attacker first, then the nearest. Null otherwise; `loose` is the count.
+inline const UnitFact* RaidSwarmJoinTarget(const Run& r, const Facts& f, std::uint32_t& loose)
+{
+    loose = 0;
+    if (!RaidTrashFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.leadHasAttacker ||
+        f.carrier.empty() || r.raidSwarmJoined || f.raid.offTanksAlive.empty())
+        return nullptr;
+    auto const looseMob = [&r](const UnitFact& u)
+    {
+        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
+            !u.victimTank && !u.victimLead && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+    };
+    auto const rank = [](const UnitFact& u) { return u.victimHealer ? 0 : 1; };
+    const UnitFact* best = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!looseMob(u))
+            continue;
+        ++loose;
+        if (!best || rank(u) < rank(*best) || (rank(u) == rank(*best) && u.distLead < best->distLead))
+            best = &u;
+    }
+    if (loose < kRaidSwarmMinLoose || static_cast<std::size_t>(loose) <= 2 * f.raid.offTanksAlive.size())
+        return nullptr;
+    return best;
+}
+
+// The main tank joins a swarm: `attack <guid> <carrier>` ends its stay and its own tank AI takes the loose pack from
+// there. Once per fight, and the spacing and the fight cap hold as for RaidAssist, with no wait (the mobs are on the
+// party now). Not a pick-up: guardOrders and guardUnitOrders are untouched.
+inline bool RaidSwarmJoin(Run& r, const Facts& f, std::string& order)
+{
+    std::uint32_t loose = 0;
+    const UnitFact* u = RaidSwarmJoinTarget(r, f, loose);
+    if (!u)
+        return false;
+    if (r.fightOrders >= kGuardOrdersFightCap || (r.fightOrders > 0 && r.guardSinceOrderMs < kGuardRepeatMs))
+        return false;
+    r.raidSwarmJoined = true;
+    ++r.fightOrders;
+    r.guardSinceOrderMs = 0;
+    if (!r.guardReturn)
+    {
+        r.guardReturn = true; // it leaves its stand, as at a pick-up
+        r.guardX = f.leadStayKnown ? f.leadStayX : f.leadX;
+        r.guardY = f.leadStayKnown ? f.leadStayY : f.leadY;
+        r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
+    }
+    r.note = "fighting: the main tank joins: " + std::to_string(loose) + " loose mobs on the party, " +
+        std::to_string(f.raid.offTanksAlive.size()) + " off-tank(s) (on " + std::to_string(u->entry) + ", " +
+        Num(u->distLead) + " yd)";
+    order = "attack " + std::to_string(u->guid) + " " + f.carrier;
+    return true;
+}
+
 // One fight tick of the guard: mobs hitting the party for kGuardWaitMs (a
 // healer: at once) send the pick-up, at most kGuardOrdersPerFight a fight and
 // kGuardRepeatMs apart. In a hold the tank on stay is sent at the event's
@@ -13340,6 +13409,8 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             }
         }
         if (RaidWalkJoin(r, f, dt, order))
+            return true;
+        if (RaidSwarmJoin(r, f, order))
             return true;
     }
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
@@ -16004,6 +16075,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.raidWalkJoinMs = 0;
         r.raidWalkJoinGuid = 0;
         r.raidWalkJoined = false;
+        r.raidSwarmJoined = false;
         r.reachStopped = false;
         // A fight may have moved the lead bot: an exact point's tighten starts
         // over and its proof is taken again before a direct step goes out.
