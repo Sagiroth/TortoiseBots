@@ -25755,7 +25755,9 @@ static void TestRaidTrashSwarmSendsMainTank()
         Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
     CHECK(Tick(r, f) == "attack 45 Tanky"); // the nearest loose mob
     CHECK(r.note == "fighting: the main tank joins: 6 loose mobs on the party, 1 off-tank(s) (on 11354, 10.0 yd)");
-    CHECK(r.raidSwarmJoined);
+    CHECK(!r.raidSwarmJoined); // pending until the tank moves
+    CHECK(r.raidSwarmPendingGuid == 45);
+    CHECK(r.raidSwarmTries == 1);
     CHECK(r.fightOrders == 1);
     CHECK(r.guardOrders == 0); // not a pick-up
     CHECK(r.guardReturn);      // it leaves its stand, as at a pick-up
@@ -25794,12 +25796,15 @@ static void TestRaidTrashSwarmOncePerFight()
     f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
         Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
     CHECK(Tick(r, f) == "attack 45 Tanky");
+    f.leadStaying = false; // the attack ended its stay: latched, its own AI takes the pack from there
+    CHECK(Tick(r, f).empty());
+    CHECK(r.raidSwarmJoined);
+    CHECK(r.raidSwarmPendingGuid == 0);
     int tankOrders = 1;
     for (std::uint32_t ms = 0; ms < 12000; ms += kTickMs)
         if (Tick(r, f).find(" Tanky") != std::string::npos)
             ++tankOrders;
     CHECK(tankOrders == 1);
-    CHECK(r.raidSwarmJoined);
 }
 
 // Never on a boss step (RaidTrashFight false): the main tank's stay and the boss rules hold as today.
@@ -25821,6 +25826,87 @@ static void TestRaidTrashSwarmNeverOnBossStep()
     CHECK(Tick(r, f) == "attack 45 Tanky"); // the guard's pick-up, the carrier's: the boss step's rule
     CHECK(!r.raidSwarmJoined);
     CHECK(r.note.find("the main tank joins") == std::string::npos);
+}
+// The swarm join stays pending until the tank moves: the first target dies
+// before it leaves stay, so the next loose mob is ordered instead of lost to the latch.
+static void TestRaidTrashSwarmRetriedWhenTheFirstTargetDies()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky");
+    CHECK(!r.raidSwarmJoined);
+    CHECK(r.raidSwarmPendingGuid == 45);
+    CHECK(r.raidSwarmTries == 1);
+    // Guid 45 dies before the tank moves: gone from the facts, the tank still on stay.
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f).empty()); // the spacing after the first order
+    CHECK(Tick(r, f) == "attack 43 Tanky"); // the nearest of the rest
+    CHECK(!r.raidSwarmJoined);
+    CHECK(r.raidSwarmPendingGuid == 43);
+    CHECK(r.raidSwarmTries == 2);
+}
+
+// The pending join latches once the main tank leaves stay: no more swarm orders.
+static void TestRaidTrashSwarmLatchedOnceTheTankMoves()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky");
+    CHECK(!r.raidSwarmJoined);
+    f.leadStaying = false; // the attack took it off its stay, its own AI fights the pack
+    CHECK(Tick(r, f).empty());
+    CHECK(r.raidSwarmJoined);
+    CHECK(r.raidSwarmPendingGuid == 0);
+    int tankOrders = 0;
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        if (Tick(r, f).find(" Tanky") != std::string::npos)
+            ++tankOrders;
+    CHECK(tankOrders == 0);
+}
+
+// Three swarm tries with the tank staying on latched the join: no fourth order.
+static void TestRaidTrashSwarmLatchedAfterThreeTries()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts();
+    f.raid.offTanksAlive = {"Merias"};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(41, 11350, 18), Hitter(42, 11351, 22), Hitter(43, 11352, 12),
+        Hitter(44, 11353, 26), Hitter(45, 11354, 10), Hitter(46, 11355, 30)};
+    CHECK(Tick(r, f) == "attack 45 Tanky");
+    int tankOrders = 1;
+    for (std::uint32_t ms = 0; ms < 15000; ms += kTickMs)
+        if (Tick(r, f).find(" Tanky") != std::string::npos)
+            ++tankOrders;
+    CHECK(tankOrders == 3);
+    CHECK(r.raidSwarmTries == 3);
+    CHECK(r.raidSwarmJoined);
+    for (int i = 0; i < 10; ++i)
+        CHECK(Tick(r, f).find(" Tanky") == std::string::npos);
 }
 
 // Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
@@ -26877,6 +26963,9 @@ int main()
     TestRaidTrashSwarmBelowThresholdKeepsOffTank();
     TestRaidTrashSwarmOncePerFight();
     TestRaidTrashSwarmNeverOnBossStep();
+    TestRaidTrashSwarmRetriedWhenTheFirstTargetDies();
+    TestRaidTrashSwarmLatchedOnceTheTankMoves();
+    TestRaidTrashSwarmLatchedAfterThreeTries();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }
