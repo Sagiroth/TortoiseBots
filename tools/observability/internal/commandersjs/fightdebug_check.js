@@ -661,4 +661,28 @@ assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, pack
   assert.ok(cutRow.ev.endsWith("Unstable Concoction was cast at least 2× (the fight dropped 40 older log events, so earlier casts and the deaths after them are missing)."));
 }
 
+// ---- a cut spell list: the Sunder rate is unknown, not a fail ------------------------------------------------
+// The bounded short form lists no spells; any other degraded rung cuts the tail first, so only a full 3-spell row
+// ending in an always-listed spell may still hide Sunder.
+const cutMT = (spells) => fight({ dur_ms: 60000, bots: [bot({ name: "T", role: "tank", taken: 100, spells })] });
+const cutOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_sunder");
+assert.strictEqual(cutOf(cutMT([])).lvl, "fail"); // full build, no Sunder: judged
+assert.strictEqual(cutOf(cutMT([])).num, "0.0/10 s");
+const trunc = cutMT([]);
+trunc.truncated = true;
+assert.strictEqual(cutOf(trunc).lvl, "unknown");
+assert.strictEqual(cutOf(trunc).num, "unknown (spell list cut)");
+const rung3 = cutMT([{ n: "Revenge", c: 2 }]);
+rung3.spells_cut = 2;
+assert.strictEqual(cutOf(rung3).lvl, "unknown");
+const hidden3 = cutMT([{ n: "Heroic Strike", c: 1 }, { n: "Revenge", c: 2 }, { n: "Shield Block", c: 1 }]);
+hidden3.spells_cut = 3;
+assert.strictEqual(cutOf(hidden3).lvl, "unknown");
+const proven3 = cutMT([{ n: "Heroic Strike", c: 1 }, { n: "Revenge", c: 2 }, { n: "Bloodrage", c: 1 }]);
+proven3.spells_cut = 3;
+assert.strictEqual(cutOf(proven3).lvl, "fail"); // ends in a non-listed spell: the absence is proof
+const short3 = cutMT([{ n: "Heroic Strike", c: 1 }]);
+short3.spells_cut = 3;
+assert.strictEqual(cutOf(short3).lvl, "fail"); // short of the cap: the absence is proof
+
 console.log("fightdebug_check: ok");

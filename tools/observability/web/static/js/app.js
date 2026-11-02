@@ -9014,7 +9014,7 @@
 
   function fdChecksHtml(checks, recaps, guids, selBot) {
     return (checks || []).map(c => {
-      const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'warn' ? 'CHECK' : 'PASS';
+      const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'ok' ? 'PASS' : 'CHECK';
       const d = typeof c.death === 'number' && c.death >= 0 ? (recaps || [])[c.death] : null;
       const guid = c.bot && guids ? guids[c.bot] : null;
       const pressed = c.bot === selBot ? 'true' : 'false';
