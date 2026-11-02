@@ -11939,9 +11939,11 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
     }
     // AiPlayerbot.DungeonRunStandPullPreCc: the approach row of an authored stand-pull step ends at the last point of
     // its walk that is outside the next pull's pack's wake reach (the glue's ReadStandPullHold), so the pull's CC
-    // orders go out while the pack is still asleep, before the walk in wakes it.
+    // orders go out while the pack is still asleep, before the walk in wakes it. The row asks the glue for the point
+    // on its first tick (Run::holdAheadStep: the glue reads that row only) and then waits kHoldAheadWaitMs for the
+    // answer: the request comes before the pack's reach is read, so the glue has a row to answer at all.
     std::string noPreCcNote;
-    if (f.standPullPreCc && NextStandPull(r) && !f.holdAheadReach.empty())
+    if (f.standPullPreCc && NextStandPull(r))
     {
         if (r.holdAheadStep != r.step)
         {
@@ -11970,7 +11972,8 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
                 r.note = "reading the last point outside the pack's wake reach";
                 return;
             }
-            // Unread past the wait: the plan's point is walked as before.
+            else
+                r.holdAheadDone = true; // unread past the wait: the glue stops reading the row, the plan's point is walked
         }
         else if (holdAhead)
         {

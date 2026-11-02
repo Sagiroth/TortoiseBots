@@ -1041,9 +1041,14 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("return (next.kind == PlanStepKind::Pull || next.kind == PlanStepKind::Boss) &&\n"
                       "        (next.flags & ai::kPlanFlagStandPull) && next.leg == s->leg;", policy)
         move = body(policy, "inline void MoveStep(", "\n}\n")
-        self.assertIn("if (f.standPullPreCc && NextStandPull(r) && !f.holdAheadReach.empty())", move)
+        # The row asks for the read on its first tick, before the glue can have supplied the pack's reach: the old
+        # gate on a non-empty reach would wait for an answer to a read that was never asked for.
+        self.assertIn("if (f.standPullPreCc && NextStandPull(r))", move)
+        self.assertNotIn("!f.holdAheadReach.empty()", move)
+        self.assertLess(move.index("r.holdAheadStep = r.step;"), move.index("if (!f.holdAheadKnown)"))
         self.assertIn("if (r.holdAheadMs < kHoldAheadWaitMs)", move)
         self.assertIn('r.note = "reading the last point outside the pack\'s wake reach";', move)
+        self.assertIn("r.holdAheadDone = true; // unread past the wait:", move)
         self.assertIn('NextStep(r, "arrived at the hold point outside the pack\'s wake reach (the pull\'s CC goes out here)");',
                       move)
         self.assertIn('noPreCcNote = "stand_pull: no pre-cc point for " +', move)

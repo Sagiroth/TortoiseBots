@@ -16502,6 +16502,73 @@ static void TestHoldAheadPointNoneInsideTheWholeWalk()
     CHECK(!HoldAheadPoint(HoldAheadWalk(), {HoldAheadUnit(20.0f, 100.0f)}, hold));
 }
 
+// The live handshake: a default Run with no hold facts at all. The policy asks the glue for the point on the row's
+// first tick (Run::holdAheadStep, no walk past), the glue's read a tick later (HoldAheadPoint fed the walk polyline,
+// as ReadStandPullHold runs it) supplies the hold point, and the row walks there and ends: the pull's CC goes out
+// from the hold point, before the walk in.
+static void TestStandApproachAsksThenHoldsFromTheReader()
+{
+    DungeonPlan plan;
+    PlanStep approach = Step(PlanStepKind::Move, 40.0f, 0.0f, 0.0f);
+    approach.leg = 0;
+    PlanStep pull = PullStep(60.0f, {14532}, ai::kPlanFlagStandPull);
+    pull.leg = 0;
+    pull.radius = 10.0f;
+    plan.steps = {approach, pull, Step(PlanStepKind::Move, 80.0f, 0.0f, 0.0f)};
+    plan.ccPriority = {14532};
+    Run r = Start(&plan);
+    Facts f = Party(0.0f);
+    f.standPullPreCc = true;
+    // The read is asked for, not answered: the row stands still outside the pack.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.phase == Phase::Begin);
+    CHECK(r.holdAheadStep == 0 && !r.holdAheadDone && r.holdAheadMs == kTickMs);
+    CHECK(r.note == "reading the last point outside the pack's wake reach");
+    // The glue's read, one tick later: the walk from the lead bot to the approach, the pack at the approach, the
+    // hold point the node before it.
+    f.holdAheadReach = {HoldAheadUnit(40.0f, 5.0f)};
+    ai::ApproachPoint hold;
+    CHECK(HoldAheadPoint(HoldAheadWalk(), f.holdAheadReach, hold));
+    CHECK(hold.x == 20.0f && hold.y == 0.0f && hold.z == 0.0f);
+    f.holdAheadRead = true;
+    f.holdAheadKnown = true;
+    f.holdAheadX = hold.x;
+    f.holdAheadY = hold.y;
+    f.holdAheadZ = hold.z;
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    CHECK(r.note == "to the hold point outside the pack's wake reach");
+    f.leadX = 20.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "arrived at the hold point outside the pack's wake reach (the pull's CC goes out here)");
+    // At the hold point, the pull row's CC goes out from there (the walk in comes after the marks).
+    f.members = {Mem("Tanky", 0), CcMem("Magey", CcFamily::Polymorph)};
+    f.units = {PreCcUnit(15, 11370, 30.0f), PreCcUnit(12, 14532, 32.0f)};
+    CHECK(Tick(r, f) == "cc moon 12 Magey");
+    CHECK(f.leadX == 20.0f);
+}
+
+// The reader never answers the request: the row waits kHoldAheadWaitMs (asking the glue each tick), then walks the
+// plan's point as before and stops asking, so a glue that does not read it never holds the run.
+static void TestStandApproachReaderSilentTimesOut()
+{
+    DungeonPlan plan = StandPullPreCcPlan();
+    Run r = Start(&plan);
+    Facts f = Party(-12240.0f);
+    f.leadY = -1680.0f;
+    f.leadZ = 131.5f;
+    f.standPullPreCc = true;
+    for (std::uint32_t i = 0; i < kHoldAheadWaitMs / kTickMs; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.holdAheadStep == 0 && !r.holdAheadDone);
+        CHECK(r.note == "reading the last point outside the pack's wake reach");
+    }
+    CHECK(r.holdAheadMs == kHoldAheadWaitMs);
+    CHECK(Tick(r, f) == "move -12253.0 -1653.0 134.4");
+    CHECK(r.note == "walking" && r.holdAheadDone);
+}
+
 // AiPlayerbot.DungeonRunStandPullPreCc off: today's walk, byte for byte. The hold point the glue offers is ignored (the
 // plan's point is walked at once, no read wait), and the pull row runs as it did before the key: the gate names the
 // units it leaves to the plain pull, the marks go out, the pull goes out. No walk to the approach.
@@ -28219,6 +28286,8 @@ int main()
     TestHoldAheadPointStopsBeforeTheApproach();
     TestHoldAheadPointIsTheApproachWhenClear();
     TestHoldAheadPointNoneInsideTheWholeWalk();
+    TestStandApproachAsksThenHoldsFromTheReader();
+    TestStandApproachReaderSilentTimesOut();
     TestStandPullPreCcKeyOffWalksAsToday();
     TestStandPullOrdersCcBeforeTheWalkIn();
     TestStandPullWalkInWaitsForTheMarksToLand();
