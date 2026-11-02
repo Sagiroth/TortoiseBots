@@ -7232,6 +7232,8 @@ static void TestOwnSpawnIsTheBoss()
     CHECK(OwnSpawnIsTheBoss(14599, 0, 14599, 60.0f));        // the row at the cap still counts
     CHECK(!OwnSpawnIsTheBoss(14599, 0, 14599, 60.1f));       // past it the old search path decides
     CHECK(!OwnSpawnIsTheBoss(14509, 14599, 14599, 66.9f));   // r1's corpse range is not the row's place
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599, 10.0f));        // the row 10 yd from the step: the boss, though the creature died 80 yd away
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 14599, 90.0f));       // the row 90 yd away: not via the own spawn, though the creature died 5 yd from the step
 }
 
 // The instance search found him alive as a changed form: the pause says so (` (as <entry>)`), so the walk's report

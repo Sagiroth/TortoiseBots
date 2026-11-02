@@ -9325,11 +9325,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             // wait for him. Dead: boss down at once, wherever he lies, and the corpse fields below are his. Alive
             // under a changed entry: the entry it reads now joins the read, so he is listed with the rest.
             if (step->kind == ai::PlanStepKind::Boss)
+            {
                 if (Creature* own = OwnBossSpawnCreature(lead, *step))
                 {
+                    // The gate reads the spawn row's place, not the creature's: a dragged boss dies far from
+                    // his row, while a far row's creature may die near the step.
+                    CreatureData const* row = own->GetCreatureData();
+                    float const rowX = row ? row->position.x : own->GetPositionX();
+                    float const rowY = row ? row->position.y : own->GetPositionY();
                     float const ownFromSpot2d = std::sqrt(
-                        (own->GetPositionX() - step->x) * (own->GetPositionX() - step->x) +
-                        (own->GetPositionY() - step->y) * (own->GetPositionY() - step->y));
+                        (rowX - step->x) * (rowX - step->x) +
+                        (rowY - step->y) * (rowY - step->y));
                     if (!own->IsAlive())
                     {
                         if (TortoiseBots::DungeonRun::OwnSpawnIsTheBoss(own->GetEntry(),
@@ -9348,6 +9354,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         std::find(entries.begin(), entries.end(), own->GetEntry()) == entries.end())
                         entries.push_back(own->GetEntry());
                 }
+            }
             // A pull step's read (DungeonRun::ClassifyPullRead): the policy decides the radius, the residue band,
             // spawn ownership and the waypoint followers; the glue only measures. The grid search reaches as far as
             // a spawn-owned patroller may be listed, and only while the gate is on.
