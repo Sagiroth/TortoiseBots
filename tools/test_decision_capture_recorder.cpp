@@ -502,6 +502,30 @@ static void TestDoneTicksAndSegmentReset()
     CHECK(recorder.stats().records == 3);
 }
 
+static void TestRefusedGapIsNotCounted()
+{
+    MemSink sink;
+    // 1: hdr, 2: tick 1, 3: tick 2 refused, 4: its gap refused,
+    // 5: the gap that lands, 6: tick 4.
+    sink.refuseAt = {3, 4};
+    Recorder recorder(Header(), Limits{}, sink);
+    Run run;
+    Facts facts;
+    Tick(recorder, run, facts, 2000);
+    Tick(recorder, run, facts, 2001);
+    Tick(recorder, run, facts, 2002);
+    Tick(recorder, run, facts, 2003);
+
+    CHECK(sink.lines.size() == 4);
+    MiniJson::Value const gap = ParseLine(sink.lines[2]);
+    CHECK(Str(gap, "k") == "gap");
+    CHECK(Num(gap, "seq") == 4);
+    // The refused gap itself is not a dropped record: tick 2 and tick 3 are.
+    CHECK(Num(gap, "dropped") == 2);
+    CHECK(Str(ParseLine(sink.lines[3]), "k") == "tick");
+    CHECK(Num(ParseLine(sink.lines[3]), "seq") == 4);
+}
+
 static void TestEndGapSeq()
 {
     MemSink sink;
@@ -599,6 +623,7 @@ int main()
     TestGlueWriteIsRunDeltaOnly();
     TestDoneTicksAndSegmentReset();
     TestEndLine();
+    TestRefusedGapIsNotCounted();
     TestEndGapSeq();
     TestEndBeforeAnyTick();
     TestSettingsMustBeAnObject();
