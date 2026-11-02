@@ -340,6 +340,14 @@ static void ReportSizes(const char* label, const Facts& facts, const Run& run)
               << " B, 1000 encodes " << us << " us (" << (total ? total : 0) << " fields)\n";
 }
 
+static void ReportDeltas(const char* label, const Facts& before, const Facts& after, const Run& beforeRun,
+                         const Run& afterRun)
+{
+    std::string const facts = DeltaObject(EncodeFields(before), EncodeFields(after));
+    std::string const run = DeltaObject(EncodeFields(beforeRun), EncodeFields(afterRun));
+    std::cout << label << ": facts delta " << facts.size() << " B, run delta " << run.size() << " B\n";
+}
+
 static void TestRealisticSizes()
 {
     DungeonPlan plan;
@@ -354,6 +362,18 @@ static void TestRealisticSizes()
     facts.maxMemberYd = 9;
     facts.anyInCombat = true;
     ReportSizes("5 members, 3 units", facts, run);
+    {
+        Facts moved = facts;
+        moved.members[1].yd = 12.0f;
+        moved.members[1].x = 12.0f;
+        ReportDeltas("5/3 one member moved", facts, moved, run, run);
+        Facts joined = facts;
+        joined.units.push_back(Unit(14, 4851, 50));
+        ReportDeltas("5/3 one unit joined", facts, joined, run, run);
+        Run next = run;
+        TortoiseBots::DungeonRun::Tick(next, facts);
+        ReportDeltas("5/3 one tick", facts, facts, run, next);
+    }
 
     Facts big = facts;
     for (int i = 0; i < 15; ++i)
@@ -363,6 +383,17 @@ static void TestRealisticSizes()
     big.patrollers = big.units;
     big.engagedUnits = big.units;
     ReportSizes("20 members, 30 units", big, run);
+    {
+        Facts moved = big;
+        moved.members[1].yd = 12.0f;
+        ReportDeltas("20/30 one member moved", big, moved, run, run);
+        Facts joined = big;
+        joined.units.push_back(Unit(300, 4851, 50));
+        ReportDeltas("20/30 one unit joined", big, joined, run, run);
+        Run next = run;
+        TortoiseBots::DungeonRun::Tick(next, big);
+        ReportDeltas("20/30 one tick", big, big, run, next);
+    }
 }
 
 // -- 9. decode errors ----------------------------------------------------
