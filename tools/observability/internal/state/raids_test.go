@@ -1,0 +1,232 @@
+package state
+
+import (
+	"testing"
+	"time"
+
+	"tortoise-observability/internal/model"
+)
+
+// raidBot builds one roster row on a raid map.
+func raidBot(guid uint32, name string, player bool, mapID, instance, group uint32) model.BotSnapshot {
+	inst := instance
+	return model.BotSnapshot{
+		GUID: guid, Name: name, Player: player, Kind: "pool",
+		MapID: mapID, Instance: &inst, GroupID: group, Raid: true,
+		Class: "warrior", Role: "dps", Level: 60,
+		HP: 100, MaxHP: 100, State: "idle",
+	}
+}
+
+func raidsRow(group uint32, key string, leader string, leaderGUID uint32, combat *model.CommanderCombat) model.RaidGroupRow {
+	return model.RaidGroupRow{
+		Group: group, Key: key, Map: 409, Instance: 7,
+		Leader: leader, LeaderGUID: leaderGUID, Combat: combat,
+	}
+}
+
+func raidsPayload(session, seq uint64, ts int64, rows ...model.RaidGroupRow) *model.RaidsPayload {
+	return &model.RaidsPayload{V: 12, Session: session, Seq: seq, TS: ts, Type: "RAIDS", Raids: rows}
+}
+
+// Roster rows sharing a group land in one raid group, different groups in two,
+// and a row without a group is ungrouped. With no RAIDS datagram the view is
+// live:false and the keys fall back to raid#<group>.
+func TestRaidsGroupsByRosterGroup(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+		raidBot(3, "DPS", false, 409, 7, 7),
+		raidBot(4, "Off", false, 409, 7, 9),
+		raidBot(5, "Off2", false, 409, 7, 9),
+		raidBot(6, "Solo", false, 409, 7, 0),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	view := s.Raids()
+	if len(view.Runs) != 1 || view.Runs[0].Key != "409:7" {
+		t.Fatalf("want one run 409:7, got %+v", view.Runs)
+	}
+	run := view.Runs[0]
+	if len(run.Groups) != 2 {
+		t.Fatalf("want groups 7 and 9, got %+v", run.Groups)
+	}
+	byGroup := map[uint32]model.RaidGroupView{}
+	for _, g := range run.Groups {
+		byGroup[g.Group] = g
+	}
+	if len(byGroup[7].Members) != 3 || len(byGroup[9].Members) != 2 {
+		t.Fatalf("group members wrong: %+v", run.Groups)
+	}
+	if len(run.Ungrouped) != 1 || run.Ungrouped[0].Name != "Solo" {
+		t.Fatalf("ungrouped wrong: %+v", run.Ungrouped)
+	}
+	if view.Live {
+		t.Fatal("no RAIDS datagram: live must be false")
+	}
+	if byGroup[7].Key != "raid#7" || byGroup[9].Key != "raid#9" {
+		t.Fatalf("keys must fall back to raid#<group>: %+v", run.Groups)
+	}
+	if byGroup[7].Observed {
+		t.Fatal("no RAIDS row: observed must be false")
+	}
+}
+
+// A fresh RAIDS row adds the leader, an offline member and the combat window;
+// a row older than RaidsStaleAfter is ignored.
+func TestRaidsJoinRaidsRow(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	combat := &model.CommanderCombat{WinS: 10, FightMS: 20000}
+	row := raidsRow(7, "raid#7", "Celindra", 3, combat)
+	row.Members = []model.RaidMemberRef{{GUID: 3, Name: "Celindra", Sub: 0, Offline: true}}
+	if !s.ApplyRaids(raidsPayload(9, 1, c.now.Unix(), row)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	run := s.Raids().Runs[0]
+	if len(run.Groups) != 1 {
+		t.Fatalf("want one group, got %+v", run.Groups)
+	}
+	g := run.Groups[0]
+	if !g.Observed || g.Leader != "Celindra" || g.LeaderGUID != 3 {
+		t.Fatalf("leader not joined: %+v", g)
+	}
+	if len(g.Members) != 3 {
+		t.Fatalf("offline member missing: %+v", g.Members)
+	}
+	var off *model.DungeonMember
+	for i := range g.Members {
+		if g.Members[i].Offline {
+			off = &g.Members[i]
+		}
+	}
+	if off == nil || off.Name != "Celindra" || off.GUID != 3 {
+		t.Fatalf("offline member wrong: %+v", g.Members)
+	}
+	if g.Combat == nil || g.Combat.WinS != 10 || g.Combat.FightMS != 20000 {
+		t.Fatalf("combat window not carried raw: %+v", g.Combat)
+	}
+	if !s.Raids().Live {
+		t.Fatal("fresh RAIDS: live must be true")
+	}
+
+	// A stale row is ignored: the view falls back to roster-only.
+	c.Advance(RaidsStaleAfter + time.Second)
+	view := s.Raids()
+	if view.Live {
+		t.Fatal("stale RAIDS: live must be false")
+	}
+	g = view.Runs[0].Groups[0]
+	if g.Observed || g.Leader != "" || len(g.Members) != 2 || g.Combat != nil {
+		t.Fatalf("stale row must be ignored: %+v", g)
+	}
+}
+
+// A COMMANDERS binding with the same group links the raid group: bound,
+// commander and the run copy, with the key becoming the commander. Works
+// with no RAIDS datagram at all.
+func TestRaidsBoundLink(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	p := commandersPayload(9, c.now.Unix(), "Hypeer")
+	p.Commanders[0].Group = 7
+	p.Commanders[0].Run = &model.CommanderRun{Plan: "mc", State: "running"}
+	if !s.ApplyCommanders(p) {
+		t.Fatal("COMMANDERS payload refused")
+	}
+	run := s.Raids().Runs[0]
+	g := run.Groups[0]
+	if !g.Bound || g.Commander != "Hypeer" {
+		t.Fatalf("bound link missing: %+v", g)
+	}
+	if g.Key != "Hypeer" {
+		t.Fatalf("bound group key must be the commander, got %q", g.Key)
+	}
+	if g.Run == nil || g.Run.Plan != "mc" {
+		t.Fatalf("binding run not copied: %+v", g.Run)
+	}
+}
+
+// A cycle split in parts applies only when every part arrived; a newer seq
+// drops the unfinished one; an empty list clears the rows at once.
+func TestRaidsParts(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	if ok := s.ApplyBatch(batch(1, 0, 1, raidBot(1, "Tank", false, 409, 7, 7))); !ok {
+		t.Fatal("batch not published")
+	}
+	ts := c.now.Unix()
+	r7 := raidsRow(7, "raid#7", "Tank", 1, nil)
+	mk := func(part, parts int, rows ...model.RaidGroupRow) *model.RaidsPayload {
+		p := raidsPayload(9, 4, ts, rows...)
+		p.Part, p.Parts = part, parts
+		return p
+	}
+	if s.ApplyRaids(mk(0, 2, r7)) {
+		t.Fatal("a partial cycle must not apply")
+	}
+	if g := s.Raids().Runs[0].Groups[0]; g.Observed {
+		t.Fatal("partial cycle visible before it completed")
+	}
+	// A newer seq drops the unfinished one: group 9 stands, group 7 falls
+	// back to roster-only.
+	r9 := raidsRow(9, "raid#9", "Off", 2, nil)
+	newer := raidsPayload(9, 5, ts, r9)
+	if !s.ApplyRaids(newer) {
+		t.Fatal("whole newer cycle refused")
+	}
+	byGroup := map[uint32]model.RaidGroupView{}
+	for _, g := range s.Raids().Runs[0].Groups {
+		byGroup[g.Group] = g
+	}
+	if g := byGroup[9]; !g.Observed || g.Leader != "Off" {
+		t.Fatalf("newer cycle must replace, got %+v", s.Raids().Runs[0].Groups)
+	}
+	if g := byGroup[7]; g.Observed {
+		t.Fatalf("dropped cycle's row must not survive: %+v", g)
+	}
+	// An empty list clears the rows at once.
+	if !s.ApplyRaids(raidsPayload(9, 6, ts)) {
+		t.Fatal("empty RAIDS list refused")
+	}
+	if g := s.Raids().Runs[0].Groups[0]; g.Observed || g.Leader != "" {
+		t.Fatalf("empty list must clear rows: %+v", g)
+	}
+}
+
+// IsRaidRun: the roster flag wins; without it a fresh DUNGEON_MOBS raid flag
+// still marks a raid; neither source means dungeon.
+func TestIsRaidRun(t *testing.T) {
+	raid := raidBot(1, "Tank", false, 409, 7, 7)
+	if !IsRaidRun([]model.BotSnapshot{raid}, false) {
+		t.Fatal("roster raid flag must win")
+	}
+	plain := raid
+	plain.Raid = false
+	if !IsRaidRun([]model.BotSnapshot{plain}, true) {
+		t.Fatal("fresh DUNGEON_MOBS raid flag must mark a raid")
+	}
+	if IsRaidRun([]model.BotSnapshot{plain}, false) {
+		t.Fatal("neither source: not a raid")
+	}
+	if IsRaidRun(nil, false) {
+		t.Fatal("empty run: not a raid")
+	}
+}
