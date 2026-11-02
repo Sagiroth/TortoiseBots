@@ -26112,6 +26112,309 @@ static void TestWedgedOutOfCombatBelowRunawayRangeIsSummoned()
     CHECK(r.note.find("X is wedged 56.0 yd above the lead bot (45.0 yd, still ") != std::string::npos);
 }
 
+// T3: a bot that keeps moving (x += 3 a tick, past kStillYd) is never wedged: no drop in a fight, no summon out of
+// one.
+static void TestWedgedMovingBotNeverDropsOrSummons()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        f.members[2].x += 3.0f;
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.anyInCombat = false;
+    f.leadInCombat = false;
+    f.members[2].inCombat = false;
+    f.members[2].yd = 45.0f;
+    f.members[2].dz = 56.0f;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        f.members[2].x += 3.0f;
+        // The fight just ended: the step looks at what is left and rests first, so a rest may go out. Never a summon.
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    }
+}
+
+// T4: the same floor (|dz| <= 8) is never wedged: a bot far away on the same floor is the ordinary follow/leash case.
+static void TestWedgedSameFloorNeverDropsOrSummons()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(45.0f, 2.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.anyInCombat = false;
+    f.leadInCombat = false;
+    f.members[2].inCombat = false;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        // The fight just ended: the step looks at what is left and rests first, so a rest may go out. Never a summon.
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    }
+}
+
+// T5: a bot with attackers is fighting, never wedged.
+static void TestWedgedWithAttackersNeverDropsOrSummons()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    f.members[2].attackers = 1;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.members[2].inCombat = false;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        // The fight just ended: the step looks at what is left and rests first, so a rest may go out. Never a summon.
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    }
+}
+
+// T6: never on a boss step, and never with a plan boss engaged on a move step (the summon would drop the bot on the
+// boss).
+static void TestWedgedNeverOnABossStepOrWithAPlanBossEngaged()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10, 0, 0);
+    boss.entry = 62072;
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.leadX = 10.0f;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.members[2].inCombat = false;
+    for (int i = 0; i < 30; ++i)
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    DungeonPlan move;
+    PlanStep far = Step(PlanStepKind::Boss, 900, 0, 0);
+    far.entry = 62072;
+    move.steps = {Step(PlanStepKind::Move, 2000), far};
+    Run q = Start(&move);
+    Facts g = WedgedFacts(41.0f, -9.0f);
+    g.anyInCombat = true;
+    g.leadInCombat = true;
+    g.members[2].inCombat = true;
+    g.engagedRead = true;
+    UnitFact u = Unit(91, 62072, 20);
+    u.attackable = true;
+    g.engagedUnits = {u};
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(g);
+        Tick(q, g);
+        CHECK(q.combatDrops.empty());
+    }
+    g.members[2].inCombat = false;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(g);
+        CHECK(Tick(q, g).compare(0, 7, "summon ") != 0);
+    }
+}
+
+// T7: a party run keeps its straggler ladder unchanged: no wedged drop, no wedged summon.
+static void TestWedgedNeverInAPartyRun()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.raid.on = false;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.anyInCombat = false;
+    f.leadInCombat = false;
+    f.members[2].inCombat = false;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        // The fight just ended: the step looks at what is left and rests first, so a rest may go out. Never a summon.
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    }
+    CHECK(r.wedgedSummons == 0);
+}
+
+// T8: the step gives two wedged bots its summons, the most wedged first, the second no sooner than
+// kRunawayResummonMs after the first, and the third never comes before the next step.
+static void TestWedgedSummonCapAndStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(60.0f, -30.0f);
+    f.members.push_back(Mem("B", 50.0f, -20.0f));
+    f.members.push_back(Mem("C", 40.0f, -10.0f));
+    f.members[2].x = 60.0f;
+    f.members[3].x = 50.0f;
+    f.members[4].x = 40.0f;
+    f.total = 5;
+    f.alive = 5;
+    f.maxMemberYd = 60.0f;
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    std::vector<std::uint64_t> at;
+    std::vector<std::string> orders;
+    for (int i = 0; i < 120; ++i)
+    {
+        WalkOn(f);
+        std::string const order = Tick(r, f);
+        if (order.compare(0, 7, "summon ") == 0)
+        {
+            at.push_back(r.runMs);
+            orders.push_back(order);
+            for (MemberFact& m : f.members) // the summon brought it to the lead bot
+                if (order == "summon " + m.name)
+                {
+                    m.yd = 3.0f;
+                    m.dz = 0.0f;
+                }
+        }
+    }
+    CHECK(orders.size() == 2);
+    CHECK(orders[0] == "summon X"); // the largest |dz| first
+    CHECK(orders[1] == "summon B"); // the farther still out; C never gets one, the step is spent
+    CHECK(at[0] == kWedgedMs + kTickMs);
+    CHECK(at[1] - at[0] == kRunawayResummonMs);
+    NextStep(r, "test");
+    CHECK(r.step == 1 && r.wedgedSummons == 0 && r.wedgedLastMs == 0);
+    // A new step: the waiting third goes before its move (its still clock is long due, the budget is clear).
+    CHECK(Tick(r, f) == "summon C");
+    f.members[4].yd = 3.0f; // C brought to the lead bot
+    f.members[4].dz = 0.0f;
+    WalkOn(f);
+    CHECK(Tick(r, f) == "move 3000.0 0.0 0.0");
+}
+
+// T9: a pause/resume or a wipe recovery restarts the SAME step (ResetStep) and must keep the step's wedged budget:
+// the cap and the 30 s between summons hold across it.
+static void TestWedgedBudgetSurvivesASameStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(45.0f, 56.0f);
+    for (int i = 0; i < 16; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.wedgedSummons == 1);
+    ResetStep(r); // a resume of the same step
+    CHECK(r.step == 0 && r.wedgedSummons == 1 && r.wedgedLastMs != 0);
+    f.members[2].yd = 3.0f; // the summon brought X to the lead bot
+    f.members[2].dz = 0.0f;
+    f.members.push_back(Mem("Y", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.total = 4;
+    f.alive = 4;
+    for (int i = 0; i < 12; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon Y"); // within 30 s of the first: no second summon
+    }
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.wedgedSummons == 2);
+    ResetStep(r); // a wipe recovery on the same step
+    f.members.push_back(Mem("Z", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.total = 5;
+    f.alive = 5;
+    for (int i = 0; i < 40; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon Z"); // the cap stays spent
+    }
+    CHECK(r.wedgedSummons == 2);
+}
+
+// T10: a bot off the plan's map, or in another copy of the instance, is never wedged: those have their own paths.
+static void TestWedgedNeverOffThePlanMapOrInAnotherCopy()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(41.0f, -9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.members[2].inCombat = true;
+    f.members[2].offPlanMap = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+        CHECK(r.combatDrops.empty());
+    }
+    f.members[2].inCombat = false;
+    f.members[2].offPlanMap = false;
+    f.members[2].otherCopy = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        // The fight just ended: the step looks at what is left and rests first, so a rest may go out. Never a summon.
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+    }
+    CHECK(r.wedgedSummons == 0);
+}
+
+// The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table.
+static void TestWedgedDropRecheckTable()
+{
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0));
+    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0));
+    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0)); // the yd boundary: at 20, not out
+    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0));
+    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0)); // the dz boundary: at 8, the same floor
+    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0));
+    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0));
+    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1)); // fighting: never wedged
+    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0));
+}
+
 static void TestPartyRulesUnchanged()
 {
     DungeonPlan plan;
@@ -26822,6 +27125,15 @@ int main()
     TestRunawaySummonStepLimits();
     TestWedgedBelowInAFightDropsThenSummons();
     TestWedgedOutOfCombatBelowRunawayRangeIsSummoned();
+    TestWedgedMovingBotNeverDropsOrSummons();
+    TestWedgedSameFloorNeverDropsOrSummons();
+    TestWedgedWithAttackersNeverDropsOrSummons();
+    TestWedgedNeverOnABossStepOrWithAPlanBossEngaged();
+    TestWedgedNeverInAPartyRun();
+    TestWedgedSummonCapAndStepReset();
+    TestWedgedBudgetSurvivesASameStepReset();
+    TestWedgedNeverOffThePlanMapOrInAnotherCopy();
+    TestWedgedDropRecheckTable();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
     // item 1 until
