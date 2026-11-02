@@ -54,6 +54,13 @@
 - Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
 - `.bot hire raid` accepts `level=<n>` like `.bot hire` (the whole roster arrives at that level), and its `onyxia` preset now hires tier 3 gear to match the `onyxia` gear preset.
 - Fixed: the bots of a raid hire that were still on their way when the raid was bound no longer leave the raid and get deleted.
+- Guild farm orders pick the farm zone nearest to the bot on its own continent among the zones it can walk to, instead of the zone with the most spawns, which could sit a ten-minute walk away. If the terrain gives no path to two different spots in a zone, the bot farms the next nearest planned zone and leaves the first one alone for half an hour, instead of retrying the same unreachable spot or giving up a zone over one bad spot.
+- Guild craft orders keep working while one material waits on you: the item goes on the need list right away, the bot carries on with every other material it can source, and the order waits only when the listed items are all that is missing.
+- Guild craft orders count materials through the whole recipe tree: a base material shared by two branches is one row with the summed need, and an intermediate in the bags shrinks its whole subtree instead of every recipe step being counted on its own.
+- A guild craft order missing several materials asks for all of them at once, each on its own sub-order, and collects each delivery from the guild bank as it arrives instead of waiting for one before asking the next.
+- Guild order status now separates what has actually reached the guild from what the bot still carries, so a half-delivered order no longer reads as done and a finished one reports nothing carried.
+- New `.bot order <BotName> steps` lists an order's last 16 status steps with how long ago each happened; it is read-only and memory only.
+- Guild orders can buy what they still need at the auction house: the bot walks to one city (up to twenty minutes), buys the cheapest way to cover the rest, and anything extra it had to buy goes back onto the auction house, with the sale gold or the returned stack paid to the guild bank on a later banker visit. If no auctioneer can be reached it says `noauctioneer` and moves on to farming, crafting or a sub-order.
 
 ### Items & Loot
 - New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.

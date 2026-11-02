@@ -520,13 +520,14 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     // BOTSTATE snapshot; loot-log = ".bot lootlog" and its TBM:LOOT history
     // lines; guild-orders = ".bot order" and its TBM:ORDER lines, only while
     // the order source index is ready (travel tables loaded);
+    // guild-order-steps = ".bot order <bot> steps" and its TBM:ORDER_STEPS lines;
     // downtime = ".bot downtime" town errands for own alts;
     // dungeon-run = ".bot run" and its TBM:RUN status lines,
     // only while the dungeon run is enabled. Old addons ignore unknown lines and items.
     bool const dungeonRun = RemoteCommander::RunSurfaceOn(CurrentCommanderGates());
     bool const guildOrders = ai::GuildOrderSourcesReady();
     handler->PSendSysMessage("TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime%s%s",
-        guildOrders ? ",guild-orders" : "", dungeonRun ? ",dungeon-run" : "");
+        guildOrders ? ",guild-orders,guild-order-steps" : "", dungeonRun ? ",dungeon-run" : "");
     // Transport trailer: the addon sends its next commands over the addon
     // channel only while this says "party". See AddonCommandChannel.
     handler->PSendSysMessage("TBM:TRANSPORT|%s", AddonCommandChannel(requester));
