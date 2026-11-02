@@ -101,14 +101,14 @@ type Run struct {
 	Session uint64   `json:"session"`
 }
 
-// Rates are one bot's own numbers over the window.
 type Rates struct {
-	Dps     *float64 `json:"dps"`
-	Hps     *float64 `json:"hps"`
-	Hcps    *float64 `json:"hcps"`
-	Cps     *float64 `json:"cps"`
-	Skill10 *float64 `json:"skill10"`
-	Deaths  int      `json:"deaths"`
+	Dps       *float64 `json:"dps"`
+	Hps       *float64 `json:"hps"`
+	Hcps      *float64 `json:"hcps"`
+	Cps       *float64 `json:"cps"`
+	Skill10   *float64 `json:"skill10"`
+	Deaths    int      `json:"deaths"`
+	DeathsAll int      `json:"deaths_all"`
 }
 
 // Peers are what a median role peer would have done in the bot's seat.
@@ -237,6 +237,7 @@ type agg struct {
 	peerMainExp   float64
 	peerCpsExp    float64
 	peerDeathsExp float64
+	peerDeaths    int
 
 	peersDpsExp  float64
 	peersHpsExp  float64
@@ -542,6 +543,7 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 				a2.peerMainExp += mMain * a
 				a2.peerCpsExp += mCps * a
 				a2.peerDeathsExp += median(pDeaths)
+				a2.peerDeaths += int(b.Deaths)
 				a2.peersDpsExp += median(pDps) * a
 				a2.peersHpsExp += median(pHps) * a
 				a2.peersHcExp += median(pHc) * a
@@ -711,7 +713,7 @@ func (a *agg) row(lim Limits) BotRow {
 		Fights: a.fights, Judged: a.judged, PeerFights: a.peerFights,
 		Flagged: a.flagged, Main: mainName(a.role),
 		Reasons: []Reason{}, Causes: []string{}, FightRefs: []FightRef{},
-		You:   Rates{Deaths: a.deaths},
+		You:   Rates{Deaths: a.peerDeaths, DeathsAll: a.deaths},
 		Peers: Peers{},
 	}
 	if a.judged > 0 && a.alive > 0 {
@@ -795,15 +797,15 @@ func (a *agg) row(lim Limits) BotRow {
 			Text: "cast " + fmt2(you) + "/s against a role median of " + fmt2(peers) + "/s over " + plural(a.peerFights),
 		})
 	}
-	if a.peerFights >= lim.MinFights && a.deaths >= lim.MinDeaths &&
-		(a.peerDeathsExp == 0 || float64(a.deaths)/a.peerDeathsExp >= lim.DeathRatio) {
+	if a.peerFights >= lim.MinFights && a.peerDeaths >= lim.MinDeaths &&
+		(a.peerDeathsExp == 0 || float64(a.peerDeaths)/a.peerDeathsExp >= lim.DeathRatio) {
 		exp := "0"
 		if a.peerDeathsExp > 0 {
 			exp = fmt1(a.peerDeathsExp)
 		}
 		row.Reasons = append(row.Reasons, Reason{
 			ID: "deaths", Level: "yellow", Fights: a.peerFights,
-			Text: "died " + itoa(a.deaths) + " times against " + exp + " expected over " + plural(a.peerFights),
+			Text: "died " + itoa(a.peerDeaths) + " times against " + exp + " expected over " + plural(a.peerFights),
 		})
 	}
 

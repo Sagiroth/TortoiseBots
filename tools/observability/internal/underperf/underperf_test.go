@@ -208,6 +208,83 @@ func TestDiedAtOnceNotJudged(t *testing.T) {
 	}
 }
 
+// Deaths outside the peer comparison must not feed the death warning: the
+// expected peer deaths only cover judged fights with enough peers, so the
+// bot's own count must cover exactly those fights too.
+func TestDeathsComparedOverPeerFights(t *testing.T) {
+	lim := defLim()
+	var fights []Input
+	// Two short fights: A dies, but nobody is judged.
+	for i := range 2 {
+		fights = append(fights, fi("s"+itoa(i), int64(1000+i*100), 15000,
+			tb(1, "A", "rogue", "dps", 300, 0, 2, 0, 1),
+			tb(2, "B", "mage", "dps", 300, 0, 2, 0, 0),
+			tb(3, "C", "hunter", "dps", 300, 0, 2, 0, 0),
+		))
+	}
+	// One judged fight with too few peers: A dies, but there is no peer
+	// expectation to compare against.
+	fights = append(fights, fi("n0", 2000, 30000,
+		tb(1, "A", "rogue", "dps", 3000, 0, 10, 0, 1),
+		tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+	))
+	// Three eligible peer fights: A lags its peers but dies in only two,
+	// under MinDeaths, while its peers never die.
+	for i := range 3 {
+		deaths := uint32(0)
+		if i < 2 {
+			deaths = 1
+		}
+		fights = append(fights, fi("p"+itoa(i), int64(3000+i*100), 30000,
+			tb(1, "A", "rogue", "dps", 300, 0, 10, 0, deaths),
+			tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+			tb(3, "C", "hunter", "dps", 3000, 0, 10, 0, 0),
+		))
+	}
+	r := Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, lim)
+	row := findBot(t, r, "A")
+	if row == nil {
+		t.Fatalf("bots = %+v, want A listed by its low main rate", r.Bots)
+	}
+	if row.PeerFights != 3 {
+		t.Errorf("peer_fights = %d, want 3", row.PeerFights)
+	}
+	if got := findReason(row, "deaths"); got != nil {
+		t.Errorf("deaths reason = %+v, want none (2 judged deaths under MinDeaths)", got)
+	}
+	if got := findReason(row, "peer:main"); got == nil {
+		t.Errorf("peer:main reason = nil, want the low-rate flag that lists A")
+	}
+	if row.You.Deaths != 2 {
+		t.Errorf("you.deaths = %d, want the 2 deaths over peer fights", row.You.Deaths)
+	}
+	if row.You.DeathsAll != 5 {
+		t.Errorf("you.deaths_all = %d, want all 5 deaths", row.You.DeathsAll)
+	}
+	if fv(row.Peers.Deaths) != 0 {
+		t.Errorf("peers.deaths = %v, want 0", fv(row.Peers.Deaths))
+	}
+
+	// Genuine excess still warns: A dies in every eligible fight.
+	fights = nil
+	for i := range 3 {
+		fights = append(fights, fi("q"+itoa(i), int64(1000+i*100), 30000,
+			tb(1, "A", "rogue", "dps", 3000, 0, 10, 0, 1),
+			tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+			tb(3, "C", "hunter", "dps", 3000, 0, 10, 0, 0),
+		))
+	}
+	row = findBot(t, Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, lim), "A")
+	if row == nil {
+		t.Fatalf("A unlisted with 3 deaths against 0 expected")
+	}
+	if got := findReason(row, "deaths"); got == nil {
+		t.Errorf("deaths reason = nil, want the excess-death flag")
+	} else if !strings.Contains(got.Text, "died 3 times against 0 expected over 3 fights") {
+		t.Errorf("deaths text = %q, want the judged count against 0 expected", got.Text)
+	}
+}
+
 func TestNoFights(t *testing.T) {
 	r := Build("Tacmdbilo", 100, 200, nil, nil, Floors{}, defLim())
 	b, err := json.Marshal(r)
