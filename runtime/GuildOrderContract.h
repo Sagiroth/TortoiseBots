@@ -209,6 +209,21 @@ inline bool IsFinished(OrderState state)
            state == OrderState::Cant || state == OrderState::Stocked;
 }
 
+// A finished row that is over: a stocked row keeps watching the bank for the
+// next round, so it is not one.
+inline bool IsTerminal(OrderState state)
+{
+    return IsFinished(state) && state != OrderState::Stocked;
+}
+
+// The terminal row's stack reached the guild: the bank deposit (done) or the
+// mail hand-over (mailed). Only that clears the carry; a row that ended cant
+// or noskill still has the stack in the bot's bags.
+inline bool HandOffSucceeded(OrderState state)
+{
+    return state == OrderState::Done || state == OrderState::Mailed;
+}
+
 // Trailing TBM:ORDER field: whether the order was given with `keep`.
 inline char const* KeepToken(bool keep)
 {
@@ -273,7 +288,8 @@ struct OrderRecord
     bool handedOver = false; // memory-only: the parent already went to fetch this delivered sub-order
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
-    uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this
+    uint32_t reportedHave = 0;   // last reported delivered count; reported have never drops below this
+    uint32_t reportedCarry = 0;  // last reported bags-plus-mailbox count; the list reply uses it for a terminal row and while the bot is offline
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;
 };

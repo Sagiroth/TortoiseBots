@@ -196,14 +196,16 @@ void NoteBagsFull(uint32_t botGuidLow);
 // What the bot already delivered into the bank or by mail.
 void AddDelivered(uint32_t botGuidLow, uint32_t count);
 
-// Current progress: delivered plus bags plus order items in the mailbox.
-// World thread only (reads the live Player when it is online).
-uint32_t Progress(Player* bot, OrderRecord const& order);
+// What the bot carries for the order but has not delivered: bags plus
+// mailbox. World thread only. A live Player is read; an offline bot reports
+// the last carry Tick stored on its row, so the list reply never claims zero.
+uint32_t Carry(Player* bot, OrderRecord const& order);
 
 // One TBM:ORDER line for the row (the list reply and live updates share it).
 // World thread only. The caller passes the reported have count, which never
-// drops (offline bots report max(delivered, last reported)).
-std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have);
+// drops (offline bots report max(delivered, last reported)), and the carry:
+// bags plus mailbox not yet delivered.
+std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry);
 
 // Step history of the bot's running or finished order (memory only, bounded);
 // nullopt for no order or a cancelled stub.

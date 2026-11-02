@@ -1,4 +1,5 @@
 #include "GuildOrderStore.h"
+#include "GuildOrderStoreColumns.h"
 
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
@@ -126,61 +127,58 @@ public:
 
         m_orders.clear();
 
-        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
-            "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
-            "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
-            "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-            "`created_at`, `updated_at` "
-            "FROM `tortoise_bots_guild_order`"));
+        std::string select = "SELECT ";
+        select += StoreColumns::SelectList();
+        select += " FROM `tortoise_bots_guild_order`";
+        std::unique_ptr<QueryResult> result(CharacterDatabase.Query(select.c_str()));
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
                 OrderRecord record;
-                record.botGuidLow = fields[0].GetUInt32();
-                record.guildId = fields[1].GetUInt32();
-                record.giverGuidLow = fields[2].GetUInt32();
-                record.parentBotGuidLow = fields[3].GetUInt32();
-                record.rootGiverGuidLow = fields[4].GetUInt32();
-                ParseType(fields[5].GetCppString(), record.type);
-                record.itemId = fields[6].GetUInt32();
-                record.amount = fields[7].GetUInt32();
-                record.hours = fields[8].GetUInt32();
-                record.delivered = fields[9].GetUInt32();
-                ParseState(fields[10].GetCppString(), record.state);
-                ParseReason(fields[11].GetCppString(), record.reason);
-                record.farmZoneId = fields[12].GetUInt32();
-                record.farmChance = static_cast<uint8_t>(fields[13].GetUInt32());
-                record.farmItemId = fields[14].GetUInt32();
-                record.zoneIndex = fields[15].GetUInt32();
-                record.deathsInZone = fields[16].GetUInt32();
-                record.workedSinceNewItemSec = fields[17].GetUInt32();
-                record.workedTotalSec = fields[18].GetUInt32();
-                record.workedNoGainSec = fields[19].GetUInt32();
-                record.reportedHave = fields[20].GetUInt32();
-                record.farmRest = fields[21].GetUInt32() != 0;
-                record.keep = fields[22].GetUInt32() != 0;
-                record.goldCap = fields[23].GetUInt32();
-                record.hasGoldCap = fields[24].GetUInt32() != 0;
-                record.guildGoldWithdrawn = fields[25].GetUInt32();
-                record.guildGoldHeld = fields[26].GetUInt32();
-                record.cancelled = fields[27].GetUInt32() != 0;
-                ParseSupplyStep(fields[28].GetCppString(), record.supplyStep);
-                ParseSupplyStep(fields[29].GetCppString(), record.supplyReturnStep);
-                record.supplyItemId = fields[30].GetUInt32();
-                record.supplyCount = fields[31].GetUInt32();
-                record.supplyGoldCount = fields[32].GetUInt32();
-                record.needItems = ParseNeedItems(fields[33].GetCppString());
-                record.needWhispered = fields[34].GetUInt32() != 0;
-                record.lastNeedWhisper = fields[35].GetCppString();
-                record.needBankDenied = fields[36].GetUInt32() != 0;
-                record.stockTarget = fields[37].GetUInt32();
-                record.lastBankCheckMs = fields[38].GetUInt32();
-                record.createdAt = fields[39].GetUInt64();
-                record.updatedAt = fields[40].GetUInt64();
+                record.botGuidLow = fields[StoreColumns::ColBotGuid].GetUInt32();
+                record.guildId = fields[StoreColumns::ColGuildId].GetUInt32();
+                record.giverGuidLow = fields[StoreColumns::ColGiverGuid].GetUInt32();
+                record.parentBotGuidLow = fields[StoreColumns::ColParentBot].GetUInt32();
+                record.rootGiverGuidLow = fields[StoreColumns::ColRootGiver].GetUInt32();
+                ParseType(fields[StoreColumns::ColType].GetCppString(), record.type);
+                record.itemId = fields[StoreColumns::ColItemId].GetUInt32();
+                record.amount = fields[StoreColumns::ColAmount].GetUInt32();
+                record.hours = fields[StoreColumns::ColHours].GetUInt32();
+                record.delivered = fields[StoreColumns::ColDelivered].GetUInt32();
+                ParseState(fields[StoreColumns::ColState].GetCppString(), record.state);
+                ParseReason(fields[StoreColumns::ColReason].GetCppString(), record.reason);
+                record.farmZoneId = fields[StoreColumns::ColFarmZone].GetUInt32();
+                record.farmChance = static_cast<uint8_t>(fields[StoreColumns::ColFarmChance].GetUInt32());
+                record.farmItemId = fields[StoreColumns::ColFarmItem].GetUInt32();
+                record.zoneIndex = fields[StoreColumns::ColZoneIndex].GetUInt32();
+                record.deathsInZone = fields[StoreColumns::ColDeathsInZone].GetUInt32();
+                record.workedSinceNewItemSec = fields[StoreColumns::ColWorkedSec].GetUInt32();
+                record.workedTotalSec = fields[StoreColumns::ColWorkedTotal].GetUInt32();
+                record.workedNoGainSec = fields[StoreColumns::ColWorkedNoGain].GetUInt32();
+                record.reportedHave = fields[StoreColumns::ColReported].GetUInt32();
+                record.farmRest = fields[StoreColumns::ColFarmRest].GetUInt32() != 0;
+                record.keep = fields[StoreColumns::ColKeep].GetUInt32() != 0;
+                record.goldCap = fields[StoreColumns::ColGoldCap].GetUInt32();
+                record.hasGoldCap = fields[StoreColumns::ColGoldCapSet].GetUInt32() != 0;
+                record.guildGoldWithdrawn = fields[StoreColumns::ColGuildGoldWithdrawn].GetUInt32();
+                record.guildGoldHeld = fields[StoreColumns::ColGuildGoldHeld].GetUInt32();
+                record.cancelled = fields[StoreColumns::ColCancelled].GetUInt32() != 0;
+                ParseSupplyStep(fields[StoreColumns::ColSupplyStep].GetCppString(), record.supplyStep);
+                ParseSupplyStep(fields[StoreColumns::ColSupplyReturnStep].GetCppString(), record.supplyReturnStep);
+                record.supplyItemId = fields[StoreColumns::ColSupplyItem].GetUInt32();
+                record.supplyCount = fields[StoreColumns::ColSupplyCount].GetUInt32();
+                record.supplyGoldCount = fields[StoreColumns::ColSupplyGoldCount].GetUInt32();
+                record.needItems = ParseNeedItems(fields[StoreColumns::ColNeedItems].GetCppString());
+                record.needWhispered = fields[StoreColumns::ColNeedWhispered].GetUInt32() != 0;
+                record.lastNeedWhisper = fields[StoreColumns::ColLastNeedWhisper].GetCppString();
+                record.needBankDenied = fields[StoreColumns::ColNeedBankDenied].GetUInt32() != 0;
+                record.stockTarget = fields[StoreColumns::ColStockTarget].GetUInt32();
+                record.lastBankCheckMs = fields[StoreColumns::ColLastBankCheck].GetUInt32();
+                record.createdAt = fields[StoreColumns::ColCreatedAt].GetUInt64();
+                record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
+                record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -352,16 +350,17 @@ public:
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`) "
+                "`created_at`, `updated_at`, `carried`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
-                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.farmRest ? 1u : 0u,
+                record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
+                record.farmRest ? 1u : 0u,
                 record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
                 record.guildGoldWithdrawn, record.guildGoldHeld, record.cancelled ? 1u : 0u,
                 SupplyStepToken(record.supplyStep),
@@ -369,7 +368,8 @@ public:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
+                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
+                record.reportedCarry))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -652,6 +652,11 @@ public:
             it->second.record.needItems.clear();
             it->second.record.needWhispered = false;
             it->second.record.needBankDenied = false;
+            // Only a successful hand-off empties the carry, and the final
+            // line and the stored row must not repeat the last pre-delivery
+            // scan. A cant or noskill row keeps the stack still in the bags.
+            if (HandOffSucceeded(state))
+                it->second.record.reportedCarry = 0;
             // Unspent guild gold outlives the order: the row parks instead
             // of disappearing, and the refund drain pays it from any banker
             // visit before FinishRepaid clears the row.
@@ -1400,6 +1405,7 @@ public:
         moved.farmChance = 0;
         moved.zoneIndex = 0;
         moved.reportedHave = 0;
+        moved.reportedCarry = 0;
         moved.supplyStep = SupplyStep::None;
         moved.supplyReturnStep = SupplyStep::None;
         moved.supplyItemId = 0;
@@ -1464,6 +1470,7 @@ public:
         bool haveRow = false;
         OrderRecord record;
         uint32_t reportedHave = 0;
+        uint32_t reportedCarry = 0;
         bool sendLine = false;
         bool finishedEdge = false;
         bool legChanged = false;
@@ -1578,6 +1585,7 @@ public:
                 record.workedTotalSec = 0;
                 record.workedNoGainSec = 0;
                 record.reportedHave = 0;
+                record.reportedCarry = 0;
                 stored.lastOwnedCount = 0;
                 stored.lastFarmCount = 0;
                 stored.lastFarmItemId = 0;
@@ -1809,14 +1817,35 @@ public:
             }
         }
 
-        // Reported progress never drops: offline (or not yet re-seen) bots
-        // keep max(delivered, last reported). A stocked order reports the
-        // bank stock the last look saw: owned counting means nothing there.
-        // Off-scan passes hold the last reported count: the zeros above are
-        // unscheduled, not a lost bag.
-        out.reportedHave = in.scanned ? ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave) :
-            (record.state == OrderState::Stocked && in.bankChecked ?
-                (in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount) : record.reportedHave);
+        // The row's have count is what reached the guild: delivered only,
+        // never the bags. It still never drops: offline (or not yet re-seen)
+        // bots keep max(delivered, last reported). A stocked order reports
+        // the bank stock the last look saw: owned counting means nothing
+        // there. Both counts are read off the row every pass, so a deposit
+        // reports itself without waiting for the next scan.
+        bool stocked = record.state == OrderState::Stocked;
+        // A row whose hand-off succeeded (done after the bank deposit, sent
+        // by mail) holds nothing for the order any more. A row that ended
+        // cant or noskill still has the stack in the bags, so it keeps the
+        // figure a scan last found. Reported before the line and the row
+        // write below, so neither invents a figure.
+        bool handOffSucceeded = HandOffSucceeded(record.state);
+        out.reportedHave = ReportedHaveThisPass(stocked, in.bankChecked, in.bankCount,
+            record.stockTarget, record.delivered, record.reportedHave);
+        out.reportedCarry = ReportedCarryThisPass(record.state, in.scanned, in.botOnline, in.bagCount,
+            in.mailboxCount, record.reportedCarry);
+        // A fresh scan is the row's carry truth: fold it in and mark the row
+        // dirty at once, so a bot that logs out before the next progress line
+        // still lists what it carried. The zero after a hand-off is truth
+        // too and reaches the row although no scan runs for it. Only the line
+        // waits for the throttle.
+        bool carryChanged = out.reportedCarry != record.reportedCarry;
+        if ((in.scanned || handOffSucceeded) && carryChanged)
+        {
+            record.reportedCarry = out.reportedCarry;
+            MarkDirtyLocked(stored);
+        }
+        bool carryToReport = out.reportedCarry != stored.reportCarry;
 
         // One timeline entry per change of state, reason, leg or leg item.
         if (OrderStepDiffers(stored.steps, record.state, record.reason, record.supplyStep, record.supplyItemId))
@@ -1829,7 +1858,8 @@ public:
                             stored.reportNeed != needToken;
         if (!stored.reportSeen || stored.reportStep != record.supplyStep)
             out.legChanged = true;
-        bool progressDue = out.reportedHave != record.reportedHave &&
+        bool haveChanged = out.reportedHave != record.reportedHave;
+        bool progressDue = (haveChanged || carryToReport) &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
         if (out.sendLine)
@@ -1839,10 +1869,12 @@ public:
             stored.reportReason = record.reason;
             stored.reportStep = record.supplyStep;
             stored.reportNeed = needToken;
-            if (out.reportedHave != record.reportedHave)
+            if (haveChanged || carryToReport)
+                stored.reportMs = in.nowMs;
+            stored.reportCarry = out.reportedCarry;
+            if (haveChanged)
             {
                 record.reportedHave = out.reportedHave;
-                stored.reportMs = in.nowMs;
                 MarkDirtyLocked(stored);
             }
         }
@@ -1870,6 +1902,7 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
+        uint32_t reportCarry = 0; // carry the last line announced, not the row's stored carry
         uint32_t lastNeedBankCheckMs = 0;
         uint32_t lastNeedLadderCheckMs = 0;
         uint32_t needLadderChecks = 0; // slow checks since the row last parked
@@ -1950,7 +1983,7 @@ private:
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u' "
                 "WHERE `bot_guid` = '%u'",
                 record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
@@ -1963,7 +1996,7 @@ private:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.updatedAt), record.botGuidLow))
+                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, record.botGuidLow))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -2123,7 +2156,7 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 }
 // Busy-only requests retry on the shared policy timer instead of every
 // tick: one member query per queued request per retry interval.
-void SendOrderLine(OrderRecord const& order, uint32_t have);
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. One guild_member query per guild per
 // tick shared across due requests; planner evaluations share a per-tick
@@ -2367,20 +2400,23 @@ bool PlaceSubOrders(uint32_t nowMs)
         // depth and item instead of the pre-tick snapshot.
         refreshBranches();
         if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
-            SendOrderLine(*placed, 0);
+        {
+            Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, placed->botGuidLow));
+            SendOrderLine(*placed, 0, Carry(bot, *placed));
+        }
     }
     if (drainedParent)
         OrderStore::Instance().NoteSubOrderDrained(drainedParent, drainedItem);
     return placedAny;
 }
 
-void SendOrderLine(OrderRecord const& order, uint32_t have)
+void SendOrderLine(OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     uint32_t giverLow = order.rootGiverGuidLow ? order.rootGiverGuidLow : order.giverGuidLow;
     Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, giverLow));
     if (!giver || !giver->IsInWorld())
         return;
-    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have));
+    giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have, carry));
 }
 
 void SendNeedWhisper(OrderRecord const& order)
@@ -2615,7 +2651,8 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
         OrderStore::Instance().Cancel(newBotGuidLow);
         return false;
     }
-    SendOrderLine(record, row->reportedHave);
+    Player* newBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, record.botGuidLow));
+    SendOrderLine(record, row->reportedHave, Carry(newBot, record));
     return true;
 }
 
@@ -2770,15 +2807,18 @@ void AddDelivered(uint32_t botGuidLow, uint32_t count)
     OrderStore::Instance().AddDelivered(botGuidLow, count);
 }
 
-uint32_t Progress(Player* bot, OrderRecord const& order)
+uint32_t Carry(Player* bot, OrderRecord const& order)
 {
-    uint32_t have = order.delivered;
-    if (bot && bot->IsInWorld() && order.itemId)
-        have += bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
-    return have;
+    if (!order.itemId)
+        return 0;
+    bool terminal = IsTerminal(order.state);
+    bool botOnline = bot && bot->IsInWorld();
+    uint32_t liveCarry = botOnline && !terminal ?
+        bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId) : 0;
+    return ListedCarry(terminal, botOnline, liveCarry, order.reportedCarry);
 }
 
-std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have)
+std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry)
 {
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
@@ -2801,7 +2841,8 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|" +
            BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
-           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems);
+           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems) + "|" +
+           std::to_string(carry);
 }
 
 void Initialize()
@@ -2974,7 +3015,7 @@ void Update(uint32_t diff)
         if (out.persist)
             OrderStore::Instance().WriteAndRescue(out.persistRecord);
         if (out.sendLine)
-            SendOrderLine(out.record, out.reportedHave);
+            SendOrderLine(out.record, out.reportedHave, out.reportedCarry);
         if (out.needWhisper)
             SendNeedWhisper(out.record);
         if (out.legChanged)

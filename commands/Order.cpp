@@ -544,11 +544,10 @@ bool HandleOrderList(ChatHandler* handler, Player* requester)
     for (OrderRecord const& order : orders)
     {
         Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
-        bool online = bot && bot->IsInWorld();
-        uint32_t bags = online ? bot->GetItemCount(order.itemId) : 0;
         handler->PSendSysMessage("%s",
             GuildOrders::FormatOrderLine(requester->GetGuildId(), order,
-                GuildOrders::ReportedHave(order.delivered, bags, online, order.reportedHave)).c_str());
+                GuildOrders::ReportedHave(order.delivered, order.reportedHave),
+                GuildOrders::Carry(bot, order)).c_str());
     }
     handler->PSendSysMessage("TBM:ORDER_END");
     return true;
