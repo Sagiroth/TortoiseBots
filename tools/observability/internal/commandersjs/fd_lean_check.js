@@ -65,8 +65,8 @@ deq(items.filter((it) => it.kind === "fold").map((it) => it.id), ["fold:" + DAY 
 assert.ok(items.every((it) => it.kind === "card" || !it.open), "folds start closed");
 assert.ok(F.railFull({ wipe: true }) && F.railFull({ deaths: 1 }) && F.railFull({ boss: true }) && F.railFull({ live: true }) && !F.railFull({ deaths: 0 }),
   "bosses, wipes, deaths and the running fight are always cards");
-assert.ok(F.railFull({ sum: "warn" }) && F.railFull({ sum: "ok", verdict: "warn" }) && F.railFull({ sum: "ok", verdict: "fail" }) && !F.railFull({ sum: "ok", verdict: "ok" }),
-  "a fired rule or an opened fight whose checks warn or fail is not clean");
+assert.ok(F.railFull({ sum: "warn" }) && F.railFull({ sum: "ok", verdict: "warn" }) && F.railFull({ sum: "ok", verdict: "fail" }) && F.railFull({ sum: "ok", verdict: "check" }) && !F.railFull({ sum: "ok", verdict: "ok" }),
+  "a fired rule or an opened fight whose checks warn, fail or cannot judge on a cut spell list is not clean");
 // A clean-by-summary fight whose loaded detail fails its checks leaves the fold.
 const detCards = F.railCards(ROWS, { t1: { fight: { bots: [], deaths: [] }, warnings: [] } }, null, { asked: 0 });
 detCards.find((c) => c.key === "t1").verdict = "fail";

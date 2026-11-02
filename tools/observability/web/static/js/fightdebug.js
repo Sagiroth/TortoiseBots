@@ -41,6 +41,26 @@
     return spells.reduce((s, x) => s + (x.n === name ? num(x.c) || 0 : 0), 0);
   }
 
+  // Spells the module always lists first (runtime/CombatMonitorPolicy.h AlwaysListed): a full 3-spell row ending in
+  // one of these may still hide casts past the cap, so the Sunder rate cannot be judged on it.
+  const ALWAYS_LISTED = ["Sunder Armor", "Maul", "Swipe", "Taunt", "Revenge", "Shield Block", "Righteous Fury",
+    "Auto Shot", "Hunter's Mark"];
+
+  // A cut spell list cannot prove Sunder went uncast: the bounded short form lists no spells, any other degraded
+  // rung cuts the tail first (only a full 3-spell row ending in an always-listed spell may still hide it).
+  function spellListCut(fight, mt) {
+    if (!fight) return false;
+    if (fight.truncated) return true;
+    const cut = num(fight.spells_cut);
+    if (cut === null || cut <= 0 || cut === 3) {
+      if (cut !== 3) return false;
+      const spells = (mt && mt.spells) || [];
+      if (spells.length < 3) return false;
+      return ALWAYS_LISTED.indexOf(spells[spells.length - 1] && spells[spells.length - 1].n) >= 0;
+    }
+    return true;
+  }
+
   function mainTank(fight, layout) {
     const bots = (fight && fight.bots) || [];
     const named = layout && layout.mt ? bots.find((b) => b.name === layout.mt) : null;
@@ -64,7 +84,7 @@
     return bots.filter((b) => roleOf(b) === "tank" && b !== mt);
   }
 
-  const LEVEL = { fail: 0, warn: 1, ok: 2 };
+  const LEVEL = { fail: 0, warn: 1, unknown: 1, ok: 2 };
 
   // Deaths right after an enemy's cast, from a finished fight's log: one row per caster name and spell, with how often it
   // was cast and every death in the windowMs after one of those casts (each death once per row, measured from the newest
@@ -113,21 +133,35 @@
     const out = [];
 
     // The main tank's Sunder Armor stack: under 0.8 per 10 s it never reaches 5 in a real fight. Below 0.4 is a
-    // problem, but only past 30 s: a trash pull that short cannot be judged on a 10 s rate.
+    // problem, but only past 30 s: a trash pull that short cannot be judged on a 10 s rate. A cut spell list cannot
+    // prove Sunder went uncast: the bounded short form lists no spells, any other degraded rung cuts the tail first,
+    // so a full 3-spell row ending in an always-listed spell may still hide it.
     if (mt && mt.class === "warrior" && durMs >= LIMITS.minFightMs) {
+      const cut = spellListCut(fight, mt);
       const n = spellCount(mt, "Sunder Armor");
       const shieldSlam = spellCount(mt, "Shield Slam");
-      const rate = (n / secs) * 10;
-      const lvl = rate >= LIMITS.sunderOk ? "ok"
-        : rate < LIMITS.sunderFail && durMs >= LIMITS.sunderFailMinMs ? "fail" : "warn";
-      out.push({
-        id: "mt_sunder",
-        lvl,
-        title: "Main tank Sunder rate",
-        num: rate.toFixed(1) + "/10 s",
-        ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
-          + "×). Under 0.8 per 10 s the stack never reaches 5.",
-      });
+      if (cut) {
+        out.push({
+          id: "mt_sunder",
+          lvl: "unknown",
+          title: "Main tank Sunder rate",
+          num: "unknown (spell list cut)",
+          ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
+            + "×). The payload cut the spell list, so the rate cannot be judged.",
+        });
+      } else {
+        const rate = (n / secs) * 10;
+        const lvl = rate >= LIMITS.sunderOk ? "ok"
+          : rate < LIMITS.sunderFail && durMs >= LIMITS.sunderFailMinMs ? "fail" : "warn";
+        out.push({
+          id: "mt_sunder",
+          lvl,
+          title: "Main tank Sunder rate",
+          num: rate.toFixed(1) + "/10 s",
+          ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
+            + "×). Under 0.8 per 10 s the stack never reaches 5.",
+        });
+      }
     }
 
     // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that. casts counts spells only
@@ -379,9 +413,9 @@
     const list = checks(fight, layout, warnings, extra);
     if (list.some((c) => c.lvl === "fail")) return "fail";
     if (list.some((c) => c.lvl === "warn")) return "warn";
+    if (list.some((c) => c.lvl === "unknown")) return "check";
     return "ok";
   }
-
   // The worst finished fight: most fails, then most warns, then most deaths; ties keep the earliest (the newest fight).
   function worstIndex(details, layout) {
     let best = -1;
@@ -391,7 +425,7 @@
       const list = checks(det.fight, layout, det.warnings || [], det.extra || null);
       const score = [
         list.filter((c) => c.lvl === "fail").length,
-        list.filter((c) => c.lvl === "warn").length,
+        list.filter((c) => c.lvl === "warn" || c.lvl === "unknown").length,
         (det.fight.deaths || []).length,
       ];
       const worse = !bestScore
@@ -742,10 +776,10 @@
   }
 
   // A card the rail always shows in full: a boss, a wipe, any death, the running fight, and any fight that is not clean (a rule
-  // the daemon fired, or a loaded detail whose checks warn or fail). Only clean trash folds.
+  // the daemon fired, or a loaded detail whose checks warn, fail or cannot judge on a cut spell list). Only clean trash folds.
   function railFull(c) {
     return !!(c && (c.boss || c.wipe || c.deaths > 0 || c.live || c.sum === "warn" || c.sum === "fail"
-      || c.verdict === "warn" || c.verdict === "fail"));
+      || c.verdict === "warn" || c.verdict === "fail" || c.verdict === "check"));
   }
 
   // The rail in reading order (oldest first): full cards, and runs of two or more clean trash fights folded into one line per
@@ -878,7 +912,7 @@
 
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS, CAST_DEATH_MS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
+    roleOf, spellCount, spellListCut, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
     spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged,
     summaryVerdict, worstSummaryIndex, railFull, railItems, liveSummary, liveChecks, liveTables,
   };

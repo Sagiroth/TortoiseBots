@@ -3418,6 +3418,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-check.l-fail .fd-lvl { color: var(--fd-fail); background: color-mix(in srgb, var(--fd-fail) 15%, transparent); }
 .fd-check.l-warn .fd-lvl { color: var(--fd-warn); background: color-mix(in srgb, var(--fd-warn) 15%, transparent); }
 .fd-check.l-ok .fd-lvl { color: var(--fd-ok); background: color-mix(in srgb, var(--fd-ok) 15%, transparent); }
+.fd-check.l-unknown .fd-lvl { color: var(--fd-warn); background: color-mix(in srgb, var(--fd-warn) 15%, transparent); }
 .fd-why { min-width: 0; }
 .fd-ttl { font-weight: 600; }
 .fd-hi { font-weight: 600; }

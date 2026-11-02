@@ -9175,11 +9175,11 @@
     // No detail: the card says what its summary says (the detail loads when the fight is opened); a detail that failed twice
     // says so, one being fetched says loading.
     const sv = !v && c.detail === 'unasked' ? c.sum : null;
-    const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
+    const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'check' ? 'check: incomplete data' : v === 'ok' ? 'clean'
       : c.detail === 'failed' ? 'details not available' : c.detail === 'loading' ? 'loading'
         : sv === 'fail' ? (c.wipe ? 'wipe' : 'deaths') : sv === 'warn' ? 'check' : sv === 'ok' ? 'no deaths' : 'details not loaded';
     const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
-    const cls = v || (sv ? sv + ' v-sum' : 'load');
+    const cls = v === 'check' ? 'warn' : v || (sv ? sv + ' v-sum' : 'load');
     const tip = sv ? ' title="From the fight\'s summary: open it for the full checks"' : '';
     return `<button type="button" class="fd-fight v-${cls}${inFold ? ' fd-infold' : ''}" data-fd-k="${esc('f:' + encodeURIComponent(c.key))}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
       + `<span class="fd-fl">${esc(c.label)}</span>`
@@ -9271,7 +9271,7 @@
 
   function fdChecksHtml(checks, recaps, guids, selBot) {
     return (checks || []).map(c => {
-      const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'warn' ? 'CHECK' : 'PASS';
+      const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'ok' ? 'PASS' : 'CHECK';
       const d = typeof c.death === 'number' && c.death >= 0 ? (recaps || [])[c.death] : null;
       const guid = c.bot && guids ? guids[c.bot] : null;
       const pressed = c.bot === selBot ? 'true' : 'false';
