@@ -42,6 +42,7 @@ namespace ai
         TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
         HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
         OneAtATime = 7, // all DPS kill one living unit of `boss_entry` at a time: the lowest health, the lowest guid on a tie
+        LinkedDeath = 8, // a group that must die together: equalise its health, hold every member at <= `param` %, then burn
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -60,6 +61,8 @@ namespace ai
             return BossTacticKind::HoldKill;
         if (text == "one_at_a_time")
             return BossTacticKind::OneAtATime;
+        if (text == "linked_death" || text == "together")
+            return BossTacticKind::LinkedDeath;
         return BossTacticKind::None;
     }
 
@@ -109,6 +112,11 @@ namespace ai
             // A one_at_a_time row is keyed by the entry it paces, its own boss_entry (like a tank_hold row): a
             // target_entry would leave the row's entry and the paced entry disagreeing.
             if (row.kind == BossTacticKind::OneAtATime && row.targetEntry != 0)
+                return false;
+            // A linked_death row is one partner of a group, its boss_entry the anchor: a row without a partner lists
+            // nobody, and the hold percent has to be a percentage.
+            if (row.kind == BossTacticKind::LinkedDeath &&
+                (row.targetEntry == 0 || !(row.param > 0.0f) || row.param > 100.0f))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -578,6 +586,109 @@ namespace ai
                 return static_cast<int>(i);
         }
         return -1;
+    }
+
+    // A linked_death group: its anchor (the rows' boss_entry), the group id (the rows' priority, so one map can carry
+    // several groups) and every partner its rows list. Any member resolves the same group from the anchor's rows.
+    struct LinkedDeathGroup
+    {
+        std::uint32_t bossEntry = 0;
+        std::uint8_t groupId = 0;
+        float param = 0.0f;                 // the hold percent
+        std::vector<std::uint32_t> entries; // the anchor first, then each partner
+    };
+
+    // The group a creature of `entry` belongs to, or false. A partner resolves the same group, but the anchor's rows
+    // have to be among `active` (a partner has no rows of its own): they are when the anchor joined the fight.
+    inline bool FindLinkedDeathGroup(const ActiveBossRows& active, std::uint32_t entry, LinkedDeathGroup& out)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind != BossTacticKind::LinkedDeath || (row->bossEntry != entry && row->targetEntry != entry))
+                continue;
+            out = LinkedDeathGroup();
+            out.bossEntry = row->bossEntry;
+            out.groupId = row->priority;
+            out.param = row->param;
+            out.entries.push_back(row->bossEntry);
+            for (const BossTacticRow* other : active)
+            {
+                if (other->kind != BossTacticKind::LinkedDeath || other->bossEntry != row->bossEntry ||
+                    other->priority != row->priority)
+                    continue;
+                out.param = std::max(out.param, other->param);
+                if (std::find(out.entries.begin(), out.entries.end(), other->targetEntry) == out.entries.end())
+                    out.entries.push_back(other->targetEntry);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // A living member of a linked_death group, as the pick sees it. `attackable` is the caller's candidate rule
+    // (alive, attackable, within the engage range).
+    struct LinkedMember
+    {
+        std::uint64_t guid = 0;
+        int hpPct = 100;
+        bool attackable = true;
+    };
+
+    // Whether the group is released: fewer than two living members, or every one of them at or below `param` %. Then
+    // the ordinary pick stands and all DPS burn the lowest, so the members die together.
+    inline bool LinkedDeathReleased(float param, const std::vector<LinkedMember>& members)
+    {
+        if (members.size() < 2)
+            return true;
+        for (const LinkedMember& member : members)
+            if (static_cast<float>(member.hpPct) > param)
+                return false;
+        return true;
+    }
+
+    // The member a free DPS bot attacks while the group is held: the attackable one with the highest health fraction,
+    // the lowest guid on a tie. A member at or below `param` % is never it while another living member stands above
+    // that (the hold), so the raid equalises the group and brings every member down to param, not past it. -1 when the
+    // group is released (LinkedDeathReleased) or no member above param % can be attacked: the ordinary pick then.
+    inline int PickLinkedDeath(float param, const std::vector<LinkedMember>& members)
+    {
+        if (LinkedDeathReleased(param, members))
+            return -1;
+        int best = -1;
+        for (std::size_t i = 0; i < members.size(); ++i)
+        {
+            if (!members[i].attackable || static_cast<float>(members[i].hpPct) <= param)
+                continue;
+            if (best < 0 || members[i].hpPct > members[best].hpPct ||
+                (members[i].hpPct == members[best].hpPct && members[i].guid < members[best].guid))
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // Whether a member at `hpPct` % is held right now: at or below `param` while another living member stands above it.
+    inline bool LinkedDeathHolds(float param, int hpPct, const std::vector<LinkedMember>& members)
+    {
+        if (static_cast<float>(hpPct) > param)
+            return false;
+        for (const LinkedMember& member : members)
+            if (static_cast<float>(member.hpPct) > param)
+                return true;
+        return false;
+    }
+
+    // The gated linked_death pick: -1 when the key (AiPlayerbot.DungeonRunLinkedDeath) or the boss tactics strategy is
+    // off, `entry` is in no group, or the group is released; else the index into `members` (the group's living units,
+    // the same list LinkedDeathHolds reads).
+    inline int PickLinkedDeathTarget(bool keyOn, bool tacticsOn, const ActiveBossRows& active, std::uint32_t entry,
+                                     const std::vector<LinkedMember>& members)
+    {
+        if (!keyOn || !tacticsOn)
+            return -1;
+        LinkedDeathGroup group;
+        if (!FindLinkedDeathGroup(active, entry, group))
+            return -1;
+        return PickLinkedDeath(group.param, members);
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

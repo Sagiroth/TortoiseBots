@@ -891,6 +891,19 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # 1 - on for every bot on a map that has rows
 AiPlayerbot.DungeonTactics = 0
 
+# The "die together" boss tactic (ai_boss_tactic kind linked_death, docs/play/boss-tactics.md).
+# A linked_death row lists one partner of a group (its boss_entry is the group's anchor) and a hold percent
+# (param). While more than one member lives, the free DPS bots spread their damage to equalise the members'
+# health: the pick is the living member with the highest health, and never one at or below param % while
+# another stands above it. Once every living member is at or below param % the hold ends and the ordinary pick
+# burns the lowest, so the group dies together. On Zul'Gurub's Thekal (14599 with the Zealots Lor'Khan 11347
+# and Zath 11348) the row's 3 % is the point inside the 7 s in which a dead sibling is raised to full health.
+# This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because it changes every
+# free DPS bot's target pick. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: DPS bots pick as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunLinkedDeath = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills

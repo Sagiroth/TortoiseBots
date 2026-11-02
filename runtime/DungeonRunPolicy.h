@@ -1264,6 +1264,10 @@ struct Run
     State state = State::Running;
     Phase phase = Phase::Begin;
     std::string note;        // what it does now, or why it paused
+    // The last health bracket of the linked_death note (the highest living member's hp in 5 % steps; -1 none read):
+    // the note is repeated only when it moves (LinkedDeathNote).
+    int linkedNotePct = -1;
+    std::string linkedNoteText;
 
     std::uint32_t phaseMs = 0;
     std::uint32_t stepIdleMs = 0;
@@ -13063,6 +13067,50 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
     return false;
 }
 
+// The linked_death note of a boss fight (ai_boss_tactic kind linked_death on the current boss step): the group's
+// living members among the engaged units and the highest of their health percentages. `bracket` leaves the highest in
+// 5 % steps (-1 when the note is empty) so the run line moves at most 20 times a fight. "" outside a boss step, with
+// no live table, with no row of the kind, or with fewer than two members engaged.
+inline std::string LinkedDeathNote(const Run& r, const Facts& f, int& bracket)
+{
+    bracket = -1;
+    if (!r.liveTactics || !r.plan || !Current(r))
+        return std::string();
+    const PlanStep& step = *Current(r);
+    if (step.kind != PlanStepKind::Boss || !step.entry)
+        return std::string();
+    const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, step.entry);
+    if (!rows)
+        return std::string();
+    std::vector<std::uint32_t> entries;
+    for (const ai::BossTacticRow& row : *rows)
+        if (row.kind == ai::BossTacticKind::LinkedDeath)
+        {
+            entries.push_back(row.bossEntry);
+            entries.push_back(row.targetEntry);
+        }
+    if (entries.empty())
+        return std::string();
+    std::string list;
+    std::uint32_t living = 0;
+    std::uint32_t highest = 0;
+    for (const UnitFact& u : f.engagedUnits)
+    {
+        if (std::find(entries.begin(), entries.end(), u.entry) == entries.end())
+            continue;
+        ++living;
+        const std::uint32_t hp = u.maxHealth ? static_cast<std::uint32_t>(u.health * 100 / u.maxHealth) : 100;
+        highest = std::max(highest, hp);
+        if (!list.empty())
+            list += "/";
+        list += std::to_string(u.entry);
+    }
+    if (living < 2)
+        return std::string();
+    bracket = static_cast<int>(highest / 5);
+    return "fighting: linked " + list + " at " + std::to_string(highest) + " %";
+}
+
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
 // AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight). `raidTrashOffTanks`: a raid's trash fight whose off-tanks
 // pick up (RaidTrashFight with a living off-tank: GuardTarget's dead-lead branch).
@@ -16575,6 +16623,21 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
+        // A linked_death group of the boss step: the tactic stays in the run line while it runs, and the line moves at
+        // most once per 5 % of the highest living member.
+        int linkedBracket = -1;
+        const std::string linked = LinkedDeathNote(r, f, linkedBracket);
+        if (!linked.empty())
+        {
+            if (linkedBracket != r.linkedNotePct || linked != r.linkedNoteText)
+            {
+                r.linkedNotePct = linkedBracket;
+                r.linkedNoteText = linked;
+            }
+            r.note = r.linkedNoteText;
+        }
+        else
+            r.linkedNotePct = -1;
         if (pastCeiling)
             r.note += "; past the " + std::to_string(cap / 1000) + " s ceiling: " +
                 (progress == FightProgress::Losing

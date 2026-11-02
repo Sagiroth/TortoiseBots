@@ -44,6 +44,24 @@ namespace ai
     // lowest health among the eligible candidates, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill).
     std::uint64_t SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry);
 
+    // The linked_death group ("die together") the fight holds, its members as the pick sees them. `active` is false
+    // when no row of the fight's rows is of the kind. Any bot may ask (the AoE density filter leaves a held member out);
+    // the pick below is the free DPS bots' only.
+    struct BossLinkedDeathScan
+    {
+        bool active = false;
+        float param = 0.0f;                 // the group's hold percent
+        std::vector<LinkedMember> members;  // the group's living units in the fight
+        std::vector<Unit*> units;           // the same order: the unit of each member
+    };
+    BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The group member this free DPS bot attacks under the linked_death tactic, or null. Gated by
+    // AiPlayerbot.DungeonRunLinkedDeath and the "boss tactics" strategy; null while the group is released (every living
+    // member at or below param %, when the ordinary pick burns them together), and for tanks, healers and bots under an
+    // explicit attack order.
+    Unit* FindBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan
     {
@@ -102,6 +120,15 @@ namespace ai
     {
     public:
         BossTacticsHoldKillAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics hold kill") {}
+        bool Execute(Event& event) override;
+    };
+
+    // On a linked_death group member that is not the equalise pick (another member stands higher): switch to the pick,
+    // so the damage is spread instead of being left on one member until it dies.
+    class BossTacticsLinkedDeathAction : public AttackAction
+    {
+    public:
+        BossTacticsLinkedDeathAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics linked death") {}
         bool Execute(Event& event) override;
     };
 

@@ -498,6 +498,24 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* runner = FinishRunnerTarget(ai, bot, AI_VALUE(Unit*, "current target"), ccProbe))
         return runner;
 
+    // A linked_death group (ai_boss_tactic kind linked_death, "die together") splits the free DPS bots' damage: the
+    // pick is the member with the highest health fraction, never one at or below the row's param % while another is
+    // above it, and it outranks the tank's victim, so the guard's pickups do not drag the raid onto one member (an
+    // explicit order and the raid mark above still win). Once every living member is at or below param % the group is
+    // released (the ordinary pick then burns the lowest, so they die together); while it is held with nothing above
+    // param % reachable, the bot waits instead of turning on a held member.
+    if (sPlayerbotAIConfig.dungeonRunLinkedDeath && ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
+        !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot))
+    {
+        const BossTacticsFight fight = ScanBossTactics(ai, bot);
+        const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
+        if (scan.active && !LinkedDeathReleased(scan.param, scan.members))
+        {
+            const int pick = PickLinkedDeath(scan.param, scan.members);
+            return pick < 0 ? nullptr : scan.units[pick];
+        }
+    }
+
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&

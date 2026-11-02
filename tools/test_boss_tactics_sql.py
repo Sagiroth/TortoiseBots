@@ -18,7 +18,8 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
+         "linked_death"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -108,6 +109,10 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "one_at_a_time":
                 self.assertEqual(int(target), 0, where)
                 self.assertEqual(int(spell), 0, where)
+            if kind == "linked_death":
+                self.assertGreater(int(target), 0, where)     # a partner: a row without one lists nobody
+                self.assertGreater(float(param), 0.0, where)  # the hold percent
+                self.assertLessEqual(float(param), 100.0, where)
 
     def test_primary_keys_are_unique(self):
         # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
@@ -273,6 +278,21 @@ class BossTacticsSql(unittest.TestCase):
             self.assertIn(line.rstrip(",;") + ",", text,
                           "a Mad Servant row did not go back in unchanged")
         self.assertIn("(309, 15111, 'one_at_a_time', 0, 0, 0, 0, '", text)
+
+    def test_linked_death_pairs_the_thekal_zealots(self):
+        # Walk 27 C: Thekal 14599 and the Zealots Lor'Khan 11347 and Zath 11348 raise a dead sibling to full health 7 s
+        # after the death, so they have to die together. The two rows of one (boss_entry, priority) key are the group;
+        # param 3 % is the hold that leaves ~10 k hp for the burst, inside the 7 s timer (10 % would need 11-15 s).
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): (int(row[6]), float(row[7]))
+                for row in effective_rows()}
+        self.assertEqual((1, 3.0), live.get((309, 14599, "linked_death", 11347, 0)),
+                         "the Thekal / Lor'Khan linked_death row is missing or changed")
+        self.assertEqual((1, 3.0), live.get((309, 14599, "linked_death", 11348, 0)),
+                         "the Thekal / Zath linked_death row is missing or changed")
+        self.assertNotIn((309, 14599, "linked_death", 0, 0), live)       # the anchor is no row of its own
+        self.assertNotIn((309, 11347, "linked_death", 14599, 0), live)   # partners are not anchors
+        path = os.path.join(ROOT, "data/sql/world/20261102200000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the Thekal linked_death migration is missing")
 
 
 def _sql_statements(text):

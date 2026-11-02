@@ -77,6 +77,17 @@ bool BossTacticsHoldKillTrigger::IsActive()
     return !fight.rows.empty() && FindBossHoldKill(ai, bot, fight) != nullptr;
 }
 
+bool BossTacticsLinkedDeathTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    Unit* pick = FindBossLinkedDeath(ai, bot, ScanBossTactics(ai, bot));
+    if (!pick)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE(Unit*, "current target") != pick;
+}
+
 bool BossTacticsFrontTrigger::IsActive()
 {
     if (!Ready(ai, bot))

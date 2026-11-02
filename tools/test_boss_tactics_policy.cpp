@@ -56,6 +56,15 @@ static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eli
     return c;
 }
 
+static LinkedMember Linked(std::uint64_t guid, int hpPct, bool attackable = true)
+{
+    LinkedMember m;
+    m.guid = guid;
+    m.hpPct = hpPct;
+    m.attackable = attackable;
+    return m;
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -643,6 +652,123 @@ int main()
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Started)) == "started");
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Deferred)) == "deferred");
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::None)) == "none");
+    }
+
+    // linked_death: kind text (and its alias), and the loader's shape checks.
+    CHECK(ParseBossTacticKind("linked_death") == BossTacticKind::LinkedDeath);
+    CHECK(ParseBossTacticKind("together") == BossTacticKind::LinkedDeath);
+    CHECK(ParseBossTacticKind("Linked_Death") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("linked-death") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("linkeddeath") == BossTacticKind::None);
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 0, 0, 1, 3.0f)));      // no partner
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 0.0f)));  // no hold percent
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 101.0f))); // over 100 %
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 3.0f)));
+        CHECK(table.Size() == 2);
+        table.Seal();
+        CHECK(table.HasMap(309));
+    }
+
+    // The group: the anchor and every partner its rows list, resolved from either.
+    const std::vector<BossTacticRow> thekal = {
+        Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f),
+        Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 3.0f),
+    };
+    const ActiveBossRows thekalRows = Active(thekal);
+    {
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(thekalRows, 14599, group));
+        CHECK(group.bossEntry == 14599);
+        CHECK(group.groupId == 1);
+        CHECK(group.param == 3.0f);
+        CHECK(group.entries.size() == 3);
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 14599) != group.entries.end());
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 11347) != group.entries.end());
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 11348) != group.entries.end());
+        CHECK(FindLinkedDeathGroup(thekalRows, 11348, group));  // a partner resolves the same group
+        CHECK(group.entries.size() == 3);
+        CHECK(!FindLinkedDeathGroup(thekalRows, 11361, group));  // the tiger is no member
+        CHECK(!FindLinkedDeathGroup(ActiveBossRows(), 14599, group));
+    }
+
+    // Equalise: the pick is the living member with the highest health fraction, never one at or below param while
+    // another stands above it, and never one this bot cannot attack.
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 80), Linked(3, 60) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 0);
+        members[0].hpPct = 40;
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 11347, members) == 1);  // the highest now
+        members = { Linked(1, 3), Linked(2, 60), Linked(3, 40) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // 3 % is held, 60 % is not
+        CHECK(LinkedDeathHolds(3.0f, 3, members));   // at the param, another member above it
+        CHECK(!LinkedDeathHolds(3.0f, 4, members));
+        members = { Linked(1, 70, false), Linked(2, 50), Linked(3, 40) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // the highest is out of reach
+    }
+
+    // Release: every living member at or below param, or one member left, hands the pick back so all DPS burn the
+    // lowest (the deaths come together then).
+    {
+        std::vector<LinkedMember> members = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(LinkedDeathReleased(3.0f, members));
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
+        members = { Linked(1, 50) };
+        CHECK(LinkedDeathReleased(3.0f, members));
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
+        members = { Linked(1, 50), Linked(2, 3) };
+        CHECK(!LinkedDeathReleased(3.0f, members));  // one above param: not released (the hold runs)
+    }
+
+    // Flag off (the key, or the tactics strategy): today's pick stands. A non-linked boss is untouched too.
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 80), Linked(3, 60) };
+        CHECK(PickLinkedDeathTarget(false, true, thekalRows, 14599, members) == -1);
+        CHECK(PickLinkedDeathTarget(true, false, thekalRows, 14599, members) == -1);
+        CHECK(PickLinkedDeathTarget(false, false, thekalRows, 14599, members) == -1);
+        const std::vector<BossTacticRow> others = { Row(309, 14507, BossTacticKind::KillFirst) };
+        CHECK(PickLinkedDeathTarget(true, true, Active(others), 14507, members) == -1);
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 11361, members) == -1);  // not a group member
+    }
+
+    // The burn window, as a tick loop: a second of the raid's damage to the pick. The hold takes every member down
+    // to param and no further; once all are there the release lets them die, and they die inside the script's 7 s
+    // resurrect timer (boss_thekal.cpp's RESSURECT_TIMER).
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 100), Linked(3, 100) };
+        int deathTick[3] = {0, 0, 0};
+        for (int tick = 1; tick <= 600; ++tick)
+        {
+            if (!members[0].attackable && !members[1].attackable && !members[2].attackable)
+                break;
+            int pick = PickLinkedDeathTarget(true, true, thekalRows, 14599, members);
+            if (pick >= 0)
+                CHECK(members[pick].hpPct > 3);  // the hold: never damage a member at or below param
+            else
+            {
+                // Released: the ordinary pick, the lowest health among the living.
+                pick = -1;
+                for (int i = 0; i < 3; ++i)
+                    if (members[i].attackable && (pick < 0 || members[i].hpPct < members[pick].hpPct))
+                        pick = i;
+                if (pick < 0)
+                    break;
+            }
+            members[pick].hpPct -= 1;
+            if (members[pick].hpPct <= 0)
+            {
+                members[pick].hpPct = 0;
+                members[pick].attackable = false;
+                deathTick[pick] = tick;
+            }
+        }
+        CHECK(!members[0].attackable && !members[1].attackable && !members[2].attackable);
+        CHECK(deathTick[0] > 0 && deathTick[1] > 0 && deathTick[2] > 0);
+        const int first = std::min(deathTick[0], std::min(deathTick[1], deathTick[2]));
+        const int last = std::max(deathTick[0], std::max(deathTick[1], deathTick[2]));
+        CHECK(last - first <= 7);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

@@ -369,6 +369,47 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
 }
 
+// The linked_death group of the fight: every living unit of the group's entries among the fight's units, with the
+// health fraction the pick compares and the attackability rule the kill_first pick applies. The first row of the kind
+// names the group's anchor; the members come from the anchor's rows, so the anchor has to be in the fight's rows.
+BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    BossLinkedDeathScan scan;
+    LinkedDeathGroup group;
+    for (const BossTacticRow* row : fight.rows)
+        if (row->kind == BossTacticKind::LinkedDeath && FindLinkedDeathGroup(fight.rows, row->bossEntry, group))
+            break;
+    if (group.entries.empty())
+        return scan;
+    scan.active = true;
+    scan.param = group.param;
+    for (Unit* unit : fight.units)
+    {
+        if (std::find(group.entries.begin(), group.entries.end(), unit->GetEntry()) == group.entries.end())
+            continue;
+        LinkedMember member;
+        member.guid = unit->GetObjectGuid().GetRawValue();
+        member.hpPct = static_cast<int>(unit->GetHealthPercent());
+        member.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
+        scan.members.push_back(member);
+        scan.units.push_back(unit);
+    }
+    return scan;
+}
+
+Unit* ai::FindBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    if (fight.rows.empty() || !IsFreeDps(ai, bot) || !sPlayerbotAIConfig.dungeonRunLinkedDeath ||
+        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
+    if (!scan.active)
+        return nullptr;
+    const int pick = PickLinkedDeath(scan.param, scan.members);
+    return pick < 0 ? nullptr : scan.units[pick];
+}
+
 Unit* ai::FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     (void)ai;
@@ -546,6 +587,18 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
     bot->AttackStop();
     return true;
+}
+
+bool BossTacticsLinkedDeathAction::Execute(Event& event)
+{
+    (void)event;
+    Unit* pick = FindBossLinkedDeath(ai, bot, ScanBossTactics(ai, bot));
+    if (!pick)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (AI_VALUE(Unit*, "current target") == pick)
+        return false;
+    return Attack(bot, pick);
 }
 
 float BossTacticsHoldMultiplier::GetValue(Action* action)

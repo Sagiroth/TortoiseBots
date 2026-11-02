@@ -27149,9 +27149,82 @@ static void TestPartyRulesUnchanged()
     CHECK(r.state == State::Running && r.regroup && r.wipes == 0 && r.nearWipes == 1);
 }
 
+// The run line of a linked_death boss fight: the group's engaged members and the highest health, in 5 % brackets;
+// nothing outside a boss step, without a row of the kind, or with fewer than two members engaged.
+static void TestLinkedDeathNoteFollowsTheGroupHealth()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 3.0f;
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    UnitFact thekal = Unit(1, 14599, 10);
+    thekal.health = 133250;
+    thekal.maxHealth = 133250;
+    UnitFact lor = Unit(2, 11347, 12);
+    lor.health = 51282;
+    lor.maxHealth = 85470;
+    UnitFact zath = Unit(3, 11348, 9);
+    zath.health = 96138;
+    zath.maxHealth = 106820;
+    UnitFact tiger = Unit(4, 11361, 7);   // not a member: never in the line
+    tiger.health = 5000;
+    tiger.maxHealth = 5000;
+    f.engagedUnits = {thekal, lor, zath, tiger};
+    int bracket = -1;
+    CHECK(LinkedDeathNote(r, f, bracket) == "fighting: linked 14599/11347/11348 at 100 %");
+    CHECK(bracket == 20);
+    f.engagedUnits[2].health = 42728;      // 40 %
+    CHECK(LinkedDeathNote(r, f, bracket) == "fighting: linked 14599/11347/11348 at 100 %");
+    CHECK(bracket == 20);
+    f.engagedUnits[0].health = 26650;      // 20 %: the highest is 60 % now
+    CHECK(LinkedDeathNote(r, f, bracket) == "fighting: linked 14599/11347/11348 at 60 %");
+    CHECK(bracket == 12);
+    // Fewer than two members engaged (one died, or the read lost one): no line.
+    f.engagedUnits = {thekal};
+    CHECK(LinkedDeathNote(r, f, bracket).empty());
+    CHECK(bracket == -1);
+    // Not a boss step, no live table, no row of the kind: no line.
+    f.engagedUnits = {thekal, lor, zath};
+    r.step = 1;
+    plan.steps.push_back(Step(PlanStepKind::Rest));
+    CHECK(LinkedDeathNote(r, f, bracket).empty());
+    r.step = 0;
+    r.liveTactics = nullptr;
+    CHECK(LinkedDeathNote(r, f, bracket).empty());
+    ai::BossTacticTable plain;
+    ai::BossTacticRow kill;
+    kill.map = 309;
+    kill.bossEntry = 14599;
+    kill.kind = ai::BossTacticKind::KillFirst;
+    kill.targetEntry = 11347;
+    CHECK(plain.Add(kill));
+    plain.Seal();
+    r.liveTactics = &plain;
+    CHECK(LinkedDeathNote(r, f, bracket).empty());
+}
+
 int main()
 {
     TestRunGossipStepOfReadsTheCurrentStep();
+    TestLinkedDeathNoteFollowsTheGroupHealth();
     TestRunArmsAMoveTriggerUntilItFired();
     TestPatrollerOutsideTheRadiusIsWaitedForThenPulled();
     TestPatrollerWaitIsBounded();
