@@ -2189,10 +2189,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
             EmptySlotGates gates;
             gates.botLevel = bot->GetLevel();
             gates.maxItemLevel = maxItemLevel;
-            // Grey stays here only: the seed band itself starts at white (#1485).
-            gates.minQuality = level < 10 ? ITEM_QUALITY_POOR
-                : level < 20 ? ITEM_QUALITY_NORMAL
-                : ITEM_QUALITY_UNCOMMON;
+            // The fresh seed never takes grey here either (#1485); grey stays
+            // allowed only for the non-seed callers of the backstop.
+            gates.minQuality = TortoiseBots::BackstopQualityFloor(level, seedSpread);
             gates.maxQuality = seedSpread
                 ? (playerUpgrade
                     ? TortoiseBots::AutogearMaxQuality(level, TortoiseBots::kAutogearMaxLevel, playerRaisedCeiling)

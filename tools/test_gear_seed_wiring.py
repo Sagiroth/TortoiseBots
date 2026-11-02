@@ -33,9 +33,10 @@ class GearSeedWiringTest(unittest.TestCase):
         fallback = body(FACTORY, "seedEpic = false;\n                    for", "QuerySeedCandidates")
         self.assertNotIn("ITEM_QUALITY_POOR", fallback)
 
-    def test_grey_stays_in_the_empty_slot_backstop(self):
+    def test_backstop_floor_follows_the_seed_path(self):
         gates = body(FACTORY, "gates.minQuality =", "gates.maxQuality")
-        self.assertIn("ITEM_QUALITY_POOR", gates)
+        self.assertIn("TortoiseBots::BackstopQualityFloor(level, seedSpread)", gates)
+        self.assertNotIn("ITEM_QUALITY_POOR", gates)
 
     def test_start_level_minimum_defaults_to_five(self):
         self.assertRegex(CONFIG, r'"AiPlayerbot\.RandomBotStartLevelMin",\s*5\)')
