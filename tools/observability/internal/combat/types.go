@@ -99,6 +99,16 @@ type Fight struct {
 	// copied from the live row when the fight is filed. LogDropped counts the oldest events past the cap.
 	Log        []json.RawMessage `json:"log,omitempty"`
 	LogDropped int               `json:"log_dropped,omitempty"`
+
+	// SpellsCut is the emitter's degraded-build marker (runtime/
+	// CombatMonitorPolicy.h TakeFightPayloads): 0 = full build, otherwise the
+	// per-bot spell cap of the build that was sent. Absent on old payloads.
+	// The 0-spell rung reads 0 like a full build, so it is told apart by
+	// Truncated: the emitter bounds every field there.
+	SpellsCut int `json:"spells_cut,omitempty"`
+	// Truncated marks the emitter's bounded short form (cut texts, at most 40
+	// bot rows, no spells, engaged list, debuff times or deaths).
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // FightDatagram is the COMBAT_FIGHT datagram envelope. The module sends each

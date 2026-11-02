@@ -1002,7 +1002,13 @@ private:
            << "\",\"step\":" << f.ctx.step << ",\"kind\":\"" << text(f.ctx.kind, kTruncatedTextBytes)
            << "\",\"start\":" << f.startUnix << ",\"dur_ms\":" << f.durMs << ",\"outcome\":\""
            << OutcomeName(f.outcome) << "\",\"boss\":" << f.ctx.bossEntry << ",\"boss_name\":\""
-           << text(f.ctx.bossName, kTruncatedTextBytes) << "\",\"planned\":[";
+           << text(f.ctx.bossName, kTruncatedTextBytes) << "\"";
+        // The dashboard gives no verdict on a cut spell list: every build past
+        // the full one carries its per-bot spell cap. The full build (and old
+        // emitters) leave the field out and the daemon reads it as zero.
+        if (maxSpells < kMaxSpellsPerBot)
+            ss << ",\"spells_cut\":" << maxSpells;
+        ss << ",\"planned\":[";
         size_t const planned = truncated ? std::min(f.ctx.planned.size(), kTruncatedPlanned) : f.ctx.planned.size();
         for (size_t i = 0; i < planned; ++i)
             ss << (i ? "," : "") << f.ctx.planned[i];

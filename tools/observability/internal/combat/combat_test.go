@@ -262,6 +262,60 @@ func TestRuleSkipsTruncatedSpellList(t *testing.T) {
 	}
 }
 
+// A degraded payload cuts every bot's spell list to 3 (then 0): it cannot
+// prove Sunder went uncast, even though only 3 rows are listed.
+func TestRuleSkipsThreeSpellDegraded(t *testing.T) {
+	mkTank := func() Fight {
+		return Fight{ID: "t3", Commander: "C", Start: 1, DurMS: 60000,
+			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100,
+				Spells: []SpellCount{{N: "Heroic Strike", C: 1}, {N: "Revenge", C: 2}, {N: "Shield Block", C: 1}}}}}
+	}
+	sunder := `[{"id":"tank_no_sunder","level":"red","role":"tank","class":"warrior","min_fight_s":20,"condition":"spell_count_zero:Sunder Armor","text":"{bot}"}]`
+	rules, err := LoadRules([]byte(sunder))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mkTank()
+	f.SpellsCut = 3
+	if w := Judge(f, rules); len(w) != 0 {
+		t.Fatalf("3-spell degraded payload may hide Sunder: want no warning, got %v", w)
+	}
+}
+
+// A 0-spell degraded payload lists nothing per bot: every spell-absence
+// rule gives no verdict on it.
+func TestRuleSkipsZeroSpellDegraded(t *testing.T) {
+	mkTank := func() Fight {
+		return Fight{ID: "t0", Commander: "C", Start: 1, DurMS: 60000,
+			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100}}}
+	}
+	sunder := `[{"id":"tank_no_sunder","level":"red","role":"tank","class":"warrior","min_fight_s":20,"condition":"spell_count_zero:Sunder Armor","text":"{bot}"}]`
+	swipe := `[{"id":"tank_no_maul_swipe","level":"red","role":"tank","class":"druid","min_fight_s":20,"condition":"spells_count_zero:Maul,Swipe","text":"{bot}"}]`
+	rules, err := LoadRules([]byte(sunder))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mkTank()
+	f.SpellsCut = 0
+	f.Truncated = true
+	if w := Judge(f, rules); len(w) != 0 {
+		t.Fatalf("0-spell degraded payload may hide Sunder: want no warning, got %v", w)
+	}
+	druid := Fight{ID: "t0", Commander: "C", Start: 1, DurMS: 60000,
+		SpellsCut: 0, Truncated: true,
+		Bots: []FightBot{{Name: "Pawswipe", GUID: 4, Class: "druid", Role: "tank", Dmg: 100}}}
+	druidRules, err := LoadRules([]byte(swipe))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(druid, druidRules); len(w) != 0 {
+		t.Fatalf("0-spell degraded payload may hide Maul/Swipe: want no warning, got %v", w)
+	}
+	if w := Judge(mkTank(), rules); len(w) != 1 {
+		t.Fatalf("full payload, no Sunder: want 1 warning, got %v", w)
+	}
+}
+
 // The no_damage rule fires only when the peer dps median clears the floor:
 // an idle raid punishes nobody.
 func TestNoDamageNeedsPeerMedian(t *testing.T) {
@@ -335,6 +389,34 @@ func TestDeadInFirstHalfNotJudged(t *testing.T) {
 	}
 	if w := Judge(mkFight(40000), rules); len(w) != 1 || w[0].Bot != "Pew" {
 		t.Fatalf("death at 40 s of 69 s: want Pew warned, got %v", w)
+	}
+}
+
+// A bot with deaths but no death row died at an unknown time: no idle or
+// no-output verdict (the last degraded build drops the death rows but keeps
+// each bot's deaths count).
+func TestDeadUnknownTimeNotJudged(t *testing.T) {
+	mkFight := func(deaths uint32, rows []FightDeath) Fight {
+		return Fight{ID: "e2", Commander: "C", Start: 1, DurMS: 69000,
+			Bots: []FightBot{
+				{Name: "Pew", GUID: 1, Class: "mage", Role: "dps", Dmg: 0, Deaths: deaths},
+				{Name: "Peer", GUID: 2, Class: "mage", Role: "dps", Dmg: 9000},
+			},
+			Deaths: rows}
+	}
+	idle := `[{"id":"dps_no_damage","level":"red","role":"dps","min_fight_s":0,"condition":"no_damage","text":"{bot}","min_role_median":2000}]`
+	rules, err := LoadRules([]byte(idle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkFight(1, nil), rules); len(w) != 0 {
+		t.Fatalf("deaths=1 with no death row: want no warning, got %v", w)
+	}
+	if w := Judge(mkFight(1, []FightDeath{{Name: "Pew", TMs: 40000, Killer: "B"}}), rules); len(w) != 1 {
+		t.Fatalf("death at 40 s of 69 s: want Pew warned, got %v", w)
+	}
+	if w := Judge(mkFight(0, nil), rules); len(w) != 1 {
+		t.Fatalf("alive with no damage: want 1 warning, got %v", w)
 	}
 }
 

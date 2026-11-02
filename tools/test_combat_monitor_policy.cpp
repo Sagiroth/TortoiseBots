@@ -1124,6 +1124,55 @@ static void TestTailCappedByLadderStep()
     CHECK(Contains(p[0], "\"tail_spells\":[]"));
     CHECK(!Contains(p[0], "\"n\":\"T0_"));
 }
+// The payload ladder (12 -> 3 -> 3 -> 0 spells) marks every degraded build
+// with its per-bot spell cap, so the dashboard gives no verdict on a cut
+// spell list. The full build carries no marker.
+static void TestDegradedBuildsCarrySpellsCut()
+{
+    auto take = [](size_t fullSpells, size_t pad) {
+        Book b;
+        std::vector<MemberInfo> m;
+        for (uint32_t i = 0; i < 40; ++i)
+            m.push_back({i + 1, "Bot" + std::to_string(i), "mage", Role::Damage, 0});
+        b.SetMembers(m);
+        b.Start(0, 1700000000, BossCtx(), 1);
+        for (uint32_t i = 0; i < 40; ++i)
+            for (size_t j = 0; j < fullSpells; ++j)
+                b.OnCast(i + 1, "S" + std::to_string(i) + "_" + std::to_string(j) + std::string(pad, 'x'), false, 1500);
+        b.SetInCombat(true, false, 1000);
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+        Seq seq;
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+        CHECK(p.size() == 1);
+        CHECK(p[0].size() <= kPayloadByteBudget);
+        return p[0];
+    };
+    // A small fight fits the full 12-spell build: no marker.
+    CHECK(!Contains(take(3, 0), "\"spells_cut\""));
+    auto isFull = [](std::string const& js) {
+        return Count(js, "\"n\":\"S") > 3 * 40;   // the full build lists 12 per bot
+    };
+    CHECK(isFull(take(20, 0)));
+    // Step out, then bisect to the first pad whose full build no longer fits.
+    size_t lo = 0, hi = 100;
+    while (isFull(take(20, hi)))
+    {
+        lo = hi;
+        hi *= 2;
+        CHECK(hi < 100000);
+    }
+    while (lo + 1 < hi)
+    {
+        size_t mid = (lo + hi) / 2;
+        if (isFull(take(20, mid)))
+            lo = mid;
+        else
+            hi = mid;
+    }
+    // The first rung past the full build lists 3 spells per bot and says so.
+    CHECK(Contains(take(20, hi), "\"spells_cut\":3"));
+}
 
 int main()
 {
@@ -1133,6 +1182,7 @@ int main()
     TestReengageReplaysOldestFirst();
     TestQuietGapCastFoldedOnReengage();
     TestTailCappedByLadderStep();
+    TestDegradedBuildsCarrySpellsCut();
     TestTailJsonField();
     TestNonMemberIgnored();
     TestFightLifecycle();

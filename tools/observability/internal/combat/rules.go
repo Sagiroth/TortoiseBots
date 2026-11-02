@@ -90,6 +90,18 @@ func truncatedSpellList(b FightBot) bool {
 	return len(b.Spells) >= maxSpellsPerBot
 }
 
+// degradedSpellList reports whether the fight arrived on a degraded build
+// whose per-bot spell list was cut: casts past the cap are dropped, so the
+// row cannot prove a spell went uncast. 0 (full build, or an old emitter
+// without the marker) keeps today's at-cap check; the 0-spell rung is told
+// apart by Truncated, which the emitter only sets on the bounded short form.
+func degradedSpellList(f Fight, b FightBot) bool {
+	if f.SpellsCut > 0 || f.Truncated {
+		return true
+	}
+	return truncatedSpellList(b)
+}
+
 // spellCasts counts casts of one spell on a bot (the module lists every cast
 // spell on the bot line, so quiet means zero).
 func spellCasts(b FightBot, name string) uint32 {
@@ -132,6 +144,21 @@ func diedEarly(b FightBot, deaths []FightDeath, durMS uint32) bool {
 		}
 	}
 	return false
+}
+
+// deathUnknown reports whether the bot died but no death row names it: the
+// last degraded build keeps each bot's deaths count and drops the death rows,
+// so when it died is unknown and no idle or no-output verdict can stand.
+func deathUnknown(b FightBot, deaths []FightDeath) bool {
+	if b.Deaths == 0 {
+		return false
+	}
+	for _, d := range deaths {
+		if d.Name == b.Name {
+			return false
+		}
+	}
+	return true
 }
 
 // deadWholeFight skips a bot that died before it could act (a death at
@@ -199,7 +226,10 @@ func Judge(f Fight, rules []Rule) []Warning {
 			if (cond.kind == condNoDamage || cond.kind == condNoHealing) && diedEarly(b, f.Deaths, f.DurMS) {
 				continue
 			}
-			if (cond.kind == condSpellCountZero || cond.kind == condSpellsCountZero) && truncatedSpellList(b) {
+			if (cond.kind == condNoDamage || cond.kind == condNoHealing) && deathUnknown(b, f.Deaths) {
+				continue
+			}
+			if (cond.kind == condSpellCountZero || cond.kind == condSpellsCountZero) && degradedSpellList(f, b) {
 				continue
 			}
 			if r.MinRoleMedian > 0 && (cond.kind == condNoDamage || cond.kind == condNoHealing) {
