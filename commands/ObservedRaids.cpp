@@ -8,6 +8,7 @@
 #include "../runtime/BoundFightPolicy.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/ObservedRaidPolicy.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/RaidTelemetry.h"
 #include "../host/ModuleLog.h"
@@ -33,16 +34,16 @@ namespace BotCommands {
 
 namespace {
 
-struct ObservedRaid
+struct SelectedCopy
 {
     uint32_t map = 0;
     uint32_t instance = 0;
 };
 
 // The groups the last RAIDS collection found (group id -> its instance copy). The sampler never walks the world itself.
-std::unordered_map<uint32_t, ObservedRaid>& RaidSet()
+std::unordered_map<uint32_t, SelectedCopy>& RaidSet()
 {
-    static std::unordered_map<uint32_t, ObservedRaid> set;
+    static std::unordered_map<uint32_t, SelectedCopy> set;
     return set;
 }
 
@@ -69,6 +70,27 @@ bool MemberFighting(Player* member)
 {
     Pet* const pet = member->GetPet();
     return member->IsInCombat() || (pet && pet->IsAlive() && pet->IsInWorld() && pet->IsInCombat());
+}
+
+// The sampler's flag as the last tick read it: the tick that sees it off after an on tick closes what it fed.
+ObservedRaid::FlagTurn& SamplerFlag()
+{
+    static ObservedRaid::FlagTurn flag;
+    return flag;
+}
+
+// The books the sampler holds: its collected set and its gone-grace clocks, each once, without a bound group's.
+std::vector<uint32_t> HeldGroupIds()
+{
+    std::vector<uint32_t> collected;
+    collected.reserve(RaidSet().size());
+    for (auto const& entry : RaidSet())
+        collected.push_back(entry.first);
+    std::vector<uint32_t> away;
+    away.reserve(RaidAway().size());
+    for (auto const& entry : RaidAway())
+        away.push_back(entry.first);
+    return ObservedRaid::HeldGroups(collected, away, [](uint32_t groupId) { return GroupIsBound(groupId); });
 }
 
 } // namespace
@@ -166,7 +188,7 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
         return a.groupId < b.groupId;
     });
     for (GroupInfo const& info : found)
-        RaidSet()[info.groupId] = ObservedRaid{info.map, info.instance};
+        RaidSet()[info.groupId] = SelectedCopy{info.map, info.instance};
     out.swap(found);
 }
 
@@ -177,7 +199,19 @@ bool IsObservedRaidGroup(uint32_t groupId)
 
 void UpdateObservedRaids(uint32_t diff)
 {
-    if (!ObservabilityEmitter::Instance().RaidsEnabled())
+    bool const enabled = ObservabilityEmitter::Instance().RaidsEnabled();
+    if (SamplerFlag().TurnedOff(enabled))
+    {
+        // `.reload config` turned the flag off under the sampler: the fights it fed end at the current time and their books
+        // go, so no window stays open on the tab and the next on turn starts from an empty set.
+        uint32_t const now = WorldTimer::getMSTime();
+        ObservedRaid::ReleaseBooks(HeldGroupIds(), now,
+            [](uint32_t groupId, uint32_t atMs) { CombatMonitorService::Instance().CloseUnfinished(groupId, atMs); },
+            [](uint32_t groupId) { CombatMonitorService::Instance().Forget(groupId); });
+        RaidSet().clear();
+        RaidAway().clear();
+    }
+    if (!enabled)
         return;
     CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
         ObservabilityEmitter::Instance().IsEnabled());
@@ -222,11 +256,19 @@ void UpdateObservedRaids(uint32_t diff)
         if (bound || !group)
             continue;
 
+        // Only the members standing on the copy the collection selected for the group: a member in another instance, on
+        // another map or outdoors is not in the raid, so its combat never opens or extends the fight and its being alive
+        // never keeps the fight from closing.
+        SelectedCopy const copy = RaidSet()[groupId];
         std::vector<Player*> members;
         for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
             Player* member = ObjectAccessor::FindPlayer(slot.guid);
             if (!member || !member->IsInWorld())
+                continue;
+            Map* const memberMap = member->GetMap();
+            if (!memberMap || !ObservedRaid::OnSelectedCopy(copy.map, copy.instance, member->GetMapId(),
+                    memberMap->GetInstanceId()))
                 continue;
             members.push_back(member);
         }
@@ -239,7 +281,7 @@ void UpdateObservedRaids(uint32_t diff)
         }
         CombatMonitor::FightContext ctx;
         ctx.kind = "raid";
-        uint32_t const mapId = RaidSet()[groupId].map;
+        uint32_t const mapId = copy.map;
         // The book is filed under "raid#<group id>", the key the RAIDS row carries until a binding stands on the group.
         CombatMonitorService::Instance().NoteBinding(groupId, "raid#" + std::to_string(groupId), 0, mapId);
         CombatMonitorService::Instance().Refresh(groupId, CombatMonitorMembersOf(members), anyInCombat, allDead, ctx,

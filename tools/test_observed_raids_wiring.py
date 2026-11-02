@@ -74,6 +74,38 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         export = definition(strip_comments(COMMANDER), "bool GroupIsBound(")
         self.assertIn("FindByGroup(", export)
 
+    def test_sampler_feeds_only_the_groups_own_copy(self):
+        # A member in another instance or on another map is not in the raid: the filter runs before the combat and death
+        # read and before the boss anchor, and it reads the copy the collection selected for the group.
+        code = strip_comments(OBSERVED)
+        sampler = definition(code, "void UpdateObservedRaids(")
+        self.assertIn("OnSelectedCopy(", sampler)
+        self.assertIn("RaidSet()[groupId]", sampler, "the selected copy is the collected one")
+        self.assertLess(sampler.index("OnSelectedCopy("), sampler.index("MemberFighting("),
+                        "the filter runs before the combat and death read")
+        self.assertLess(sampler.index("OnSelectedCopy("), sampler.index("NoteFightBoss("),
+                        "the boss anchor is a member of the selected copy")
+
+    def test_off_turn_closes_the_books_it_fed(self):
+        # `.reload config` turning the flag off closes the open observed fights at that moment and drops the sampler's
+        # groups, instead of leaving a window open on the tab.
+        sampler = definition(strip_comments(OBSERVED), "void UpdateObservedRaids(")
+        self.assertIn("TurnedOff(", sampler)
+        self.assertIn("ReleaseBooks(", sampler)
+        self.assertIn("CloseUnfinished(", sampler)
+        self.assertIn("Forget(", sampler)
+        self.assertLess(sampler.index("TurnedOff("), sampler.index("ReleaseBooks("))
+        self.assertLess(sampler.index("ReleaseBooks("), sampler.index("RaidSet().clear()"))
+        self.assertIn("RaidAway().clear()", sampler)
+        self.assertLess(sampler.index("RaidSet().clear()"), sampler.index("RaidAway().clear()"))
+        # The datagram side: one empty list after the last one that listed a group, then nothing.
+        emit = definition(strip_comments(EMITTER), "void ObservabilityEmitter::EmitRaids(")
+        off = emit[:emit.index("if (!m_raidProvider")]
+        self.assertIn("if (!m_raidsEnabled)", off)
+        self.assertIn("if (m_raidsSent)", off)
+        self.assertIn("SendDatagram(BuildRaidsPayload(", off)
+        self.assertIn("m_raidsSent = false;", off)
+
     def test_released_binding_keeps_an_observed_book(self):
         code = strip_comments(COMMANDER)
         forget = definition(code, "static void ForgetReleasedCombatGroups()")
