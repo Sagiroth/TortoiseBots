@@ -26,7 +26,7 @@ It is **off by default** (`AiPlayerbot.DecisionCapture.Enabled = 0`) and costs n
 | `AiPlayerbot.DecisionCapture.Dir` | `decisions` | Output folder; relative paths are under `LogsDir` (an absolute path stands as written). |
 | `AiPlayerbot.DecisionCapture.SegmentMiB` | `32` | A segment rotates past this many MiB (clamped to 1..256). |
 | `AiPlayerbot.DecisionCapture.CaptureMiB` | `512` | Segments of one capture past this many MiB are deleted oldest first, marked `deleted` in the index; never the segment being written (clamped to `SegmentMiB`..4096). |
-| `AiPlayerbot.DecisionCapture.TotalMiB` | `4096` | The whole folder past this many MiB drops its oldest ended captures; never a running one (clamped to `CaptureMiB`..65536). |
+| `AiPlayerbot.DecisionCapture.TotalMiB` | `4096` | The whole folder is measured at every segment rotation and at each capture's end; past this many MiB the oldest ended captures are deleted. If the running captures alone are over it, the largest one is stopped (`endReason` `stopped: total cap`) and its files are kept; a running capture's files are never deleted (clamped to `CaptureMiB`..65536). |
 | `AiPlayerbot.DecisionCapture.RecordKiB` | `512` | A record larger than this is written as a stub and the next tick is a keyframe (clamped to 64..4096). |
 | `AiPlayerbot.DecisionCapture.KeyframeEvery` | `60` | A full keyframe every this many records (clamped to 1..600), always at a segment start. |
 
@@ -50,12 +50,12 @@ The capture id is `<UTC yyyymmddThhmmssZ>-<plan>-<commander>`: the plan name and
 {"format":"tb-decision-capture","v":1,"id":"20261102T161939Z-zul_gurub-Fionaa",
  "commander":"Fionaa","plan":"zul_gurub","map":309,
  "started":"2026-11-02T16:19:39Z","startedUnixMs":0,"ended":null,"endReason":"",
- "schema":"89abf76bb51823a4",
+ "status":"running","schema":"89abf76bb51823a4",
  "segments":[{"file":"seg-0001.jsonl","firstSeq":1,"lastSeq":1800,"records":1800,"bytes":33554000,"deleted":false}],
  "dropped":0}
 ```
 
-The open segment's `lastSeq`, `records` and `bytes` are what was known at the last index write.
+`status` is `running` while the capture runs, `incomplete` from the moment it ends until every segment writer has flushed, then `complete`; a writer that failed makes it `failed` and the failure is logged once. The final rewrite carries the bytes and records that actually reached the disk, and `dropped` counts the records lost on the way. A shutdown that does not wait for a busy writer leaves `incomplete` (or `failed`), never a false `complete`. The open segment's `lastSeq`, `records` and `bytes` are what was known at the last index write.
 
 ## Records
 
