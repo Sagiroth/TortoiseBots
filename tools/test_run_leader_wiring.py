@@ -862,6 +862,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("BossEncounter boss;", read)
         self.assertIn("boss = BossEncounterOf(&step);", read)
         self.assertIn("boss.guid = own->GetObjectGuid().GetRawValue();", read)
+        self.assertIn("boss.dbGuid = own->GetGUIDLow();", read)
         self.assertIn("boss.formation = RunFormationOf(own);", read)
         self.assertIn("ReadStandClearance(lead, bots, pack, members, f, boss, &otherMobs);", read)
         # The other-storey rule: a stand candidate's sight line to a refused unit, on the map.
@@ -897,7 +898,14 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn('#include "TemporarySummon.h"', COMMANDS)
         self.assertIn("other.guid = scan.guid;", clearance)
         self.assertIn("(*otherMobs)[other.guid] = c;", clearance)
-        self.assertIn("info->masterId == boss.entry", COMMANDS)
+        linked = body(COMMANDS, "bool RunLinkedToBoss(Creature* creature, "
+                                "TortoiseBots::DungeonRun::BossEncounter const& boss)\n{", "\n}\n")
+        # The two kinds of link: creature_linking_template names the boss entry, creature_linking names his spawn's
+        # DB guid (masterDBGuid marks it), which the read hands the policy as one record.
+        self.assertIn("TortoiseBots::DungeonRun::BossLink link;", linked)
+        self.assertIn("link.masterId = info->masterId;", linked)
+        self.assertIn("link.masterDBGuid = info->masterDBGuid;", linked)
+        self.assertIn("return TortoiseBots::DungeonRun::BossLinkNamesBoss(boss, link);", linked)
         self.assertIn("HostileCreaturesAround(lead, kStandClearScanYd, found);", clearance)
         self.assertIn("inPack.push_back(InPullPack(pack, c->GetObjectGuid().GetRawValue(), formations.back()));",
                       clearance)
@@ -959,6 +967,10 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("inline bool BossEncounterUnit(const BossEncounter& boss, const BossEncounterScan& unit)", policy)
         self.assertIn("return (boss.guid != 0 && unit.guid == boss.guid) || unit.summoned || unit.linked ||", policy)
         self.assertIn("(boss.formation != 0 && unit.formation == boss.formation) || unit.inCombat;", policy)
+        self.assertIn("inline bool BossLinkNamesBoss(const BossEncounter& boss, const BossLink& link)", policy)
+        self.assertIn("if (link.masterDBGuid != 0)", policy)
+        self.assertIn("return boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid;", policy)
+        self.assertIn("return boss.entry != 0 && link.masterId == boss.entry;", policy)
         self.assertIn("inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, "
                       "std::uint64_t targetFormation)", policy)
         self.assertIn("inline bool InPullPack(const PullPack& pack, std::uint64_t guid, "

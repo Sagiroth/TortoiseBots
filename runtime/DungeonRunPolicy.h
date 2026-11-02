@@ -884,8 +884,9 @@ inline bool InPullPack(const PullPack& pack, std::uint64_t guid, std::uint64_t f
 // walking his formation, or one already in the fight.
 struct BossEncounter
 {
-    std::uint32_t entry = 0;     // the step's boss (0: not a boss step), creature_linking's master entry
+    std::uint32_t entry = 0;     // the step's boss (0: not a boss step), creature_linking_template's master entry
     std::uint64_t guid = 0;      // the boss's own spawn (0: not read, a script summons him)
+    std::uint32_t dbGuid = 0;    // ... that spawn's DB row, creature_linking's master_guid (0: not read)
     std::uint64_t formation = 0; // the formation the boss walks in (0: not read)
 };
 
@@ -910,6 +911,24 @@ struct BossEncounterScan
     bool linked = false;
     bool inCombat = false;
 };
+
+// One creature's creature_linking row as the core keeps it: an entry link's masterId is the master's creature entry,
+// a GUID link's is the master spawn's DB guid, which the core also puts in masterDBGuid (nonzero only for a GUID
+// link). Reading a GUID link's masterId as an entry never matches a boss.
+struct BossLink
+{
+    std::uint32_t masterId = 0;
+    std::uint32_t masterDBGuid = 0;
+};
+
+// Whether the link names the boss: a GUID link is read against the boss's own spawn row, an entry link against the
+// step's boss entry.
+inline bool BossLinkNamesBoss(const BossEncounter& boss, const BossLink& link)
+{
+    if (link.masterDBGuid != 0)
+        return boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid;
+    return boss.entry != 0 && link.masterId == boss.entry;
+}
 
 // Whether the scanned creature is one of the boss encounter, on spawn-level evidence only (the glue reads the
 // summoner and the linking row): the boss's own spawn, a creature the boss summoned, one the core links to the boss,

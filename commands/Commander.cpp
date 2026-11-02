@@ -8972,6 +8972,7 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
                 if (Creature* own = OwnBossSpawnCreature(lead, step))
                 {
                     boss.guid = own->GetObjectGuid().GetRawValue();
+                    boss.dbGuid = own->GetGUIDLow();
                     boss.formation = RunFormationOf(own);
                 }
         }
@@ -9139,14 +9140,18 @@ bool RunAssistsCreature(Creature* helper, Creature* caller)
     return caller->IsWithinLOSInMap(helper);
 }
 
-// Whether the core links the creature to the boss of the step (creature_linking, its master the boss's entry): such a
-// creature is of the boss fight, not another pack a boss step's stand keeps clear of.
+// Whether the core links the creature to the boss of the step: a creature_linking_template row names the boss's entry,
+// a creature_linking row the boss spawn (its masterId is that spawn's DB guid, not an entry). Such a creature is of
+// the boss fight, not another pack a boss step's stand keeps clear of.
 bool RunLinkedToBoss(Creature* creature, TortoiseBots::DungeonRun::BossEncounter const& boss)
 {
-    if (!boss.entry)
-        return false;
     CreatureLinkingInfo const* const info = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature);
-    return info && info->masterId == boss.entry;
+    if (!info)
+        return false;
+    TortoiseBots::DungeonRun::BossLink link;
+    link.masterId = info->masterId;
+    link.masterDBGuid = info->masterDBGuid;
+    return TortoiseBots::DungeonRun::BossLinkNamesBoss(boss, link);
 }
 
 // Whether the boss summoned the creature: a temporary summon of his, or one he owns (a charmed add, a pet). The
