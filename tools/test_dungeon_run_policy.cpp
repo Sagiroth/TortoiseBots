@@ -15207,6 +15207,156 @@ static void TestJoinerRestSlotsAreSpentByRealRestsOnly()
     CHECK(notes[4] != notes[5]);
 }
 
+// A pull row's `item` is its own bodies ceiling (the plan's max_bodies); with
+// AiPlayerbot.DungeonRunAggroWalkRing on, the ring estimate's bodies are compared with it.
+static PlanStep BodiesPullStep(float x, std::vector<std::uint32_t> entries, std::uint32_t bodies)
+{
+    PlanStep s = PullStep(x, entries);
+    s.item = bodies;
+    ai::NormalizePlanStep(s);
+    return s;
+}
+
+static UnitFact Estimated(std::uint64_t guid, std::uint32_t entry, float dist, std::uint32_t bodies,
+    std::vector<std::uint64_t> guids = {})
+{
+    UnitFact u = Unit(guid, entry, dist);
+    u.estBodies = bodies;
+    u.estGuids = guids;
+    return u;
+}
+
+static void TestPlanCeilingReplacesTheConfigCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 100;
+    // 27 bodies at a plan ceiling of 27: the row is sized on purpose, the pull
+    // goes out at once and nothing rests.
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.phase == Phase::AwaitPull && !r.joinerRest && r.joinerHeld.empty());
+    // One more body than the plan sized: a rest note with the plan ceiling, not the config one.
+    f.units = {Estimated(31, 4852, 54.7f, 28, {31, 32, 33})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 28 bodies over the ceiling 27 (plan): 0x") == 0);
+    CHECK(over.joinerRest && over.joinerHeld.count(31));
+    CHECK(over.phase != Phase::AwaitPull && over.pulls == 0);
+}
+
+static void TestConfigCeilingInBodiesWhenNoPlanCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 0)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6; // bodies 7
+    f.minHealthPct = 85; // under the end lines: a rest would start
+    f.units = {Estimated(31, 4852, 54.7f, 7, {31})};
+    Run at = Start(&plan);
+    CHECK(Tick(at, f) == "pullback 31");
+    f.units = {Estimated(31, 4852, 54.7f, 8, {31, 32})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 8 bodies over the ceiling 7 (config): 0x") == 0);
+    CHECK(over.joinerRest);
+    // No ceiling at all: nothing is judged.
+    f.joinerCeiling = 0;
+    f.units = {Estimated(31, 4852, 54.7f, 99)};
+    Run off = Start(&plan);
+    f.minHealthPct = 100;
+    CHECK(Tick(off, f) == "pullback 31");
+}
+
+static void TestEstimateNoteListsAtMostEightGuids()
+{
+    std::vector<std::uint64_t> guids;
+    for (std::uint64_t g = 1; g <= 11; ++g)
+        guids.push_back(g);
+    std::string const note = EstimateNote(12, 7, false, guids, false);
+    CHECK(note.compare(0, 56, "pull estimate: 12 bodies over the ceiling 7 (config): 0x") == 0);
+    std::size_t count = 0;
+    for (std::size_t at = note.find("0x"); at != std::string::npos; at = note.find("0x", at + 2))
+        ++count;
+    CHECK(count == 8);
+    CHECK(note.find("(+3 more)") != std::string::npos);
+    // The sight budget is said, and a note without guids ends at the ceiling.
+    std::string const spent = EstimateNote(12, 7, true, guids, true);
+    CHECK(spent.find("(plan)") != std::string::npos);
+    CHECK(spent.find("(LOS budget spent)") != std::string::npos);
+    std::string const bare = EstimateNote(12, 7, true, {}, false);
+    CHECK(bare == "pull estimate: 12 bodies over the ceiling 7 (plan)");
+}
+
+static void TestAheadNoteOnceOnTheChainsMoveRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0),
+        BodiesPullStep(20, {4852}, 7)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.aheadStep = 2;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0");
+    f.leadX = 5.0f;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    // The walk note is prefixed once; the order is the one the key off sends.
+    std::string const order = Tick(r, f);
+    CHECK(order == "move 10.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 3 brings 14 (ceiling 7)") == 0);
+    CHECK(r.aheadNotedStep == 1);
+    std::string const again = Tick(r, f);
+    CHECK(again.empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+    // Key off: the same order, no note.
+    Facts off = f;
+    off.aggroWalkRing = false;
+    off.leadX = 0.0f;
+    Run plain = Start(&plan);
+    Tick(plain, off);
+    off.leadX = 5.0f;
+    Tick(plain, off);
+    CHECK(Tick(plain, off) == "move 10.0 0.0 0.0");
+    CHECK(plain.note == "walking");
+    // At or under the ceiling: the row is noted as done, the walk note is not prefixed.
+    Facts quiet = f;
+    quiet.aheadBodies = 7;
+    quiet.leadX = 0.0f;
+    Run q = Start(&plan);
+    Tick(q, quiet);
+    quiet.leadX = 5.0f;
+    Tick(q, quiet);
+    Tick(q, quiet);
+    CHECK(q.note == "walking" && q.aheadNotedStep == 1);
+}
+
+static void TestWalkRingKeyOffKeepsJoinerNotes()
+{
+    // AiPlayerbot.DungeonRunAggroWalkRing off: the old joiners and the config
+    // ceiling rule, whatever the ring estimate left on the unit.
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = false;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 85;
+    f.units = {Estimated(31, 4852, 54.7f, 99, {31})};
+    f.units[0].joiners = 7;
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "7 joiners expected" && r.joinerRest);
+}
+
 // Both keys on (AiPlayerbot.DungeonRunAggroEstimate and DungeonRunRezHold): a loud pull, a death in its
 // fight, then the regroup, then the next loud pick. The joiner rest is a pull-step thing (cleared by
 // ResetStep, kept by BeginRegroup, which a single death reaches without a ResetStep); the rez hold's clocks
@@ -29487,6 +29637,11 @@ int main()
     TestAggroEstimateHoldsOnceForARest();
     TestJoinerRestsAreBudgetedAndNotIdleTime();
     TestJoinerRestSlotsAreSpentByRealRestsOnly();
+    TestPlanCeilingReplacesTheConfigCeiling();
+    TestConfigCeilingInBodiesWhenNoPlanCeiling();
+    TestEstimateNoteListsAtMostEightGuids();
+    TestAheadNoteOnceOnTheChainsMoveRow();
+    TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
     TestRezHoldClocks();

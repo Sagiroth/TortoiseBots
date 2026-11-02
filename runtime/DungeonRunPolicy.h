@@ -56,6 +56,7 @@
 
 #include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
+#include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
 #include "RemoteCommanderTasks.h"
@@ -873,6 +874,11 @@ struct UnitFact
     bool joinersPatrol = false; // ... and a lone patrol alone puts that over the ceiling
     bool joinersRead = false;   // the count above is this step's (ReadPullJoiners judged the unit; a held
                                 // or off-index unit keeps its earlier read)
+    // The ring estimate (Facts::aggroWalkRing, ai::EstimateAggroRing): the bodies that come if this one is
+    // pulled, the target included, with their guids and whether its sight budget ran out.
+    std::uint32_t estBodies = 0;
+    std::vector<std::uint64_t> estGuids;
+    bool estLosBudget = false;
     // Pull step and hop units, when Facts::pullStand is set: the lead bot sees
     // it now (Unit::IsWithinLOSInMap).
     bool losLead = false;
@@ -1558,6 +1564,16 @@ struct Facts
     // (AiPlayerbot.DungeonRunAggroCeiling) while the estimate is on, 0 = off.
     // Off, the units carry no estimate and no pull ever waits for it.
     std::uint32_t joinerCeiling = 0;
+    // AiPlayerbot.DungeonRunAggroWalkRing: the ring estimate (ai::EstimateAggroRing) judges the units by
+    // their bodies against the row's own ceiling (a pull row's `item`, else joinerCeiling + 1), and the
+    // look-ahead estimate below is read. Off: every joiner note stays as it was.
+    bool aggroWalkRing = false;
+    // The look-ahead (ReadPullAhead), read on the last move row before a pull: the bodies that pull would
+    // bring, its ceiling, the pull row and the guids. aheadStep npos: not read.
+    std::uint32_t aheadBodies = 0;
+    std::uint32_t aheadCeiling = 0;
+    std::size_t aheadStep = static_cast<std::size_t>(-1);
+    std::vector<std::uint64_t> aheadGuids;
     // AiPlayerbot.DungeonRunPullStand (HoldForShot): the key is on. Off (the
     // default) nothing below is read and the pull goes out as before, byte for byte.
     bool pullStand = false;
@@ -2139,7 +2155,10 @@ struct Run
     bool joinerRest = false;                  // the rest check is due before the pull
     bool restForJoiners = false;              // the rest phase is the joiner rest: its time is not step idle time
     std::uint32_t joinerRests = 0;            // joiner rests used this step (kMaxJoinerRests)
-    std::string joinerNote;                   // "N joiners expected ..."
+    std::string joinerNote;                   // "N joiners expected ..." or the ring estimate's note
+    // The move row whose walk note already carries the look-ahead estimate (Facts::aheadStep), so the
+    // prefix goes out once a row (npos: none).
+    std::size_t aheadNotedStep = static_cast<std::size_t>(-1);
     // The pull stand (Facts::pullStand, HoldForShot): the unit the glue reads a
     // firing stand for on the next tick (0: none), the stands walked to per
     // unit this step, the stand walk under way (its unit and point), the time
@@ -2564,6 +2583,17 @@ struct Run
     std::uint32_t runBacks = 0;  // run backs this run (the report)
 };
 
+// The look-ahead estimate's one answer for a row (ReadPullAhead): the row it was computed on, the bodies, the
+// ceiling and their guids. Kept on the slot, so later ticks refill Facts from it instead of reading again.
+struct AheadEstimate
+{
+    std::size_t step = static_cast<std::size_t>(-1);
+    bool done = false;
+    std::uint32_t bodies = 0;
+    std::uint32_t ceiling = 0;
+    std::vector<std::uint64_t> guids;
+};
+
 inline const PlanStep* Current(const Run& r)
 {
     return r.plan && r.step < r.plan->steps.size() ? &r.plan->steps[r.step] : nullptr;
@@ -2646,6 +2676,33 @@ inline std::string GuidArg(std::uint64_t guid)
 inline std::string EntryArg(std::uint32_t entry, float x, float y, float z)
 {
     return "entry:" + std::to_string(entry) + "@" + Num(x) + "," + Num(y) + "," + Num(z);
+}
+
+// The bodies ceiling of a row (the ring estimate): a pull row's own `item`
+// (the plan's max_bodies), else the config ceiling in joiners + 1. 0: none.
+inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)
+{
+    return ai::PullCeilingBodies(s.kind == PlanStepKind::Pull ? s.item : 0, f.joinerCeiling);
+}
+
+// A pull estimate note with at most eight guids: "pull estimate: N bodies over
+// the ceiling M (plan|config): 0x..., 0x... (+K more)"; the sight budget is said.
+inline std::string EstimateNote(std::uint32_t bodies, std::uint32_t ceiling, bool plan,
+    const std::vector<std::uint64_t>& guids, bool budget)
+{
+    std::string note = "pull estimate: " + std::to_string(bodies) + " bodies over the ceiling " +
+        std::to_string(ceiling) + (plan ? " (plan)" : " (config)");
+    std::size_t const shown = std::min<std::size_t>(guids.size(), 8);
+    std::string list;
+    for (std::size_t i = 0; i < shown; ++i)
+        list += (i ? ", " : "") + GuidArg(guids[i]);
+    if (!list.empty())
+        note += ": " + list;
+    if (guids.size() > shown)
+        note += " (+" + std::to_string(guids.size() - shown) + " more)";
+    if (budget)
+        note += " (LOS budget spent)";
+    return note;
 }
 
 inline void EnterPhase(Run& r, Phase p)
@@ -8962,7 +9019,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // judged; a unit held or out of the index keeps its earlier read, and its
     // count is not claimed). The joiners the pull really drew are read from the
     // fight and reported by JoinerReport, estimated or not.
-    if (f.joinerCeiling > 0 && u.joinersRead)
+    if (f.aggroWalkRing && u.joinersRead)
+        r.note += "; " + std::to_string(u.estBodies) + " bodies expected";
+    else if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
 }
 
@@ -11853,7 +11912,29 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         // kMaxJoinerRests such waits a step (counted when a rest really starts);
         // after that the pull goes out.
         std::string budgetNote;
-        if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
+        if (f.aggroWalkRing)
+        {
+            // The ring estimate: bodies against the row's own ceiling (a pull
+            // row's `item` first, deliberately sized pulls never rest).
+            std::uint32_t const ceiling = RowCeilingBodies(s, f);
+            if (ceiling && pick->estBodies > ceiling && !r.joinerHeld.count(pick->guid))
+            {
+                std::string const note = EstimateNote(pick->estBodies, ceiling,
+                    s.kind == PlanStepKind::Pull && s.item != 0, pick->estGuids, pick->estLosBudget);
+                if (r.joinerRests >= kMaxJoinerRests)
+                    budgetNote = note + ", rest budget used";
+                else
+                {
+                    r.joinerHeld.insert(pick->guid);
+                    r.joinerRest = true;
+                    r.standPullShotGuid = 0; // the pull never went out (the joiner rest holds this tick)
+                    r.joinerNote = note;
+                    r.note = r.joinerNote;
+                    return;
+                }
+            }
+        }
+        else if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
         {
             if (r.joinerRests >= kMaxJoinerRests)
                 budgetNote = std::to_string(pick->joiners) + " joiners expected, rest budget used";
@@ -12221,6 +12302,26 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         }
     }
     r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;
+    // The look-ahead estimate (Facts::aheadBodies): the last move row before the pull says once what the walk
+    // and the pull bring, over the pull's ceiling. Advice only: no order changes.
+    if (f.aggroWalkRing && f.aheadStep == r.step + 1 && r.aheadNotedStep != r.step)
+    {
+        r.aheadNotedStep = r.step;
+        if (f.aheadCeiling && f.aheadBodies > f.aheadCeiling)
+        {
+            std::string ahead = "ahead: pull " + std::to_string(f.aheadStep + 1) + " brings " +
+                std::to_string(f.aheadBodies) + " (ceiling " + std::to_string(f.aheadCeiling) + ")";
+            std::string list;
+            std::size_t const shown = std::min<std::size_t>(f.aheadGuids.size(), 8);
+            for (std::size_t i = 0; i < shown; ++i)
+                list += (i ? ", " : "") + GuidArg(f.aheadGuids[i]);
+            if (!list.empty())
+                ahead += ": " + list;
+            if (f.aheadGuids.size() > shown)
+                ahead += " (+" + std::to_string(f.aheadGuids.size() - shown) + " more)";
+            r.note = ahead + "; " + r.note;
+        }
+    }
     if (WalkTo(r, f, s.x, s.y, s.z, s.kind == PlanStepKind::MoveDirect, dt, order))
     {
         NoteReached(r, f, r.step);
