@@ -9733,7 +9733,7 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     // The linked slaves a pulled master wakes (FLAG_AGGRO_ON_AGGRO) that the pull's read does not list: the core
     // wakes every one of them within the row's range, so they come with the pull and are pack, not joiners. Their
     // own "aggro together" groups come with them.
-    auto addLinkedSlaves = [&addGroup](UnitFact& u, Creature* master)
+    auto addLinkedSlaves = [&addGroup, &slaveOf](UnitFact& u, Creature* master)
     {
         std::list<Creature*> nearby;
         MaNGOS::AllCreaturesInRange check(master, kPullPackMasterYd);
