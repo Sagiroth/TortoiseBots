@@ -102,16 +102,16 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertLess(tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"),
                         tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"))
         self.assertLess(tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"),
-                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops);"))
-        self.assertLess(tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops);"),
+                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"))
+        self.assertLess(tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"),
                         tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("if (!bot->IsAlive() || !bot->IsInWorld() ||", drop)
         self.assertIn("ReadMemberEngaged(lead, judge, bot, now);", drop)
         self.assertIn("now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;",
                       drop)
-        self.assertIn("if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && "
-                      "!TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&\n            !wedged)\n            continue;", drop)
+        self.assertIn("else if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) &&\n"
+                      "            !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
         self.assertLess(drop.index("ReadMemberEngaged(lead, judge, bot, now);"), drop.index("now.yd = "))
         self.assertIn("sServerFacade.GetHostileRefManager(pet).deleteReferences();\n            pet->CombatStop();", drop)
         self.assertIn("sServerFacade.GetHostileRefManager(bot).deleteReferences();\n        bot->CombatStop();", drop)
@@ -139,21 +139,45 @@ class UnattackableFightWiringTest(unittest.TestCase):
         policy = (ROOT / "runtime" / "DungeonRunPolicy.h").read_text()
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("ReadMemberParticipation(bot, now);", drop)
-        self.assertIn("bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
-                      "            TortoiseBots::DungeonRun::MemberParticipates(now));", drop)
-        # The participation clock is actual progress only: the bot's own cast and swing state, never its selected
-        # target or its place on a threat list (a wedged bot keeps a target it cannot reach).
+        self.assertIn("wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
+                      "                TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);", drop)
+        # The wedged re-check runs only for the bots the run named wedged (Run::combatDropWedged), and it needs the
+        # same reach facts the run's own test read (LOS, a complete path and its length, at most once every 5 s).
+        self.assertIn("bool const namedWedged = wedgedNames.count(bot->GetName()) != 0;", drop)
+        self.assertIn("ReadMemberReach(lead, bot, now);", drop)
+        self.assertIn("TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);",
+                      drop)
+        self.assertIn("if (!wedged)\n                continue;", drop)
+        # A bot named for an unattackable or far unit is judged by those only: its drop is not decided by looking
+        # wedged on the re-read.
+        self.assertIn("else if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) &&\n"
+                      "            !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
+        # The participation clock is actual progress only: the bot's own cast, auto-repeat and swing state, never
+        # its selected target or its place on a threat list (a wedged bot keeps a target it cannot reach). It is
+        # pruned by last-seen time, never by last progress (a bot that has not progressed yet keeps its clock).
         part = body(CODE, "void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)")
+        self.assertIn("clock.seenMs = now;", part)
+        self.assertIn("if (ParticipationClocks().size() > TortoiseBots::DungeonRun::kParticipationClocksMax)\n"
+                      "        TortoiseBots::DungeonRun::PruneParticipationClocks(ParticipationClocks(), now);", part)
         self.assertIn("if (MemberProgressed(bot, clock))\n        clock.actMs = now;", part)
         self.assertIn("member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;", part)
         self.assertNotIn("member.engaged", part)
         progress = body(CODE, "bool MemberProgressed(Player* bot, MemberParticipation& clock)")
         self.assertIn("bool const inFight = bot->IsInCombat();", progress)
-        self.assertIn("inFight ? CurrentSpellId(bot) : 0", progress)
+        self.assertIn("inFight ? ProgressSpellId(bot) : 0", progress)
+        self.assertIn("inFight ? AutoRepeatSpellId(bot) : 0", progress)
+        self.assertIn("TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, autoRepeat, clock.observed,\n"
+                      "        clock.spellId, baseSwing, rangedSwing);", progress)
         self.assertIn("bot->GetAttackTimer(BASE_ATTACK)", progress)
         self.assertIn("bot->GetAttackTimer(RANGED_ATTACK)", progress)
         self.assertNotIn("GetTargetGuid", progress)
         self.assertNotIn("member.engaged", progress)
+        # The cast the clock reads is not a self-cast, and the auto-repeat slot (Auto Shot, a wand) is read too.
+        spell = body(CODE, "uint32 ProgressSpellId(Unit* unit)")
+        self.assertIn("spell->m_targets.getUnitTargetGuid() == unit->GetObjectGuid()", spell)
+        self.assertIn("TortoiseBots::DungeonRun::ProgressSpell(spell->m_spellInfo->Id, targetSelf);", spell)
+        auto_repeat = body(CODE, "uint32 AutoRepeatSpellId(Unit* unit)")
+        self.assertIn("unit->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)", auto_repeat)
         participates = body(policy, "inline bool MemberParticipates(const MemberFact& m)\n{")
         self.assertIn("return m.actedMs < kParticipateMs;", participates)
         self.assertNotIn("targetGuid", participates)
