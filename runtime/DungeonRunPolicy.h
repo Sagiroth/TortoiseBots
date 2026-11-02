@@ -445,6 +445,16 @@ constexpr float kRaidBossGuardYd = 100.0f;
 // ... and a mob that had kGuardOrdersPerUnit of its orders gets the next ones this long after its last order: a whelp
 // an off-tank lost again is never left on the healers for the rest of the fight.
 constexpr std::uint32_t kRaidGuardRearmMs = 20000;
+// A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, RaidHealerGuard): with the main tank holding
+// the boss an add on a healer goes to that many ranged dps of the raid at most, nearest first, one order a tick; the
+// off-tanks take such an add only when none is free for it.
+constexpr std::uint32_t kRaidHealerGuardDps = 2;
+// ... a ranged dps is picked by its distance to the add (3D), and only from this close to it: a ranged bot farther off
+// is no help with the add (its order is refused beyond sight range, and the add goes on killing the healer).
+constexpr float kRaidHealerGuardRangeYd = 35.0f;
+// ... and an accepted order that the bot does not take up (its current target is not the add) is over this long, its
+// slot free again: a bot walked off, held or turned away never covers the add for the rest of the fight.
+constexpr std::uint32_t kRaidHealerGuardExpireMs = 6000;
 // The kill_first focus (PickKillFirst) sends every bot, the tank too, at its
 // unit. Zul'Farrak r5-19z23 step 27: the camp's witch doctors aggroed on the
 // tank from 20 yd (wipe 1: the focus took it into the camp, next to the north
@@ -555,7 +565,8 @@ struct UnitFact
     // changes entry mid-fight (Thekal 14599 -> 14509) is still the boss.
     std::uint32_t formOf = 0;
     float distLead = 0.0f;
-    float x = 0.0f, y = 0.0f; // hold units and patrollers: where it stands (HoldStands: the side the event comes from)
+    float x = 0.0f, y = 0.0f; // hold units and patrollers: where it stands (HoldStands: the side the event comes from);
+                              // a raid boss fight's attackers: where the add stands (RaidHealerGuard's nearest dps)
     float z = 0.0f;           // ... patrollers (OwnedByLaterStep); step units: the unit's real height (the passed-boss pause)
     bool hostile = true;     // not friendly to the party (hostile or neutral): it may be pulled
     bool stealthed = false;
@@ -731,6 +742,12 @@ struct MemberFact
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
     bool ranged = false;    // a ranged bot or a healer: it stands behind the tank in a hold (HoldStands)
+    // A ranged damage bot (no tank, no healer): a raid boss fight's healer guard sends it at an add on a healer
+    // (RaidHealerGuard). Read with the raid's roles.
+    bool rangedDps = false;
+    // The unit the bot has targeted now (the glue's read of its selection): a healer guard assignment whose bot
+    // does not target its add is over (RaidHealerGuard).
+    std::uint64_t targetGuid = 0;
     bool core = false;      // a tank or a healer (the raid's gather waits for every one of them)
     // With Facts::directJoinRead: the glue's own direct-step test for this bot (the one `cmd move ... direct`
     // refuses too-far on: a complete navmesh path of at most kDirectMaxGatherPath yd onto the lead bot's spot,
@@ -819,6 +836,10 @@ struct RaidFacts
     // AiPlayerbot.DungeonRunRaidBossRules (default off): a raid's boss fight gets kRaidBossFightCapMs, a death in it
     // does not pause it while it still loses hp (FightProgressTick), and its guard is RaidGuardTick.
     bool bossRules = false;
+    // AiPlayerbot.DungeonRunRaidHealerGuard (default off, boss rules only): with the main tank holding the boss an add
+    // on a healer goes to the nearest ranged dps first, and the off-tanks take such an add only when none is free
+    // (RaidHealerGuard, RaidGuardTick).
+    bool healerGuard = false;
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
@@ -2027,6 +2048,27 @@ struct Run
         std::uint32_t at = 0;
     };
     std::unordered_map<std::uint64_t, RaidGuardMark> raidGuardUnits;
+    // A raid boss fight's healer guard (RaidHealerGuard): a ranged dps sent at an add on a healer, or a bot whose
+    // order for it was refused, and when (`atMs`, on healerGuardClockMs).
+    struct HealerGuardMark
+    {
+        std::string name;
+        std::uint64_t atMs = 0;
+    };
+    // The ranged dps each add on a healer was sent to this fight (kRaidHealerGuardDps at most, nearest first), and the
+    // bots whose order for that add was refused or whose assignment expired with the add not targeted (left out of its
+    // pick for kRaidHealerGuardExpireMs). An entry is dropped once its add leaves the fight, its bot dies, or it
+    // expires without the bot targeting the add.
+    std::unordered_map<std::uint64_t, std::vector<HealerGuardMark>> healerGuardDps;
+    std::unordered_map<std::uint64_t, std::vector<HealerGuardMark>> healerGuardTried;
+    // The clock the guard's times are read against (RaidHealerGuard's dt), its orders this fight (kGuardRepeatMs
+    // apart), and the order out this tick, until the glue reports the result (HealerGuardOrderTaken): never an
+    // assignment before that.
+    std::uint64_t healerGuardClockMs = 0;
+    std::uint32_t healerGuardOrders = 0;
+    std::uint64_t healerGuardOrderGuid = 0;
+    std::string healerGuardOrderBot;
+    std::string healerGuardOrder;
     // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
     // has waited for it (the wait belongs to one mob: raidAssistGuid), and the units it was sent at this fight.
     std::uint32_t raidAssistMs = 0;
@@ -2540,6 +2582,13 @@ inline void ResetStep(Run& r)
     r.offTankTurn = 0;
     r.raidBossFight = false;
     r.raidGuardUnits.clear();
+    r.healerGuardDps.clear();
+    r.healerGuardTried.clear();
+    r.healerGuardClockMs = 0;
+    r.healerGuardOrders = 0;
+    r.healerGuardOrderGuid = 0;
+    r.healerGuardOrderBot.clear();
+    r.healerGuardOrder.clear();
     r.raidAssistMs = 0;
     r.raidAssistGuid = 0;
     r.raidAssisted.clear();
@@ -13046,6 +13095,230 @@ inline bool LeadHoldsPlanBoss(const Run& r, const Facts& f)
     return false;
 }
 
+// Whether `name` is in a guard mark list (sent at the add, or tried and found unusable).
+inline bool HealerGuardMarked(const std::vector<Run::HealerGuardMark>& marks, const std::string& name)
+{
+    return std::any_of(marks.begin(), marks.end(),
+        [&name](const Run::HealerGuardMark& mark) { return mark.name == name; });
+}
+
+// The bots a living add of this fight already has (Run::healerGuardDps).
+inline std::unordered_set<std::string> HealerGuardTaken(const Run& r)
+{
+    std::unordered_set<std::string> taken;
+    for (auto const& sent : r.healerGuardDps)
+        for (Run::HealerGuardMark const& mark : sent.second)
+            taken.insert(mark.name);
+    return taken;
+}
+
+// `m` can be sent at the add `u`: a ranged dps on the plan's map and no other add's, never one whose order for
+// `u` was refused or expired (Run::healerGuardTried), and within kRaidHealerGuardRangeYd of `u`.
+inline bool HealerGuardDpsFits(const Run& r, const MemberFact& m, const UnitFact& u,
+    const std::unordered_set<std::string>& taken)
+{
+    if (!m.rangedDps || m.offPlanMap || m.otherCopy || taken.count(m.name))
+        return false;
+    auto const tried = r.healerGuardTried.find(u.guid);
+    if (tried != r.healerGuardTried.end() && HealerGuardMarked(tried->second, m.name))
+        return false;
+    return ai::PlanDistance(m.x, m.y, m.z, u.x, u.y, u.z) <= kRaidHealerGuardRangeYd;
+}
+
+// The add `u` has a free ranged dps in reach: the off-tank path leaves such an add to the healer guard, also while
+// the guard's order spacing holds it back a tick (RaidGuardTick's "no ranged dps is free for it").
+inline bool HealerGuardHasFreeDps(const Run& r, const Facts& f, const UnitFact& u,
+    const std::unordered_set<std::string>& taken)
+{
+    for (const MemberFact& m : f.members)
+        if (HealerGuardDpsFits(r, m, u, taken))
+            return true;
+    return false;
+}
+
+// An assignment the bot never took up is left out of its add's pick like a refused order (tried): the expiry
+// frees the slot for the next ranged dps, not for the bot that already sat on it.
+inline void PruneHealerGuardMarks(std::vector<Run::HealerGuardMark>& marks,
+    std::vector<Run::HealerGuardMark>* tried, const Facts& f, std::uint64_t addGuid, std::uint64_t nowMs,
+    bool assignment)
+{
+    std::size_t keep = 0;
+    for (Run::HealerGuardMark const& mark : marks)
+    {
+        const MemberFact* bot = nullptr;
+        for (const MemberFact& m : f.members)
+            if (m.name == mark.name)
+            {
+                bot = &m;
+                break;
+            }
+        if (!bot || bot->offPlanMap || bot->otherCopy)
+            continue;
+        bool const onAdd = assignment && bot->targetGuid == addGuid;
+        if (!onAdd && nowMs - mark.atMs >= kRaidHealerGuardExpireMs)
+        {
+            if (assignment && tried && !HealerGuardMarked(*tried, mark.name))
+                tried->push_back(Run::HealerGuardMark{ mark.name, nowMs });
+            continue;
+        }
+        marks[keep] = mark;
+        if (onAdd)
+            marks[keep].atMs = nowMs; // its bot has the add: the wait starts over
+        ++keep;
+    }
+    marks.resize(keep);
+}
+
+// A unit the raid boss fight's guard already had kGuardOrdersPerUnit orders at and whose re-arm
+// (kRaidGuardRearmMs) has not run out: passed over by both its pick-ups (RaidGuardTick, RaidHealerGuard).
+inline bool RaidGuardUnitCapped(const Run& r, const UnitFact& u)
+{
+    auto const had = r.raidGuardUnits.find(u.guid);
+    return had != r.raidGuardUnits.end() && had->second.orders >= kGuardOrdersPerUnit &&
+        r.fightMs - had->second.at < kRaidGuardRearmMs;
+}
+
+// One order for a unit this fight, by either pick-up: its count, re-armed once it had kGuardOrdersPerUnit
+// (each re-arm gives it kGuardOrdersPerUnit more), and the fight time of the last one.
+inline void NoteRaidGuardOrder(Run& r, std::uint64_t guid)
+{
+    ++r.guardUnitOrders[guid];
+    Run::RaidGuardMark& mark = r.raidGuardUnits[guid];
+    if (mark.orders >= kGuardOrdersPerUnit)
+        mark.orders = 0; // re-armed (kRaidGuardRearmMs)
+    ++mark.orders;
+    mark.at = r.fightMs;
+}
+
+// A unit under one of the run's own holds, which neither guard sends a bot at: the run's crowd control on it
+// (Run::ccHolds) or the fight's kill_first focus (Run::focusGuid). The batch's hold_kill and one_at_a_time
+// holds are the same rule for the DPS pick (batch/zg-raid-fixes-2,
+// ai/playerbot/strategy/values/DpsTargetValue.cpp: HeldDpsTarget, not on this base): its rows hold a unit off
+// the DPS the way these holds do, so the guard reads the holds the run itself keeps.
+inline bool GuardHeldByRun(const Run& r, std::uint64_t guid)
+{
+    return r.ccHolds.count(guid) != 0 || r.focusGuid == guid;
+}
+
+// A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank holding the boss): an add
+// that hits a healer is the ranged dps' job, not the off-tank's. The nearest free ranged dps within
+// kRaidHealerGuardRangeYd of the add is sent at it, kRaidHealerGuardDps at most per add (at most one order a tick,
+// nearest first), and its dps assist puts it back on the boss once the add dies: the run orders no return. A bot is
+// free when no living add of this fight has it yet. A bot is recorded as sent only once the glue reports its order
+// taken (HealerGuardOrderTaken), so a refused order covers no slot; the refused bot is left out of that add's pick for
+// kRaidHealerGuardExpireMs, and the next tick tries the next one. An assignment is over when its add leaves the fight,
+// its bot dies, or kRaidHealerGuardExpireMs pass with the bot's current target not the add, and its slot is free again
+// (another ranged dps, or the off-tanks); a bot whose assignment expired without it targeting the add is left out of
+// that add's pick like a refused one. Orders space by kGuardRepeatMs, and the add's pick passes over what the off-tank
+// path does (RaidGuardTick): a plan boss, an add under a run cc order or hold, a camp caster the tank would walk to,
+// and a unit that had kGuardOrdersPerUnit orders this fight (kRaidGuardRearmMs). Never an evading, polymorphed or
+// unattackable add, and only while the main tank holds the boss (LeadHoldsPlanBoss): with it dead or off the boss the
+// dungeon rules above still stand. With the gate off a pending order is dropped: the glue answers on the tick it went
+// out. True when `order` holds it.
+inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    if (!f.raid.healerGuard || !f.leadAlive || !f.leadIsTank || !LeadHoldsPlanBoss(r, f))
+    {
+        r.healerGuardOrder.clear();
+        r.healerGuardOrderGuid = 0;
+        r.healerGuardOrderBot.clear();
+        return false;
+    }
+    r.healerGuardClockMs += dt;
+    // An order the glue never answered (it answers on the tick it went out) records nothing.
+    r.healerGuardOrder.clear();
+    r.healerGuardOrderGuid = 0;
+    r.healerGuardOrderBot.clear();
+    auto const prune = [&r, &f](std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>& marks,
+                             std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>* triedMap,
+                             bool assignment)
+    {
+        for (auto it = marks.begin(); it != marks.end();)
+        {
+            bool const addIn = std::any_of(f.partyAttackers.begin(), f.partyAttackers.end(),
+                [&it](const UnitFact& u) { return u.guid == it->first; });
+            std::vector<Run::HealerGuardMark>* tried = triedMap ? &(*triedMap)[it->first] : nullptr;
+            if (addIn)
+                PruneHealerGuardMarks(it->second, tried, f, it->first, r.healerGuardClockMs, assignment);
+            if (!addIn || it->second.empty())
+                it = marks.erase(it);
+            else
+                ++it;
+        }
+    };
+    // The assignments still in the fight, and the refused tries (an expired assignment joins them).
+    prune(r.healerGuardDps, &r.healerGuardTried, true);
+    prune(r.healerGuardTried, nullptr, false);
+    std::unordered_set<std::string> const taken = HealerGuardTaken(r);
+    // The nearest healer add still short of kRaidHealerGuardDps, with its nearest free ranged dps in reach of it.
+    const UnitFact* pick = nullptr;
+    const MemberFact* dps = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
+            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || GuardLeavesCampAlone(u) ||
+            CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
+            continue;
+        auto const had = r.healerGuardDps.find(u.guid);
+        if (had != r.healerGuardDps.end() && had->second.size() >= kRaidHealerGuardDps)
+            continue;
+        const MemberFact* best = nullptr;
+        float bestYd = 0.0f;
+        for (const MemberFact& m : f.members)
+        {
+            if (!HealerGuardDpsFits(r, m, u, taken))
+                continue;
+            float const yd = ai::PlanDistance(m.x, m.y, m.z, u.x, u.y, u.z);
+            if (best && yd >= bestYd)
+                continue;
+            best = &m;
+            bestYd = yd;
+        }
+        if (best && (!pick || u.distLead < pick->distLead))
+        {
+            pick = &u;
+            dps = best;
+        }
+    }
+    if (!pick || !dps)
+        return false;
+    // No further order before kGuardRepeatMs after the last one, the off-tank path's spacing: an order a tick would
+    // starve the fight's kill_first focus and the party guard's own orders. The off-tank path sees the free dps and
+    // leaves the add to the guard meanwhile.
+    if ((r.fightOrders > 0 || r.healerGuardOrders > 0) && r.guardSinceOrderMs < kGuardRepeatMs)
+        return false;
+    // The assignment waits for the glue's answer (HealerGuardOrderTaken): a refused order is no assignment, and no
+    // order for the unit's cap either.
+    r.healerGuardOrderGuid = pick->guid;
+    r.healerGuardOrderBot = dps->name;
+    r.healerGuardOrder = "attack " + std::to_string(pick->guid) + " " + dps->name;
+    r.note = "fighting: " + dps->name + " takes " + std::to_string(pick->entry) + " off the healer (" +
+        Num(pick->distLead) + " yd)";
+    ++r.healerGuardOrders;
+    r.guardSinceOrderMs = 0;
+    order = r.healerGuardOrder;
+    return true;
+}
+
+// The glue's answer on a healer guard order (RaidHealerGuard): taken, its bot is recorded as sent at the add, and the
+// order counts for the add's cap (NoteRaidGuardOrder); refused, it leaves the cap alone and is left out of that add's
+// pick for kRaidHealerGuardExpireMs, so the next tick tries the next ranged dps, or the off-tanks take the add. True
+// when `order` was the guard's.
+inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepted)
+{
+    if (r.healerGuardOrder.empty() || order != r.healerGuardOrder)
+        return false;
+    if (accepted)
+        NoteRaidGuardOrder(r, r.healerGuardOrderGuid);
+    std::vector<Run::HealerGuardMark>& marks = accepted ? r.healerGuardDps[r.healerGuardOrderGuid]
+                                                        : r.healerGuardTried[r.healerGuardOrderGuid];
+    marks.push_back(Run::HealerGuardMark{ r.healerGuardOrderBot, r.healerGuardClockMs });
+    r.healerGuardOrder.clear();
+    r.healerGuardOrderGuid = 0;
+    r.healerGuardOrderBot.clear();
+    return true;
+}
+
 // One fight tick of the guard in a raid's boss fight (RaidBossRulesFight, CheckGuard): the main tank (the lead bot)
 // stays on the boss, and the whelps and adds that hit the raid within kRaidBossGuardYd go to an off-tank
 // (`attack <guid> <offTank>`, RaidFacts::bossOffTanksAlive, Run::offTankTurn) after the party guard's wait
@@ -13055,11 +13328,16 @@ inline bool LeadHoldsPlanBoss(const Run& r, const Facts& f)
 // hitting the raid from its own camp is left to the DPS (GuardLeavesCampAlone). The off-tank sent is never one holding
 // a plan boss (UnitFact::victimName), and one nobody hits comes before one holding an add; in turn among them. With the
 // lead bot dead or no tank, the boss itself on a raid member that is no tank is taken off him at once (one an off-tank
-// holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). True when `order` holds it.
+// holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). With
+// AiPlayerbot.DungeonRunRaidHealerGuard (CheckGuard, which runs RaidHealerGuard first) the off-tanks take no other
+// add. True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (f.raid.bossOffTanksAlive.empty())
         return false;
+    // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss the off-tanks below take only an add
+    // on a healer, and not one the ranged dps already have (RaidHealerGuard).
+    bool const healerGuardOn = f.leadAlive && f.leadIsTank && f.raid.healerGuard && LeadHoldsPlanBoss(r, f);
     std::vector<const std::string*> free, busy;
     for (const std::string& name : f.raid.bossOffTanksAlive)
     {
@@ -13075,24 +13353,22 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             (holds ? busy : free).push_back(&name);
     }
     std::vector<const std::string*> const& tanks = free.empty() ? busy : free;
-    auto const capped = [&r](const UnitFact& u)
-    {
-        auto const had = r.raidGuardUnits.find(u.guid);
-        return had != r.raidGuardUnits.end() && had->second.orders >= kGuardOrdersPerUnit &&
-            r.fightMs - had->second.at < kRaidGuardRearmMs;
-    };
     const UnitFact* pick = nullptr;
     bool boss = false;
     if (!f.leadAlive || !f.leadIsTank) // no main tank: the lead bot dead, or a living one that is no tank
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
-                u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd || capped(u))
+                u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
+                RaidGuardUnitCapped(r, u))
                 continue;
             pick = &u;
             boss = true;
             break;
         }
+    std::unordered_set<std::string> healerTaken;
+    if (healerGuardOn)
+        healerTaken = HealerGuardTaken(r);
     if (!pick)
         for (const UnitFact& u : f.partyAttackers)
         {
@@ -13100,7 +13376,13 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank)
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
-            if (GuardLeavesCampAlone(u) || capped(u) || CcOrderOut(r, u.guid))
+            // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
+            // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
+            if (healerGuardOn && (!u.victimHealer || r.healerGuardDps.count(u.guid) ||
+                    HealerGuardHasFreeDps(r, f, u, healerTaken)))
+                continue;
+            if (GuardLeavesCampAlone(u) || RaidGuardUnitCapped(r, u) || CcOrderOut(r, u.guid) ||
+                GuardHeldByRun(r, u.guid))
                 continue;
             if (!pick || u.distLead < pick->distLead)
                 pick = &u;
@@ -13116,12 +13398,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         return false;
     // Not counted in fightOrders: kGuardOrdersFightCap bounds the party guard, which takes over when the off-tanks fall.
     std::string const& tank = *tanks[r.offTankTurn++ % tanks.size()];
-    ++r.guardUnitOrders[pick->guid];
-    Run::RaidGuardMark& mark = r.raidGuardUnits[pick->guid];
-    if (mark.orders >= kGuardOrdersPerUnit)
-        mark.orders = 0; // re-armed (kRaidGuardRearmMs)
-    ++mark.orders;
-    mark.at = r.fightMs;
+    NoteRaidGuardOrder(r, pick->guid);
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
     r.note = std::string("fighting: ") +
@@ -13683,6 +13960,11 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // but never while the main tank holds a plan boss (LeadHoldsPlanBoss).
         if (RaidBossRulesFight(r, f))
         {
+            // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to
+            // the ranged dps first, with no off-tank in range too (RaidHealerGuard); the off-tanks take such an add
+            // only when none of the ranged dps is free for it (RaidGuardTick).
+            if (f.raid.healerGuard && RaidHealerGuard(r, f, dt, order))
+                return true;
             if (!f.raid.bossOffTanksAlive.empty())
                 return RaidGuardTick(r, f, dt, order);
             if (LeadHoldsPlanBoss(r, f))
@@ -16368,6 +16650,12 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.offTankTurn = 0;
         r.raidBossFight = false;
         r.raidGuardUnits.clear();
+        r.healerGuardDps.clear();
+        r.healerGuardTried.clear();
+        r.healerGuardClockMs = 0;
+        r.healerGuardOrderGuid = 0;
+        r.healerGuardOrderBot.clear();
+        r.healerGuardOrder.clear();
         r.raidAssistMs = 0;
         r.raidAssistGuid = 0;
         r.raidAssisted.clear();
