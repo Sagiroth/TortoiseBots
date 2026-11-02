@@ -207,8 +207,8 @@ namespace ai
     {
     public:
         // Loading only. False after Seal(), for an unusable row, or when the
-        // (map, boss, kind, target, spell) key is already there: the first row
-        // wins, as it would under the table's primary key.
+        // (map, boss, kind, target, spell, hp_min, hp_max) key is already there: the
+        // first row wins, as it would under the table's primary key.
         bool Add(const BossTacticRow& row)
         {
             if (sealed_.load(std::memory_order_acquire))
@@ -249,7 +249,7 @@ namespace ai
             if (row.kind == BossTacticKind::LinkedDeath &&
                 (row.targetEntry == 0 || !(row.param > 0.0f) || row.param > 100.0f || !(row.windowSec > 0.0f)))
                 return false;
-            // dps_hold_after: the hold in seconds, never zero and never longer than the row's own release would take.
+            // dps_hold_after: the hold in seconds, more than zero and at most 30.
             if (row.kind == BossTacticKind::DpsHoldAfter && (!(row.param > 0.0f) || row.param > 30.0f))
                 return false;
             // A dispel_priority row ranks one aura of the row's boss.
