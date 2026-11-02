@@ -880,22 +880,24 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         zone.chance = uint8_t(std::min(float(100), std::floor(accum.chance)));
         zone.score = ZoneScore(accum.spawns, accum.chance);
         zone.onBotMap = accum.hasNearest;
+        zone.distanceSq = accum.hasNearest ? accum.nearest : -1.0f;
         plan.zones.push_back(zone);
     }
-    // Zones on the bot's own map first: pool bots never get travel targets on
-    // another map, so a better-scored zone across the sea is unreachable.
-    std::sort(plan.zones.begin(), plan.zones.end(), [&](FarmZone const& a, FarmZone const& b)
-    {
-        ZoneAccum const& accA = zones[a.zoneId];
-        ZoneAccum const& accB = zones[b.zoneId];
-        if (accA.hasNearest != accB.hasNearest)
-            return accA.hasNearest;
-        if (a.score != b.score)
-            return a.score > b.score;
-        if (accA.hasNearest && accB.hasNearest && accA.nearest != accB.nearest)
-            return accA.nearest < accB.nearest;
-        return a.zoneId < b.zoneId;
-    });
+    // A zone the travel layer could not path into stays out for its window,
+    // so the leg farms the next planned zone instead of the same mesh hole.
+    uint32_t const nowMs = WorldTimer::getMSTime();
+    std::vector<uint8_t> unreachable;
+    unreachable.reserve(plan.zones.size());
+    for (FarmZone const& zone : plan.zones)
+        unreachable.push_back(FarmZoneFailureFresh(
+            FarmZoneUnreachableAt(bot->GetGUIDLow(), zone.zoneId), nowMs) ? 1 : 0);
+    DropUnreachableFarmZones(plan.zones, unreachable);
+
+    // Nearest farm point first: walking distance is the cost the order pays
+    // on every trip, so a zone with fewer spawns next door beats a richer one
+    // across the continent. Pool bots never get travel targets on another
+    // map, so same-map zones rank first regardless of distance.
+    std::sort(plan.zones.begin(), plan.zones.end(), FarmZoneBefore);
 
     plan.bestChance = zones.empty() ? 0.0f : zones[plan.zones.front().zoneId].chance;
 

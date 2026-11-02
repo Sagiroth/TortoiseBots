@@ -329,6 +329,7 @@ struct FarmZone
     uint8_t chance = 0;   // percent at the best source in this zone
     double score = 0.0;   // spawns x chance
     bool onBotMap = false; // has spawns on the map the bot is on
+    float distanceSq = -1.0f; // squared distance to the nearest sample spawn on the bot's map; < 0 = none there
 };
 
 // What one bot can do about one item: the answer of the source finder, used by

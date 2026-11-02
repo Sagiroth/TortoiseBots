@@ -1002,6 +1002,33 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    // Remember the zone of the failed farm-leg travel, so the planner ranks it
+    // out for the policy window. Only the zone the order actually farms
+    // counts: a banker or auctioneer leg fails in a city, never in the farm
+    // zone, and must not mark it.
+    void NoteFarmZoneUnreachable(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        if (it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::Farm ||
+            it->second.record.farmZoneId != zoneId)
+            return;
+        it->second.farmZoneUnreachableMs[zoneId] = WorldTimer::getMSTime();
+    }
+
+    uint32_t FarmZoneUnreachableAt(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return 0;
+        auto found = it->second.farmZoneUnreachableMs.find(zoneId);
+        return found == it->second.farmZoneUnreachableMs.end() ? 0 : found->second;
+    }
+
     void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1691,6 +1718,7 @@ private:
         uint32_t lastFarmItemId = 0;
         uint32_t lastFarmCount = 0;
         bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
+        std::unordered_map<uint32_t, uint32_t> farmZoneUnreachableMs; // zone -> last mesh-failed farm travel attempt
         SupplySearchStreak supplySearch; // empty service-leg searches for the current leg
         OrderProtectedSet kept; // protected item ids for the row's keys (recomputed on the bot's map thread)
         bool sawOnline = false;
@@ -2483,6 +2511,16 @@ void NoteFarmRest(uint32_t botGuidLow)
 void NoteDeath(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteDeath(botGuidLow);
+}
+
+void NoteFarmZoneUnreachable(uint32_t botGuidLow, uint32_t zoneId)
+{
+    OrderStore::Instance().NoteFarmZoneUnreachable(botGuidLow, zoneId);
+}
+
+uint32_t FarmZoneUnreachableAt(uint32_t botGuidLow, uint32_t zoneId)
+{
+    return OrderStore::Instance().FarmZoneUnreachableAt(botGuidLow, zoneId);
 }
 
 void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)

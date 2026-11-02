@@ -2,7 +2,10 @@
 
 #include "GuildOrderContract.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 // Pure rules for guild-order source finding: which sources a bot may use for
 // an item and how its farm zones rank. Header-only and free of core types so
@@ -114,6 +117,64 @@ inline bool FactionTemplatesHostile(FactionTemplateMasks const& bot, FactionTemp
 inline double ZoneScore(uint32_t spawns, float chancePct)
 {
     return double(spawns) * double(chancePct);
+}
+
+// A farm zone whose last travel attempt failed on the mesh (no path or a
+// partial one) stays out of the plan for this long: the bot farms the next
+// zone of the plan instead of re-picking the same unreachable point every
+// time its leg re-plans. The stamp is server uptime ms, 0 = never failed;
+// uint32 wrap keeps the subtraction meaningful.
+inline constexpr uint32_t kFarmZoneUnreachableMs = 30 * 60 * 1000;
+
+inline bool FarmZoneFailureFresh(uint32_t failedAtMs, uint32_t nowMs)
+{
+    return failedAtMs != 0 && nowMs - failedAtMs < kFarmZoneUnreachableMs;
+}
+
+// The travel layer's navmesh verdict names a zone the leg cannot serve: a
+// mesh hole (nopath) or a partial path (incomplete). A complete path whose
+// dispatch still failed is a movement problem, and crossmap was never probed,
+// so neither says anything about the zone.
+inline bool TravelPathUnreachable(std::string const& pathTag)
+{
+    return pathTag == "incomplete" || pathTag == "nopath";
+}
+
+// Farm-zone plan order: zones on the bot's map first, then the nearest farm
+// point (the planner's own sample spawn), then the richer zone. A zone with
+// no spawn on the bot's map has no distance and ranks after every same-map
+// zone, by score among the rest.
+inline bool FarmZoneBefore(FarmZone const& a, FarmZone const& b)
+{
+    if (a.onBotMap != b.onBotMap)
+        return a.onBotMap;
+    if (a.onBotMap && a.distanceSq != b.distanceSq)
+        return a.distanceSq < b.distanceSq;
+    if (a.score != b.score)
+        return a.score > b.score;
+    return a.zoneId < b.zoneId;
+}
+
+// Drop the zones whose last travel attempt failed on the mesh; `unreachable`
+// is index-parallel to `zones`. When every zone is flagged the plan keeps
+// them: an empty plan reads as nosource and would end the order, while the
+// travel layer's own retry and teleport may still get there. No zone is
+// added, so the search stays inside the planner's existing limits.
+inline void DropUnreachableFarmZones(std::vector<FarmZone>& zones,
+    std::vector<uint8_t> const& unreachable)
+{
+    if (zones.size() != unreachable.size())
+        return;
+    bool anyReachable = false;
+    for (uint8_t flagged : unreachable)
+        anyReachable = anyReachable || !flagged;
+    if (!anyReachable)
+        return;
+    size_t kept = 0;
+    for (size_t i = 0; i < zones.size(); ++i)
+        if (!unreachable[i])
+            zones[kept++] = zones[i];
+    zones.resize(kept);
 }
 
 // A drop row is usable for the farm plan when it is not a quest row and its

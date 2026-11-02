@@ -166,6 +166,15 @@ void NoteFarmRest(uint32_t botGuidLow);
 // The bot died while the order ran. Only deaths in Working count.
 void NoteDeath(uint32_t botGuidLow);
 
+// The farm leg's travel probe found no route into the planned zone (a mesh
+// hole or a partial path): remember it per bot and zone, so the plan ranks
+// that zone out for kFarmZoneUnreachableMs. Only the zone the order currently
+// farms and a Farm supply step count. Map thread only (travel move).
+void NoteFarmZoneUnreachable(uint32_t botGuidLow, uint32_t zoneId);
+// When the bot's last failed farm-leg travel into the zone was, in server
+// uptime ms (0 = never). The planner turns it into the policy window.
+uint32_t FarmZoneUnreachableAt(uint32_t botGuidLow, uint32_t zoneId);
+
 // An order-leg search came back rejected or empty in the planned zone.
 // Counts consecutive failures there; the third moves the order to the next
 // plan zone through the zone-move path. World thread only (travel pick).

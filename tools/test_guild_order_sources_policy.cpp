@@ -2,7 +2,9 @@
 // source rules (level window, skinning skill, chance filter, zone scoring).
 #include "../runtime/GuildOrderSourcesPolicy.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <vector>
 
 using namespace TortoiseBots::GuildOrders;
 
@@ -127,6 +129,58 @@ int main()
 
     CHECK(FarPartitionSkipApplies(false));
     CHECK(!FarPartitionSkipApplies(true));
+
+    // A mesh-failed farm zone is out for the window, never forever; the
+    // stamp is uptime ms and may wrap.
+    CHECK(!FarmZoneFailureFresh(0, 12345));
+    CHECK(FarmZoneFailureFresh(1000, 1000 + kFarmZoneUnreachableMs - 1));
+    CHECK(!FarmZoneFailureFresh(1000, 1000 + kFarmZoneUnreachableMs));
+    CHECK(FarmZoneFailureFresh(0xFFFFFF00u, 0x00001000u));
+    CHECK(TravelPathUnreachable("incomplete"));
+    CHECK(TravelPathUnreachable("nopath"));
+    CHECK(!TravelPathUnreachable("complete"));
+    CHECK(!TravelPathUnreachable("not-using-path"));
+    CHECK(!TravelPathUnreachable("crossmap"));
+
+    // Two servable zones: the near one is picked even though the far one is
+    // richer; a zone on another continent ranks after both. Then the near
+    // zone's last travel attempt failed on the mesh and the pick moves on.
+    {
+        FarmZone near;
+        near.zoneId = 10;
+        near.onBotMap = true;
+        near.distanceSq = 25.0f;
+        near.score = 10.0;
+        FarmZone far;
+        far.zoneId = 20;
+        far.onBotMap = true;
+        far.distanceSq = 900.0f;
+        far.score = 500.0;
+        FarmZone sea;
+        sea.zoneId = 30;
+        sea.onBotMap = false;
+        sea.score = 9000.0;
+
+        std::vector<FarmZone> zones { far, sea, near };
+        std::sort(zones.begin(), zones.end(), FarmZoneBefore);
+        CHECK(zones.size() == 3);
+        CHECK(zones[0].zoneId == 10);
+        CHECK(zones[1].zoneId == 20);
+        CHECK(zones[2].zoneId == 30);
+        CHECK(FarmZoneBefore(near, sea));
+        CHECK(!FarmZoneBefore(sea, near));
+
+        std::vector<uint8_t> nearFailed { 1, 0, 0 };
+        DropUnreachableFarmZones(zones, nearFailed);
+        CHECK(zones.size() == 2);
+        CHECK(zones[0].zoneId == 20);
+        CHECK(zones[1].zoneId == 30);
+
+        std::vector<FarmZone> allFlagged { near, far };
+        std::vector<uint8_t> all { 1, 1 };
+        DropUnreachableFarmZones(allFlagged, all);
+        CHECK(allFlagged.size() == 2); // no reachable zone: keep the plan, the order must not read nosource
+    }
 
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");
