@@ -1636,7 +1636,18 @@ inline bool UpgradeFixture(const std::string& path, std::string& err, std::strin
     ai::BossTacticTable table;
     bool tableSet = false;
     std::string decodeError;
-    if (!DecisionCapture::DecodePlan(*planValue, plan, decodeError))
+    if (planBody)
+    {
+        // The body changed under the drop, so the old object's hash no longer
+        // matches it: decode the body alone and re-encode all of it.
+        if (!DecisionCapture::DecodeStruct(*planBody, plan, DecisionCapture::DecodeContext{}, decodeError))
+        {
+            err = name + ": upgraded plan does not decode: " + decodeError;
+            return false;
+        }
+        *planValue = ParseText(DecisionCapture::EncodePlan(plan));
+    }
+    else if (!DecisionCapture::DecodePlan(*planValue, plan, decodeError))
     {
         err = name + ": upgraded plan does not decode: " + decodeError;
         return false;
@@ -1647,6 +1658,8 @@ inline bool UpgradeFixture(const std::string& path, std::string& err, std::strin
         return false;
     }
     std::string const planHash = DecisionCapture::PlanHash(plan);
+    if (tactics)
+        *tactics = ParseText(DecisionCapture::EncodeTactics(tableSet ? &table : nullptr, plan.map));
 
     MiniJson::Value* ticks = nullptr;
     for (auto& entry : root.obj)
@@ -1690,6 +1703,11 @@ inline bool UpgradeFixture(const std::string& path, std::string& err, std::strin
     {
         Set(root, "history", VArray());
         history = &root.obj.back().second;
+    }
+    if (history->kind != MiniJson::Value::Array)
+    {
+        err = name + ": history is not an array";
+        return false;
     }
     MiniJson::Value step = VObject();
     Set(step, "from", VString(oldHash));
