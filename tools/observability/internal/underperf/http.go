@@ -114,6 +114,9 @@ func Handler(src Sources) http.HandlerFunc {
 			// switch to another run without asking for the window again.
 			rep.Runs = base.Runs
 			rep.Run = runSel
+			// The cap cut the window's oldest fights before the run was
+			// picked, so a run can be short by the cut; keep the window's flag.
+			rep.Truncated = base.Truncated
 		}
 
 		fillSpecs(rep.Bots, src.Specs, specs, &mu, nowFn())

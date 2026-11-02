@@ -376,3 +376,26 @@ func namesOfOK(rows []OKRow) []string {
 	}
 	return out
 }
+
+func TestTruncatedRunKeepsFlag(t *testing.T) {
+	base := dayOf(2026, 11, 2)
+	mem := &fakeMem{fights: map[string]combat.Fight{}, warns: map[string][]combat.Warning{}}
+	for i := range 501 {
+		key := combat.Key("T", 1, "f"+itoa(i))
+		f := combat.Fight{ID: "f" + itoa(i), Start: base + int64(i*60), DurMS: 30000,
+			Bots: []combat.FightBot{tb(uint32(i+1), "B"+itoa(i), "rogue", "dps", 3000, 0, 10, 0, 0)}}
+		mem.rows = append(mem.rows, memRow(key, f, 1))
+		mem.fights[key] = f
+		mem.warns[key] = nil
+	}
+	r := decodeAnswer(t, get(t, Handler(Sources{Mem: mem}), "/api/v1/combat/underperformers?commander=T&day=2026-11-02&run=last"))
+	if r.Run != "last" {
+		t.Fatalf("run = %q, want last", r.Run)
+	}
+	if r.Fights != 500 {
+		t.Fatalf("fights = %d, want 500", r.Fights)
+	}
+	if !r.Truncated {
+		t.Errorf("truncated = false on a run cut by the 500-fight cap, want true")
+	}
+}
