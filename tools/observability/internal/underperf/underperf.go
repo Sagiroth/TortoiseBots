@@ -637,7 +637,7 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 			a2.flagged++
 			ref := FightRef{
 				Key: input.Key, Day: input.Day, Start: f.Start, Step: f.Step, Leg: f.Leg,
-				BossName: f.BossName, Outcome: f.Outcome, Low: low[guid],
+				BossName: f.BossName, Outcome: f.Outcome, Rules: []string{}, Low: low[guid],
 			}
 			for rule := range flagRules[guid] {
 				ref.Rules = append(ref.Rules, rule)

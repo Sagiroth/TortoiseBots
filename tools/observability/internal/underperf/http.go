@@ -6,6 +6,7 @@ package underperf
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -84,8 +85,9 @@ func Handler(src Sources) http.HandlerFunc {
 		}
 		floors := ParseFloors(rules)
 		lim := DefaultLimits()
-		fights := collect(src, commander, since, until, rules)
+		fights, preTruncated := collect(src, commander, since, until, rules, lim.MaxFights)
 		base := Build(commander, since, until, fights, rules, floors, lim)
+		base.Truncated = base.Truncated || preTruncated
 
 		rep := base
 		if runSel != "all" {
@@ -156,25 +158,30 @@ func window(q map[string][]string, now time.Time) (int64, int64, string) {
 	return since, until, ""
 }
 
+// candidate is one stored fight before its detail is read. The lists carry
+// only summaries, so the window is cut to the newest maxFights before any
+// fight body is read (a day of history can hold more than the view keeps).
+type candidate struct {
+	key     string
+	start   int64
+	session uint64
+	row     history.Row // the history index row of a fight the store no longer holds
+	mem     bool
+}
+
 // collect reads the window's fights: memory first (its warnings are the ones
 // the store judged with), then the history's fights the store no longer
-// holds, re-judged with the current rules.
-func collect(src Sources, commander string, since, until int64, rules []combat.Rule) []Input {
+// holds, re-judged with the current rules. The newest maxFights are kept.
+func collect(src Sources, commander string, since, until int64, rules []combat.Rule, maxFights int) ([]Input, bool) {
 	seen := map[string]bool{}
-	out := []Input{}
+	var cands []candidate
 	if src.Mem != nil {
 		for _, row := range src.Mem.List(commander) {
-			if row.Live || row.Start < since || row.Start >= until {
-				continue
-			}
-			f, warnings, ok := src.Mem.GetKey(row.Key)
-			if !ok {
+			if row.Live || row.Start < since || row.Start >= until || seen[row.Key] {
 				continue
 			}
 			seen[row.Key] = true
-			out = append(out, Input{
-				Key: row.Key, Day: utcDay(row.Start), Session: row.Session, Fight: f, Warnings: warnings,
-			})
+			cands = append(cands, candidate{key: row.Key, start: row.Start, session: row.Session, mem: true})
 		}
 	}
 	if src.Hist != nil {
@@ -182,21 +189,44 @@ func collect(src Sources, commander string, since, until int64, rules []combat.R
 			if seen[row.Key] || row.Start < since || row.Start >= until {
 				continue
 			}
-			f, got, ok := src.Hist.Fight(row.Key)
+			seen[row.Key] = true
+			cands = append(cands, candidate{key: row.Key, start: row.Start, session: row.Session, row: row})
+		}
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].start != cands[j].start {
+			return cands[i].start < cands[j].start
+		}
+		return cands[i].key < cands[j].key
+	})
+	truncated := false
+	if maxFights > 0 && len(cands) > maxFights {
+		cands = cands[len(cands)-maxFights:]
+		truncated = true
+	}
+	out := make([]Input, 0, len(cands))
+	for _, c := range cands {
+		if c.mem {
+			f, warnings, ok := src.Mem.GetKey(c.key)
 			if !ok {
 				continue
 			}
-			seen[row.Key] = true
-			start := f.Start
-			if start == 0 {
-				start = got.Start
-			}
-			out = append(out, Input{
-				Key: row.Key, Day: utcDay(start), Session: row.Session, Fight: f, Warnings: combat.Judge(f, rules),
-			})
+			out = append(out, Input{Key: c.key, Day: utcDay(c.start), Session: c.session, Fight: f, Warnings: warnings})
+			continue
 		}
+		f, got, ok := src.Hist.Fight(c.key)
+		if !ok {
+			continue
+		}
+		start := c.start
+		if start == 0 {
+			start = got.Start
+		}
+		out = append(out, Input{
+			Key: c.key, Day: utcDay(start), Session: c.session, Fight: f, Warnings: combat.Judge(f, rules),
+		})
 	}
-	return out
+	return out, truncated
 }
 
 func utcDay(unix int64) string {
