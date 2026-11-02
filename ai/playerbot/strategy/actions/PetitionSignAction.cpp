@@ -89,10 +89,6 @@ bool PetitionSignAction::Execute(Event& event)
         WorldPacket data(CMSG_PETITION_SIGN, 20);
         data << petitionGuid << unk;
         bot->GetSession()->HandlePetitionSignOpcode(data);
-        // Issue #1108: the sign itself is functional, the "thanks" in /say is
-        // ambient chatter and follows AiPlayerbot.EnableBroadcasts.
-        if (sPlayerbotAIConfig.enableBroadcasts)
-            bot->Say("Thanks for the invite!", LANG_UNIVERSAL);
         sLog.outDetail("Bot #%d <%s> accepts guild invite", bot->GetGUIDLow(), bot->GetName());
         return true;
     }

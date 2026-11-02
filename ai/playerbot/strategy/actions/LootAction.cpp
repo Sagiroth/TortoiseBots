@@ -756,8 +756,6 @@ bool StoreLootAction::Execute(Event& event)
 
         if (gatherSkill != SKILL_NONE)
             sPlayerbotAIConfig.logEvent(ai, "GatherLoot", std::to_string(gatherSkill), std::to_string(proto->ItemId));
-
-        BroadcastHelper::BroadcastLootingItem(ai, bot, proto, itemQualifier);
     }
 
     // The open paid out: forget the attempts OpenLootAction counted on this object, so a

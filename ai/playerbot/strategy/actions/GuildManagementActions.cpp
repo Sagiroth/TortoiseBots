@@ -68,8 +68,6 @@ bool GuidManageAction::Execute(Event& event)
 
 bool GuildManageNearbyAction::Execute(Event& event)
 {
-    uint32 found = 0;
-
     if (!bot->GetGuildId() || TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()))
         return false;
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
@@ -94,15 +92,11 @@ bool GuildManageNearbyAction::Execute(Event& event)
 
             if (!urand(0, 30) && dCount < 2 && guild->HasRankRight(botMember->RankId, GR_RIGHT_PROMOTE) && bot->GetRank() + 1 < player->GetRank())
             {
-                BroadcastHelper::BroadcastGuildMemberPromotion(ai, bot, player);
-
                 ai->DoSpecificAction("guild promote", Event("guild management", guid), true);
                 continue;
             }
 
             if (!urand(0, 30) && dCount > 2 && guild->HasRankRight(botMember->RankId, GR_RIGHT_DEMOTE) && bot->GetRank() < player->GetRank() && player->GetRank() > guild->GetLowestRank()) {
-                BroadcastHelper::BroadcastGuildMemberDemotion(ai, bot, player);
-
                 ai->DoSpecificAction("guild demote", Event("guild management", guid), true);
                 continue;
             }
@@ -149,85 +143,11 @@ bool GuildManageNearbyAction::Execute(Event& event)
         if (!sameGroup && sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
             continue;
 
-        if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
-        {
-            std::map<std::string, std::string> placeholders;
-            placeholders["%name"] = player->GetName();
-            placeholders["%members"] = std::to_string(guild->GetMemberSize());
-            placeholders["%guildname"] = guild->GetName();
-            AreaTableEntry const* current_area = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot));
-            AreaTableEntry const* current_zone = GetAreaEntryByAreaID(sTerrainMgr.getZoneId(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ()));
-            placeholders["%area_name"] = current_area && current_area->Name ? std::string(current_area->Name) : BOT_TEXT("string_unknown_area");
-            placeholders["%zone_name"] = current_zone && current_zone->Name ? std::string(current_zone->Name) : BOT_TEXT("string_unknown_area");
-
-            std::vector<std::string> lines;
-
-            //TODO - Move these hardcoded texts to sql!
-            switch ((urand(0, 10)* urand(0, 10))/10)
-            {
-            case 0:
-                lines.push_back(BOT_TEXT2("Hey %name do you want to join my guild?", placeholders));
-                break;
-            case 1:
-                lines.push_back(BOT_TEXT2("Hey man you wanna join my guild %name?", placeholders));
-                break;
-            case 2:
-                lines.push_back(BOT_TEXT2("I think you would be a good contribution to %guildname. Would you like to join %name?", placeholders));
-                break;
-            case 3:
-                lines.push_back(BOT_TEXT2("My guild %guildname has %members quality members. Would you like to make it 1 more %name?", placeholders));
-                break;
-            case 4:
-                lines.push_back(BOT_TEXT2("Hey %name do you want to join %guildname? We have %members members and looking to become number 1 of the server.", placeholders));
-                break;
-            case 5:
-                lines.push_back(BOT_TEXT2("I'm not really good at smalltalk. Do you wanna join my guild %name/r?", placeholders));
-                break;
-            case 6:
-                lines.push_back(BOT_TEXT2("Welcome to %zone_name.... do you want to join my guild %name?", placeholders));
-                break;
-            case 7:
-                lines.push_back(BOT_TEXT2("%name, you should join my guild!", placeholders));
-                break;
-            case 8:
-                lines.push_back(BOT_TEXT2("%name, I got this guild....", placeholders));
-                break;
-            case 9:
-                lines.push_back(BOT_TEXT2("You are actually going to join my guild %name?", placeholders));
-                lines.push_back(BOT_TEXT2("Haha.. you are the man! We are going to raid Molten...", placeholders));
-                break;
-            case 10:
-                lines.push_back(BOT_TEXT2("Hey Hey! do you guys wanna join my gild????", placeholders));
-                lines.push_back(BOT_TEXT2("We've got a bunch of high levels and we are really super friendly..", placeholders));
-                lines.push_back(BOT_TEXT2("..and watch your dog and do your homework...", placeholders));
-                lines.push_back(BOT_TEXT2("..and we raid once a week and are working on MC raids...", placeholders));
-                lines.push_back(BOT_TEXT2("..and we have more members than just me...", placeholders));
-                lines.push_back(BOT_TEXT2("..and please stop I'm lonenly and we can get a ride the whole time...", placeholders));
-                lines.push_back(BOT_TEXT2("..and it's really beautifull and I feel like crying...", placeholders));
-                lines.push_back(BOT_TEXT2("So what do you guys say are you going to join are you going to join?", placeholders));
-                break;
-            }
-
-            for (auto line : lines)
-                if (sameGroup)
-                {
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, bot->GetGroup()->IsRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, line.c_str(), LANG_UNIVERSAL, CHAT_TAG_NONE, bot->getObjectGuid(), bot->GetName());
-                    bot->GetGroup()->BroadcastPacket(&data, true);
-                }
-                else if (sPlayerbotAIConfig.enableBroadcasts)
-                    bot->Say(line, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
-        }
-
         if (ai->DoSpecificAction("guild invite", Event("guild management", guid), true))
-        {
-            if (sPlayerbotAIConfig.inviteChat)
-                return true;
-            found++;
-        }
+            return true;
     }
 
-    return found > 0;
+    return false;
 }
 
 bool GuildManageNearbyAction::isUseful()
@@ -272,19 +192,6 @@ bool GuildLeaveAction::Execute(Event& event)
     }
 
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-
-    // Issue #1108: the announcement is guild chat, the bot still leaves the
-    // guild either way.
-    if (sPlayerbotAIConfig.enableBroadcasts && guild->GetMemberSize() > sPlayerbotAIConfig.guildMaxBotLimit)
-    {
-        std::map<std::string, std::string> placeholders;
-        placeholders["%guild_bot_limit"] = std::to_string(sPlayerbotAIConfig.guildMaxBotLimit);
-        guild->BroadcastToGuild(
-            bot->GetSession(),
-            BOT_TEXT2("I am leaving this guild to prevent it from reaching the %guild_bot_limit member limit.", placeholders),
-            LANG_UNIVERSAL
-        );
-    }
 
     sPlayerbotAIConfig.logEvent(ai, "GuildLeaveAction", guild->GetName(), std::to_string(guild->GetMemberSize()));
 

@@ -599,35 +599,6 @@ bool RpgQuestUseTrigger::IsActive()
     return false;
 }
 
-bool RpgAIChatTrigger::IsActive()
-{
-    if (sPlayerbotAIConfig.llmEnabled == 0)
-        return false;
-
-    if (FarFromRpgTargetTrigger::IsActive())
-        return false;
-
-    if (!ai->HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) && sPlayerbotAIConfig.llmEnabled < 3)
-        return false;
-
-    if (!sPlayerbotAIConfig.llmRpgAIChatChance || !(urand(0, 99) < sPlayerbotAIConfig.llmRpgAIChatChance))
-        return false;
-
-    if (!ai->HasPlayerNearby(sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_SAY)))
-        return false;
-
-    GuidPosition guidP(getGuidP());
-
-    if (guidP.IsPlayer())
-    {
-        Player* player = guidP.GetPlayer();
-
-        if (!player || isRealPlayer_Helper(player))
-            return false;
-    }
-
-    return true;
-};
 
 bool RpgSpellTrigger::IsActive()
 {

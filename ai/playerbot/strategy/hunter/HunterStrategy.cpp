@@ -172,15 +172,8 @@ void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("flare", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "low ammo",
-        NextAction::array(0, new NextAction("say::low ammo", ACTION_NORMAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "no ammo",
-    NextAction::array(0,
-        new NextAction("equip ammo", ACTION_EMERGENCY),
-        new NextAction("say::no ammo", ACTION_NORMAL),
-        NULL)));
+        NextAction::array(0, new NextAction("equip ammo", ACTION_EMERGENCY), NULL)));
 
     // PET-5: same last-resort demotion as the combat node above — the
     // HunterPetStrategy "call pet" (NORMAL+2) node wins wherever castable.
