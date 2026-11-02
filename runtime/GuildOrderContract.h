@@ -330,6 +330,11 @@ struct FarmZone
     double score = 0.0;   // spawns x chance
     bool onBotMap = false; // has spawns on the map the bot is on
     float distanceSq = -1.0f; // squared distance to the nearest sample spawn on the bot's map; < 0 = none there
+    // The travel layer's route gate accepts that sample spawn as a destination
+    // from where the bot stands. False ranks the zone after the zones it
+    // accepts; the gate can be wrong about one sample of a zone, so the zone
+    // stays in the plan and only the failure memory drops it.
+    bool reachable = true;
 };
 
 // What one bot can do about one item: the answer of the source finder, used by

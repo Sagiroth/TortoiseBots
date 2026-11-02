@@ -2731,7 +2731,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
             auto planFor = [&](uint32_t planItem)
             {
-                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm);
+                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm,
+                    true);
             };
 
             // The planned zone only changes when it runs dry (the plan no

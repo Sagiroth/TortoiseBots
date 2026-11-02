@@ -130,8 +130,8 @@ int main()
     CHECK(FarPartitionSkipApplies(false));
     CHECK(!FarPartitionSkipApplies(true));
 
-    // A mesh-failed farm zone is out for the window, never forever; the
-    // stamp is uptime ms and may wrap.
+    // A failed farm target is remembered per point inside the window, never
+    // forever; the stamp is uptime ms and may wrap.
     CHECK(!FarmZoneFailureFresh(0, 12345));
     CHECK(FarmZoneFailureFresh(1000, 1000 + kFarmZoneUnreachableMs - 1));
     CHECK(!FarmZoneFailureFresh(1000, 1000 + kFarmZoneUnreachableMs));
@@ -142,9 +142,88 @@ int main()
     CHECK(!TravelPathUnreachable("not-using-path"));
     CHECK(!TravelPathUnreachable("crossmap"));
 
+    // One failed target point never costs the zone: the leg tries the zone's
+    // other farm spots first. Two different points inside the window do.
+    {
+        uint32_t const now = 100000;
+        std::vector<FarmZoneTargetFailure> zoneFailures;
+        CHECK(!FarmZoneSkipped(zoneFailures, now));
+
+        FarmZoneTargetPoint const a = FarmZoneTargetPointAt(0, 100.0f, 200.0f, 30.0f);
+        FarmZoneTargetPoint const b = FarmZoneTargetPointAt(0, 400.0f, 500.0f, 60.0f);
+        // Same 10 yd cell, different rounding noise: still one target.
+        FarmZoneTargetPoint const aAgain = FarmZoneTargetPointAt(0, 104.0f, 205.0f, 31.0f);
+        // Same coordinates on another map is another target.
+        FarmZoneTargetPoint const aOtherMap = FarmZoneTargetPointAt(1, 100.0f, 200.0f, 30.0f);
+        CHECK(a == aAgain);
+        CHECK(!(a == b));
+        CHECK(!(a == aOtherMap));
+
+        RecordFarmZoneTargetFailure(zoneFailures, a, now);
+        CHECK(zoneFailures.size() == 1);
+        CHECK(!FarmZoneSkipped(zoneFailures, now));
+        CHECK(FarmZoneFailedTargets(zoneFailures, now) == 1);
+
+        RecordFarmZoneTargetFailure(zoneFailures, aAgain, now + 1000);
+        CHECK(zoneFailures.size() == 1); // repeat at the same spot refreshes, adds no target
+        CHECK(!FarmZoneSkipped(zoneFailures, now + 1000));
+
+        RecordFarmZoneTargetFailure(zoneFailures, b, now + 2000);
+        CHECK(FarmZoneFailedTargets(zoneFailures, now + 2000) == 2);
+        CHECK(FarmZoneSkipped(zoneFailures, now + 2000));
+
+        // A third point on another map does not change the count.
+        RecordFarmZoneTargetFailure(zoneFailures, aOtherMap, now + 3000);
+        CHECK(FarmZoneFailedTargets(zoneFailures, now + 3000) == 3);
+
+        // Only the two fresh points count: the first two age out, so the zone
+        // stops being skipped once its zoneFailures leave the window.
+        CHECK(FarmZoneFailedTargets(zoneFailures, now + kFarmZoneUnreachableMs + 2500) == 1);
+        CHECK(!FarmZoneSkipped(zoneFailures, now + kFarmZoneUnreachableMs + 2500));
+        CHECK(!FarmZoneSkipped(zoneFailures, now + kFarmZoneUnreachableMs + 3500));
+
+        // Stale stamps drop when the next failure is recorded.
+        RecordFarmZoneTargetFailure(zoneFailures, b, now + kFarmZoneUnreachableMs + 4000);
+        CHECK(zoneFailures.size() == 1);
+        CHECK(!FarmZoneSkipped(zoneFailures, now + kFarmZoneUnreachableMs + 4000));
+
+        // A zero clock never records (0 is the "never failed" stamp).
+        std::vector<FarmZoneTargetFailure> zeroClock;
+        RecordFarmZoneTargetFailure(zeroClock, a, 0);
+        CHECK(zeroClock.empty());
+    }
+
+    // Nearest first, but a zone the travel layer's route gate rejects ranks
+    // after the nearer-or-farther zones it accepts.
+    {
+        FarmZone rejected;
+        rejected.zoneId = 1;
+        rejected.onBotMap = true;
+        rejected.distanceSq = 25.0f;
+        rejected.score = 900.0;
+        rejected.reachable = false;
+        FarmZone accepted = rejected;
+        accepted.zoneId = 2;
+        accepted.distanceSq = 2500.0f;
+        accepted.score = 5.0;
+        accepted.reachable = true;
+
+        std::vector<FarmZone> order { rejected, accepted };
+        std::sort(order.begin(), order.end(), FarmZoneBefore);
+        CHECK(order[0].zoneId == 2);
+        CHECK(FarmZoneBefore(accepted, rejected));
+        CHECK(!FarmZoneBefore(rejected, accepted));
+
+        // A reachable cross-map zone still ranks after every same-map zone.
+        FarmZone seaAccepted = accepted;
+        seaAccepted.zoneId = 3;
+        seaAccepted.onBotMap = false;
+        CHECK(FarmZoneBefore(rejected, seaAccepted));
+    }
+
     // Two servable zones: the near one is picked even though the far one is
     // richer; a zone on another continent ranks after both. Then the near
-    // zone's last travel attempt failed on the mesh and the pick moves on.
+    // zone is dropped and the pick moves on.
     {
         FarmZone near;
         near.zoneId = 10;

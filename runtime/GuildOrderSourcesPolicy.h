@@ -2,6 +2,7 @@
 
 #include "GuildOrderContract.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -119,16 +120,102 @@ inline double ZoneScore(uint32_t spawns, float chancePct)
     return double(spawns) * double(chancePct);
 }
 
-// A farm zone whose last travel attempt failed on the mesh (no path or a
-// partial one) stays out of the plan for this long: the bot farms the next
-// zone of the plan instead of re-picking the same unreachable point every
-// time its leg re-plans. The stamp is server uptime ms, 0 = never failed;
-// uint32 wrap keeps the subtraction meaningful.
+// A failed farm-leg travel attempt is remembered per target point, not per
+// zone: one mesh hole where a zone's spawn sample sat says nothing about the
+// zone's other farm spots, and the travel pick tries those next. A zone stays
+// out of the plan only once this many different target points in it failed
+// inside the window. Stamps are server uptime ms, 0 = never failed; uint32
+// wrap keeps the subtraction meaningful.
 inline constexpr uint32_t kFarmZoneUnreachableMs = 30 * 60 * 1000;
+inline constexpr size_t kFarmZoneFailedTargets = 2;
+
+// Target points within this many yards count as the same target: the travel
+// pick's approach point for one spawn moves a few yards between picks.
+inline constexpr float kFarmZoneTargetCellYd = 10.0f;
 
 inline bool FarmZoneFailureFresh(uint32_t failedAtMs, uint32_t nowMs)
 {
     return failedAtMs != 0 && nowMs - failedAtMs < kFarmZoneUnreachableMs;
+}
+
+struct FarmZoneTargetPoint
+{
+    uint32_t mapId = 0;
+    int32_t cellX = 0, cellY = 0, cellZ = 0;
+
+    bool operator==(FarmZoneTargetPoint const& other) const
+    {
+        return mapId == other.mapId && cellX == other.cellX && cellY == other.cellY &&
+            cellZ == other.cellZ;
+    }
+};
+
+inline FarmZoneTargetPoint FarmZoneTargetPointAt(uint32_t mapId, float x, float y, float z)
+{
+    auto cell = [](float value) { return int32_t(std::floor(value / kFarmZoneTargetCellYd)); };
+    FarmZoneTargetPoint point;
+    point.mapId = mapId;
+    point.cellX = cell(x);
+    point.cellY = cell(y);
+    point.cellZ = cell(z);
+    return point;
+}
+
+struct FarmZoneTargetFailure
+{
+    FarmZoneTargetPoint point;
+    uint32_t failedAtMs = 0;
+};
+
+// Distinct target points of one zone whose last failure is still inside the
+// window: repeats at the same point are one target, not two.
+inline size_t FarmZoneFailedTargets(std::vector<FarmZoneTargetFailure> const& failures, uint32_t nowMs)
+{
+    size_t distinct = 0;
+    for (size_t i = 0; i < failures.size(); ++i)
+    {
+        if (!FarmZoneFailureFresh(failures[i].failedAtMs, nowMs))
+            continue;
+        bool repeat = false;
+        for (size_t j = 0; j < i; ++j)
+            repeat = repeat || (failures[j].point == failures[i].point &&
+                FarmZoneFailureFresh(failures[j].failedAtMs, nowMs));
+        if (!repeat)
+            ++distinct;
+    }
+    return distinct;
+}
+
+// The zone is left out of the plan: at least two different targets in it
+// could not be walked to inside the window.
+inline bool FarmZoneSkipped(std::vector<FarmZoneTargetFailure> const& failures, uint32_t nowMs)
+{
+    return FarmZoneFailedTargets(failures, nowMs) >= kFarmZoneFailedTargets;
+}
+
+// Record one failed target point: the point keeps its latest stamp, repeats
+// refresh it, and stamps older than the window drop out on the way.
+inline void RecordFarmZoneTargetFailure(std::vector<FarmZoneTargetFailure>& failures,
+    FarmZoneTargetPoint const& point, uint32_t nowMs)
+{
+    if (!nowMs)
+        return;
+    for (size_t i = 0; i < failures.size();)
+    {
+        if (!FarmZoneFailureFresh(failures[i].failedAtMs, nowMs))
+            failures.erase(failures.begin() + i);
+        else
+            ++i;
+    }
+    for (FarmZoneTargetFailure& failure : failures)
+    {
+        if (failure.point == point)
+        {
+            failure.failedAtMs = nowMs;
+            return;
+        }
+    }
+    failures.push_back(FarmZoneTargetFailure{ point, nowMs });
 }
 
 // The travel layer's navmesh verdict names a zone the leg cannot serve: a
@@ -140,14 +227,20 @@ inline bool TravelPathUnreachable(std::string const& pathTag)
     return pathTag == "incomplete" || pathTag == "nopath";
 }
 
-// Farm-zone plan order: zones on the bot's map first, then the nearest farm
-// point (the planner's own sample spawn), then the richer zone. A zone with
-// no spawn on the bot's map has no distance and ranks after every same-map
-// zone, by score among the rest.
+// Farm-zone plan order: zones on the bot's map first, then the ones the
+// travel layer's route gate accepts, then the nearest farm point (the
+// planner's own sample spawn), then the richer zone. A zone with no spawn on
+// the bot's map has no distance and ranks after every same-map zone, by score
+// among the rest. Distance is straight-line: the only node-graph cost the
+// travel layer offers is a full A* per pair (TravelNodeMap::getRoute), so the
+// gate's verdict is the reachability signal and the walk itself is measured
+// in a straight line from where the bot stands.
 inline bool FarmZoneBefore(FarmZone const& a, FarmZone const& b)
 {
     if (a.onBotMap != b.onBotMap)
         return a.onBotMap;
+    if (a.onBotMap && a.reachable != b.reachable)
+        return a.reachable;
     if (a.onBotMap && a.distanceSq != b.distanceSq)
         return a.distanceSq < b.distanceSq;
     if (a.score != b.score)

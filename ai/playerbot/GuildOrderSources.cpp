@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/TravelValues.h"
+#include "playerbot/strategy/actions/ChooseTravelTargetAction.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/policy/travel/TravelRouteDangerPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
@@ -188,6 +189,7 @@ struct ZoneAccum
     uint32_t spawns = 0;
     float chance = 0.0f;
     float nearest = 0.0f;
+    float nearestX = 0.0f, nearestY = 0.0f, nearestZ = 0.0f;
     bool hasNearest = false;
 };
 
@@ -591,7 +593,7 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     return false;
 }
 
-SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
+SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type, bool rankByTravelRoute)
 {
     SourcePlan plan;
     if (!bot || !itemId)
@@ -851,6 +853,9 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 if (!accum.hasNearest || dist < accum.nearest)
                 {
                     accum.nearest = dist;
+                    accum.nearestX = slice.x;
+                    accum.nearestY = slice.y;
+                    accum.nearestZ = slice.z;
                     accum.hasNearest = true;
                 }
             }
@@ -881,22 +886,38 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         zone.score = ZoneScore(accum.spawns, accum.chance);
         zone.onBotMap = accum.hasNearest;
         zone.distanceSq = accum.hasNearest ? accum.nearest : -1.0f;
+        // The travel layer's own route verdict for the zone's sample spawn:
+        // one node route plus one leg scan, cached five minutes per bot and
+        // area cell. The nearest zone the bot cannot travel to must not
+        // outrank a farther one it can walk to. Only the travel pick asks
+        // (map thread): the gate touches the node graph and the terrain.
+        // Cross-map zones have no point on this map; they rank last through
+        // onBotMap anyway.
+        if (rankByTravelRoute && accum.hasNearest)
+        {
+            WorldPosition sample(botPos.getMapId(), accum.nearestX, accum.nearestY, accum.nearestZ);
+            std::string blocker;
+            zone.reachable = SharedRouteIsSurvivable(bot, &sample, blocker);
+        }
         plan.zones.push_back(zone);
     }
-    // A zone the travel layer could not path into stays out for its window,
-    // so the leg farms the next planned zone instead of the same mesh hole.
+    // A zone stays out for the window once two different target points in it
+    // could not be walked to: one mesh hole where a sample spawn sat says
+    // nothing about the zone's other farm spots, so the leg tries those
+    // instead of dropping the whole zone.
     uint32_t const nowMs = WorldTimer::getMSTime();
     std::vector<uint8_t> unreachable;
     unreachable.reserve(plan.zones.size());
     for (FarmZone const& zone : plan.zones)
-        unreachable.push_back(FarmZoneFailureFresh(
-            FarmZoneUnreachableAt(bot->GetGUIDLow(), zone.zoneId), nowMs) ? 1 : 0);
+        unreachable.push_back(FarmZoneSkipped(FarmZoneFailures(bot->GetGUIDLow(), zone.zoneId),
+            nowMs) ? 1 : 0);
     DropUnreachableFarmZones(plan.zones, unreachable);
 
-    // Nearest farm point first: walking distance is the cost the order pays
-    // on every trip, so a zone with fewer spawns next door beats a richer one
-    // across the continent. Pool bots never get travel targets on another
-    // map, so same-map zones rank first regardless of distance.
+    // Nearest farm point first, among the zones the travel layer's route gate
+    // accepts: walking distance is the cost the order pays on every trip, so a
+    // zone with fewer spawns next door beats a richer one across the
+    // continent. Pool bots never get travel targets on another map, so
+    // same-map zones rank first regardless of distance.
     std::sort(plan.zones.begin(), plan.zones.end(), FarmZoneBefore);
 
     plan.bestChance = zones.empty() ? 0.0f : zones[plan.zones.front().zoneId].chance;
