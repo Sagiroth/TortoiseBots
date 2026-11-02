@@ -601,6 +601,9 @@ public:
     // The run leader orders `pullback` only when the tank can shoot from where it stands, else it walks the
     // party to a firing stand first (DungeonRunPolicy.h HoldForShot; default off).
     bool dungeonRunPullStand;
+    // A firing stand is refused when another live pack (its patrol loop included) can reach it; none clear: the
+    // plain pull goes out (DungeonRunPolicy.h HoldForShot; default off).
+    bool dungeonRunStandClearance;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;

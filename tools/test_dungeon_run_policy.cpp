@@ -16002,6 +16002,73 @@ static void TestShotStandOnPath()
     }
 }
 
+// The firing stand's clearance (AiPlayerbot.DungeonRunStandClearance): the stands the path offers are tried in the
+// ranged reach's own order, and the first one clear of every other live pack is taken; none clear, the plain pull.
+static void TestStandClearancePicksTheFarStand()
+{
+    using ai::ApproachPoint;
+    auto P = [](float x, float y) { ApproachPoint p; p.x = x; p.y = y; return p; };
+    ApproachPoint const unit = P(0, 0);
+    auto seesAll = [](const ApproachPoint&) { return true; };
+    float const range = 24.5f;
+    // The tank 70 yd out; the path enters the 24.5 yd shot at P1 and runs on to P2, both in range and in sight.
+    std::vector<ApproachPoint> const path = {P(-70, 0), P(-24.5f, 0), P(-16.4f, -16.8f), unit};
+    ShotStand const plain = ShotStandOnPath(path, unit, range, seesAll);
+    CHECK(plain.known && std::fabs(plain.x + 24.5f) < 0.01f && std::fabs(plain.y) < 0.01f);
+    // A patrol none of the pulled unit's group walks (a two-point loop, so its legs count too): 20.0 yd from the
+    // reach's stand, 38.6 yd from the path's next in-range point.
+    StandOther patrol;
+    patrol.x = -33.2f;
+    patrol.y = 18.0f;
+    patrol.path = {P(-33.2f, 18.0f), P(-41.9f, 36.0f)};
+    patrol.clearYd = 20.0f + kStandClearSpreadYd; // a 20 yd detection at the party's level, plus the spread
+    std::vector<StandOther> const others = {patrol};
+    CHECK(std::fabs(StandClearanceYd(plain.x, plain.y, plain.z, patrol) - 20.0f) < 0.1f);
+    CHECK(!StandClearAt(plain.x, plain.y, plain.z, others));
+    bool blocked = true;
+    ShotStand const stand = ShotStandOnPathCleared(path, unit, range, seesAll,
+        [&others](const ShotStand& s) { return StandClearAt(s.x, s.y, s.z, others); }, blocked);
+    CHECK(stand.known && std::fabs(stand.x + 16.4f) < 0.01f && std::fabs(stand.y + 16.8f) < 0.01f && !blocked);
+    CHECK(StandClearanceYd(stand.x, stand.y, stand.z, patrol) > patrol.clearYd);
+    // Every stand within the clearance: no stand, and blocked (the pull goes out from where the tank stands).
+    StandOther close = patrol;
+    close.path.push_back(P(-16.4f, -41.8f)); // a leg 25.0 yd from the path's second stand
+    std::vector<StandOther> const all = {close};
+    bool allBlocked = false;
+    ShotStand const none = ShotStandOnPathCleared(path, unit, range, seesAll,
+        [&all](const ShotStand& s) { return StandClearAt(s.x, s.y, s.z, all); }, allBlocked);
+    CHECK(!none.known && allBlocked);
+    // The key off: the glue reads one stand, the reach's own pick, and consults no other pack.
+    std::vector<ShotStand> const one = ShotStandCandidates(path, unit, range, seesAll, 1);
+    CHECK(one.size() == 1 && one[0].x == plain.x && one[0].y == plain.y && one[0].z == plain.z);
+
+    // The stand rule on the key-off pick: the tank walks to that stand as before.
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851})};
+    {
+        Run r = Start(&plan);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f, false)};
+        CHECK(Tick(r, f).empty());
+        GiveStand(f, r, plain.x, plain.y);
+        f.shotStandYd = 24.5f;
+        CHECK(Tick(r, f) == "move -24.5 0.0 0.0");
+    }
+    // Every stand refused: the pullback goes out from where the tank stands, and the note names the entry.
+    {
+        Run r = Start(&plan);
+        Facts f = StandParty();
+        f.units = {Seen(11, 4851, 40.0f, false)};
+        CHECK(Tick(r, f).empty());
+        f.shotStandGuid = 11; // read, no clear stand
+        f.shotStandKnown = false;
+        f.shotStandBlocked = true;
+        CHECK(Tick(r, f) == "pullback 11");
+        CHECK(Has(r.note, "(order 1; stand_pull: no clear stand for 4851; plain pull)"));
+        CHECK(r.shotStandTries[11] == kShotStandTries);
+    }
+}
+
 // Uldaman run 4, step 38: a fight past the 180 s ceiling paused the run, the
 // fight ended 15 s later, and the run stayed paused for 470 s. A ceiling pause
 // goes on by itself once the party is out of combat kCeilingQuietMs, once per
@@ -27091,6 +27158,7 @@ int main()
     TestPickPackPullPrefersShootable();
     TestStandTicksAreNotFruitlessPulls();
     TestShotStandOnPath();
+    TestStandClearancePicksTheFarStand();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

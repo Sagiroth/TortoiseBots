@@ -48,6 +48,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
 | [`AiPlayerbot.DungeonRunRaidBossRules`](#aiplayerbotdungeonrunraidbossrules) | `0` | `1`: a raid's boss fight runs up to 1200 s, survives its deaths while the boss still loses hp, and sends its adds to the off-tanks instead of the main tank. |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
+| [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | With `AiPlayerbot.DungeonRunPullStand`, a firing stand is refused when another live pack (its patrol loop included) can reach it; none clear, the plain pull goes out. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -400,6 +401,17 @@ Whether the run leader pulls the living back to the last stand when two party me
 <summary>How it works in detail</summary>
 
 **Retreat at two dead:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-10-23 for the wipes of that day (30 notes *3 dead: fighting on, a regroup follows*, each one a wipe and a corpse walk back of 4-28 min). With `1`, in a fight with two members dead (one fewer than the 3 that make the run regroup by itself), the lead bot alive, and the fight being lost (the fight ceiling's hp watch had read the engaged units for at least 15 s and none of them set a new low in that time), the run sends one `cmd move` to its last stand (the last point it walked the party to, at most 40 yd away; again once after 5 s), note *retreat: 2 dead and no engaged unit lost hp in 15 s: the living pull back to the last stand at x y z*. The retreat ends at the stand, after 20 s, at a third death or when the lead bot dies, and the fight is the bots' own again; once per fight. A refused move ends it without a pause. Never inside a scripted event, on the steps leading into one, on a `hold` step or on a boss step that is an event (an encounter, or done by instance data or an object). Whether the mobs follow the party back or let it go is the game's (the module adds no leash); this was not proven in a live run when it was added. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunStandClearance`
+Makes the pull stand keep clear of every other live pack, its patrol loop included.
+**Default:** `0` · **Values:** `0` off (the stand is picked as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Stand clearance:** only read while `AiPlayerbot.DungeonSelfClear = 1` and with `AiPlayerbot.DungeonRunPullStand = 1`. Added 2026-11-02 for Zul'Gurub's Mar'li leg (walk 26b: the tank's firing stand for pack 1 stood 35.3 yd from the nearest pack-1 spawn but 20.0 yd from the loop of pack 0's patrolling leader 49202, which woke the pack as the party gathered). The stands the tank's navmesh path to the target offers are tried in the same order as before (the ranged reach's own point first, then the path's points nearer the target), and the first one clear of every other live pack is taken. Clear means at least the pack's aggro reach (its detection range minus the party's level advantage over it, the core's own rule) plus the party's spread round the stand (10 yd) away from it. A pack that patrols is measured along its whole loop (`creature_movement` / `creature_movement_template`, the path its movement generator walks; a loop the server does not hold, as a scripted escort path, stands in by the pack's spot plus 10 yd), so a stand beside a leg it will walk is refused too; a pack already in combat, and the pulled unit's own pack, are not checked. With no clear stand the pull goes out from where the tank stands (the plain pull) and the order's note reads `stand_pull: no clear stand for <entry>; plain pull`. The reading is one grid search around the lead bot and a path lookup per patroller, only on the tick a stand is read.
 
 </details>
 

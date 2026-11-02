@@ -1084,6 +1084,18 @@ AiPlayerbot.DungeonRunRezHold = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunPullStand = 0
 
+# The pull stand keeps clear of other packs (with AiPlayerbot.DungeonRunPullStand = 1). Every firing stand the
+# tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
+# from every other living pack is taken. Far enough is the pack's aggro reach (its detection range minus the
+# party's level advantage over it) plus the party's spread round the stand (10 yd): a pack that patrols is checked
+# along its whole loop, so a stand the loop will walk past is refused too. The pulled pack itself is not checked.
+# With no clear stand the pull goes out from where the tank stands (the plain pull) and the order's note reads
+# "stand_pull: no clear stand for <entry>; plain pull".
+# 0 - off, the stand is picked as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandClearance = 0
+
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
 # e.g. Uldaman, Revelosh's Shaft of Tsol). With 1 the lead bot (it leads the bound group) sets

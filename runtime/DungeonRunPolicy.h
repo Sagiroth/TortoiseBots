@@ -54,6 +54,7 @@
 //     follower of the lead bot); the party stays where it is and fights them
 //     once it has arrived. Never during an event.
 
+#include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
@@ -222,6 +223,65 @@ constexpr std::uint32_t kShotStillWaitMs = 3000;  // a moving tank is waited for
 // A stand walk that gains nothing for kWalkRetryMs, or takes longer than this
 // in all, is given up: the order goes out from where the tank is (never a pause).
 constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
+// AiPlayerbot.DungeonRunStandClearance (HoldForShot): a firing stand is refused when another live pack can reach it,
+// from where it stands or from any point of the loop it patrols. The clearance is the unit's aggro reach (its
+// detection range minus the party's level advantage over its level, the core's Creature::GetAttackDistance) plus the
+// party's spread round the stand (ai::kSpreadSettledDistance: the party does not all stand on the point). `path` is
+// the whole loop a patroller walks; a loop the host cannot read (a special escorts path) stands in by the unit's
+// spot plus kStandClearUnreadPathYd.
+constexpr float kStandClearSpreadYd = ai::kSpreadSettledDistance;
+constexpr float kStandClearUnreadPathYd = 10.0f;
+constexpr std::size_t kStandClearCandidates = 8;   // stands tried along the lead bot's path, nearest the lead first
+constexpr float kStandClearScanYd = 2.0f * kSeeYd; // the glue reads the other packs this far around the lead bot
+
+// One live hostile that is not in the pulled group (the glue's read, Facts::standOthers).
+struct StandOther
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands now
+    std::vector<ai::ApproachPoint> path; // the loop it walks, closed (empty: its spot alone)
+    float clearYd = 0.0f;                // its aggro reach plus the party's spread
+    float marginYd = 0.0f;               // a loop the host could not read: its spot plus this
+};
+
+// Point-to-segment distance in 3D: a stand beside a loop's leg is as close to the patrol as one beside a waypoint.
+inline float StandClearSegmentYd(float ax, float ay, float az, float bx, float by, float bz, float px, float py, float pz)
+{
+    float const dx = bx - ax, dy = by - ay, dz = bz - az;
+    float const len2 = dx * dx + dy * dy + dz * dz;
+    float t = len2 > 0.0f ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len2 : 0.0f;
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    return ai::PlanDistance(ax + t * dx, ay + t * dy, az + t * dz, px, py, pz);
+}
+
+// How near a point comes to one other unit: its spot (plus the margin of a loop the host could not read), or the
+// nearest point of the closed loop it walks.
+inline float StandClearanceYd(float x, float y, float z, const StandOther& other)
+{
+    float best = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;
+    std::size_t const n = other.path.size();
+    for (std::size_t i = 1; i < n; ++i)
+    {
+        ai::ApproachPoint const& a = other.path[i - 1];
+        ai::ApproachPoint const& b = other.path[i];
+        best = std::min(best, StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z));
+    }
+    if (n > 1)
+    {
+        ai::ApproachPoint const& a = other.path[n - 1];
+        ai::ApproachPoint const& b = other.path[0];
+        best = std::min(best, StandClearSegmentYd(a.x, a.y, a.z, b.x, b.y, b.z, x, y, z));
+    }
+    return best;
+}
+
+// Whether every other pack's aggro reach plus the party's spread stays off the point.
+inline bool StandClearAt(float x, float y, float z, const std::vector<StandOther>& others)
+{
+    for (const StandOther& other : others)
+        if (StandClearanceYd(x, y, z, other) < other.clearYd)
+            return false;
+    return true;
+}
 constexpr std::uint32_t kMaxPullsPerStep = 20;
 constexpr std::uint32_t kMaxWalkBackPulls = 8;    // pulls on the way of a walk back (their own count), then pause
 // A lead bot on a navmesh island (IslandEscape). Zul'Farrak r3-19z20: the tank
@@ -1199,6 +1259,11 @@ struct Facts
     bool shotStandKnown = false;
     float shotStandX = 0.0f, shotStandY = 0.0f, shotStandZ = 0.0f;
     float shotStandYd = 0.0f;           // ... the stand's distance from the unit (centre to centre); it sees the unit
+    // AiPlayerbot.DungeonRunStandClearance (HoldForShot): the other packs a firing stand must keep clear of, read with
+    // the stand; shotStandBlocked: the stand search found stands and refused them all (the pull goes out from where the
+    // tank stands, and its note says so).
+    std::vector<StandOther> standOthers;
+    bool shotStandBlocked = false;
 };
 
 // Task A5: declared here (used from the first gate), defined next to PartyDead.
@@ -7805,6 +7870,66 @@ inline ShotStand ShotStandOnPath(const std::vector<ai::ApproachPoint>& path, con
     return ShotStandOnFloor(upper, unit, range, hasLos);
 }
 
+// The firing stands on the path, in the order the ranged reach prefers them: its own choice first (ShotStandOnFloor:
+// the stand today's rule walks to), then the path's in-range, in-sight points from there on toward the unit, the
+// nearer the unit the later. At most `limit` stands (1: today's pick alone, nothing more read).
+template <typename LosFn>
+inline std::vector<ShotStand> ShotStandCandidates(const std::vector<ai::ApproachPoint>& path,
+    const ai::ApproachPoint& unit, float range, LosFn hasLos, std::size_t limit = kStandClearCandidates)
+{
+    std::vector<ShotStand> stands;
+    if (path.size() < 2 || range <= 0.0f || limit == 0)
+        return stands;
+    std::vector<ai::ApproachPoint> upper;
+    upper.reserve(path.size());
+    for (const ai::ApproachPoint& point : path)
+    {
+        if (path.front().z - point.z > kStandLedgeDropYd)
+            break; // a ledge: nothing at or past it
+        upper.push_back(point);
+    }
+    ShotStand const first = ShotStandOnFloor(upper, unit, range, hasLos);
+    if (!first.known)
+        return stands;
+    stands.push_back(first);
+    ai::ApproachPoint firstPoint;
+    firstPoint.x = first.x;
+    firstPoint.y = first.y;
+    firstPoint.z = first.z;
+    float const firstSq = ai::ApproachDistanceSq(firstPoint, unit);
+    float const rangeSq = range * range;
+    for (std::size_t i = 1; i < upper.size() && stands.size() < limit; ++i)
+    {
+        float const distSq = ai::ApproachDistanceSq(upper[i], unit);
+        // Only points the first choice left behind (nearer the unit), in range and in sight, and never on the unit:
+        // that is the approach itself, not a stand.
+        if (distSq >= firstSq || distSq > rangeSq || distSq <= kArriveYd * kArriveYd || !hasLos(upper[i]))
+            continue;
+        ShotStand stand;
+        stand.known = true;
+        stand.x = upper[i].x;
+        stand.y = upper[i].y;
+        stand.z = upper[i].z;
+        stands.push_back(stand);
+    }
+    return stands;
+}
+
+// The first candidate a clearness test accepts (AiPlayerbot.DungeonRunStandClearance: StandClearAt): no stand when
+// none passes, and `blocked` says the path did offer stands.
+template <typename LosFn, typename ClearFn>
+inline ShotStand ShotStandOnPathCleared(const std::vector<ai::ApproachPoint>& path, const ai::ApproachPoint& unit,
+    float range, LosFn hasLos, ClearFn isClear, bool& blocked, std::size_t limit = kStandClearCandidates)
+{
+    blocked = false;
+    std::vector<ShotStand> const stands = ShotStandCandidates(path, unit, range, hasLos, limit);
+    for (const ShotStand& stand : stands)
+        if (isClear(stand))
+            return stand;
+    blocked = !stands.empty();
+    return ShotStand();
+}
+
 // The joiners the aggro estimate expects for a pull of `u`: this tick's read,
 // else the last one this step (a unit held for its joiner rest is not judged
 // again by the glue). 0 with the estimate off.
@@ -7914,7 +8039,11 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
         if (!f.shotStandKnown)
         {
             tries = kShotStandTries;
-            r.shotHow = "no firing stand found";
+            // AiPlayerbot.DungeonRunStandClearance refused every stand the path offered: the pull goes out from where
+            // the tank stands (the plain approach pull), and the order's note says so for the walk's log.
+            r.shotHow = f.shotStandBlocked
+                ? "stand_pull: no clear stand for " + std::to_string(u.entry) + "; plain pull"
+                : "no firing stand found";
             return false;
         }
         if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, f.shotStandX, f.shotStandY, f.shotStandZ) <= kArriveYd)

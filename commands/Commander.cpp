@@ -124,6 +124,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/PathFinder.h"
 #include "Movement/spline/MoveSplineInit.h"
+#include "Movement/WaypointManager.h"
 #include "Maps/Cell.h"
 #include "Maps/Map.h"
 #include "Database/DBCStores.h"
@@ -8845,6 +8846,9 @@ void ReadRezRoster(Player* lead, std::vector<Player*> const& bots, TortoiseBots:
 // one request is read once) the firing stand on its navmesh path to that unit (DungeonRun::ShotStandOnPath:
 // the path walked back from the unit end to the first point within range less kShotMarginYd that sees it).
 // One path and a few sight rays, for that one unit, on that one tick.
+// With AiPlayerbot.DungeonRunStandClearance on, the stands the path offers are tried in the reach's own order and the
+// first one clear of every other live pack is taken (ReadStandClearance, DungeonRun::StandClearAt); none clear: no
+// stand is reported and DungeonRun::HoldForShot orders the plain pull.
 // For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
 // leadShotYd and losLead whatever the key says (the key governs ordinary pulls only).
 // StandThisStep: the current step is such a boss or pull with its stand (the move row right before it in the same leg).
@@ -8862,7 +8866,12 @@ inline bool StandThisStep(DungeonRunSlot const& slot)
     return prev.kind == ai::PlanStepKind::Move && prev.leg == s.leg;
 }
 
-void ReadPullStand(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f)
+// The other packs a firing stand must keep clear of (defined with the patrol readers below).
+static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, Creature* target,
+    TortoiseBots::DungeonRun::Facts& f);
+
+void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
     bool const standStep = StandThisStep(slot);
@@ -8915,9 +8924,22 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Dunge
     };
     static_assert(kStandLedgeDropYd == ai::kRunnerLedgeDropYd,
         "the run leader's firing stand keeps to the bots' own ledge rule (owner decision 2026-10-23)");
-    ShotStand const stand = ShotStandOnPath(points, goal, f.leadShotYd - kShotMarginYd, sees);
+    bool const clearance = sPlayerbotAIConfig.dungeonRunStandClearance;
+    if (clearance)
+        ReadStandClearance(lead, bots, unit, f);
+    // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule).
+    bool blocked = false;
+    ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
+        [&f, clearance](ShotStand const& candidate)
+        {
+            return !clearance || StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers);
+        },
+        blocked, clearance ? kStandClearCandidates : 1);
     if (!stand.known)
+    {
+        f.shotStandBlocked = clearance && blocked;
         return;
+    }
     f.shotStandKnown = true;
     f.shotStandX = stand.x;
     f.shotStandY = stand.y;
@@ -8969,19 +8991,77 @@ uint64 RunFormationOf(Creature* creature)
 // leader's own default movement IDLE, so judging by the current leader would call a live patrol static after its
 // waypoint leader died (the temp leader and its followers read IDLE). Dead creatures stay in the map until they
 // respawn, so the original leader is still found. The current leader (the creature itself or a promoted one) must be
-// alive: its death stops the walk.
-bool RunWalksPatrol(Creature* creature)
+// alive: its death stops the walk. PatrolWalker is the creature whose waypoint loop drives that walk: the unit
+// itself, else its formation's original leader; 0 for a unit that does not patrol.
+Creature* PatrolWalker(Creature* creature)
 {
     if (creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE)
-        return true;
+        return creature;
     CreatureGroup* const group = creature->GetCreatureGroup();
     if (!group || !group->IsFormation())
-        return false;
+        return nullptr;
     Creature* const leader = creature->GetMap()->GetCreature(group->GetLeaderGuid());
     if (!leader || !leader->IsAlive())
-        return false;
+        return nullptr;
     Creature* const original = creature->GetMap()->GetCreature(group->GetOriginalLeaderGuid());
-    return original && original->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+    return original && original->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE ? original : nullptr;
+}
+
+bool RunWalksPatrol(Creature* creature)
+{
+    return PatrolWalker(creature) != nullptr;
+}
+
+// The other packs a firing stand must keep clear of (AiPlayerbot.DungeonRunStandClearance, DungeonRun::StandClearAt):
+// living, hostile, out-of-combat creatures that are not in the pulled unit's formation, within kStandClearScanYd of the
+// lead bot, each with its aggro reach (the aggro estimate's own rule: detection range minus the party's level advantage
+// over its level, the widest over the party) plus the party's spread. A waypoint patroller carries the whole loop it
+// walks: sWaypointMgr's path for its walker, the one WaypointMovementGenerator loads, closed, so a stand beside a leg
+// the patrol will walk is refused as well. A loop the host cannot read (a special escorts path) stands in by the unit's
+// spot plus kStandClearUnreadPathYd. One grid search and a map lookup per patroller, on the tick a stand is read.
+static void ReadStandClearance(Player* lead, std::vector<Player*> const& bots, Creature* target,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    std::list<Unit*> found;
+    HostileCreaturesAround(lead, kStandClearScanYd, found);
+    uint64 const pulled = RunFormationOf(target);
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMapId() == lead->GetMapId() && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    for (Unit* unit : found)
+    {
+        Creature* c = unit->ToCreature();
+        if (!c || !c->IsAlive() || c == target || c->IsInCombat() || RunFormationOf(c) == pulled)
+            continue;
+        if (c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
+            continue; // never wakes by proximity
+        ai::AggroMob mob;
+        mob.level = c->GetLevel();
+        mob.detectionYd = c->GetDetectionRange();
+        StandOther other;
+        other.x = c->GetPositionX();
+        other.y = c->GetPositionY();
+        other.z = c->GetPositionZ();
+        other.clearYd = ai::AggroRadius(mob, lowest, rate) + kStandClearSpreadYd;
+        if (Creature* const walker = PatrolWalker(c))
+        {
+            if (WaypointPath const* const loop = sWaypointMgr.GetDefaultPath(walker->GetEntry(), walker->GetGUIDLow()))
+                for (auto const& node : *loop)
+                {
+                    ai::ApproachPoint point;
+                    point.x = node.second.x;
+                    point.y = node.second.y;
+                    point.z = node.second.z;
+                    other.path.push_back(point);
+                }
+            else
+                other.marginYd = kStandClearUnreadPathYd;
+        }
+        f.standOthers.push_back(other);
+    }
 }
 
 // A stand-pull pull row's other patrols (DungeonRun::Facts::standPatrols, PatrolStandPullGate): living hostile
@@ -9945,7 +10025,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     if (f.leadIsland && lead->IsAlive())
         f.goodSpotCut = GoodSpotCutOff(lead, slot.run);
     ReadTimeSinkWays(slot, lead, f);
-    ReadPullStand(slot, lead, f);
+    ReadPullStand(slot, lead, bots, f);
     // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
     // the pack in the tank's shot), not on every tick of the wait. A row that left a unit of the pack to the plain pull
     // (Run::standPullStatic) reads them too: its plain pull still needs the clearance.
