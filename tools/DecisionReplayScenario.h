@@ -81,7 +81,7 @@ inline void ScenarioFacts(std::uint64_t seq, DungeonRun::Facts& facts)
         facts.members.push_back(member);
     }
 
-    if (seq >= 9)
+    if (seq >= 9 && seq < 26)
     {
         DungeonRun::UnitFact unit;
         unit.guid = 101;
