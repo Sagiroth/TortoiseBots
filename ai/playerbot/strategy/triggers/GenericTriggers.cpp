@@ -7,6 +7,7 @@
 #include "playerbot/TankAddPickupPolicy.h"
 #include "playerbot/policy/combat/AoeTauntPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
@@ -2043,4 +2044,13 @@ bool PetAttackTrigger::IsActive()
         return false;
 
     return true;
+}
+
+bool DangerousEliteNearTrigger::IsActive()
+{
+    // Standing elites are already kept out of grind and travel picks by their
+    // spawn point; only one that walks around comes to the bot.
+    Creature* elite = dynamic_cast<Creature*>(AI_VALUE(Unit*, "dangerous elite"));
+    return elite && elite->GetDefaultMovementType() != IDLE_MOTION_TYPE &&
+        bot->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD);
 }

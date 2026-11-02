@@ -35,6 +35,7 @@
 #include "vmap/VMapFactory.h"
 #include "playerbot/BotActionLog.h"
 #include "Database/DBCStores.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 
 using namespace ai;
 
@@ -5229,4 +5230,25 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
 
     sLog.outDetail("%s: GetPossibleJumpStartFor Failed to find jump point!", jumper->GetName());
     return WorldPosition();
+}
+
+bool AvoidEliteAction::Execute(Event& event)
+{
+    Unit* elite = AI_VALUE(Unit*, "dangerous elite");
+    if (!elite)
+        return false;
+
+    // Straight away from the elite first, then fanning out to the sides.
+    WorldPosition const from(elite);
+    float const away = from.getAngleTo(WorldPosition(bot));
+    float const stepYd = ai::ROAMING_ELITE_AVOID_YD + 15.0f;
+    for (float turn : { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f })
+    {
+        float const x = from.getX() + stepYd * cos(away + turn);
+        float const y = from.getY() + stepYd * sin(away + turn);
+        float const z = bot->GetMap()->GetHeight(x, y, bot->GetPositionZ() + 5.0f);
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            return true;
+    }
+    return false;
 }

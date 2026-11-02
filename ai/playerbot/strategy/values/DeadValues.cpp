@@ -183,7 +183,11 @@ bool ShouldSpiritHealerValue::Calculate()
     if (ai->HasAura(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS, bot) || durability < 10)
         return true;
 
-    //Died too many times - but a sub-10 pool bot never goes to the spirit
+    //Died again after every corpse revive: three failed corpse runs in a row
+    //(the count only clears on a kill) send the next revive to the spirit
+    //healer. Until then the bot runs to its body like a player would; reviving
+    //at the healer on every death piled the pool up at graveyard gates.
+    //A sub-10 pool bot never goes to the spirit
     //healer just for the count: its valley graveyard sits in the next town,
     //so the revive strands it above its level (LowbieGraveyardPolicy.h).
     //The corpse run stays the default; the stall and long-dead-time gates
@@ -252,40 +256,6 @@ bool ShouldSpiritHealerValue::Calculate()
             return true;
         }
     }
-
-    //If there are enemies near grave and corpse we go to corpse first.
-    if (AI_VALUE2(bool, "manual bool", "enemies near graveyard"))
-        return false;
-
-    //Enemies near corpse so try grave first.
-    if (AI_VALUE2(bool, "manual bool", "enemies near corpse"))
-        return true;
-
-    GuidPosition graveyard = AI_VALUE(GuidPosition, "best graveyard");
-
-    float corpseDistance = WorldPosition(bot).fDist(corpse);
-    float graveYardDistance = WorldPosition(bot).fDist(graveyard);
-    bool corpseInSight = corpseDistance < sPlayerbotAIConfig.sightDistance;
-    bool graveInSight = graveYardDistance < sPlayerbotAIConfig.sightDistance;
-    bool enemiesNear = !AI_VALUE(std::list<ObjectGuid>, "possible targets").empty();
-
-    if (enemiesNear)
-    {
-        if (graveInSight)
-        {
-            SET_AI_VALUE2(bool, "manual bool", "enemies near graveyard", true);
-            return false;
-        }
-        if (corpseInSight)
-        {
-            SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", true);
-            return true;
-        }
-    }
-
-    //If grave is near and no ress sickness go there.
-    if (graveInSight && !corpseInSight && ai->HasCheat(BotCheatMask::repair))
-        return true;
 
     //Stick to corpse.
     return false;

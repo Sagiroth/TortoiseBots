@@ -171,6 +171,7 @@ namespace ai
             creators["pet target"] = [](PlayerbotAI* ai) { return new PetTargetValue(ai); };
             creators["old target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
             creators["grind target"] = [](PlayerbotAI* ai) { return new GrindTargetValue(ai); };
+            creators["dangerous elite"] = [](PlayerbotAI* ai) { return new DangerousEliteValue(ai); };
             creators["rti target"] = [](PlayerbotAI* ai) { return new RtiTargetValue(ai); };
             creators["rti cc target"] = [](PlayerbotAI* ai) { return new RtiCcTargetValue(ai); };
             creators["duel target"] = [](PlayerbotAI* ai) { return new DuelTargetValue(ai); };
