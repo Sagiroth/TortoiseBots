@@ -945,7 +945,7 @@ bool PlayerbotAIConfig::Initialize()
     pullBackMaxReturnTime = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.PullBackMaxReturnTime", 15));
     rangedPull = config.GetBoolDefault("AiPlayerbot.RangedPull", true);
     rangedPullMeleeApproach = config.GetFloatDefault("AiPlayerbot.RangedPullMeleeApproach", 20.0f);
-    randomBotStartLevelMin = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMin", 1);
+    randomBotStartLevelMin = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMin", 5);
     randomBotStartLevelMax = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMax", 60);
     gearscorecheck = config.GetBoolDefault("AiPlayerbot.GearScoreCheck", false);
     levelCheck = config.GetIntDefault("AiPlayerbot.LevelCheck", 30);

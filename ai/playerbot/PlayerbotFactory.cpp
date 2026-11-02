@@ -15,6 +15,7 @@
 #include "../../runtime/OwnedBotQolPolicy.h"
 #include "../../runtime/policy/class/ShamanTankKitPolicy.h"
 #include "../../runtime/GearItemLevelCapPolicy.h"
+#include "../../runtime/GearSeedQualityPolicy.h"
 #include "../../runtime/policy/provision/GearBlacklistPolicy.h"
 #include "../../runtime/PlayerAutogearPolicy.h"
 #include "Database/DBCStores.h"
@@ -37,6 +38,9 @@
 #include "playerbot/policy/travel/MountShopPolicy.h"
 
 using namespace ai;
+
+static_assert(TortoiseBots::kSeedQualityNormal == ITEM_QUALITY_NORMAL && TortoiseBots::kSeedQualityUncommon == ITEM_QUALITY_UNCOMMON,
+    "GearSeedQualityPolicy.h mirrors the core item quality values");
 
 namespace
 {
@@ -1361,7 +1365,6 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
         return;
     }
 
-    bool isRandomBot = sRandomBotFacade.IsRandomBot(bot) && PlayerbotAIStorage::Instance().GetAI(bot) && !PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster() && !PlayerbotAIStorage::Instance().GetAI(bot)->IsInRealGuild();
     if (!incremental)
     {
         DestroyItemsVisitor visitor(bot);
@@ -1667,7 +1670,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                     frand(0.0f, 1.0f) < sPlayerbotAIConfig.randomGearSeedEpicChance)
                     seedEpic = TrySeedEpicIds(bot, specId, slot, searchLevel, maxItemLevel, ids);
                 // Fresh-seed quality band (owner spec): greens and blues mixed
-                // from level 20, the progressive poor/normal floor below that.
+                // from level 20, white (never grey, #1485) below that.
                 // Epics only through the rare world-epic gate above (a fresh
                 // bot must not be overpowered). Earned/command paths keep
                 // the quality-started band.
@@ -1675,9 +1678,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                 uint32 qEnd = ITEM_QUALITY_ARTIFACT;
                 if (seedSpread && !seedEpic)
                 {
-                    qBegin = level < 10 ? ITEM_QUALITY_POOR
-                           : level < 20 ? ITEM_QUALITY_NORMAL
-                                        : ITEM_QUALITY_UNCOMMON;
+                    qBegin = TortoiseBots::SeedQualityFloor(level);
                     // Spawn band tops out at rare; a raised level-60 ilvl
                     // ceiling opens the band up to epic (deterministically).
                     qEnd = (playerUpgrade ? TortoiseBots::AutogearMaxQuality(level, TortoiseBots::kAutogearMaxLevel, playerRaisedCeiling)
@@ -1726,9 +1727,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                 if (seedEpic && ids.empty())
                 {
                     seedEpic = false;
-                    for (uint32 q = level < 10 ? ITEM_QUALITY_POOR
-                               : level < 20 ? ITEM_QUALITY_NORMAL
-                                            : ITEM_QUALITY_UNCOMMON;
+                    for (uint32 q = TortoiseBots::SeedQualityFloor(level);
                          q < ITEM_QUALITY_RARE + 1; ++q)
                     {
                         if (setQuality && q != quality)
@@ -2190,6 +2189,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
             EmptySlotGates gates;
             gates.botLevel = bot->GetLevel();
             gates.maxItemLevel = maxItemLevel;
+            // Grey stays here only: the seed band itself starts at white (#1485).
             gates.minQuality = level < 10 ? ITEM_QUALITY_POOR
                 : level < 20 ? ITEM_QUALITY_NORMAL
                 : ITEM_QUALITY_UNCOMMON;
