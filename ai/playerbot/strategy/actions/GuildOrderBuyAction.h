@@ -10,7 +10,8 @@ namespace ai
 // listing, outbid, or unaffordable): farm what is missing when sourcable,
 // else a sub-order, else the need list. Shared by the buy action, the travel
 // pick when the auctioneer search comes back empty, and the reach deadline.
-// `reason` rides onto the next leg (NoAuctioneer for an unreachable leg).
+// `reason` rides onto the next leg (NoAuctioneer for an unreachable leg,
+// NoListing when the counter had nothing fitting).
 void AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot,
     TortoiseBots::GuildOrders::OrderRecord const& order,
     TortoiseBots::GuildOrders::OrderReason reason = TortoiseBots::GuildOrders::OrderReason::None);

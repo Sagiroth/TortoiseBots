@@ -438,7 +438,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     if (!best.auctionId)
     {
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -464,7 +464,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             return false;
         }
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -499,7 +499,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     else
     {
         SET_AI_VALUE2(int, "manual int", "order buy failed bid", int(best.auctionId));
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
     }
 
     std::ostringstream out;
@@ -567,9 +567,13 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     if (!OrderMailboxItems(bot, itemId))
     {
         ClearMailEmpty(bot->GetGUIDLow());
-        SupplyStep next = stored->supplyReturnStep;
-        SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : itemId, 0,
-            SupplyStep::None, stored->reason);
+        // The mail is picked up: hand back to the ladder through the empty
+        // step, never to the counter with a zero count. The refresh counts
+        // bags plus mail itself, so it routes a still-missing miss onward
+        // without a stale auction leg in between. Delivery needs the items
+        // in the bags, so only the ladder may send the bot to the banker.
+        SetSupply(bot->GetGUIDLow(), SupplyStep::None, 0, 0);
+        return result;
     }
     else if (!result)
     {

@@ -668,6 +668,15 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     NoteSupplyRefreshed(order.botGuidLow, nowMs);
     SupplySnapshot snapshot;
     snapshot.nowMs = nowMs;
+    // A stale auction row with nothing left missing never walks back to the
+    // counter with a zero count: hand back to the ladder through the empty
+    // step, and the pass below routes to delivery or the next source.
+    if (order.supplyStep == SupplyStep::AuctionHouse && order.supplyItemId &&
+        order.supplyCount == 0)
+    {
+        TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
+        return;
+    }
     uint32_t carried = SnapshotBags(ai, snapshot, order.itemId);
     uint32_t mailed = SnapshotMail(bot, snapshot, order.itemId);
     // The bought oversized stack is in the bags: the auction leg runs again,

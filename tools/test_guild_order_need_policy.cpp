@@ -156,6 +156,7 @@ int main()
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoSource) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::BankDenied) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoBanker) == OrderReason::None);
+    CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoListing) == OrderReason::None);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::NoRecipe) == OrderReason::NoRecipe);
     CHECK(ResetDeadEndReasonOnWorking(OrderReason::None) == OrderReason::None);
 

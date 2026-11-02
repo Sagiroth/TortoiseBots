@@ -199,6 +199,15 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         if (!atLimit(SupplyStep::Bags, mailItemId))
             return false;
         NoteMailEmpty(bot->GetGUIDLow(), mailItemId);
+        // The mail will not empty: the ladder moves on instead of walking
+        // back to a mailbox it cannot empty. A covered auction leg hands
+        // back through the empty step, never to the counter with a zero
+        // count, so the next ladder pass routes to delivery or the source.
+        if (record->supplyReturnStep == SupplyStep::AuctionHouse && record->supplyCount == 0)
+        {
+            SetSupply(bot->GetGUIDLow(), SupplyStep::None, 0, 0);
+            return true;
+        }
         SupplyStep next = record->supplyReturnStep;
         SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : mailItemId, 0,
             SupplyStep::None, record->reason);

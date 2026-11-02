@@ -172,10 +172,13 @@ inline std::string NeedWhisperTokenUnion(std::string const& lastToken, std::vect
 // working row that takes an item on its need list turns to another item, and
 // the stale verdict must not follow it. NoSource would drop the next
 // candidate's vendor and farm legs, BankDenied or NoBanker its bank leg.
+// NoListing is the auction leg's verdict in the same way: a stale
+// empty-counter mark must not keep the next item off the auction house.
 inline OrderReason ResetDeadEndReasonOnWorking(OrderReason reason)
 {
     if (reason == OrderReason::NoSource || reason == OrderReason::BankDenied ||
-        reason == OrderReason::NoBanker || reason == OrderReason::NoAuctioneer)
+        reason == OrderReason::NoBanker || reason == OrderReason::NoAuctioneer ||
+        reason == OrderReason::NoListing)
         return OrderReason::None;
     return reason;
 }

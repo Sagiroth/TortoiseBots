@@ -726,10 +726,12 @@ public:
         // A denial belongs to the bank leg that produced it: it survives
         // only while the step and item stay put. A step or item change with
         // no explicit reason clears it, so the addon never shows a stale
-        // denial while the bot farms or buys.
+        // denial while the bot farms or buys. The empty-counter verdict
+        // survives the same way: the ladder keeps buying more of it on the
+        // same visit, and a new listing may still succeed.
         if (reason == OrderReason::None && step == record.supplyStep && record.supplyItemId == itemId &&
             (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoBanker ||
-                record.reason == OrderReason::NoSource))
+                record.reason == OrderReason::NoSource || record.reason == OrderReason::NoListing))
             reason = record.reason;
         // The farm give-up verdict belongs to the farm leg: a sub-order is
         // normal progress, so the addon must not show it as a failure.

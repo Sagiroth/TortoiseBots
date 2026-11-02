@@ -105,10 +105,11 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertLess(advance.index("if (relistLeg)"),
             advance.index("PlanGuildOrderSources("))
 
-    def test_buy_handoffs_keep_the_order_reason(self):
+    def test_buy_handoffs_report_nothing_fitting(self):
         execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
-        self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason)"),
+        self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing)"),
             3)
+        self.assertNotIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason)", execute)
         self.assertNotIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored);", execute)
 
     def test_relist_posts_the_surplus_at_the_policy_price(self):
@@ -139,10 +140,20 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer)",
             arrival)
 
-    def test_contract_carries_noauctioneer(self):
+    def test_contract_carries_noauctioneer_and_nolisting(self):
         self.assertIn('case OrderReason::NoAuctioneer: return "noauctioneer";', CONTRACT)
         self.assertIn("case OrderReason::NoAuctioneer:return OrderState::Working;", CONTRACT)
+        self.assertIn('case OrderReason::NoListing: return "nolisting";', CONTRACT)
+        self.assertIn("case OrderReason::NoListing:return OrderState::Working;", CONTRACT)
 
+    def test_covered_auction_leg_never_reenters_the_counter(self):
+        mail = body(BUY, "bool GuildOrderTakeMailAction::Execute(", "    else if (!result)")
+        cleared = mail[mail.index("if (!OrderMailboxItems(bot, itemId))"):]
+        self.assertIn("SetSupply(bot->GetGUIDLow(), SupplyStep::None, 0, 0);", cleared)
+        self.assertNotIn("supplyReturnStep", cleared)
+        self.assertIn("order.supplyCount == 0", VALUES)
+        self.assertIn("TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);",
+            VALUES)
 
 if __name__ == "__main__":
     unittest.main()
