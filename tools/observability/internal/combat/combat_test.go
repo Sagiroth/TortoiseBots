@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -238,13 +239,13 @@ func TestStoreReadsModuleBytes(t *testing.T) {
 	}
 }
 
-// A warrior tank whose spell list is cut at the module cap may hide Sunder:
-// no verdict on it. One entry short of the cap still judges.
+// A full build lists every AlwaysListed spell first, so a full 12-spell row
+// without Sunder proves it went uncast: the rule still judges.
 func TestRuleSkipsTruncatedSpellList(t *testing.T) {
-	mkTank := func(n int) Fight {
-		spells := make([]SpellCount, 0, n)
-		for range n {
-			spells = append(spells, SpellCount{N: "Heroic Strike", C: 1})
+	mkTank := func(names ...string) Fight {
+		spells := make([]SpellCount, 0, len(names))
+		for _, n := range names {
+			spells = append(spells, SpellCount{N: n, C: 1})
 		}
 		return Fight{ID: "t1", Commander: "C", Start: 1, DurMS: 60000,
 			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100, Spells: spells}}}
@@ -254,31 +255,41 @@ func TestRuleSkipsTruncatedSpellList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := Judge(mkTank(11), rules); len(w) != 1 {
-		t.Fatalf("11 listed spells, no Sunder: want 1 warning, got %v", w)
+	full := []string{"Heroic Strike", "Revenge", "Shield Block", "Taunt", "Bloodrage", "Slam",
+		"Cleave", "Overpower", "Rend", "Thunder Clap", "Demoralizing Shout", "Battle Shout"}
+	if w := Judge(mkTank(full...), rules); len(w) != 1 {
+		t.Fatalf("12 distinct listed spells, no Sunder: want 1 warning, got %v", w)
 	}
-	if w := Judge(mkTank(12), rules); len(w) != 0 {
-		t.Fatalf("12 listed spells may hide Sunder: want no warning, got %v", w)
+	short := []string{"Heroic Strike", "Revenge"}
+	if w := Judge(mkTank(short...), rules); len(w) != 1 {
+		t.Fatalf("2 listed spells, no Sunder: want 1 warning, got %v", w)
 	}
 }
 
-// A degraded payload cuts every bot's spell list to 3 (then 0): it cannot
-// prove Sunder went uncast, even though only 3 rows are listed.
+// A 3-spell degraded payload cuts the rest-by-count tail first: a full row
+// ending in an always-listed spell may still hide casts past it, but a row
+// ending in anything else proves the absence.
 func TestRuleSkipsThreeSpellDegraded(t *testing.T) {
-	mkTank := func() Fight {
-		return Fight{ID: "t3", Commander: "C", Start: 1, DurMS: 60000,
-			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100,
-				Spells: []SpellCount{{N: "Heroic Strike", C: 1}, {N: "Revenge", C: 2}, {N: "Shield Block", C: 1}}}}}
+	mkTank := func(spells ...SpellCount) Fight {
+		return Fight{ID: "t3", Commander: "C", Start: 1, DurMS: 60000, SpellsCut: 3,
+			Bots: []FightBot{{Name: "Tanky", GUID: 1, Class: "warrior", Role: "tank", Dmg: 100, Spells: spells}}}
 	}
 	sunder := `[{"id":"tank_no_sunder","level":"red","role":"tank","class":"warrior","min_fight_s":20,"condition":"spell_count_zero:Sunder Armor","text":"{bot}"}]`
 	rules, err := LoadRules([]byte(sunder))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := mkTank()
-	f.SpellsCut = 3
-	if w := Judge(f, rules); len(w) != 0 {
-		t.Fatalf("3-spell degraded payload may hide Sunder: want no warning, got %v", w)
+	hidden := mkTank(SpellCount{N: "Heroic Strike", C: 1}, SpellCount{N: "Revenge", C: 2}, SpellCount{N: "Shield Block", C: 1})
+	if w := Judge(hidden, rules); len(w) != 0 {
+		t.Fatalf("3-spell row ending in an always-listed spell may hide Sunder: want no warning, got %v", w)
+	}
+	proven := mkTank(SpellCount{N: "Heroic Strike", C: 1}, SpellCount{N: "Revenge", C: 2}, SpellCount{N: "Bloodrage", C: 1})
+	if w := Judge(proven, rules); len(w) != 1 {
+		t.Fatalf("3-spell row ending in a non-listed spell proves no Sunder: want 1 warning, got %v", w)
+	}
+	shortRow := mkTank(SpellCount{N: "Heroic Strike", C: 1}, SpellCount{N: "Bloodrage", C: 1})
+	if w := Judge(shortRow, rules); len(w) != 1 {
+		t.Fatalf("short 3-rung row proves no Sunder: want 1 warning, got %v", w)
 	}
 }
 
@@ -368,6 +379,61 @@ func TestNoHealsNeedsPeerMedian(t *testing.T) {
 	}
 }
 
+// A lone healer (no role peers) has no median to clear: healer_no_heals
+// fires only for a long fight where it healed nothing while the group took
+// real damage. A lone dps is still never judged.
+func TestLoneHealerFallback(t *testing.T) {
+	mkHealer := func(durMS uint32, heal, taken uint64) Fight {
+		return Fight{ID: "h2", Commander: "C", Start: 1, DurMS: durMS,
+			Bots: []FightBot{
+				{Name: "Healy", GUID: 1, Class: "priest", Role: "healer", Heal: heal, Taken: 500},
+				{Name: "Tanky", GUID: 2, Class: "warrior", Role: "tank", Taken: taken},
+			}}
+	}
+	quiet := `[{"id":"healer_no_heals","level":"red","role":"healer","min_fight_s":0,"condition":"no_healing","text":"{bot}","min_role_median":3000}]`
+	rules, err := LoadRules([]byte(quiet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(mkHealer(60000, 0, 4000), rules); len(w) != 1 || w[0].Bot != "Healy" {
+		t.Fatalf("lone healer, 60 s, group took 4500: want Healy warned, got %v", w)
+	}
+	if w := Judge(mkHealer(59000, 0, 4000), rules); len(w) != 0 {
+		t.Fatalf("lone healer, 59 s: want no warning, got %v", w)
+	}
+	if w := Judge(mkHealer(60000, 0, 2000), rules); len(w) != 0 {
+		t.Fatalf("lone healer, group took 2500: want no warning, got %v", w)
+	}
+	if w := Judge(mkHealer(60000, 100, 4000), rules); len(w) != 0 {
+		t.Fatalf("lone healer that healed: want no warning, got %v", w)
+	}
+	earlyDeath := Fight{ID: "h2", Commander: "C", Start: 1, DurMS: 69000,
+		Bots: []FightBot{
+			{Name: "Healy", GUID: 1, Class: "priest", Role: "healer", Heal: 0, Taken: 500, Deaths: 1},
+			{Name: "Tanky", GUID: 2, Class: "warrior", Role: "tank", Taken: 4000},
+		},
+		Deaths: []FightDeath{{Name: "Healy", TMs: 12000, Killer: "B"}}}
+	if w := Judge(earlyDeath, rules); len(w) != 0 {
+		t.Fatalf("lone healer dead at 12 s of 69 s: want no warning, got %v", w)
+	}
+}
+
+func TestLoneDpsNeverJudged(t *testing.T) {
+	f := Fight{ID: "d2", Commander: "C", Start: 1, DurMS: 120000,
+		Bots: []FightBot{
+			{Name: "Pew", GUID: 1, Class: "mage", Role: "dps", Dmg: 0, Taken: 2000},
+			{Name: "Tanky", GUID: 2, Class: "warrior", Role: "tank", Dmg: 5000, Taken: 4000},
+		}}
+	idle := `[{"id":"dps_no_damage","level":"red","role":"dps","min_fight_s":0,"condition":"no_damage","text":"{bot}","min_role_median":2000}]`
+	rules, err := LoadRules([]byte(idle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := Judge(f, rules); len(w) != 0 {
+		t.Fatalf("lone dps, no peers: want no warning, got %v", w)
+	}
+}
+
 // A bot dead before half the fight is not judged on output: a death early
 // is not idleness. A death past half still judges.
 func TestDeadInFirstHalfNotJudged(t *testing.T) {
@@ -440,18 +506,25 @@ func TestSunderRuleNeeds45s(t *testing.T) {
 	}
 }
 
-// The truncation skip keys on the module's spell-list cap: the pin reads it
-// from runtime/CombatMonitorPolicy.h.
-func TestMaxSpellsPerBotPinnedToModule(t *testing.T) {
+// The 3-spell skip keys on the module's always-listed spell names: the pin
+// reads them from runtime/CombatMonitorPolicy.h.
+func TestAlwaysListedSpellsPinnedToModule(t *testing.T) {
 	raw, err := os.ReadFile("../../../../runtime/CombatMonitorPolicy.h")
 	if err != nil {
 		t.Skip("module checkout not above the dashboard")
 	}
-	m := regexp.MustCompile(`kMaxSpellsPerBot\s*=\s*(\d+)`).FindSubmatch(raw)
-	if m == nil {
-		t.Fatal("kMaxSpellsPerBot not found in runtime/CombatMonitorPolicy.h")
+	for name := range alwaysListedSpells {
+		if !strings.Contains(string(raw), `"`+name+`"`) {
+			t.Fatalf("always-listed spell %q not found in runtime/CombatMonitorPolicy.h", name)
+		}
 	}
-	if string(m[1]) != "12" {
-		t.Fatalf("kMaxSpellsPerBot = %s, want 12", m[1])
+	m := regexp.MustCompile(`spell == "([^"]+)"`).FindAllSubmatch(raw, -1)
+	if m == nil {
+		t.Fatal("AlwaysListed spells not found in runtime/CombatMonitorPolicy.h")
+	}
+	for _, one := range m {
+		if !alwaysListedSpells[string(one[1])] {
+			t.Fatalf("module always-lists %q, Go mirror misses it", one[1])
+		}
 	}
 }

@@ -16,10 +16,20 @@ var defaultRules []byte
 
 func DefaultRules() []byte { return defaultRules }
 
-// maxSpellsPerBot is the module's per-bot spell list cap
-// (runtime/CombatMonitorPolicy.h kMaxSpellsPerBot): a bot row listing this
-// many spells may hide casts the fight dropped.
-const maxSpellsPerBot = 12
+// alwaysListedSpells mirrors runtime/CombatMonitorPolicy.h AlwaysListed: the
+// module's SpellList puts every one of these first, so a full row of them
+// still proves the rest went uncast.
+var alwaysListedSpells = map[string]bool{
+	"Sunder Armor":   true,
+	"Maul":           true,
+	"Swipe":          true,
+	"Taunt":          true,
+	"Revenge":        true,
+	"Shield Block":   true,
+	"Righteous Fury": true,
+	"Auto Shot":      true,
+	"Hunter's Mark":  true,
+}
 
 // LoadRules parses the rule table. Unknown conditions fail: a rule whose
 // test the daemon cannot run must not load as judging nothing.
@@ -83,23 +93,25 @@ func parseCondition(s string) (condition, error) {
 	return condition{}, fmt.Errorf("unknown condition %q", s)
 }
 
-// truncatedSpellList reports whether the bot's spell row reached the
-// module's per-bot cap: casts past it are dropped, so the row cannot prove
-// a spell went uncast.
-func truncatedSpellList(b FightBot) bool {
-	return len(b.Spells) >= maxSpellsPerBot
-}
-
 // degradedSpellList reports whether the fight arrived on a degraded build
 // whose per-bot spell list was cut: casts past the cap are dropped, so the
 // row cannot prove a spell went uncast. 0 (full build, or an old emitter
-// without the marker) keeps today's at-cap check; the 0-spell rung is told
+// without the marker) judges like a full build; the 0-spell rung is told
 // apart by Truncated, which the emitter only sets on the bounded short form.
+// On the 3-spell rung the cap cuts the rest-by-count tail first, so a full
+// row ending in an always-listed spell may still hide casts past it; a row
+// ending in anything else (or short of the cap) proves the absence.
 func degradedSpellList(f Fight, b FightBot) bool {
-	if f.SpellsCut > 0 || f.Truncated {
+	if f.Truncated || (f.SpellsCut > 0 && f.SpellsCut != 3) {
 		return true
 	}
-	return truncatedSpellList(b)
+	if f.SpellsCut == 3 {
+		if len(b.Spells) < 3 {
+			return false
+		}
+		return alwaysListedSpells[b.Spells[len(b.Spells)-1].N]
+	}
+	return false
 }
 
 // spellCasts counts casts of one spell on a bot (the module lists every cast
@@ -200,6 +212,27 @@ func rolePeerMedian(f Fight, b FightBot, kind conditionKind) (uint64, bool) {
 	return (vals[len(vals)/2-1] + vals[len(vals)/2]) / 2, true
 }
 
+// loneHealerIdle fires healer_no_heals for a healer with no role peers (one
+// healer in a 5-man has no median to clear): a long fight where it healed
+// nothing while the group took real damage, and it was alive for the first
+// half.
+func loneHealerIdle(f Fight, b FightBot, r Rule, cond condition) bool {
+	if r.ID != "healer_no_heals" || cond.kind != condNoHealing {
+		return false
+	}
+	if b.Heal != 0 || f.DurMS < 60000 {
+		return false
+	}
+	if deadWholeFight(b, f.Deaths) || diedEarly(b, f.Deaths, f.DurMS) || deathUnknown(b, f.Deaths) {
+		return false
+	}
+	var taken uint64
+	for _, p := range f.Bots {
+		taken += p.Taken
+	}
+	return taken > 3000
+}
+
 // Judge runs the rule table over one fight. Duration is seconds (dur_ms /
 // 1000): a short fight warns nothing. Class "" matches any class.
 func Judge(f Fight, rules []Rule) []Warning {
@@ -232,11 +265,18 @@ func Judge(f Fight, rules []Rule) []Warning {
 			if (cond.kind == condSpellCountZero || cond.kind == condSpellsCountZero) && degradedSpellList(f, b) {
 				continue
 			}
-			if r.MinRoleMedian > 0 && (cond.kind == condNoDamage || cond.kind == condNoHealing) {
+			peerGated := r.MinRoleMedian > 0 && (cond.kind == condNoDamage || cond.kind == condNoHealing)
+			peerOK := true
+			if peerGated {
 				med, ok := rolePeerMedian(f, b, cond.kind)
-				if !ok || med < uint64(r.MinRoleMedian) {
-					continue
+				if !ok {
+					peerOK = loneHealerIdle(f, b, r, cond)
+				} else {
+					peerOK = med >= uint64(r.MinRoleMedian)
 				}
+			}
+			if !peerOK {
+				continue
 			}
 			if cond.violatedBy(b) {
 				out = append(out, Warning{
