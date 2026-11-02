@@ -23865,18 +23865,67 @@ static void TestRaidBossMainTankJoinSkipsAnEvadingBoss()
         CHECK(Tick(r, f).empty());
 }
 
+// The join is an `attack`, so it is bounded by the attack range (kRaidWalkJoinYd, the SightDistance bound), not by
+// the boss fight's own 100 yd guard reach: 70 yd is a boss the main tank cannot be sent at (no order, no note).
 static void TestRaidBossMainTankJoinStaysInRange()
 {
     DungeonPlan plan;
     Run r = RaidBossRun(plan);
     Facts f = RaidBossGuardFacts();
     f.leadHeldEntries.clear();
-    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 101);
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 70);
     boss.victimTank = true;
     boss.victimName = "Off";
     f.partyAttackers = {boss};
-    for (int k = 0; k < 8; ++k)
+    for (int k = 0; k < 30; ++k)
+    {
         CHECK(Tick(r, f).empty());
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    // The same boss inside the attack range is joined once its wait is due.
+    boss.distLead = kRaidWalkJoinYd;
+    f.partyAttackers = {boss};
+    std::string join;
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + kTickMs && join.empty(); ms += kTickMs)
+        join = Tick(r, f);
+    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+// The join is only for a plan boss an off-tank holds: a boss on a healer or a dps is the guard's to hand out (and
+// a boss already on the main tank needs no join), so the main tank stays put with no note of its own.
+static void TestRaidBossMainTankJoinOnlyAnOffTanksBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimName = "Healy"; // on a healer: no victimTank
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+    {
+        Tick(r, f);
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    CHECK(r.raidBossJoined.empty());
+    // Two plan-boss entries, the main tank holding one of them: the off-tank's boss is left alone too (the main
+    // tank never leaves a plan boss for another).
+    DungeonPlan two;
+    PlanStep first = Step(PlanStepKind::Boss, 80);
+    first.entry = 10184;
+    PlanStep second = Step(PlanStepKind::Boss, 90);
+    second.entry = 10185;
+    two.steps = {first, second};
+    Run q = Start(&two);
+    Facts g = RaidBossGuardFacts();
+    g.leadHeldEntries = {10184}; // the main tank holds the first plan boss
+    UnitFact other = Hitter(0xF1300027C9000002ull, 10185, 20);
+    other.victimTank = true;
+    other.victimName = "Off";
+    g.partyAttackers = {other};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+        CHECK(Tick(q, g).empty());
+    CHECK(q.raidBossJoined.empty() && q.note.find("takes boss") == std::string::npos);
 }
 
 static void TestRaidBossMainTankJoinNeedsStay()
@@ -23957,10 +24006,17 @@ static void TestRaidBossMainTankJoinLeavesAddsToTheOffTank()
     boss.victimName = "Off";
     f.partyAttackers = {boss, Hitter(45311, 11262, 20, true)};
     CHECK(Tick(r, f) == "attack 45311 Offy");
+    std::string const want = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky";
     std::string join;
-    for (int k = 0; k < 8 && join.empty(); ++k)
-        join = Tick(r, f);
-    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 2 * kTickMs; ms += kTickMs)
+    {
+        if (Tick(r, f) == want)
+        {
+            join = want; // the guard's add orders meanwhile are not the join
+            break;
+        }
+    }
+    CHECK(join == want);
 }
 
 static void TestRaidBossMainTankJoinRestartsAfterTheStayEnds()
@@ -29871,6 +29927,7 @@ int main()
     TestRaidBossMainTankHoldingTheBossIsNotSent();
     TestRaidBossMainTankJoinSkipsAnEvadingBoss();
     TestRaidBossMainTankJoinStaysInRange();
+    TestRaidBossMainTankJoinOnlyAnOffTanksBoss();
     TestRaidBossMainTankJoinNeedsStay();
     TestRaidBossMainTankJoinKeyOffKeepsRaidGuard();
     TestRaidBossMainTankJoinRearmsAfterTwentySeconds();

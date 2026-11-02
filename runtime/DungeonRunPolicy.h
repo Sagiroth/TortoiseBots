@@ -653,7 +653,7 @@ constexpr std::uint32_t kGuardHealerWaitMs = 0;   // ... a mob hitting a healer 
                                                   // took the healer from 73 % to dead in 4 s
 constexpr std::uint32_t kGuardRepeatMs = 2000;    // a further pick-up no sooner than this after the last one
 constexpr std::uint32_t kGuardOrdersPerFight = 3; // pick-up orders one fight may send (per budget: see below)
-constexpr std::uint32_t kRaidAssistWaitMs = 3000; // a main tank on stay with no mob of its own
+constexpr std::uint32_t kRaidAssistWaitMs = 8000; // a main tank on stay with no mob of its own
                                                   // helps on an off-tank's mob after this (the off-tank takes it first)
 // ... and in a raid's walk (#1368): the main tank parks at the walk's end and a pack that breaks out behind it is out of
 // every lift's reach. ZG walk 11 step 6: the tank at -11917,-1442, the hurt mobs 38-52 yd behind it, 25 s with no order.
@@ -14365,14 +14365,16 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
 }
 // ZG walk 24 Jeklik: Orlara on stay 169 s, 9 casts, while Rageshield held her, and RaidGuardTick only hands adds to
 // off-tanks. So in a raid's boss fight under
-// AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at the plan
+// AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at a plan
 // boss an off-tank holds (`attack <guid> <carrier>` ends its stay and its own tank AI taunts it back from there),
-// after the off-tank's wait (kRaidAssistWaitMs). The wait is continuous: any break (the lead bot off stay, dead or no
-// tank, holding a plan boss, the rules off, no boss waiting) starts it over. The boss picked keeps the wait while it
-// stays eligible, so a nearer boss swapping places with it does not restart the wait (RaidAssistTarget's pattern).
-// Once per boss guid until kRaidGuardRearmMs after the last one, and only while the lead bot is again staying and
-// holding nothing. Not under fightOrders (like RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when
-// `order` holds it.
+// after the off-tank's wait (kRaidAssistWaitMs). Only a boss an off-tank actually holds counts (the victim is a
+// tank other than the lead bot: a boss on a healer or a pet is the guard's, and one already on the main tank needs
+// no join), and only one within attack range (kRaidWalkJoinYd, the SightDistance bound `attack` refuses past). The
+// wait is continuous: any break (the lead bot off stay, dead or no tank, holding a plan boss, the rules off, no
+// boss waiting) starts it over. The boss picked keeps the wait while it stays eligible, so a nearer boss swapping
+// places with it does not restart the wait (RaidAssistTarget's pattern). Once per boss guid until kRaidGuardRearmMs
+// after the last one, and only while the lead bot is again staying and holding nothing. Not under fightOrders (like
+// RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when `order` holds it.
 inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
@@ -14385,10 +14387,10 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     // A boss joined within kRaidGuardRearmMs is not eligible. The boss already picked (raidBossJoinGuid) stays the pick
     // while it is eligible, so two bosses trading which one is nearer do not restart the wait every tick; only once it
     // is no longer eligible does the nearest one take over (with its own full wait).
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-            u.distLead > kRaidBossGuardYd)
+            u.distLead > kRaidWalkJoinYd || !u.victimTank || u.victimName == f.carrier)
             return false;
         auto const joined = r.raidBossJoined.find(u.guid);
         return joined == r.raidBossJoined.end() || r.fightMs - joined->second >= kRaidGuardRearmMs;
