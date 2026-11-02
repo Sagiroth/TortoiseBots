@@ -42,6 +42,7 @@ MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
 LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 DPS_TARGET = (STRATEGY / "values/DpsTargetValue.cpp").read_text()
+AOE_VALUES = (STRATEGY / "values/AoeValues.cpp").read_text()
 TANK_TARGET = (STRATEGY / "values/TankTargetValue.cpp").read_text()
 BLOCKERS = (STRATEGY / "values/HoldKillBlockersValue.cpp").read_text()
 BLOCKERS_H = (STRATEGY / "values/HoldKillBlockersValue.h").read_text()
@@ -450,7 +451,7 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
         fn = body(DPS_TARGET, "Unit* DpsAoeTargetValue::Calculate()")
         self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", fn)
         dps = body(DPS_TARGET, "Unit* DpsTargetValue::Calculate()")
-        self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", dps)
+        self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&", dps)
         runner = DPS_TARGET[DPS_TARGET.index("IsFinishableRunner(facts)"):]
         runner = runner[:runner.index("chaser.ranged && !bot->IsWithinLOSInMap(unit)")]
         self.assertIn("IsWastedDpsTarget(ai, unit) || HeldDpsTarget(ai, bot, unit)", runner)
@@ -686,7 +687,7 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
         self.assertIn("LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach)", fn)
         self.assertIn("LinkedDeathHeldNear(ai, bot, scan, reach)", fn)
-        self.assertIn("const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);", fn)
+        self.assertIn("const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);", fn)
         self.assertIn("attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd", fn)
         # Only with the key and the strategy: the rows are inert otherwise, like the pick.
         self.assertIn("sPlayerbotAIConfig.dungeonRunLinkedDeath", fn)
@@ -703,6 +704,63 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         self.assertIn("inline int LinkedDeathHeldIndex(", POLICY)
         self.assertIn("LinkedDeathHeldIndex(", POLICY_TEST)
         self.assertIn("LinkedDeathHeldIndex(3.0f, burn, { 5.0f, 0.0f, 5.0f }, near) == -1", POLICY_TEST)
+
+
+class LinkedDeathFightWideScan(unittest.TestCase):
+    """The die-together group under "focus rti targets".
+
+    That strategy collapses every bot's "attackers" list to the raid mark, so a group read from the fight saw one
+    member (a mark on the anchor) or no row at all (a mark on a partner) and counted as released: the equalise pick,
+    the hold and the area/DoT veto all stood down, and `dps target` returned the mark before the group. The group now
+    comes from the table's map rows and a grid search of its entries; a raid mark on a held member falls through to
+    the pick, and an explicit order stays the only thing above the tactic.
+    """
+
+    def test_the_scan_reads_the_map_rows_and_a_grid_search(self):
+        fn = body(ACTIONS, "BossLinkedDeathScan ai::ScanBossLinkedDeath(")
+        # Never the attackers list (the mutation this pins: scanning from attackers again leaves the mark's group a
+        # single member, and the raid-mark case releases it).
+        self.assertNotIn('"attackers"', fn)
+        self.assertNotIn("fight.units", fn)
+        self.assertNotIn("fight.rows", fn)
+        # The anchor list is the table's; each entry's living, fighting units come from the same per-second grid
+        # search the sole-kill pick reads.
+        self.assertIn("table.LinkedDeathAnchors(bot->GetMapId())", fn)
+        self.assertIn("active.push_back(&row);", fn)
+        self.assertIn("FindLinkedDeathGroup(active, anchor, group)", fn)
+        self.assertEqual(fn.count("SoleKillCandidates(ai, entry)"), 1)
+        # The table keeps one anchor per group, however many partner rows name it, and none before the seal.
+        self.assertIn("std::vector<std::uint32_t>& anchors = linkedDeathAnchors_[row.map];", POLICY)
+        self.assertIn("const std::vector<std::uint32_t>& LinkedDeathAnchors(std::uint32_t map) const", POLICY)
+        self.assertIn("table.LinkedDeathAnchors(309).size() == 1", POLICY_TEST)
+
+    def test_the_trigger_and_the_action_read_the_same_scan(self):
+        self.assertIn("Unit* pick = FindBossLinkedDeath(ai, bot);", TRIGGERS)
+        self.assertIn("Unit* pick = FindBossLinkedDeath(ai, bot);",
+                      body(ACTIONS, "bool BossTacticsLinkedDeathAction::Execute("))
+        self.assertIn("const BossLinkedDeathScan scan = ScanBossLinkedDeath(botAi, bot);", AOE_VALUES)
+
+    def test_the_area_veto_is_gated_on_the_map_not_the_fight(self):
+        # The veto used to need a linked row in the fight's rows, which a mark on a partner hides: the map flag arms
+        # it instead, ahead of the area test.
+        fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("bool holdsRows = linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId());", fn)
+        self.assertLess(fn.index("bool holdsRows = linkedDeath"), fn.index("IsAreaDamageAction(ai, action)"))
+
+    def test_the_raid_mark_falls_through_a_held_member_to_the_pick(self):
+        fn = body(DPS_TARGET, "Unit* DpsTargetValue::Calculate()")
+        # An explicit attack order is still the only thing above the tactic.
+        self.assertLess(fn.index("GetExplicitAttackTarget()"), fn.index("LinkedDeathHoldsMember("))
+        # The scan comes before the mark so the mark is judged against the group, and a held mark is dropped.
+        self.assertLess(fn.index("linkedScan = ScanBossLinkedDeath(ai, bot);"),
+                        fn.index("RtiTargetValue::Calculate()"))
+        self.assertIn("!(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, "
+                      "rti->GetObjectGuid().GetRawValue()))", fn)
+        # One scan per pick: the group pick reads the scan the mark was judged against.
+        self.assertEqual(fn.count("ScanBossLinkedDeath("), 1)
+        self.assertIn("PickLinkedDeath(linkedScan.param, linkedScan.members)", fn)
+        self.assertIn("inline bool LinkedDeathHoldsMember(", POLICY)
+        self.assertIn("LinkedDeathHoldsMember(3.0f, members, 1)", POLICY_TEST)
 
 
 class HoldKillIsLogged(unittest.TestCase):

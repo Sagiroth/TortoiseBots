@@ -131,7 +131,13 @@ namespace ai
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
             if (row.kind == BossTacticKind::LinkedDeath)
+            {
                 linkedDeathMaps_[row.map] = true;
+                // The group rows are read from the anchor, and the anchor alone: a partner has no row of its own.
+                std::vector<std::uint32_t>& anchors = linkedDeathAnchors_[row.map];
+                if (std::find(anchors.begin(), anchors.end(), row.bossEntry) == anchors.end())
+                    anchors.push_back(row.bossEntry);
+            }
             ++size_;
             return true;
         }
@@ -168,6 +174,18 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && linkedDeathMaps_.find(map) != linkedDeathMaps_.end();
         }
 
+        // The map's linked_death anchors, in load order: each anchor's rows name the whole group. The link scan reads
+        // these instead of a fight's rows, which under "focus rti targets" are the raid mark's entry only. Empty
+        // before the seal or for a map without rows of the kind.
+        const std::vector<std::uint32_t>& LinkedDeathAnchors(std::uint32_t map) const
+        {
+            static const std::vector<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = linkedDeathAnchors_.find(map);
+            return it == linkedDeathAnchors_.end() ? none : it->second;
+        }
+
         // The rows of one boss entry, or null. Null before the seal.
         const std::vector<BossTacticRow>* Rows(std::uint32_t map, std::uint32_t bossEntry) const
         {
@@ -188,6 +206,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
+        std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> linkedDeathAnchors_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };
@@ -685,6 +704,17 @@ namespace ai
         for (const LinkedMember& member : members)
             if (static_cast<float>(member.hpPct) > param)
                 return true;
+        return false;
+    }
+
+    // Whether `guid` names a member the tactic holds right now (LinkedDeathHolds). Target selection falls through such
+    // a raid mark to the group's pick: the mark would otherwise park the bot on a member that has to live to the burn.
+    // A guid outside the group is never held here.
+    inline bool LinkedDeathHoldsMember(float param, const std::vector<LinkedMember>& members, std::uint64_t guid)
+    {
+        for (const LinkedMember& member : members)
+            if (member.guid == guid)
+                return LinkedDeathHolds(param, member.hpPct, members);
         return false;
     }
 

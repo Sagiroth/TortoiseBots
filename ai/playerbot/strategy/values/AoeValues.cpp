@@ -22,8 +22,7 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
     // it) is left out of the density: an AoE is not aimed at a member that still has to live to the burn.
     if (sPlayerbotAIConfig.dungeonRunLinkedDeath && botAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
     {
-        const BossTacticsFight fight = ScanBossTactics(botAi, bot);
-        const BossLinkedDeathScan scan = ScanBossLinkedDeath(botAi, bot, fight);
+        const BossLinkedDeathScan scan = ScanBossLinkedDeath(botAi, bot);
         if (scan.active)
         {
             std::list<ObjectGuid> kept;

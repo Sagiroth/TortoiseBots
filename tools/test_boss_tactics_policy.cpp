@@ -673,6 +673,15 @@ int main()
         CHECK(table.HasLinkedDeathMap(309));
         CHECK(!table.HasLinkedDeathMap(70));
         CHECK(!table.HasHoldMap(309));  // a linked group is not a hold_kill budget: each map flag answers its own kind
+        // The group is read from the anchor alone, so two partner rows name one anchor. A map without rows has none,
+        // and an unsealed table has none either.
+        CHECK(table.LinkedDeathAnchors(309).size() == 1);
+        CHECK(table.LinkedDeathAnchors(309)[0] == 14599);
+        CHECK(table.LinkedDeathAnchors(70).empty());
+
+        BossTacticTable unsealed;
+        CHECK(unsealed.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f)));
+        CHECK(unsealed.LinkedDeathAnchors(309).empty());
     }
 
     // The group: the anchor and every partner its rows list, resolved from either.
@@ -708,6 +717,14 @@ int main()
         CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // 3 % is held, 60 % is not
         CHECK(LinkedDeathHolds(3.0f, 3, members));   // at the param, another member above it
         CHECK(!LinkedDeathHolds(3.0f, 4, members));
+        // A raid mark on a held member names a member that has to live to the burn, so target selection falls
+        // through to the group's pick; a mark on an above-threshold member, on a non-member, or with the group
+        // released stands as it is.
+        CHECK(LinkedDeathHoldsMember(3.0f, members, 1));
+        CHECK(!LinkedDeathHoldsMember(3.0f, members, 2));
+        CHECK(!LinkedDeathHoldsMember(3.0f, members, 77));
+        std::vector<LinkedMember> burnAll = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(!LinkedDeathHoldsMember(3.0f, burnAll, 1));
         members = { Linked(1, 70, false), Linked(2, 50), Linked(3, 40) };
         CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // the highest is out of reach
     }

@@ -81,7 +81,7 @@ bool BossTacticsLinkedDeathTrigger::IsActive()
 {
     if (!Ready(ai, bot))
         return false;
-    Unit* pick = FindBossLinkedDeath(ai, bot, ScanBossTactics(ai, bot));
+    Unit* pick = FindBossLinkedDeath(ai, bot);
     if (!pick)
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();

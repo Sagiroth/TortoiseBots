@@ -388,41 +388,59 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
 }
 
-// The linked_death group of the fight: every living unit of the group's entries among the fight's units, with the
-// health fraction the pick compares and the attackability rule the kill_first pick applies. The first row of the kind
-// names the group's anchor; the members come from the anchor's rows, so the anchor has to be in the fight's rows.
-BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+// The linked_death group of the fight: every living, fighting unit of the group's entries within kHoldKillRangeYd of
+// the bot, with the health fraction the pick compares and the attackability rule the kill_first pick applies. The
+// group comes from the table's map rows and the members from the grid search the "sole kill candidates" value reads,
+// never the bot's "attackers" list: "focus rti targets" collapses that one to the raid mark, so a mark on the anchor or
+// on a partner would leave the group a single member (or none at all) and the hold released. A map that carries several
+// groups: the one with the most living, fighting members is the fight's, the first on a tie.
+BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
 {
-    (void)ai;
     BossLinkedDeathScan scan;
-    LinkedDeathGroup group;
-    for (const BossTacticRow* row : fight.rows)
-        if (row->kind == BossTacticKind::LinkedDeath && FindLinkedDeathGroup(fight.rows, row->bossEntry, group))
-            break;
-    if (group.entries.empty())
-        return scan;
-    scan.active = true;
-    scan.param = group.param;
-    for (Unit* unit : fight.units)
+    const BossTacticTable& table = GetBossTactics();
+    for (std::uint32_t anchor : table.LinkedDeathAnchors(bot->GetMapId()))
     {
-        if (std::find(group.entries.begin(), group.entries.end(), unit->GetEntry()) == group.entries.end())
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), anchor);
+        if (!rows)
             continue;
-        LinkedMember member;
-        member.guid = unit->GetObjectGuid().GetRawValue();
-        member.hpPct = static_cast<int>(unit->GetHealthPercent());
-        member.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
-        scan.members.push_back(member);
-        scan.units.push_back(unit);
+        ActiveBossRows active;
+        active.reserve(rows->size());
+        for (const BossTacticRow& row : *rows)
+            active.push_back(&row);
+        LinkedDeathGroup group;
+        if (!FindLinkedDeathGroup(active, anchor, group))
+            continue;
+        BossLinkedDeathScan groupScan;
+        groupScan.active = true;
+        groupScan.param = group.param;
+        for (std::uint32_t entry : group.entries)
+        {
+            for (const SoleCandidate& candidate : SoleKillCandidates(ai, entry))
+            {
+                Unit* unit = ai->GetUnit(ObjectGuid(candidate.guid));
+                if (!unit || !unit->IsAlive() || unit->GetEntry() != entry)
+                    continue;
+                LinkedMember member;
+                member.guid = candidate.guid;
+                member.hpPct = static_cast<int>(unit->GetHealthPercent());
+                member.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
+                groupScan.members.push_back(member);
+                groupScan.units.push_back(unit);
+            }
+        }
+        if (!scan.active || groupScan.members.size() > scan.members.size())
+            scan = groupScan;
     }
     return scan;
 }
 
-Unit* ai::FindBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+Unit* ai::FindBossLinkedDeath(PlayerbotAI* ai, Player* bot)
 {
-    if (fight.rows.empty() || !IsFreeDps(ai, bot) || !sPlayerbotAIConfig.dungeonRunLinkedDeath ||
-        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+    if (!IsFreeDps(ai, bot) || !sPlayerbotAIConfig.dungeonRunLinkedDeath ||
+        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasLinkedDeathMap(bot->GetMapId()))
         return nullptr;
-    const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
+    const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
     if (!scan.active)
         return nullptr;
     const int pick = PickLinkedDeath(scan.param, scan.members);
@@ -611,7 +629,7 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
 bool BossTacticsLinkedDeathAction::Execute(Event& event)
 {
     (void)event;
-    Unit* pick = FindBossLinkedDeath(ai, bot, ScanBossTactics(ai, bot));
+    Unit* pick = FindBossLinkedDeath(ai, bot);
     if (!pick)
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -640,12 +658,13 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     // The area test (a dynamic_cast and a spell lookup) only runs for a fight whose rows can hold a member: on any
-    // other fight, and for any other action class, the clause below is dead weight.
-    bool holdsRows = false;
+    // other fight, and for any other action class, the clause below is dead weight. The linked rows are read from the
+    // map, not from the fight's rows: "focus rti targets" gives the fight the raid mark's entry only, so a mark on a
+    // partner would hide the group from the veto.
+    bool holdsRows = linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId());
     for (const BossTacticRow* row : fight.rows)
     {
-        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime ||
-            (linkedDeath && row->kind == BossTacticKind::LinkedDeath))
+        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
         {
             holdsRows = true;
             break;
@@ -683,7 +702,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         // area casts are allowed again and the members die together.
         if (linkedDeath)
         {
-            const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
+            const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
             const float reach = attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd;
             Unit* linkedHeld = LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach);
             if (!linkedHeld && area)

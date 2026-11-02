@@ -486,10 +486,27 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* horseman = FourHorsemenRotationTarget(ai, bot))
         return horseman;
 
+    // The die-together group, read once: the raid mark below has to know whether it names a held member, and the
+    // group's pick further down reads the same scan. Only a free DPS bot takes part (never a tank or a healer): for
+    // them the mark stands as it is.
+    bool linked = sPlayerbotAIConfig.dungeonRunLinkedDeath &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) && !PlayerbotAI::IsTank(bot) &&
+        !PlayerbotAI::IsHeal(bot);
+    BossLinkedDeathScan linkedScan;
+    if (linked)
+    {
+        linkedScan = ScanBossLinkedDeath(ai, bot);
+        linked = linkedScan.active && !LinkedDeathReleased(linkedScan.param, linkedScan.members);
+    }
+
     // A raid mark set aside in a creature aura keep-out falls through to
-    // the next pick like the tank's victim below.
+    // the next pick like the tank's victim below. A mark on a member the group holds falls through to the group's pick
+    // for the same reason the tactic exists (that member has to live to the burn); an explicit attack order above is
+    // the only thing that outranks the tactic, and a mark anywhere else still wins.
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
+    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
+        !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))
+        return rti;
 
     GeneralDpsStrategy ccProbe(ai, 0.0f);
 
@@ -501,19 +518,13 @@ Unit* DpsTargetValue::Calculate()
     // A linked_death group (ai_boss_tactic kind linked_death, "die together") splits the free DPS bots' damage: the
     // pick is the member with the highest health fraction, never one at or below the row's param % while another is
     // above it, and it outranks the tank's victim, so the guard's pickups do not drag the raid onto one member (an
-    // explicit order and the raid mark above still win). Once every living member is at or below param % the group is
-    // released (the ordinary pick then burns the lowest, so they die together); while it is held with nothing above
-    // param % reachable, the bot waits instead of turning on a held member.
-    if (sPlayerbotAIConfig.dungeonRunLinkedDeath && ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
-        !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot))
+    // explicit order wins above; a raid mark wins unless it names a held member). Once every living member is at or
+    // below param % the group is released (the ordinary pick then burns the lowest, so they die together); while it is
+    // held with nothing above param % reachable, the bot waits instead of turning on a held member.
+    if (linked)
     {
-        const BossTacticsFight fight = ScanBossTactics(ai, bot);
-        const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot, fight);
-        if (scan.active && !LinkedDeathReleased(scan.param, scan.members))
-        {
-            const int pick = PickLinkedDeath(scan.param, scan.members);
-            return pick < 0 ? nullptr : scan.units[pick];
-        }
+        const int pick = PickLinkedDeath(linkedScan.param, linkedScan.members);
+        return pick < 0 ? nullptr : linkedScan.units[pick];
     }
 
     if (Unit* tankTarget = GetGroupTankTarget(ai))

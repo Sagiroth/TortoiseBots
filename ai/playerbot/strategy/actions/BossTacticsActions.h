@@ -45,22 +45,23 @@ namespace ai
     std::uint64_t SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry);
 
     // The linked_death group ("die together") the fight holds, its members as the pick sees them. `active` is false
-    // when no row of the fight's rows is of the kind. Any bot may ask (the AoE density filter leaves a held member out);
-    // the pick below is the free DPS bots' only.
+    // when the map has no row of the kind. The group and its members come from the table's map rows and a grid search
+    // of the group's entries, never from the fight's units: under "focus rti targets" those collapse to the raid mark.
+    // Any bot may ask (the AoE density filter leaves a held member out); the pick below is the free DPS bots' only.
     struct BossLinkedDeathScan
     {
         bool active = false;
         float param = 0.0f;                 // the group's hold percent
-        std::vector<LinkedMember> members;  // the group's living units in the fight
+        std::vector<LinkedMember> members;  // the group's living, fighting units within kHoldKillRangeYd of the bot
         std::vector<Unit*> units;           // the same order: the unit of each member
     };
-    BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+    BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot);
 
     // The group member this free DPS bot attacks under the linked_death tactic, or null. Gated by
     // AiPlayerbot.DungeonRunLinkedDeath and the "boss tactics" strategy; null while the group is released (every living
     // member at or below param %, when the ordinary pick burns them together), and for tanks, healers and bots under an
     // explicit attack order.
-    Unit* FindBossLinkedDeath(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+    Unit* FindBossLinkedDeath(PlayerbotAI* ai, Player* bot);
 
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan
