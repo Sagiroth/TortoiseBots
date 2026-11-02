@@ -71,8 +71,15 @@ if command -v g++ >/dev/null 2>&1; then
         -o "${BUILD_DIR}/test_decision_capture_codec"
     "${BUILD_DIR}/test_decision_capture_codec"
 
+    # Special case: the decision capture's file side builds with the run trace
+    # writer it queues through and needs the thread library.
+    g++ -std=c++17 -O2 -Wall -Wextra tools/test_decision_capture_files.cpp \
+        runtime/RunTraceWriter.cpp runtime/DecisionCaptureFiles.cpp -pthread \
+        -o "${BUILD_DIR}/test_decision_capture_files"
+    "${BUILD_DIR}/test_decision_capture_files"
+
     # Every other standalone test: discover the sources, compile and run in parallel.
-    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$' | grep -v '^tools/test_combat_monitor_service\.cpp$' | grep -v '^tools/test_decision_capture_codec\.cpp$')
+    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$' | grep -v '^tools/test_combat_monitor_service\.cpp$' | grep -v '^tools/test_decision_capture_codec\.cpp$' | grep -v '^tools/test_decision_capture_files\.cpp$')
 
     compile_one() {
         local src="$1" name
