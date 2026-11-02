@@ -766,6 +766,38 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("@ da0bdfbc (AGPL-3.0-or-later;", header)
         self.assertIn("Copyright (C) 2026+ Jared Wright and", header)
 
+    def test_aggro_walk_ring_is_wired_behind_its_keys(self):
+        # AiPlayerbot.DungeonRunAggroWalkRing (needs the estimate on): the glue reads it, the policy
+        # compares bodies against the row's ceiling and notes the look-ahead once on the row before a pull.
+        read = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
+        self.assertIn("f.aggroWalkRing = sPlayerbotAIConfig.dungeonRunAggroEstimate && "
+                      "sPlayerbotAIConfig.dungeonRunAggroWalkRing;", read)
+        self.assertLess(read.index("ReadStandPullHold(slot, lead, bots, f);"),
+                        read.index("ReadPullAhead(slot, lead, bots, f);"))
+        joiners = body(COMMANDS, "void ReadPullJoiners(", "\n}\n")
+        self.assertLess(joiners.index("sPlayerbotAIConfig.dungeonRunAggroWalkRing"),
+                        joiners.index("ai::AggroGeometry geometry;"))
+        self.assertIn("ai::EstimateAggroRing(mobs, it->second, geometry, ring)", joiners)
+        self.assertIn("unit.estBodies = estimate.bodies;", joiners)
+        self.assertIn("unit.estGuids.push_back(mobs[member.index].guid);", joiners)
+        self.assertIn("m.guid = c->GetObjectGuid().GetRawValue();", joiners)
+        ahead = body(COMMANDS, "void ReadPullAhead(", "\n}\n")
+        self.assertIn("NextPullOfChain(slot, &at)", ahead)
+        self.assertIn("ai::EstimateAggroRing(mobs, target, geometry, params)", ahead)
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn('"AiPlayerbot.DungeonRunAggroWalkRing", false', config)
+        self.assertIn('"AiPlayerbot.DungeonRunAggroRingYd", 20.0f', config)
+        self.assertIn("AiPlayerbot.DungeonRunAggroWalkRing = 0", template)
+        self.assertIn("AiPlayerbot.DungeonRunAggroRingYd = 20", template)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        self.assertIn("inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)", policy)
+        self.assertIn("inline std::string EstimateNote(", policy)
+        self.assertIn("f.aheadStep == r.step + 1 && r.aheadNotedStep != r.step", policy)
+        self.assertIn("std::to_string(u.estBodies) + \" bodies expected\"", policy)
+        plan = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
+        self.assertIn("step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies", plan)
+
     def test_pull_stand_is_wired_behind_its_key(self):
         # AiPlayerbot.DungeonRunPullStand (default 0): the glue reads sight, the shot range and the stand only with
         # the key on; the policy holds the pullback for them only when the facts say the key is on.

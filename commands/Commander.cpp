@@ -259,6 +259,9 @@ struct DungeonRunSlot
     std::unordered_map<uint64, RemoteCommander::Point3> placedAt; // ... and the point each was sent to
     // The forward run's move-point reading (DungeonRun::MoveProbeHit): ReadRunFacts reads a const slot.
     mutable TortoiseBots::DungeonRun::MoveProbeCache moveProbe;
+    // The look-ahead aggro estimate of the row before a pull (DungeonRun::AheadEstimate, ReadPullAhead): read
+    // once per row, refilled into the facts on later ticks.
+    mutable TortoiseBots::DungeonRun::AheadEstimate aheadCache;
     // A player-led run (`.bot run start ... player`, PlayerLedPolicy.h): its own state beside the run.
     TortoiseBots::PlayerLed::State playerLed;
     // A system run paused by L6 (SystemRun::DecideJoinStep).
@@ -8719,13 +8722,55 @@ bool OpenProofUp(Player* lead, ai::PlanStep const& step)
 constexpr float kAggroEngageYd = 30.0f;  // how close to the pulled creature the tank gets before it pulls back
 constexpr float kAggroScanYd = 40.0f;    // hostiles read beyond the step's radius (the widest aggro radius is ~45 yd)
 
+// The lead bot's navmesh polyline to a point, sampled every 2 yd (every 4 yd past 128 yd, at most 64
+// samples): the walk the ring estimate reads (ai::AggroGeometry::walk).
+static std::vector<ai::AggroPoint> SampleWalkTo(Player* lead, float x, float y, float z)
+{
+    std::vector<ai::AggroPoint> out;
+    ai::AggroPoint at{lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()};
+    out.push_back(at);
+    PathFinder path(lead);
+    path.calculate(x, y, z, false);
+    if (path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE)
+        return out;
+    float travelled = 0.0f;
+    float next = 0.0f;
+    for (Vector3 const& p : path.getPath())
+    {
+        ai::AggroPoint const to{p.x, p.y, p.z};
+        float const seg = ai::PlanDistance(at.x, at.y, at.z, to.x, to.y, to.z);
+        if (seg > 0.0001f)
+        {
+            float const end = travelled + seg;
+            while (out.size() < 64 && next + (next < 128.0f ? 2.0f : 4.0f) <= end)
+            {
+                next += next < 128.0f ? 2.0f : 4.0f;
+                float const t = (next - travelled) / seg;
+                out.push_back(ai::AggroPoint{at.x + (to.x - at.x) * t, at.y + (to.y - at.y) * t,
+                    at.z + (to.z - at.z) * t});
+            }
+            travelled = end;
+        }
+        at = to;
+    }
+    if (out.size() < 64)
+        out.push_back(at);
+    return out;
+}
+
 void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanStep const& step, float toPoint,
     uint32 ceiling, std::unordered_set<std::uint64_t> const& held, TortoiseBots::DungeonRun::Facts& f)
 {
     if (!ceiling || f.units.empty())
         return;
+    // The ring estimate (AiPlayerbot.DungeonRunAggroWalkRing, needs the estimate on): the walk, the
+    // stand and the fight point wake a pack, and every member calls within ringYd for kAggroRingHops
+    // hops, so the read reaches that much further.
+    bool const walkRing = sPlayerbotAIConfig.dungeonRunAggroWalkRing && sPlayerbotAIConfig.dungeonRunAggroEstimate;
+    float const ringYd = walkRing ? sPlayerbotAIConfig.dungeonRunAggroRingYd : 0.0f;
     std::list<Unit*> found;
-    HostileCreaturesAround(lead, std::min(toPoint + step.radius + kAggroScanYd, 2.0f * TortoiseBots::DungeonRun::kSeeYd), found);
+    HostileCreaturesAround(lead, std::min(toPoint + step.radius + kAggroScanYd + ringYd * ai::kAggroRingHops,
+        2.0f * TortoiseBots::DungeonRun::kSeeYd), found);
     std::vector<Creature*> creatures;
     std::vector<ai::AggroMob> mobs;
     std::unordered_map<uint64, std::size_t> index;
@@ -8740,6 +8785,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         if (c->IsInCombat() && !pulled)
             continue; // already fighting: not a joiner
         ai::AggroMob m;
+        m.guid = c->GetObjectGuid().GetRawValue();
         m.x = c->GetPositionX();
         m.y = c->GetPositionY();
         m.z = c->GetPositionZ();
@@ -8803,25 +8849,63 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         params.engageX = target->GetPositionX() + (lead->GetPositionX() - target->GetPositionX()) * k;
         params.engageY = target->GetPositionY() + (lead->GetPositionY() - target->GetPositionY()) * k;
         params.engageZ = target->GetPositionZ() + (lead->GetPositionZ() - target->GetPositionZ()) * k;
-        // Sight, only where it can change the answer (a raycast each): a creature wakes by itself when it sees the
-        // engage point inside its aggro radius, so that is read from the creature (the core's MoveInLineOfSight, which
-        // aims at the player's position + 1 yd with target height 0);
-        // assist needs the caller to see the assisted one, for which the pulled creature's sight of it, within the
-        // assist range of it, stands in.
-        for (std::size_t i = 0; i < creatures.size(); ++i)
+        ai::AggroEstimate estimate;
+        if (walkRing)
         {
-            ai::AggroMob& m = mobs[i];
-            float const dx = m.x - params.engageX, dy = m.y - params.engageY, dz = m.z - params.engageZ;
-            float const reach = ai::AggroRadius(m, params.lowestPartyLevel, params.aggroRate) + params.spreadYd;
-            m.partySees = i == it->second || dx * dx + dy * dy + dz * dz > reach * reach ||
-                creatures[i]->IsWithinLOS(params.engageX, params.engageY, params.engageZ + 1.0f, true, 0.0f);
-            m.seen = i == it->second || target->GetDistance(creatures[i]) > params.familyAssistYd ||
-                target->IsWithinLOSInMap(creatures[i]);
+            // The ring estimate: the party's walk to the engage point, the stand and the fight point
+            // (the stand, for a plain pull), each widened by its spread; the raid spreads 10 yd.
+            ai::AggroGeometry geometry;
+            geometry.walk = SampleWalkTo(lead, params.engageX, params.engageY, params.engageZ);
+            geometry.walkSpreadYd = 3.0f;
+            geometry.stand = ai::AggroPoint{params.engageX, params.engageY, params.engageZ};
+            geometry.standSpreadYd = f.raid.on ? ai::kSpreadSettledDistance : 3.0f;
+            geometry.hasFight = true;
+            geometry.fight = geometry.stand;
+            // A camp pull (B) fills the tank walk and the drag here; with the camp pull out they stay empty.
+            ai::AggroEstimateParams ring = params;
+            ring.ringYd = ringYd;
+            ring.ringHops = ai::kAggroRingHops;
+            ring.floorDz = ai::kAggroFloorDz;
+            // Sight, only inside the reach read: mob to the sample point (the core's MoveInLineOfSight aims at
+            // position + 1 yd), caller to the called creature.
+            ring.mobSees = [&](std::size_t mob, ai::AggroPoint const& point)
+            {
+                return creatures[mob]->IsWithinLOS(point.x, point.y, point.z + 1.0f, true, 0.0f);
+            };
+            ring.mobsSee = [&](std::size_t from, std::size_t to)
+            {
+                return creatures[from]->IsWithinLOSInMap(creatures[to]);
+            };
+            estimate = ai::EstimateAggroRing(mobs, it->second, geometry, ring);
+            unit.estBodies = estimate.bodies;
+            unit.estGuids.clear();
+            for (ai::AggroMember const& member : estimate.members)
+                unit.estGuids.push_back(mobs[member.index].guid);
+            unit.estLosBudget = estimate.losBudgetSpent;
+            unit.joiners = estimate.joiners; // the joiner report's expected count
         }
-        ai::AggroEstimate estimate = ai::EstimateAggro(mobs, it->second, params);
-        ai::JoinersOverCeiling(estimate, ceiling);
-        unit.joiners = estimate.joiners;
-        unit.joinersPatrol = estimate.patrolIsTheCause;
+        else
+        {
+            // Sight, only where it can change the answer (a raycast each): a creature wakes by itself when it sees the
+            // engage point inside its aggro radius, so that is read from the creature (the core's MoveInLineOfSight, which
+            // aims at the player's position + 1 yd with target height 0);
+            // assist needs the caller to see the assisted one, for which the pulled creature's sight of it, within the
+            // assist range of it, stands in.
+            for (std::size_t i = 0; i < creatures.size(); ++i)
+            {
+                ai::AggroMob& m = mobs[i];
+                float const dx = m.x - params.engageX, dy = m.y - params.engageY, dz = m.z - params.engageZ;
+                float const reach = ai::AggroRadius(m, params.lowestPartyLevel, params.aggroRate) + params.spreadYd;
+                m.partySees = i == it->second || dx * dx + dy * dy + dz * dz > reach * reach ||
+                    creatures[i]->IsWithinLOS(params.engageX, params.engageY, params.engageZ + 1.0f, true, 0.0f);
+                m.seen = i == it->second || target->GetDistance(creatures[i]) > params.familyAssistYd ||
+                    target->IsWithinLOSInMap(creatures[i]);
+            }
+            estimate = ai::EstimateAggro(mobs, it->second, params);
+            ai::JoinersOverCeiling(estimate, ceiling);
+            unit.joiners = estimate.joiners;
+            unit.joinersPatrol = estimate.patrolIsTheCause;
+        }
         unit.joinersRead = true;
     }
 }
@@ -9571,6 +9655,159 @@ static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vec
     f.holdAheadZ = hold.z;
 }
 
+// The chain's pull row from a move row (AiPlayerbot.DungeonRunAggroWalkRing's look-ahead): walking forward over
+// the same leg's move rows, the first pull row; anything else (a boss, a hold, another leg) ends the chain.
+static const ai::PlanStep* NextPullOfChain(DungeonRunSlot const& slot, std::size_t* at = nullptr)
+{
+    const ai::DungeonPlan* const plan = slot.run.plan;
+    if (!plan || slot.run.step >= plan->steps.size())
+        return nullptr;
+    std::uint8_t const leg = plan->steps[slot.run.step].leg;
+    for (std::size_t i = slot.run.step + 1; i < plan->steps.size(); ++i)
+    {
+        const ai::PlanStep& row = plan->steps[i];
+        if (row.leg != leg)
+            return nullptr;
+        if (row.kind == ai::PlanStepKind::Move || row.kind == ai::PlanStepKind::MoveDirect)
+            continue;
+        if (row.kind != ai::PlanStepKind::Pull)
+            return nullptr;
+        if (at)
+            *at = i;
+        return &row;
+    }
+    return nullptr;
+}
+
+// AiPlayerbot.DungeonRunAggroWalkRing's look-ahead: on the last move row before a pull, how many bodies the
+// party's walk in and that pull would bring (ai::EstimateAggroRing, fight point = the stand, the row's own
+// point), and their guids. The pull row's pack is scoped as a stand-pull row scopes it: a creature whose DB
+// spawn lies within the row's radius of its point. Read once per row (DungeonRun::AheadEstimate on the slot)
+// and refilled into the facts on later ticks. Advice only: no order changes.
+static void ReadPullAhead(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!f.aggroWalkRing || !lead->IsAlive() || !lead->IsInWorld() || lead->GetTransport() || !slot.run.plan)
+        return;
+    std::size_t at = 0;
+    const ai::PlanStep* const pull = NextPullOfChain(slot, &at);
+    // The last move row before the pull: the chain ends here, so the walk in does too.
+    if (!pull || at != slot.run.step + 1)
+        return;
+    AheadEstimate& cache = slot.aheadCache;
+    if (!cache.done || cache.step != slot.run.step)
+    {
+        cache = AheadEstimate();
+        cache.step = slot.run.step;
+        cache.done = true;
+        const ai::PlanStep& row = slot.run.plan->steps[slot.run.step];
+        cache.ceiling = RowCeilingBodies(*pull, f);
+        float const ringYd = sPlayerbotAIConfig.dungeonRunAggroRingYd;
+        std::list<Unit*> found;
+        HostileCreaturesAround(lead, std::min(pull->radius + kAggroScanYd + ringYd * ai::kAggroRingHops,
+            2.0f * kSeeYd), found);
+        std::vector<Creature*> creatures;
+        std::vector<ai::AggroMob> mobs;
+        for (Unit* unit : found)
+        {
+            Creature* const c = unit->ToCreature();
+            if (!c || !c->IsAlive() || c->IsInCombat())
+                continue;
+            CreatureData const* const data = c->GetCreatureData();
+            if (!data || ai::PlanDistance(data->position.x, data->position.y, data->position.z, pull->x, pull->y,
+                    pull->z) > pull->radius + kSpawnOwnTolYd)
+                continue; // not this row's pack (the scope its own read uses)
+            ai::AggroMob m;
+            m.guid = c->GetObjectGuid().GetRawValue();
+            m.x = c->GetPositionX();
+            m.y = c->GetPositionY();
+            m.z = c->GetPositionZ();
+            m.level = c->GetLevel();
+            m.detectionYd = c->GetDetectionRange();
+            m.faction = c->GetFactionTemplateId();
+            m.noAggro = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO);
+            m.noAssist = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST);
+            m.patroller = c->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+            if (CreatureGroup* group = c->GetCreatureGroup())
+                if (group->HasGroupFlag(OPTION_AGGRO_TOGETHER))
+                    m.groupId = static_cast<uint32>(group->GetOriginalLeaderGuid().GetCounter());
+            creatures.push_back(c);
+            mobs.push_back(m);
+        }
+        if (!mobs.empty())
+        {
+            ai::AggroEstimateParams params;
+            params.lowestPartyLevel = 255;
+            for (Player* bot : bots)
+                if (bot->IsAlive())
+                    params.lowestPartyLevel = std::min<uint32>(params.lowestPartyLevel, bot->GetLevel());
+            if (params.lowestPartyLevel == 255)
+                params.lowestPartyLevel = lead->GetLevel();
+            params.aggroRate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+            params.familyAssistYd = sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS);
+            params.ringYd = ringYd;
+            params.ringHops = ai::kAggroRingHops;
+            params.floorDz = ai::kAggroFloorDz;
+            for (std::size_t i = 0; i < creatures.size(); ++i)
+            {
+                CreatureLinkingInfo const* info = sCreatureLinkingMgr.GetLinkedTriggerInformation(creatures[i]);
+                if (!info)
+                    continue;
+                bool toMaster = false;
+                for (std::size_t j = 0; j < creatures.size(); ++j)
+                {
+                    bool const isMaster = j != i && (info->masterDBGuid ? creatures[j]->GetGUIDLow() == info->masterDBGuid
+                                                                         : creatures[j]->GetEntry() == info->masterId);
+                    if (!isMaster || (info->searchRange && creatures[i]->GetDistance(creatures[j]) > info->searchRange))
+                        continue;
+                    if (info->linkingFlag & FLAG_AGGRO_ON_AGGRO)
+                        params.links.push_back(ai::AggroLink{j, i});
+                    if ((info->linkingFlag & FLAG_TO_AGGRO_ON_AGGRO) && !toMaster)
+                    {
+                        params.links.push_back(ai::AggroLink{i, j});
+                        toMaster = true;
+                    }
+                }
+            }
+            // The pick the pull would make: the unit nearest the row this walk ends on.
+            std::size_t target = 0;
+            float best = 0.0f;
+            for (std::size_t i = 0; i < mobs.size(); ++i)
+            {
+                float const d = ai::PlanDistance(mobs[i].x, mobs[i].y, mobs[i].z, row.x, row.y, row.z);
+                if (i == 0 || d < best)
+                {
+                    best = d;
+                    target = i;
+                }
+            }
+            ai::AggroGeometry geometry;
+            geometry.walk = SampleWalkTo(lead, row.x, row.y, row.z);
+            geometry.stand = ai::AggroPoint{row.x, row.y, row.z};
+            geometry.standSpreadYd = f.raid.on ? ai::kSpreadSettledDistance : 3.0f;
+            geometry.hasFight = true;
+            geometry.fight = geometry.stand;
+            params.mobSees = [&](std::size_t mob, ai::AggroPoint const& point)
+            {
+                return creatures[mob]->IsWithinLOS(point.x, point.y, point.z + 1.0f, true, 0.0f);
+            };
+            params.mobsSee = [&](std::size_t from, std::size_t to)
+            {
+                return creatures[from]->IsWithinLOSInMap(creatures[to]);
+            };
+            ai::AggroEstimate const estimate = ai::EstimateAggroRing(mobs, target, geometry, params);
+            cache.bodies = estimate.bodies;
+            for (ai::AggroMember const& member : estimate.members)
+                cache.guids.push_back(mobs[member.index].guid);
+        }
+    }
+    f.aheadBodies = cache.bodies;
+    f.aheadCeiling = cache.ceiling;
+    f.aheadStep = at;
+    f.aheadGuids = cache.guids;
+}
+
 // A linked master without a named spawn is searched for this far from its slave (the row's own search range
 // narrows it).
 constexpr float kPullPackMasterYd = 40.0f;
@@ -9659,6 +9896,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f = Facts();
     // The pull aggro estimate (PullAggroEstimatePolicy.h): off at 0, nothing is read and no pull waits for it.
     f.joinerCeiling = sPlayerbotAIConfig.dungeonRunAggroEstimate ? sPlayerbotAIConfig.dungeonRunAggroCeiling : 0;
+    // The ring estimate (EstimateAggroRing): inside the estimate's key, the walk and the ring judge the pull.
+    f.aggroWalkRing = sPlayerbotAIConfig.dungeonRunAggroEstimate && sPlayerbotAIConfig.dungeonRunAggroWalkRing;
     // The pack-cleared gate (DungeonRun::ClassifyPullRead): read every tick, so a reload switches it mid-run.
     f.packClearMarginYd = sPlayerbotAIConfig.dungeonRunPackClearMarginYd;
     f.packClearRepulls = sPlayerbotAIConfig.dungeonRunPackClearRepulls;
@@ -10603,6 +10842,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     ReadTimeSinkWays(slot, lead, f);
     ReadPullStand(slot, lead, bots, f);
     ReadStandPullHold(slot, lead, bots, f);
+    // The ring estimate's look-ahead (AiPlayerbot.DungeonRunAggroWalkRing), on the row before a pull.
+    ReadPullAhead(slot, lead, bots, f);
     // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
     // the pack in the tank's shot), not on every tick of the wait. A row that left a unit of the pack to the plain pull
     // (Run::standPullStatic) reads them too: its plain pull still needs the clearance.
