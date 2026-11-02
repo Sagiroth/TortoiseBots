@@ -331,6 +331,23 @@ func TestTwoTanksCompare(t *testing.T) {
 	if findBot(t, r, "Fast") != nil {
 		t.Errorf("Fast listed, want only Slow")
 	}
+
+	// One guid in two roles is two rows: the key is guid and role, not the name
+	// (a bot that healed in one fight and damaged in another).
+	fights = append(fights,
+		fi("s1", 5000, 30000, tb(9, "Switch", "priest", "dps", 3000, 0, 10, 0, 0)),
+		fi("s2", 6000, 30000, tb(9, "Switch", "priest", "healer", 0, 3000, 0, 10, 0)),
+	)
+	split := Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, defLim())
+	rows := 0
+	for _, ok := range split.OK {
+		if ok.Name == "Switch" {
+			rows++
+		}
+	}
+	if rows != 2 {
+		t.Fatalf("Switch rows = %d, want 2 (guid 9 seen as dps and as healer)", rows)
+	}
 }
 
 func TestRuleWarningsCountedPerFight(t *testing.T) {
