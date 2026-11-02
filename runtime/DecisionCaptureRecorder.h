@@ -146,8 +146,9 @@ public:
         line += OutObject(run, order);
         line += ",\"post\":";
         line += DeltaObject(pendingRun_, postRun);
+        stats_.lastCapUs = CapMicros(start_);
         line += ",\"capUs\":";
-        line += std::to_string(CapMicros(start_));
+        line += std::to_string(stats_.lastCapUs);
         line += "}";
 
         if (limits_.recordBytes > 0 && line.size() > limits_.recordBytes)

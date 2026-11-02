@@ -1,9 +1,8 @@
 #pragma once
 
 // JSON encode/decode and top-level field deltas for one captured `Facts` or
-// `Run` (spec: decision capture and replay). Header-only and standard library
-// only: the policy tests, the replay tool and the recorder all build it without
-// the game.
+// `Run`. Header-only and standard library only: the policy tests, the replay
+// tool and the recorder all build it without the game.
 //
 // Exactness rules (they are the format):
 //   - float `%.9g`, double `%.17g`; nan/inf/-inf as the JSON strings "nan",
