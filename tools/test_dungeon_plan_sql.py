@@ -5324,16 +5324,16 @@ class DungeonPlanSql(unittest.TestCase):
         # the run leader's 60 yd see range, so plan-check refuses it; leg 0 is unchanged and the plan note records
         # it as OPEN.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261101093000_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532', '', '14750,15146', 'turtle-agent f3a7c87 dungeons/zul_gurub.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261102120000_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532', '', '14750,15146', 'turtle-agent 2436536 dungeons/zul_gurub.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
                          ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 1097)
+        self.assertEqual(len(rows), 1096)
         self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
-                         [41, 144, 30, 61, 121, 75, 114, 279, 232])
+                         [41, 144, 29, 61, 121, 75, 114, 279, 232])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [10, 21, 6, 7, 25, 23, 20, 38, 18])
         # Leg 1 (high_priest_venoxis), walk 20: the Mad Servant packs (15111) are pulled from stands out of the
@@ -5387,13 +5387,19 @@ class DungeonPlanSql(unittest.TestCase):
                          [(r["x"], r["y"], r["radius"]) for r in leg1 if r["kind"] == "pull"])
         for gone in (("-11874.35", "-1855.11", "10"), ("-11890.38", "-1878.2", "10")):
             self.assertNotIn(gone, [(r["x"], r["y"], r["radius"]) for r in leg1 if r["kind"] == "pull"])
-        # Leg 2 (high_priestess_marli), walk 25 (TortoiseBots-audit research/zg-w25/MARLI-PULL.md, SPEC-1-AMEND):
-        # the `to` leaves the spawn of the patrolling Razzashi Skitterer 49202 and the two spider packs are pulled
-        # from the east. The `to` is -12242.112 -1685.4194 (the old path row's point); pack 0's approach
-        # -12251.5 -1685.5 and pack 1's -12250 -1683 are approach move rows. The old `to` -12286.3 -1677.55
-        # (49202's spawn, 0.1 yd) is gone: no leg-2 move row stands within 5 yd of it.
+        # Leg 2 (high_priestess_marli): walk 25 put the two spider packs on east stands and walk 26b changed their
+        # ORDER (TortoiseBots-audit tests/raid-zg-walk26b, research/zg-w26/MARLI-203.md). The `to` is
+        # -12242.112 -1685.4194 (the old path row's point) and no leg-2 move row stands within 5 yd of the old `to`
+        # -12286.3 -1677.55 (49202's spawn, 0.1 yd). Pack 1 is pulled FIRST from its stand S1 -12250 -1683 (stand
+        # pull: flags 8192, param 0), pack 0 SECOND from S0 -12251.5 -1685.5 (plain pull: flags 0). Walk 26b: step
+        # 203 pulled pack 0 and its leader 49202, aggro-together with the pack, was dragged from its loop at
+        # -12308.3 -1624.2 through pack 1's 10 yd assistance ring (6.9 yd from 49251, 9.6 from 49248), waking pack 1
+        # too: 23 hostiles, 20 dead in 35 s. Pack 1 dead first removes that: when pack 0 is pulled later 49202 has
+        # nothing to wake. The exporter's cut row of 8a3d163 (-12275.199 -1686.1334) and walk 25's cut row
+        # (-12295.88 -1663.1277) are both gone: the hop from S0 to pack 0's row centre is 48.99 yd and the hop from
+        # pack 0's row to group 2 is 35.6 yd, both inside the 50 yd reach. Leg 2 is 29 rows of 1096 steps.
         leg2 = leg_steps(rows, 2)
-        self.assertEqual(len(leg2), 30)
+        self.assertEqual(len(leg2), 29)
         moves2 = [(r["x"], r["y"]) for r in leg2 if r["kind"] == "move"]
         self.assertIn(("-12242.112", "-1685.4194"), moves2)
         self.assertNotIn(("-12286.3", "-1677.55"), moves2)
@@ -5401,38 +5407,31 @@ class DungeonPlanSql(unittest.TestCase):
             if r["kind"] == "move":
                 self.assertGreater(math.hypot(float(r["x"]) + 12286.3, float(r["y"]) + 1677.55), 5.0,
                                    (r["seq"], r["comment"]))
-        # SPEC-1-AMEND (the walk-25 review, Codex's HIGH, research/zg-w25/SPEC-1-AMEND.md): pack 0's row is NOT a
-        # stand pull (flags 0, comment without "; stand pull"). Its leader 49202 walks a 13-point loop that never
-        # comes within the stand-pull gate's 27.5 yd of S0 (43.8 yd at its closest), so the gate would hold the
-        # party 600 s and pause the run; the plain pull walks the gathered party to a firing stand in the pack's own
-        # shot instead (about 23.5 yd from the nearest pack-0 unit). Pack 1 keeps its stand pull (flags 8192) for
-        # the patrol clearance: all 12 of its units are static and out of shot at S1, so the row hands them to the
-        # same firing-stand walk after one tick, and its move row stays directly before it.
-        # f3a7c87 (the approach-hop fix): 8a3d163's approach (-12245.333 -1685.3334) stood 55.16 yd from pack 0's
-        # row centre, past the exporter's 50 yd approach-hop reach, so plan-export --approach-hops cut the hop into a
-        # navmesh row at -12275.199 -1686.1334 (25.3 yd of it), 14.1 yd from 49202's spawn and 17.1 from the static
-        # Venombrood 49771: the party walked into pack 0's aggro on a MOVE row, before the pull step. The approach now
-        # stands at -12251.5 -1685.5 (48.99 yd from the centre, 40.6 from the nearest static unit 49771, 42.1 from
-        # pack 1, 35.7 from the patroller 49202's own spawn - the pack it pulls), so the exporter cuts nothing there
-        # and leg 2 is 30 rows of 1097 steps: the move row before pack 0's pull row is the approach itself.
+        # SPEC-1-AMEND (the walk-25 review, Codex's HIGH, research/zg-w25/SPEC-1-AMEND.md) keeps pack 0 a plain pull:
+        # its leader 49202 walks a 13-point loop that never comes within the stand-pull gate's 27.5 yd of S0, so a
+        # stand pull would hold the party 600 s and pause the run; the plain pull walks the gathered party to a firing
+        # stand in the pack's own shot instead (about 23.5 yd from the nearest pack-0 unit). Pack 1 keeps its stand
+        # pull (flags 8192) for the patrol clearance: its 12 units are static and out of shot at S1, so the row hands
+        # them to the same firing-stand walk after one tick, and its move row stays directly before it.
         g0 = next(i for i, r in enumerate(leg2) if r["kind"] == "pull" and r["comment"].startswith("pull group 0"))
         g1 = next(i for i, r in enumerate(leg2) if r["kind"] == "pull" and r["comment"].startswith("pull group 1"))
-        self.assertEqual((leg2[g0]["comment"], leg2[g0]["flags"], leg2[g0]["param"]), ("pull group 0", "0", "0"))
-        self.assertEqual((leg2[g1]["comment"], leg2[g1]["flags"], leg2[g1]["param"]),
-                         ("pull group 1; stand pull", "8192", "0"))
+        self.assertEqual((leg2[g0]["comment"], leg2[g0]["flags"], leg2[g0]["param"]),
+                         ("pull group 0; stand pull", "8192", "0"))
+        self.assertEqual((leg2[g1]["comment"], leg2[g1]["flags"], leg2[g1]["param"]), ("pull group 1", "0", "0"))
         self.assertEqual((leg2[g0 - 2]["kind"], leg2[g0 - 2]["comment"], leg2[g0 - 2]["x"], leg2[g0 - 2]["y"]),
                          ("move", "to", "-12242.112", "-1685.4194"))
         self.assertEqual((leg2[g0 - 1]["kind"], leg2[g0 - 1]["comment"], leg2[g0 - 1]["x"], leg2[g0 - 1]["y"]),
-                         ("move", "pull group 0 approach", "-12251.5", "-1685.5"))
+                         ("move", "pull group 0 approach", "-12250", "-1683"))
         self.assertEqual((leg2[g1 - 1]["kind"], leg2[g1 - 1]["comment"], leg2[g1 - 1]["x"], leg2[g1 - 1]["y"]),
-                         ("move", "pull group 1 approach", "-12250", "-1683"))
-        # The cut row of 8a3d163 is gone, and no row before pack 0's pull row stands within 25 yd of a pack-0 spawn
-        # (the hazard f3a7c87 fixes): the approach is the nearest (40.6 yd from 49771).
+                         ("move", "pull group 1 approach", "-12251.5", "-1685.5"))
+        # Both cut rows are gone, and no row before pack 0's pull row (g1: pack 1 comes first) stands within 25 yd of
+        # a pack-0 spawn: the S0 approach is the nearest (40.6 yd from 49771).
         self.assertNotIn("-12275.199", [r["x"] for r in leg2])
+        self.assertNotIn("-12295.88", [r["x"] for r in leg2])
         pack0_spawns = [(-12286.3, -1677.55), (-12298.1, -1687.7), (-12309.5, -1696.85), (-12312.8, -1686.91),
                         (-12292, -1682.84), (-12301.3, -1692.08), (-12311, -1684.61), (-12294.6, -1682.9),
                         (-12298.9, -1679.9)]
-        for r in leg2[:g0]:
+        for r in leg2[:g1]:
             for sx, sy in pack0_spawns:
                 self.assertGreaterEqual(math.hypot(float(r["x"]) - sx, float(r["y"]) - sy), 25.0,
                                        (r["seq"], r["comment"], sx, sy))

@@ -54,6 +54,7 @@
 //     follower of the lead bot); the party stays where it is and fights them
 //     once it has arrived. Never during an event.
 
+#include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
@@ -68,6 +69,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -105,6 +107,9 @@ constexpr float kArriveYd = 3.0f;                 // a walk is done this close t
 constexpr float kStalledArriveYd = 6.0f;          // ... or this close once it stopped gaining ground (a point
                                                   // just off the mesh or on a ledge the bot cannot reach)
 constexpr float kStandZTolYd = 4.5f;              // a stand this far above or below the lead bot or less is judged on the ground plane
+// The core's INVALID_MAP_ID (CreatureLinkingMgr.cpp): a creature_linking row (a master spawn's guid) has no map of its
+// own, a creature_linking_template row always does.
+constexpr std::uint32_t kInvalidMapId = 0xFFFFFFFF;
 constexpr float kSeeYd = 60.0f;                   // a pack, boss or spot is judged only from this close
 constexpr float kWaitClearMaxDz = 10.0f;          // wait_clear: past the step's own wait, a remaining hostile this far above or below the spot counts as another floor (WaitClearOffFloorOnly)
 // A lead bot revived in another part of the instance (LeadInOtherPart, Scarlet
@@ -222,6 +227,208 @@ constexpr std::uint32_t kShotStillWaitMs = 3000;  // a moving tank is waited for
 // A stand walk that gains nothing for kWalkRetryMs, or takes longer than this
 // in all, is given up: the order goes out from where the tank is (never a pause).
 constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
+// AiPlayerbot.DungeonRunStandClearance (HoldForShot): a firing stand is refused when another live pack can reach it,
+// from where it stands or from any point of the loop it patrols. The clearance is the unit's aggro reach (its
+// detection range minus the party's level advantage over its level, the core's Creature::GetAttackDistance) plus
+// kStandClearSpreadYd: the bots stand at the stand point (the run's own spread places them there), so only the unit's
+// own reach and the line of sight the core needs decide whether it can wake on the stand. `path` is the whole loop a
+// patroller walks; a loop the host cannot read (a special escorts path) stands in by the unit's spot plus
+// kStandClearUnreadPathYd. A unit that stays put this far above or below the stand with no sight line to it is on
+// another storey (kStandClearOtherStoreyYd): it is no other pack the stand must keep clear of. A patroller is excused
+// only when its whole loop stays that far in height: its spot may be on another storey while the loop comes down to
+// the stand's, and no sight line is asked of a point it has not reached yet. A boss step's stand stands inside
+// the boss fight (BossEncounter): the step's own units and the creatures the core links to the boss are no other
+// packs either.
+constexpr float kStandClearSpreadYd = 4.0f;
+constexpr float kStandClearUnreadPathYd = 10.0f;
+constexpr std::size_t kStandClearCandidates = 8;   // stands tried along the lead bot's path, nearest the lead first
+constexpr float kStandClearScanYd = 2.0f * kSeeYd; // the glue reads the other packs this far around the lead bot
+constexpr float kStandClearOtherStoreyYd = 8.0f;   // a unit this far from the stand in height (a patroller: every point of its loop) is on another storey
+// The core's family assistance radius (ai::kAggroFamilyAssistYd): a creature this near a pulled one that can answer
+// its call is called to the fight with it, so the pull's pack grows by it (GrowPullPackByAssistance). One ring: the
+// creatures the call reaches do not call the next.
+constexpr float kStandClearAssistYd = 10.0f;
+// A waypoint patroller that alone refuses every stand is waited for this long to walk its own spot clear of the
+// reach's stand; then the default stand goes out (advisory: the clearance never holds a pull past it, HoldForShot).
+constexpr std::uint32_t kStandClearWaitMs = 20000;
+
+// One live hostile that is not in the pulled group (the glue's read, Facts::standOthers).
+struct StandOther
+{
+    std::uint32_t entry = 0;             // the hold's note names it (HoldForShot)
+    std::uint64_t guid = 0;              // the glue's key for the sight line its other-storey rule reads
+    bool patrols = false;                // it walks a patrol: its spot may move off the stand
+    float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands now
+    std::vector<ai::ApproachPoint> path; // the loop it walks, closed (empty: its spot alone)
+    float clearYd = 0.0f;                // its aggro reach plus the party's spread
+    float marginYd = 0.0f;               // a loop the host could not read: its spot plus this
+};
+
+// One unit of the pack the pull takes, and the reach it puts under a firing stand (Facts::standPackReach): a stand
+// within it is walked into and the unit wakes before the shot.
+struct StandPackReach
+{
+    std::uint32_t entry = 0;             // the hold's note names it (HoldForShot)
+    bool patrols = false;                // it walks a patrol: its spot may move off the stand
+    float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands now
+    float reachYd = 0.0f;                // its aggro reach (the aggro estimate's rule, the party's level)
+};
+
+// Point-to-segment distance in 3D: a stand beside a loop's leg is as close to the patrol as one beside a waypoint.
+inline float StandClearSegmentYd(float ax, float ay, float az, float bx, float by, float bz, float px, float py,
+    float pz)
+{
+    float const dx = bx - ax, dy = by - ay, dz = bz - az;
+    float const len2 = dx * dx + dy * dy + dz * dz;
+    float t = len2 > 0.0f ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len2 : 0.0f;
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    float const nearestZ = az + t * dz;
+    return ai::PlanDistance(ax + t * dx, ay + t * dy, nearestZ, px, py, pz);
+}
+
+// How near a point comes to the closed loop a patrol walks. A path of fewer than two nodes is no loop: no distance
+// at all.
+inline float StandPathClearanceYd(const std::vector<ai::ApproachPoint>& path, float x, float y, float z)
+{
+    std::size_t const n = path.size();
+    if (n < 2)
+        return std::numeric_limits<float>::max();
+    float best = std::numeric_limits<float>::max();
+    for (std::size_t i = 1; i < n; ++i)
+        best = std::min(best, StandClearSegmentYd(path[i - 1].x, path[i - 1].y, path[i - 1].z, path[i].x, path[i].y,
+            path[i].z, x, y, z));
+    return std::min(best, StandClearSegmentYd(path[n - 1].x, path[n - 1].y, path[n - 1].z, path[0].x, path[0].y,
+        path[0].z, x, y, z));
+}
+
+// How near a point comes to one other unit: its spot (plus the margin of a loop the host could not read), or the
+// nearest point of the closed loop it walks.
+inline float StandClearanceYd(float x, float y, float z, const StandOther& other)
+{
+    float const spot = ai::PlanDistance(x, y, z, other.x, other.y, other.z) - other.marginYd;
+    return std::min(spot, StandPathClearanceYd(other.path, x, y, z));
+}
+
+// The pack the pull takes grows by the core's family assistance radius (kStandClearAssistYd): a creature within it of
+// a pack unit is called to the fight with it, but only when it can answer that unit's call (`canAssistPack`: the
+// glue's read of the core's CanAssistTo conditions, its faction relation and its line of sight). One ring, not
+// transitive: what such a creature could call in turn is another pack a stand must keep clear of. `found` is every
+// scanned creature's spot, `pack` which of them the pull already takes (parallel to `found`), `canAssistPack` whether
+// the call would take each of them (parallel too), and `seeds` the pack's own units that may stand outside the scan.
+// The creatures the call reaches join `pack`: they are part of the pull, not another pack a stand must keep clear of.
+inline void GrowPullPackByAssistance(std::vector<bool>& pack, const std::vector<ai::ApproachPoint>& found,
+    const std::vector<ai::ApproachPoint>& seeds, const std::vector<bool>& canAssistPack)
+{
+    std::vector<bool> const pulled = pack; // the ring anchors on the pull's own units, not on what joined this call
+    for (std::size_t i = 0; i < found.size(); ++i)
+    {
+        if (pack[i] || !canAssistPack[i])
+            continue;
+        bool called = false;
+        for (const ai::ApproachPoint& seed : seeds)
+            if (ai::PlanDistance(found[i].x, found[i].y, found[i].z, seed.x, seed.y, seed.z) <=
+                kStandClearAssistYd)
+            {
+                called = true;
+                break;
+            }
+        for (std::size_t j = 0; j < found.size() && !called; ++j)
+            called = pulled[j] && ai::PlanDistance(found[i].x, found[i].y, found[i].z, found[j].x, found[j].y,
+                found[j].z) <= kStandClearAssistYd;
+        pack[i] = called;
+    }
+}
+
+// A unit this far above or below the stand, with no sight line between them, is on another storey (the floors take
+// its sight as well as the party's): it cannot wake on the stand, so it is no other pack the stand keeps clear of.
+inline bool StandOnOtherStorey(const StandOther& other, float z, bool los)
+{
+    return std::fabs(other.z - z) > kStandClearOtherStoreyYd && !los;
+}
+
+// Whether that unit refuses the stand: inside its clearance, and not on another storey. A unit that stays put is
+// excused only when it is this far in height and out of its sight; a patroller is excused only when its whole
+// recorded loop stays this far in height (the lowest and the highest point both), no sight line asked: its spot may
+// be on another storey while its loop comes down to the stand's, and the map ray is the expensive read, aimed at a
+// point it has not reached yet.
+inline bool StandOtherBlocks(const StandOther& other, float x, float y, float z,
+    const std::function<bool(const StandOther&)>& los)
+{
+    if (StandClearanceYd(x, y, z, other) >= other.clearYd)
+        return false;
+    if (other.path.size() > 1)
+    {
+        float lowestZ = other.path[0].z;
+        float highestZ = other.path[0].z;
+        for (const ai::ApproachPoint& point : other.path)
+        {
+            lowestZ = std::min(lowestZ, point.z);
+            highestZ = std::max(highestZ, point.z);
+        }
+        return std::fabs(lowestZ - z) <= kStandClearOtherStoreyYd ||
+            std::fabs(highestZ - z) <= kStandClearOtherStoreyYd;
+    }
+    if (std::fabs(other.z - z) <= kStandClearOtherStoreyYd)
+        return true;
+    return !StandOnOtherStorey(other, z, los(other));
+}
+
+// Whether every other pack's clearance stays off the point (no sight line read: another storey never excused).
+inline const StandOther* StandBlocker(float x, float y, float z, const std::vector<StandOther>& others)
+{
+    for (const StandOther& other : others)
+        if (StandClearanceYd(x, y, z, other) < other.clearYd)
+            return &other;
+    return nullptr;
+}
+
+// ... with the storey rule: `los` reads the glue's sight line from the point to a unit.
+inline const StandOther* StandBlocker(float x, float y, float z, const std::vector<StandOther>& others,
+    const std::function<bool(const StandOther&)>& los)
+{
+    for (const StandOther& other : others)
+        if (StandOtherBlocks(other, x, y, z, los))
+            return &other;
+    return nullptr;
+}
+
+inline bool StandClearAt(float x, float y, float z, const std::vector<StandOther>& others)
+{
+    return StandBlocker(x, y, z, others) == nullptr;
+}
+
+inline bool StandClearAt(float x, float y, float z, const std::vector<StandOther>& others,
+    const std::function<bool(const StandOther&)>& los)
+{
+    return StandBlocker(x, y, z, others, los) == nullptr;
+}
+
+// The widest aggro reach of the pack the pull takes: the floor under every stand, since the party walks to it and
+// stands there, and a unit of the pack within that reach would wake before the shot (StandAbovePackReach).
+inline float StandPackReachYd(const std::vector<StandPackReach>& pack)
+{
+    float reach = 0.0f;
+    for (const StandPackReach& unit : pack)
+        reach = std::max(reach, unit.reachYd);
+    return reach;
+}
+
+// The unit of the pack whose floor refuses the point (the first): null when the point stands above it.
+inline const StandPackReach* StandPackBlocker(float x, float y, float z, const std::vector<StandPackReach>& pack)
+{
+    float const reach = StandPackReachYd(pack);
+    for (const StandPackReach& unit : pack)
+        if (ai::PlanDistance(x, y, z, unit.x, unit.y, unit.z) < reach)
+            return &unit;
+    return nullptr;
+}
+
+// Whether the point stands at least the pack's widest reach from every unit of the pack: the party can walk to it
+// and wait there without a unit of the pack waking by itself.
+inline bool StandAbovePackReach(float x, float y, float z, const std::vector<StandPackReach>& pack)
+{
+    return StandPackBlocker(x, y, z, pack) == nullptr;
+}
 constexpr std::uint32_t kMaxPullsPerStep = 20;
 constexpr std::uint32_t kMaxWalkBackPulls = 8;    // pulls on the way of a walk back (their own count), then pause
 // A lead bot on a navmesh island (IslandEscape). Zul'Farrak r3-19z20: the tank
@@ -322,6 +529,43 @@ inline std::uint32_t BossAwayWaitMs(const PlanStep& s)
 }
 constexpr std::uint32_t kStandPullWaitMs = 600000;
 constexpr float kStandPullMarginYd = 1.0f;
+// AiPlayerbot.DungeonRunStandPullPreCc: the move row before an authored stand-pull step (NextStandPull) ends at the
+// last point of its walk that stands outside the next row's pack (Facts::holdAheadReach), and that row's crowd
+// control goes out there: the party is still asleep in the pack's eyes when the sheep land, and only the walk in
+// after them wakes it. The floor is the widest aggro reach of the pack plus the party's own spread
+// (ai::kSpreadSettledDistance: the bots stand around the row's point) and kHoldAheadMarginYd. The point is the
+// glue's read (ReadStandPullHold) on the row's first tick; the row waits kHoldAheadWaitMs for it and then walks the
+// plan's point as before, so a glue that does not answer never holds the run.
+constexpr float kHoldAheadMarginYd = 1.0f;
+constexpr std::uint32_t kHoldAheadWaitMs = 3 * kTickMs;
+// The hold point itself: the last point of the walk to the approach (the lead bot's spot first, the approach last)
+// that stands outside every pack unit's wake reach. False when every point is in reach: the row walks the plan's
+// point as before and the note says why (MoveStep). The walk's last point is the approach, so the hold never lies
+// past the authored approach.
+inline bool HoldAheadPoint(std::vector<ai::ApproachPoint> const& walk, std::vector<StandPackReach> const& reach,
+    ai::ApproachPoint& hold)
+{
+    for (std::size_t i = walk.size(); i-- > 0;)
+    {
+        bool clear = true;
+        for (StandPackReach const& unit : reach)
+            if (ai::PlanDistance(walk[i].x, walk[i].y, walk[i].z, unit.x, unit.y, unit.z) <
+                unit.reachYd + ai::kSpreadSettledDistance + kHoldAheadMarginYd)
+            {
+                clear = false;
+                break;
+            }
+        if (!clear)
+            continue;
+        hold = walk[i];
+        return true;
+    }
+    return false;
+}
+// ... and the pull's crowd control lands on the pack (or this long passes after the last order) before the party
+// walks in: a Polymorph, Shackle Undead or Sap needs its cast time, and a walk that starts before the aura is there
+// wakes the unit the mark was for.
+constexpr std::uint32_t kCcPrePullWaitMs = 6000;
 // A stand-pull PULL row (kPlanFlagStandPull on a pull): the pack is pulled from the stand once one of its units is in
 // the tank's shot and no other patrol is near the lead bot.
 constexpr float kStandPullClearYd = 40.0f;    // ... no other patrol this close (the row's `param` in yd; 0: this)
@@ -635,12 +879,113 @@ struct UnitFact
     std::uint32_t health = 0;
     std::uint32_t maxHealth = 0;
     bool partyHits = false;
-    // A stand-pull row's units, patrollers and Facts::standPatrols: the formation it walks in (its creature group's
-    // original leader guid; a unit in no group: its own guid). 0: not read.
+    // A pull row's units, a stand-pull row's patrollers and Facts::standPatrols: the formation it walks in (its
+    // creature group's original leader guid; a unit in no group: its own guid). 0: not read.
     std::uint64_t formation = 0;
     // ... and it walks a patrol (its own waypoints, or a formation follower of a living waypoint leader). Not read: false.
     bool patrols = false;
 };
+
+// The pack a pull step takes, as the firing stand's clearance reads it (AiPlayerbot.DungeonRunStandClearance): the
+// step's own units (Facts::units, the row's living matches within its radius) and the formation each walks in, whose
+// members come with the pull. Such a creature is no "other pack" a stand must keep clear of; only the packs the step
+// does not take are.
+struct PullPack
+{
+    std::unordered_set<std::uint64_t> guids;
+    std::unordered_set<std::uint64_t> formations;
+};
+
+inline PullPack PullPackOf(const std::vector<UnitFact>& units, std::uint64_t target, std::uint64_t targetFormation)
+{
+    PullPack pack;
+    for (const UnitFact& u : units)
+    {
+        if (u.guid)
+            pack.guids.insert(u.guid);
+        if (u.formation)
+            pack.formations.insert(u.formation);
+    }
+    if (target)
+        pack.guids.insert(target);
+    if (targetFormation)
+        pack.formations.insert(targetFormation);
+    return pack;
+}
+
+// Whether a creature the stand scan found is one of the pack: one of its units, or one walking in their formation.
+// A formation not read (0) tells nothing beyond the guid.
+inline bool InPullPack(const PullPack& pack, std::uint64_t guid, std::uint64_t formation)
+{
+    return pack.guids.count(guid) != 0 || (formation && pack.formations.count(formation) != 0);
+}
+
+// The boss fight a boss step's firing stand stands inside (AiPlayerbot.DungeonRunStandClearance): the boss the step
+// names, and the creatures of his fight the glue can prove from their spawn. An entry alone proves nothing: 11368 is
+// both Jeklik's summoned Bloodseeker Bat and ordinary Zul'Gurub trash, so a trash pack of that entry beside the stand
+// is another pack. The evidence is his own spawn (guid), a creature he summoned, one the core links to him, one
+// walking his formation, or one already in the fight.
+struct BossEncounter
+{
+    std::uint32_t entry = 0;     // the step's boss (0: not a boss step), creature_linking_template's master entry
+    std::uint64_t guid = 0;      // the boss's own spawn (0: not read, a script summons him)
+    std::uint32_t dbGuid = 0;    // ... that spawn's DB row, creature_linking's master_guid (0: not read)
+    std::uint64_t formation = 0; // the formation the boss walks in (0: not read)
+};
+
+inline BossEncounter BossEncounterOf(const PlanStep* step)
+{
+    BossEncounter boss;
+    if (!step || step->kind != PlanStepKind::Boss)
+        return boss;
+    boss.entry = step->entry;
+    return boss;
+}
+
+// What the glue read of one creature on the stand scan (RunFormationOf, the boss's summoner, the core's linking row):
+// the spawn-level evidence the boss encounter reads, and the entry the other pack's note carries. A shared entry
+// (11368 is Jeklik's summoned bat and ordinary Zul'Gurub trash) proves nothing, so the entry is not membership.
+struct BossEncounterScan
+{
+    std::uint64_t guid = 0;
+    std::uint64_t formation = 0;
+    std::uint32_t entry = 0;
+    bool summoned = false;
+    bool linked = false;
+    bool inCombat = false;
+};
+
+// One creature's creature_linking row as the core keeps it: a template row's masterId is the master's creature entry
+// and it carries a map, a creature_linking row's is the master spawn's DB guid and its map is INVALID_MAP_ID, which
+// the core also copies into masterDBGuid (CreatureLinkingMgr). masterDBGuid is set on some template rows too (a
+// unique master, the FOLLOW flag), so it alone never tells the two kinds apart.
+struct BossLink
+{
+    std::uint32_t masterId = 0;
+    std::uint32_t masterDBGuid = 0;
+    std::uint32_t mapId = kInvalidMapId;
+};
+
+// Whether the link names the boss: its master spawn (a creature_linking row's master_guid, or a template row's
+// unique master), or a template row's master entry against the step's boss entry.
+inline bool BossLinkNamesBoss(const BossEncounter& boss, const BossLink& link)
+{
+    if (link.masterDBGuid != 0 && boss.dbGuid != 0 && link.masterDBGuid == boss.dbGuid)
+        return true;
+    return link.mapId != kInvalidMapId && boss.entry != 0 && link.masterId == boss.entry;
+}
+
+// Whether the scanned creature is one of the boss encounter, on spawn-level evidence only (the glue reads the
+// summoner and the linking row): the boss's own spawn, a creature the boss summoned, one the core links to the boss,
+// one walking the boss's formation, or one already in the fight. Its entry never makes it so. A pull step before a
+// boss is not the boss step: nothing of a boss fight is ignored there.
+inline bool BossEncounterUnit(const BossEncounter& boss, const BossEncounterScan& unit)
+{
+    if (boss.entry == 0 || unit.guid == 0)
+        return false;
+    return (boss.guid != 0 && unit.guid == boss.guid) || unit.summoned || unit.linked ||
+        (boss.formation != 0 && unit.formation == boss.formation) || unit.inCombat;
+}
 
 // The mage's Polymorph (all ranks and forms): the aura the run waits for after
 // a `cc moon`, and the spell a mage must know to be the run's crowd control.
@@ -1197,6 +1542,10 @@ struct Facts
     // AiPlayerbot.DungeonRunPullStand (HoldForShot): the key is on. Off (the
     // default) nothing below is read and the pull goes out as before, byte for byte.
     bool pullStand = false;
+    // AiPlayerbot.DungeonRunStandClearance: the key is on. It owns the stand
+    // rule of an authored stand-pull step's own pull (PullStandRuleOn) and
+    // the glue's clearance read of the stands it offers.
+    bool standClearance = false;
     // AiPlayerbot.DungeonRunWalkBackAfterWonFight (GuardWalkBackWanted): on (1),
     // the old walk back to the guard's stand point after every guarded fight. Off
     // (0, the default) the run goes on from where the tank stands once the step's
@@ -1220,6 +1569,31 @@ struct Facts
     bool shotStandKnown = false;
     float shotStandX = 0.0f, shotStandY = 0.0f, shotStandZ = 0.0f;
     float shotStandYd = 0.0f;           // ... the stand's distance from the unit (centre to centre); it sees the unit
+    // AiPlayerbot.DungeonRunStandClearance (HoldForShot): the other packs a firing stand must keep clear of, read with
+    // the stand; shotStandBlocked: the stand search found stands and refused them all. shotStandBest* is the reach's
+    // own stand (the first candidate); shotStandBlock* the pack that refuses it (the nearest: its entry, whether it
+    // walks a patrol, and how near the stand it comes), and shotStandBlockNowClear whether every refusing pack stands
+    // by its own spot clear of that stand now (a patrol may have walked off: HoldForShot waits for it).
+    std::vector<StandOther> standOthers;
+    bool shotStandBlocked = false;
+    float shotStandBestX = 0.0f, shotStandBestY = 0.0f, shotStandBestZ = 0.0f;
+    float shotStandBestYd = 0.0f; // ... its distance from the unit
+    std::uint32_t shotStandBlockEntry = 0;
+    bool shotStandBlockPatrols = false;
+    float shotStandBlockYd = 0.0f; // how near the stand the blocking pack comes (its spot, or the loop it walks)
+    bool shotStandBlockNowClear = false;
+    // The pack the pull takes, each unit with its aggro reach (StandPackReach): a stand must stay the widest reach
+    // from every unit of it, or the party walks into the pack before the shot (StandAbovePackReach).
+    std::vector<StandPackReach> standPackReach;
+    // AiPlayerbot.DungeonRunStandPullPreCc: the key is on. On the approach row of an authored stand-pull step
+    // (Run::holdAheadStep), the next row's pack, each unit with its aggro reach, and the last point of the row's walk
+    // that stands outside all of them: the row ends there, and the pull's CC goes out before the walk in wakes the
+    // pack (the glue's ReadStandPullHold). holdAheadKnown false: the point is not read yet (or there is none).
+    bool standPullPreCc = false;
+    std::vector<StandPackReach> holdAheadReach;
+    bool holdAheadRead = false; // ... the glue looked for the point (holdAheadKnown false: the walk has no clear point)
+    bool holdAheadKnown = false;
+    float holdAheadX = 0.0f, holdAheadY = 0.0f, holdAheadZ = 0.0f;
 };
 
 // Task A5: declared here (used from the first gate), defined next to PartyDead.
@@ -1448,6 +1822,17 @@ struct Run
     std::size_t standPullStep = static_cast<std::size_t>(-1);
     std::uint32_t standPullMs = 0;
     std::uint64_t standPullShotGuid = 0;
+    // AiPlayerbot.DungeonRunStandPullPreCc, the approach row (NextStandPull): the row the hold point was asked for
+    // this tick (the glue answers for that row only), whether the answer came (holdAheadDone: the glue stops reading
+    // it) and how long the row has waited for it. Past kHoldAheadWaitMs the row walks the plan's point as before.
+    std::size_t holdAheadStep = static_cast<std::size_t>(-1);
+    std::uint32_t holdAheadMs = 0;
+    bool holdAheadDone = false;
+    // ... and the pull row that follows: its walk to the plan's approach ran once, so the stand is read from the
+    // approach and a second pull of the row never walks back there (ResetStep clears it). ccOrderMs: time since the
+    // step's last crowd-control order, waited out (or until the marks read held) before that walk (kCcPrePullWaitMs).
+    bool standApproachReached = false;
+    std::uint32_t ccOrderMs = 0;
     // A stand-pull pull row: units of the pack the gate judged unable to come to the stand (UnitFact::patrols false and
     // out of the tank's shot when first seen): never waited for nor picked by PatrolStandPullGate again this step, left
     // to the plain pull (ResetStep clears it).
@@ -1735,6 +2120,10 @@ struct Run
     bool shotStandPrep = false;
     std::uint64_t shotHoldGuid = 0;           // ... the unit the prep is for (another pick checks the way back)
     std::string shotHow;
+    // A patrol refuses every firing stand this pull offered: how long the pull has waited for it to walk clear
+    // (kStandClearWaitMs), and the unit it waited for.
+    std::uint32_t shotClearMs = 0;
+    std::uint64_t shotClearGuid = 0;
     // HoldForShot ran on this tick. A tick it did not run on (a fight, a
     // gather, a dead member, a joiner rest, a regroup, another step kind) ends
     // the hold: the stand request, the walk and the wait are dropped (Tick).
@@ -2227,6 +2616,8 @@ inline void ResetShotStand(Run& r)
     r.shotStandPrep = false;
     r.shotHoldGuid = 0;
     r.shotHow.clear();
+    r.shotClearMs = 0;
+    r.shotClearGuid = 0;
 }
 
 // The big pack's stand walk gate is over (the pull went out, a fight, the step).
@@ -2476,6 +2867,11 @@ inline void ResetStep(Run& r)
         r.standPullMs = 0;
     }
     r.standPullShotGuid = 0;
+    r.holdAheadStep = static_cast<std::size_t>(-1);
+    r.holdAheadMs = 0;
+    r.holdAheadDone = false;
+    r.standApproachReached = false;
+    r.ccOrderMs = 0;
     r.standPullStatic.clear();
     r.hpWatch.clear();
     ClearFightProgress(r);
@@ -7637,12 +8033,72 @@ inline std::vector<std::pair<int, std::uint64_t>> CcIconsToClear(const Run& r)
     return out;
 }
 
+// The stand of a stand-pull boss step: the move row right before it in the same leg, or null (then the flag acts as
+// off: the step pulls as before).
+inline const PlanStep* StandPullStand(const Run& r, const PlanStep& s)
+{
+    if (!(s.flags & ai::kPlanFlagStandPull) || r.step == 0 || !r.plan)
+        return nullptr;
+    const PlanStep& prev = r.plan->steps[r.step - 1];
+    if (prev.kind != PlanStepKind::Move || prev.leg != s.leg)
+        return nullptr;
+    return &prev;
+}
+
+// The current step is an authored stand-pull step (kPlanFlagStandPull, the glue's StandThisStep): a pull or boss step
+// with its stand row right before it in the same leg. The glue reads its shot range and sight whatever the key says
+// (the stand-pull row's own unit is judged with them); the stand rule runs for its own pull with the clearance key
+// (PullStandRuleOn).
+inline bool AuthoredStandStep(const Run& r)
+{
+    const PlanStep* const s = Current(r);
+    return s && (s->kind == PlanStepKind::Boss || s->kind == PlanStepKind::Pull) && StandPullStand(r, *s) != nullptr;
+}
+
+// The current step is the approach row of an authored stand-pull step (the inverse of StandPullStand): a move row
+// whose next step, in the same leg, is a stand-pull pull or boss. AiPlayerbot.DungeonRunStandPullPreCc holds the
+// row at the last point outside that row's pack's wake reach.
+inline bool NextStandPull(const Run& r)
+{
+    const PlanStep* const s = Current(r);
+    if (!s || s->kind != PlanStepKind::Move || !r.plan || r.step + 1 >= r.plan->steps.size())
+        return false;
+    const PlanStep& next = r.plan->steps[r.step + 1];
+    return (next.kind == PlanStepKind::Pull || next.kind == PlanStepKind::Boss) &&
+        (next.flags & ai::kPlanFlagStandPull) && next.leg == s->leg;
+}
+
+// Every crowd control this step sent reads held on its unit (a Polymorph, Shackle Undead or Banish the glue's read
+// carries as UnitFact::polymorphed): AiPlayerbot.DungeonRunStandPullPreCc's walk in can start. A unit gone from the
+// read (dead, out of sight) is no "not yet".
+inline bool CcAllHeld(const Run& r, const Facts& f)
+{
+    for (std::uint64_t guid : r.ccSent)
+    {
+        const UnitFact* const u = StepUnit(f, guid);
+        if (u && !u->polymorphed)
+            return false;
+    }
+    return true;
+}
+
 // The pull stand rule is on for this pull (AiPlayerbot.DungeonRunPullStand):
 // the key, a ranged weapon shot the glue could read with more range than the
 // margin (the glue reads no stand below that), and not inside a scripted event.
 inline bool PullStandOn(const Run& r, const Facts& f)
 {
     return f.pullStand && f.leadShotYd > kShotMarginYd && !InEvent(r);
+}
+
+// The same rule, for an authored stand-pull step's own pull too: its stand
+// runs with AiPlayerbot.DungeonRunStandClearance (the key that owns the
+// stand's clearance), whichever way AiPlayerbot.DungeonRunPullStand says.
+// Never a hop or a walk-back pull, the step's own included: their stand would
+// walk the tank off the point the step's pull stands on.
+inline bool PullStandRuleOn(const Run& r, const Facts& f, bool hop)
+{
+    return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r))) && f.leadShotYd > kShotMarginYd &&
+        !InEvent(r);
 }
 
 // The tank's shot can go out from where it stands: the unit in sight and
@@ -7854,6 +8310,70 @@ inline ShotStand ShotStandOnPath(const std::vector<ai::ApproachPoint>& path, con
     return ShotStandOnFloor(upper, unit, range, hasLos);
 }
 
+// The firing stands on the path, in the order the ranged reach prefers them: its own choice first (ShotStandOnFloor:
+// the stand today's rule walks to), then the path's in-range, in-sight points from there on toward the unit, the
+// nearer the unit the later. At most `limit` stands (1: today's pick alone, nothing more read).
+template <typename LosFn>
+inline std::vector<ShotStand> ShotStandCandidates(const std::vector<ai::ApproachPoint>& path,
+    const ai::ApproachPoint& unit, float range, LosFn hasLos, std::size_t limit = kStandClearCandidates)
+{
+    std::vector<ShotStand> stands;
+    if (path.size() < 2 || range <= 0.0f || limit == 0)
+        return stands;
+    std::vector<ai::ApproachPoint> upper;
+    upper.reserve(path.size());
+    for (const ai::ApproachPoint& point : path)
+    {
+        if (path.front().z - point.z > kStandLedgeDropYd)
+            break; // a ledge: nothing at or past it
+        upper.push_back(point);
+    }
+    ShotStand const first = ShotStandOnFloor(upper, unit, range, hasLos);
+    if (!first.known)
+        return stands;
+    stands.push_back(first);
+    ai::ApproachPoint firstPoint;
+    firstPoint.x = first.x;
+    firstPoint.y = first.y;
+    firstPoint.z = first.z;
+    float const firstSq = ai::ApproachDistanceSq(firstPoint, unit);
+    float const rangeSq = range * range;
+    for (std::size_t i = 1; i < upper.size() && stands.size() < limit; ++i)
+    {
+        float const distSq = ai::ApproachDistanceSq(upper[i], unit);
+        // Only points the first choice left behind (nearer the unit), in range and in sight, and never on the unit:
+        // that is the approach itself, not a stand.
+        if (distSq >= firstSq || distSq > rangeSq || distSq <= kArriveYd * kArriveYd || !hasLos(upper[i]))
+            continue;
+        ShotStand stand;
+        stand.known = true;
+        stand.x = upper[i].x;
+        stand.y = upper[i].y;
+        stand.z = upper[i].z;
+        stands.push_back(stand);
+    }
+    return stands;
+}
+
+// The first candidate a clearness test accepts (AiPlayerbot.DungeonRunStandClearance: StandClearAt): no stand when
+// none passes, and `blocked` says the path did offer stands. `best` is the first candidate the test refused (the
+// reach's own stand: the hold names the pack that blocks it).
+template <typename LosFn, typename ClearFn>
+inline ShotStand ShotStandOnPathCleared(const std::vector<ai::ApproachPoint>& path, const ai::ApproachPoint& unit,
+    float range, LosFn hasLos, ClearFn isClear, bool& blocked, std::size_t limit = kStandClearCandidates,
+    ShotStand* best = nullptr)
+{
+    blocked = false;
+    std::vector<ShotStand> const stands = ShotStandCandidates(path, unit, range, hasLos, limit);
+    if (best)
+        *best = stands.empty() ? ShotStand() : stands.front();
+    for (const ShotStand& stand : stands)
+        if (isClear(stand))
+            return stand;
+    blocked = !stands.empty();
+    return ShotStand();
+}
+
 // The joiners the aggro estimate expects for a pull of `u`: this tick's read,
 // else the last one this step (a unit held for its joiner rest is not judged
 // again by the glue). 0 with the estimate off.
@@ -7878,20 +8398,35 @@ inline std::uint32_t ExpectedJoiners(const Run& r, const UnitFact& u)
 //     walks there (WalkTo); a walk with no headway for kWalkRetryMs, or longer
 //     than kShotWalkCapMs, gives the stand up and orders from here (never a
 //     pause); at most kShotStandTries stands per unit and step;
-//   - no stand found, or the stands used up: the order as before.
+//   - no stand found, or the stands used up: the order as before;
+//   - AiPlayerbot.DungeonRunStandClearance refused every stand: the clearance
+//     is advisory. A patroller that alone refuses the reach's own stand is
+//     waited for up to kStandClearWaitMs to walk clear of it (then that stand
+//     is walked to); any other blocker, or the wait spent, walks the party to
+//     the stand the key-off read takes (the path's first candidate, today's
+//     point) with the note naming the closest blocker. The pull is never
+//     paused or held past the patrol wait.
+// The rule runs for an authored stand-pull step's own pull too, with
+// AiPlayerbot.DungeonRunStandClearance (PullStandRuleOn); a hop or walk-back
+// pull of that step never takes it.
 // True while the pull waits (`order` may hold the move); false: the order
 // goes out now, and Run::shotHow says how its shot stood.
-inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t dt, std::string& order)
+inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t dt, std::string& order, bool hop)
 {
     r.shotGateRan = true;
     // A stand request is answered (or dropped) on the very next tick: the
     // glue reads at most one stand per request.
     bool const standRead = r.shotStandFor == u.guid && f.shotStandGuid == u.guid;
     r.shotStandFor = 0;
-    if (!PullStandOn(r, f))
+    if (!PullStandRuleOn(r, f, hop))
     {
         r.shotHow = f.leadShotYd > kShotMarginYd ? "no stand rule in an event" : "no ranged weapon pull: stand rule off";
         return false;
+    }
+    if (r.shotClearGuid != u.guid)
+    {
+        r.shotClearGuid = u.guid;
+        r.shotClearMs = 0;
     }
     std::string const what = std::to_string(u.entry) + " " + GuidArg(u.guid);
     std::uint32_t& tries = r.shotStandTries[u.guid];
@@ -7960,13 +8495,41 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
     }
     if (standRead)
     {
-        if (!f.shotStandKnown)
+        std::string defaultNote; // the advisory note: the default stand's walk carries it (never lost to the walk's)
+        // A patrol may have been waited for: its own spot clear of the reach's stand takes that stand, its loop aside.
+        bool const patrolClear = f.shotStandBlocked && f.shotStandBlockPatrols && f.shotStandBlockNowClear;
+        if (!f.shotStandKnown && !patrolClear)
         {
-            tries = kShotStandTries;
-            r.shotHow = "no firing stand found";
-            return false;
+            if (f.shotStandBlocked && f.shotStandBlockPatrols && r.shotClearMs + dt <= kStandClearWaitMs)
+            {
+                r.shotClearMs += dt;
+                r.shotStandFor = u.guid; // read again next tick: the patrol may have walked clear
+                return hold("stand_pull: no clear stand for " + std::to_string(u.entry) + " (blocked by " +
+                    std::to_string(f.shotStandBlockEntry) + " at " + Num(f.shotStandBlockYd) +
+                    " yd): waiting for the patrol to walk clear (" + std::to_string(r.shotClearMs / 1000) +
+                    " s of " + std::to_string(kStandClearWaitMs / 1000) + ")");
+            }
+            if (!f.shotStandBlocked)
+            {
+                tries = kShotStandTries;
+                r.shotHow = "no firing stand found";
+                return false;
+            }
+            // AiPlayerbot.DungeonRunStandClearance refused every stand the path offered and no patrol can be waited
+            // for: the clearance is advisory. The stand goes out as the key-off read takes it (the path's first
+            // candidate, which the glue kept as the best), and the note names the closest blocker. The pull is never
+            // held or paused for it.
+            r.note = defaultNote = "stand_pull: no clear stand for " + std::to_string(u.entry) + " (closest " +
+                std::to_string(f.shotStandBlockEntry) + " at " + Num(f.shotStandBlockYd) +
+                "); using the default stand";
         }
-        if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, f.shotStandX, f.shotStandY, f.shotStandZ) <= kArriveYd)
+        float const sx = f.shotStandKnown ? f.shotStandX : f.shotStandBestX;
+        float const sy = f.shotStandKnown ? f.shotStandY : f.shotStandBestY;
+        float const sz = f.shotStandKnown ? f.shotStandZ : f.shotStandBestZ;
+        float const sYd = f.shotStandKnown ? f.shotStandYd : f.shotStandBestYd;
+        // The patrol wait is one unit's, not one read's: a stand walk leaves it
+        // standing (ResetShotStand ends it with the step).
+        if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, sx, sy, sz) <= kArriveYd)
         {
             // The stand is where the tank stands: walking gains nothing.
             tries = kShotStandTries;
@@ -7976,9 +8539,9 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
         ++tries;
         r.shotStandWalk = true;
         r.shotStandGuid = u.guid;
-        r.shotStandX = f.shotStandX;
-        r.shotStandY = f.shotStandY;
-        r.shotStandZ = f.shotStandZ;
+        r.shotStandX = sx;
+        r.shotStandY = sy;
+        r.shotStandZ = sz;
         r.shotStillMs = 0;
         r.shotWalkMs = 0;
         // A big pack (kBigPackJoiners): the walk is watched every tick by
@@ -7989,14 +8552,15 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
         {
             r.bigWalk = true;
             r.bigWalkGuid = u.guid;
-            r.bigWalkX = f.shotStandX;
-            r.bigWalkY = f.shotStandY;
-            r.bigWalkZ = f.shotStandZ;
+            r.bigWalkX = sx;
+            r.bigWalkY = sy;
+            r.bigWalkZ = sz;
             r.bigJoiners = joiners;
         }
-        WalkTo(r, f, f.shotStandX, f.shotStandY, f.shotStandZ, false, dt, order);
-        return hold("to firing stand " + std::to_string(tries) + " for " + what + " (" + Num(f.shotStandYd) +
-            " yd from it; was " + Num(u.distLead) + " yd, los " + (u.losLead ? "yes" : "no") + ")");
+        std::string const walkNote = "to firing stand " + std::to_string(tries) + " for " + what + " (" + Num(sYd) +
+            " yd from it; was " + Num(u.distLead) + " yd, los " + (u.losLead ? "yes" : "no") + ")";
+        WalkTo(r, f, sx, sy, sz, false, dt, order);
+        return hold(defaultNote.empty() ? walkNote : defaultNote);
     }
     r.shotStandFor = u.guid; // the glue reads it on the next tick
     return hold("reading a firing stand for " + what);
@@ -8105,23 +8669,64 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         r.note = "crowd control on " + std::to_string(cc->entry) + " (" + ccPick.bot + ": " +
             RunCcOf(ccPick.family)->spell + ") before the pull";
         order = "cc " + ccPick.mark + " " + std::to_string(cc->guid) + " " + ccPick.bot;
+        r.ccOrderMs = 0;
         r.standPullShotGuid = 0; // the pull never went out (the mark goes out first)
         return;
     }
+    // AiPlayerbot.DungeonRunStandPullPreCc, the marks now out: the pull walks to the plan's approach first. The stand
+    // is read from where the tank stands (ReadPullStand), and the approach row ended outside the pack's wake reach, so
+    // the stand is read from the approach and the walk in past it is all the party spends awake in the pack. Once per
+    // step (Run::standApproachReached): a second pull of the row never walks back there.
+    if (f.standPullPreCc && !hop && AuthoredStandStep(r) && !r.standApproachReached)
+    {
+        // The marks land first (or kCcPrePullWaitMs passes): the walk in must not outrun the sheep.
+        if (!r.ccSent.empty() && r.ccOrderMs < kCcPrePullWaitMs && !CcAllHeld(r, f))
+        {
+            r.ccOrderMs += dt;
+            r.note = "stand_pull: waiting for the crowd control to land before the walk in";
+            r.standPullShotGuid = 0; // the pull never went out (the marks come first)
+            return;
+        }
+        const PlanStep* const st = StandPullStand(r, *Current(r));
+        if (st)
+        {
+            if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z) > kArriveYd)
+            {
+                if (!WalkTo(r, f, st->x, st->y, st->z, false, dt, order))
+                {
+                    r.note = "to the stand-pull approach";
+                    r.standPullShotGuid = 0; // the pull never went out (walking to the approach first)
+                    return;
+                }
+                EnterPhase(r, Phase::Begin);
+            }
+            // The party stands at the approach: the way back is read from there, so the stand rule's first tick does
+            // not spend one reading it from the hold point (WalkTo's arrival does this when it walked).
+            r.anchorKnown = true;
+            r.anchorX = st->x;
+            r.anchorY = st->y;
+            r.anchorZ = st->z;
+        }
+        r.standApproachReached = true;
+        r.standPullShotGuid = 0;
+    }
     // The pull stand (off: false at once, nothing changed): before the gather
-    // waiver is spent, so a stand walk from a hop in sight keeps it. The
-    // stand-pull gate's authorization covers only the unit it picked in shot.
-    if (f.pullStand && r.standPullShotGuid != u.guid)
+    // waiver is spent, so a stand walk from a hop in sight keeps it. An
+    // authored stand-pull step's own pull runs it with the clearance key
+    // (PullStandRuleOn); its hop and walk-back pulls never take it.
+    // The stand-pull gate's authorization covers only the unit it picked in shot.
+    bool const authored = f.standClearance && !hop && AuthoredStandStep(r);
+    if ((f.pullStand || authored) && r.standPullShotGuid != u.guid)
     {
         auto const done = r.pullTries.find(u.guid);
-        if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order))
+        if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order, hop))
             return;
     }
     // A gather left out holds for this pull only: the next one gathers again.
     r.gatherWaived = false;
     r.hopWaiveUnits.clear();
     r.gatherRefusals = 0;
-    if (hop && PullStandOn(r, f) && !ShootableFromLead(f, u))
+    if (hop && PullStandRuleOn(r, f, hop) && !ShootableFromLead(f, u))
     {
         r.neverCame.insert(u.guid);
         r.standPullShotGuid = 0; // the pull never went out (a hop unit the tank cannot shoot is left out)
@@ -8156,7 +8761,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     EnterPhase(r, Phase::AwaitPull);
     r.note = "pulling " + std::to_string(u.entry);
     order = "pullback " + std::to_string(u.guid);
-    if (f.pullStand)
+    if (f.pullStand || authored)
     {
         // Each order its own status line (the trace keeps only changes): the
         // target's guid, the how-many-th order to it, and how its shot stood.
@@ -10503,18 +11108,6 @@ inline std::size_t UnitsOutOfReach(const Run& r, const Facts& f)
     return n;
 }
 
-// The stand of a stand-pull boss step: the move row right before it in the same leg, or null (then the flag acts as
-// off: the step pulls as before).
-inline const PlanStep* StandPullStand(const Run& r, const PlanStep& s)
-{
-    if (!(s.flags & ai::kPlanFlagStandPull) || r.step == 0 || !r.plan)
-        return nullptr;
-    const PlanStep& prev = r.plan->steps[r.step - 1];
-    if (prev.kind != PlanStepKind::Move || prev.leg != s.leg)
-        return nullptr;
-    return &prev;
-}
-
 inline void StandPullGiveUp(Run& r, const PlanStep& s, const std::string& why)
 {
     if (s.flags & ai::kPlanFlagSkipUnreachable)
@@ -10651,6 +11244,13 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
         return nullptr;
     const PlanStep* const st = StandPullStand(r, s);
     if (!st)
+        return nullptr;
+    // AiPlayerbot.DungeonRunStandPullPreCc: the step's CC orders go out where the approach row held the party, before
+    // any walk to the stand (that walk is what wakes the pack). Away from the stand, the row's pick is the plain
+    // pull's: its first ticks are the marks, then the approach walk. Once the party stands at the approach, the gate
+    // takes the row as before.
+    if (f.standPullPreCc &&
+        ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z) > kArriveYd)
         return nullptr;
     float const inShot = f.leadShotYd - kStandPullMarginYd;
     auto inShotOf = [&](const UnitFact& u) { return u.losLead && u.distLead <= inShot; };
@@ -11013,7 +11613,10 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
     if (pick)
     {
         r.bossWaitMs = 0;
-        if (s.kind == PlanStepKind::Boss && !f.anyInCombat && pick->entry == s.entry)
+        // AiPlayerbot.DungeonRunStandPullPreCc: a boss stand-pull row sends its CC orders, and walks to the approach,
+        // before this walk back to the stand (the walk is what wakes the pack).
+        if (s.kind == PlanStepKind::Boss && !f.anyInCombat && pick->entry == s.entry &&
+            !(f.standPullPreCc && !r.standApproachReached))
             if (const PlanStep* st = StandPullStand(r, s))
             {
                 float const fromStand = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, st->x, st->y, st->z);
@@ -11383,7 +11986,57 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         }
         return;
     }
-    r.note = "walking";
+    // AiPlayerbot.DungeonRunStandPullPreCc: the approach row of an authored stand-pull step ends at the last point of
+    // its walk that is outside the next pull's pack's wake reach (the glue's ReadStandPullHold), so the pull's CC
+    // orders go out while the pack is still asleep, before the walk in wakes it. The row asks the glue for the point
+    // on its first tick (Run::holdAheadStep: the glue reads that row only) and then waits kHoldAheadWaitMs for the
+    // answer: the request comes before the pack's reach is read, so the glue has a row to answer at all.
+    std::string noPreCcNote;
+    if (f.standPullPreCc && NextStandPull(r))
+    {
+        if (r.holdAheadStep != r.step)
+        {
+            r.holdAheadStep = r.step;
+            r.holdAheadMs = 0;
+            r.holdAheadDone = false;
+        }
+        // The glue's answer for this row came (a point, or a read with none): it reads it once, not every tick.
+        r.holdAheadDone = r.holdAheadDone || f.holdAheadKnown || f.holdAheadRead;
+        // A hold point within kArriveYd of the row's own point is the row's point: the walk below is the same order
+        // and the row ends as it always did.
+        bool const holdAhead = f.holdAheadKnown &&
+            ai::PlanDistance(f.holdAheadX, f.holdAheadY, f.holdAheadZ, s.x, s.y, s.z) > kArriveYd;
+        if (!f.holdAheadKnown)
+        {
+            if (f.holdAheadRead)
+            {
+                // Read, and no point of the walk is clear: the plan's point is walked as before, the note says why.
+                const PlanStep& next = r.plan->steps[r.step + 1];
+                noPreCcNote = "stand_pull: no pre-cc point for " +
+                    std::to_string(next.entries.empty() ? 0u : next.entries.front());
+            }
+            else if (r.holdAheadMs < kHoldAheadWaitMs)
+            {
+                r.holdAheadMs += dt;
+                r.note = "reading the last point outside the pack's wake reach";
+                return;
+            }
+            else
+                r.holdAheadDone = true; // unread past the wait: the glue stops reading the row, the plan's point is walked
+        }
+        else if (holdAhead)
+        {
+            if (WalkTo(r, f, f.holdAheadX, f.holdAheadY, f.holdAheadZ, false, dt, order))
+            {
+                NoteCheckpoint(r, r.step);
+                NextStep(r, "arrived at the hold point outside the pack's wake reach (the pull's CC goes out here)");
+            }
+            else
+                r.note = "to the hold point outside the pack's wake reach";
+            return;
+        }
+    }
+    r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;
     if (WalkTo(r, f, s.x, s.y, s.z, s.kind == PlanStepKind::MoveDirect, dt, order))
     {
         NoteReached(r, f, r.step);
