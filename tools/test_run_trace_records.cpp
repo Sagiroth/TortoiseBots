@@ -463,6 +463,15 @@ static void TestPermissions()
     CHECK(!MaySeeRunDetail(false, false));
 }
 
+static void TestStopRunIdRefusal()
+{
+    // `.bot trace stop [<run_id>]`: no id, or the running trace's own id,
+    // stops it; another run's id is refused and nothing is stopped.
+    CHECK(StopRunIdRefusal("r1", "") == nullptr);
+    CHECK(StopRunIdRefusal("r1", "r1") == nullptr);
+    CHECK_EQ(StopRunIdRefusal("r1", "r2"), "other-run");
+}
+
 static void TestLifecycle()
 {
     RunLifecycle run;
@@ -552,6 +561,7 @@ int main()
     TestScopeSource();
     TestScopeSetEmptiesOnLogout();
     TestPermissions();
+    TestStopRunIdRefusal();
     TestLifecycle();
     TestTraceNeedsTheAi();
     std::printf("test_run_trace_records: %d checks passed\n", checks);

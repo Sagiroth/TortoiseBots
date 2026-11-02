@@ -633,6 +633,17 @@ inline bool MaySeeRunDetail(bool requesterIsGm, bool isStarter)
     return requesterIsGm || isStarter;
 }
 
+// `.bot trace stop [<run_id>]`: a named run id must be the running trace's
+// own. Null when the stop may go on (no id given, or the running trace's),
+// else the refusal code. The reply names the running run id (the requester
+// here is a GameMaster or the starter, so nothing leaks).
+inline char const* StopRunIdRefusal(std::string const& active, std::string const& asked)
+{
+    if (asked.empty() || asked == active)
+        return nullptr;
+    return "other-run";
+}
+
 // A run needs both the bot AI (AiPlayerbot.Enabled) and the trace switch
 // (AiPlayerbot.RunTrace.Enabled): null when it may start or go on, else the
 // message. A running trace whose switch goes off (a config reload) ends with
