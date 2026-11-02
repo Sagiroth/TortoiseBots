@@ -70,6 +70,7 @@
 #include <cstdlib>
 #include <functional>
 #include <limits>
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -214,6 +215,9 @@ constexpr float kExactBackYd = 6.5f;              // a `cmd move` shorter than ~
                                                   // nearer than this is walked back along the plan's own points first
 constexpr std::uint32_t kExactCapMs = kWalkRetryMs * kWalkTries; // the tighten's ceiling out of combat (36 s): then pause
 constexpr std::uint32_t kPullNoFightMs = 25000;   // a pull that started no fight in this time failed
+// A pull's joiners: hostiles engaged with the party in this window after its pullback that are not in
+// the pulled pack (turtle-agent counts its own from the frames over the same 10 s).
+constexpr std::uint32_t kJoinerWindowMs = 10000;
 constexpr std::uint32_t kPullTriesPerUnit = 2;    // a unit two pulls could not start a fight with is passed
 constexpr std::uint32_t kMaxPullsPerTarget = 3;  // a unit three fought pulls did not kill is out of reach
 constexpr std::uint32_t kFruitlessPulls = 3;      // three pulls in a row that kill nothing: the rest of the pack is out of reach
@@ -889,6 +893,12 @@ struct UnitFact
     std::uint64_t formation = 0;
     // ... and it walks a patrol (its own waypoints, or a formation follower of a living waypoint leader). Not read: false.
     bool patrols = false;
+    // The units a pull can pick (units, patrollers, residue, hop units): the guids the core's own grouping
+    // brings with this one, as the glue read them: its creature group's members, its creature_linking master
+    // where the row makes the slave's aggro wake the master, and the linked slaves of it among the picks
+    // where the row makes the master's aggro wake them. A pull draws these with its target; every other
+    // creature that joins it is a joiner (Run::joinerPack).
+    std::vector<std::uint64_t> packGuids;
 };
 
 // The pack a pull step takes, as the firing stand's clearance reads it (AiPlayerbot.DungeonRunStandClearance): the
@@ -1872,6 +1882,16 @@ struct Run
     // The last joiner count the glue read per unit this step: a unit held for
     // its rest is not judged again (joinersRead false), the count stands.
     std::unordered_map<std::uint64_t, std::uint32_t> joinerSeen;
+    // The joiners the pull's own pack did not explain: when a pull goes out its
+    // pack is recorded by guid (the target and its own group, PullPackOf: the
+    // read's other packs are not pack), and for kJoinerWindowMs every hostile
+    // engaged with the party outside that set counts once (guid -> entry). The
+    // report rides on the status note until the next pull or the step's reset.
+    std::unordered_set<std::uint64_t> joinerPack;
+    std::unordered_map<std::uint64_t, std::uint32_t> joinerAdds;
+    std::uint32_t joinerMs = 0;
+    bool joinerWindow = false;
+    bool joinerTracked = false;
     std::uint32_t walkBackPulls = 0; // pulls on the way of the walk back (not counted in `pulls`)
     // Run-wide (kept across steps).
     std::unordered_set<std::uint64_t> unreachable;   // units given up on: never pulled again this run
@@ -2913,6 +2933,11 @@ inline void ResetStep(Run& r)
     r.patrolSeen.clear();
     EndBigWalk(r);
     r.joinerSeen.clear();
+    r.joinerPack.clear();
+    r.joinerAdds.clear();
+    r.joinerMs = 0;
+    r.joinerWindow = false;
+    r.joinerTracked = false;
     r.walkBackPulls = 0;
     r.gatherOrder.clear();
     r.gatherRefusals = 0;
@@ -8699,6 +8724,25 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
     return hold("reading a firing stand for " + what);
 }
 
+// The pack a pull brings, by guid: the pulled unit and the core's own grouping
+// around it (UnitFact::packGuids, read by the glue), plus the units the run
+// leader ordered with this pull (the crowd control it sent, and the pull's own
+// pick of one). Not the read a pull or hop step lists: that holds several
+// packs, so a second pack that joins is a joiner, like anything else outside
+// these.
+inline std::unordered_set<std::uint64_t> PullPackOf(const Run& r, const UnitFact& u, const UnitFact* cc)
+{
+    std::unordered_set<std::uint64_t> pack;
+    pack.insert(u.guid);
+    for (std::uint64_t guid : u.packGuids)
+        pack.insert(guid);
+    for (std::uint64_t guid : r.ccSent)
+        pack.insert(guid);
+    if (cc)
+        pack.insert(cc->guid);
+    return pack;
+}
+
 // Gathers the party, crowd-controls the plan's cc targets of the pack (a
 // `cc <mark> <guid> <bot>` each, once per unit and step, PickCcOrder), then
 // sends `pullback <guid>`.
@@ -8887,6 +8931,13 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     ++tries;
     ++(walkBack ? r.walkBackPulls : r.pulls);
     r.pullGuid = u.guid;
+    // The pulled pack, recorded by guid now: a unit that dies, evades or leaves
+    // the read is still pack, and the joiners are read against this set.
+    r.joinerPack = PullPackOf(r, u, cc);
+    r.joinerAdds.clear();
+    r.joinerMs = 0;
+    r.joinerWindow = true;
+    r.joinerTracked = true;
     r.pullHop = hop;
     r.residuePullGuid = 0; // a residue pull marks its unit after this (PackResidueTick)
     r.reachStopped = false;
@@ -8907,12 +8958,12 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     }
     r.standPullShotGuid = 0; // the pull went out: the authorization is spent
     // The aggro estimate (Facts::joinerCeiling): the note says how many joiners
-    // the estimate expects with this pull, or that the facts carried no count
-    // this step (the glue reads it only for units it judged; a unit held or out
-    // of the index keeps its earlier read).
-    if (f.joinerCeiling > 0)
-        r.note += u.joinersRead ? "; " + std::to_string(u.joiners) + " joiners expected"
-                                : std::string("; joiners not read");
+    // the estimate expects with this pull (the glue reads it only for units it
+    // judged; a unit held or out of the index keeps its earlier read, and its
+    // count is not claimed). The joiners the pull really drew are read from the
+    // fight and reported by JoinerReport, estimated or not.
+    if (f.joinerCeiling > 0 && u.joinersRead)
+        r.note += "; " + std::to_string(u.joiners) + " joiners expected";
 }
 
 // The step's pull is out: wait for the fight (the fight gate takes over) or
@@ -16983,6 +17034,47 @@ inline void NoteWipes(Run& r, const Facts& f)
     r.wipeEventOn = eventNow;
 }
 
+// Counts a pull's joiners: every hostile engaged with the party in the first
+// kJoinerWindowMs after its pullback that is not in the pulled pack, once. A
+// unit that comes after the window is no joiner of that pull.
+inline void JoinersTick(Run& r, const Facts& f, std::uint32_t dt)
+{
+    if (!r.joinerTracked || !r.joinerWindow)
+        return;
+    if (f.anyInCombat)
+        for (const UnitFact& u : f.engagedUnits)
+            if (!r.joinerPack.count(u.guid) && !r.joinerAdds.count(u.guid))
+                r.joinerAdds.emplace(u.guid, u.entry);
+    r.joinerMs += dt;
+    if (r.joinerMs >= kJoinerWindowMs)
+        r.joinerWindow = false;
+}
+
+// The pull's joiner report for the status note: "joiners N" and, with any,
+// "(entry <entry> x<count>, ...)" in ascending entry order. "" before the first
+// pull of the step.
+inline std::string JoinerReport(const Run& r)
+{
+    if (!r.joinerTracked)
+        return std::string();
+    std::map<std::uint32_t, std::uint32_t> byEntry;
+    for (auto const& add : r.joinerAdds)
+        ++byEntry[add.second];
+    std::string text = "joiners " + std::to_string(r.joinerAdds.size());
+    if (!byEntry.empty())
+    {
+        text += " (entry ";
+        for (auto it = byEntry.begin(); it != byEntry.end(); ++it)
+        {
+            if (it != byEntry.begin())
+                text += ", ";
+            text += std::to_string(it->first) + " x" + std::to_string(it->second);
+        }
+        text += ")";
+    }
+    return text;
+}
+
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)
 {
     std::string order;
@@ -16997,6 +17089,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     }
     r.runMs += dt;
     r.phaseMs += dt;
+    JoinersTick(r, f, dt);
     ForgetUnitsThatCame(r, f);
     if (r.eventOn)
         r.eventMs += dt; // an event's clock runs in its fights too
@@ -18052,6 +18145,9 @@ inline StatusFields StatusParts(const Run& r)
     f.kind = s ? ai::PlanStepKindName(s->kind) : std::string();
     f.phase = PhaseText(r);
     f.note = r.note;
+    std::string const joiners = JoinerReport(r);
+    if (!joiners.empty())
+        f.note += (f.note.empty() ? "" : "; ") + joiners;
     for (char& c : f.note)
         if (c == '|' || c == '\n' || c == '\r')
             c = ' ';
