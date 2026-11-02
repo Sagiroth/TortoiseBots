@@ -44,6 +44,26 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;", raid)
 
 
+    def test_healer_guard_key_default_off_and_fed_to_the_raid_facts(self):
+        # AiPlayerbot.DungeonRunRaidHealerGuard: in a raid boss fight whose main tank holds the boss an add on a healer
+        # goes to the nearest ranged dps first (DungeonRun::RaidHealerGuard); off by default, the off-tanks take it.
+        # Only read inside a raid boss fight (DungeonRunRaidBossRules).
+        keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
+        self.assertIn(
+            'dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);', keys)
+        self.assertIn("bool dungeonRunRaidHealerGuard = false;", HEADER)
+        self.assertIn("AiPlayerbot.DungeonRunRaidHealerGuard = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunRaidHealerGuard`", SETTINGS)
+        self.assertIn("[`AiPlayerbot.DungeonRunRaidHealerGuard`](#aiplayerbotdungeonrunraidhealerguard) | `0`", SETTINGS)
+        code = strip_comments(COMMANDER)
+        raid = body(code, "    if (raid && sPlayerbotAIConfig.dungeonRunRaid)", "\n    }\n")
+        self.assertIn("f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;", raid)
+        # The ranged dps the guard sends and the add's own place, both read by the glue.
+        self.assertIn("member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);", code)
+        read = body(code, "void ReadGuardFacts(Player* lead,", "\n}\n")
+        self.assertIn("fact.x = attacker->GetPositionX();", read)
+        self.assertIn("fact.y = attacker->GetPositionY();", read)
+
     def test_guard_read_fills_the_raid_attackers_with_the_lead_dead(self):
         # DungeonRun::RaidGuardTick's dead-lead branch needs Facts::partyAttackers: in a raid's boss fight the glue's
         # guard read goes on past a dead (or non-tank) lead bot, around a living anchor (DungeonRun::GuardReadMode).

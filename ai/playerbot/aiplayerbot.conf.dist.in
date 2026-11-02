@@ -916,6 +916,11 @@ AiPlayerbot.DungeonRunRaid = 0
 # 1 - on
 AiPlayerbot.DungeonRunRaidBossRules = 0
 
+# A raid binding's boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1: an add that attacks a healer goes to the raid's nearest ranged dps (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss is never sent at an add. Adds not on a healer are left to the dps. Without boss rules the dungeon guard applies.
+# 0 - off: the off-tanks take the adds, as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRaidHealerGuard = 0
+
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
 # group of four, tank, healer and damage, with one role left open for a player.

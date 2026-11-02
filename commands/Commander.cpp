@@ -8203,6 +8203,11 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
             fact.distLead = mobYd;
+            // Where the add stands: the healer guard picks the nearest ranged dps by its distance to it
+            // (DungeonRun::RaidHealerGuard).
+            fact.x = attacker->GetPositionX();
+            fact.y = attacker->GetPositionY();
+            fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
             fact.engaged = true;
@@ -9056,6 +9061,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.on = true;
         // AiPlayerbot.DungeonRunRaidBossRules: the raid's boss fight rules (DungeonRun::RaidBossRulesFight).
         f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;
+        // AiPlayerbot.DungeonRunRaidHealerGuard: an add on a healer goes to the ranged dps first (RaidHealerGuard).
+        f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).
@@ -9144,6 +9151,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
+        // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
+        // (DungeonRun::RaidHealerGuard).
+        member.rangedDps = f.raid.on && !isTank && !isHeal && memberAi && memberAi->IsRanged(bot);
         // A rogue's pre-pull Sap trigger (SapCcMarkTrigger) fires only for a bot with a live client master and Sap
         // on: without it the run orders no Sap (DungeonRun::PickCcOrder).
         member.canSap = (member.cc & CcBit(CcFamily::Sap)) && memberAi && memberAi->HasRealPlayerMaster() &&

@@ -22247,6 +22247,119 @@ static void TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead()
         CHECK(Tick(u, h).empty());
 }
 
+// AiPlayerbot.DungeonRunRaidHealerGuard (flag off by default): in a raid boss fight whose main tank holds the boss
+// (Facts::leadHeldEntries names a plan boss), an add on a healer goes to the nearest ranged dps, up to
+// kRaidHealerGuardDps of them, one order a tick; the off-tanks keep their post. A ranged bot that is a tank or a
+// healer is no candidate, and neither is a melee dps.
+static Facts RaidHealerGuardFacts()
+{
+    Facts f = RaidBossGuardFacts();
+    f.raid.healerGuard = true;
+    f.leadHeldEntries = {10184};
+    return f;
+}
+
+static void TestRaidHealerGuardSendsTheNearestRangedDps()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact healy = Mem("Healy", 20);
+    healy.ranged = true; // a healer: ranged, but no damage
+    MemberFact melee = Mem("Melee", 21);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    MemberFact far = Mem("FarDps", 40);
+    far.ranged = true;
+    far.rangedDps = true;
+    f.members = {tank, healy, melee, near, mid, far};
+    UnitFact add = Hitter(50001, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd, MidDps 8, FarDps 18, Melee 1 (not ranged), Healy 2 (not damage)
+    f.partyAttackers = {add};
+    CHECK(Tick(r, f) == "attack 50001 NearDps");
+    CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
+    CHECK(r.offTankTurn == 0); // the off-tanks untouched
+    CHECK(r.note.find("off-tank") == std::string::npos);
+    // The second nearest, one tick later; then the add has its two and nothing more is sent.
+    CHECK(Tick(r, f) == "attack 50001 MidDps");
+    CHECK(r.offTankTurn == 0);
+    for (int k = 0; k < 5; ++k)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.healerGuardDps[50001].size() == kRaidHealerGuardDps);
+}
+
+// No ranged dps free: the off-tank takes the add on the healer, as without the key.
+static void TestRaidHealerGuardFallsBackToAFreeOffTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact healy = Mem("Healy", 20);
+    healy.ranged = true;
+    f.members = {tank, healy};
+    UnitFact add = Hitter(50002, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    CHECK(Tick(r, f) == "attack 50002 Offy");
+    CHECK(r.note.find("the off-tank Offy takes 11368 off the healer") != std::string::npos);
+    CHECK(r.healerGuardDps.empty());
+}
+
+// An off-tank holding the boss (its victim is the plan boss) is never reassigned: with no ranged dps the add on the
+// healer is simply left, and with a free off-tank it goes to that one.
+static void TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    f.raid.bossOffTanksAlive = {"Offy"};
+    MemberFact tank = Mem("Tanky", 0);
+    f.members = {tank};
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 10);
+    boss.victimTank = true;
+    boss.victimName = "Offy";
+    UnitFact add = Hitter(50003, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {boss, add};
+    for (int k = 0; k < 10; ++k)
+    {
+        std::string const o = Tick(r, f);
+        CHECK(o.empty());
+        CHECK(o.find("Offy") == std::string::npos);
+    }
+    CHECK(r.offTankTurn == 0);
+    // A free off-tank next to it takes the healer's add.
+    Run q = RaidBossRun(plan);
+    Facts g = f;
+    g.raid.bossOffTanksAlive = {"Offy", "Offz"};
+    CHECK(Tick(q, g) == "attack 50003 Offz");
+    CHECK(q.note.find("the off-tank Offz takes 11368 off the healer") != std::string::npos);
+}
+
+// The healer guard keeps the off-tanks for the healers: an add on a dps is left where it hits (the dps fight it), and
+// never draws an off-tank off its post.
+static void TestRaidHealerGuardLeavesANonHealerAddAlone()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    f.members = {tank};
+    UnitFact add = Hitter(50004, 11368, 20, false);
+    add.x = 20.0f;
+    f.partyAttackers = {add};
+    for (int k = 0; k < 10; ++k)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.offTankTurn == 0);
+    CHECK(r.healerGuardDps.empty());
+}
+
 // Adds that die keep the hp watch losing, but only the plan boss's own loss holds a raid's boss fight through its
 // deaths: a flat boss with whelps dying every 20 s pauses on the first death past the 1200 s ceiling.
 static void TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp()
@@ -26669,6 +26782,10 @@ int main()
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();
     TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
+    TestRaidHealerGuardSendsTheNearestRangedDps();
+    TestRaidHealerGuardFallsBackToAFreeOffTank();
+    TestRaidHealerGuardNeverSendsTheOffTankHoldingTheBoss();
+    TestRaidHealerGuardLeavesANonHealerAddAlone();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();
