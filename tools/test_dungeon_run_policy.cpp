@@ -26090,6 +26090,95 @@ static void TestRaidGuardRoundRobinsTheOffTanks()
     CHECK(!r.guardReturn && r.guardOrders == 2);
 }
 
+// AiPlayerbot.DungeonRunRaidHealerGuard in a raid trash fight (RaidTrashFight): with the main tank holding its current
+// target, an add on a healer goes to the nearest ranged dps in reach of it, as in a boss fight, and the off-tanks keep
+// their post.
+static void TestRaidTrashHealerGuardSendsTheNearestRangedDps()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true; // the main tank holds its current target
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    MemberFact mid = Mem("MidDps", 30);
+    mid.ranged = true;
+    mid.rangedDps = true;
+    f.members = {tank, near, mid};
+    UnitFact add = Hitter(50001, 11368, 20, true);
+    add.x = 22.0f; // NearDps 2 yd, MidDps 8
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50001 NearDps");
+    CHECK(r.note == "fighting: NearDps takes 11368 off the healer (20.0 yd)");
+    CHECK(r.offTankTurn == 0); // the off-tanks untouched
+}
+
+// The off-tank holding its own add (its victim) is not pulled away from it: the healer's add goes to the free off-tank
+// instead, and with none free the main tank takes it as without the key.
+static void TestRaidTrashHealerGuardKeepsTheOffTankOnItsOwnAdd()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    f.members = {tank}; // no ranged dps free
+    UnitFact own = TankHeld(41, 12129, 30);
+    own.victimName = "Brun"; // Brun holds its own add
+    UnitFact add = Hitter(50002, 11368, 20, true);
+    add.x = 20.0f;
+    f.partyAttackers = {own, add};
+    CHECK(GuardTick(r, f) == "attack 50002 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 11368 off the healer") != std::string::npos);
+    // Only the off-tank holding its own add is left: the main tank takes the healer's add, as without the key.
+    DungeonPlan plan2;
+    Facts g = RaidTrashFacts();
+    g.raid.healerGuard = true;
+    g.leadHasAttacker = true;
+    g.raid.offTanksAlive = {"Brun"};
+    Run q = StartRaidTrashFight(plan2, g);
+    g.members = {tank};
+    UnitFact own2 = TankHeld(42, 12129, 30);
+    own2.victimName = "Brun";
+    UnitFact add2 = Hitter(50004, 11368, 20, true);
+    add2.x = 20.0f;
+    g.partyAttackers = {own2, add2};
+    CHECK(GuardTick(q, g) == "attack 50004 Tanky");
+    CHECK(q.note.find("the tank picks up 11368 off the healer") != std::string::npos);
+}
+
+// With the key off the trash fight keeps today's behaviour: the off-tanks take the healer's add in turn, and the
+// ranged dps are not sent.
+static void TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.raid.healerGuard = false;
+    f.leadHasAttacker = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    // The fight's first order is the arrival engage, the main tank's: unchanged, and it ends the tank's stay.
+    f.leadAttacker = Hitter(61, 12129, 5);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    UnitFact add = Hitter(50003, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after the arrival engage
+    CHECK(Tick(r, f) == "attack 50003 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.healerGuardDps.empty());
+}
+
 static void TestRaidGuardOnABossStepSendsTheMainTank()
 {
     DungeonPlan plan;
@@ -27852,6 +27941,9 @@ int main()
     TestRaidHoldRegroupGathers();
     TestRaidMainTankHelpsOnAMobAnOffTankHolds();
     TestRaidGuardRoundRobinsTheOffTanks();
+    TestRaidTrashHealerGuardSendsTheNearestRangedDps();
+    TestRaidTrashHealerGuardKeepsTheOffTankOnItsOwnAdd();
+    TestRaidTrashHealerGuardOffKeepsTheOffTankPickUp();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
     TestRaidTrashOffTanksPickUpWithTheLeadDead();
