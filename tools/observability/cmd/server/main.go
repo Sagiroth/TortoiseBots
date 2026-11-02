@@ -242,7 +242,7 @@ func main() {
 
 	// Guild orders: the order table is polled every 10 s and every change is
 	// kept as the order's step history for the Guild orders tab.
-	guildOrders := armory.NewGuildOrderTracker(armoryService)
+	guildOrders := armory.NewGuildOrderTracker(armoryService, filepath.Join(filepath.Dir(*activityStateFile), "guild-order-steps.json"))
 	go guildOrders.Run(10 * time.Second)
 
 	// Background DB sweeps: runs immediately then every 5 minutes.

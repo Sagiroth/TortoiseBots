@@ -2853,31 +2853,26 @@
   }
 
   // ---- Guild orders ------------------------------------------------------------
-  // Every guild order with its sub-orders: who works on it, what it is doing
-  // now and how, where the bot is heading, the steps so far (the daemon polls
-  // the order table and keeps every change) and what the bot looted, gathered
-  // or bought lately. Polled every 5 s while the tab is open.
+  // One simple block per order: what, who, state, progress and one sentence on
+  // what the bot does now; the sub-orders it handed out sit right under it.
+  // A click opens the details: where the bot is and heads, the steps so far
+  // and what it looted or bought. Polled every 5 s while the tab is open.
   const gord = { data: null, error: null, search: '', guild: '', show: 'active', open: {}, seq: 0 };
   const GO_FINISHED = { done: 1, mailed: 1, cant: 1, noskill: 1, stocked: 1 };
   const GO_STATE = {
-    working: ['Working', 'badge-info'], waiting: ['Waiting', 'badge-warn'], delivering: ['Delivering', 'badge-info'],
-    done: ['Done', 'badge-success'], mailed: ['Mailed to GM', 'badge-success'], stocked: ['Stocked', 'badge-success'],
-    cant: ["Can't", 'badge-error'], noskill: ['No skill', 'badge-error']
+    working: ['Working', 'go-s-work'], waiting: ['Waiting', 'go-s-wait'], delivering: ['Delivering', 'go-s-work'],
+    done: ['Done', 'go-s-done'], mailed: ['Mailed', 'go-s-done'], stocked: ['Stocked', 'go-s-done'],
+    cant: ['Failed', 'go-s-fail'], noskill: ['Failed', 'go-s-fail']
   };
   const GO_REASON = {
-    grouped: 'in a group, paused', noskill: 'missing the profession', lowskill: 'profession skill too low',
-    lowlevel: 'level too low for the farm zones', norange: 'no farm zone in reach', nosource: 'no way to get it',
-    norecipe: 'does not know the recipe', stuck: 'stuck', bagsfull: 'bags full', nobank: 'no guild bank access',
-    elite: 'only drops from elites', timeout: 'farm time ran out', noprogress: '3 h without a single item',
-    needitems: 'needs items from you', bankdenied: 'guild bank refused', nobanker: 'no guild banker reachable',
-    noauctioneer: 'no auctioneer reachable'
+    grouped: 'paused while in a group', noskill: 'does not have the profession', lowskill: 'profession skill too low',
+    lowlevel: 'too low level for the farm zones', norange: 'no farm zone in reach', nosource: 'found no way to get it',
+    norecipe: 'does not know the recipe', stuck: 'got stuck', bagsfull: 'bags are full', nobank: 'no guild bank access',
+    elite: 'only drops from elites', timeout: 'farm time ran out', noprogress: '3 hours without a single item',
+    needitems: 'needs items from you', bankdenied: 'the guild bank refused', nobanker: 'cannot reach a guild banker',
+    noauctioneer: 'cannot reach an auctioneer'
   };
-  const GO_STEP_ICON = { bags: '🎒', bank: '🏦', ah: '⚖️', farm: '⛏️', craft: '🔨', sub: '🤝', need: '🙋', deliver: '📦', '-': '•' };
-  const GO_TRAIL_CLASS = {
-    loot: 'badge-info', gather: 'badge-success', skin: 'badge-success', roll: 'badge-info', mail: 'badge-pvp',
-    'vendor buy': 'badge-warn', 'vendor sell': 'badge-warn', 'AH buy': 'badge-warn', 'AH list': 'badge-warn',
-    'AH relist': 'badge-warn', 'AH relist failed': 'badge-error', died: 'badge-error'
-  };
+  const GO_HOW = { bags: 'bags/mail', bank: 'guild bank', ah: 'auction house', farm: 'farming', craft: 'crafting', sub: 'another bot', need: 'asked you', deliver: 'delivery' };
 
   function goFetch() {
     const seq = ++gord.seq;
@@ -2889,7 +2884,7 @@
   }
 
   function goBadge() {
-    const n = ((gord.data && gord.data.orders) || []).filter(o => !o.cancelled && !GO_FINISHED[o.state]).length;
+    const n = ((gord.data && gord.data.orders) || []).filter(o => !o.cancelled && !o.parent_guid && !GO_FINISHED[o.state]).length;
     const b = document.getElementById('go-count');
     if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
   }
@@ -2897,131 +2892,135 @@
   function goAgo(ts) {
     if (!ts) return '';
     const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-    if (s < 60) return `${s}s ago`;
-    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min ago`;
+    return `${Math.floor(s / 86400)} d ago`;
   }
   function goClock(ts) {
-    return ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    return ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   }
   function goDur(sec) {
     sec = sec || 0;
     const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-    return h ? `${h}h ${m}m` : `${m}m`;
+    return h ? `${h} h ${m} min` : `${m} min`;
   }
-  function goItem(name, quality) {
-    return `<span class="quality-text-${esc(quality == null ? 1 : quality)}">${esc(name || '?')}</span>`;
+  // Travel targets can carry WoW link markup: keep the readable name only.
+  function goPlain(s) {
+    s = String(s || '');
+    const link = s.match(/\[([^\]]+)\]/);
+    if (link) s = s.replace(/\|c[0-9a-fA-F]{8}\|H[^|]*\|h\[[^\]]*\]\|h\|r/, link[1]);
+    return s.replace(/\|c[0-9a-fA-F]{8}|\|r/g, '').trim();
   }
+  const goB = s => `<strong>${esc(s)}</strong>`;
 
-  // One plain sentence for what a step means.
-  function goStepText(s, o) {
-    const it = s.item_name ? `<strong>${esc(s.item_name)}</strong>${s.count ? ` ×${esc(s.count)}` : ''}` : '';
-    switch (s.step) {
-      case 'bags': return `Checking its bags and mail${it ? ` for ${it}` : ''}`;
-      case 'bank': return `Taking ${it || 'materials'} from the guild bank`;
-      case 'ah': return `Buying ${it || 'materials'} on the auction house`;
-      case 'farm': {
-        const zone = s.farm_zone ? ` in <strong>${esc(getZoneName(s.farm_zone))}</strong>` : '';
-        const what = it || (s.farm_item ? `<strong>${esc(s.farm_item)}</strong>` : `<strong>${esc(o.item_name)}</strong>`);
-        return `Farming ${what}${zone}`;
+  // One plain sentence: what the bot does right now.
+  function goNow(o, kids) {
+    const item = o.supply_name || o.item_name;
+    const n = o.supply_count ? `${o.supply_count}× ` : '';
+    if (o.state === 'done') return `Delivered ${goB(o.amount + '× ' + o.item_name)} to the guild bank.`;
+    if (o.state === 'mailed') return `Mailed ${goB(o.item_name)} to the guild master.`;
+    if (o.state === 'stocked') return 'The guild bank holds the amount; refills when it drops.';
+    if (o.state === 'cant' || o.state === 'noskill') return `Gave up: ${esc(GO_REASON[o.reason] || o.reason)}.`;
+    if ((o.need || []).length) return `Waiting for you: bring ${o.need.map(x => goB(x.count + '× ' + (x.name || x.item_id))).join(', ')} (trade, mail or guild bank).`;
+    if (o.reason === 'grouped') return 'Paused while in a group.';
+    switch (o.step) {
+      case 'bags': return `Checking its bags and mail for ${goB(n + item)}.`;
+      case 'bank': return `Getting ${goB(n + item)} from the guild bank.`;
+      case 'ah': return `Buying ${goB(n + item)} on the auction house.`;
+      case 'farm': return `Farming ${goB(n + item)}${o.farm_zone ? ` in ${goB(getZoneName(o.farm_zone))}` : ''}.`;
+      case 'craft': return `Crafting ${goB(n + item)}.`;
+      case 'sub': {
+        const k = kids.find(c => c.item_id === o.supply_item && !GO_FINISHED[c.state]);
+        return k ? `Waiting for ${goB(k.bot)} to bring ${goB(n + item)}.` : `Looking for a guild bot to make ${goB(n + item)}.`;
       }
-      case 'craft': return `Crafting ${it || `<strong>${esc(o.item_name)}</strong>`}`;
-      case 'sub': return `Asked another guild bot for ${it || 'a material'}`;
-      case 'need': return `Waiting for you to bring ${s.need ? `<strong>${esc(s.need)}</strong>` : it || 'items'}`;
-      case 'deliver': return 'Taking the finished order to the guild bank';
+      case 'deliver': return o.reason === 'bagsfull' ? 'Wants to deliver, but its bags are full.' : 'Taking it to the guild bank.';
     }
-    if (s.state === 'done') return 'Delivered to the guild';
-    if (s.state === 'mailed') return 'Mailed to the guild master';
-    if (s.state === 'waiting' && s.reason === 'needitems') return `Waiting for you to bring <strong>${esc(s.need || 'items')}</strong>`;
-    if (o.type === 'farm' && s.farm_zone) return `Farming <strong>${esc(o.item_name)}</strong> in <strong>${esc(getZoneName(s.farm_zone))}</strong>`;
-    return 'Starting the order';
+    if (o.type === 'farm' && o.farm_zone) return `Farming ${goB(o.item_name)} in ${goB(getZoneName(o.farm_zone))}.`;
+    return 'Just started.';
   }
 
-  function goStateBadge(o) {
-    const [label, cls] = GO_STATE[o.state] || [o.state, 'badge-info'];
-    const reason = o.reason && o.reason !== '-' ? ` · ${GO_REASON[o.reason] || o.reason}` : '';
-    return `<span class="badge ${cls}">${esc(label + reason)}</span>`;
-  }
-
-  function goLive(o) {
-    const b = state.bots.find(x => x.guid === o.bot_guid);
-    if (!b) return `<div class="go-live go-offline">${o.online ? 'Online, no live report yet' : 'Offline'}</div>`;
-    const bits = [];
-    bits.push(`<span class="go-live-state go-st-${esc(b.state || 'idle')}">${esc(b.state || 'idle')}</span>`);
-    bits.push(`📍 ${esc(getZoneName(b.zone, b.map))}`);
-    if (b.travel_to || b.travel_purpose) {
-      const dist = b.travel_dist > 0 ? ` · ${esc(b.travel_dist)} yd left` : '';
-      bits.push(`🧭 heading to <strong>${esc(b.travel_to || '?')}</strong> <span class="cell-muted">(${esc(b.travel_purpose || 'travel')}${b.travel_status ? `, ${esc(b.travel_status)}` : ''}${dist})</span>`);
-    }
-    if (b.target) bits.push(`🎯 ${esc(b.target)}`);
-    if (b.last_action) bits.push(`<span class="cell-muted">doing: ${esc(b.last_action)}</span>`);
-    return `<div class="go-live">${bits.join('<span class="go-sep">·</span>')}</div>`;
-  }
-
-  function goProgress(o) {
+  function goBar(o) {
     const want = Math.max(1, o.amount || 1);
     const done = Math.min(100, (o.delivered / want) * 100);
-    const carry = Math.min(100 - done, ((o.carried || 0) / want) * 100);
-    return `<div class="go-progress" title="${esc(o.delivered)} delivered, ${esc(o.carried || 0)} in bags or mail, ${esc(o.amount)} wanted">
-      <div class="go-bar"><span class="go-bar-done" style="width:${done}%"></span><span class="go-bar-carry" style="width:${carry}%"></span></div>
-      <span class="mono">${esc(o.delivered)}/${esc(o.amount)}${o.carried ? ` <span class="cell-muted">(+${esc(o.carried)} carrying)</span>` : ''}</span></div>`;
+    return `<span class="go-bar" title="${esc(o.delivered)} of ${esc(o.amount)} in the guild bank"><span style="width:${done}%"></span></span><span class="go-count mono">${esc(o.delivered)}/${esc(o.amount)}</span>`;
   }
 
-  function goTimeline(o) {
-    const steps = (o.steps || []).slice().reverse();
-    if (!steps.length) return '<div class="cell-muted">No steps seen yet.</div>';
-    return `<ol class="go-timeline">${steps.map((s, i) => {
-      const prev = steps[i + 1];
-      const gained = prev && s.delivered > prev.delivered ? ` <span class="badge badge-success">+${s.delivered - prev.delivered} delivered</span>` : '';
-      const reason = s.reason && s.reason !== '-' ? ` <span class="cell-muted">(${esc(GO_REASON[s.reason] || s.reason)})</span>` : '';
-      const deaths = s.deaths_in_zone ? ` <span class="badge badge-error">${esc(s.deaths_in_zone)} deaths here</span>` : '';
-      return `<li class="${i === 0 ? 'go-now' : ''}"><span class="go-t" title="${esc(goAgo(s.at))}">${esc(goClock(s.at))}</span>
-        <span class="go-ico">${GO_STEP_ICON[s.step] || '•'}</span><span>${goStepText(s, o)}${reason}${gained}${deaths}</span></li>`;
-    }).join('')}</ol>`;
+  function goPill(o) {
+    const [label, cls] = GO_STATE[o.state] || [o.state, 'go-s-work'];
+    return `<span class="go-pill ${cls}">${esc(label)}</span>`;
   }
 
-  function goTrail(o) {
+  // History, folded: consecutive polls of the same step and item are one line.
+  function goHistory(o) {
+    const out = [];
+    (o.steps || []).forEach(s => {
+      const key = `${s.step}|${s.item_name}|${s.state}`;
+      const last = out[out.length - 1];
+      if (last && last.key === key) { last.to = s.at; last.end = s; return; }
+      out.push({ key, from: s.at, to: s.at, start: s, end: s });
+    });
+    if (!out.length) return '<p class="go-muted">Nothing yet.</p>';
+    return `<ul class="go-hist">${out.reverse().map(g => {
+      const s = g.end;
+      const what = s.state === 'done' ? 'Delivered to the guild bank'
+        : s.state === 'mailed' ? 'Mailed to the guild master'
+        : s.step && s.step !== '-' ? `${esc(GO_HOW[s.step] || s.step)}${s.item_name ? `: ${goB(s.item_name)}` : ''}${s.step === 'farm' && s.farm_zone ? ` in ${esc(getZoneName(s.farm_zone))}` : ''}`
+        : s.state === 'waiting' ? `Waiting${s.reason && s.reason !== '-' ? ` (${esc(GO_REASON[s.reason] || s.reason)})` : ''}` : 'Started';
+      const notes = [];
+      if (s.delivered > g.start.delivered) notes.push(`+${s.delivered - g.start.delivered} delivered`);
+      if (s.deaths_in_zone > g.start.deaths_in_zone) notes.push(`died ${s.deaths_in_zone - g.start.deaths_in_zone}×`);
+      const time = g.from === g.to ? goClock(g.from) : `${goClock(g.from)}–${goClock(g.to)}`;
+      return `<li><span class="go-time">${esc(time)}</span><span>${what}${notes.length ? ` <span class="go-muted">· ${esc(notes.join(' · '))}</span>` : ''}</span></li>`;
+    }).join('')}</ul>`;
+  }
+
+  function goLoot(o) {
     const trail = ((gord.data.trails || {})[o.bot_guid]) || [];
-    const since = (o.created_at || 0) - 60;
-    const rows = trail.filter(t => t.at >= since).slice(0, 15);
-    if (!rows.length) return '<div class="cell-muted">Nothing looted, gathered or bought since the order started (seen by the dashboard).</div>';
-    return `<ul class="go-trail">${rows.map(t => `<li><span class="go-t">${esc(goClock(t.at))}</span>
-      <span class="badge ${GO_TRAIL_CLASS[t.kind] || 'badge-info'}">${esc(t.kind)}</span>
-      ${t.item ? goItem(t.item, t.quality) : ''}${t.zone ? ` <span class="cell-muted">in ${esc(getZoneName(t.zone))}</span>` : ''}</li>`).join('')}</ul>`;
+    const rows = trail.filter(t => t.at >= (o.created_at || 0) - 60 && t.kind !== 'died').slice(0, 10);
+    if (!rows.length) return '<p class="go-muted">Nothing yet.</p>';
+    return `<ul class="go-hist">${rows.map(t => `<li><span class="go-time">${esc(goClock(t.at))}</span>
+      <span>${esc(t.kind)}${t.item ? ` <span class="quality-text-${esc(t.quality || 1)}">${esc(t.item)}</span>` : ''}</span></li>`).join('')}</ul>`;
   }
 
-  function goCard(o, children, depth) {
-    const cls = classNameById(o.class);
-    const nowStep = (o.steps && o.steps.length) ? o.steps[o.steps.length - 1] : { step: o.step, item_name: o.supply_name, count: o.supply_count, state: o.state, reason: o.reason, farm_zone: o.farm_zone, need: '' };
-    const need = (o.need || []).length ? `<div class="go-need">🙋 Needs from you: ${o.need.map(n => `<strong>${esc(n.count)}× ${esc(n.name || n.item_id)}</strong>`).join(', ')} — trade, mail or put them in the guild bank</div>` : '';
-    const meta = [
-      `${esc(o.type)} order`,
-      o.parent ? `for <strong>${esc(o.parent)}</strong>'s order` : (o.giver ? `given by <strong>${esc(o.giver)}</strong>` : ''),
-      o.guild ? esc(o.guild) : '',
-      `started ${esc(goAgo(o.created_at))}`,
+  function goWhere(o) {
+    const b = state.bots.find(x => x.guid === o.bot_guid);
+    if (!b) return o.online ? 'Online' : 'Offline';
+    let s = `In ${goB(getZoneName(b.zone, b.map))}`;
+    if (b.state === 'dead') s += ', dead (running back)';
+    else if (b.state === 'combat') s += `, fighting${b.target ? ` ${esc(b.target)}` : ''}`;
+    if (b.travel_to) s += `, heading to ${goB(goPlain(b.travel_to))}${b.travel_dist > 0 ? ` (${esc(b.travel_dist)} yd)` : ''}`;
+    return s + '.';
+  }
+
+  function goDetails(o) {
+    const facts = [
+      `Given by ${goB(o.parent || o.giver || '?')}${o.parent ? ' (sub-order)' : ''} ${esc(goAgo(o.created_at))}`,
       `worked ${esc(goDur(o.worked_sec))}`,
-      o.nogain_sec > 600 ? `<span class="go-warn">${esc(goDur(o.nogain_sec))} without a new item</span>` : '',
-      o.hours ? `limit ${esc(o.hours)} h` : 'no time limit',
-      o.keep ? 'keep in stock' : '',
-      o.gold_cap || o.guild_gold_used ? `guild gold ${formatMoney(o.guild_gold_used)}${o.gold_cap ? ` of ${formatMoney(o.gold_cap)}` : ''}` : ''
-    ].filter(Boolean).join(' · ');
+      o.hours ? `time limit ${esc(o.hours)} h` : 'no time limit'
+    ];
+    return `<div class="go-details">
+      <div class="go-facts">${goWhere(o)}<br><span class="go-muted">${facts.join(' · ')}</span></div>
+      <div class="go-cols"><div><h4>Steps</h4>${goHistory(o)}</div><div><h4>Looted and bought</h4>${goLoot(o)}</div></div>
+    </div>`;
+  }
+
+  function goRow(o, kids, depth) {
     const key = `${o.bot_guid}:${o.created_at}`;
-    const open = gord.open[key] !== undefined ? gord.open[key] : !GO_FINISHED[o.state];
-    return `<div class="card go-card${depth ? ' go-sub' : ''}${GO_FINISHED[o.state] ? ' go-finished' : ''}">
-      <div class="go-head" data-key="${esc(key)}">
-        <div class="go-title">${depth ? '<span class="go-arrow">↳</span>' : ''}${goItem(o.item_name, o.quality)} <span class="mono">×${esc(o.amount)}</span>
-          <span class="go-by">— ${botLink(o.bot_guid, o.bot, cls)} <span class="cell-muted">lvl ${esc(o.level)} ${esc(cls)}${o.online ? '' : ' · offline'}</span></span></div>
-        <div class="go-right">${goStateBadge(o)}${goProgress(o)}<span class="go-toggle">${open ? '▾' : '▸'}</span></div>
+    const open = !!gord.open[key];
+    const finished = GO_FINISHED[o.state];
+    const cls = classNameById(o.class);
+    const slow = !finished && o.nogain_sec > 1800 ? ` <span class="go-flag" title="No new item for ${esc(goDur(o.nogain_sec))}">slow</span>` : '';
+    return `<div class="go-row${depth ? ' go-child' : ''}${finished ? ' go-fin' : ''}${open ? ' go-open' : ''}">
+      <div class="go-line" data-key="${esc(key)}">
+        <span class="go-chev">${open ? '▾' : '▸'}</span>
+        <span class="go-what">${depth ? '↳ ' : ''}<span class="quality-text-${esc(o.quality == null ? 1 : o.quality)}">${esc(o.item_name)}</span> ×${esc(o.amount)}</span>
+        <span class="go-who" style="color:${classColor(cls)}">${esc(o.bot)}</span>
+        ${goPill(o)}${slow}
+        <span class="go-prog">${goBar(o)}</span>
       </div>
-      <div class="go-now-line">${GO_STEP_ICON[nowStep.step] || '•'} ${goStepText(nowStep, o)}</div>
-      ${need}
-      ${open ? `${goLive(o)}
-      <div class="go-meta">${meta}</div>
-      <div class="go-cols">
-        <div><h4>Steps so far</h4>${goTimeline(o)}</div>
-        <div><h4>Looted, gathered and bought</h4>${goTrail(o)}</div>
-      </div>` : ''}
-      ${children.length ? `<div class="go-children">${children.map(c => c.html).join('')}</div>` : ''}
+      <div class="go-sentence">${goNow(o, kids)}</div>
+      ${open ? goDetails(o) : ''}
     </div>`;
   }
 
@@ -3031,7 +3030,7 @@
     if (gord.error && !gord.data) { list.innerHTML = `<div class="card"><div class="table-empty">Could not load guild orders: ${esc(gord.error)}</div></div>`; return; }
     const d = gord.data;
     if (!d) { list.innerHTML = '<div class="card"><div class="table-empty">Loading guild orders…</div></div>'; return; }
-    if (d.error) { list.innerHTML = `<div class="card"><div class="table-empty">Could not read the order table: ${esc(d.error)}</div></div>`; return; }
+    if (d.error) { list.innerHTML = `<div class="card"><div class="table-empty">Could not read the orders: ${esc(d.error)}</div></div>`; return; }
 
     const all = (d.orders || []).filter(o => !o.cancelled);
     const guilds = [...new Set(all.map(o => o.guild).filter(Boolean))].sort();
@@ -3041,41 +3040,36 @@
     seg.querySelectorAll('.seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.v === gord.guild));
     seg.style.display = guilds.length > 1 ? '' : 'none';
 
-    const running = all.filter(o => !GO_FINISHED[o.state]);
-    const waitingYou = all.filter(o => o.reason === 'needitems' || (o.need || []).length).length;
-    const subs = running.filter(o => o.parent_guid).length;
-    const doneToday = all.filter(o => (o.state === 'done' || o.state === 'mailed') && Date.now() / 1000 - o.updated_at < 86400).length;
-    const stuck = running.filter(o => o.nogain_sec > 1800 || o.state === 'cant').length;
-    const kpi = (label, value, sub, cls) => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value${cls ? ' ' + cls : ''}">${value}</div><div class="kpi-sub">${sub}</div></div>`;
-    document.getElementById('go-summary').innerHTML =
-      kpi('Running', running.length, `${subs} of them sub-orders`) +
-      kpi('Needs you', waitingYou, 'orders waiting for your items', waitingYou ? 'go-kpi-warn' : '') +
-      kpi('Done (24 h)', doneToday, 'delivered or mailed') +
-      kpi('No progress', stuck, '30+ min without a new item', stuck ? 'go-kpi-warn' : '');
-    document.getElementById('go-polled').textContent = d.polled ? `updated ${goAgo(d.polled)}` : '';
-
-    const q = gord.search.toLowerCase();
     const byGuid = new Map(all.map(o => [o.bot_guid, o]));
-    const match = o => (!gord.guild || o.guild === gord.guild) && (!q || (o.bot || '').toLowerCase().includes(q) || (o.item_name || '').toLowerCase().includes(q));
-    // A tree per root order; a sub-order whose parent row is gone shows as a root.
     const kids = new Map();
     all.forEach(o => { if (o.parent_guid && byGuid.has(o.parent_guid)) { if (!kids.has(o.parent_guid)) kids.set(o.parent_guid, []); kids.get(o.parent_guid).push(o); } });
-    const build = (o, depth) => {
-      const ch = (kids.get(o.bot_guid) || []).map(c => build(c, depth + 1));
-      const anyMatch = match(o) || ch.some(c => c.match);
-      const anyRunning = !GO_FINISHED[o.state] || ch.some(c => c.running);
-      return { html: goCard(o, ch, depth), match: anyMatch, running: anyRunning };
+    const roots = all.filter(o => !(o.parent_guid && byGuid.has(o.parent_guid)));
+    const treeRunning = o => !GO_FINISHED[o.state] || (kids.get(o.bot_guid) || []).some(treeRunning);
+    const running = roots.filter(treeRunning);
+    const waitingYou = all.filter(o => !GO_FINISHED[o.state] && (o.need || []).length).length;
+    const doneToday = roots.filter(o => (o.state === 'done' || o.state === 'mailed') && Date.now() / 1000 - o.updated_at < 86400).length;
+    const kpi = (label, value, cls) => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
+    document.getElementById('go-summary').innerHTML =
+      kpi('Orders in progress', running.length) +
+      kpi('Waiting for you', waitingYou, waitingYou ? 'go-kpi-warn' : '') +
+      kpi('Finished today', doneToday);
+    document.getElementById('go-polled').textContent = d.polled ? `Updated ${goAgo(d.polled)}` : '';
+
+    const q = gord.search.toLowerCase();
+    const matches = o => (!q || (o.bot || '').toLowerCase().includes(q) || (o.item_name || '').toLowerCase().includes(q)) || (kids.get(o.bot_guid) || []).some(matches);
+    const shown = roots.filter(o => (!gord.guild || o.guild === gord.guild) && matches(o) && (gord.show === 'all' || treeRunning(o)));
+    const tree = (o, depth) => {
+      const ch = (kids.get(o.bot_guid) || []).slice().sort((a, b) => a.created_at - b.created_at);
+      return goRow(o, ch, depth) + ch.map(c => tree(c, depth + 1)).join('');
     };
-    const roots = all.filter(o => !(o.parent_guid && byGuid.has(o.parent_guid))).map(o => build(o, 0))
-      .filter(t => t.match && (gord.show === 'all' || t.running));
-    list.innerHTML = roots.length ? roots.map(t => t.html).join('')
-      : `<div class="card"><div class="table-empty">${all.length ? 'No orders match.' : 'No guild orders yet. Give one with the addon or .bot order.'}</div></div>`;
+    list.innerHTML = shown.length ? shown.map(o => `<div class="card go-order">${tree(o, 0)}</div>`).join('')
+      : `<div class="card"><div class="table-empty">${all.length ? 'No orders here. Pick "All" to see finished ones.' : 'No guild orders yet.'}</div></div>`;
 
     const rel = d.relists || [];
     document.getElementById('go-relist-card').style.display = rel.length ? '' : 'none';
     document.getElementById('go-relist-body').innerHTML = rel.map(r => `<tr><td>${esc(r.bot)}</td><td>${esc(r.item_name)}</td><td class="mono">${esc(r.count)}</td>
       <td class="mono">${formatMoney(r.buyout)}</td><td>${esc(goAgo(r.posted_at))}</td>
-      <td>${r.received ? `<span class="badge badge-warn">collected ${r.held_gold ? formatMoney(r.held_gold) : ''}${r.held_count ? ` ${esc(r.held_count)} items` : ''}, to pay into the bank</span>` : '<span class="badge badge-info">listed</span>'}</td></tr>`).join('');
+      <td>${r.received ? 'Collected, goes to the guild bank next visit' : 'On the auction house'}</td></tr>`).join('');
   }
 
   function initGuildOrders() {
@@ -3091,12 +3085,9 @@
     bindSeg(document.getElementById('go-show'), v => { gord.show = v; renderGuildOrders(); });
     document.getElementById('go-list').addEventListener('click', e => {
       if (e.target.closest('a')) return;
-      const head = e.target.closest('.go-head');
-      if (!head) return;
-      const key = head.dataset.key;
-      const card = head.closest('.go-card');
-      const isOpen = !!card.querySelector(':scope > .go-cols');
-      gord.open[key] = !isOpen;
+      const line = e.target.closest('.go-line');
+      if (!line) return;
+      gord.open[line.dataset.key] = !gord.open[line.dataset.key];
       renderGuildOrders();
     });
     goFetch();

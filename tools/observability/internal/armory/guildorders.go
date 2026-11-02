@@ -1,7 +1,10 @@
 package armory
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,6 +119,8 @@ type GuildOrderTracker struct {
 	seen    map[string]time.Time
 	names   map[uint32]itemName
 	carried bool // the carried column exists (newer module)
+	file    string
+	dirty   bool
 }
 
 type itemName struct {
@@ -123,15 +128,54 @@ type itemName struct {
 	quality uint8
 }
 
-func NewGuildOrderTracker(svc *Service) *GuildOrderTracker {
-	return &GuildOrderTracker{svc: svc, steps: map[string][]GuildOrderStep{}, seen: map[string]time.Time{},
-		names: map[uint32]itemName{}, carried: true}
+// NewGuildOrderTracker keeps the step history in file (empty = memory only),
+// so a dashboard restart does not lose it.
+func NewGuildOrderTracker(svc *Service, file string) *GuildOrderTracker {
+	t := &GuildOrderTracker{svc: svc, steps: map[string][]GuildOrderStep{}, seen: map[string]time.Time{},
+		names: map[uint32]itemName{}, carried: true, file: file}
+	if file != "" {
+		if raw, err := os.ReadFile(file); err == nil {
+			if err := json.Unmarshal(raw, &t.steps); err != nil {
+				log.Printf("[GuildOrders] ignoring unreadable %s: %v", file, err)
+				t.steps = map[string][]GuildOrderStep{}
+			}
+			now := time.Now()
+			for key := range t.steps {
+				t.seen[key] = now
+			}
+		}
+	}
+	return t
+}
+
+func (t *GuildOrderTracker) save() {
+	t.mu.RLock()
+	if t.file == "" || !t.dirty {
+		t.mu.RUnlock()
+		return
+	}
+	raw, err := json.Marshal(t.steps)
+	t.mu.RUnlock()
+	if err != nil {
+		return
+	}
+	tmp := t.file + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		log.Printf("[GuildOrders] saving history failed: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, t.file); err == nil {
+		t.mu.Lock()
+		t.dirty = false
+		t.mu.Unlock()
+	}
 }
 
 // Run polls forever; call it in its own goroutine.
 func (t *GuildOrderTracker) Run(every time.Duration) {
 	for {
 		t.Poll()
+		t.save()
 		time.Sleep(every)
 	}
 }
@@ -175,8 +219,10 @@ func (t *GuildOrderTracker) Poll() {
 				cur.At = o.UpdatedAt
 			}
 			hist = append(hist, cur)
+			t.dirty = true
 		} else if last := hist[len(hist)-1]; !sameStep(last, cur) {
 			hist = append(hist, cur)
+			t.dirty = true
 			if len(hist) > guildOrderStepCap {
 				hist = hist[len(hist)-guildOrderStepCap:]
 			}
@@ -189,6 +235,7 @@ func (t *GuildOrderTracker) Poll() {
 		if now.Sub(at) > guildOrderKeep {
 			delete(t.seen, key)
 			delete(t.steps, key)
+			t.dirty = true
 		}
 	}
 	t.view = GuildOrdersView{Orders: orders, Relists: relists, Polled: now.Unix()}
