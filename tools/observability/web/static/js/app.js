@@ -87,6 +87,7 @@
     botsSpec: 'all',
     botsIssueOnly: false,
     botsPvpOnly: false,
+    botsGuild: '',
     botsSort: { key: null, dir: 1 }, // null = online first, then by name
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
@@ -2468,6 +2469,7 @@
       spec: db ? (db.spec || '') : '',
       money: db ? (parseInt(db.money, 10) || 0) : 0,
       online: !!live || !!(db && db.online),
+      guild: (live && live.guild) || (db && db.guild) || '',
       live,
       db
     };
@@ -2589,8 +2591,8 @@
     guild: {
       label: 'Guild',
       title: 'Guild the bot is in (dash when guildless)',
-      sort: r => (r.live && r.live.guild ? r.live.guild.toLowerCase() : ''),
-      cell: r => (r.live && r.live.guild ? `<span class="mono">${esc(r.live.guild)}</span>` : DASH)
+      sort: r => (r.guild || '').toLowerCase(),
+      cell: r => (r.guild ? `<span class="mono">${esc(r.guild)}</span>` : DASH)
     },
     xp: {
       label: 'XP',
@@ -2738,6 +2740,19 @@
     };
   }
 
+  // Guild filter: every guild any listed character is in, with its size.
+  function paintGuildFilter(rows) {
+    const sel = document.getElementById('bots-guild');
+    if (!sel) return;
+    const counts = {};
+    rows.forEach(r => { if (r.guild) counts[r.guild] = (counts[r.guild] || 0) + 1; });
+    const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+    const html = '<option value="">Any guild</option><option value="-">No guild</option>' +
+      names.map(n => `<option value="${esc(n)}">${esc(n)} (${counts[n]})</option>`).join('');
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    sel.value = state.botsGuild || '';
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     paintSeg(el.presenceSeg, state.botsPresence);
@@ -2756,14 +2771,16 @@
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
     const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || (r.live && r.live.guild || '').toLowerCase().includes(w));
+      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;
     const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
     const pvpOk = r => !state.botsPvpOnly || !!(r.live && r.live.pvp) || inWorldPvp(r.live);
+    const guildOk = r => !state.botsGuild || (state.botsGuild === '-' ? !r.guild : r.guild === state.botsGuild);
+    paintGuildFilter(rows);
 
-    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r));
+    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r) && guildOk(r));
     renderBotChips(base, issues, stateOk, classOk);
     renderKindChips(base);
     const list = base.filter(r => kindOk(r) && stateOk(r) && classOk(r) && specOk(r) && issueOk(r) && pvpOk(r));
@@ -3224,6 +3241,8 @@
     if (el.botSearch) el.botSearch.addEventListener('input', renderRoster);
     bindSeg(el.presenceSeg, v => { state.botsPresence = v; renderRoster(); });
     bindSeg(el.kindSeg, v => { state.botsKind = v; renderRoster(); });
+    const guildSel = document.getElementById('bots-guild');
+    if (guildSel) guildSel.addEventListener('change', () => { state.botsGuild = guildSel.value; renderRoster(); });
     bindSeg(el.viewSeg, v => {
       state.botsView = v;
       try { localStorage.setItem(BOTS_VIEW_STORAGE_KEY, v); } catch (e) {}
