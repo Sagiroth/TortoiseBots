@@ -7,6 +7,7 @@
 #include "playerbot/Helpers.h"
 #include "runtime/GuildOrderRelistPolicy.h"
 #include "runtime/GuildOrderStore.h"
+#include "host/ModuleLog.h"
 
 #include <algorithm>
 #include <cstdlib>

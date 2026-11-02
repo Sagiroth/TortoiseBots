@@ -3201,9 +3201,10 @@ void ClearRelistSurplus(uint32_t botGuidLow)
 }
 
 void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
-    uint32_t unitPrice)
+    uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec)
 {
-    OrderStore::Instance().NoteRelistPosted(botGuidLow, guildId, itemId, count, unitPrice);
+    OrderStore::Instance().NoteRelistPosted(botGuidLow, guildId, itemId, count, unitPrice, bid, buyout,
+        deposit, durationSec);
 }
 
 std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
