@@ -19,6 +19,10 @@ AiPlayerbot.Observability = 0
 AiPlayerbot.ObservabilityPort = 9195
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1)
 AiPlayerbot.ObservabilityDungeonMobs = 1
+# Raids tab: leader, offline members and the live fight window of every raid group, without a commander bind (only acts
+# with Observability = 1; the fight window needs AiPlayerbot.CombatMonitor = 1 in this file). On only when both this
+# file and the world config say 1; 0 in either turns it off (re-read on .reload config).
+AiPlayerbot.ObservabilityRaids = 0
 
 # Enable random bot system
 # On by default: a fresh install brings up a living world of random bots

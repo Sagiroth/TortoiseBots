@@ -13873,6 +13873,22 @@ static std::string CommanderDisplayName(RemoteCommander::Binding const& binding,
                      : "offline #" + std::to_string(::ObjectGuid(binding.commanderGuid).GetCounter());
 }
 
+// The bound commander's display name on a group: the name the dashboard files its fights under ("" when none stands).
+// A system binding's "system" is the word COMMANDERS uses too.
+std::string BoundCommanderNameOfGroup(uint32 groupId)
+{
+    RemoteCommander::Binding const* binding = CommanderBindings().FindByGroup(groupId);
+    if (!binding)
+        return "";
+    return binding->system ? "system" : CommanderDisplayName(*binding, FindCharacter(binding->commanderGuid));
+}
+
+// Whether a binding stands on the group (its combat book belongs to the bound path).
+bool GroupIsBound(uint32 groupId)
+{
+    return CommanderBindings().FindByGroup(groupId) != nullptr;
+}
+
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
@@ -14145,12 +14161,15 @@ static void ForgetReleasedCombatGroups()
             if (RemoteCommander::Binding const* b = CommanderBindings().FindByCommander(raw))
                 standing = standing || b->groupId == *it;
         if (standing)
-            ++it;
-        else
         {
-            TortoiseBots::CombatMonitorService::Instance().Forget(*it);
-            it = s_combatGroups().erase(it);
+            ++it;
+            continue;
         }
+        // A released binding's group that the Raids tab observes keeps its book (the observed sampler now feeds it); the
+        // entry leaves this set all the same.
+        if (!IsObservedRaidGroup(*it))
+            TortoiseBots::CombatMonitorService::Instance().Forget(*it);
+        it = s_combatGroups().erase(it);
     }
 }
 
@@ -14213,8 +14232,8 @@ static void FillCommanderCombat(RemoteCommander::Binding const& binding, Player*
     ref.combatJson = TortoiseBots::CombatMonitorService::Instance().WindowJson(ref.groupId);
 }
 
-// The group's members as the combat monitor aggregates them.
-static std::vector<TortoiseBots::CombatMonitor::MemberInfo> CombatMonitorMembers(std::vector<Player*> const& bots)
+// The group's members as the combat monitor aggregates them (the bound sampler and the observed-raid sampler share it).
+std::vector<TortoiseBots::CombatMonitor::MemberInfo> CombatMonitorMembersOf(std::vector<Player*> const& bots)
 {
     std::vector<TortoiseBots::CombatMonitor::MemberInfo> members;
     members.reserve(bots.size());
@@ -14299,7 +14318,7 @@ static void FeedCombatMonitor(RemoteCommander::Binding const& binding, Player* l
                     holder->GetStackAmount()))
                     debuffKeysUp.push_back(key);
             }
-    CombatMonitorService::Instance().Refresh(binding.groupId, CombatMonitorMembers(bots), anyInCombat, allDead,
+    CombatMonitorService::Instance().Refresh(binding.groupId, CombatMonitorMembersOf(bots), anyInCombat, allDead,
         ctx, debuffKeysUp, WorldTimer::getMSTime());
 }
 
@@ -14333,6 +14352,50 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+}
+
+// The fight's boss from data: world-boss rank, an instance-bind flag, or a
+// plan boss step of the anchor's map (the boss list's rule), most health first.
+// Both samplers pick it the same way, once per fight. The fight's boss entry: a creature a script changed the
+// entry of is picked (and named) under it, and the unit that reads it now tells the fight its phase (NoteBossForm,
+// one change at a time).
+void NoteFightBoss(uint32 groupId, Player* anchor)
+{
+    if (!anchor)
+        return;
+    std::vector<BoundFight::BossCandidate> candidates;
+    uint32 const bossEntry = CombatMonitorService::Instance().BossEntry(groupId);
+    for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(groupId))
+    {
+        BoundFight::BossCandidate c;
+        c.entry = u.entry;
+        c.guid = u.guid;
+        c.name = u.name;
+        uint32 formOf = 0;
+        if (Unit* unit = ObjectAccessor::GetUnit(*anchor, ::ObjectGuid(u.guid)))
+        {
+            c.maxHealth = unit->GetMaxHealth();
+            if (Creature* creature = unit->ToCreature())
+                formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
+        }
+        if (formOf)
+        {
+            c.entry = formOf;
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(formOf))
+                c.name = info->name;
+            if (formOf == bossEntry)
+                CombatMonitorService::Instance().NoteBossForm(groupId, u.entry);
+        }
+        if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(c.entry))
+            c.boss = info->rank == CREATURE_ELITE_WORLDBOSS ||
+                (info->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND);
+        c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(anchor->GetMapId(), c.entry);
+        candidates.push_back(std::move(c));
+    }
+    int const picked = BoundFight::PickBoss(candidates);
+    if (picked >= 0)
+        CombatMonitorService::Instance().NoteBoss(groupId, candidates[picked].entry,
+            candidates[picked].name.c_str());
 }
 
 // The bound-group sampler (task R1): every standing binding whose run did not
@@ -14398,43 +14461,7 @@ static void SampleBoundFights(uint32 diff)
         FeedCombatMonitor(*binding, lead, bots, anyInCombat, allDead, ctx, nullptr);
         if (!CombatMonitorService::Instance().InFight(binding->groupId))
             continue;
-        // The boss from data: world-boss rank, an instance-bind flag, or a plan
-        // boss step of the lead's map (the boss list's rule), most health first.
-        std::vector<BoundFight::BossCandidate> candidates;
-        // The fight's boss entry: a creature a script changed the entry of is picked (and named) under it, and the
-        // unit that reads it now tells the fight its phase (NoteBossForm, one change at a time).
-        uint32 const bossEntry = CombatMonitorService::Instance().BossEntry(binding->groupId);
-        for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(binding->groupId))
-        {
-            BoundFight::BossCandidate c;
-            c.entry = u.entry;
-            c.guid = u.guid;
-            c.name = u.name;
-            uint32 formOf = 0;
-            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
-            {
-                c.maxHealth = unit->GetMaxHealth();
-                if (Creature* creature = unit->ToCreature())
-                    formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(creature);
-            }
-            if (formOf)
-            {
-                c.entry = formOf;
-                if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(formOf))
-                    c.name = info->name;
-                if (formOf == bossEntry)
-                    CombatMonitorService::Instance().NoteBossForm(binding->groupId, u.entry);
-            }
-            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(c.entry))
-                c.boss = info->rank == CREATURE_ELITE_WORLDBOSS ||
-                    (info->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND);
-            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), c.entry);
-            candidates.push_back(std::move(c));
-        }
-        int const picked = BoundFight::PickBoss(candidates);
-        if (picked >= 0)
-            CombatMonitorService::Instance().NoteBoss(binding->groupId, candidates[picked].entry,
-                candidates[picked].name.c_str());
+        NoteFightBoss(binding->groupId, lead);
     }
     int64_t const us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started).count();

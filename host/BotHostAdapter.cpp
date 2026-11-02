@@ -194,6 +194,10 @@ void BotHostAdapter::OnStartup()
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(
         [](std::vector<DungeonMobTelemetry::RunRef>& runs) { BotCommands::CollectDungeonMobs(runs); });
+    // The Raids tab (spec dash-raids-tab): the raid groups of every raid map copy, bound or not.
+    ObservabilityEmitter::Instance().SetRaidProvider(
+        [](std::vector<Player*> const& bots, std::vector<Player*> const& players,
+           std::vector<RaidTelemetry::GroupInfo>& groups) { BotCommands::CollectObservedRaids(bots, players, groups); });
 }
 void BotHostAdapter::OnUpdate(uint32 diff)
 {
@@ -244,6 +248,9 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // Issue #884: release remote-commander bindings whose commander logged
     // out or whose group broke up (nothing runs while none is bound).
     BotCommands::UpdateRemoteCommanders(diff);
+    // The Raids tab: the unbound raid groups' combat books. Outside the binding sweep, which returns early while nothing is
+    // bound. One bool read per tick while AiPlayerbot.ObservabilityRaids is 0.
+    BotCommands::UpdateObservedRaids(diff);
     PlayerConvenience::Instance().Update(diff);
     RandomBotService::Instance().Update(diff);
     // Issue #192: complete queued hire provisions, then sweep grace timers.
@@ -268,6 +275,7 @@ void BotHostAdapter::OnShutdown()
     BattlegroundQueueService::Instance().Shutdown();
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
+    BotCommands::ClearObservedRaids();
     BotPacketAdapter::ClearDeferredPackets();
     // After the bots are gone: aura-strip/cast hooks during session teardown
     // reopen nothing once nothing is left to log.
