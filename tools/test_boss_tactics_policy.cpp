@@ -935,7 +935,7 @@ int main()
     }
 
     // Encounter reset (Codex round 3): a stale guid must not block the arming forever. An evade (every visible member out
-    // of combat at full health) resets the known set, armed and latch, so respawned members under new guids arm on the
+    // of combat at full health, every known guid of the scan) resets the known set, armed and latch, so respawned members under new guids arm on the
     // next pull; a quiet group (no member seen for kLinkedDeathEndMs) resets too; a guid unseen for kLinkedDeathDropMs
     // while the group is seen is forgotten (a despawn).
     {
@@ -975,6 +975,24 @@ int main()
         CHECK(!LinkedDeathLatchTick(stillFights, p, nobody, none, 2000, fighting));
         CHECK(stillFights.known.size() == 2);
         CHECK(!LinkedDeathEncounterEnded(stillFights, nobody, fighting, 2000));
+
+        // One visible idle member at full health is no evade while another known member is unresolved and recent (it may
+        // still fight out of view). The reset waits until every known guid is idle at full health in one scan.
+        LinkedDeathLatch partial;
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(partial.known.size() == 2);                                       // 2 unresolved, seen 1 s ago: no reset
+        CHECK(!LinkedDeathEncounterEnded(partial, nobody, { Linked(1, 100, false) }, 2000));
+        CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 3000, idleFull)); // all known idle at full health: reset
+        CHECK(partial.known.empty());
+
+        // An unresolved known member not seen for kLinkedDeathEndMs times out even while another member is idle.
+        LinkedDeathLatch timedOut;
+        CHECK(!LinkedDeathLatchTick(timedOut, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(timedOut, p, nobody, none, 1000 + kLinkedDeathEndMs - 1, { Linked(1, 100, false) }));
+        CHECK(timedOut.known.size() == 2);                                      // 2 unseen 29.999 s: still the fight
+        CHECK(!LinkedDeathLatchTick(timedOut, p, nobody, none, 1000 + kLinkedDeathEndMs, { Linked(1, 100, false) }));
+        CHECK(timedOut.known.empty());
 
         // Quiet group: no member in combat or idle, none seen for kLinkedDeathEndMs: the fight is gone, reset.
         LinkedDeathLatch quiet;

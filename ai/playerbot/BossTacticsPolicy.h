@@ -752,8 +752,8 @@ namespace ai
     //   not seen (out of range, not cached) is never a death. Each death counts once.
     //   Cleared once every known member is confirmed dead, or `kLinkedDeathLatchMs` after the death, so a fight that
     //   cannot finish the trio goes back to the equalise hold instead of burning one member at a time forever.
-    //   Encounter end (no latch): the known set, armed and latch reset when no member fights and either every visible
-    //   member stands out of combat at full health (an evade) or no living member was seen for kLinkedDeathEndMs. So an
+    //   Encounter end (no latch): the known set, armed and latch reset when no member fights and every non-dead known
+    //   guid is accounted for: out of combat at full health this scan (an evade), or not seen for kLinkedDeathEndMs. So an
     //   evade or a wipe does not leave old guids to block the next pull's arming; a respawn under new guids starts clean.
     //   A known guid not seen for kLinkedDeathDropMs while the group is seen (a member despawned) is forgotten too. Within
     //   those windows an unseen member still blocks the arming (fail safe).
@@ -817,25 +817,28 @@ namespace ai
         return unseen;
     }
 
-    // Whether the group's encounter has ended without a latch: no member of it fights (`members` empty), and either
-    // every visible unit out of combat (`idle`) stands at full health (an evade: the bosses reset), or, with none
-    // visible, no known living guid was seen for kLinkedDeathEndMs. An idle unit below full health, or still in combat,
-    // is a fight.
+    // Whether the group's encounter has ended without a latch: no member of it fights (`members` empty), and every
+    // non-dead known guid is accounted for: either it is in this scan's `idle` set (seen, out of combat, full health:
+    // an evade, the bosses reset), or it was not seen for kLinkedDeathEndMs (the 30 s no-sighting timeout). One
+    // idle-full-health guid does not end the encounter while another known guid is unresolved and recent: that guid
+    // may still be fighting. An idle unit below full health, or still in combat, is a fight.
     inline bool LinkedDeathEncounterEnded(const LinkedDeathLatch& latch, const std::vector<LinkedMember>& members,
                                           const std::vector<LinkedMember>& idle, std::uint32_t nowMs)
     {
         if (!members.empty())
             return false;
-        if (!idle.empty())
-        {
-            for (const LinkedMember& member : idle)
-                if (member.inCombat || member.hpPct < 100)
-                    return false;
-            return true;
-        }
-        for (const LinkedDeathKnown& known : latch.known)
-            if (!LinkedDeathHasGuid(latch.dead, known.guid) && nowMs - known.seenMs < kLinkedDeathEndMs)
+        for (const LinkedMember& member : idle)
+            if (member.inCombat || member.hpPct < 100)
                 return false;
+        for (const LinkedDeathKnown& known : latch.known)
+        {
+            if (LinkedDeathHasGuid(latch.dead, known.guid))
+                continue;
+            const bool idleNow = std::any_of(idle.begin(), idle.end(),
+                                             [&known](const LinkedMember& member) { return member.guid == known.guid; });
+            if (!idleNow && nowMs - known.seenMs < kLinkedDeathEndMs)
+                return false;
+        }
         return true;
     }
 
