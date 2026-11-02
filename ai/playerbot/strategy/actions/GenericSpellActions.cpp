@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "FankrissFocusActions.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
@@ -388,6 +389,9 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    if (FankrissBlocksAoe(ai, spellId))
+        return false;
+
     // A mounted travelling bot must not start an out-of-combat cast the core
     // would strip its mount for: without this every trigger family that does
     // not route through BuffTrigger (class armor rows, cure/dispel rows,

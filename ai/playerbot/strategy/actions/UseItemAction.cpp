@@ -1,6 +1,7 @@
 
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
+#include "FankrissFocusActions.h"
 #include "UseItemAction.h"
 #include "UseItemNamePolicy.h"
 #include "playerbot/DoorLockPolicy.h"
@@ -600,6 +601,9 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         {
             continue;
         }
+
+        if (FankrissBlocksAoe(ai, spellInfo->Id))
+            continue;
 
         if (IsNonCombatSpell(spellInfo) && bot->IsInCombat())
         {

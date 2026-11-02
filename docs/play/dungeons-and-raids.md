@@ -211,6 +211,26 @@ an avoidance action succeeds.
 - **Ahn'Qiraj (AQ20/AQ40):** Designated runners activate crystals while *Strength of Ossirian* is active. Kiting Ossirian remains the player's responsibility.
 - **Paladin Aura Auto-Swap:** Paladins in raids automatically swap to *Fire Resistance Aura* or *Shadow Resistance Aura* on applicable bosses.
 
+### Fankriss (opt-in roles)
+
+Fankriss the Unyielding (Temple of Ahn'Qiraj) has opt-in roles, all off by default. A raid that sets none of them fights him as before. Give two warrior or bear tanks the boss role, optionally a third tank the spawn role, then the rest:
+
+```text
+.bot strategy +fankriss tank TankOne
+.bot strategy +fankriss tank TankTwo
+.bot strategy +fankriss spawn tank SpareTank
+.bot strategy +fankriss spawn focus @ranged
+.bot strategy +fankriss stack @melee
+.bot strategy +fankriss healing @heal
+```
+
+- **`fankriss tank`:** the tank stays on Fankriss instead of picking loose adds. When the current tank reaches [`AiPlayerbot.FankrissSwapStacks`](../server/settings/dungeons-raids.md#aiplayerbotfankrissswapstacks) Mortal Wound stacks (default 5), one assigned tank with no stacks taunts (warrior Taunt, druid Growl); the other assigned tanks' automatic taunts on the boss are held. With `fankriss stack` as well (`@melee` includes tanks), the boss tanks hold him at his pull centre.
+- **`fankriss spawn tank`:** a spare tank picks up loose Spawns of Fankriss near the raid and taunts one that is not on a tank. The boss role wins if a tank has both.
+- **`fankriss spawn focus`** (DPS) and **`fankriss stack`** (melee DPS): the raid kills one shared Spawn at a time (lowest health, then the earliest to reach the raid) before going back to the boss, and from 10 s after a Spawn joins the fight a DPS with a stun or slow uses it on it. While Fankriss is engaged these DPS use single-target damage only (area, chain and swing-copy spells are blocked and running ones stopped), ignore the other bugs in the room except one attacking a healer (the three nearest DPS within 20 yd kill it), and do not chase into the tunnels. `fankriss stack` also keeps melee packed behind the boss.
+- **`fankriss healing`:** a healer moved away by Entangle heals whoever it can reach from where it stands instead of walking back first.
+
+An attack order, a raid mark on another enemy, or `stay`/`follow` still wins over the tank and stack roles. Remove a role with `-` instead of `+`.
+
 ## Custom Turtle Raids
 
 When [`AiPlayerbot.EnableCustomRaidTactics`](../server/settings/dungeons-raids.md#aiplayerbotenablecustomraidtactics) is enabled, the raid engine handles custom Turtle WoW raid encounters:

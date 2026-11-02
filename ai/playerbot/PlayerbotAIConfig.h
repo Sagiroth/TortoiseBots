@@ -581,6 +581,8 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
+    uint32 fankrissSwapStacks = 5;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party

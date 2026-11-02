@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
@@ -264,12 +265,14 @@ bool WandBlocksCastTrigger::NoManaRowActive()
 
 bool WandBlocksCastTrigger::RaidAggroWand()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     Group* group = bot->GetGroup();
     return RaidAggroWandRow(group && group->isRaidGroup(), AI_VALUE2(bool, "has aggro", "current target"));
 }
 
 bool WandBlocksCastTrigger::ThreatVetoesNuke()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     // Mirrors ThreatMultiplier::GetValue (ThreatStrategy.cpp) for a
     // single-target damage spell.
     if (!ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT))
@@ -387,6 +390,7 @@ bool HasAggroTrigger::IsActive()
 
 bool HasAggroInRaidGroupTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     // Same test as WandBlocksCastTrigger::RaidAggroWand, so the stop never
     // fights this row.
     Group* group = bot->GetGroup();
@@ -740,6 +744,7 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool HighThreatTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     uint8 relativeThreat = AI_VALUE2(uint8, "threat", "current target");
 
     if (relativeThreat >= 80)
@@ -771,6 +776,7 @@ bool HighThreatTrigger::IsActive()
 
 bool MediumThreatTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     if (AI_VALUE2(uint8, "threat", "current target") >= 60)
         return true;
 

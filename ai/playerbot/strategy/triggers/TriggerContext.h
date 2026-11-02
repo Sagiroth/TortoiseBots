@@ -1,6 +1,9 @@
 #pragma once
 
 #include "HealthTriggers.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
 #include "GenericTriggers.h"
@@ -40,6 +43,13 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
+            creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
+            creators["fankriss spawn engage needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnEngageTrigger(ai); };
+            creators["fankriss spawn pickup needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnPickupTrigger(ai); };
+            creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
+            creators["fankriss control needed"] = [](PlayerbotAI* ai) { return new FankrissControlTrigger(ai); };
+            creators["fankriss focus needed"] = [](PlayerbotAI* ai) { return new FankrissFocusTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
             creators["return to stay position"] = [](PlayerbotAI* ai) { return new ReturnToStayPositionTrigger(ai); };

@@ -925,6 +925,10 @@ AiPlayerbot.DungeonRunRaidBossRules = 0
 # 1 - on
 AiPlayerbot.DungeonRunRaidHealerGuard = 0
 
+# Opt-in "fankriss tank" role (.bot strategy +fankriss tank): an assigned tank with no Mortal Wound
+# stacks taunts Fankriss off the current tank at this many stacks (1-9, clamped). Does not enable the role.
+AiPlayerbot.FankrissSwapStacks = 5
+
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
 # group of four, tank, healer and damage, with one role left open for a player.

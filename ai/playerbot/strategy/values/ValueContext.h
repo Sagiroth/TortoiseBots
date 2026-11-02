@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 #include "ActiveSpellValue.h"
@@ -118,6 +119,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["fankriss active boss"] = [](PlayerbotAI* ai) { return new FankrissActiveBossValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };

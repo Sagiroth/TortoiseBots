@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CustomStrategy.h"
+#include "generic/FankrissStrategy.h"
+#include "actions/FankrissTankActions.h"
+#include "actions/FankrissRaidActions.h"
 #include "generic/NonCombatStrategy.h"
 #include "generic/RacialsStrategy.h"
 #include "generic/ChatCommandHandlerStrategy.h"
@@ -174,6 +177,11 @@ namespace ai
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
+            creators["fankriss tank"] = [](PlayerbotAI* ai) { return new FankrissTankStrategy(ai); };
+            creators["fankriss spawn tank"] = [](PlayerbotAI* ai) { return new FankrissSpawnTankStrategy(ai); };
+            creators["fankriss stack"] = [](PlayerbotAI* ai) { return new FankrissStackStrategy(ai); };
+            creators["fankriss healing"] = [](PlayerbotAI* ai) { return new FankrissHealingStrategy(ai); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsStrategy(ai); };

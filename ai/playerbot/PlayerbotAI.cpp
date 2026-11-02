@@ -1,4 +1,6 @@
 #include <vector>
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/playerbot.h"
@@ -837,6 +839,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Update facing
     SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");
     UpdateFaceTarget(elapsed, minimal);
+
+    // Opt-in Fankriss roles: a healer able to heal from where it stands stops
+    // walking, and the raid's shared Spawn hand-off and the no-AoE rule run
+    // before a long cast or action delay could postpone them.
+    UpdateFankrissHealing(this);
+    UpdateFankrissFocus(this);
 
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
 
