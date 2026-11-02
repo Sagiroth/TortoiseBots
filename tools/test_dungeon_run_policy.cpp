@@ -22201,6 +22201,40 @@ static void TestRaidBossMainTankIdleJoinsBossOnOffTank()
     CHECK(r.note == "fighting: the main tank takes boss 10184 back from Off (20.0 yd)");
     CHECK(r.guardReturn);
 }
+// Two plan bosses (one entry, two spawns) whose distances trade places every tick: the boss picked first keeps the
+// wait (raidBossJoinGuid), so one join order comes after kRaidAssistWaitMs and the other boss is not picked at all.
+static void TestRaidBossMainTankJoinSticksToItsBossWhenDistancesAlternate()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact a = Hitter(0xF1300027C8000001ull, 10184, 20);
+    a.victimTank = true;
+    a.victimName = "Off";
+    UnitFact b = Hitter(0xF1300027C8000002ull, 10184, 30);
+    b.victimTank = true;
+    b.victimName = "Off";
+    std::string const orderA = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky";
+    int orders = 0;
+    std::string first;
+    for (std::uint32_t ms = kTickMs; ms <= kRaidAssistWaitMs + kTickMs; ms += kTickMs)
+    {
+        bool const swapped = (ms / kTickMs) % 2 == 0;
+        a.distLead = swapped ? 30.0f : 20.0f;
+        b.distLead = swapped ? 20.0f : 30.0f;
+        f.partyAttackers = {a, b};
+        std::string const order = Tick(r, f);
+        if (!order.empty())
+        {
+            ++orders;
+            if (first.empty())
+                first = order;
+        }
+    }
+    CHECK(orders == 1);
+    CHECK(first == orderA);
+}
 static void TestRaidBossMainTankHoldingTheBossIsNotSent()
 {
     // The lead bot already holds the boss: no join order, and the fight's guard never draws it off her either.
@@ -26872,6 +26906,7 @@ int main()
     TestRaidBossGuardUnchangedOutsideARaid();
     TestRaidBossGuardKeyOffSendsTheMainTank();
     TestRaidBossMainTankIdleJoinsBossOnOffTank();
+    TestRaidBossMainTankJoinSticksToItsBossWhenDistancesAlternate();
     TestRaidBossMainTankHoldingTheBossIsNotSent();
     TestRaidBossMainTankJoinSkipsAnEvadingBoss();
     TestRaidBossMainTankJoinStaysInRange();

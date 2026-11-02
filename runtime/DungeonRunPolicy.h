@@ -12916,9 +12916,11 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
 // AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at the plan
 // boss an off-tank holds (`attack <guid> <carrier>` ends its stay and its own tank AI taunts it back from there),
 // after the off-tank's wait (kRaidAssistWaitMs). The wait is continuous: any break (the lead bot off stay, dead or no
-// tank, holding a plan boss, the rules off, no boss waiting) starts it over. Once per boss guid until kRaidGuardRearmMs
-// after the last one, and only while the lead bot is again staying and holding nothing. Not under fightOrders (like
-// RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when `order` holds it.
+// tank, holding a plan boss, the rules off, no boss waiting) starts it over. The boss picked keeps the wait while it
+// stays eligible, so a nearer boss swapping places with it does not restart the wait (RaidAssistTarget's pattern).
+// Once per boss guid until kRaidGuardRearmMs after the last one, and only while the lead bot is again staying and
+// holding nothing. Not under fightOrders (like RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when
+// `order` holds it.
 inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
@@ -12928,12 +12930,27 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
         r.raidBossJoinGuid = 0;
         return false;
     }
-    const UnitFact* pick = nullptr;
-    for (const UnitFact& u : f.partyAttackers)
+    // A boss joined within kRaidGuardRearmMs is not eligible. The boss already picked (raidBossJoinGuid) stays the pick
+    // while it is eligible, so two bosses trading which one is nearer do not restart the wait every tick; only once it
+    // is no longer eligible does the nearest one take over (with its own full wait).
+    auto const eligible = [&r](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
             u.distLead > kRaidBossGuardYd)
+            return false;
+        auto const joined = r.raidBossJoined.find(u.guid);
+        return joined == r.raidBossJoined.end() || r.fightMs - joined->second >= kRaidGuardRearmMs;
+    };
+    const UnitFact* pick = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!eligible(u))
             continue;
+        if (u.guid == r.raidBossJoinGuid)
+        {
+            pick = &u;
+            break;
+        }
         if (!pick || u.distLead < pick->distLead)
             pick = &u;
     }
@@ -12947,12 +12964,6 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     {
         r.raidBossJoinGuid = pick->guid;
         r.raidBossJoinMs = 0;
-    }
-    auto const joined = r.raidBossJoined.find(pick->guid);
-    if (joined != r.raidBossJoined.end() && r.fightMs - joined->second < kRaidGuardRearmMs)
-    {
-        r.raidBossJoinMs = 0;
-        return false;
     }
     r.raidBossJoinMs += dt;
     if (r.raidBossJoinMs < kRaidAssistWaitMs)
