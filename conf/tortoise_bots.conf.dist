@@ -55,6 +55,7 @@ AiPlayerbot.ObservabilityHost = 127.0.0.1
 AiPlayerbot.ObservabilityDungeonMobs = 1
 # Raids tab: leader, offline members and the live fight window of every raid group, without a commander bind (only acts
 # with Observability = 1; the fight window and its fights also need AiPlayerbot.CombatMonitor = 1 in aiplayerbot.conf).
+# On only when both this file and aiplayerbot.conf say 1; 0 in either turns it off (re-read on .reload config).
 AiPlayerbot.ObservabilityRaids = 0
 # Live dashboard: fight events (deaths, pulls, taunts, interrupts, elite and boss casts, kill/wipe) as they happen and,
 # with the keys below, faster positions while fighting. 0 turns all of it off at once (re-read on .reload config).

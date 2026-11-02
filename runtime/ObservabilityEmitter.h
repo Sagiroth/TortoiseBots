@@ -4,6 +4,7 @@
 #include "PlayerLagWindow.h"
 #include "CommanderTelemetry.h"
 #include "DungeonMobTelemetry.h"
+#include "ObservabilityFlag.h"
 #include "RaidTelemetry.h"
 #include "RealtimeCadence.h"
 #include <cstdint>
@@ -209,8 +210,9 @@ public:
     // layer on the world thread once per snapshot cycle for the groups the emitter rotates in (see EmitRaids).
     void SetRaidProvider(std::function<void(std::vector<Player*> const&, std::vector<Player*> const&,
                                                 std::vector<RaidTelemetry::GroupInfo>&)> provider);
-    // AiPlayerbot.ObservabilityRaids on an enabled emitter: the RAIDS datagram and the observed-raid combat sampler.
-    bool RaidsEnabled() const { return m_enabled && m_raidsEnabled; }
+    // AiPlayerbot.ObservabilityRaids on an enabled emitter: the RAIDS datagram and the observed-raid combat sampler. Both
+    // config files must allow it (ObservabilityFlag::Feed), re-read on `.reload config`.
+    bool RaidsEnabled() const { return m_enabled && m_raids.enabled; }
 
 private:
     ObservabilityEmitter();
@@ -246,11 +248,11 @@ private:
     };
     DungeonMobsTiming m_dungeonMobsTiming;
     // RAIDS datagram (spec dash-raids-tab): one set per snapshot cycle while a raid group stands, and one empty list when
-    // the last one ends. Nothing while AiPlayerbot.ObservabilityRaids is 0.
+    // the last one ends. Nothing while AiPlayerbot.ObservabilityRaids is 0 in either config file.
     void EmitRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players);
     std::function<void(std::vector<Player*> const&, std::vector<Player*> const&, std::vector<RaidTelemetry::GroupInfo>&)> m_raidProvider;
     std::vector<RaidTelemetry::GroupInfo> m_raidGroups; // reused between cycles
-    bool m_raidsEnabled = false;
+    ObservabilityFlag::Feed m_raids;  // both config files' AiPlayerbot.ObservabilityRaids, re-read on `.reload config`
     bool m_raidsSent = false;        // the last RAIDS datagram listed at least one group
     size_t m_raidOffset = 0;         // rotation start when more than kMaxRaidGroupsPerCycle groups stand
     std::unordered_map<uint32_t, int64_t> m_raidTrimLoggedAt; // group id -> unix seconds its trim was last logged

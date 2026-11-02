@@ -88,9 +88,13 @@ public:
     // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*), read from the loaded
     // aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
-    // Reads aiplayerbot.conf again and only the run leader's keys from it (the rest of the settings keep their
-    // start values). World thread only (BotHostAdapter::OnUpdate). False when the AI is disabled or the file
-    // could not be read; the keys are then left as they were.
+    // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
+    // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
+    void LoadObservabilityRaids();
+    // Reads aiplayerbot.conf again and only the keys that follow a `.reload config` (the run leader's, the raids
+    // observability flag; the rest of the settings keep their start values). World thread only
+    // (BotHostAdapter::OnUpdate). False when the AI is disabled or the file could not be read; the keys are then
+    // left as they were.
     bool ReloadDungeonRunKeys();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);

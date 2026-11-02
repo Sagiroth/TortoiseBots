@@ -574,10 +574,10 @@ void ObservabilityEmitter::Initialize()
     m_dungeonRunOffset = 0;
     m_dungeonMobsTiming = DungeonMobsTiming();
 
-    // Spec dash-raids-tab: off by default (a new feature); either file can turn it on. Gates the RAIDS datagram and the
-    // observed-raid combat sampler.
-    m_raidsEnabled = sPlayerbotAIConfig.observabilityRaids ||
-                     sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+    // Spec dash-raids-tab: off by default (a new feature); both config files must allow it, a 0 in either turns it off.
+    // Gates the RAIDS datagram and the observed-raid combat sampler.
+    m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
     m_raidsSent = false;
     m_raidOffset = 0;
     m_raidTrimLoggedAt.clear();
@@ -682,7 +682,7 @@ void ObservabilityEmitter::Shutdown()
     }
 
     m_enabled = false;
-    m_raidsEnabled = false;
+    m_raids = ObservabilityFlag::Feed();
     m_raidsSent = false;
     m_raidOffset = 0;
     m_raidTrimLoggedAt.clear();
@@ -753,9 +753,10 @@ void ObservabilityEmitter::ReloadRealtimeKeys()
     m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
         sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
     m_posClock.Set(m_posCadence);
-    // Spec dash-raids-tab: the RAIDS feed and the observed-raid sampler follow `.reload config`.
-    m_raidsEnabled = sPlayerbotAIConfig.observabilityRaids ||
-                     sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+    // Spec dash-raids-tab: the RAIDS feed and the observed-raid sampler follow `.reload config`. PlayerbotAIConfig read
+    // the aiplayerbot.conf half again in ReloadDungeonRunKeys, which runs before this on the same world tick.
+    m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1804,7 +1805,7 @@ void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vect
 {
     using namespace RaidTelemetry;
     // One empty list after the last group ends (the DUNGEON_MOBS / COMMANDERS convention), then nothing.
-    if (!m_raidsEnabled)
+    if (!m_raids.enabled)
     {
         if (m_raidsSent)
             SendDatagram(BuildRaidsPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), NowUnixMs(), {}));

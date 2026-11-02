@@ -10,6 +10,7 @@ ADAPTER = (ROOT / "host" / "BotHostAdapter.cpp").read_text()
 COMMANDER = (ROOT / "commands" / "Commander.cpp").read_text()
 OBSERVED = (ROOT / "commands" / "ObservedRaids.cpp").read_text()
 EMITTER = (ROOT / "runtime" / "ObservabilityEmitter.cpp").read_text()
+EMITTER_H = (ROOT / "runtime" / "ObservabilityEmitter.h").read_text()
 CONF = (ROOT / "conf" / "tortoise_bots.conf.dist").read_text()
 AI_CONF = (ROOT / "ai" / "playerbot" / "aiplayerbot.conf.dist.in").read_text()
 CONFIG_H = (ROOT / "ai" / "playerbot" / "PlayerbotAIConfig.h").read_text()
@@ -117,7 +118,7 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         # The datagram side: one empty list after the last one that listed a group, then nothing.
         emit = definition(strip_comments(EMITTER), "void ObservabilityEmitter::EmitRaids(")
         off = emit[:emit.index("if (!m_raidProvider")]
-        self.assertIn("if (!m_raidsEnabled)", off)
+        self.assertIn("if (!m_raids.enabled)", off)
         self.assertIn("if (m_raidsSent)", off)
         self.assertIn("SendDatagram(BuildRaidsPayload(", off)
         self.assertIn("m_raidsSent = false;", off)
@@ -157,6 +158,32 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("bool observabilityRaids = false;", CONFIG_H)
         self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaids", false)', CONFIG_CPP)
         self.assertIn("AiPlayerbot.ObservabilityRaids", LOGGING)
+
+    def test_both_config_files_gate_the_flag(self):
+        # AiPlayerbot.ObservabilityRaids is set in aiplayerbot.conf and in the world config, and a feed is on only while
+        # both allow it: a 0 in either file switches it off, so the emitter's gate is ObservabilityFlag::Feed.
+        code = strip_comments(EMITTER)
+        for name in ("void ObservabilityEmitter::Initialize()", "void ObservabilityEmitter::ReloadRealtimeKeys()"):
+            fn = definition(code, name)
+            self.assertIn("m_raids.Read(", fn, name)
+            self.assertIn("sPlayerbotAIConfig.observabilityRaids,", fn, name)
+            self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaids", false)', fn, name)
+            self.assertNotIn("observabilityRaids ||", fn, name)
+        self.assertIn("ObservabilityFlag::Feed m_raids;", EMITTER_H)
+        self.assertIn("bool RaidsEnabled() const { return m_enabled && m_raids.enabled; }", EMITTER_H)
+
+    def test_aiplayerbot_half_is_read_again_on_a_reload(self):
+        # The aiplayerbot.conf half is read only at startup, so the `.reload config` tick re-reads it with the same
+        # function Initialize uses, before the emitter recomputes the two-file gate.
+        config = strip_comments(CONFIG_CPP)
+        reload = body(config, "bool PlayerbotAIConfig::ReloadDungeonRunKeys()\n{", "\n}\n")
+        self.assertIn("LoadObservabilityRaids();", reload)
+        self.assertLess(reload.index("if (!config.Reload())"), reload.index("LoadObservabilityRaids();"),
+                        "the keys are read from the file reloaded above")
+        key = body(config, "void PlayerbotAIConfig::LoadObservabilityRaids()\n{", "\n}\n")
+        self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaids", false)', key)
+        init = body(config, "bool PlayerbotAIConfig::Initialize()\n{", "\n}\n")
+        self.assertIn("LoadObservabilityRaids();", init)
 
     def test_no_creature_entry_literals(self):
         # The boss pick reads ranks and flags from the core, never a hard-coded entry.
