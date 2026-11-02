@@ -183,9 +183,11 @@ void ClearRelistSurplus(uint32_t botGuidLow);
 // the order posted on the auction house. A sale or an expired listing comes
 // back by mail, often after the order is gone, and its value belongs to the
 // guild until the bank trip pays it back.
-// A relist was posted. Map thread only (the buy action).
+// A relist was posted, with the listing terms the auction mail reports back
+// and its duration (the row's expiry is the posting plus that duration).
+// Map thread only (the buy action).
 void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
-    uint32_t unitPrice);
+    uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec);
 // The bot's ledger rows, oldest first. Any thread.
 std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
 // A matched relist mail was collected: the gold or the item is in hand.

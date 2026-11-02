@@ -39,6 +39,31 @@ bool ParseAuctionSubject(std::string const& subject, uint32_t& itemId, uint32_t&
     return true;
 }
 
+// A sale notification body is "<bidder>:<bid>:<buyout>:<deposit>:<cut>"
+// (AuctionHouseMgr::SendAuctionSuccessfulMail); these are the listing terms
+// the ledger row was posted with, so they identify the auction that settled.
+void ParseAuctionSaleBody(std::string const& text, TortoiseBots::GuildOrders::RelistMail& view)
+{
+    std::vector<std::string> parts = split(text, ':');
+    if (parts.size() != 5)
+        return;
+    uint32_t values[3] = {};
+    for (size_t i = 0; i < 3; ++i)
+    {
+        if (parts[i + 1].empty())
+            return;
+        char* end = nullptr;
+        unsigned long const value = std::strtoul(parts[i + 1].c_str(), &end, 10);
+        if (!end || *end)
+            return;
+        values[i] = uint32_t(value);
+    }
+    view.bodyParsed = true;
+    view.bodyBid = values[0];
+    view.bodyBuyout = values[1];
+    view.bodyDeposit = values[2];
+}
+
 TortoiseBots::GuildOrders::RelistMail MakeRelistMailView(Mail* mail, MasterPlayer* owner)
 {
     TortoiseBots::GuildOrders::RelistMail view;
@@ -46,6 +71,9 @@ TortoiseBots::GuildOrders::RelistMail MakeRelistMailView(Mail* mail, MasterPlaye
     view.hasItems = mail->has_items && !mail->items.empty();
     view.money = mail->money;
     ParseAuctionSubject(mail->subject, view.subjectItemId, view.subjectState);
+    if (view.auction && view.subjectState == TortoiseBots::GuildOrders::kRelistMailSuccessful &&
+        mail->itemTextId)
+        ParseAuctionSaleBody(sObjectMgr.GetItemText(mail->itemTextId), view);
     if (view.hasItems)
     {
         Item* item = owner->GetMItem(mail->items.front().item_guid);
@@ -376,17 +404,23 @@ uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
         RelistMail view = MakeRelistMailView(mail, owner);
         if (!view.auction)
             continue;
-        // The oldest row this mail settles. A row matched earlier in the same
-        // read is already marked received, so two mails of one item settle
-        // two rows.
-        std::vector<RelistLedgerEntry>::iterator entry = std::find_if(entries.begin(), entries.end(),
-            [&view](RelistLedgerEntry const& row) {
-                return !row.received && RelistMailMatch(row, view) != RelistMailKind::None;
-            });
-        if (entry == entries.end())
+        // A mail settles a row only when its item, listing terms and timing
+        // identify exactly one unread row. An unrelated auction of the same
+        // item, or two guilds' rows that look alike, leaves the mail to
+        // normal mail handling: the ledger never guesses.
+        size_t matched = 0;
+        size_t const matches = RelistMatchCount(entries, view, uint64_t(curTime), matched);
+        if (matches != 1)
+        {
+            if (matches > 1)
+                TB_LOG_BASIC("TortoiseBots: relist mail ambiguous for bot %u (item %u): %zu ledger "
+                    "rows match; leaving it to normal mail handling.", bot->GetGUIDLow(),
+                    view.subjectItemId, matches);
             continue;
+        }
+        std::vector<RelistLedgerEntry>::iterator entry = entries.begin() + matched;
 
-        RelistMailKind const kind = RelistMailMatch(*entry, view);
+        RelistMailKind const kind = RelistMailMatch(*entry, view, uint64_t(curTime));
         uint32_t gold = 0;
         uint32_t items = 0;
         if (kind == RelistMailKind::Sold)

@@ -23,7 +23,8 @@ def body(text, start_marker, end_marker):
 class GuildOrderRelistWiringTest(unittest.TestCase):
     def test_relist_records_the_ledger_row(self):
         relist = body(BUY, "uint32_t RelistSurplus(", "\n} // namespace")
-        self.assertIn("NoteRelistPosted(bot->GetGUIDLow(), bot->GetGuildId(), itemId, postCount, unitPrice)", relist)
+        self.assertIn("NoteRelistPosted(bot->GetGUIDLow(), bot->GetGuildId(), itemId, postCount, unitPrice, bid, buyout,", relist)
+        self.assertIn("deposit, kRelistDurationMinutes * 60);", relist)
         sell = relist.index("HandleAuctionSellItem(")
         self.assertGreater(relist.index("NoteRelistPosted("), sell)
 
@@ -31,13 +32,16 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         take = body(MAIL, "uint32_t ai::TakeRelistMail(", "\nclass DeleteMailProcessor")
         self.assertNotIn("GuildOrders::Find(", take)
         self.assertIn("RelistEntries(bot->GetGUIDLow())", take)
-        self.assertIn("RelistMailMatch(row, view)", take)
+        self.assertIn("RelistMatchCount(entries, view, uint64_t(curTime), matched)", take)
+        self.assertIn("RelistMailMatch(*entry, view, uint64_t(curTime))", take)
+        self.assertIn("relist mail ambiguous", take)
         self.assertIn("RelistNoteMailReceived(*entry, kind, gold, items)", take)
         self.assertIn("NoteRelistReceived(bot->GetGUIDLow(), entry->seq,", take)
         self.assertIn("HandleMailTakeMoney(", take)
         self.assertIn("HandleMailTakeItem(", take)
         self.assertIn("MAIL_STATIONERY_AUCTION", MAIL)
         self.assertIn("ParseAuctionSubject(mail->subject", MAIL)
+        self.assertIn("ParseAuctionSaleBody(sObjectMgr.GetItemText(mail->itemTextId), view)", MAIL)
 
     def test_order_mail_leg_settles_before_taking_order_stock(self):
         execute = BUY[BUY.index("bool GuildOrderTakeMailAction::Execute("):]
@@ -57,6 +61,11 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS `tortoise_bots_guild_relist`", migration)
         for column in ("bot_guid", "guild_id", "item_id", "count", "unit_price", "posted_at"):
             self.assertIn("`%s`" % column, migration)
+        identity = (ROOT / "data/sql/character/20261102190000_char.sql").read_text()
+        for column in ("bid", "buyout", "deposit", "expires_at"):
+            self.assertIn("ADD COLUMN `%s`" % column, identity)
+        self.assertIn("`bid`, `buyout`, `deposit`, `posted_at`, `expires_at`", STORE)
+        self.assertIn("`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`,", STORE)
 
     def test_stale_rows_drop_with_a_log_line(self):
         expire = body(STORE, "void ExpireStaleRelists(", "\n    void NoteBagsFull(")

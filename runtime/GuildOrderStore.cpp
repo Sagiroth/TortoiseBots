@@ -197,8 +197,9 @@ public:
         // still belongs to the guild until the bank trip pays it back.
         m_relist.clear();
         std::unique_ptr<QueryResult> relists(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `seq`, `guild_id`, `item_id`, `count`, `unit_price`, `posted_at`, "
-            "`received`, `held_gold`, `held_count` FROM `tortoise_bots_guild_relist`"));
+            "SELECT `bot_guid`, `seq`, `guild_id`, `item_id`, `count`, `unit_price`, `bid`, "
+            "`buyout`, `deposit`, `posted_at`, `expires_at`, `received`, `held_gold`, `held_count` "
+            "FROM `tortoise_bots_guild_relist`"));
         size_t relistCount = 0;
         if (relists)
         {
@@ -212,10 +213,14 @@ public:
                 entry.itemId = fields[3].GetUInt32();
                 entry.count = fields[4].GetUInt32();
                 entry.unitPrice = fields[5].GetUInt32();
-                entry.postedAtSec = fields[6].GetUInt64();
-                entry.received = fields[7].GetUInt32() != 0;
-                entry.heldGold = fields[8].GetUInt32();
-                entry.heldCount = fields[9].GetUInt32();
+                entry.bid = fields[6].GetUInt32();
+                entry.buyout = fields[7].GetUInt32();
+                entry.deposit = fields[8].GetUInt32();
+                entry.postedAtSec = fields[9].GetUInt64();
+                entry.expiresAtSec = fields[10].GetUInt64();
+                entry.received = fields[11].GetUInt32() != 0;
+                entry.heldGold = fields[12].GetUInt32();
+                entry.heldCount = fields[13].GetUInt32();
                 if (!entry.botGuidLow || !entry.seq || !entry.itemId || !entry.count)
                     continue;
                 m_relist[entry.botGuidLow].push_back(entry);
@@ -1285,9 +1290,11 @@ public:
     }
 
     // One relist was posted: its sale gold or its returned stack comes back
-    // by mail later. Map thread only (the buy action); the row write is queued.
+    // by mail later. The listing terms are the identity the notification
+    // carries back, so one auction of the item cannot settle another's row.
+    // Map thread only (the buy action); the row write is queued.
     void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
-        uint32_t unitPrice)
+        uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec)
     {
         if (!botGuidLow || !guildId || !itemId || !count)
             return;
@@ -1297,7 +1304,11 @@ public:
         entry.itemId = itemId;
         entry.count = count;
         entry.unitPrice = unitPrice;
+        entry.bid = bid;
+        entry.buyout = buyout;
+        entry.deposit = deposit;
         entry.postedAtSec = static_cast<uint64_t>(std::time(nullptr));
+        entry.expiresAtSec = entry.postedAtSec + durationSec;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             std::vector<RelistLedgerEntry>& rows = m_relist[botGuidLow];
@@ -1309,10 +1320,12 @@ public:
         }
         CharacterDatabase.PExecute(
             "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
-            "`count`, `unit_price`, `posted_at`, `received`, `held_gold`, `held_count`) "
-            "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
+            "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
+            "`received`, `held_gold`, `held_count`) "
+            "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
             entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
-            static_cast<uint32_t>(entry.postedAtSec));
+            entry.bid, entry.buyout, entry.deposit, static_cast<uint32_t>(entry.postedAtSec),
+            static_cast<uint32_t>(entry.expiresAtSec));
     }
 
     // The bot's ledger rows, oldest first. Any thread.

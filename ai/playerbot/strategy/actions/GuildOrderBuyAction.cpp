@@ -263,7 +263,8 @@ uint32_t RelistSurplus(PlayerbotAI* ai, Player* bot, Unit* auctioneer, uint32_t 
     // The posting carries guild-funded value: the sale gold or the returned
     // stack comes back by mail later and the ledger keeps it owed to the
     // guild until the bank trip pays it back.
-    NoteRelistPosted(bot->GetGUIDLow(), bot->GetGuildId(), itemId, postCount, unitPrice);
+    NoteRelistPosted(bot->GetGUIDLow(), bot->GetGuildId(), itemId, postCount, unitPrice, bid, buyout,
+        deposit, kRelistDurationMinutes * 60);
     return postCount;
 }
 
