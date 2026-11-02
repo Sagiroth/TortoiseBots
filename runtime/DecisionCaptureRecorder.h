@@ -9,7 +9,8 @@
 // line, hand it to the Sink. The Sink owns the disk (a RunTraceWriter queue and
 // its own thread), so a slow disk never blocks a tick. A refused Push is a
 // drop: counted, and a `gap` line goes out before the next record, which is a
-// keyframe.
+// keyframe. A refused header is retried before the next record: no record is
+// written into a segment the sink has not taken a header for.
 //
 // Record grammar (kRecordVersion 1):
 //   hdr  once per segment: schema, capture, plan, tactics, settings
@@ -31,6 +32,11 @@ namespace TortoiseBots
 {
 namespace DecisionCapture
 {
+
+// How many records may pass between two keyframes written over the size cap.
+// A full snapshot that never fits would otherwise be a stub at every keyframe
+// and the segment could never be decoded from its own file.
+constexpr std::uint64_t kOversizedKeyframeEvery = 60;
 
 struct Limits
 {
@@ -65,6 +71,7 @@ struct Stats
     std::uint64_t records = 0; // tick and stub lines written
     std::uint64_t keyframes = 0;
     std::uint64_t stubs = 0;
+    std::uint64_t oversized = 0; // keyframes written over the size cap
     std::uint64_t gaps = 0;
     std::uint64_t dropped = 0;
     std::uint64_t bytes = 0;   // accepted by the sink, headers included
@@ -78,6 +85,7 @@ public:
     Recorder(HeaderInfo header, Limits limits, Sink& sink)
         : header_(std::move(header)), limits_(limits), sink_(sink)
     {
+        header_.settingsJson = CheckedSettings(std::move(header_.settingsJson));
     }
 
     void BeforeTick(const DungeonRun::Run& run, const DungeonRun::Facts& facts, std::uint32_t dt,
@@ -85,10 +93,14 @@ public:
     {
         if (stopped_)
             return;
-        start_ = std::chrono::steady_clock::now();
         ++tickSeq_;
+        capUs_ = 0;
+        auto clock = std::chrono::steady_clock::now();
         pendingFacts_ = EncodeFields(facts);
+        AddEncodeMicros(clock);
+        clock = std::chrono::steady_clock::now();
         pendingRun_ = EncodeFields(run);
+        AddEncodeMicros(clock);
         pendingDt_ = dt;
         pendingNow_ = nowUnixMs;
         pendingState_ = run.state;
@@ -97,12 +109,14 @@ public:
         pending_ = true;
 
         std::uint64_t const nextSeq = tickSeq_;
-        bool const planMoved = headerWritten_ && (run.plan != headerPlan_ || run.liveTactics != headerTactics_);
-        bool const overBytes = headerWritten_ && limits_.segmentBytes > 0 && segmentBytes_ > limits_.segmentBytes;
-        if (!headerWritten_)
+        bool const planMoved = segmentOpen_ && PlanOrTacticsMoved();
+        bool const overBytes = headerAccepted_ && limits_.segmentBytes > 0 && segmentBytes_ > limits_.segmentBytes;
+        if (!segmentOpen_)
             OpenSegment(1, nextSeq);
-        else if (planMoved || overBytes)
+        else if (headerAccepted_ && (planMoved || overBytes))
             OpenSegment(segment_ + 1, nextSeq);
+        else if (headerPending_ && planMoved)
+            RefreshHeader();
     }
 
     void AfterTick(const DungeonRun::Run& run, const std::string& order)
@@ -110,20 +124,28 @@ public:
         if (stopped_ || !pending_)
             return;
         pending_ = false;
+        auto const clock = std::chrono::steady_clock::now();
         FieldMap const postRun = EncodeFields(run);
+        AddEncodeMicros(clock);
+        stats_.lastCapUs = capUs_;
 
-        // A finished run ticks on; one `Done` record says so and the rest are skipped.
-        if (pendingState_ == DungeonRun::State::Done && run.state == DungeonRun::State::Done)
+        // A finished run ticks on; one `Done` record says so and the rest are
+        // skipped. A new segment writes its own (its first record is a keyframe).
+        bool const done = pendingState_ == DungeonRun::State::Done && run.state == DungeonRun::State::Done;
+        if (done && doneWritten_)
         {
-            if (!doneWritten_)
-            {
-                doneWritten_ = true;
-            }
-            else
-            {
-                KeepBase(postRun);
-                return;
-            }
+            KeepBase(postRun);
+            return;
+        }
+
+        // No record lands in a segment whose header the sink has not taken.
+        if (headerPending_ && !PushHeader())
+        {
+            ++stats_.dropped;
+            ++gapDropped_;
+            nextKey_ = true;
+            KeepBase(postRun);
+            return;
         }
 
         bool const key = nextKey_ || !haveBase_ ||
@@ -146,12 +168,14 @@ public:
         line += OutObject(run, order);
         line += ",\"post\":";
         line += DeltaObject(pendingRun_, postRun);
-        stats_.lastCapUs = CapMicros(start_);
         line += ",\"capUs\":";
         line += std::to_string(stats_.lastCapUs);
         line += "}";
 
-        if (limits_.recordBytes > 0 && line.size() > limits_.recordBytes)
+        bool const over = limits_.recordBytes > 0 && line.size() > limits_.recordBytes;
+        bool const writeOversized = over && key &&
+                                    (!haveOversized_ || tickIndex_ - lastOversizedAt_ >= kOversizedKeyframeEvery);
+        if (over && !writeOversized)
         {
             std::string stub = "{\"k\":\"stub\",\"seq\":";
             stub += std::to_string(seq);
@@ -177,11 +201,19 @@ public:
             KeepBase(postRun);
             return;
         }
+        if (writeOversized)
+        {
+            ++stats_.oversized;
+            lastOversizedAt_ = tickIndex_;
+            haveOversized_ = true;
+        }
         ++tickIndex_;
         ++stats_.records;
         if (key)
             ++stats_.keyframes;
         nextKey_ = false;
+        if (done)
+            doneWritten_ = true;
         KeepBase(postRun);
     }
 
@@ -189,6 +221,14 @@ public:
     {
         if (stopped_)
             return;
+        stopped_ = true;
+        if (tickSeq_ == 0)
+            return; // nothing was ever recorded: no `end` without a segment
+        if (headerPending_ && !PushHeader())
+            return; // no `end` into a segment without its header
+        if (gapPending_)
+            PushGap(tickSeq_ + 1);
+
         std::string line = "{\"k\":\"end\",\"t\":";
         line += std::to_string(nowUnixMs);
         line += ",\"reason\":";
@@ -198,10 +238,7 @@ public:
         line += ",\"dropped\":";
         line += std::to_string(stats_.dropped);
         line += "}";
-        if (gapPending_)
-            PushGap(tickSeq_);
-        PushLine(line);
-        stopped_ = true;
+        PushLine(std::move(line));
     }
 
     const Stats& stats() const
@@ -215,16 +252,37 @@ public:
     }
 
 private:
-    static std::uint32_t CapMicros(std::chrono::steady_clock::time_point start)
+    // The header's settings are a JSON object; anything else would corrupt
+    // every line of the file, so a bad value degrades to `{}`.
+    static std::string CheckedSettings(std::string text)
     {
-        auto const us =
-            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start)
-                .count();
+        if (text.empty())
+            return "{}";
+        MiniJson::Value value;
+        std::string error;
+        if (!MiniJson::Parse(text, value, error) || value.kind != MiniJson::Value::Object)
+            return "{}";
+        return text;
+    }
+
+    // Only the encode work counts: the sink push and the line building are not
+    // the capture's per-tick cost on the world thread's CPU budget.
+    void AddEncodeMicros(std::chrono::steady_clock::time_point start)
+    {
+        auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
         if (us <= 0)
-            return 0;
-        if (us > 0xFFFFFFFFll)
-            return 0xFFFFFFFFu;
-        return static_cast<std::uint32_t>(us);
+            return;
+        std::uint64_t const total = static_cast<std::uint64_t>(capUs_) + static_cast<std::uint64_t>(us);
+        capUs_ = total > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<std::uint32_t>(total);
+    }
+
+    bool PlanOrTacticsMoved() const
+    {
+        std::uint32_t const map = pendingPlan_ ? pendingPlan_->map : 0;
+        return CachedPlanHash(pendingPlan_) != headerPlanHash_ ||
+               CachedTacticsHash(pendingTactics_, map) != headerTacticsHash_;
     }
 
     static std::string OutObject(const DungeonRun::Run& run, const std::string& order)
@@ -252,18 +310,19 @@ private:
         haveBase_ = true;
     }
 
-    bool PushLine(const std::string& line)
+    bool PushLine(std::string line)
     {
-        if (sink_.Push(line))
+        std::size_t const size = line.size();
+        if (!sink_.Push(std::move(line)))
         {
-            stats_.bytes += line.size();
-            segmentBytes_ += line.size();
-            return true;
+            ++stats_.dropped;
+            ++gapDropped_;
+            gapPending_ = true;
+            return false;
         }
-        ++stats_.dropped;
-        ++gapDropped_;
-        gapPending_ = true;
-        return false;
+        stats_.bytes += size;
+        segmentBytes_ += size;
+        return true;
     }
 
     // Push a tick or stub line, with the pending gap line first.
@@ -277,7 +336,7 @@ private:
             ++gapDropped_;
             return false;
         }
-        return PushLine(line);
+        return PushLine(std::move(line));
     }
 
     bool PushGap(std::uint64_t seq)
@@ -288,28 +347,37 @@ private:
         gap += std::to_string(gapDropped_);
         gap += "}";
         gapPending_ = false;
-        if (!PushLine(gap))
+        std::uint64_t const pendingDrops = gapDropped_;
+        gapDropped_ = 0; // the gap line's own refusal is not a record drop
+        std::size_t const size = gap.size();
+        if (!sink_.Push(std::move(gap)))
+        {
+            ++stats_.dropped;
+            gapDropped_ = pendingDrops;
+            gapPending_ = true;
             return false;
-        gapDropped_ = 0;
+        }
+        stats_.bytes += size;
+        segmentBytes_ += size;
         ++stats_.gaps;
         return true;
     }
 
-    void OpenSegment(std::uint32_t seg, std::uint64_t firstSeq)
+    bool PushHeader()
     {
-        if (seg > 1 && !sink_.NewSegment(seg, firstSeq))
-        {
-            stopped_ = true;
-            return;
-        }
-        segment_ = seg;
-        segmentBytes_ = 0;
-        stats_.segments = seg;
-        headerPlan_ = pendingPlan_;
-        headerTactics_ = pendingTactics_;
-        headerWritten_ = true;
-        nextKey_ = true;
+        if (!headerPending_)
+            return true;
+        if (!PushLine(pendingHeader_))
+            return false;
+        pendingHeader_.clear();
+        headerPending_ = false;
+        headerAccepted_ = true;
+        return true;
+    }
 
+    std::string BuildHeader(std::uint32_t seg) const
+    {
+        std::uint32_t const map = pendingPlan_ ? pendingPlan_->map : 0;
         std::string line = "{\"k\":\"hdr\",\"v\":";
         line += std::to_string(kRecordVersion);
         line += ",\"schema\":";
@@ -329,9 +397,42 @@ private:
         line += ",\"plan\":";
         line += EncodePlanPointer(pendingPlan_);
         line += ",\"tactics\":";
-        line += EncodeTactics(pendingTactics_, pendingPlan_ ? pendingPlan_->map : 0);
+        line += CachedTacticsText(pendingTactics_, map);
         line += "}";
-        PushLine(line);
+        return line;
+    }
+
+    void OpenSegment(std::uint32_t seg, std::uint64_t firstSeq)
+    {
+        if (seg > 1 && !sink_.NewSegment(seg, firstSeq))
+        {
+            stopped_ = true;
+            return;
+        }
+        segment_ = seg;
+        segmentBytes_ = 0;
+        stats_.segments = seg;
+        segmentOpen_ = true;
+        std::uint32_t const map = pendingPlan_ ? pendingPlan_->map : 0;
+        headerPlanHash_ = CachedPlanHash(pendingPlan_);
+        headerTacticsHash_ = CachedTacticsHash(pendingTactics_, map);
+        doneWritten_ = false;   // a new segment writes its own Done tick
+        haveOversized_ = false; // ... and its own keyframe, over the cap or not
+        nextKey_ = true;
+        pendingHeader_ = BuildHeader(seg);
+        headerPending_ = true;
+        headerAccepted_ = false;
+        PushHeader();
+    }
+
+    // A header the sink refused carries the plan of the tick it was built for;
+    // a reload before the retry rebuilds it rather than writing a stale one.
+    void RefreshHeader()
+    {
+        std::uint32_t const map = pendingPlan_ ? pendingPlan_->map : 0;
+        headerPlanHash_ = CachedPlanHash(pendingPlan_);
+        headerTacticsHash_ = CachedTacticsHash(pendingTactics_, map);
+        pendingHeader_ = BuildHeader(segment_);
     }
 
     HeaderInfo header_;
@@ -340,12 +441,15 @@ private:
     Stats stats_;
 
     std::uint32_t segment_ = 0;
-    std::uint64_t tickSeq_ = 0;  // ticks seen, written or not: the record's seq
+    bool segmentOpen_ = false;
+    std::uint64_t tickSeq_ = 0;   // ticks seen, written or not: the record's seq
     std::uint64_t tickIndex_ = 0; // records written, for the keyframe cadence
     std::uint64_t segmentBytes_ = 0;
-    bool headerWritten_ = false;
-    const ai::DungeonPlan* headerPlan_ = nullptr;
-    const ai::BossTacticTable* headerTactics_ = nullptr;
+    std::string headerPlanHash_;
+    std::string headerTacticsHash_;
+    std::string pendingHeader_;
+    bool headerPending_ = false;
+    bool headerAccepted_ = false;
 
     FieldMap baseFacts_;
     FieldMap baseRun_;
@@ -354,6 +458,8 @@ private:
     bool doneWritten_ = false;
     bool gapPending_ = false;
     std::uint64_t gapDropped_ = 0;
+    bool haveOversized_ = false;
+    std::uint64_t lastOversizedAt_ = 0;
 
     FieldMap pendingFacts_;
     FieldMap pendingRun_;
@@ -363,7 +469,7 @@ private:
     const ai::DungeonPlan* pendingPlan_ = nullptr;
     const ai::BossTacticTable* pendingTactics_ = nullptr;
     bool pending_ = false;
-    std::chrono::steady_clock::time_point start_{};
+    std::uint32_t capUs_ = 0;
 
     bool stopped_ = false;
 };
