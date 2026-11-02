@@ -777,6 +777,10 @@ bool ShouldGetMailValue::Calculate() {
         TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     bool hasBuyOrder = stored && stored->type == TortoiseBots::GuildOrders::OrderType::Buy &&
         !TortoiseBots::GuildOrders::IsFinished(stored->state);
+    // A relist still on the auction house collects its sale gold or returned
+    // stack by mail: that mail is guild-funded value, so it never waits out
+    // the normal mailbox hibernation below.
+    bool hasRelistLedger = !TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow()).empty();
 
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
@@ -786,6 +790,12 @@ bool ShouldGetMailValue::Calculate() {
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
         if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION)
+        {
+            return true;
+        }
+
+        if (hasRelistLedger && (*itr)->stationery == MAIL_STATIONERY_AUCTION &&
+            ((*itr)->has_items || (*itr)->money))
         {
             return true;
         }

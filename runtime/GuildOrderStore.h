@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderRelistPolicy.h"
 #include "runtime/GuildOrderStepHistoryPolicy.h"
 
 #include <cstdint>
@@ -177,6 +178,28 @@ void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uin
 bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice);
 // The pending relist is over: posted, abandoned, or the leg handed off.
 void ClearRelistSurplus(uint32_t botGuidLow);
+
+// Relist ledger, persisted next to the order rows: one row per surplus stack
+// the order posted on the auction house. A sale or an expired listing comes
+// back by mail, often after the order is gone, and its value belongs to the
+// guild until the bank trip pays it back.
+// A relist was posted. Map thread only (the buy action).
+void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+    uint32_t unitPrice);
+// The bot's ledger rows, oldest first. Any thread.
+std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
+// A matched relist mail was collected: the gold or the item is in hand.
+// Map thread only (the mail read).
+bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items);
+// A banker pass paid part of an entry: it drops once nothing is left, and
+// nothing moved (no banker, a refused message) keeps it for the next trip.
+// World thread only (the relist drain). Returns whether the row settled.
+bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved);
+// Value collected from a relist mail is due to the guild bank. Any thread.
+bool RelistDepositPending(uint32_t botGuidLow);
+// The received rows a bank trip has to pay out, oldest first. World thread
+// only (the relist drain).
+std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow);
 
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();

@@ -5,6 +5,8 @@
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderRefundPolicy.h"
 #include "GuildOrderRefundQueue.h"
+#include "GuildOrderRelistPolicy.h"
+#include "GuildOrderRelistQueue.h"
 #include "GuildOrderSupplyQueue.h"
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/GuildOrderCraft.h"
@@ -699,6 +701,82 @@ private:
     }
 };
 
+// Pays collected relist value back to the guild bank. Runs on the world
+// thread like the other drains: the bank handler keeps the acting player in
+// member fields. A row stays in the ledger until the bank actually took its
+// value, so a visit with no banker in reach simply leaves it for the next
+// one.
+class RelistDrain
+{
+public:
+    static RelistDrain& Instance()
+    {
+        static RelistDrain instance;
+        return instance;
+    }
+
+    void Update()
+    {
+        for (PendingRelistDeposit const& request : RelistQueue::Instance().TakeAll())
+            RunOne(request);
+    }
+
+private:
+    void RunOne(PendingRelistDeposit const& request)
+    {
+        std::vector<RelistLedgerEntry> entries = RelistDeposits(request.botGuidLow);
+        if (entries.empty())
+            return;
+        Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, request.botGuidLow));
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() ||
+            !bot->GetGuildId())
+            return;
+        ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
+        Unit* banker = FindNearbyGuildBanker(bot, ai);
+        if (!banker)
+            return;
+        Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+        if (!guild || !guild->_Bank)
+            return;
+
+        ObjectGuid oldSelection = bot->GetSelectionGuid();
+        bot->SetSelectionGuid(banker->getObjectGuid());
+        for (RelistLedgerEntry const& entry : entries)
+        {
+            // A bot that changed guilds since the posting cannot pay that
+            // guild: the row stays until the stale sweep or a guild return.
+            if (entry.guildId != bot->GetGuildId())
+                continue;
+            uint32_t goldMoved = 0;
+            uint32_t itemsMoved = 0;
+            if (entry.heldGold)
+            {
+                uint32_t cash = bot->GetMoney();
+                uint32_t take = entry.heldGold < cash ? entry.heldGold : cash;
+                if (take)
+                {
+                    uint32_t before = bot->GetMoney();
+                    std::ostringstream message;
+                    message << "DepositMoney:" << take;
+                    guild->_Bank->HandleAddonMessages(message.str(), bot);
+                    uint32_t after = bot->GetMoney();
+                    if (after < before)
+                        goldMoved = before - after;
+                }
+            }
+            if (entry.heldCount)
+            {
+                uint32_t bagCount = bot->GetItemCount(entry.itemId);
+                uint32_t quota = entry.heldCount < bagCount ? entry.heldCount : bagCount;
+                if (quota)
+                    itemsMoved = DepositPass(bot, guild, banker, entry.itemId, 0, quota);
+            }
+            NoteRelistDeposit(request.botGuidLow, entry.seq, goldMoved, itemsMoved);
+        }
+        bot->SetSelectionGuid(oldSelection);
+    }
+};
+
 
 } // namespace
 
@@ -715,6 +793,11 @@ void UpdateSupplyWithdrawals()
 void UpdateGoldRefunds()
 {
     RefundDrain::Instance().Update();
+}
+
+void UpdateRelistDeposits()
+{
+    RelistDrain::Instance().Update();
 }
 
 void OnDeliveryOrderGone(uint32_t botGuidLow)

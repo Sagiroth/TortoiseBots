@@ -6,6 +6,7 @@
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderDeliveryQueue.h"
 #include "runtime/GuildOrderRefundQueue.h"
+#include "runtime/GuildOrderRelistQueue.h"
 #include "runtime/GuildOrderSupplyQueue.h"
 #include "runtime/GuildOrderStore.h"
 
@@ -65,6 +66,11 @@ bool GuildBankAction::isUseful()
         return false;
     if (!ai::OrderBotMayTravel(ai, bot))
         return false;
+    // Collected relist value owes the guild a banker visit even after the
+    // order that posted it is gone: the ledger row outlives the order row.
+    if (TortoiseBots::GuildOrders::RelistDepositPending(bot->GetGUIDLow()) &&
+        FindNearbyGuildBanker() != nullptr)
+        return true;
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!stored || stored->guildId != bot->GetGuildId())
         return false;
@@ -114,7 +120,17 @@ bool GuildBankAction::Execute(Event& event)
     (void)event;
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!stored || stored->guildId != bot->GetGuildId())
+    {
+        // No order row (finished, cancelled or never given): collected relist
+        // value still goes to the guild bank from this visit.
+        if (TortoiseBots::GuildOrders::RelistDepositPending(bot->GetGUIDLow()) &&
+            FindNearbyGuildBanker() != nullptr)
+            return TortoiseBots::GuildOrders::RelistQueue::Instance().Enqueue(bot->GetGUIDLow());
         return false;
+    }
+    if (TortoiseBots::GuildOrders::RelistDepositPending(bot->GetGUIDLow()) &&
+        FindNearbyGuildBanker() != nullptr)
+        TortoiseBots::GuildOrders::RelistQueue::Instance().Enqueue(bot->GetGUIDLow());
     // Unspent guild gold goes back first: a live order and a cancelled stub
     // both repay at any banker visit, before supply or delivery runs.
     if (stored->guildGoldHeld > 0 && bot->GetMoney() > 0 && FindNearbyGuildBanker())

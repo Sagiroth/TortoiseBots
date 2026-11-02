@@ -260,6 +260,10 @@ uint32_t RelistSurplus(PlayerbotAI* ai, Player* bot, Unit* auctioneer, uint32_t 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     sPlayerbotAIConfig.logEvent(ai, "GuildAhRelist", proto ? proto->Name1 : "item",
         std::to_string(itemId) + ":" + std::to_string(postCount) + ":" + std::to_string(buyout));
+    // The posting carries guild-funded value: the sale gold or the returned
+    // stack comes back by mail later and the ledger keeps it owed to the
+    // guild until the bank trip pays it back.
+    NoteRelistPosted(bot->GetGUIDLow(), bot->GetGuildId(), itemId, postCount, unitPrice);
     return postCount;
 }
 
@@ -477,6 +481,10 @@ bool GuildOrderTakeMailAction::isUseful()
 bool GuildOrderTakeMailAction::Execute(Event& event)
 {
     (void)event;
+    // Relist mail waiting for the guild settles first: the surplus stack the
+    // order posted comes back tagged with the same item as the order leg, and
+    // taking it as order stock would lose the ledger row.
+    ai::TakeRelistMail(ai);
     std::optional<OrderRecord> stored = Find(bot->GetGUIDLow());
     if (!stored || stored->state != OrderState::Working || stored->supplyStep != SupplyStep::Bags)
         return false;

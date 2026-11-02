@@ -6,6 +6,7 @@
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderNeedPolicy.h"
+#include "GuildOrderRelistPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
 #include "GuildOrderSupplyPolicy.h"
 #include "GuildOrderSubOrderPolicy.h"
@@ -45,6 +46,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -190,8 +192,41 @@ public:
             } while (result->NextRow());
         }
 
+        // Relist ledger rows ride with the order store: a sale or an expired
+        // listing may land long after the order row is gone, and the value
+        // still belongs to the guild until the bank trip pays it back.
+        m_relist.clear();
+        std::unique_ptr<QueryResult> relists(CharacterDatabase.Query(
+            "SELECT `bot_guid`, `seq`, `guild_id`, `item_id`, `count`, `unit_price`, `posted_at`, "
+            "`received`, `held_gold`, `held_count` FROM `tortoise_bots_guild_relist`"));
+        size_t relistCount = 0;
+        if (relists)
+        {
+            do
+            {
+                Field* fields = relists->Fetch();
+                RelistLedgerEntry entry;
+                entry.botGuidLow = fields[0].GetUInt32();
+                entry.seq = fields[1].GetUInt32();
+                entry.guildId = fields[2].GetUInt32();
+                entry.itemId = fields[3].GetUInt32();
+                entry.count = fields[4].GetUInt32();
+                entry.unitPrice = fields[5].GetUInt32();
+                entry.postedAtSec = fields[6].GetUInt64();
+                entry.received = fields[7].GetUInt32() != 0;
+                entry.heldGold = fields[8].GetUInt32();
+                entry.heldCount = fields[9].GetUInt32();
+                if (!entry.botGuidLow || !entry.seq || !entry.itemId || !entry.count)
+                    continue;
+                m_relist[entry.botGuidLow].push_back(entry);
+                ++relistCount;
+            } while (relists->NextRow());
+        }
+
         m_initialized = true;
         TB_LOG_BASIC("TortoiseBots: loaded %zu guild order(s) from database.", m_orders.size());
+        if (relistCount)
+            TB_LOG_BASIC("TortoiseBots: loaded %zu guild relist ledger row(s).", relistCount);
     }
 
     // The pool reads the store before the startup sequence may have loaded
@@ -1249,6 +1284,198 @@ public:
         it->second.relistUnitPrice = 0;
     }
 
+    // One relist was posted: its sale gold or its returned stack comes back
+    // by mail later. Map thread only (the buy action); the row write is queued.
+    void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+        uint32_t unitPrice)
+    {
+        if (!botGuidLow || !guildId || !itemId || !count)
+            return;
+        RelistLedgerEntry entry;
+        entry.botGuidLow = botGuidLow;
+        entry.guildId = guildId;
+        entry.itemId = itemId;
+        entry.count = count;
+        entry.unitPrice = unitPrice;
+        entry.postedAtSec = static_cast<uint64_t>(std::time(nullptr));
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            std::vector<RelistLedgerEntry>& rows = m_relist[botGuidLow];
+            entry.seq = 1;
+            for (RelistLedgerEntry const& row : rows)
+                if (row.seq >= entry.seq)
+                    entry.seq = row.seq + 1;
+            rows.push_back(entry);
+        }
+        CharacterDatabase.PExecute(
+            "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
+            "`count`, `unit_price`, `posted_at`, `received`, `held_gold`, `held_count`) "
+            "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '0', '0', '0')",
+            entry.botGuidLow, entry.seq, entry.guildId, entry.itemId, entry.count, entry.unitPrice,
+            static_cast<uint32_t>(entry.postedAtSec));
+    }
+
+    // The bot's ledger rows, oldest first. Any thread.
+    std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return {};
+        return it->second;
+    }
+
+    // A matched mail was collected: the value is in the bot's hands. Map
+    // thread only (the mail read); the row write is queued.
+    bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+    {
+        RelistLedgerEntry updated;
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_relist.find(botGuidLow);
+            if (it == m_relist.end())
+                return false;
+            for (RelistLedgerEntry& entry : it->second)
+            {
+                if (entry.seq != seq)
+                    continue;
+                entry.received = true;
+                entry.heldGold = entry.heldGold > gold ? entry.heldGold : gold;
+                entry.heldCount = entry.heldCount > items ? entry.heldCount : items;
+                updated = entry;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;
+        CharacterDatabase.PExecute(
+            "UPDATE `tortoise_bots_guild_relist` SET `received` = '1', `held_gold` = '%u', "
+            "`held_count` = '%u' WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+            updated.heldGold, updated.heldCount, botGuidLow, seq);
+        return true;
+    }
+
+    // A banker pass moved part of the value: the entry drops once nothing is
+    // left. Nothing moved (no banker, a refused message) keeps it whole.
+    // World thread only (the relist drain).
+    bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved)
+    {
+        bool settled = false;
+        bool found = false;
+        RelistLedgerEntry updated;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_relist.find(botGuidLow);
+            if (it == m_relist.end())
+                return false;
+            std::vector<RelistLedgerEntry>& rows = it->second;
+            for (auto row = rows.begin(); row != rows.end(); ++row)
+            {
+                if (row->seq != seq)
+                    continue;
+                found = true;
+                settled = RelistNoteDeposit(*row, goldMoved, itemsMoved);
+                updated = *row;
+                if (settled)
+                {
+                    rows.erase(row);
+                    if (rows.empty())
+                        m_relist.erase(it);
+                }
+                break;
+            }
+        }
+        if (!found)
+            return false;
+        if (settled)
+        {
+            CharacterDatabase.PExecute(
+                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                botGuidLow, seq);
+            return true;
+        }
+        CharacterDatabase.PExecute(
+            "UPDATE `tortoise_bots_guild_relist` SET `held_gold` = '%u', `held_count` = '%u' "
+            "WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+            updated.heldGold, updated.heldCount, botGuidLow, seq);
+        return false;
+    }
+
+    // Any value collected from a relist mail is due to the guild.
+    bool RelistDepositPending(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return false;
+        for (RelistLedgerEntry const& entry : it->second)
+            if (RelistNeedsDeposit(entry))
+                return true;
+        return false;
+    }
+
+    // The received rows the bank trip has to pay out, oldest first. World
+    // thread only (the relist drain).
+    std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry> out;
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return out;
+        for (RelistLedgerEntry const& entry : it->second)
+            if (RelistNeedsDeposit(entry))
+                out.push_back(entry);
+        return out;
+    }
+
+    // One stale sweep a minute, not one per world tick.
+    bool RelistExpireDue(uint64_t nowSec)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_lastRelistExpireSec && nowSec < m_lastRelistExpireSec + 60)
+            return false;
+        m_lastRelistExpireSec = nowSec;
+        return true;
+    }
+
+    // Three days with nothing back means the posting no longer reports on
+    // the auction house: the entry stops being a debt to the guild. World
+    // thread only; called at a minute's cadence, never per tick.
+    void ExpireStaleRelists(uint64_t nowSec)
+    {
+        std::vector<RelistLedgerEntry> dropped;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (auto it = m_relist.begin(); it != m_relist.end();)
+            {
+                std::vector<RelistLedgerEntry>& rows = it->second;
+                for (auto row = rows.begin(); row != rows.end();)
+                {
+                    if (RelistEntryStale(*row, nowSec))
+                    {
+                        dropped.push_back(*row);
+                        row = rows.erase(row);
+                    }
+                    else
+                        ++row;
+                }
+                it = rows.empty() ? m_relist.erase(it) : std::next(it);
+            }
+        }
+        for (RelistLedgerEntry const& entry : dropped)
+        {
+            TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u) posted %llu s ago "
+                "returned nothing; dropping the ledger row.", entry.botGuidLow, entry.itemId,
+                entry.count, static_cast<unsigned long long>(nowSec - entry.postedAtSec));
+            CharacterDatabase.PExecute(
+                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                entry.botGuidLow, entry.seq);
+        }
+    }
+
     void NoteBagsFull(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -2096,6 +2323,10 @@ private:
 
     std::mutex m_mutex;
     std::unordered_map<uint32_t, Stored> m_orders;
+    // Relisted auction surplus per bot, oldest first: the guild-funded value
+    // that is still on the auction house, in the mail or in the bot's hands.
+    std::unordered_map<uint32_t, std::vector<RelistLedgerEntry>> m_relist;
+    uint64_t m_lastRelistExpireSec = 0;
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     // Last request the drain gave planner time to: the next drain starts
     // after it, so one request cannot spend every tick's evaluation budget.
@@ -2904,6 +3135,37 @@ void ClearRelistSurplus(uint32_t botGuidLow)
     OrderStore::Instance().ClearRelistSurplus(botGuidLow);
 }
 
+void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+    uint32_t unitPrice)
+{
+    OrderStore::Instance().NoteRelistPosted(botGuidLow, guildId, itemId, count, unitPrice);
+}
+
+std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().RelistEntries(botGuidLow);
+}
+
+bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items)
+{
+    return OrderStore::Instance().NoteRelistReceived(botGuidLow, seq, gold, items);
+}
+
+bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved)
+{
+    return OrderStore::Instance().NoteRelistDeposit(botGuidLow, seq, goldMoved, itemsMoved);
+}
+
+bool RelistDepositPending(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().RelistDepositPending(botGuidLow);
+}
+
+std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().RelistDeposits(botGuidLow);
+}
+
 void NoteBagsFull(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteBagsFull(botGuidLow);
@@ -2984,6 +3246,11 @@ void Update(uint32_t diff)
     // few, bots are many. The only place that looks up players and sends
     // live updates; map-thread mutators only mark rows dirty.
     uint32_t now = WorldTimer::getMSTime();
+    // Once a minute, not per tick: an entry whose posting never reported back
+    // after three days stops being a debt to the guild (one log line each).
+    uint64_t nowSec = static_cast<uint64_t>(std::time(nullptr));
+    if (OrderStore::Instance().RelistExpireDue(nowSec))
+        OrderStore::Instance().ExpireStaleRelists(nowSec);
     PlaceSubOrders(now);
     for (OrderRecord const& snapshot : OrderStore::Instance().All())
     {
@@ -3150,6 +3417,7 @@ void Update(uint32_t diff)
     UpdateDeliveries();
     UpdateSupplyWithdrawals();
     UpdateGoldRefunds();
+    UpdateRelistDeposits();
     OrderStore::Instance().FinishRepaid();
 }
 

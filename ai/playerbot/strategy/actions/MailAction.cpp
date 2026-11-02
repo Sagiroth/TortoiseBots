@@ -5,6 +5,11 @@
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/Helpers.h"
+#include "runtime/GuildOrderRelistPolicy.h"
+#include "runtime/GuildOrderStore.h"
+
+#include <algorithm>
+#include <cstdlib>
 
 using namespace ai;
 
@@ -13,6 +18,44 @@ namespace
 MasterPlayer* GetMailOwner(Player* bot)
 {
     return bot && bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+}
+
+// The core's auction notification subject is "<item>:<random>:<state>"
+// (Mail.h AuctionMailState). Anything else is not an auction notification.
+bool ParseAuctionSubject(std::string const& subject, uint32_t& itemId, uint32_t& state)
+{
+    std::vector<std::string> parts = split(subject, ':');
+    if (parts.size() != 3 || parts[0].empty() || parts[2].empty())
+        return false;
+    char* end = nullptr;
+    unsigned long const item = std::strtoul(parts[0].c_str(), &end, 10);
+    if (!end || *end)
+        return false;
+    unsigned long const sentinel = std::strtoul(parts[2].c_str(), &end, 10);
+    if (!end || *end)
+        return false;
+    itemId = uint32_t(item);
+    state = uint32_t(sentinel);
+    return true;
+}
+
+TortoiseBots::GuildOrders::RelistMail MakeRelistMailView(Mail* mail, MasterPlayer* owner)
+{
+    TortoiseBots::GuildOrders::RelistMail view;
+    view.auction = mail->stationery == MAIL_STATIONERY_AUCTION;
+    view.hasItems = mail->has_items && !mail->items.empty();
+    view.money = mail->money;
+    ParseAuctionSubject(mail->subject, view.subjectItemId, view.subjectState);
+    if (view.hasItems)
+    {
+        Item* item = owner->GetMItem(mail->items.front().item_guid);
+        if (item)
+        {
+            view.itemId = item->GetEntry();
+            view.count = item->GetCount();
+        }
+    }
+    return view;
 }
 }
 
@@ -299,6 +342,108 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
     return taken;
 }
 
+// Settles the guild relist ledger against the waiting auction mail. A sale
+// mail pays its gold into the bot's hands, an expired listing returns the
+// stack; the ledger row then waits for the bank trip the relist drain makes.
+// Runs at any order state, or with no order row at all: the guild-funded
+// value outlives the order that posted it. Returns the rows this read matched.
+uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
+{
+    if (!ai)
+        return 0;
+    Player* bot = ai->GetBot();
+    MasterPlayer* owner = GetMailOwner(bot);
+    if (!bot || !owner || !bot->GetGuildId())
+        return 0;
+    std::vector<TortoiseBots::GuildOrders::RelistLedgerEntry> entries =
+        TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow());
+    if (entries.empty())
+        return 0;
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
+    if (mailbox.IsEmpty())
+        return 0;
+
+    using namespace TortoiseBots::GuildOrders;
+    uint32_t settled = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = owner->GetMailBegin(); itr != owner->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->money && !mail->has_items)
+            continue;
+        RelistMail view = MakeRelistMailView(mail, owner);
+        if (!view.auction)
+            continue;
+        // The oldest row this mail settles. A row matched earlier in the same
+        // read is already marked received, so two mails of one item settle
+        // two rows.
+        std::vector<RelistLedgerEntry>::iterator entry = std::find_if(entries.begin(), entries.end(),
+            [&view](RelistLedgerEntry const& row) {
+                return !row.received && RelistMailMatch(row, view) != RelistMailKind::None;
+            });
+        if (entry == entries.end())
+            continue;
+
+        RelistMailKind const kind = RelistMailMatch(*entry, view);
+        uint32_t gold = 0;
+        uint32_t items = 0;
+        if (kind == RelistMailKind::Sold)
+        {
+            uint32_t before = bot->GetMoney();
+            WorldPacket packet;
+            packet << mailbox;
+            packet << mail->messageID;
+            bot->GetSession()->HandleMailTakeMoney(packet);
+            uint32_t after = bot->GetMoney();
+            if (after <= before)
+                continue;
+            gold = after - before;
+        }
+        else if (kind == RelistMailKind::Expired)
+        {
+            uint32_t itemGuid = 0;
+            for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
+            {
+                if (it->item_template == entry->itemId)
+                {
+                    itemGuid = it->item_guid;
+                    break;
+                }
+            }
+            if (!itemGuid)
+                continue;
+            uint32_t before = ai->GetInventoryItemsCountWithId(entry->itemId);
+            WorldPacket packet;
+            packet << mailbox;
+            packet << mail->messageID;
+            bot->GetSession()->HandleMailTakeItem(packet);
+            uint32_t after = ai->GetInventoryItemsCountWithId(entry->itemId);
+            if (after <= before)
+                continue;
+            items = after - before;
+        }
+        else
+            continue;
+
+        RelistNoteMailReceived(*entry, kind, gold, items);
+        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry->seq,
+                entry->heldGold, entry->heldCount))
+            continue;
+        ++settled;
+        Mail* current = owner->GetMail(mail->messageID);
+        if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
+        {
+            WorldPacket delPacket;
+            delPacket << mailbox;
+            delPacket << mail->messageID;
+            bot->GetSession()->HandleMailDelete(delPacket);
+        }
+    }
+    return settled;
+}
+
 class DeleteMailProcessor : public MailProcessor
 {
 public:
@@ -375,6 +520,11 @@ bool MailAction::Execute(Event& event)
         ai->TellPlayer(requester, out.str());
         return false;
     }
+
+    // A mail read also settles the guild relist ledger, whatever the bot's
+    // order state: the guild-funded value arrives long after the posting.
+    if (action == "take")
+        ai::TakeRelistMail(ai);
 
     if (!processor->Before(requester, ai))
         return false;
