@@ -5,6 +5,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/GuildOrderBuyAction.h"
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
@@ -646,6 +647,19 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     // store no-ops when the keys already match.
     TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
     uint32_t nowMs = WorldTimer::getMSTime();
+    // A leg that cannot reach an auctioneer hands off after two minutes.
+    // The clock belongs to the leg and clears on an auctioneer the bot can
+    // actually interact with.
+    if (order.supplyStep == SupplyStep::AuctionHouse)
+    {
+        if (ai::GuildOrderAuctioneerInReach(ai, bot))
+            TortoiseBots::GuildOrders::NoteAuctioneerInReach(order.botGuidLow);
+        else if (TortoiseBots::GuildOrders::AuctionLegUnreachable(order.botGuidLow, nowMs))
+        {
+            AdvanceGuildOrderAfterAuction(ai, bot, order, OrderReason::NoAuctioneer);
+            return;
+        }
+    }
     if (!SupplyRefreshDue(order.botGuidLow, nowMs))
         return;
     NoteSupplyRefreshed(order.botGuidLow, nowMs);
@@ -653,6 +667,31 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     snapshot.nowMs = nowMs;
     uint32_t carried = SnapshotBags(ai, snapshot, order.itemId);
     uint32_t mailed = SnapshotMail(bot, snapshot, order.itemId);
+    // The bought oversized stack is in the bags: the auction leg runs again,
+    // this time only to relist the surplus. Buying more waits until it is
+    // posted (or the relist gives up and the delivery leftover path takes it).
+    uint32_t relistItemId = 0, relistCount = 0, relistUnitPrice = 0;
+    if (TortoiseBots::GuildOrders::PendingRelist(order.botGuidLow, relistItemId, relistCount,
+            relistUnitPrice) && relistItemId && relistCount)
+    {
+        if (SnapshotBags(ai, snapshot, relistItemId) >= relistCount)
+        {
+            if (order.supplyStep != SupplyStep::AuctionHouse || order.supplyItemId != relistItemId ||
+                order.supplyCount != relistCount)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::AuctionHouse,
+                    relistItemId, relistCount, SupplyStep::None, order.reason);
+            return;
+        }
+        // The bought stack is still in the mailbox: collect it first, even
+        // on a craft order whose tree already counts the mail as owned.
+        if (OrderMailboxItems(bot, relistItemId) > 0)
+        {
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != relistItemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    relistItemId, relistCount, SupplyStep::AuctionHouse, order.reason);
+            return;
+        }
+    }
     if (order.type != OrderType::Craft)
     {
         uint32_t have = order.delivered + carried + mailed;

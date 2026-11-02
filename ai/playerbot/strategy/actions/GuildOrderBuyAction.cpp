@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
 #include "MailAction.h"
+#include "runtime/GuildOrderAuctionPolicy.h"
 #include "runtime/GuildOrderBuyPolicy.h"
 #include "runtime/GuildOrderRefundPolicy.h"
 #include "runtime/GuildOrderStore.h"
@@ -29,10 +30,14 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
 
 } // namespace
 
-void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
+void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order,
+    OrderReason reason)
 {
     if (order.type == OrderType::Buy && !order.farmRest)
         NoteFarmRest(bot->GetGUIDLow());
+    // Leaving the auction leg ends any relist it still owed: the surplus
+    // stays in the bags for the delivery leftover path.
+    ClearRelistSurplus(order.botGuidLow);
 
     SourcePlan plan = ai::PlanGuildOrderSources(bot, order.supplyItemId, OrderType::Farm);
     SupplyOptions options;
@@ -46,21 +51,21 @@ void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord
         if (RequestSupply(order.botGuidLow, order.supplyItemId, order.supplyCount))
         {
             SetSupply(order.botGuidLow, SupplyStep::Sub, order.supplyItemId,
-                order.supplyCount, SupplyStep::None, order.reason);
+                order.supplyCount, SupplyStep::None, reason);
             return;
         }
         SetNeedItems(order.botGuidLow, { NeedItem{ order.supplyItemId, order.supplyCount } },
-            order.reason == OrderReason::BankDenied);
+            reason == OrderReason::BankDenied);
         return;
     }
     if (next == SupplyStep::Need)
     {
         SetNeedItems(order.botGuidLow, { NeedItem{ order.supplyItemId, order.supplyCount } },
-            order.reason == OrderReason::BankDenied);
+            reason == OrderReason::BankDenied);
         return;
     }
     SetSupply(order.botGuidLow, next, order.supplyItemId, order.supplyCount,
-        SupplyStep::None, order.reason);
+        SupplyStep::None, reason);
 }
 
 bool GuildOrderBuyAction::isUseful()
@@ -92,9 +97,10 @@ Unit* ai::GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot)
     return nullptr;
 }
 
-Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
+Unit* ai::GuildOrderAuctioneerInReach(PlayerbotAI* ai, Player* bot)
 {
-    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    std::list<ObjectGuid> npcs =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
     for (ObjectGuid& guid : npcs)
     {
         Unit* npc = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER);
@@ -103,6 +109,161 @@ Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
     }
     return nullptr;
 }
+
+Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
+{
+    return ai::GuildOrderAuctioneerInReach(ai, bot);
+}
+
+namespace
+{
+
+// The stack the relist can post without eating into what the order still
+// needs: a whole stack that fits inside the pending surplus, else the
+// smallest stack (which the caller splits down to the pending amount).
+// Null when no stack carries the item.
+Item* FindRelistStack(Player* bot, uint32_t itemId, uint32_t pendingCount)
+{
+    Item* smallest = nullptr;
+    Item* fits = nullptr;
+    auto consider = [&](Item* item)
+    {
+        if (!item || item->GetEntry() != itemId)
+            return;
+        if (item->GetCount() <= pendingCount && (!fits || item->GetCount() > fits->GetCount()))
+            fits = item;
+        if (!smallest || item->GetCount() < smallest->GetCount())
+            smallest = item;
+    };
+    for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (!pack)
+            continue;
+        for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
+            consider(pack->GetItemByPos(uint8_t(slot)));
+    }
+    return fits ? fits : smallest;
+}
+
+// Lowest per-unit buyout already listed for the item, 0 when none. The
+// caller holds the auction mutex.
+uint32_t LowestListingUnitPrice(AuctionHouseObject* auctionHouse, uint32_t itemId)
+{
+    uint32_t lowest = 0;
+    if (!auctionHouse)
+        return 0;
+    for (auto const& entry : *auctionHouse->GetAuctions())
+    {
+        AuctionEntry* auction = entry.second;
+        if (!auction || !auction->buyout)
+            continue;
+        Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow);
+        if (!item || item->GetProto()->ItemId != itemId || !item->GetCount())
+            continue;
+        uint32_t const unit = AuctionUnitPrice(auction->buyout, item->GetCount());
+        if (unit && (!lowest || unit < lowest))
+            lowest = unit;
+    }
+    return lowest;
+}
+
+// A free inventory position, so a split lands in its own stack instead of
+// merging into an existing one and hiding how much was set aside.
+bool FindFreeBagSlot(Player* bot, uint8_t& bag, uint8_t& slot)
+{
+    for (uint8_t s = INVENTORY_SLOT_ITEM_START; s < INVENTORY_SLOT_ITEM_END; ++s)
+    {
+        if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, s))
+        {
+            bag = INVENTORY_SLOT_BAG_0;
+            slot = s;
+            return true;
+        }
+    }
+    for (uint8_t b = INVENTORY_SLOT_BAG_START; b < INVENTORY_SLOT_BAG_END; ++b)
+    {
+        Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, b);
+        if (!pack)
+            continue;
+        for (uint32_t s = 0; s < pack->GetBagSize(); ++s)
+        {
+            if (!pack->GetItemByPos(uint8_t(s)))
+            {
+                bag = b;
+                slot = uint8_t(s);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Posts up to one stack of the pending surplus. Returns what left the bags
+// (0 = nothing posted; the caller then leaves the surplus to the delivery
+// leftover path). The caller holds the auction mutex and has checked the
+// auctioneer.
+uint32_t RelistSurplus(PlayerbotAI* ai, Player* bot, Unit* auctioneer, uint32_t itemId,
+    uint32_t pendingCount, uint32_t boughtUnitPrice)
+{
+    if (!auctioneer || !itemId || !pendingCount)
+        return 0;
+    AuctionHouseEntry const* ahEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(
+        auctioneer->getObjectGuid());
+    AuctionHouseObject* auctionHouse = ahEntry ? sAuctionMgr.GetAuctionsMap(ahEntry) : nullptr;
+    if (!ahEntry || !auctionHouse)
+        return 0;
+    Item* stack = FindRelistStack(bot, itemId, pendingCount);
+    if (!stack)
+        return 0;
+    uint32_t postCount = stack->GetCount() <= pendingCount ? stack->GetCount() :
+        std::min(pendingCount, 255u);
+    // The split packet carries the stack in a single byte; post a larger
+    // surplus over several visits instead of overflowing it.
+    if (postCount > 255)
+        postCount = 255;
+    if (stack->GetCount() > postCount)
+    {
+        uint8_t dstBag = 0, dstSlot = 0;
+        if (!FindFreeBagSlot(bot, dstBag, dstSlot))
+            return 0;
+        uint16_t const src = stack->GetPos();
+        WorldPacket split(CMSG_SPLIT_ITEM, 5);
+        split << uint8_t(src >> 8) << uint8_t(src & 0xFF) << dstBag << dstSlot << uint8_t(postCount);
+        bot->GetSession()->HandleSplitItemOpcode(split);
+        stack = bot->GetItemByPos(dstBag, dstSlot);
+        if (!stack || stack->GetEntry() != itemId || stack->GetCount() != postCount)
+            return 0;
+    }
+
+    uint32_t const unitPrice = RelistUnitPriceFromUnit(boughtUnitPrice,
+        LowestListingUnitPrice(auctionHouse, itemId));
+    uint32_t const buyout = RelistTotal(unitPrice, postCount);
+    if (!buyout)
+        return 0;
+    uint32_t const deposit = AuctionHouseMgr::GetAuctionDeposit(ahEntry, kRelistDurationMinutes * MINUTE,
+        stack);
+    if (bot->GetMoney() < deposit)
+        return 0;
+
+    ObjectGuid const itemGuid = stack->getObjectGuid();
+    uint32_t const bid = buyout > 1 ? uint32_t(uint64_t(buyout) * 95 / 100) : 1;
+    WorldPacket packet(CMSG_AUCTION_SELL_ITEM, 8 + 8 + 4 + 4 + 4);
+    packet << auctioneer->getObjectGuid() << itemGuid;
+    packet << bid << buyout << kRelistDurationMinutes;
+    bot->GetSession()->HandleAuctionSellItem(packet);
+    if (bot->GetItemByGuid(itemGuid))
+        return 0;
+
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    sPlayerbotAIConfig.logEvent(ai, "GuildAhRelist", proto ? proto->Name1 : "item",
+        std::to_string(itemId) + ":" + std::to_string(postCount) + ":" + std::to_string(buyout));
+    return postCount;
+}
+
+} // namespace
 
 bool GuildOrderBuyAction::Execute(Event& event)
 {
@@ -136,6 +297,45 @@ bool GuildOrderBuyAction::Execute(Event& event)
     if (!ahLock.owns_lock())
         return false;
 
+    // An oversized purchase left a surplus to relist: this visit posts it
+    // instead of buying more. The ladder refresh only routes here once the
+    // bought stack is in the bags (mail picked up).
+    uint32_t relistItemId = 0, relistCount = 0, relistUnitPrice = 0;
+    if (PendingRelist(botGuidLow, relistItemId, relistCount, relistUnitPrice) &&
+        relistItemId == itemId && relistCount)
+    {
+        uint32_t const posted = RelistSurplus(ai, bot, auctioneer, itemId, relistCount, relistUnitPrice);
+        uint32_t const remaining = posted && posted < relistCount ? relistCount - posted : 0;
+        if (remaining)
+            NoteRelistSurplus(botGuidLow, itemId, remaining, relistUnitPrice);
+        else
+            ClearRelistSurplus(botGuidLow);
+        ahLock.unlock();
+        if (!posted)
+        {
+            // No AH access, no free split slot, or the deposit is
+            // unaffordable: the pending relist is dropped and the surplus
+            // stays in the bags for the order's delivery leftover path (the
+            // guild-bank deposit).
+            if (SurplusDestinationAfterRelist(false, relistCount) == SurplusDestination::DeliveryLeftover)
+            {
+                ItemPrototype const* failedProto = sObjectMgr.GetItemPrototype(itemId);
+                sPlayerbotAIConfig.logEvent(ai, "GuildAhRelistFailed",
+                    failedProto ? failedProto->Name1 : "item", std::to_string(itemId));
+            }
+            SetSupply(botGuidLow, SupplyStep::None, 0, 0);
+            RESET_AI_VALUE(bool, "travel target active");
+            return false;
+        }
+        NoteSupplyProgress(botGuidLow);
+        if (remaining)
+            SetSupply(botGuidLow, SupplyStep::AuctionHouse, itemId, remaining, SupplyStep::None,
+                stored->reason);
+        else
+            SetSupply(botGuidLow, SupplyStep::None, 0, 0);
+        return true;
+    }
+
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(auctioneer);
     AuctionHouseObject* auctionHouse = ahEntry ? sAuctionMgr.GetAuctionsMap(ahEntry) : nullptr;
     struct Candidate
@@ -166,12 +366,16 @@ bool GuildOrderBuyAction::Execute(Event& event)
             if (!item || item->GetProto()->ItemId != itemId)
                 continue;
             uint32_t count = item->GetCount();
-            if (!count || count > missing)
+            if (!count)
                 continue;
             ItemPosCountVec dest;
             if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count) != EQUIP_ERR_OK)
                 continue;
-            if (!best.auctionId || BuyoutBeatsPerItem(auction->buyout, count, best.buyout, best.count))
+            // A stack bigger than the miss is allowed: the order uses what
+            // it needs and the surplus returns to the AH. The smallest
+            // covering stack wins, then the cheapest per unit.
+            if (!best.auctionId ||
+                AuctionPickBeats(count, auction->buyout, best.count, best.buyout, missing))
                 best = { auction->Id, auction->itemGuidLow, auction->buyout, count };
         }
     }
@@ -226,6 +430,9 @@ bool GuildOrderBuyAction::Execute(Event& event)
         NoteSupplyGain(botGuidLow, itemId, best.count);
         NoteSupplyProgress(botGuidLow);
         SET_AI_VALUE2(int, "manual int", "order buy gold tried", 0);
+        uint32_t const surplus = BuySurplus(best.count, missing);
+        if (surplus)
+            NoteRelistSurplus(botGuidLow, itemId, surplus, AuctionUnitPrice(best.buyout, best.count));
         SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
     }
     else

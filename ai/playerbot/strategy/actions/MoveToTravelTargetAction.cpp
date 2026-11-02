@@ -860,7 +860,7 @@ static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
             break;
         case AuctionArrival::CountAndExit:
             NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
-            AdvanceGuildOrderAfterAuction(ai, bot, *record);
+            AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer);
             break;
     }
 }

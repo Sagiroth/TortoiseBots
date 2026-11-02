@@ -1,6 +1,7 @@
 #include "GuildOrderStore.h"
 #include "GuildOrderStoreColumns.h"
 
+#include "GuildOrderAuctionPolicy.h"
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
@@ -715,12 +716,20 @@ public:
         }
         if (step != record.supplyStep || itemId != record.supplyItemId)
             record.searchZoneMoves = 0;
+        // The reach deadline belongs to one auction visit: entering the leg
+        // (or changing its item) starts it, leaving the leg clears it.
+        bool const enteringAuction = step == SupplyStep::AuctionHouse &&
+            (record.supplyStep != SupplyStep::AuctionHouse || record.supplyItemId != itemId);
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
         record.supplyReturnStep = returnStep;
         record.supplyGoldCount = goldCount;
         record.reason = reason;
+        if (enteringAuction)
+            it->second.auctionReachStartedMs = WorldTimer::getMSTime();
+        else if (step != SupplyStep::AuctionHouse)
+            it->second.auctionReachStartedMs = 0;
         MarkDirtyLocked(it->second);
         it->second.supplySearch = SupplySearchStreak{};
     }
@@ -1173,6 +1182,71 @@ public:
         record.arrivedAuctionVisits = auctioneerInReach ? 0 : record.arrivedAuctionVisits + 1;
         MarkDirtyLocked(it->second);
         return record.arrivedAuctionVisits;
+    }
+
+    // The reach clock starts when the leg is entered (SetSupply) and this
+    // method reports the deadline once. Started here too so a row loaded
+    // with an auction leg on restart gets its full window.
+    bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return false;
+        uint32_t& started = it->second.auctionReachStartedMs;
+        if (!started)
+        {
+            started = nowMs;
+            return false;
+        }
+        return AuctionUnreachableElapsed(started, nowMs);
+    }
+
+    void NoteAuctioneerInReach(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.auctionReachStartedMs = 0;
+    }
+
+    void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.relistItemId = itemId;
+        it->second.relistCount = count;
+        it->second.relistUnitPrice = unitPrice;
+    }
+
+    bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        itemId = 0;
+        count = 0;
+        unitPrice = 0;
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            !it->second.relistItemId || !it->second.relistCount)
+            return false;
+        itemId = it->second.relistItemId;
+        count = it->second.relistCount;
+        unitPrice = it->second.relistUnitPrice;
+        return true;
+    }
+
+    void ClearRelistSurplus(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.relistItemId = 0;
+        it->second.relistCount = 0;
+        it->second.relistUnitPrice = 0;
     }
 
     void NoteBagsFull(uint32_t botGuidLow)
@@ -1785,8 +1859,12 @@ public:
         // the state alone marks it delivering). Mailbox items count for
         // progress and the give-up clock above, but delivery needs the
         // items in the bags - the bank deposit cannot take them from mail.
+        // An oversized AH purchase inflates the bags with the order item
+        // past the amount; delivery waits until the surplus is back on the
+        // auction house (or the relist gave up), or the bank would take the
+        // whole stack before it could be posted.
         if (!wasFinished && in.scanned && record.state == OrderState::Working && record.amount > 0 &&
-            record.delivered + in.bagCount >= record.amount)
+            !stored.relistItemId && record.delivered + in.bagCount >= record.amount)
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;
@@ -1910,6 +1988,10 @@ private:
         SupplyStep reportStep = SupplyStep::None;
         std::string reportNeed;
         OrderStepHistory steps; // memory only: the addon's step timeline
+        uint32_t auctionReachStartedMs = 0; // auction leg entered; 0 = reached or not running
+        uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
+        uint32_t relistCount = 0;
+        uint32_t relistUnitPrice = 0;
     };
 
     // A zone move advances to the next zone of the plan (the wrap-around is
@@ -2795,6 +2877,31 @@ void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId)
 uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach)
 {
     return OrderStore::Instance().NoteArrivedAuctionVisit(botGuidLow, auctioneerInReach);
+}
+
+bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs)
+{
+    return OrderStore::Instance().AuctionLegUnreachable(botGuidLow, nowMs);
+}
+
+void NoteAuctioneerInReach(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteAuctioneerInReach(botGuidLow);
+}
+
+void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice)
+{
+    OrderStore::Instance().NoteRelistSurplus(botGuidLow, itemId, count, unitPrice);
+}
+
+bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice)
+{
+    return OrderStore::Instance().PendingRelist(botGuidLow, itemId, count, unitPrice);
+}
+
+void ClearRelistSurplus(uint32_t botGuidLow)
+{
+    OrderStore::Instance().ClearRelistSurplus(botGuidLow);
 }
 
 void NoteBagsFull(uint32_t botGuidLow)

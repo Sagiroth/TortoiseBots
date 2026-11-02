@@ -161,6 +161,23 @@ void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId);
 // the consecutive count; the caller moves the ladder down at the visit
 // limit. Map thread only (arrival).
 uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach);
+// The auction leg has run this long without an auctioneer in reach: the
+// caller hands off with OrderReason::NoAuctioneer. Starts the clock on the
+// first call after the leg was entered and reports true once the deadline
+// passed. Map thread only (the ladder refresh).
+bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs);
+// An auctioneer came into interact range on the auction leg: the reach clock
+// clears, so a later arrival never trips the deadline. Map thread only.
+void NoteAuctioneerInReach(uint32_t botGuidLow);
+// An oversized listing was bought: remember what has to go back to the
+// auction house. Memory only (a restart leaves the surplus to the delivery
+// leftover path, which is the same fallback as a failed relist).
+void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice);
+// The pending relist, if any (item 0 = none). Map thread only.
+bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice);
+// The pending relist is over: posted, abandoned, or the leg handed off.
+void ClearRelistSurplus(uint32_t botGuidLow);
+
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
 // A keep round landed in the bank: the order watches it from now on. Sets
