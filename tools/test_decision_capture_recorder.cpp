@@ -127,6 +127,14 @@ static void TestHeaderThenKeyframe()
     CHECK(Str(header, "capture") == "20261102T161939Z-zul_gurub-Fionaa");
     CHECK(Str(header.Find("plan") ? *header.Find("plan") : header, "name") == "zul_gurub");
 
+    // The header carries the plan itself, so a capture replays without the game's tables.
+    const MiniJson::Value* planValue = header.Find("plan");
+    CHECK(planValue && planValue->kind == MiniJson::Value::Object);
+    const MiniJson::Value* body = planValue->Find("body");
+    CHECK(body && body->kind == MiniJson::Value::Object);
+    CHECK(Str(*body, "name") == "zul_gurub");
+    CHECK(Num(*body, "map") == 309);
+
     MiniJson::Value const tick = ParseLine(sink.lines[1]);
     CHECK(Str(tick, "k") == "tick");
     CHECK(Num(tick, "seq") == 1);

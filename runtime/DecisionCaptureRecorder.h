@@ -395,7 +395,9 @@ private:
         line += ",\"settings\":";
         line += header_.settingsJson.empty() ? "{}" : header_.settingsJson;
         line += ",\"plan\":";
-        line += EncodePlanPointer(pendingPlan_);
+        // The whole plan, not run.plan's name+hash: the replay tool rebuilds the
+        // policy inputs from this file alone, without the game's plan tables.
+        line += pendingPlan_ ? EncodePlan(*pendingPlan_) : std::string("null");
         line += ",\"tactics\":";
         line += CachedTacticsText(pendingTactics_, map);
         line += "}";
