@@ -12950,10 +12950,10 @@ inline bool RaidGuardUnitCapped(const Run& r, const UnitFact& u)
 
 // One order for a unit this fight, by either pick-up: its count, re-armed once it had kGuardOrdersPerUnit
 // (each re-arm gives it kGuardOrdersPerUnit more), and the fight time of the last one.
-inline void NoteRaidGuardOrder(Run& r, const UnitFact& u)
+inline void NoteRaidGuardOrder(Run& r, std::uint64_t guid)
 {
-    ++r.guardUnitOrders[u.guid];
-    Run::RaidGuardMark& mark = r.raidGuardUnits[u.guid];
+    ++r.guardUnitOrders[guid];
+    Run::RaidGuardMark& mark = r.raidGuardUnits[guid];
     if (mark.orders >= kGuardOrdersPerUnit)
         mark.orders = 0; // re-armed (kRaidGuardRearmMs)
     ++mark.orders;
@@ -13057,26 +13057,29 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     // leaves the add to the guard meanwhile.
     if ((r.fightOrders > 0 || r.healerGuardOrders > 0) && r.guardSinceOrderMs < kGuardRepeatMs)
         return false;
-    // The assignment waits for the glue's answer (HealerGuardOrderTaken): a refused order is no assignment.
+    // The assignment waits for the glue's answer (HealerGuardOrderTaken): a refused order is no assignment, and no
+    // order for the unit's cap either.
     r.healerGuardOrderGuid = pick->guid;
     r.healerGuardOrderBot = dps->name;
     r.healerGuardOrder = "attack " + std::to_string(pick->guid) + " " + dps->name;
     r.note = "fighting: " + dps->name + " takes " + std::to_string(pick->entry) + " off the healer (" +
         Num(pick->distLead) + " yd)";
     ++r.healerGuardOrders;
-    NoteRaidGuardOrder(r, *pick);
     r.guardSinceOrderMs = 0;
     order = r.healerGuardOrder;
     return true;
 }
 
-// The glue's answer on a healer guard order (RaidHealerGuard): taken, its bot is recorded as sent at the add; refused,
-// it is left out of that add's pick for kRaidHealerGuardExpireMs, so the next tick tries the next ranged dps, or the
-// off-tanks take the add. True when `order` was the guard's.
+// The glue's answer on a healer guard order (RaidHealerGuard): taken, its bot is recorded as sent at the add, and the
+// order counts for the add's cap (NoteRaidGuardOrder); refused, it leaves the cap alone and is left out of that add's
+// pick for kRaidHealerGuardExpireMs, so the next tick tries the next ranged dps, or the off-tanks take the add. True
+// when `order` was the guard's.
 inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepted)
 {
     if (r.healerGuardOrder.empty() || order != r.healerGuardOrder)
         return false;
+    if (accepted)
+        NoteRaidGuardOrder(r, r.healerGuardOrderGuid);
     std::vector<Run::HealerGuardMark>& marks = accepted ? r.healerGuardDps[r.healerGuardOrderGuid]
                                                         : r.healerGuardTried[r.healerGuardOrderGuid];
     marks.push_back(Run::HealerGuardMark{ r.healerGuardOrderBot, r.healerGuardClockMs });
@@ -13165,7 +13168,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         return false;
     // Not counted in fightOrders: kGuardOrdersFightCap bounds the party guard, which takes over when the off-tanks fall.
     std::string const& tank = *tanks[r.offTankTurn++ % tanks.size()];
-    NoteRaidGuardOrder(r, *pick);
+    NoteRaidGuardOrder(r, pick->guid);
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
     r.note = std::string("fighting: ") +

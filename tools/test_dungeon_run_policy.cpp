@@ -22620,8 +22620,12 @@ static void TestRaidHealerGuardCapsAndRearmsOneAdd()
     CHECK(GuardTick(r, f, false) == "attack 50015 NearDps");
     CHECK(GuardTick(r, f).empty()); // the order spacing
     CHECK(GuardTick(r, f, false) == "attack 50015 MidDps");
+    // The refusals count for no slot of the unit's cap: with no ranged dps free for it, the free off-tank takes it.
+    CHECK(GuardTick(r, f) == "attack 50015 Offy");
+    CHECK(GuardTick(r, f).empty()); // the order spacing
+    CHECK(GuardTick(r, f) == "attack 50015 Offz"); // the other off-tank's order: the unit at its cap
     for (int k = 0; k < 10; ++k)
-        CHECK(GuardTick(r, f).empty()); // both refused, the unit at its cap: not even the off-tank
+        CHECK(GuardTick(r, f).empty()); // at its cap: neither a ranged dps nor the off-tank
     std::string rearmed;
     for (int k = 0; k < 25 && rearmed.empty(); ++k)
         rearmed = GuardTick(r, f);
