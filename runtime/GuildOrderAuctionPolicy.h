@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "GuildOrderContract.h"
+
 namespace TortoiseBots
 {
 namespace GuildOrders
@@ -230,6 +232,17 @@ inline bool AuctionReentryAllowed(AuctionLegCycle const& cycle, uint32_t itemId)
 inline bool AuctionHandoffLeavesSurplus(bool pendingRelist, uint32_t relistItemId, uint32_t legItemId)
 {
     return pendingRelist && relistItemId && relistItemId == legItemId;
+}
+
+// The reason a listing the leg cannot buy hands off with. A top-up the spending
+// budget cut short is the leg's own dead end (nolisting). A top-up whose retry
+// is blocked keeps the reason the bank already recorded (bankdenied), so the
+// timeline names the real cause. A leg with no recorded reason is nolisting.
+inline OrderReason AuctionTopUpBlockedReason(bool overBudget, OrderReason storedReason)
+{
+    if (overBudget || storedReason == OrderReason::None)
+        return OrderReason::NoListing;
+    return storedReason;
 }
 
 // What an oversized purchase leaves for the auction house.

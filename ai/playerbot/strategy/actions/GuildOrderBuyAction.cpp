@@ -429,8 +429,11 @@ bool GuildOrderBuyAction::Execute(Event& event)
                 OrderReason::None, shortfall);
             return false;
         }
+        // Over budget is the leg's own dead end; a blocked retry keeps the
+        // bank's reason (e.g. bankdenied) instead of hiding it.
         ahLock.unlock();
-        AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored,
+            AuctionTopUpBlockedReason(cappedShortfall < shortfall, stored->reason));
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }

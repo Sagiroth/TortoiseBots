@@ -112,10 +112,13 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
 
     def test_buy_handoffs_keep_their_reason(self):
         execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
-        # A landed search with nothing fitting, or a listing over the price
-        # cap, is the leg's own dead end; a lost bid is not a search result.
+        # A landed search with nothing fitting is the leg's own dead end; a
+        # blocked gold top-up keeps the bank's reason through the policy; a
+        # lost bid is not a search result and keeps the stored reason.
         self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing)"),
-            2)
+            1)
+        self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored,\n            AuctionTopUpBlockedReason(cappedShortfall < shortfall, stored->reason))",
+            execute)
         self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason)"),
             1)
         self.assertNotIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored);", execute)

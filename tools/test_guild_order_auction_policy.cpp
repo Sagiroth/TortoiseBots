@@ -1,6 +1,7 @@
 // Standalone test for runtime/GuildOrderAuctionPolicy.h (guild auction leg).
 // No core, no DB: feeds the rules plain counters.
 #include "../runtime/GuildOrderAuctionPolicy.h"
+#include "../runtime/GuildOrderRefundPolicy.h"
 
 #include <cstdio>
 
@@ -135,6 +136,23 @@ int main()
     CHECK(SurplusDestinationAfterRelist(false, 13) == SurplusDestination::DeliveryLeftover);
     CHECK(SurplusDestinationAfterRelist(true, 13) == SurplusDestination::None);
     CHECK(SurplusDestinationAfterRelist(false, 0) == SurplusDestination::None);
+
+    // A blocked top-up hands off with the bank's reason; a budget-cut top-up
+    // or a leg with no recorded reason is the leg's own nolisting.
+    CHECK(AuctionTopUpBlockedReason(false, OrderReason::BankDenied) == OrderReason::BankDenied);
+    CHECK(AuctionTopUpBlockedReason(true, OrderReason::BankDenied) == OrderReason::NoListing);
+    CHECK(AuctionTopUpBlockedReason(false, OrderReason::None) == OrderReason::NoListing);
+
+    // Auction -> failed gold withdrawal -> auction hand-off: the first pass
+    // queues the top-up for listing 42, the bank denies it, and the next pass
+    // on the same listing is blocked. The final reason is bankdenied.
+    {
+        uint32_t const listing = 42;
+        CHECK(GoldTopUpAllowed(listing, 0, 500, true));
+        // The bank leg recorded the denial; the retry on the same listing is blocked.
+        CHECK(!GoldTopUpAllowed(listing, listing, 500, true));
+        CHECK(AuctionTopUpBlockedReason(false, OrderReason::BankDenied) == OrderReason::BankDenied);
+    }
 
     if (failures == 0)
         std::printf("guild order auction policy: all tests passed\n");
