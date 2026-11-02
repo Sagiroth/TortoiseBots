@@ -16,26 +16,32 @@ function grab(name) {
   return src.slice(m.index, end + 4);
 }
 const grabLine = (name) => {
-  const m = new RegExp(`^  const ${name} = `, "m").exec(src);
+  const m = new RegExp(`^  const [^;]*\\b${name}\\b`, "m").exec(src);
   assert.ok(m, `${name} not found`);
   return src.slice(m.index, src.indexOf(";\n", m.index) + 2);
 };
 
 const ctx = { console, Map };
 vm.createContext(ctx);
-vm.runInContext([grab("raidsOnScreen"), grab("raidsPollDue"), grabLine("RAIDS_POLL_MS"), grabLine("RAIDS_EVENT_MS")].join("\n"), ctx);
+vm.runInContext([grab("raidsOnScreen"), grab("raidsPollDue")].join("\n"), ctx);
+const constLine = grabLine("RAIDS_POLL_MS");
+const mPoll = /RAIDS_POLL_MS\s*=\s*(\d+)/.exec(constLine);
+const mEvent = /RAIDS_EVENT_MS\s*=\s*(\d+)/.exec(constLine);
+assert.ok(mPoll && mEvent, "RAIDS_POLL_MS / RAIDS_EVENT_MS not found: " + constLine);
+vm.runInContext(`var RAIDS_POLL_MS = ${mPoll[1]}, RAIDS_EVENT_MS = ${mEvent[1]};`, ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 const T0 = 1000000000;
 assert.strictEqual(run("RAIDS_POLL_MS"), 30000, "the off-screen window is 30 s");
 assert.strictEqual(run("RAIDS_EVENT_MS"), 5000, "a recent raids event suppresses the snapshot fetch");
 assert.strictEqual(run("raidsPollDue(true, 0, 0, now)", { now: T0 }), true, "on screen with no event: every snapshot");
-assert.strictEqual(run("raidsPollDue(true, now - 1000, 0, now)", { now: T0 }), true, "on screen, stale event: every snapshot");
-assert.strictEqual(run("raidsPollDue(true, now - 4000, 0, now)", { now: T0 }), false, "an event 4 s ago suppresses the fetch: no fetch per snapshot while events flow");
-assert.strictEqual(run("raidsPollDue(true, now - 5000, 0, now)", { now: T0 }), true, "after 5 s the snapshot fetches again");
+assert.strictEqual(run("raidsPollDue(true, 0, now - 6000, now)", { now: T0 }), true, "on screen, stale event: every snapshot");
+assert.strictEqual(run("raidsPollDue(true, 0, now - 4000, now)", { now: T0 }), false, "an event 4 s ago suppresses the fetch: no fetch per snapshot while events flow");
+assert.strictEqual(run("raidsPollDue(true, 0, now - 5000, now)", { now: T0 }), true, "after 5 s the snapshot fetches again");
 assert.strictEqual(run("raidsPollDue(false, 0, 0, now)", { now: T0 }), true, "a page that never asked asks once");
 assert.strictEqual(run("raidsPollDue(false, now - 29000, 0, now)", { now: T0 }), false, "off screen: not before the 30 s are up");
 assert.strictEqual(run("raidsPollDue(false, now - 30000, 0, now)", { now: T0 }), true, "off screen: again after 30 s");
+assert.strictEqual(run("raidsPollDue(false, 0, now - 1000, now)", { now: T0 }), true, "off screen ignores the event clock: the 30 s answer window rules");
 
 // On screen: the Raids tab. The Commanders tab does NOT count (its cards read state.dungeons only).
 ctx.state = { activeTab: "overview", raids: { at: 0, eventAt: 0 } };

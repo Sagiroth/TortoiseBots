@@ -176,7 +176,25 @@ func TestDungeonsJS(t *testing.T) {
 	}
 }
 
-// TestFightReplayJS runs fightreplay_check.js: the replay's interpolation between the kept positions, its fight window and the
+// TestRaidsJS runs raids_check.js: the Raids tab's pure logic (group binds, list order, state word, window totals,
+// the offline member reading as not alive).
+func TestRaidsJS(t *testing.T) {
+	runCheck(t, "raids_check.js",
+		"../../web/static/js/commanders.js", "../../web/static/js/dungeons.js", "../../web/static/js/raids.js")
+}
+
+// TestRaidsPollJS runs raids_poll_check.js: /api/v1/raids is fetched on snapshot only while the Raids tab is on
+// screen and no `raids` event came in 5 s, off screen once per 30 s.
+func TestRaidsPollJS(t *testing.T) {
+	runCheck(t, "raids_poll_check.js", "../../web/static/js/app.js")
+}
+
+// TestRaidsRouteJS runs raids_route_check.js: #/raids?run=&group= opens the card, the Fights button builds
+// #/commanders/<key>/fight, cmdFindBind returns the observed bind, the Commanders Live list drops it and the
+// debugger tab strip keeps it.
+func TestRaidsRouteJS(t *testing.T) {
+	runCheck(t, "raids_route_check.js", "../../web/static/js/app.js")
+}
 // walk 2 track fixture.
 func TestFightReplayJS(t *testing.T) {
 	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")

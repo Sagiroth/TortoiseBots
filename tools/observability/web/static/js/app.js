@@ -51,9 +51,13 @@
     // Remote-commander bindings reported by the module (COMMANDERS datagrams).
     commanders: { list: [], fresh: false, updatedAt: 0, freshAt: 0, reportedAt: 0, lost: false, externalUrl: '' },
     // Live dungeon runs (issue #895) from /api/v1/dungeons: one per instance copy
-    // of a dungeon or raid with bots in it. byMember maps guid -> the run it is in
+    // of a dungeon with bots in it. byMember maps guid -> the run it is in
     // (profile links); binds are the run cards in the shape the Commanders map draws.
     dungeons: { runs: [], binds: [], byMember: new Map(), staleModule: false, at: 0, openKey: null },
+    // Live raid runs from /api/v1/raids: one per raid instance copy with bots in it.
+    // binds are the group cards in the shape the Commanders map draws; byMember maps
+    // guid -> the run it is in (profile links).
+    raids: { runs: [], binds: [], byMember: new Map(), live: false, staleModule: false, at: 0, eventAt: 0, openKey: null, openGroup: null },
     // turtle-agent run maps from --agent-maps-dir (issue #1102): a read-only list of SVG maps and single-file HTML replays. The
     // daemon answers 404 while the folder is unset, which is how the page learns to keep the tab hidden.
     agentMaps: { probed: false, enabled: false, error: false, files: [], open: '', at: 0 },
@@ -806,6 +810,7 @@
     roster: { hash: 'bots', title: 'Bots' },
     map: { hash: 'map', title: 'Map' },
     dungeons: { hash: 'dungeons', title: 'Dungeons' },
+    raids: { hash: 'raids', title: 'Raids' },
     agentmaps: { hash: 'agent-maps', title: 'Agent maps' },
     commanders: { hash: 'commanders', title: 'Commanders' },
     'dungeon-runs': { hash: 'dungeon-runs', title: 'Dungeon runs' },
@@ -872,7 +877,7 @@
     // #/coverage[/<raid>][?missing=1][&boss=<entry>] is parsed by coverage.js, the one owner of the coverage route.
     const cov = tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.parseHash
       ? Coverage.parseHash(window.location.hash) : null;
-    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov };
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov, group: q.get('group') };
   }
 
   function routeHash(r) {
@@ -884,6 +889,7 @@
       if (r.ptab && r.ptab !== 'overview') q.set('p', r.ptab);
     }
     if (r.run) q.set('run', r.run);
+    if (r.tab === 'raids' && r.group) q.set('group', r.group);
     if (r.demo && r.tab === 'commanders') q.set('demo', '1');
     const qs = q.toString();
     let hash = `#/${TABS[r.tab].hash}`;
@@ -901,7 +907,7 @@
   // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
     const cur = parseRoute();
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov }, partial);
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.activeTab === 'raids' ? state.raids.openKey : state.dungeons.openKey, group: state.raids.openGroup, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
     if (partial.tab && partial.tab !== 'coverage' && !('cov' in partial)) next.cov = null;
@@ -930,11 +936,15 @@
     if (r.demo && tab === 'commanders') setCmdDemo(true, true);
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
+    const prevRaidRun = state.raids.openKey, prevRaidGroup = state.raids.openGroup;
+    state.raids.openKey = tab === 'raids' && r.run ? r.run : null;
+    state.raids.openGroup = tab === 'raids' && r.group ? r.group : null;
     // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
     const prevCmd = fdPage.open, prevFight = fdPage.fight;
     if (tab === 'commanders') cmdRouteTab(r);
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
+    else if (tab === 'raids' && (state.raids.openKey !== prevRaidRun || state.raids.openGroup !== prevRaidGroup)) renderRaids();
     else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
     else if (tab === 'coverage') renderCoverage();
     routeApplied = true;
@@ -962,6 +972,7 @@
     else if (tab === 'map') renderMap();
     else if (tab === 'commanders') renderCommanders();
     else if (tab === 'dungeons') renderDungeons();
+    else if (tab === 'raids') renderRaids();
     else if (tab === 'dungeon-runs') renderDgRuns();
     else if (tab === 'coverage') renderCoverage();
     else if (tab === 'agentmaps') renderAgentMaps();
@@ -997,6 +1008,7 @@
     if (tab === 'issues') fetchAnomalyTotals();
     if (tab === 'commanders') fetchCommanders();
     if (tab === 'dungeons') fetchDungeons();
+    if (tab === 'raids') fetchRaids();
     if (tab === 'dungeon-runs') fetchDgRuns();
     if (tab === 'coverage' || tab === 'commanders') { if (typeof covLoad === 'function') covLoad(); }
     if (tab === 'agentmaps') fetchAgentMaps();
@@ -3751,6 +3763,15 @@
   const kv = (label, value) => `<div class="kv-row"><span>${esc(label)}</span><span>${value}</span></div>`;
   const kvMono = (value) => `<span class="mono">${esc(value || '-')}</span>`;
 
+  // The character's raid run, when it is in one: a link to the group's live view on the Raids tab.
+  function raidRunLink(guid) {
+    const hit = state.raids.byMember.get(guid);
+    if (!hit) return '';
+    const label = dgnRunName(hit.run) + (hit.group ? ` · ${hit.group.key}` : '');
+    const qs = hit.group ? `run=${encodeURIComponent(hit.run.key)}&group=${encodeURIComponent(hit.group.key)}` : `run=${encodeURIComponent(hit.run.key)}`;
+    return kv('Raid', `<a class="card-link" href="#/raids?${qs}" title="Open the raid group's live view">${esc(label)}</a>`);
+  }
+
   // The character's dungeon run, when it is in one: a link to the run's live view on the Dungeons tab (issue #895).
   function dgnRunLink(guid) {
     const run = state.dungeons.byMember.get(guid);
@@ -3786,6 +3807,7 @@
           ${live.player ? '' : kv('Strategy', kvMono(live.strategy || 'default'))}
           ${(live.pvp || inWorldPvp(live)) ? kv('PvP', pvpBadge(live) || worldPvpBadge(live)) : ''}
           ${dgnRunLink(guid)}
+          ${raidRunLink(guid)}
           ${live.player ? '' : kv('Combat role', `<span class="badge badge-info" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(live))}</span>`)}
         </div>
         <div class="kv-card">
@@ -4953,11 +4975,14 @@
         // The Dungeons view is a rollup of the roster: refresh it with each snapshot only while it is on screen, else once
         // every 30 s (the profile's run link and the world map's link read it too, and a snapshot is every 2 s).
         if (dgnPollDue(dgnOnScreen(), state.dungeons.at, Date.now())) fetchDungeons();
+        if (raidsPollDue(raidsOnScreen(), state.raids.at, state.raids.eventAt, Date.now())) fetchRaids();
 
         if (state.bots.length !== prevCount) {
           appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
         }
       });
+    } else if (msg.event === 'raids') {
+      applyRaidsEvent(msg.data);
     } else if (msg.event === 'heartbeat') {
       const d = msg.data;
       if (!d) return;
@@ -5203,7 +5228,7 @@
   function cmdGlideFocus() {
     if (state.activeTab !== 'commanders') return null;
     if (cmdPageMode() === 'debug') return fdPage.open || null;
-    const keys = Array.from(cmdCards.keys()).filter(k => k.indexOf('dgn:') !== 0);
+    const keys = Array.from(cmdCards.keys()).filter(k => k.indexOf('dgn:') !== 0 && k.indexOf('raid:') !== 0);
     return keys.length === 1 ? keys[0] : null;
   }
 
@@ -5405,7 +5430,7 @@
   const fdTabGone = key => key != null && !!fdPage.gone[key];
 
   function fdTabsModel(all) {
-    const rows = FdTabs.sortBinds((all || []).filter(b => !b.dungeon)).map(b => {
+    const rows = FdTabs.sortBinds(all || []).map(b => {
       const nowSec = cmdNowFor(b);
       return {
         key: b.commander, name: b.commander, place: cmdPlace(b), plan: (b.run && b.run.plan) || '',
@@ -5675,7 +5700,7 @@
       if (cmdDemo.bind) commanders = commanders.concat([cmdDemo.bind]);
       if (cmdDemo.raidBind) commanders = commanders.concat([cmdDemo.raidBind]);
     }
-    return commanders.concat(state.dungeons.binds);
+    return commanders.concat(state.dungeons.binds, state.raids.binds);
   };
   const cmdFindBind = key => cmdAllBinds().find(b => b.commander === key);
   const cmdNowFor = bind => (bind && bind.demo ? Date.now() / 1000 : cmdServerNow());
@@ -6116,7 +6141,7 @@
       const step = numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
       const verdict = t.last ? t.verdict : '';
       return `<button type="button" class="cmd-mini${t.gone ? ' gone' : ''}" data-fdtab="${esc(encodeURIComponent(bind.commander))}" title="Open ${esc(bind.commander)}">`
-        + `<span class="cmd-mini-head"><b class="cmd-mini-name">${esc(bind.commander)}</b><span class="cmd-chip s-${esc(t.state || 'idle')}">${esc(t.state || 'idle')}</span></span>`
+        + `<span class="cmd-mini-head"><b class="cmd-mini-name">${esc(bind.commander)}</b><span class="cmd-chip s-${esc(t.state || 'idle')}">${esc(t.state || 'idle')}</span>${bind.observed ? ' <span class="cmd-chip">raid &middot; observed</span>' : ''}</span>`
         + `<span class="cmd-mini-sub">${esc(t.plan || t.place || 'no plan')}${step ? ' &middot; ' + esc(step) : ''}</span>`
         + `<span class="cmd-mini-map">${fdMiniMapSvg(bind)}</span>`
         + `<span class="cmd-mini-foot">`
@@ -7946,6 +7971,12 @@
     return card;
   }
 
+  // The Commanders Live page shows commanders only: dungeon and observed-raid
+  // pseudo-bindings never render as Live cards (the debugger strip keeps them).
+  function cmdLiveBinds() {
+    return cmdAllBinds().filter(b => !b.dungeon && !b.observed);
+  }
+
   function renderCommanders() {
     const c = state.commanders;
     const listEl = document.getElementById('cmd-list');
@@ -7969,11 +8000,14 @@
         : 'The game server has not reported any commander yet (it sends them only while a binding stands).';
     }
 
-    // Only the commanders' cards live in #cmd-list; the Dungeons tab draws its own (the shared cmdCards map holds both).
+    // Only the commanders' cards live in #cmd-list; the Dungeons and Raids tabs draw their own (the shared cmdCards map holds all).
+    // The debugger strip keeps observed raids; the Live list (cmdLiveBinds) does not.
+    // Live draws the commanders; the debugger draws commanders plus observed raids.
+    const live = cmdLiveBinds();
     const all = cmdAllBinds().filter(b => !b.dungeon);
     fdTabsSync(all);
     cmdPaintPageMode(mode);
-    const tabs = fdTabsModel(all);
+    const tabs = fdTabsModel(mode === 'debug' ? all : live);
     fdTabPaint(tabs, mode);
     const page = document.getElementById('tab-commanders');
     if (page) {
@@ -7982,7 +8016,7 @@
       page.classList.toggle('cmd-debug-grid', mode === 'debug' && !fdPage.open);
     }
     if (mode === 'debug') renderFdPage(all, tabs, listEl);
-    else renderLivePage(all, listEl);
+    else renderLivePage(live, listEl);
     // The one layer panel moves into the map only for an open commander tab, where the debugger's Layers button expects it.
     cmdPlaceLayers(mode === 'debug' && !!fdPage.open && !fdTabGone(fdPage.open));
     paintCmdLayers();
@@ -9664,7 +9698,7 @@
   }
 
   // ---- Dungeons (issue #895) -----------------------------------------------
-  // A read-only live view of every instance copy (dungeon or raid) that has bots in it, one run per copy (map + instance id), so two
+  // A read-only live view of every dungeon copy that has bots in it, one run per copy (map + instance id), so two
   // copies of the same dungeon are two runs. The daemon does the grouping (/api/v1/dungeons, internal/state/dungeons.go); the tab shows
   // the list of runs, and a run's live view reuses the Commanders card and map renderer. No orders, no buttons that act on bots.
 
@@ -9743,6 +9777,180 @@
       cmdPruneAll();
       if (state.activeTab === 'dungeons') renderDungeons();
     });
+  }
+
+  // ---- Raids (no binding needed) ------------------------------------------------------------------
+  // The RAIDS rollup is on screen only on the Raids tab; a `raids` event newer than 5 s suppresses the snapshot
+  // fetch (flag-off servers send none, so the tab polls). Off screen it is asked once every 30 s.
+  const RAIDS_POLL_MS = 30000, RAIDS_EVENT_MS = 5000;
+  function raidsOnScreen() {
+    return state.activeTab === 'raids';
+  }
+  function raidsPollDue(onScreen, at, eventAt, nowMs) {
+    if (!onScreen) return !at || nowMs - at >= RAIDS_POLL_MS;
+    if (eventAt && nowMs - eventAt < RAIDS_EVENT_MS) return false;
+    return true;
+  }
+
+  function fetchRaids() {
+    if (raidsInflight) return;
+    raidsInflight = true;
+    fetch('/api/v1/raids')
+      .then(jsonOrThrow)
+      .then(view => { if (view && Array.isArray(view.runs)) applyRaids(view); })
+      .catch(() => {})
+      .finally(() => { raidsInflight = false; });
+  }
+  let raidsInflight = false;
+
+  function applyRaids(view) {
+    // The same refresh-rate gate as every other live view: frozen while paused.
+    const eventFresh = Array.isArray(view.runs) && view.live;
+    refreshGate.submit('raids', () => {
+      state.raids.runs = view.runs;
+      state.raids.live = !!view.live;
+      state.raids.staleModule = !!view.stale_module;
+      state.raids.at = Date.now();
+      if (eventFresh) state.raids.eventAt = Date.now();
+      state.raids.binds = [];
+      state.raids.byMember = new Map();
+      view.runs.forEach(r => {
+        (r.groups || []).forEach(g => {
+          const bind = RaidView.bindOf(r, g);
+          state.raids.binds.push(bind);
+          (g.members || []).forEach(m => {
+            if (!state.raids.byMember.has(m.guid)) state.raids.byMember.set(m.guid, { run: r, group: g });
+          });
+        });
+        (r.ungrouped || []).forEach(m => {
+          if (!state.raids.byMember.has(m.guid)) state.raids.byMember.set(m.guid, { run: r, group: null });
+        });
+      });
+      cmdPruneAll();
+      if (state.activeTab === 'raids') renderRaids();
+    });
+  }
+
+  // The WS `raids` event carries the full view: same path as a fetch answer.
+  function applyRaidsEvent(view) {
+    if (!view || !Array.isArray(view.runs)) return;
+    state.raids.eventAt = Date.now();
+    applyRaids(view);
+  }
+
+  // The tab: a group opened (#/raids?run=<key>&group=<group>) shows its card (map + party + fights), otherwise the list.
+  function renderRaids() {
+    const listEl = document.getElementById('raid-list'), viewEl = document.getElementById('raid-view');
+    if (!listEl || !viewEl) return;
+    const runs = state.raids.runs;
+    const openRun = state.raids.openKey != null ? runs.find(r => r.key === state.raids.openKey) : null;
+    const open = openRun && state.raids.openGroup != null
+      ? (openRun.groups || []).find(g => String(g.key) === String(state.raids.openGroup)) || null
+      : null;
+    listEl.style.display = open ? 'none' : '';
+    viewEl.style.display = open ? '' : 'none';
+
+    const emptyEl = document.getElementById('raid-empty');
+    if (emptyEl) emptyEl.style.display = runs.length || open ? 'none' : '';
+    const staleEl = document.getElementById('raid-stale');
+    if (staleEl) staleEl.style.display = state.raids.staleModule ? '' : 'none';
+
+    const back = document.getElementById('raid-back');
+    if (back) back.onclick = () => go({ tab: 'raids', run: null, group: null });
+
+    if (open && openRun) {
+      raidRenderCard(openRun, open);
+      return;
+    }
+
+    // The list of runs, one row per group (fighting first, then by key).
+    const host = document.getElementById('raid-list');
+    const rows = [];
+    runs.forEach(r => RaidView.listRows(r).forEach(g => rows.push({ run: r, group: g })));
+    host.innerHTML = rows.length
+      ? '<table class="dgn-table"><thead><tr><th>Raid</th><th>Group</th><th>Leader</th><th>Bots</th><th>Down</th><th>State</th><th>Seen</th></tr></thead><tbody>'
+        + rows.map(({ run, group }) => {
+          const word = RaidView.stateWord(group);
+          const members = group.members || [];
+          const bots = members.filter(m => !m.player).length;
+          const players = members.filter(m => m.player).map(m => m.name);
+          const down = members.filter(m => m.dead || m.offline).length;
+          return `<tr class="raid-run-row" data-run="${esc(run.key)}" data-group="${esc(group.key)}" title="Open the live view of this group">
+            <td>${esc(dgnRunName(run))}</td>
+            <td>${esc(group.key)}${group.bound && group.commander ? ' <span class="cell-muted">bound</span>' : ''}${group.observed ? '' : ' <span class="cell-muted">roster</span>'}</td>
+            <td>${group.leader ? esc(group.leader) : '<span class="cell-muted">–</span>'}</td>
+            <td>${bots}${players.length ? ' + ' + esc(players.join(', ')) : ''}</td>
+            <td>${down || '–'}</td>
+            <td><span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span></td>
+            <td>${esc(DgnView.seenText(run.seen_sec))}</td>
+          </tr>`;
+        }).join('') + '</tbody></table>'
+      : '';
+    if (!host._wired) {
+      host._wired = true;
+      host.addEventListener('click', e => {
+        const row = e.target.closest && e.target.closest('.raid-run-row');
+        if (row) go({ tab: 'raids', run: row.dataset.run, group: row.dataset.group });
+      });
+    }
+  }
+
+  // One shared card per group, rebuilt and drawn like a commander's: the header names the instance, leader and
+  // up-count; badges say observed vs roster-only and link the bound commander; the party, map and fights reuse the
+  // Commanders renderers (cmdRaidHtml, drawCmdMap, mountFightPanel) unchanged.
+  function raidRenderCard(run, group) {
+    const bind = RaidView.bindOf(run, group);
+    const name = dgnRunName(run);
+    const up = (group.members || []).filter(m => !m.dead && !m.offline).length;
+    const total = (group.members || []).length;
+    const word = RaidView.stateWord(group);
+    document.getElementById('raid-run-title').innerHTML =
+      `${esc(name)} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`;
+    const wins = group.combat ? RaidView.windowTotals(group.combat) : null;
+    setHtml(document.getElementById('raid-run-sub'),
+      `Group ${esc(group.key)} &middot; led by <b>${esc(group.leader || bind.lead || '?')}</b> &middot; ${up}/${total} up`
+      + ` &middot; seen ${esc(DgnView.seenText(run.seen_sec))}`
+      + (wins ? ` &middot; window ${wins.dps} dps / ${wins.hps} hps` : ''));
+    const key = 'raid:' + run.key + ':' + group.key;
+    cmdCards.forEach((cardEl, k) => {
+      if (k.indexOf('raid:') !== 0 || k === key) return;
+      cardEl.remove(); cmdUnwatchStage(cardEl); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
+    });
+    let card = cmdCards.get(key);
+    if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
+    const host = document.getElementById('raid-card');
+    if (!host.contains(card)) host.appendChild(card);
+    const flagNote = 'the server sends no RAIDS: AiPlayerbot.ObservabilityRaids = 0, so no fight numbers for unbound raids';
+    setHtml(card.querySelector('.cmd-title'), `${esc(name)} &middot; group ${esc(group.key)} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+    setHtml(card.querySelector('.cmd-badges'),
+      (group.observed
+        ? `<span class="badge badge-info" title="A live RAIDS report covers this group">observed</span>`
+        : `<span class="badge badge-warn" title="${esc(flagNote)}">roster only</span>`)
+      + (group.bound && group.commander
+        ? ` <a class="badge badge-info" href="#/commanders/${esc(encodeURIComponent(group.commander))}" title="Open the bound commander's card">bound &middot; ${esc(group.commander)}</a>`
+        : '')
+      + ` <span class="badge badge-info" title="Instance copy ${esc(String(run.instance))} of map ${esc(String(run.map))}">instance ${esc(String(run.instance))}</span>`);
+    const rb = group.run ? UnitInfo.runBrief(bind, cmdServerNow()) : null;
+    setHtml(card.querySelector('.cmd-sub'),
+      `Led by <b>${bind.lead ? cmdBotLink(bind.bots.find(b => b.name === bind.lead)?.guid, bind.lead) : esc(group.leader || '?')}</b> &middot; group ${esc(String(group.group))}`
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}">${esc(rb.text)}</span>` : ''));
+    card.querySelector('.cmd-orders').parentElement.querySelector('.cmd-h').style.display = 'none';
+    setHtml(card.querySelector('.cmd-orders'), '');
+    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind));
+    setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
+    setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
+    setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
+    const fightsBtn = `<div class="raid-fights"><a class="btn" href="${esc(raidFightHash(group.key, null))}">Fights</a></div>`;
+    const fightsHost = card.querySelector('.cmd-fights');
+    if (fightsHost) setHtml(fightsHost, fightsBtn);
+    mountFightPanel(card, bind);
+    drawCmdMap(key);
+  }
+
+  // Fight debugger links for an observed group: the debugger resolves the bind through cmdFindBind.
+  function raidFightHash(groupKey, fightKey) {
+    const h = `#/commanders/${encodeURIComponent(groupKey)}/fight`;
+    return fightKey ? h + '/' + encodeURIComponent(fightKey) : h;
   }
 
   // The tab: a run opened (#/dungeons?run=<key>) shows its card (map + party), otherwise the list of runs.
