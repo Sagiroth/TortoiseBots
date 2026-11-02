@@ -7370,6 +7370,19 @@ inline bool IsStepBoss(const PlanStep& s, const UnitFact& u)
     return s.entry != 0 && (u.entry == s.entry || u.formOf == s.entry);
 }
 
+// The boss step's own spawn, dead: boss down when it reads the step's entry or a script changed it away from it
+// (the same filter ReadBossInInstance uses). A change back to the boss's own entry reads as the entry itself
+// (ScriptChangedEntry is 0 then); that return is moot within one Thekal fight and not counted as a phase.
+// spawnFromSpotYd: the spawn row's 2D distance from the step's point (only the row nearest to the point counts,
+// within kSeeYd).
+inline bool OwnSpawnIsTheBoss(std::uint32_t currentEntry, std::uint32_t changedFrom, std::uint32_t stepEntry,
+    float spawnFromSpotYd = 0.0f)
+{
+    if (stepEntry == 0 || spawnFromSpotYd > kSeeYd)
+        return false;
+    return currentEntry == stepEntry || (changedFrom != 0 && changedFrom == stepEntry && currentEntry != stepEntry);
+}
+
 // The pack member the run crowd-controls before a pull of `pullGuid`: the
 // best-ranked of the plan's cc entries (cc_priority, then cc_always) among
 // the step's units, never the pull target, not one already done this step.

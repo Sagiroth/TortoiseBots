@@ -9327,15 +9327,22 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             if (step->kind == ai::PlanStepKind::Boss)
                 if (Creature* own = OwnBossSpawnCreature(lead, *step))
                 {
+                    float const ownFromSpot2d = std::sqrt(
+                        (own->GetPositionX() - step->x) * (own->GetPositionX() - step->x) +
+                        (own->GetPositionY() - step->y) * (own->GetPositionY() - step->y));
                     if (!own->IsAlive())
                     {
-                        f.bossOwnDead = true;
-                        f.bossOwnDeadEntry = own->GetEntry();
-                        f.bossCorpseGuid = own->GetObjectGuid().GetRawValue();
-                        f.bossCorpseX = own->GetPositionX();
-                        f.bossCorpseY = own->GetPositionY();
-                        f.bossCorpseZ = own->GetPositionZ();
-                        bossCorpseFromSpot = DistanceTo(own, step->x, step->y, step->z);
+                        if (TortoiseBots::DungeonRun::OwnSpawnIsTheBoss(own->GetEntry(),
+                                TortoiseBots::DungeonRun::ScriptChangedFrom(own), step->entry, ownFromSpot2d))
+                        {
+                            f.bossOwnDead = true;
+                            f.bossOwnDeadEntry = own->GetEntry();
+                            f.bossCorpseGuid = own->GetObjectGuid().GetRawValue();
+                            f.bossCorpseX = own->GetPositionX();
+                            f.bossCorpseY = own->GetPositionY();
+                            f.bossCorpseZ = own->GetPositionZ();
+                            bossCorpseFromSpot = DistanceTo(own, step->x, step->y, step->z);
+                        }
                     }
                     else if (TortoiseBots::DungeonRun::ScriptChangedFrom(own) == step->entry &&
                         std::find(entries.begin(), entries.end(), own->GetEntry()) == entries.end())
@@ -9408,8 +9415,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                             f.bossDeadNearSpot = true;
                         if (bossEntry && lead->GetDistance(creature) <= kSeeYd)
                             f.bossDeadNearLead = true;
-                        // The corpse the run remembers for a later loot step: the one nearest to the spot.
-                        if (bossEntry && (fromPoint <= step->radius + kSeeYd || lead->GetDistance(creature) <= kSeeYd) &&
+                        // The corpse the run remembers for a later loot step: the one nearest to the spot. Not while
+                        // the own spawn above already named the corpse: the grid's nearer entry corpse must not move it.
+                        if (!f.bossOwnDead && bossEntry && (fromPoint <= step->radius + kSeeYd || lead->GetDistance(creature) <= kSeeYd) &&
                             (!f.bossCorpseGuid || fromPoint < bossCorpseFromSpot))
                         {
                             f.bossCorpseGuid = creature->GetObjectGuid().GetRawValue();

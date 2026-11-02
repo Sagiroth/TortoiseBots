@@ -7219,6 +7219,21 @@ static void TestScriptChangedEntry()
     CHECK(!IsStepBoss(boss, Unit(3, 11347, 10)) && !IsStepBoss(boss, Unit(4, 15068, 10)));
 }
 
+// #1453 item 1 (Codex HIGH/Opus M1): the step's own spawn, dead, is the boss down only when it reads the step's
+// entry or a script changed it away from it; an alternate creature of another entry is not the boss. Item L4: the
+// row counts only within kSeeYd (2D) of the step's point.
+static void TestOwnSpawnIsTheBoss()
+{
+    CHECK(!OwnSpawnIsTheBoss(11347, 0, 14599));              // an alternate creature dead: not the boss
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599));               // the boss's own entry dead: the boss
+    CHECK(OwnSpawnIsTheBoss(14509, 14599, 14599));           // a script-changed form of the boss dead: the boss
+    CHECK(!OwnSpawnIsTheBoss(14509, 0, 14599));              // changed, but not from the boss: not the boss
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 0));                  // no step entry: not the boss
+    CHECK(OwnSpawnIsTheBoss(14599, 0, 14599, 60.0f));        // the row at the cap still counts
+    CHECK(!OwnSpawnIsTheBoss(14599, 0, 14599, 60.1f));       // past it the old search path decides
+    CHECK(!OwnSpawnIsTheBoss(14509, 14599, 14599, 66.9f));   // r1's corpse range is not the row's place
+}
+
 // The instance search found him alive as a changed form: the pause says so (` (as <entry>)`), so the walk's report
 // and the pause line name what the client's frames showed.
 static void TestBossSearchFindsChangedForm()
@@ -26463,6 +26478,7 @@ int main()
     TestBossChangedEntryAliveIsFought();
     TestBossFoughtEarlyCorpseNearLead();
     TestScriptChangedEntry();
+    TestOwnSpawnIsTheBoss();
     TestBossSearchFindsChangedForm();
     TestWalkBackFarPointIsApproached();
     TestRefusedPullOnlyForInvalidTarget();

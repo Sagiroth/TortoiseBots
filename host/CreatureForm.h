@@ -14,14 +14,14 @@ namespace DungeonRun
 
 inline std::uint32_t ScriptChangedFrom(Creature const* c)
 {
-    if (!c)
+    if (!c || c->GetObjectGuid().GetHigh() != HIGHGUID_UNIT)
         return 0;
     std::uint32_t const guidEntry = c->GetObjectGuid().GetEntry();
     std::uint32_t const current = c->GetEntry();
     if (!guidEntry || current == guidEntry)
         return 0;
     std::vector<std::uint32_t> spawnIds;
-    if (CreatureData const* data = sObjectMgr.GetCreatureData(c->GetGUIDLow()))
+    if (CreatureData const* data = c->GetCreatureData())
         for (std::uint32_t id : data->creature_id)
             if (id)
                 spawnIds.push_back(id);
