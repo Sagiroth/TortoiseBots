@@ -343,11 +343,14 @@ void TestPlanHashMismatch()
         if (entry.first == "plan")
             planValue = &entry.second;
     CHECK(planValue);
-    for (auto& entry : planValue->obj)
-        if (entry.first == "body")
-            for (auto& field : entry.second.obj)
-                if (field.first == "name")
-                    field.second = VString("edited");
+    ai::DungeonPlan decoded;
+    std::string err;
+    CHECK(DecisionCapture::DecodePlan(*planValue, decoded, err));
+    ai::DungeonPlan changed = decoded;
+    changed.name = "edited";
+    // A plan that decodes and hashes cleanly: only the fixture's planHash can catch it.
+    planValue->obj.clear();
+    *planValue = ParseText(DecisionCapture::EncodePlan(changed));
     std::filesystem::path const edited = gRoot / "base" / "edited-plan.json";
     CHECK(WriteText(edited, MiniJson::Raw(plan)));
 
@@ -359,9 +362,8 @@ void TestPlanHashMismatch()
     CHECK(WriteVariant("plan-bad", root));
 
     Fixture fixture;
-    std::string err;
     CHECK(!LoadFixture(Variant("plan-bad").string(), fixture, err));
-    CHECK(err.find("plan") != std::string::npos);
+    CHECK(err.find("planHash") != std::string::npos);
 }
 
 void TestUpgrade()
