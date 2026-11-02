@@ -350,5 +350,23 @@ class TheDispelDecisionIsLogged(unittest.TestCase):
         self.assertIn('verdict.wait ? "wait" : "excluded"', ACTIONS)
 
 
+class DispelHoldAtCastTime(unittest.TestCase):
+    """The member can gain the protected aura after the action was chosen, and a paladin Cure resolves one of its
+    dispel types at random, so the same hold is judged again at the last gate: the cast itself."""
+
+    def test_the_cast_path_refuses_the_spell_before_the_core_cast(self):
+        fn = body(PLAYERBOT_AI_SPELLS, "bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target")
+        self.assertIn("DispelCastBlocked(this, target, spellId)", fn)
+        self.assertLess(fn.index("DispelCastBlocked"), fn.index("new Spell("))
+        self.assertIn("reason=dispel-hold", fn)
+
+    def test_the_cast_gate_judges_every_type_the_spell_removes(self):
+        fn = body(ACTIONS, "bool ai::DispelCastBlocked")
+        self.assertIn("CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types)", fn)
+        self.assertIn("DispelMemberState(target, type, rows", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+
 if __name__ == "__main__":
     unittest.main()

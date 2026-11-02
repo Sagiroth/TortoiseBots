@@ -1224,6 +1224,45 @@ bool ai::SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply)
     return SweepDispelCures(ai, bot, rows, sPlayerbotAIConfig.bombRunoutDistance, apply);
 }
 
+// The hold at the last gate: the engine consults the multiplier when it picks the action, but a group member can gain
+// a protected aura in between (a debuff lands while the bot walks into range), and the core resolves the dispel type
+// of a Cure cast at random, so the cast itself has to be refused rather than merely deprioritised.
+bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
+{
+    if (!ai || !target || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    Player* bot = ai->GetBot();
+    if (!bot || !target->IsAlive() || target->GetMapId() != bot->GetMapId())
+        return false;
+    if (target != bot)
+    {
+        Player* member = sObjectMgr.GetPlayer(target->GetObjectGuid());
+        if (!member || !member->GetGroup() || member->GetGroup() != bot->GetGroup())
+            return false;
+    }
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    std::vector<uint32> types;
+    CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types);
+    if (types.empty())
+        return false;
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
+    if (rows.empty())
+        return false;
+    float const allyYd = sServerFacade.GetDistance2d(bot, target);
+    for (uint32 type : types)
+    {
+        const DispelVerdict verdict = DispelMemberState(target, type, rows, sPlayerbotAIConfig.bombRunoutDistance);
+        if (!verdict.excluded)
+            continue;
+        LogDispelExcluded(ai, bot, verdict, target, allyYd);
+        return true;
+    }
+    return false;
+}
+
 float BossTacticsDispelHoldMultiplier::GetValue(Action* action)
 {
     if (!action || !sPlayerbotAIConfig.dungeonRunAuraTactics)

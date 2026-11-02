@@ -1323,6 +1323,22 @@ int main()
         CHECK(!DispelCureVerdict(active, { Aura(9008, kPoison) }, cleanse, 50.0f, 30.0f).excluded);
     }
 
+    // The cast-time case: Cleanse chosen for a magic Hex on a member that also carries Poisonous Blood 24321, whose
+    // dispel_priority row is never. The core resolves one of Cleanse's dispel types at random, so the poison can be
+    // picked and the aura stripped: the cure is held even though the triggering type (magic) is not protected.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24321, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(24321, kPoison), Aura(24053, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kMagic, kPoison, 3 };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 20.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 24321);
+        CHECK(held.mode == TacticMode::Never);
+        // Without the poison aura the same Cleanse runs on the Hex.
+        CHECK(!DispelCureVerdict(active, { Aura(24053, kMagic) }, cleanse, 20.0f, 30.0f).excluded);
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

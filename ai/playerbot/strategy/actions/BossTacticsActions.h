@@ -49,6 +49,10 @@ namespace ai
     // With `apply` false the scan only reports whether there is anything to do. Gated by
     // AiPlayerbot.DungeonRunAuraTactics, the map's dispel rows and the "boss tactics" strategy.
     bool SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply);
+    // The same hold judged again at cast time (PlayerbotAI::CastSpell): the target may have gained a protected aura
+    // after the action was chosen. True when the cast must not be issued because the spell removes, by any of the
+    // dispel types read from its effects, a protected aura the target carries. Gated like SweepBossDispelCures.
+    bool DispelCastBlocked(PlayerbotAI* ai, Unit* target, std::uint32_t spellId);
 
     // How many living units of `entry`, a hold_kill row's blocker, stand within kHoldKillRangeYd of the bot and count
     // (CountsAsBlocker, BossTacticsPolicy.h): the "hold kill blockers" value, a grid search at most once a second per

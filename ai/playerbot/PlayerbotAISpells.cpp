@@ -11,6 +11,7 @@
 #include "Spells/SpellMgr.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/MountDismountPolicy.h"
+#include "strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
 
@@ -1065,6 +1066,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
             botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=self-harmful-refused", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
             return false;
         }
+    }
+
+    // A cure picked a moment ago can strip a protected aura the target gained since the action was chosen, and the
+    // core resolves the type of a Cure cast at random, so the hold is judged again here, at the last gate.
+    if (DispelCastBlocked(this, target, spellId))
+    {
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=dispel-hold", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+        return false;
     }
 
     Pet* pet = bot->GetPet();
