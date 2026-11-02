@@ -26584,6 +26584,83 @@ static void TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight()
     CHECK(r.healerGuardLastResortGuids.size() == 3);
 }
 
+// The last resort leaves the ordinary counters alone (Codex HIGH, 2026-11-02): three saves move neither guardOrders,
+// fightOrders nor guardUnitOrders, so the ordinary budget is whole after them.
+static void TestRaidTrashHealerGuardLastResortLeavesOrdinaryCountersAlone()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    auto const guardOrders = r.guardOrders;
+    auto const fightOrders = r.fightOrders;
+    auto const unitOrders = r.guardUnitOrders.size();
+    const std::uint64_t adds[] = {50101, 50102, 50103};
+    for (std::uint64_t guid : adds)
+    {
+        UnitFact add = Hitter(guid, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(guid) + " Tanky");
+        CHECK(r.guardOrders == guardOrders);
+        CHECK(r.fightOrders == fightOrders);
+        CHECK(r.guardUnitOrders.size() == unitOrders);
+        CHECK(r.guardUnitOrders.count(guid) == 0);
+    }
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
+}
+
+// An add the fight already saw, held back once the last resort's three saves were spent, gets the ordinary off-tank
+// pick-up as soon as an off-tank is free: the saves left guardOrders whole (at 3 they spent kGuardOrdersPerFight).
+static void TestRaidTrashHealerGuardLastResortLeavesAPickUpForASeenAdd()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    f.members = {Mem("Tanky", 0)};
+    f.leadAttacker = Hitter(60, 12130, 5);
+    f.leadAttacker.victimLead = true;
+    CHECK(GuardTick(r, f) == "attack 60 Tanky");
+    f.leadStaying = false;
+    const std::uint64_t adds[] = {50101, 50102, 50103};
+    for (std::uint64_t guid : adds)
+    {
+        UnitFact add = Hitter(guid, 11368, 20, true);
+        add.x = 20.0f;
+        f.partyAttackers = {add};
+        std::string got;
+        for (int k = 0; k < 8 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack " + std::to_string(guid) + " Tanky");
+    }
+    UnitFact fourth = Hitter(50104, 11368, 20, true);
+    fourth.x = 20.0f;
+    f.partyAttackers = {fourth};
+    for (int k = 0; k < 12; ++k) // seen loose, held: the fight's three last resorts are spent
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardLastResortGuids.size() == 3);
+    f.raid.offTanksAlive = {"Brun"};
+    std::string got;
+    for (int k = 0; k < 8 && got.empty(); ++k)
+        got = GuardTick(r, f);
+    CHECK(got == "attack 50104 Brun");
+    CHECK(r.note.find("off-tank Brun picks up 11368 off the healer") != std::string::npos);
+    CHECK(r.guardUnitOrders.at(50104) == 1);
+}
+
 // The trash guard stays on for the fight once the main tank's current target turned it on (Run::trashHealerGuard):
 // a tick where that target is gone neither hands a loose mob to an off-tank nor sends the main tank, and the guard's
 // clock keeps running.
@@ -28419,6 +28496,8 @@ int main()
     TestRaidTrashHealerGuardLastResortAfterBudgetsSpent();
     TestRaidTrashHealerGuardLastResortIgnoresSpacing();
     TestRaidTrashHealerGuardLastResortOncePerAddThreePerFight();
+    TestRaidTrashHealerGuardLastResortLeavesOrdinaryCountersAlone();
+    TestRaidTrashHealerGuardLastResortLeavesAPickUpForASeenAdd();
     TestRaidTrashHealerGuardLatchesForTheFight();
     TestRaidTrashHealerGuardOrderSpacesThePickUp();
     TestRaidGuardOnABossStepSendsTheMainTank();

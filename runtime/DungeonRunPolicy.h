@@ -14159,11 +14159,17 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
-    ++r.guardOrders;
-    if (!hold)
+    // The last resort is not an ordinary pick-up: its orders leave guardOrders, fightOrders and guardUnitOrders alone,
+    // so three saves cannot spend the ordinary budget (Codex HIGH, 2026-11-02). It counts only in
+    // healerGuardLastResortGuids (one an add, kRaidHealerGuardLastResortsPerFight a fight).
+    if (!mainTankLastResort)
     {
-        ++r.fightOrders;
-        ++r.guardUnitOrders[u->guid];
+        ++r.guardOrders;
+        if (!hold)
+        {
+            ++r.fightOrders;
+            ++r.guardUnitOrders[u->guid];
+        }
     }
     if (trashOffTank && !free.empty())
     {
