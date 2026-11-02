@@ -41,13 +41,13 @@ int main()
     for (std::uint32_t level = 20; level <= 60; ++level)
         CHECK(SeedQualityFloor(level) == kSeedQualityUncommon);
 
-    // Empty-slot backstop, fresh seed at level 7: white is accepted, a slot with
+    // Empty-slot backstop, fresh pool-bot seed at level 7: white is accepted, a slot with
     // only grey candidates stays empty.
     {
         ai::EmptySlotGates g;
         g.botLevel = 7;
         g.maxItemLevel = 8;
-        g.minQuality = BackstopQualityFloor(7, true);
+        g.minQuality = GearQualityFloor(7, true);
         g.maxQuality = 3;
         ai::EmptySlotCandidate grey;
         grey.itemId = 1; grey.itemLevel = 5; grey.requiredLevel = 5; grey.quality = 0; grey.equippable = true;
@@ -61,17 +61,19 @@ int main()
         std::vector<ai::EmptySlotCandidate> onlyGrey{grey};
         CHECK(ai::RankEmptySlotCandidates(g, onlyGrey).empty());
 
-        // A non-seed caller keeps grey below level 10.
+        // Player autogear, hired-companion provisioning and re-gearing are not
+        // the fresh pool-bot seed (freshPoolSeed false): at level 7 the backstop
+        // still accepts grey, so they can fill a slot with it.
         ai::EmptySlotGates legacy = g;
-        legacy.minQuality = BackstopQualityFloor(7, false);
+        legacy.minQuality = GearQualityFloor(7, false);
         CHECK(legacy.minQuality == 0);
         CHECK(ai::RankEmptySlotCandidates(legacy, onlyGrey).size() == 1);
     }
     // Non-seed floor is unchanged at 10-19 and 20+; the seed floor never drops below it.
-    CHECK(BackstopQualityFloor(12, false) == kSeedQualityNormal);
-    CHECK(BackstopQualityFloor(25, false) == kSeedQualityUncommon);
+    CHECK(GearQualityFloor(12, false) == kSeedQualityNormal);
+    CHECK(GearQualityFloor(25, false) == kSeedQualityUncommon);
     for (std::uint32_t level = 5; level <= 60; ++level)
-        CHECK(BackstopQualityFloor(level, true) == SeedQualityFloor(level));
+        CHECK(GearQualityFloor(level, true) == SeedQualityFloor(level));
 
     constexpr std::uint32_t atCompileTime = SeedQualityFloor(25);
     CHECK(atCompileTime == kSeedQualityUncommon);

@@ -68,7 +68,7 @@ TortoiseBots::RangedAmmoKind RangedAmmoKindOf(ItemPrototype const* proto)
 }
 
 
-void PlayerbotFactory::MakeComplete()
+void PlayerbotFactory::MakeComplete(bool freshSeed)
 {
     if (!bot || !ai)
         return;
@@ -90,7 +90,9 @@ void PlayerbotFactory::MakeComplete()
     // level + RandomGearMaxItemLevelAboveLevel, so a wandering bot never wears
     // raid-level loot it could not have earned.
     UsePoolGearCap();
+    freshPoolSeed = freshSeed;
     InitEquipment(true, false);
+    freshPoolSeed = false;
     // Missing kit, idempotent: thrown top-up FIRST (Issue #401: 76
     // rogues/warriors missed it with EQUIP_ERR_INVENTORY_FULL - the bulky
     // kit filled the last slots before the single-slot thrown grant ran),
@@ -1670,7 +1672,8 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                     frand(0.0f, 1.0f) < sPlayerbotAIConfig.randomGearSeedEpicChance)
                     seedEpic = TrySeedEpicIds(bot, specId, slot, searchLevel, maxItemLevel, ids);
                 // Fresh-seed quality band (owner spec): greens and blues mixed
-                // from level 20, white (never grey, #1485) below that.
+                // from level 20, white (never grey, #1485) below that on the fresh
+                // pool-bot seed (freshPoolSeed); other callers keep the old floors.
                 // Epics only through the rare world-epic gate above (a fresh
                 // bot must not be overpowered). Earned/command paths keep
                 // the quality-started band.
@@ -1678,7 +1681,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                 uint32 qEnd = ITEM_QUALITY_ARTIFACT;
                 if (seedSpread && !seedEpic)
                 {
-                    qBegin = TortoiseBots::SeedQualityFloor(level);
+                    qBegin = TortoiseBots::GearQualityFloor(level, freshPoolSeed);
                     // Spawn band tops out at rare; a raised level-60 ilvl
                     // ceiling opens the band up to epic (deterministically).
                     qEnd = (playerUpgrade ? TortoiseBots::AutogearMaxQuality(level, TortoiseBots::kAutogearMaxLevel, playerRaisedCeiling)
@@ -1727,7 +1730,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                 if (seedEpic && ids.empty())
                 {
                     seedEpic = false;
-                    for (uint32 q = TortoiseBots::SeedQualityFloor(level);
+                    for (uint32 q = TortoiseBots::GearQualityFloor(level, freshPoolSeed);
                          q < ITEM_QUALITY_RARE + 1; ++q)
                     {
                         if (setQuality && q != quality)
@@ -2189,9 +2192,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
             EmptySlotGates gates;
             gates.botLevel = bot->GetLevel();
             gates.maxItemLevel = maxItemLevel;
-            // The fresh seed never takes grey here either (#1485); grey stays
-            // allowed only for the non-seed callers of the backstop.
-            gates.minQuality = TortoiseBots::BackstopQualityFloor(level, seedSpread);
+            // The fresh pool-bot seed never takes grey here either (#1485);
+            // grey stays allowed for every other caller of the backstop.
+            gates.minQuality = TortoiseBots::GearQualityFloor(level, freshPoolSeed);
             gates.maxQuality = seedSpread
                 ? (playerUpgrade
                     ? TortoiseBots::AutogearMaxQuality(level, TortoiseBots::kAutogearMaxLevel, playerRaisedCeiling)
