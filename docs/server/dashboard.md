@@ -74,7 +74,8 @@ The web interface provides real-time operational visibility into your realm's bo
 | **Commanders** | Who is leading bot groups? | Party health bars, tactical warnings, commander orders, and fight status. |
 | **Progress** | Are bots levelling up smoothly? | XP per hour KPIs, level-up timelines, and average gear item level by level band. |
 | **Activity** | What events have occurred? | Real-time feed of completed quests, rare loot drops, gathered nodes, and kills. |
-| **Dungeons** | What dungeon and raid runs are active? | Live view of active instance copies with bots, member health, and player badges. |
+| **Dungeons** | What dungeon runs are active? | Live view of active dungeon copies with bots, member health, and player badges. |
+| **Raids** | What raid runs are active? | Live view of active raid copies by group, no binding needed: leaders, offline members, live combat window, fight links. |
 | **Dungeon runs** | How do the dungeon runs go? | Success rate, clear and boss kill times, wipes and deaths per dungeon, read from the run trace summaries; optional Overview strip. |
 | **Agent maps** | What did a turtle-agent test run do? | Developer tool for turtle-agent test runs. Hidden unless the daemon is given a maps folder. |
 | **Auction House** | What is currently on the market? | Searchable catalog of all active auction listings posted by bots and players. |
@@ -102,14 +103,23 @@ Clicking any bot name or map marker opens a slide-over profile panel that inspec
 
 ### Dungeons Tab
 
-The **Dungeons** tab provides a dedicated live overview of all active dungeon and raid runs containing bots:
+The **Dungeons** tab provides a dedicated live overview of all active dungeon runs containing bots (raid copies live on the Raids tab):
 
 - **Instance Isolation:** Groups bots by active instance copy (`(map, instance)` pair), distinctly separating multiple concurrent runs of the same dungeon.
 - **Player Highlighting:** Real players in bot parties are visually distinguished with a distinct badge and gold ring indicator.
-- **Raid Subgroups:** Raid encounters display members formatted into compact 5-player subgroup tiles.
 - **Live Run View:** Selecting an active run presents an interactive instance map rendering bot positions and vital health/power bars. The first living tank is the run's lead: the map anchors on it and draws its mark and path.
 - **Mobs and Targets (`DUNGEON_MOBS`):** A module that sends the `DUNGEON_MOBS` datagram (issue #1101; additive, no protocol version bump) adds the mobs the party's bots have seen, each mob's target and every bot's own target; the run's map draws them through the **Enemies**, **Critters**, **Threat colours and lines** and **Target, heal and crowd-control lines** layers (see [Commanders maps](#commanders-maps)). The module caps a run at 24 mobs in a party and 48 in a raid (fewer when many runs are live), and the card says `N of M mobs shown` when the list was cut. Mobs of a copy that leaves the instance vanish within about 8 seconds. `AiPlayerbot.ObservabilityDungeonMobs = 1` (default) turns the feed on, but only while `AiPlayerbot.Observability = 1`; with either off the maps keep working and those layers stay greyed with "it needs the newer module". A mob entry joins a run by map + instance id; when the roster reports no instance at all (a module from before #895), it joins by map plus a shared member guid, never by map alone, and only when exactly one run on that map matches.
 - **Power Bars:** Each member row draws its power bar from the roster's `power`/`max_power`/`power_type`, exactly like the Bots tab, so a module that reports no power and a dead member show none.
+
+### Raids Tab
+
+The **Raids** tab lists every raid map copy that holds a bot, with or without a commander bind: the instance, the groups inside it, each group's rows (roster fields, plus a name and an offline marker for members not online), the map and the mobs from `DUNGEON_MOBS`, and a link to a bound group's Commanders card. A run is a raid when a member's roster row carries `"raid":true` (the module's map is a raid map, the core's own map type) or its `DUNGEON_MOBS` entry does; the Dungeons tab then lists only the other runs.
+
+- **Groups:** One card per group with the leader, offline members and the live combat window. The party, map and fights reuse the Commanders renderers unchanged: subgroup blocks, threat and deaths panels, and `mountFightPanel` under the group key.
+- **Observed vs roster only:** A live `RAIDS` report marks the group `observed` (leader, offline members, fight numbers); without one the card says `roster only` (the server sends no RAIDS: `AiPlayerbot.ObservabilityRaids = 0`). A bound group shows `bound · <commander>` linking to its Commanders card and carries the run line; fights are the same list under the commander name.
+- **Ungrouped:** Units of the copy with no group read as one muted "Not in a group" block.
+- **Known limit:** past 40 raid groups the module rotates which groups it reports, so the tab cycles through them instead of showing all at once.
+- **Polling:** The page refetches `/api/v1/raids` on each snapshot only while the tab is on screen and the last `raids` event is older than 5 s, else once per 30 s. The WebSocket hub broadcasts `raids` after every applied RAIDS datagram.
 
 ### Commanders Maps
 
@@ -142,6 +152,38 @@ It is not the live **Dungeons** tab above: that one shows the instance copies bo
 **Run steps** (a party the run leader clears, "observe"): the plan's steps for the current section - a dashed route (grey = done, blue = ahead), numbered circles for pulls and bosses (green = cleared, yellow = the step it is on, struck out = skipped), a crown and name for bosses, icons for loot, doors, rituals and stops - need a module that sends `run.plan_steps`; an older one leaves the layer greyed.
 
 **Bosses** (owner request 2026-10-21): every known boss of the dungeon a card shows was drawn at its spawn point all the time, with its name - a gold crown while it lived, a grey crown with a tick and the name struck through once killed, an outlined crown when not seen - and the run line counted `bosses 3 / 8 killed` of the run's bosses (the ones the plan names; the others are listed in its tooltip), with `bosses –` on a dungeon map where nothing was known. The module sends the list with each boss's state in that party's own instance (`bosses` in the `COMMANDERS` report); without it the page falls back to the plan's boss steps, the bosses in sight and the kills it saw.
+
+### Underperforming bots (Fight debugger)
+
+Inside the Fight debugger card, under everything else and closed by default, **Underperforming bots** lists the bots a run flagged and says why. It is one view for every class and role and for parties and raids of 5 to 40: no boss, map or spell-id constant takes part.
+
+- **One row per listed bot:** name (click it for the gear and profile), class and talent spec, role, and its numbers next to what a median peer in the same role did in the same fights: damage per second (dps), healing per second (healers) or casts per second (tanks, because the fight data carries no threat), then casts per second, deaths, the skill rate for tanks whose class has a spell-count-zero rule (Sunder Armor, Maul/Swipe; shown, never flagged), how many fights flagged it, the reasons as chips (a rule id and its fight count, or the peer comparison in words), a short likely cause, and up to eight fight links (the boss name, or the step) that open that fight on its local night.
+- **The reasons:** the daemon's own warning rules (`combat.Judge`, so a rules change shows here at once), a bot whose main number is below half (yellow) or a quarter (red) of its role peers' median over at least three peer fights, low activity (casts per second below 40% of the peers) and frequent deaths. A red or a yellow rule warning lists a bot, but only in a fight it is judged in (the same alive-time rule as the numbers, so the flagged count never passes the judged count; a bot that died at once cannot be listed by a rule); a role with no peers (the only tank or healer of a five-man) gets no peer comparison, only its rules.
+- **The window:** a live card asks for the current binding (since it began; the last two hours when the module did not report a bound time), a history card for the current local night; a night picked on the rail is a local night too, with the page's zone and the 06:00 rollover, exactly as the fight history lists nights (`night=`, `tz=` and `rollover=` in the request, the UTC day when the zone is unknown). The run picker's first option is the whole window - *This run* on a live card, *Whole night* on a history card; *Last run* and each run of the window narrow the answer to one run. A run is one session of fights: a new run starts when the fight's session changes or the gap from the previous fight's end is over 15 minutes; a supervisor restart inside a run stays one run. The pick is dropped when the window changes (another night, another card, live to history, a new binding), so it never points at a run of the window before it.
+- **Not measured:** range, line of sight and mana are not in the fight data, so causes come from casts, damage, healing and deaths only.
+- **Known limits:** a bot is one row per guid and role, so a bot whose role changed inside the window lists twice (the header counts it once); the window picks fights by their start, a fight is never split across two nights; a live window is the whole binding since it began, which can hold fights from before the current session (the run picker narrows it); the peer medians need same-role peers judged in the same fight, so they compare within one fight and not across the night; a window over `max_fights` keeps its newest fights only, and the page says so.
+
+The limits served with every answer:
+
+| Name | Value | Meaning |
+|---|---|---|
+| `min_judged_s` | 20 | a fight shorter than this is not used for the peer numbers |
+| `min_alive_s` | 10 | a bot alive less than this in a fight is not judged in it |
+| `min_peers` | 2 | role peers a healer or dps needs in a fight for a peer median |
+| `min_tank_peers` | 1 | the same for tanks (a five-man has one tank, so no tank peers there) |
+| `min_fights` | 3 | peer fights a bot needs before a peer reason may list it |
+| `yellow_ratio` | 0.5 | bot / peer below this: yellow |
+| `red_ratio` | 0.25 | below this: red |
+| `idle_ratio` | 0.4 | casts per second below this share of the peers: low activity |
+| `death_ratio` | 2 | deaths at least this many times the peers' expected deaths |
+| `min_deaths` | 3 | ... and at least this many: yellow |
+| `early_death_share` | 0.5 | cause line when the bot died before half the fight in at least this share of its flagged fights |
+| `run_gap_s` | 900 | a longer gap between fights starts a new run |
+| `max_fights` | 500 | fights read per request, the newest kept (`truncated` says so) |
+| `max_fight_refs` | 20 | fight links per bot, newest first |
+| `spell_list_cap` | 12 | a bot with this many listed spells has a cut list (no skill rate) |
+
+`GET /api/v1/combat/underperformers?commander=<name>&(day=<YYYY-MM-DD>|night=<YYYY-MM-DD>&tz=<IANA zone>[&rollover=0-12]|since=<unix s>[&until=<unix s>])[&run=all|last|<i>]` answers `commander`, `since`, `until`, `run`, `fights`, `judged`, `truncated`, `runs` (each `since`, `until`, `fights`, `plan`, `legs`, `session`), `limits`, `bots` and `ok`; `run=all` (the default) is the whole window, and a run pick narrows the fights to that run's session and time bounds but `runs` still lists the whole window, and the answer's `since`/`until` become the run's. Each `bot` carries `you` (its own rates over the peer fights, the same fights as `peers` and the ratio), `you_all` (the same rates over every judged fight) and `fight_refs`, each of which carries the fight's `start` and no day: the page turns the start into the fight's local night to open. `night` is the same local night the fight history lists (tz and the 06:00 rollover, `X-TZ-Fallback: utc` and the night read as a UTC day when the zone is unknown); `day` stays one UTC day. Every number that cannot be computed is `null`, never NaN. A bad parameter answers 400 with `{"error": "..."}`; the route needs the normal GM login.
 
 ### Agent Maps Tab
 
@@ -196,7 +238,8 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/issues`: Active and historical navigation and combat stall episodes.
 - `GET /api/v1/commanders`: Active remote commander bindings, party member positions, and recent orders.
 - `GET /api/v1/commanders/trails`: Historic movement trails and paths for active commanders.
-- `GET /api/v1/dungeons`: Live view of active instance copies with member states and player indicators; from a module that sends `DUNGEON_MOBS`, each run also carries `mobs`, `mobs_map` and `mobs_total`, and each member `id` and `target`.
+- `GET /api/v1/dungeons`: Live view of active dungeon copies with member states and player indicators; from a module that sends `DUNGEON_MOBS`, each run also carries `mobs`, `mobs_map` and `mobs_total`, and each member `id` and `target`.
+- `GET /api/v1/raids`: Live view of active raid copies: one run per copy, groups by group id with leader, offline members and live combat window, ungrouped units apart; `live` says a RAIDS datagram arrived inside 12 s. `WS /api/v1/stream` event `raids` carries the same view.
 - `GET /api/v1/dungeon-runs`, `GET /api/v1/dungeon-runs/<map>/runs`: Run trace summaries per dungeon and the runs of one map (the Dungeon runs tab).
 - `GET /api/v1/maps/<map id>`: The three picture slots of a map in display order (`kind` worldmap/minimap/navmesh, `floor`, `label`, `available`; a missing slot carries `reason`, an available one `name`, `source`, `url` and the rectangle `x`/`y`/`w`/`h` it covers). Answers 200 also for a map without pictures; 404 only when no map folder is configured.
 - `GET /api/v1/mapfiles/<name>`: One available map picture (`.png`) or its placement (`.json`) from the map folder.
@@ -208,6 +251,7 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
 - `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history. Each fight (live or finished) carries `boss_phase` and `boss_phase_entry`: the fight's boss phase (1 + the entry changes the module saw of his unit) and the entry he reads now, so the Fights panel and the debugger show `phase N (entry E)` after the boss name when N > 1 - a boss a script changes mid-fight keeps being the boss, e.g. Zul'Gurub's Thekal 14599 turning into 14509.
 - `GET /api/v1/combat/history/days?commander=` (add `tz`, e.g. `Europe/Oslo`, and the optional `rollover` hour, default 6), `GET /api/v1/combat/history?commander=` with `day=` (one UTC day) or `night=` (with `tz`: one local night), `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's nights, one night's fights, and the same pack across runs. Without `tz` the days and list answer the old UTC day rows, so old clients keep working.
+- `GET /api/v1/combat/run-totals?commander=&session=`: one run's finished fights summed per bot (damage, healing, overheal, taken, casts, deaths, the Tank table's Sunder and taunt counts, and each bot's summed fight time), from the fights the daemon remembers plus the history files. Only fights of that commander's run (that game session) are summed; at most 500 fights are summed and a cut answers the header `X-More: 1`. The daemon opens only the run's history rows, newest first, skipping rows already in memory and fights without per-bot numbers (a live row, an ended fight not yet filed). The answer is held per run for 10 s; a run with no fight still live and no new fight in 10 minutes stays cached until a newer fight lands. Runs are capped at 256 cached entries with least-recently-used eviction, and a session with no fights is not cached. Commander and session are required, a bad one is a 400.
 - Both fight lists (`/combat/fights` and `/combat/history`) take optional paging and filter params; without them they answer as before. `limit=N` (at most 500) cuts the list, put in start-descending then key-ascending order first, and answers the header `X-More: 1` when rows were left out (a `since` or `before` without `limit` is capped at 500 the same way); `before=<start>[,<key>]` lists only older fights (pass the last row's `start,key` to get the next page); `since=<start>` only fights from that unix second on; `boss=1`, `deaths=1` and `outcome=kill,wipe` filter. With `since` or `before` the history list may leave out `day` and then spans every stored day. A bad param is a 400.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
@@ -231,6 +275,7 @@ All times on the dashboard are shown in your browser's local time, and nights ro
 - **Pack labels:** "Pack N" counts inside the fight's day and run over the rows the rail holds. For an earlier run that the 2-hour window cuts, the numbers count from the window's first fight and shift as the window slides; Load older or Show all fights gives the run's own numbers.
 - **Details on demand:** a fight's detail (`/combat/fight/<key>`, 4-35 KB) is fetched only when it is opened (a click, a pack row, the URL, or the debugger's own pick of the worst fight by its summary: a wipe, then deaths, then fired rules), and kept in a per-commander cache. Cards without a detail show their summary's word (wipe, deaths, check or no deaths, in italics); the full checks, damage numbers, engaged mob name and the per-death marks come when the fight is opened. The run strip marks a fight's deaths with one counted mark until it is opened. The header's "N of M fights need a look" counts by summary (a wipe or a death), so opening fights never changes it.
 - **Redraws:** the rail repaints by key every 2 s; only the cards whose summary changed are rebuilt.
+- **This fight | Total:** the switch above the role tables shows the picked fight's own numbers or the run's sums. A run is one game session, and the session id is the server's start in unix seconds, so Total's title reads "Total · N fights since <server start, local time>" (with "(newest 500 fights)" when the daemon cut the answer at its cap). Total fetches run-totals for the session parsed from the picked fight's key (commander, session, id), so a fight the rail does not hold still sums its own run; the answer is held per commander per session for 10 s. It renders the same Tanks, Healers and Damage tables: DPS and HPS over each bot's own fight time, Over % over the run's healing, plus Taken, Casts, the summed death count, Sunder and taunts. The header's raid dps and hps chips follow the switch (the run's sums over its fight time, with a fight count). The checks and timeline below still judge the picked fight and say so ("Checks for <fight>"). The choice is kept per viewer in this browser. The live table and live chips keep the rolling 10 s window and have no switch.
 - **Live events** sit at the top of the right column, beside the map and above the Tanks table; between 761 and 1180 px wide they go under the map, and on a phone they stack under the map above the role tables.
 
 <details>

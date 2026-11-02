@@ -1,6 +1,6 @@
 "use strict";
 // Dungeons tab: the pure logic of the live dungeon runs (issue #895), free of the page so a test can run it under node
-// (internal/commandersjs). A run is one instance copy (map + instance id) of a dungeon or raid with at least one bot in it; the daemon
+// (internal/commandersjs). A run is one dungeon copy (map + instance id) with at least one bot in it (raid copies live on the Raids tab); the daemon
 // does the grouping (internal/state/dungeons.go) and serves it at /api/v1/dungeons. app.js draws the list and the cards; this file
 // holds the wording and the party layout. Depends on commanders.js (CmdView) being loaded first.
 (function (root) {

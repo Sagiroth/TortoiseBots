@@ -81,9 +81,13 @@ public:
     // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*), read from the loaded
     // aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
-    // Reads aiplayerbot.conf again and only the run leader's keys from it (the rest of the settings keep their
-    // start values). World thread only (BotHostAdapter::OnUpdate). False when the AI is disabled or the file
-    // could not be read; the keys are then left as they were.
+    // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
+    // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
+    void LoadObservabilityRaids();
+    // Reads aiplayerbot.conf again and only the keys that follow a `.reload config` (the run leader's, the raids
+    // observability flag; the rest of the settings keep their start values). World thread only
+    // (BotHostAdapter::OnUpdate). False when the AI is disabled or the file could not be read; the keys are then
+    // left as they were.
     bool ReloadDungeonRunKeys();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);
@@ -186,6 +190,9 @@ public:
     std::string observabilityHost;
     // Issue #1101: the DUNGEON_MOBS datagram (mobs per dungeon run); only acts while observability is on.
     bool observabilityDungeonMobs = true;
+    // Spec dash-raids-tab: the RAIDS datagram and the observed-raid combat sampler (leader, offline members and the live
+    // fight window of unbound raid groups); only acts while observability is on, off by default.
+    bool observabilityRaids = false;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
     uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)
@@ -597,6 +604,12 @@ public:
     // The run leader orders `pullback` only when the tank can shoot from where it stands, else it walks the
     // party to a firing stand first (DungeonRunPolicy.h HoldForShot; default off).
     bool dungeonRunPullStand;
+    // A firing stand is refused when another live pack (its patrol loop included) can reach it; none clear: the
+    // plain pull goes out (DungeonRunPolicy.h HoldForShot; default off).
+    bool dungeonRunStandClearance;
+    // The approach row before a stand-pull step holds outside the pulled pack's wake reach and the pull's crowd
+    // control goes out there, before the walk in wakes the pack (DungeonRunPolicy.h NextStandPull; default off).
+    bool dungeonRunStandPullPreCc;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;

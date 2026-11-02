@@ -167,7 +167,8 @@ class CombatMonitorWiringTest(unittest.TestCase):
         sample = definition(code, "static void SampleBoundFights(")
         self.assertIn("SamplerFeeds(", sample)
         self.assertIn("FeedCombatMonitor(", sample)
-        self.assertIn("NoteBoss(", sample)
+        self.assertIn("NoteFightBoss(", sample)
+        self.assertIn("NoteBoss(", definition(code, "void NoteFightBoss("))
         # A lead in another group (it left and rejoined elsewhere) is away for
         # this binding: it never feeds the fight, and the grace closes it.
         self.assertIn("LeadUsable(", sample)

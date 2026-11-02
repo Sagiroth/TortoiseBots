@@ -1,6 +1,7 @@
 // Standalone test for runtime/GuildOrderAuctionPolicy.h (guild auction leg).
 // No core, no DB: feeds the rules plain counters.
 #include "../runtime/GuildOrderAuctionPolicy.h"
+#include "../runtime/GuildOrderRefundPolicy.h"
 
 #include <cstdio>
 
@@ -12,9 +13,9 @@ static int failures = 0;
 int main()
 {
     // One search per auction leg: the first empty search moves the ladder.
-    CHECK(kAuctionSearchMovesLadderAfter == 3);
+    CHECK(kAuctionSearchMovesLadderAfter == 1);
     CHECK(!AuctionSearchMovesLadder(0));
-    CHECK(!AuctionSearchMovesLadder(2));
+    CHECK(AuctionSearchMovesLadder(1));
     CHECK(AuctionSearchMovesLadder(3));
 
     // Two minutes without an auctioneer in interact range ends the leg.
@@ -74,6 +75,38 @@ int main()
         CHECK(AuctionCoveringBeatsPartials(100000, 20, 0, 0));
     }
 
+    // A fitting listing is still bought: the leg only hands off when the
+    // pick is empty. A partial stack is bought too, and a miss of zero is
+    // never a purchase.
+    std::vector<AuctionListing> listings{
+        { 11, 101, 100, 10 }, // 10 for 100 covers the miss of 7
+        { 12, 102, 200, 20 },
+    };
+    CHECK(PickAuctionListing(listings, 7) == 0);
+    std::vector<AuctionListing> partialsOnly{ { 21, 201, 300, 3 } };
+    CHECK(PickAuctionListing(partialsOnly, 7) == 0);
+    std::vector<AuctionListing> none;
+    CHECK(PickAuctionListing(none, 7) == kNoAuctionListing);
+    CHECK(PickAuctionListing(listings, 0) == kNoAuctionListing);
+
+    // The leg is not re-entered for the same reagent until the rest of the
+    // ladder was tried: the first visit blocks a second one, the need stage
+    // earns one retry, and the retry is the last.
+    CHECK(kAuctionVisitsPerReagent == 2);
+    AuctionLegCycle cycle;
+    CHECK(AuctionReentryAllowed(cycle, 2589)); // never tried
+    NoteAuctionLegEntered(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589)); // no other source yet
+    NoteAuctionLadderEnd(cycle, 2590); // another reagent's cycle does not unlock it
+    CHECK(!AuctionReentryAllowed(cycle, 2589));
+    NoteAuctionLadderEnd(cycle, 2589);
+    CHECK(AuctionReentryAllowed(cycle, 2589)); // full cycle: one retry
+    NoteAuctionLegEntered(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589));
+    NoteAuctionLadderEnd(cycle, 2589);
+    CHECK(!AuctionReentryAllowed(cycle, 2589)); // retry spent
+    CHECK(AuctionReentryAllowed(cycle, 2591)); // a fresh reagent starts clean
+
     // A hand-off during a relist trip drops the surplus instead of sourcing
     // it: the leg's item is stock the order already bought.
     CHECK(AuctionHandoffLeavesSurplus(true, 2589, 2589));
@@ -103,6 +136,23 @@ int main()
     CHECK(SurplusDestinationAfterRelist(false, 13) == SurplusDestination::DeliveryLeftover);
     CHECK(SurplusDestinationAfterRelist(true, 13) == SurplusDestination::None);
     CHECK(SurplusDestinationAfterRelist(false, 0) == SurplusDestination::None);
+
+    // A blocked top-up hands off with the bank's reason; a budget-cut top-up
+    // or a leg with no recorded reason is the leg's own nolisting.
+    CHECK(AuctionTopUpBlockedReason(false, OrderReason::BankDenied) == OrderReason::BankDenied);
+    CHECK(AuctionTopUpBlockedReason(true, OrderReason::BankDenied) == OrderReason::NoListing);
+    CHECK(AuctionTopUpBlockedReason(false, OrderReason::None) == OrderReason::NoListing);
+
+    // Auction -> failed gold withdrawal -> auction hand-off: the first pass
+    // queues the top-up for listing 42, the bank denies it, and the next pass
+    // on the same listing is blocked. The final reason is bankdenied.
+    {
+        uint32_t const listing = 42;
+        CHECK(GoldTopUpAllowed(listing, 0, 500, true));
+        // The bank leg recorded the denial; the retry on the same listing is blocked.
+        CHECK(!GoldTopUpAllowed(listing, listing, 500, true));
+        CHECK(AuctionTopUpBlockedReason(false, OrderReason::BankDenied) == OrderReason::BankDenied);
+    }
 
     if (failures == 0)
         std::printf("guild order auction policy: all tests passed\n");

@@ -43,6 +43,7 @@ import (
 	"tortoise-observability/internal/ringbuf"
 	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
+	"tortoise-observability/internal/underperf"
 	"tortoise-observability/internal/ws"
 	"tortoise-observability/web"
 )
@@ -677,12 +678,19 @@ func main() {
 	}))
 
 	// The live dungeon runs (issue #895): one entry per instance copy (map +
-	// instance id) of a dungeon or raid that has bots in it, members (bots and
-	// real players) included. Read-only: the tab draws, it never orders.
+	// instance id) of a dungeon that has bots in it, members (bots and
+	// real players) included. Raid copies leave for /api/v1/raids.
+	// Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/dungeons", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Dungeons())
 	}))
 
+	// The live raid runs: one entry per raid instance copy that has bots in
+	// it, groups with their leaders, offline members and live combat window.
+	// Read-only: the tab draws, it never orders.
+	mux.HandleFunc("/api/v1/raids", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Raids())
+	}))
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 
 	// The boss tactic rows the coverage view compares with the boss table:
@@ -693,8 +701,10 @@ func main() {
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
 	// commander, newest first; each fight carries the v1 warnings with it.
 	// The optional combat.ListQuery params (limit, before, since, boss, deaths, outcome) page and filter the list; without
-	// them it answers as it always did. A page cut by limit answers the header X-More: 1.
+	// them it answers as it always did. A page cut by limit answers the header X-More: 1. The run-totals route below sums one
+	// run's fights per bot for the debugger's "Total" view.
 	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
+	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// The detail key is (commander, session, id): fight ids repeat
 		// across commanders and sessions. The list rows carry the composed
@@ -737,6 +747,17 @@ func main() {
 	mux.HandleFunc("GET /api/v1/combat/history/commanders", requireAuth(history.CommandersHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/history", requireAuth(history.ListHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/packs", requireAuth(history.PackHandler(historyStore)))
+
+	// The underperforming bots of a window or one of its runs: each flagged bot next to the median of its role peers,
+	// the rules that fired on it and the fights that flagged it. With the history off it answers from memory only; a
+	// typed-nil *history.Store inside the interface would panic, so the interface value stays nil.
+	var histSource underperf.HistSource
+	if historyStore != nil {
+		histSource = historyStore
+	}
+	mux.HandleFunc("GET /api/v1/combat/underperformers", requireAuth(underperf.Handler(underperf.Sources{
+		Mem: combatStore, Hist: histSource, Rules: combatStore.Rules, Specs: armoryService.SpecsFor, Now: time.Now,
+	})))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
 	// {"<commander>": {"<bot guid>": {"map": 209, "pts": [[x, y, unix seconds], ...]}}}, oldest point first. A point where something

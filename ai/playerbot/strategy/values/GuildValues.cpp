@@ -533,8 +533,14 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         options.bankAttempted = bankSkipped || current == SupplyStep::AuctionHouse ||
             current == SupplyStep::Farm || current == SupplyStep::Craft ||
             current == SupplyStep::Sub || current == SupplyStep::Need;
-        options.auctionHouseAttempted = auctionUnaffordable || current == SupplyStep::Farm ||
-            current == SupplyStep::Craft || current == SupplyStep::Sub || current == SupplyStep::Need;
+        // A reagent whose counter was already searched does not bounce back
+        // to it: the ladder must reach its need stage first, and then the
+        // cycle allows exactly one retry. The live auction leg itself is
+        // never marked attempted, so it keeps its turn while it runs.
+        bool const auctionReentry = TortoiseBots::GuildOrders::AuctionReentryAllowed(
+            order.botGuidLow, candidate.itemId);
+        options.auctionHouseAttempted = auctionUnaffordable ||
+            (!auctionReentry && current != SupplyStep::AuctionHouse);
         options.selfCanCraft = candidate.craft;
         options.selfCanFarm = verdict.CanFarm();
         options.subAttempted = current == SupplyStep::Need;
@@ -543,7 +549,8 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     SupplyOptions options;
     options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped;
     options.bankAttempted = bankSkipped;
-    options.auctionHouseAttempted = auctionUnaffordable;
+    options.auctionHouseAttempted = auctionUnaffordable ||
+        !TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId);
     options.selfCanCraft = candidate.craft;
     options.selfCanFarm = verdict.CanFarm();
     options.subAttempted = false;
@@ -742,8 +749,14 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         // the bank first.
         FarmableVerdict farmable(bot, order, candidate);
         SupplyStep step = ChooseSourceStep(bot, order, candidate, &snapshot, &farmable);
+        // A farm or buy order never walks its own item to the bank; that
+        // leg is the auction one. A counter that was already searched for
+        // this item falls through to the rest of the ladder instead.
         if (step == SupplyStep::Bank)
-            step = SupplyStep::AuctionHouse;
+            step = TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId) ?
+                SupplyStep::AuctionHouse :
+                TortoiseBots::GuildOrders::NextSupplyStep(
+                    SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
         SupplyStep fallback = SupplyStep::None;
         if (step == SupplyStep::AuctionHouse)
             fallback = TortoiseBots::GuildOrders::NextSupplyStep(

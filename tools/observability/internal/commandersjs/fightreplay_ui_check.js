@@ -160,7 +160,7 @@ assert.ok(src.includes("AggroLanes.lanes("), "the lanes read the same track answ
 assert.ok(src.includes("setTimeout(() => fdReplayTick(key)"), "playback is a setTimeout chain");
 assert.ok(src.includes("clearTimeout(fd.rp.timer)"), "stopping clears the pending step");
 assert.ok(grab("fdReplayStop").includes("clearTimeout("), "fdReplayStop clears the pending step");
-assert.ok(src.includes("const liveBind = cmdFindBind(key)"), "the map keeps the live binding beside the replayed one");
+assert.ok(src.includes("const liveBind = cmdBindForCard(key)"), "the map keeps the live binding beside the replayed one");
 assert.ok(src.includes("fd.tracks["), "the per-commander state keeps the tracks");
 assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
 const off = run("FD_REPLAY_OFF");

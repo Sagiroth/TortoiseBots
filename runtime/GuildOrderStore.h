@@ -178,6 +178,14 @@ void NoteAuctioneerInReach(uint32_t botGuidLow);
 // stands within sight of a house): the reach deadline starts now. Never
 // restarts a deadline already running. Map thread only.
 void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs);
+// The auction leg is not re-entered for the same reagent until the ladder
+// reached its last source for it, and then only once more. Memory only (a
+// restart starts a fresh cycle). Map thread only (the ladder refresh).
+bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId);
+// The auction leg ended for `reason`: the cause is recorded on the step
+// timeline with the leg's own `ah` step, so `.bot order <bot> steps` shows
+// whether the counter was unreachable or had nothing fitting. Memory only.
+void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason);
 // An oversized listing was bought: remember what has to go back to the
 // auction house. Memory only (a restart leaves the surplus to the delivery
 // leftover path, which is the same fallback as a failed relist).

@@ -6,12 +6,12 @@
 
 namespace ai
 {
-// The ladder move after the auction visit ends with nothing bought (no
-// listing, outbid, or unaffordable): farm what is missing when sourcable,
-// else a sub-order, else the need list. Shared by the buy action, the travel
-// pick when the auctioneer search comes back empty, and the reach deadline.
-// `reason` rides onto the next leg (NoAuctioneer for an unreachable leg,
-// NoListing when the counter had nothing fitting).
+// The ladder move after the auction visit ends with nothing bought: farm what
+// is missing when sourcable, else a sub-order, else the need list. Shared by
+// the buy action (NoListing when the counter had nothing fitting), the travel
+// pick when the auctioneer search comes back empty, and the reach deadline
+// (both NoAuctioneer for an unreachable leg). `reason` is recorded on the
+// step timeline under the ah step and rides onto the next leg.
 void AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot,
     TortoiseBots::GuildOrders::OrderRecord const& order,
     TortoiseBots::GuildOrders::OrderReason reason = TortoiseBots::GuildOrders::OrderReason::None);

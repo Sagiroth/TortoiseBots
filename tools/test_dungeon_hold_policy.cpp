@@ -905,6 +905,407 @@ static void TestBlyHoldFoughtOnItsFirstTickEnds()
     CHECK(z.step == 1 && !z.eventOn && !z.eventStarted);
 }
 
+// Zul'Farrak's Farraki Arena (Champion Razjal the Quick 62498): the run
+// leader's rows are `gossip 62498 param 1` then a units hold (no done flag,
+// flags 16384 kPlanFlagResetToGossip) with entries 62498,62496,62497,62499,
+// radius 35, 600 s. The three champions
+// stand faction 35 and friendly, then turn hostile 13 s after the gossip. The
+// core script (farraki_arena.cpp ResetArena) makes all three friendly and
+// faction 35 again and restores the gossip on a wipe or an evade: the units
+// hold must go back to the gossip (the step that started it), not sit out the
+// 600 s timeout.
+static PlanStep ArenaGossip()
+{
+    PlanStep s;
+    s.kind = PlanStepKind::Gossip;
+    s.entry = 62498;
+    s.param = 1;
+    s.x = 4.0f;
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+static PlanStep ArenaHold()
+{
+    PlanStep s;
+    s.kind = PlanStepKind::Hold;
+    s.flags = ai::kPlanFlagResetToGossip;
+    s.timeoutS = 600;
+    s.radius = 35.0f;
+    s.entries = {62498, 62496, 62497, 62499};
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+// The arena crew alive and friendly again with the party in no fight: the
+// script's ResetArena. Razjal (62498, the hold's first entry), Kath'zen
+// (62496) and Juthza (62497) are back in the radius.
+static Facts ArenaReset(const Facts& base)
+{
+    Facts f = base;
+    f.anyInCombat = false;
+    f.units = {Unit(62498, 5, 0, false), Unit(62496, 10, 0, false), Unit(62497, 6, 2, false)};
+    return f;
+}
+
+static void TestArenaHoldResetGoesBackToTheGossip()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    // The event started: Kath'zen turned hostile in the fight.
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.step == 2 && r.eventStarted && r.eventUp == 1);
+    // The reset: all three friendly and alive again, no fight. Exactly 5 s of
+    // such ticks and the hold goes back to the gossip and pauses (the 4 s
+    // test below pins the other side of the boundary).
+    f = ArenaReset(f);
+    for (int i = 0; i < 5; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Paused);
+    CHECK(Has(r.note, "event reset") && Has(r.note, "starts it again at step 2 (gossip)"));
+}
+
+static void TestArenaHoldResetNeedsFiveSeconds()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted);
+    // 4 s of reset ticks is under the 5 s: still in the hold, not paused.
+    f = ArenaReset(f);
+    for (int i = 0; i < 4; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    CHECK(!Has(r.note, "event failed") && !Has(r.note, "event reset"));
+}
+
+static void TestArenaHoldNotStartedIsNoReset()
+{
+    // The 13 s intro: the units are alive and friendly from the first tick and
+    // were never hostile, so the event never started and nothing resets. 20 s
+    // of it leaves the hold in place (the timeout rule is unchanged).
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.units = {Unit(62498, 5, 0, false), Unit(62496, 10, 0, false), Unit(62497, 6, 2, false)};
+    for (int i = 0; i < 20; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running && !r.eventStarted);
+    CHECK(!Has(r.note, "event failed") && !Has(r.note, "event reset"));
+}
+
+static void TestArenaHoldInFightIsNoReset()
+{
+    // The arena's units are back friendly but the party is still in a fight (a
+    // patrol add): no reset until the fight is over.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.step == 2);
+    f = ArenaReset(f);
+    f.anyInCombat = true;
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running && !Has(r.note, "event reset"));
+    CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+}
+
+static void TestArenaWipeRearmsTheGossipOnce()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.step == 2);
+    // The wipe recovery: the party is dead/regrouping, the units are back at
+    // once, no 5 s wait: the regroup re-arms to the gossip. The tick counts
+    // the event's units (CountEvent) before the wipe branch reads them.
+    f = ArenaReset(f);
+    CountEvent(r, f, *Current(r));
+    CHECK(RearmEventOnWipe(r, f));
+    CHECK(r.step == 1 && r.eventRetry);
+    // A second time in the same run does not re-arm again.
+    r.step = 2;
+    CHECK(!RearmEventOnWipe(r, f));
+}
+
+static void TestArenaWipeRearmsTheGossipOnTheTick()
+{
+    // The production path: the wipe regroup branch reaches RearmEventOnWipe
+    // before the step dispatch does, so the rearm must read this tick's units
+    // (the fighting block counted the previous tick's, with the units hostile).
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    // Tick 1: the event started in the fight.
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.step == 2);
+    // Tick 2: the party wiped, the script reset the units (friendly, no fight).
+    f = ArenaReset(f);
+    f.dead = 5;
+    f.alive = 0;
+    Tick(r, f);
+    CHECK(r.step == 1); // the wipe recovery re-armed to the gossip
+}
+
+// The party up and back at the hold, the arena reset: the lead bot on the plan's last move point before the hold
+// (the regroup's walk back is done there; the hold spot is 30 yd on, in sight).
+static Facts UpAtTheHold()
+{
+    Facts f = ArenaReset(Party());
+    f.leadX = -30.0f;
+    return f;
+}
+
+static void TestArenaSecondWipeGoesBackToTheGossip()
+{
+    // The first wipe re-arms to the gossip (once). The event's second attempt starts and is wiped too: no second
+    // re-arm, but the event WAS started, so the reset is read when the party is back and the crew friendly again.
+    // ResetStep clears eventStarted on that wipe; Run::resetHoldStarted is the latch that keeps the start.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted && r.step == 2);
+    f = ArenaReset(f);
+    f.dead = 5;
+    f.alive = 0;
+    f.leadAlive = false;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.eventRetry && r.eventRearmed.count(1) == 1);
+    // The run is back at the hold (the gossip said the event started again) for its second attempt: it turns
+    // hostile and is wiped in it.
+    r.step = 2;
+    f = Party();
+    f.leadX = -30.0f;
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted && r.step == 2);
+    f = ArenaReset(f);
+    f.dead = 5;
+    f.alive = 0;
+    f.leadAlive = false;
+    Tick(r, f);
+    CHECK(r.step == 2 && !r.eventStarted && r.resetHoldStarted); // no second re-arm, the latch kept
+    CHECK(r.eventRearmed.size() == 1);
+    // Up at the spot, the whole crew friendly: the reset comes within the 5 s window.
+    f = UpAtTheHold();
+    for (int i = 0; i < 5; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Paused);
+    CHECK(Has(r.note, "event reset") && Has(r.note, "starts it again at step 2 (gossip)"));
+}
+
+static void TestArenaResetReadAfterAnOutOfSightRegroupTick()
+{
+    // The wipe's regroup tick came with the lead bot more than 60 yd from the spot: nothing of the arena was read
+    // (no units), so no re-arm. ResetStep cleared eventStarted; once back in range, the latch still says the event
+    // had started, and the reset is read (it used to wait out the 600 s).
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), ArenaHold()};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.resetHoldStarted);
+    Facts far = ArenaReset(Party());
+    far.leadX = 100.0f;
+    far.seen = false;
+    far.units.clear();
+    far.dead = 5;
+    far.alive = 0;
+    far.leadAlive = false;
+    Tick(r, far);
+    CHECK(r.step == 2 && !r.eventStarted && r.resetHoldStarted);
+    CHECK(r.eventRearmed.empty());
+    f = UpAtTheHold();
+    for (int i = 0; i < 5; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Paused);
+    CHECK(Has(r.note, "event reset"));
+}
+
+static void TestArenaHoldWithoutTheFlagIsNoReset()
+{
+    // The mutation guard: the same reset ticks on a hold whose row does not set
+    // kPlanFlagResetToGossip leave the hold in place. The flag is what makes
+    // the reset read opt-in, not the shape of the units.
+    PlanStep hold = ArenaHold();
+    hold.flags = 0;
+    CHECK(ai::NormalizePlanStep(hold) == PlanStepRefusal::None);
+    DungeonPlan plan;
+    plan.steps = {Move(-30), ArenaGossip(), hold};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.anyInCombat = true;
+    f.units = {Engaged(62496, 10, 0, 10.0f)};
+    Tick(r, f);
+    CHECK(r.eventStarted && r.step == 2);
+    f = ArenaReset(f);
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+    CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+}
+
+static void TestArenaHoldWithoutAGossipIsNoReset()
+{
+    // The flag alone is not enough: the step to go back to must be the gossip
+    // that started the event. A flagged hold with no gossip before it (or with
+    // a ritual there) reads no reset and waits out its timeout as before.
+    {
+        DungeonPlan plan;
+        plan.steps = {Move(-30), ArenaHold()};
+        Run r = Start(&plan, 1);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(62496, 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.eventStarted && r.step == 1);
+        f = ArenaReset(f);
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 1 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
+    {
+        PlanStep ritual;
+        ritual.kind = PlanStepKind::Ritual;
+        ritual.entry = 1;
+        ritual.param = 3;
+        CHECK(ai::NormalizePlanStep(ritual) == PlanStepRefusal::None);
+        DungeonPlan plan;
+        plan.steps = {Move(-30), ritual, ArenaHold()};
+        Run r = Start(&plan, 2);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(62496, 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.eventStarted && r.step == 2);
+        f = ArenaReset(f);
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 2 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
+}
+
+static void TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets()
+{
+    // Bly's crew, the Sunken Temple and Stratholme holds: units holds whose
+    // first entry counts while still friendly. A crew that evades or drops
+    // hostility and turns friendly again is not a reset without the flag, so
+    // the hold goes on instead of pausing the run.
+    PlanStep bly = BlyHold();
+    PlanStep temple;
+    temple.kind = PlanStepKind::Hold;
+    temple.timeoutS = 300;
+    temple.radius = 30.0f;
+    temple.entries = {8580};
+    CHECK(ai::NormalizePlanStep(temple) == PlanStepRefusal::None);
+    PlanStep stratholme;
+    stratholme.kind = PlanStepKind::Hold;
+    stratholme.timeoutS = 300;
+    stratholme.radius = 68.0f;
+    stratholme.entries = {10440, 10416, 10417};
+    CHECK(ai::NormalizePlanStep(stratholme) == PlanStepRefusal::None);
+    struct Case
+    {
+        PlanStep hold;
+        std::uint32_t gossip;
+    };
+    Case const cases[] = {{bly, 7604}, {temple, 8580}, {stratholme, 10440}};
+    for (const Case& c : cases)
+    {
+        PlanStep gossip;
+        gossip.kind = PlanStepKind::Gossip;
+        gossip.entry = c.gossip;
+        gossip.param = 1;
+        CHECK(ai::NormalizePlanStep(gossip) == PlanStepRefusal::None);
+        DungeonPlan plan;
+        plan.steps = {Move(-30), gossip, c.hold};
+        Run r = Start(&plan, 2);
+        Facts f = Party();
+        f.anyInCombat = true;
+        f.units = {Engaged(c.hold.entries.front(), 10, 0, 10.0f)};
+        Tick(r, f);
+        CHECK(r.step == 2 && r.eventStarted);
+        f.anyInCombat = false;
+        f.units = {Unit(c.hold.entries.front(), 5, 0, false)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 2 && r.state == State::Running);
+        CHECK(!Has(r.note, "event reset") && !Has(r.note, "event failed"));
+        CHECK(!UnitsHoldResetSeen(r, f, *Current(r)));
+    }
+}
+
+static void TestBlyHoldUnchangedByTheResetRule()
+{
+    // Bly's crew turns hostile and dies in the fight: "event done" as today.
+    {
+        FightHold h;
+        StartFightHold(h, BlyHold(), 7604);
+        Run& r = h.r;
+        Facts& f = h.f;
+        f.anyInCombat = true;
+        f.units = {Engaged(7604, 5, 0, 5.0f), Engaged(7606, 6, 2, 6.0f), Engaged(7605, -5, 3, 6.0f)};
+        Tick(r, f);
+        CHECK(r.eventStarted && r.step == 1);
+        f.units = {Engaged(7604, 5, 0, 5.0f)};
+        f.eventDown = 2;
+        Tick(r, f);
+        f.units.clear();
+        f.eventDown = 3;
+        Tick(r, f);
+        CHECK(r.step == 1);
+        f.anyInCombat = false;
+        for (int i = 0; i < 5 && r.step == 1; ++i)
+            Tick(r, f);
+        CHECK(r.step == 2 && Has(r.note, "every unit of it is dead"));
+    }
+    // Bly alive and hostile for 10 s: the hold's units are not friendly, so
+    // nothing resets (the awake unit is the event, not a reset).
+    {
+        FightHold h;
+        StartFightHold(h, BlyHold(), 7604);
+        Run& r = h.r;
+        Facts& f = h.f;
+        f.anyInCombat = true;
+        f.units = {Engaged(7604, 5, 0, 5.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(r.step == 1 && r.state == State::Running && !Has(r.note, "event reset"));
+    }
+}
+
 
 // Scarlet Monastery's Mograine 3976 and Whitemane 3977 as one hold (SM-CATHEDRAL-MOGRAINE-2026-10-23 fix 3, the plan
 // shape turtle-agent writes for a boss hold with a value): instance data 1, value 4, flag 8 alone, timeout 600 s. The
@@ -923,6 +1324,108 @@ static PlanStep MograineHold()
     s.entries = {3976, 3977};
     CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
     return s;
+}
+
+// #243 round 1: Zul'Farrak's Bly hold done by its units with kPlanFlagDeadGossipOk (32768): the gossip row before it counted its
+// dead NPC as done (dead_is_done, 512), so the crew can never be turned hostile (only Bly's own script does, and he lies dead).
+// The hold then ends as soon as no unit of it is hostile: at once when all four lie dead, and with the same note when only
+// friendly survivors are left. Without the gossip's dead note (a run resumed at the hold) it waits for a hostility as before.
+static const char* const kCrewDeadAnswer =
+    "no-npc: No living NPC of that entry is within 40 yd of the bot: a dead one lies nearby: Sergeant Bly (7604) "
+    "lies dead 3 yd away and respawns in 6 d 23 h (604800 s spawn timer).";
+
+static PlanStep DeadBlyGossip()
+{
+    PlanStep s;
+    s.kind = PlanStepKind::Gossip;
+    s.entry = 7604;
+    s.param = 1;
+    s.flags = ai::kPlanFlagDeadNpcIsDone;
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+static PlanStep BlyHoldDeadGossip()
+{
+    PlanStep s = BlyHold();
+    s.flags = ai::kPlanFlagDeadGossipOk;
+    CHECK(ai::NormalizePlanStep(s) == PlanStepRefusal::None);
+    return s;
+}
+
+// The gossip row ran to its dead-NPC "counted done": the run stands on the flagged hold (step 2).
+static Run StartAfterTheDeadGossip(const DungeonPlan* plan)
+{
+    Run r = Start(plan, 1);
+    Facts f = Party();
+    std::string const order = Tick(r, f);
+    CHECK(order.compare(0, 11, "gossip 7604") == 0);
+    OrderRefused(r, order, kCrewDeadAnswer);
+    CHECK(r.state == State::Running && r.step == 2);
+    CHECK(Has(r.note, "counted done"));
+    return r;
+}
+
+static void TestDeadGossipHoldEndsAtOnceWhenAllLieDead()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = StartAfterTheDeadGossip(&plan);
+    Facts f = Party();
+    f.units.clear();
+    f.eventDown = 4; // the four corpses are in sight
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(Has(r.note, "event done: the NPC that starts it was dead and no unit of it is hostile"));
+    CHECK(Has(r.note, "(4 of 4 down)"));
+}
+
+static void TestDeadGossipHoldEndsWithFriendlySurvivors()
+{
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = StartAfterTheDeadGossip(&plan);
+    Facts f = Party();
+    // Bly died; Murta and Oro stand friendly (faction 35) and cannot be turned: no pull reaches them.
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(Has(r.note, "event done: the NPC that starts it was dead and no unit of it is hostile"));
+    CHECK(Has(r.note, "(2 of 2 down)"));
+}
+
+static void TestDeadGossipHoldWithoutTheDeadNoteWaits()
+{
+    // The latch is the gossip row's own tick: a run resumed at the hold (Start past the gossip) never saw it, so the flag
+    // alone changes nothing and the hold waits for a unit to turn hostile, as an unflagged units hold does.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), DeadBlyGossip(), BlyHoldDeadGossip(), Move(30)};
+    Run r = Start(&plan, 2);
+    Facts f = Party();
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    CHECK(!Has(r.note, "the NPC that starts it was dead"));
+}
+
+static void TestDeadGossipHoldWithoutAStartStepDoesNotEnd()
+{
+    // A flagged hold with no gossip before it (the plan starts at the hold): there is no startNpcDeadStep and no
+    // event start step, both npos. They must not match: the hold waits for a hostile unit, as the rule above does.
+    DungeonPlan plan;
+    plan.steps = {Move(-30), BlyHoldDeadGossip(), Move(30)};
+    Run r = Start(&plan, 1);
+    Facts f = Party();
+    f.units = {Unit(7608, 5, 0, false), Unit(7606, 10, 0, false)};
+    f.eventDown = 2;
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    CHECK(r.startNpcDeadStep == static_cast<std::size_t>(-1) && EventStartStep(r) == static_cast<std::size_t>(-1));
+    CHECK(!Has(r.note, "the NPC that starts it was dead"));
 }
 
 static void TestMograineWhitemaneHoldWaitsForValueFour()
@@ -1120,6 +1623,22 @@ int main()
     TestBlyHoldEndsWhenTheFightKilledTheCrew();
     TestFightDoesNotStartADataHold();
     TestBlyHoldFoughtOnItsFirstTickEnds();
+    TestArenaHoldResetGoesBackToTheGossip();
+    TestArenaHoldResetNeedsFiveSeconds();
+    TestArenaHoldNotStartedIsNoReset();
+    TestArenaHoldInFightIsNoReset();
+    TestArenaWipeRearmsTheGossipOnce();
+    TestArenaWipeRearmsTheGossipOnTheTick();
+    TestArenaSecondWipeGoesBackToTheGossip();
+    TestArenaResetReadAfterAnOutOfSightRegroupTick();
+    TestArenaHoldWithoutTheFlagIsNoReset();
+    TestArenaHoldWithoutAGossipIsNoReset();
+    TestUnflaggedUnitsHoldsFriendlyAgainAreNoResets();
+    TestBlyHoldUnchangedByTheResetRule();
+    TestDeadGossipHoldEndsAtOnceWhenAllLieDead();
+    TestDeadGossipHoldEndsWithFriendlySurvivors();
+    TestDeadGossipHoldWithoutTheDeadNoteWaits();
+    TestDeadGossipHoldWithoutAStartStepDoesNotEnd();
     TestMograineWhitemaneHoldWaitsForValueFour();
     TestCrystalHoldWaitsForActive();
     TestCrystalHoldMissingObject();

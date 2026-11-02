@@ -53,6 +53,7 @@ SEEDED_BOSSES = {
     (209, 8127): "Antu'sul", (209, 7272): "Theka the Martyr", (209, 7795): "Hydromancer Velratha",
     (209, 7271): "Witch Doctor Zum'rah", (209, 7274): "Sandfury Executioner", (209, 7275): "Shadowpriest Sezz'ziz",
     (209, 7267): "Chief Ukorz Sandscalp", (209, 7273): "Gahz'rilla",
+    (209, 62498): "Champion Razjal the Quick", (209, 62495): "Zel'jeb the Ancient",
     (36, 644): "Rhahk'Zor", (36, 642): "Sneed's Shredder", (36, 643): "Sneed", (36, 1763): "Gilnid",
     (36, 61963): "Masterpiece Harvester", (36, 61961): "Jared Voss", (36, 646): "Mr. Smite", (36, 647): "Captain Greenskin",
     (36, 639): "Edwin VanCleef", (36, 645): "Cookie",
@@ -456,7 +457,8 @@ class DungeonPlanSql(unittest.TestCase):
         # (hand-set there: the plan file dropped 7247).
         # 20261021174716 (Gahz'rilla and Bly in the rows): Sergeant Bly's crew follows in his boss.first order, Murta 7608, Oro 7606,
         # Raven 7605, because his units hold has no kill order of its own (the plan-wide kill_first is focused in every fight).
-        self.assertEqual(row.get("kill_first"), "7785,8179,5650,7247,7608,7606,7605")
+        # 20261102190000 (#243): the Farraki Arena's scorpids 62499 join the list (the plan's kill_first; they fight while Razjal is immune).
+        self.assertEqual(row.get("kill_first"), "7785,8179,5650,7247,7608,7606,7605,62499")
         self.assertEqual(row.get("cc_priority"), "7246,7247,5648")
 
     def test_uldaman_keeps_its_event_steps(self):
@@ -3902,10 +3904,10 @@ class DungeonPlanSql(unittest.TestCase):
     def test_zulfarrak_names_its_area_trigger_on_the_walk_in(self):
         # The move into at_zumrah (962) names the trigger in `entry`, so the run's bots fire it without
         # AiPlayerbot.BotAreaTriggers (ai::IsBotAreaTriggerArmed). The 20261025002900 export moved the row from
-        # leg 10 to leg 11 (the gahzrilla leg); its own UPDATE re-applies the entry and comment after the INSERT,
-        # because 20261024000000's UPDATE still names the old leg 10 (the courtyard now).
+        # leg 10 to leg 11 (the gahzrilla leg), and to leg 13 with #243 (farraki_arena 8, zeljeb 10); its own UPDATE
+        # re-applies the entry and comment after the INSERT, because the older migrations' UPDATEs name their leg.
         name, text, rows = newest_zulfarrak_rows()
-        walk_in = [r for r in rows if r["leg"] == "11" and r["seq"] == "101"]
+        walk_in = [r for r in rows if r["leg"] == "13" and r["seq"] == "101"]
         self.assertEqual(len(walk_in), 1)
         self.assertEqual(walk_in[0]["kind"], "move")
         self.assertIn("area trigger 962", walk_in[0]["comment"])
@@ -3913,7 +3915,7 @@ class DungeonPlanSql(unittest.TestCase):
         statements = [s.strip() for s in re.split(r";\s*$", re.sub(r"(?m)^--.*$", "", update), flags=re.M) if s.strip()]
         ours = [s for s in statements if s.startswith("UPDATE `ai_dungeon_step` SET `entry` = 962")]
         self.assertEqual(len(ours), 1, name)
-        self.assertTrue(ours[0].endswith("\nWHERE `plan` = 'zulfarrak' AND `leg` = 11 AND `seq` = 101 AND `kind` = 'move'"), name)
+        self.assertTrue(ours[0].endswith("\nWHERE `plan` = 'zulfarrak' AND `leg` = 13 AND `seq` = 101 AND `kind` = 'move'"), name)
         # The row's comment no longer claims the allowlist is needed.
         comment = re.search(r"`comment` = '((?:[^']|'')*)'", ours[0]).group(1)
         self.assertNotIn("needs AiPlayerbot.BotAreaTriggers", comment)
@@ -4070,9 +4072,9 @@ class DungeonPlanSql(unittest.TestCase):
     def test_zulfarrak_and_uldaman_final_counts(self):
         # Each plan's newest INSERT follows the DELETE of its old steps and legs, so its rows are the plan after all migrations.
         name, text = newest_plan_text("zulfarrak")
-        self.assertEqual(name, "20261025002900_world.sql")
-        self.assertEqual(len(leg_rows(text, "zulfarrak")), 18)
-        self.assertEqual(len([r for r in self.step_rows(text) if r["plan"] == "zulfarrak"]), 247)
+        self.assertEqual(name, "20261102190000_world.sql")
+        self.assertEqual(len(leg_rows(text, "zulfarrak")), 20)
+        self.assertEqual(len([r for r in self.step_rows(text) if r["plan"] == "zulfarrak"]), 347)
         name, text = newest_plan_text("uldaman")
         self.assertEqual(name, "20261022170000_world.sql")
         self.assertEqual(len(leg_rows(text, "uldaman")), 14)
@@ -4298,7 +4300,7 @@ class DungeonPlanSql(unittest.TestCase):
         # Weegli Blastfuse (7607) blows the End Door (146084) only once the pyramid phase (instance data 1) reads 8 (PYRAMID_KILLED_ALL_TROLLS,
         # tortoise-wow zulfarrak.h:40) and his menu then offers its one line (zulfarrak.cpp:497: index 0, so `cmd gossip` option 1).
         name, _text, zf = newest_zulfarrak_rows()
-        rows = [r for r in zf if r["leg"] == "15"]
+        rows = [r for r in zf if r["leg"] == "17"]
         self.assertEqual([r["kind"] for r in rows], ["move", "hold", "gossip", "wait_object"])
         hold, gossip, door = rows[1], rows[2], rows[3]
         # flag 8 alone: the phase is a script value, not an encounter state (no 32), and param 8 is above the encounter states 0-4
@@ -4309,22 +4311,26 @@ class DungeonPlanSql(unittest.TestCase):
         # (zulfarrak.cpp:423 DoUseDoorOrButton(EndDoorGUID, 0, true)), and wait_object compares exactly: the r8 run paused twice at
         # a state-1 wait on an open door. The order of the rows is the point.
         self.assertEqual((door["entry"], door["param"]), ("146084", "2"))
-        # Sergeant Bly (leg 16): his gossip, then a hold done by its units (no done flag) with Bly first, so he counts while still
-        # friendly; a boss row would leave the friendly Bly alone at once (DungeonRunPolicy.h FightStep).
-        bly = [r for r in zf if r["leg"] == "16"]
+        # Sergeant Bly (leg 18): his gossip, then a hold done by its units (flag 32768, kPlanFlagDeadGossipOk) with Bly first, so he
+        # counts while still friendly; a boss row would leave the friendly Bly alone at once (DungeonRunPolicy.h FightStep).
+        bly = [r for r in zf if r["leg"] == "18"]
         self.assertEqual([r["kind"] for r in bly], ["move", "gossip", "hold"], name)
         # flags 512 = kPlanFlagDeadNpcIsDone (20261022210000): his crew dies in the pyramid event's troll waves in some runs (r12, r15-19z33)
-        # and a dead Bly then counts the gossip as done instead of pausing the run; Weegli's gossip (leg 15, above) keeps flags 0.
+        # and a dead Bly then counts the gossip as done instead of pausing the run; Weegli's gossip (leg 17, above) keeps flags 0.
         self.assertEqual((bly[1]["entry"], bly[1]["param"], bly[1]["flags"]), ("7604", "1", "512"), name)
         hold = bly[2]
+        # flags 32768 = kPlanFlagDeadGossipOk (#243): his gossip row may have counted the dead Bly as done, and the hold then ends
+        # when no unit of it is hostile (#1455's module does not read the bit: an older module waits as before).
         self.assertEqual((hold["entry"], hold["param"], hold["flags"], hold["radius"], hold["timeout_s"], hold["entries"]),
-                         ("0", "0", "0", "25", "300", "7604,7608,7606,7605"), name)
+                         ("0", "0", "32768", "25", "300", "7604,7608,7606,7605"), name)
         self.assertEqual((hold["x"], hold["y"], hold["z"]), ("1884", "1212", "9"), name)
         # the Ukorz leg follows with the plain kinds, after Bly
-        ukorz = [r for r in zf if r["leg"] == "17"]
-        self.assertEqual(max(int(r["leg"]) for r in zf), 17, name + ": Ukorz is the last leg")
-        self.assertEqual([r["kind"] for r in ukorz], ["move", "move", "pull", "pull", "pull", "pull", "pull", "boss"])
-        self.assertEqual((ukorz[-1]["entry"], ukorz[-1]["entries"]), ("7267", "7797"))
+        ukorz = [r for r in zf if r["leg"] == "19"]
+        self.assertEqual(max(int(r["leg"]) for r in zf), 19, name + ": Ukorz is the last leg")
+        # --approach-hops puts move rows between the far pulls (Ukroz's leg is 190+ yd of navmesh); the pulls and the boss stay.
+        self.assertEqual([r["kind"] for r in ukorz[:2]], ["move", "move"])
+        self.assertEqual(sum(1 for r in ukorz if r["kind"] == "pull"), 5, name)
+        self.assertEqual((ukorz[-1]["kind"], ukorz[-1]["entry"], ukorz[-1]["entries"]), ("boss", "7267", "7797"))
 
     def test_zulfarrak_dead_bly_migration_changes_one_flag(self):
         # 20261022210000 is 20261021174716 with ONE row changed: Sergeant Bly's gossip (leg 15 seq 1) carries flags 512
@@ -4377,7 +4383,8 @@ class DungeonPlanSql(unittest.TestCase):
         # flag 8 alone), Nekrum before Sezz'ziz at the end of leg 14 and Ukorz as the last row; a re-export from an exporter without hold values
         # would cut the plan at the stairs again (or write them as encounter states, which the loader refuses above 4).
         name, text, rows = newest_zulfarrak_rows()
-        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"], ["8127", "7272", "7795", "7273", "7271", "7274", "7275", "7267"], name)
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["8127", "7272", "7795", "62495", "7273", "7271", "7274", "7275", "7267"], name)
         cage = [i for i, r in enumerate(rows) if r["kind"] == "open"]
         self.assertEqual(len(cage), 1, name)
         i = cage[0]
@@ -4385,17 +4392,21 @@ class DungeonPlanSql(unittest.TestCase):
         loot = [r for r in rows[:i] if r["kind"] == "loot"]
         self.assertEqual((loot[-1]["entry"], loot[-1]["item"]), ("7274", "8444"), name + ": the key is looted before the cage")
         holds = [r for r in rows if r["kind"] == "hold"]
+        # holds in row order: the Farraki Arena's units hold (16384, kPlanFlagResetToGossip), the three pyramid waits and
+        # Bly's units hold (32768, kPlanFlagDeadGossipOk) last.
         self.assertEqual([(r["entry"], r["param"], r["flags"], r["timeout_s"]) for r in holds],
-                         [("1", "3", "8", "90"), ("1", "7", "8", "600"), ("1", "8", "8", "600"), ("0", "0", "0", "300")], name)
+                         [("0", "0", "16384", "600"), ("1", "3", "8", "90"), ("1", "7", "8", "600"),
+                          ("1", "8", "8", "600"), ("0", "0", "32768", "300")], name)
         self.assertEqual(rows[i + 1]["kind"], "hold", name + ": the first hold right after the cage (the event's start)")
-        for r in holds[:2]:
+        for r in holds[1:3]:
             self.assertEqual((r["x"], r["y"], r["z"], r["entries"]), ("1887", "1274", "42", "7787,7788,7789,8876,8877"), name)
-        self.assertEqual((holds[2]["leg"], holds[2]["x"], holds[2]["y"], holds[2]["z"], holds[2]["entries"]),
-                         ("15", "1877.5", "1199.6", "8.9", "7787,7788,7789,8876,8877"), name)
-        leg14 = [r for r in rows if r["leg"] == "14"]
-        self.assertEqual(leg14[-2]["entries"], "7796", name + ": Nekrum before Sezz'ziz")
-        self.assertEqual(leg14[-1]["kind"], "wait_clear", name)
-        self.assertEqual((rows[-1]["kind"], rows[-1]["leg"]), ("boss", "17"), name + ": Ukorz ends the plan")
+        self.assertEqual((holds[3]["leg"], holds[3]["x"], holds[3]["y"], holds[3]["z"], holds[3]["entries"]),
+                         ("17", "1877.5", "1199.6", "8.9", "7787,7788,7789,8876,8877"), name)
+        base_leg = str(next(k for k, (n, _c) in leg_rows(text, "zulfarrak").items() if n == "stairs_base"))
+        base = [r for r in rows if r["leg"] == base_leg]
+        self.assertEqual(base[-2]["entries"], "7796", name + ": Nekrum before Sezz'ziz")
+        self.assertEqual(base[-1]["kind"], "wait_clear", name)
+        self.assertEqual((rows[-1]["kind"], rows[-1]["leg"]), ("boss", "19"), name + ": Ukorz ends the plan")
         self.assertIn("area trigger 962", text, name + ": the header and UPDATE name the trigger Zum'rah needs")
 
     def test_zulfarrak_antusul_pulls_the_pair_before_the_camp_from_stands(self):
@@ -4414,7 +4425,7 @@ class DungeonPlanSql(unittest.TestCase):
         # pair's stand is west of 1625 and the camp's stand west of 1635, so neither is near the Shadowcaster camp at 1660 901
         for stand, limit in ((leg[pulls[-3][0] - 1], 1625), (leg[pulls[-2][0] - 1], 1635)):
             self.assertLess(float(stand["x"]), limit, name)
-        self.assertEqual(max(int(r["leg"]) for r in rows), 17, name)
+        self.assertEqual(max(int(r["leg"]) for r in rows), 19, name)
 
     def test_shipped_zulfarrak_has_the_gahzrilla_leg(self):
         # 2026-10-26: the audit counts Gahz'rilla 7273 (EVERY-BOSS-2026-10-26) and the leg was played live in zf-r5, so the shipped
@@ -4441,7 +4452,7 @@ class DungeonPlanSql(unittest.TestCase):
         ported = plan_row(opt)
         self.assertEqual(re.sub(r"'turtle-agent \w+ ", "'turtle-agent ", shipped),
                          re.sub(r"'turtle-agent \w+ ", "'turtle-agent ", ported), name + ": only the source revision differs")
-        self.assertIn("SUPERSEDED 2026-10-26", opt.split("DELETE FROM")[0])
+        self.assertIn("SUPERSEDED 2026-11-02", opt.split("DELETE FROM")[0])
         self.assertIn("NOT A MIGRATION", opt.split("DELETE FROM")[0])
         update = "UPDATE `ai_dungeon_plan` SET `cc_priority` = '7246,7247,5648' WHERE `plan` = 'zulfarrak';"
         self.assertIn(update, text)
@@ -4455,9 +4466,9 @@ class DungeonPlanSql(unittest.TestCase):
         # The boss rows: ai_dungeon_boss (209, 7273) and the two interruptible casts from core data (spell_template interruptFlags 15).
         name, text, rows = newest_zulfarrak_rows()
         legs = leg_rows(text, "zulfarrak")
-        self.assertEqual(legs[9][0], "gahzrilla", name)
-        self.assertEqual(max(int(r["leg"]) for r in rows), 17, name + ": Ukorz is leg 17 with the gahzrilla leg")
-        leg = [r for r in rows if r["leg"] == "9"]
+        self.assertEqual(legs[11][0], "gahzrilla", name)
+        self.assertEqual(max(int(r["leg"]) for r in rows), 19, name + ": Ukorz is leg 19 with #243's legs and the gahzrilla leg")
+        leg = [r for r in rows if r["leg"] == "11"]
         uses = [i for i, r in enumerate(leg) if r["kind"] == "use_on"]
         self.assertEqual(len(uses), 1, name + ": the gong is rung once (a second ring summons a new Gahz'rilla that dies at once, an invisible corpse at the pit)")
         i = uses[0]
@@ -4465,7 +4476,9 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual((use["entry"], use["item"], use["x"], use["y"], use["z"], use["param"], use["flags"]),
                          ("141832", "9240", "1650.9", "1171.9", "10.9", "0", "0"), name)
         self.assertEqual((leg[i - 1]["kind"], leg[i - 1]["x"], leg[i - 1]["y"]), ("move", "1652.84", "1168.99"), name + ": the stand first")
-        self.assertEqual((leg[i + 1]["kind"], leg[i + 1]["entry"], leg[i + 1]["x"]), ("boss", "7273", "1702.58"), name)
+        # --approach-hops cuts the 52 yd hop from the gong stand to him into approach path rows; the boss row is where his walk-out ends.
+        boss = next(r for r in leg[i + 1:] if r["kind"] == "boss")
+        self.assertEqual((boss["kind"], boss["entry"], boss["x"]), ("boss", "7273", "1702.58"), name)
         self.assertEqual(sum(1 for r in leg if r["kind"] == "pull"), 8, name + ": the pool ring is cleared first")
         self.assertIn(".additem 9240", text, name + ": the header names the Mallet's GM setup")
         self.assertIn("7604", text.split("DELETE FROM")[0], name + ": the header names Bly's BotGossipNpcs entry")
@@ -4657,7 +4670,7 @@ class DungeonPlanSql(unittest.TestCase):
                                         r["param"], r["flags"], r["timeout_s"], r["entries"]]))
         self.assertGreater(counts["zulfarrak"], 200)
         self.assertGreater(counts["uldaman"], 130)
-        self.assertEqual(counts["zulfarrak"], 247, "the gahzrilla leg is in the shipped plan")
+        self.assertEqual(counts["zulfarrak"], 347, "the gahzrilla leg and #243's two legs are in the shipped plan")
         with tempfile.TemporaryDirectory() as tmp:
             binary = os.path.join(tmp, "rows")
             build = subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", os.path.join(ROOT, "tools/test_dungeon_plan_rows.cpp"), "-o", binary],
