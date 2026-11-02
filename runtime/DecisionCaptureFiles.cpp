@@ -55,8 +55,8 @@ std::string Sanitise(std::string const& text, std::size_t limit)
     return out;
 }
 
-// Digits only, in range: a JSON number like "1.0", "-1" or "1e3" is not an
-// id or a version.
+// Digits only: a JSON number like "1.0", "-1" or "1e3" is not a version or a
+// millisecond count.
 bool DigitValue(MiniJson::Value const* value, std::uint64_t& out)
 {
     if (!value || value->kind != MiniJson::Value::Number || value->text.empty())
