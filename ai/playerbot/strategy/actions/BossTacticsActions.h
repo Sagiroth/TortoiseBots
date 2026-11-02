@@ -29,6 +29,20 @@ namespace ai
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
 
+    // The auras of one dispel type a unit carries (id + SpellEntry::Dispel), the input of the dispel verdict. Aura
+    // iteration only: no grid search, no database.
+    void CollectDispelAuras(Unit* member, uint32 dispelType, std::vector<AuraOnMember>& out);
+    // The distance to the nearest other living group member (the `clear` test of a dispel_priority row), or a large
+    // value when the unit has none: a carrier alone is clear by definition.
+    float NearestGroupMemberYd(Unit* member);
+    // The dispel_priority verdict for one member, with the aura collection and the group distance taken care of.
+    DispelVerdict DispelMemberState(Unit* member, uint32 dispelType, const ActiveBossRows& rows, float defaultClearYd,
+                                    float* allyYdOut = nullptr);
+    // One bot_events.csv BossTacticsDispel row (throttled per bot and kind): the member a cure was picked for, or the
+    // one it was withheld from (a never aura, or a clear row whose carrier is not clear yet).
+    void LogDispelPick(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd);
+    void LogDispelExcluded(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd);
+
     // How many living units of `entry`, a hold_kill row's blocker, stand within kHoldKillRangeYd of the bot and count
     // (CountsAsBlocker, BossTacticsPolicy.h): the "hold kill blockers" value, a grid search at most once a second per
     // bot and entry. Never the bots' "attackers" list: a Portal of Madness is unselectable and never attacks.
@@ -156,6 +170,16 @@ namespace ai
     {
     public:
         BossTacticsCastHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics cast hold") {}
+        float GetValue(Action* action) override;
+    };
+
+    // A cure that would remove a `never` aura, or an un-clear `clear` one, is stood down: the single-target cure on an
+    // excluded member, and the area/periodic cures (Abolish Disease, the cleansing totems, Stoneform) while any living
+    // group member within kDispelSafetyYd carries such an aura of the type. Combat only.
+    class BossTacticsDispelHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsDispelHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics dispel hold") {}
         float GetValue(Action* action) override;
     };
 

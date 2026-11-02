@@ -303,6 +303,63 @@ void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subje
         snprintf(info2, sizeof(info2), "held=none");
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);
 }
+
+// One bot_events.csv row per dispel decision (picked, waiting for a clear carrier, or excluded), at most one per bot
+// and kind per kDispelLogGapMs: the predicate and the multiplier see the same member every tick, while the walk needs
+// the decision, not the repetition. The two kinds never swallow each other's rows. A no-op unless bot_events.csv is in
+// AiPlayerbot.AllowedLogFiles, like the hold rows; the throttle is checked before any string is built.
+constexpr uint32 kDispelLogGapMs = 5000;
+enum class DispelLogKind : std::uint8_t
+{
+    Pick,
+    Excluded,
+};
+std::mutex g_dispelLogMutex;
+std::unordered_map<uint64, uint32> g_dispelLog;
+
+bool DispelLogDue(Player* bot, DispelLogKind kind)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return false;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 key = bot->GetObjectGuid().GetRawValue() ^ ((static_cast<uint64>(kind) + 1) * 0x9E3779B97F4A7C15ull);
+    std::lock_guard<std::mutex> lock(g_dispelLogMutex);
+    uint32& last = g_dispelLog[key];
+    if (last != 0 && nowMs - last < kDispelLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+const char* DispelModeWord(TacticMode mode)
+{
+    switch (mode)
+    {
+        case TacticMode::Clear:
+            return "clear";
+        case TacticMode::Never:
+            return "never";
+        default:
+            return "now";
+    }
+}
+
+// The verdict row: the aura that decided, its carrier, the row's mode, the member's rank, the carrier's distance to the
+// nearest group member (the `clear` test) and what the cure did about it. A row without a listed aura names mode now
+// (the default) and rank 255 (after every listed aura).
+void LogDispel(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd,
+               DispelLogKind kind, const char* word)
+{
+    if (!ai || !bot || !carrier || verdict.auraId == 0 || !DispelLogDue(bot, kind))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "aura=%u,carrier=%u", verdict.auraId, carrier->GetGUIDLow());
+    char info2[96];
+    int const ally = allyYd == std::numeric_limits<float>::max() ? -1 : static_cast<int>(allyYd + 0.5f);
+    snprintf(info2, sizeof(info2), "mode=%s,rank=%d,ally_yd=%d,verdict=%s", DispelModeWord(verdict.mode),
+             verdict.rank, ally, word);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsDispel", info1, info2);
+}
 }
 
 // The blocker count of the hold_kill rows ("hold kill blockers" value: one grid search per bot and blocker entry per
@@ -377,6 +434,73 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         }
     }
     return fight;
+}
+
+void ai::CollectDispelAuras(Unit* member, uint32 dispelType, std::vector<AuraOnMember>& out)
+{
+    if (!member)
+        return;
+    for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
+    {
+        Unit::AuraList const& auras = member->GetAurasByType((AuraType)type);
+        for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            const SpellEntry* entry = (*itr)->GetSpellProto();
+            if (entry && entry->Dispel == dispelType)
+            {
+                AuraOnMember aura;
+                aura.spellId = entry->Id;
+                aura.dispelType = dispelType;
+                out.push_back(aura);
+            }
+        }
+    }
+}
+
+float ai::NearestGroupMemberYd(Unit* member)
+{
+    if (!member)
+        return std::numeric_limits<float>::max();
+    // A dispelled unit can be a pet: its owner's group is the carrier's group, the distance is the pet's.
+    Player* carrier = dynamic_cast<Player*>(member);
+    if (!carrier)
+    {
+        Pet* pet = dynamic_cast<Pet*>(member);
+        if (pet)
+            carrier = dynamic_cast<Player*>(pet->GetOwner());
+    }
+    if (!carrier || !carrier->GetGroup())
+        return std::numeric_limits<float>::max();
+    float nearest = std::numeric_limits<float>::max();
+    for (Player* other : LiveGroupMembers(carrier->GetGroup()))
+    {
+        if (!other || other == member || !other->IsAlive() || other->GetMapId() != member->GetMapId())
+            continue;
+        nearest = std::min(nearest, sServerFacade.GetDistance2d(member, other));
+    }
+    return nearest;
+}
+
+DispelVerdict ai::DispelMemberState(Unit* member, uint32 dispelType, const ActiveBossRows& rows, float defaultClearYd,
+                                    float* allyYdOut)
+{
+    std::vector<AuraOnMember> auras;
+    CollectDispelAuras(member, dispelType, auras);
+    float const allyYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(member)
+                                                             : std::numeric_limits<float>::max();
+    if (allyYdOut)
+        *allyYdOut = allyYd;
+    return DispelMemberVerdict(rows, auras, dispelType, allyYd, defaultClearYd);
+}
+
+void ai::LogDispelPick(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd)
+{
+    LogDispel(ai, bot, verdict, carrier, allyYd, DispelLogKind::Pick, "pick");
+}
+
+void ai::LogDispelExcluded(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd)
+{
+    LogDispel(ai, bot, verdict, carrier, allyYd, DispelLogKind::Excluded, verdict.wait ? "wait" : "excluded");
 }
 
 BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -861,6 +985,165 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     {
         LogHoldKillVeto(ai, bot, veto, current);
         return 0.0f;
+    }
+    return 1.0f;
+}
+
+namespace
+{
+// How far a member can carry a protected aura and still be hit by an area cure (a totem pulse, Stoneform's own
+// removal, an Abolish Poison tick on a nearby ally): the raid's practical radius, the same 30 yd the bomb runout uses.
+constexpr float kDispelSafetyYd = 30.0f;
+
+// The area and periodic cures a dispel_priority row must be able to stand down as a whole: one cast removes (or keeps
+// removing each tick) auras from more than the chosen target.
+bool IsDispelAreaCure(const std::string& spell)
+{
+    return spell == "abolish disease" || spell == "disease cleansing totem" ||
+           spell == "poison cleansing totem" || spell == "stoneform";
+}
+
+// The dispel types a cure action removes, from the spell it casts: 1.12 has a typed action class for the party cures
+// only; the self, totem and Stoneform cures are plain casts. Returns how many types were written (0: not a cure).
+int CureDispelTypes(const std::string& spell, uint32 types[3])
+{
+    if (spell == "dispel magic")
+    {
+        types[0] = DISPEL_MAGIC;
+        return 1;
+    }
+    if (spell == "remove curse" || spell == "remove lesser curse")
+    {
+        types[0] = DISPEL_CURSE;
+        return 1;
+    }
+    if (spell == "cure disease" || spell == "abolish disease" || spell == "disease cleansing totem")
+    {
+        types[0] = DISPEL_DISEASE;
+        return 1;
+    }
+    if (spell == "cure poison" || spell == "abolish poison" || spell == "poison cleansing totem")
+    {
+        types[0] = DISPEL_POISON;
+        return 1;
+    }
+    if (spell == "purify")
+    {
+        types[0] = DISPEL_DISEASE;
+        types[1] = DISPEL_POISON;
+        return 2;
+    }
+    if (spell == "cleanse")
+    {
+        types[0] = DISPEL_MAGIC;
+        types[1] = DISPEL_DISEASE;
+        types[2] = DISPEL_POISON;
+        return 3;
+    }
+    if (spell == "stoneform")
+    {
+        types[0] = DISPEL_DISEASE;
+        types[1] = DISPEL_POISON;
+        return 2;
+    }
+    return 0;
+}
+}
+
+float BossTacticsDispelHoldMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return 1.0f;
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return 1.0f;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return 1.0f;
+
+    // A cure action, by its typed target (a party cure) or by the spell it casts (a self, totem or Stoneform cure).
+    CurePartyMemberAction* partyCure = dynamic_cast<CurePartyMemberAction*>(action);
+    CastSpellAction* cast = partyCure ? nullptr : dynamic_cast<CastSpellAction*>(action);
+    uint32 types[3] = {0, 0, 0};
+    int typeCount = 0;
+    bool areaCure = false;
+    if (partyCure)
+    {
+        types[0] = partyCure->GetDispelType();
+        typeCount = 1;
+    }
+    else if (cast)
+    {
+        const std::string& spell = cast->GetSpellName();
+        typeCount = CureDispelTypes(spell, types);
+        if (typeCount == 0)
+            return 1.0f;
+        areaCure = IsDispelAreaCure(spell);
+    }
+    else
+        return 1.0f;
+
+    // The fight's dispel rows only: a map without one has nothing to rank, and the scan is not paid for.
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    ActiveBossRows rows;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::DispelPriority)
+            rows.push_back(row);
+    }
+    if (rows.empty())
+        return 1.0f;
+    const float defaultClearYd = sPlayerbotAIConfig.bombRunoutDistance;
+
+    if (partyCure)
+    {
+        // The chosen member: a cure on an excluded one would remove the aura that must stay (the core picks one of
+        // the type at random), so the action is stood down and the predicate offers somebody else.
+        Unit* target = action->GetTarget();
+        if (!target)
+            return 1.0f;
+        for (int i = 0; i < typeCount; ++i)
+        {
+            float allyYd = 0.0f;
+            const DispelVerdict verdict = DispelMemberState(target, types[i], rows, defaultClearYd, &allyYd);
+            if (verdict.excluded)
+            {
+                LogDispelExcluded(ai, bot, verdict, target, allyYd);
+                return 0.0f;
+            }
+        }
+        return 1.0f;
+    }
+
+    // A self cure judges the bot itself; an area or periodic cure judges every living group member it can reach.
+    const auto veto = [&](Unit* member)
+    {
+        for (int i = 0; i < typeCount; ++i)
+        {
+            float allyYd = 0.0f;
+            const DispelVerdict verdict = DispelMemberState(member, types[i], rows, defaultClearYd, &allyYd);
+            if (verdict.excluded)
+            {
+                LogDispelExcluded(ai, bot, verdict, member, allyYd);
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!areaCure)
+        return veto(bot) ? 0.0f : 1.0f;
+    if (veto(bot))
+        return 0.0f;
+    Group* group = bot->GetGroup();
+    if (group)
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+                continue;
+            if (sServerFacade.GetDistance2d(bot, member) > kDispelSafetyYd)
+                continue;
+            if (veto(member))
+                return 0.0f;
+        }
     }
     return 1.0f;
 }

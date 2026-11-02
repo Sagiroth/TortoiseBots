@@ -76,6 +76,7 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
 {
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
 }
 
 // The hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the

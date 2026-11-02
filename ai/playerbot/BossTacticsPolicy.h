@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "policy/combat/RearFlankPolicy.h"
+#include "policy/heal/DispelTargetPolicy.h"
 
 namespace ai
 {
@@ -395,6 +396,112 @@ namespace ai
 
     // Rows of the bosses present in a fight.
     using ActiveBossRows = std::vector<const BossTacticRow*>;
+
+    // --- dispel_priority --------------------------------------------------------------------------------------------
+    // The rank of an aura no dispel_priority row lists: after every listed one.
+    constexpr int kUnlistedDispelRank = 255;
+
+    // One aura a member carries, as the core sees it: its id and its SpellEntry::Dispel, which is the cure that removes
+    // it (the row never names the type; the aura's own data does).
+    struct AuraOnMember
+    {
+        std::uint32_t spellId = 0;
+        std::uint32_t dispelType = 0;
+    };
+
+    // What a cure of one dispel type may do for one member.
+    struct DispelVerdict
+    {
+        bool excluded = false;           // no cure of this type may touch the member (a never aura, or an un-clear clear one)
+        bool wait = false;               // excluded only until the carrier is clear of the group (mode clear)
+        int rank = kUnlistedDispelRank;  // the member's aura rank: lower is cured first
+        std::uint32_t auraId = 0;        // the aura that decided (0: the member carries none of the type)
+        TacticMode mode = TacticMode::Default;
+    };
+
+    inline const BossTacticRow* DispelRowFor(const ActiveBossRows& active, std::uint32_t spellId)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::DispelPriority && row->spellId == spellId)
+                return row;
+        }
+        return nullptr;
+    }
+
+    // Whether a verdict needs the carrier's distance from the group at all: only a `clear` row asks for it.
+    inline bool DispelNeedsAllyDistance(const ActiveBossRows& active, const std::vector<AuraOnMember>& auras)
+    {
+        for (const AuraOnMember& aura : auras)
+        {
+            const BossTacticRow* row = DispelRowFor(active, aura.spellId);
+            if (row && row->mode == TacticMode::Clear)
+                return true;
+        }
+        return false;
+    }
+
+    // The cure verdict for one member and one dispel type. The whole type is excluded while any of its auras is a
+    // `never` row, or a `clear` row whose carrier is still inside the row's yards (or the config default when 0): the
+    // core picks a random aura of the type, so a cure could remove the one that must stay. Otherwise the member ranks
+    // by the lowest `priority` among its listed auras, and an unlisted aura ranks after every listed one. A hard
+    // never-dispel aura (IsNeverDispelSpellId) stays excluded unless a `clear` row lists it and the carrier is clear.
+    inline DispelVerdict DispelMemberVerdict(const ActiveBossRows& active, const std::vector<AuraOnMember>& auras,
+                                            std::uint32_t dispelType, float nearestAllyYd, float defaultClearYd)
+    {
+        DispelVerdict verdict;
+        for (const AuraOnMember& aura : auras)
+        {
+            if (aura.dispelType != dispelType)
+                continue;
+            const BossTacticRow* row = DispelRowFor(active, aura.spellId);
+            bool const hardNever = IsNeverDispelSpellId(aura.spellId);
+            float const clearYd = row && row->param > 0.0f ? row->param : defaultClearYd;
+            bool const clearReady = row && row->mode == TacticMode::Clear && nearestAllyYd >= clearYd;
+            if (row && row->mode == TacticMode::Never)
+            {
+                verdict.excluded = true;
+                verdict.wait = false;
+                verdict.auraId = aura.spellId;
+                verdict.mode = TacticMode::Never;
+                return verdict;
+            }
+            if (row && row->mode == TacticMode::Clear && !clearReady)
+            {
+                verdict.excluded = true;
+                verdict.wait = true;
+                verdict.auraId = aura.spellId;
+                verdict.mode = TacticMode::Clear;
+                return verdict;
+            }
+            if (hardNever && !clearReady)
+            {
+                verdict.excluded = true;
+                verdict.wait = false;
+                verdict.auraId = aura.spellId;
+                verdict.mode = row ? row->mode : TacticMode::Never;
+                return verdict;
+            }
+            int const rank = row ? static_cast<int>(row->priority) : kUnlistedDispelRank;
+            if (verdict.auraId == 0 || rank < verdict.rank)
+            {
+                verdict.rank = rank;
+                verdict.auraId = aura.spellId;
+                verdict.mode = row ? row->mode : TacticMode::Default;
+            }
+        }
+        return verdict;
+    }
+
+    // Order of two cure candidates: rank first, the target tier only on a tie. A rank-0 aura is cured before a rank-2
+    // one even when the latter stands in cast range and the former needs a short walk.
+    inline bool DispelCandidateBetter(int rankA, int tierA, int rankB, int tierB)
+    {
+        if (rankA != rankB)
+            return rankA < rankB;
+        return tierA < tierB;
+    }
+
 
     // True when a creature of `casterEntry` casting `spellId` must be interrupted.
     inline bool IsInterruptListed(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t spellId)
