@@ -204,6 +204,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/Totem.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Action.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Commander.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/ObservedRaids.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Pool.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Ah.cpp"
     "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"

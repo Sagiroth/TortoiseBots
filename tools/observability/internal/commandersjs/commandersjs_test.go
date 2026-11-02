@@ -90,6 +90,18 @@ func TestFightDebugJS(t *testing.T) {
 	runCheck(t, "fightdebug_check.js", "../../web/static/js/fightdebug.js")
 }
 
+// TestFDTotalsJS runs fd_totals_check.js: the Fight debugger's "This fight | Total" switch (the .seg above the role
+// tables, the run's sums with per-bot DPS/HPS, the title and the remembered choice) while the live table keeps its 10 s window.
+func TestFDTotalsJS(t *testing.T) {
+	runCheck(t, "fd_totals_check.js", "../../web/static/js/app.js")
+}
+
+// TestFDTotalsRenderJS runs fd_totals_render_check.js: renderFightDebug itself with a finished fight selected, once in
+// "This fight" and once in "Total" mode (a fake fetch answering the totals), plus no selection and a live one.
+func TestFDTotalsRenderJS(t *testing.T) {
+	runCheck(t, "fd_totals_render_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightDebugUIJS runs fightdebug_ui_check.js: the Fight debugger's markup in app.js (frames, rail, checks, timeline,
 // recap, role tables, bot panel, map death marks) with the walk 2 fights and with names that would break the page.
 func TestFightDebugUIJS(t *testing.T) {
@@ -176,7 +188,25 @@ func TestDungeonsJS(t *testing.T) {
 	}
 }
 
-// TestFightReplayJS runs fightreplay_check.js: the replay's interpolation between the kept positions, its fight window and the
+// TestRaidsJS runs raids_check.js: the Raids tab's pure logic (group binds, list order, state word, window totals,
+// the offline member reading as not alive).
+func TestRaidsJS(t *testing.T) {
+	runCheck(t, "raids_check.js",
+		"../../web/static/js/commanders.js", "../../web/static/js/dungeons.js", "../../web/static/js/raids.js")
+}
+
+// TestRaidsPollJS runs raids_poll_check.js: /api/v1/raids is fetched on snapshot only while the Raids tab is on
+// screen and no `raids` event came in 5 s, off screen once per 30 s.
+func TestRaidsPollJS(t *testing.T) {
+	runCheck(t, "raids_poll_check.js", "../../web/static/js/app.js")
+}
+
+// TestRaidsRouteJS runs raids_route_check.js: #/raids?run=&group= opens the card, the Fights button builds
+// #/commanders/<key>/fight, cmdFindBind returns the observed bind, the Commanders Live list drops it and the
+// debugger tab strip keeps it.
+func TestRaidsRouteJS(t *testing.T) {
+	runCheck(t, "raids_route_check.js", "../../web/static/js/app.js")
+}
 // walk 2 track fixture.
 func TestFightReplayJS(t *testing.T) {
 	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")
@@ -443,6 +473,7 @@ func TestCoverageCSS(t *testing.T) {
 func TestLiveLayoutScrollJS(t *testing.T) {
 	runCheck(t, "live_layout_scroll_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
 }
+
 // TestControlsDebugJS runs controls_debug_check.js: the run controls (pause, resume, skip, stop, status, start, revive, gear)
 // also show in the Fight debugger, under the raid frames, with the same buttons, binding and answer note.
 func TestControlsDebugJS(t *testing.T) {

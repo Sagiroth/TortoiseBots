@@ -431,6 +431,19 @@ func nightOf(start int64, loc *time.Location, rollover int) string {
 	return t.Format(dayLayout)
 }
 
+// NightWindow is the half-open [since, until) one local night spans: the local date at the rollover hour to the next
+// date's rollover hour, so a DST night is 23 or 25 hours long. ok is false for a night that is not a strict YYYY-MM-DD.
+func NightWindow(night string, loc *time.Location, rollover int) (since, until int64, ok bool) {
+	t, err := time.ParseInLocation(dayLayout, night, loc)
+	if err != nil || t.Format(dayLayout) != night {
+		return 0, 0, false
+	}
+	y, m, d := t.Date()
+	since = time.Date(y, m, d, rollover, 0, 0, 0, loc).Unix()
+	until = time.Date(y, m, d+1, rollover, 0, 0, 0, loc).Unix()
+	return since, until, true
+}
+
 // Nights groups a commander's fights by local night, newest first, with the fights each night holds.
 func (s *Store) Nights(commander string, loc *time.Location, rollover int) []NightCount {
 	s.mu.RLock()
@@ -662,10 +675,10 @@ func hasControl(s string) bool {
 	return false
 }
 
-// nightParams reads the list's night params: tz (an IANA zone name) and the rollover hour (0-12, default 6). Without tz
-// the routes answer the old UTC shapes. An unknown zone falls back to those same UTC shapes (fallback true) instead of
-// failing: a build without zone data must still answer. The error names the bad param.
-func nightParams(get func(string) string) (*time.Location, int, string, bool) {
+// NightParams reads the night params every night route shares: tz (an IANA zone name) and the rollover hour (0-12,
+// default 6). Without tz the routes answer the old UTC shapes. An unknown zone falls back to those same UTC shapes
+// (fallback true) instead of failing: a build without zone data must still answer. The error names the bad param.
+func NightParams(get func(string) string) (*time.Location, int, string, bool) {
 	tz := get("tz")
 	rollover := 6
 	if s := get("rollover"); s != "" {
@@ -705,7 +718,7 @@ func CommandersHandler(s *Store) http.HandlerFunc {
 func DaysHandler(s *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		loc, rollover, paramErr, fallback := nightParams(q.Get)
+		loc, rollover, paramErr, fallback := NightParams(q.Get)
 		if paramErr != "" {
 			bad(w, paramErr)
 			return
@@ -746,7 +759,7 @@ func ListHandler(s *Store) http.HandlerFunc {
 			bad(w, err.Error())
 			return
 		}
-		loc, rollover, paramErr, fallback := nightParams(q.Get)
+		loc, rollover, paramErr, fallback := NightParams(q.Get)
 		if paramErr != "" {
 			bad(w, paramErr)
 			return

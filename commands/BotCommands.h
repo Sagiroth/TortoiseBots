@@ -6,7 +6,9 @@
 
 #include "../runtime/CommandedGroupQuery.h" // IsInCommandedGroup
 #include "../runtime/CommanderTelemetry.h"
+#include "../runtime/CombatMonitorPolicy.h" // CombatMonitor::MemberInfo
 #include "../runtime/DungeonMobTelemetry.h"
+#include "../runtime/RaidTelemetry.h"
 
 class ChatHandler;
 class Player;
@@ -52,6 +54,25 @@ void BuildBossSpawnCache();
 // bots' cached "attackers" and the sight readers' cached "possible targets"), each guid resolved at most once per run, no grid
 // or world scan. World thread, once per 2 s snapshot cycle, outside the map update.
 void CollectDungeonMobs(std::vector<DungeonMobTelemetry::RunRef>& runs);
+// The Raids tab (spec dash-raids-tab): the raid map copies a bot stands in, without a commander binding, for the RAIDS
+// datagram. Walks only the bots and players the emitter's cycle already holds, reads each member's group slots; fills
+// `out` sorted by (map, instance, group id) and records the same set for the sampler (ObservedRaidSet). World thread, once
+// per 2 s snapshot cycle.
+void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players,
+                          std::vector<RaidTelemetry::GroupInfo>& out);
+// The observed raid groups' combat books, 1 Hz on the world thread: one Refresh per group, a boss pick while it fights, and
+// a released or vanished group's open fight closed after the lead-gone grace. A bound group is skipped (its book is the
+// bound path's). Reads RaidsEnabled() only while nothing is observed; nothing while AiPlayerbot.ObservabilityRaids is 0.
+void UpdateObservedRaids(uint32_t diff);
+bool IsObservedRaidGroup(uint32_t groupId);
+void ClearObservedRaids();
+// Commander.cpp exports the observed-raid sampler shares with the bound path: a group's members in the combat monitor's
+// shape, the bound commander's display name on a group ("" when none), whether a binding stands on it, and the fight's boss
+// pick from the engaged creatures.
+std::vector<CombatMonitor::MemberInfo> CombatMonitorMembersOf(std::vector<Player*> const& bots);
+std::string BoundCommanderNameOfGroup(uint32_t groupId);
+bool GroupIsBound(uint32_t groupId);
+void NoteFightBoss(uint32_t groupId, Player* anchor);
 // Any order a player gives the party pauses its run (`.bot run`); the run's own orders never pause it. Does nothing without a run.
 void PauseDungeonRunForPlayer(uint64_t commanderRaw, std::string const& order);
 // Another real player of a run-bound party: the run's commander (players in the party, 2026-10-23), else 0.

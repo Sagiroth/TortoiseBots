@@ -1,0 +1,493 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/history"
+)
+
+// TestRunTotalsRouteWired drives the run-totals handler over HTTP: missing
+// params are a 400, memory and history fights de-duplicate by key, only
+// the asked session's fights are summed, and the cap answers X-More.
+func TestRunTotalsRouteWired(t *testing.T) {
+	mk := func(id string, start int64, dmg uint64) combat.Fight {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 30000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: dmg}}
+		return f
+	}
+	newMem := func() *combat.Store {
+		st := combat.NewStore(nil)
+		if !st.Add(1, mk("a", 1000, 100)) || !st.Add(1, mk("b", 2000, 200)) {
+			t.Fatal("Add refused")
+		}
+		return st
+	}
+	newHist := func(t *testing.T, fights ...combat.Fight) *history.Store {
+		t.Helper()
+		now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+		clk := now
+		s, err := history.Open(history.Config{Dir: t.TempDir(), Now: func() time.Time { return clk }},
+			func(context.Context, string, combat.Fight) int { return 0 }, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { s.Close(context.Background()) })
+		for _, f := range fights {
+			if !s.Enqueue(history.Item{Session: 1, Fight: f, At: now}) {
+				t.Fatal("Enqueue refused")
+			}
+		}
+		clk = now.Add(7 * time.Second)
+		s.Flush()
+		return s
+	}
+	do := func(h http.HandlerFunc, target string) (int, combat.RunTotals, string, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		var got combat.RunTotals
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return rec.Code, got, rec.Header().Get("X-More"), rec.Body.String()
+	}
+	for _, target := range []string{
+		"/api/v1/combat/run-totals",
+		"/api/v1/combat/run-totals?commander=G",
+		"/api/v1/combat/run-totals?session=1",
+		"/api/v1/combat/run-totals?commander=G&session=nope",
+	} {
+		if code, _, _, body := do(runTotalsHandler(newMem(), nil), target); code != 400 {
+			t.Errorf("%s: status = %d, want 400 (%s)", target, code, body)
+		}
+	}
+	runTotalsLive = &runTotalsCache{}
+	code, got, more, body := do(runTotalsHandler(newMem(), nil), "/api/v1/combat/run-totals?commander=G&session=1")
+	if code != 200 || more != "" || got.Fights != 2 || len(got.Bots) != 1 || got.Bots[0].Dmg != 300 {
+		t.Errorf("all: %d %+v more=%q (%s)", code, got, more, body)
+	}
+	runTotalsLive = &runTotalsCache{}
+	// The history holds the same fight "a": it is summed once, not twice.
+	h := newHist(t, mk("a", 1000, 100))
+	code, got, _, body = do(runTotalsHandler(newMem(), h), "/api/v1/combat/run-totals?commander=G&session=1")
+	if code != 200 || got.Fights != 2 || got.Bots[0].Dmg != 300 {
+		t.Errorf("dedup: %d %+v (%s)", code, got, body)
+	}
+	runTotalsLive = &runTotalsCache{}
+	// The history holds a fight the memory dropped: it joins the sum.
+	h = newHist(t, mk("old", 500, 50))
+	code, got, _, body = do(runTotalsHandler(newMem(), h), "/api/v1/combat/run-totals?commander=G&session=1")
+	if code != 200 || got.Fights != 3 || got.Bots[0].Dmg != 350 {
+		t.Errorf("history: %d %+v (%s)", code, got, body)
+	}
+}
+
+// TestRunTotalsRouteCap cuts past 500 fights and reports X-More.
+func TestRunTotalsRouteCap(t *testing.T) {
+	ms := combat.NewStore(nil)
+	runTotalsLive = &runTotalsCache{}
+	for i := range int64(5) {
+		f := combat.Fight{ID: string(rune('a' + i)), Commander: "G", Start: 1000 + i, DurMS: 10000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: 1}}
+		if !ms.Add(1, f) {
+			t.Fatal("Add refused")
+		}
+	}
+	rec := httptest.NewRecorder()
+	runTotalsHandlerCap(ms, nil, 2)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=1", nil))
+	if rec.Code != 200 || rec.Header().Get("X-More") != "1" {
+		t.Fatalf("cap: %d more=%q (%s)", rec.Code, rec.Header().Get("X-More"), rec.Body.String())
+	}
+	var got combat.RunTotals
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Fights != 2 {
+		t.Fatalf("cap body: %+v err=%v (%s)", got, err, rec.Body.String())
+	}
+}
+
+// TestRunTotalsCapCountsMemory: the cap counts the memory rows too, and a
+// history row already in memory is not opened again toward it.
+func TestRunTotalsCapCountsMemory(t *testing.T) {
+	mem := combat.NewStore(nil)
+	bot := func(dmg uint64) []combat.FightBot {
+		return []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: dmg}}
+	}
+	fa := combat.Fight{ID: "a", Commander: "G", Start: 3000, DurMS: 10000, Outcome: "kill", Bots: bot(300)}
+	fb := combat.Fight{ID: "b", Commander: "G", Start: 2000, DurMS: 10000, Outcome: "kill", Bots: bot(200)}
+	if !mem.Add(1, fa) || !mem.Add(1, fb) {
+		t.Fatal("Add refused")
+	}
+	old := combat.Fight{ID: "old", Commander: "G", Start: 1000, DurMS: 10000, Outcome: "kill", Bots: bot(100)}
+	dup := combat.Fight{ID: "a", Commander: "G", Start: 3000, DurMS: 10000, Outcome: "kill", Bots: bot(300)}
+	fake := &fakeRunHistory{rows: []history.Row{
+		{Key: combat.Key("G", 1, "old"), Commander: "G", Session: 1, ID: "old", Start: 1000},
+		{Key: combat.Key("G", 1, "a"), Commander: "G", Session: 1, ID: "a", Start: 3000},
+	}, fights: map[string]combat.Fight{
+		combat.Key("G", 1, "old"): old,
+		combat.Key("G", 1, "a"):   dup,
+	}}
+	runTotalsLive = &runTotalsCache{}
+	rec := httptest.NewRecorder()
+	// Memory holds 2 of the cap's 3: only the one new history row joins, and
+	// the duplicate already in memory is never opened.
+	runTotalsHandlerCap(mem, fake, 3)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=1", nil))
+	var got combat.RunTotals
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != 200 {
+		t.Fatalf("status = %d err=%v (%s)", rec.Code, err, rec.Body.String())
+	}
+	if got.Fights != 3 || len(got.Bots) != 1 || got.Bots[0].Dmg != 600 || rec.Header().Get("X-More") != "" {
+		t.Fatalf("totals = %+v more=%q opened=%v, want 3 fights dmg 600 without a cut", got, rec.Header().Get("X-More"), fake.opened)
+	}
+	for _, key := range fake.opened {
+		if key == combat.Key("G", 1, "a") {
+			t.Fatalf("opened the in-memory row again: %v", fake.opened)
+		}
+	}
+	if len(fake.opened) != 1 {
+		t.Fatalf("opened %d history rows, want only the one new row: %v", len(fake.opened), fake.opened)
+	}
+}
+
+// TestRunTotalsEndedLiveRowNotSummed files one finished fight, then opens a
+// second fight whose kept end arrived but whose COMBAT_FIGHT has not: the
+// ended-but-unfiled live row (outcome kill, no per-bot numbers) must not be
+// summed, and neither must any other bot-less fight.
+func TestRunTotalsEndedLiveRowNotSummed(t *testing.T) {
+	ms := combat.NewStore(nil)
+	runTotalsLive = &runTotalsCache{}
+	now := time.Date(2026, 10, 28, 20, 0, 0, 0, time.UTC)
+	ms.SetClock(func() time.Time { return now })
+	hdr := &combat.LiveHeader{ID: "open", Start: now.Unix() - 30, StartMs: now.UnixMilli() - 30000}
+	open := combat.EventsDatagram{V: 12, FMT: 1, Session: 1, Seq: 1, TS: now.Unix(),
+		Type: "COMBAT_EVENTS", Commander: "G", CommanderGUID: 9, Fight: hdr,
+		Events: []json.RawMessage{json.RawMessage(`{"k":"start","t":0}`)}}
+	if _, _, accepted := ms.ApplyEvents(open, now); !accepted {
+		t.Fatal("live datagram not accepted")
+	}
+	end := combat.EventsDatagram{V: 12, FMT: 1, Session: 1, Seq: 2, TS: now.Unix(),
+		Type: "COMBAT_EVENTS", Commander: "G", CommanderGUID: 9,
+		Events: []json.RawMessage{json.RawMessage(`{"k":"end","t":31000,"o":"kill","dur":31000,"kept":true}`)}}
+	if _, _, accepted := ms.ApplyEvents(end, now); !accepted {
+		t.Fatal("end datagram not accepted")
+	}
+	f := combat.Fight{ID: "a", Commander: "G", Start: 1000, DurMS: 30000, Outcome: "kill"}
+	f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: 100}}
+	if !ms.Add(1, f) {
+		t.Fatal("Add refused")
+	}
+	rec := httptest.NewRecorder()
+	runTotalsHandler(ms, nil)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=1", nil))
+	var got combat.RunTotals
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != 200 {
+		t.Fatalf("status = %d err=%v (%s)", rec.Code, err, rec.Body.String())
+	}
+	if got.Fights != 1 || len(got.Bots) != 1 || got.Bots[0].Dmg != 100 {
+		t.Fatalf("totals = %+v, want only the finished fight", got)
+	}
+}
+
+// TestRunTotalsLiveFiledAfterCached caches an entry while a fight is live,
+// then the fight is filed: the next request must include it, not the cached
+// answer without it.
+func TestRunTotalsLiveFiledAfterCached(t *testing.T) {
+	now := time.Unix(5000, 0).UTC()
+	oldNow := runTotalsNow
+	runTotalsNow = func() time.Time { return now }
+	defer func() { runTotalsNow = oldNow }()
+	runTotalsLive = &runTotalsCache{}
+	ms := combat.NewStore(nil)
+	ms.SetClock(func() time.Time { return now })
+	mk := func(id string, start int64, dmg uint64) combat.Fight {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 30000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: dmg}}
+		return f
+	}
+	if !ms.Add(1, mk("a", 1000, 100)) {
+		t.Fatal("Add refused")
+	}
+	hdr := &combat.LiveHeader{ID: "open", Start: 2000, StartMs: 2000000}
+	open := combat.EventsDatagram{V: 12, FMT: 1, Session: 1, Seq: 1, TS: now.Unix(),
+		Type: "COMBAT_EVENTS", Commander: "G", CommanderGUID: 9, Fight: hdr,
+		Events: []json.RawMessage{json.RawMessage(`{"k":"start","t":0}`)}}
+	if _, _, accepted := ms.ApplyEvents(open, now); !accepted {
+		t.Fatal("live datagram not accepted")
+	}
+	do := func() combat.RunTotals {
+		rec := httptest.NewRecorder()
+		runTotalsHandler(ms, nil)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=1", nil))
+		if rec.Code != 200 {
+			t.Fatalf("status = %d (%s)", rec.Code, rec.Body.String())
+		}
+		var got combat.RunTotals
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("unmarshal: %v (%s)", err, rec.Body.String())
+		}
+		return got
+	}
+	if got := do(); got.Fights != 1 {
+		t.Fatalf("during the live fight: %+v, want the 1 finished fight", got)
+	}
+	// A fight of this run is still live: the entry must not be ended, or it
+	// would stay cached past the ten-second window while the run goes on.
+	if e := runTotalsLive.entries["G\x00"+strconv.Itoa(1)]; e == nil || e.end {
+		t.Fatalf("the live run was cached as ended: %+v", e)
+	}
+	if !ms.Add(1, mk("open", 2000, 200)) {
+		t.Fatal("filing the live fight refused")
+	}
+	now = now.Add(5 * time.Second)
+	if got := do(); got.Fights != 2 || len(got.Bots) != 1 || got.Bots[0].Dmg != 300 {
+		t.Fatalf("after the filing: %+v, want 2 fights dmg 300", got)
+	}
+}
+
+// TestRunTotalsRouteSessionScope sums only the asked session: two sessions
+// of one commander, and a later day's fight of the same commander, stay out
+// of each other's totals.
+func TestRunTotalsRouteSessionScope(t *testing.T) {
+	mk := func(id string, session uint64, start int64, dmg uint64) combat.Fight {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 30000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: dmg}}
+		return f
+	}
+	newHist := func(t *testing.T, items ...history.Item) *history.Store {
+		t.Helper()
+		now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+		clk := now
+		s, err := history.Open(history.Config{Dir: t.TempDir(), Now: func() time.Time { return clk }},
+			func(context.Context, string, combat.Fight) int { return 0 }, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { s.Close(context.Background()) })
+		for _, it := range items {
+			if !s.Enqueue(it) {
+				t.Fatal("Enqueue refused")
+			}
+		}
+		clk = now.Add(7 * time.Second)
+		s.Flush()
+		return s
+	}
+	do := func(h http.HandlerFunc, target string) (int, combat.RunTotals, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		var got combat.RunTotals
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return rec.Code, got, rec.Body.String()
+	}
+	at := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	runTotalsLive = &runTotalsCache{}
+	ms := combat.NewStore(nil)
+	if !ms.Add(7, mk("a", 7, 1000, 100)) || !ms.Add(8, mk("b", 8, 2000, 200)) {
+		t.Fatal("Add refused")
+	}
+	h := newHist(t,
+		history.Item{Session: 7, Fight: mk("a", 7, 1000, 100), At: at},
+		history.Item{Session: 8, Fight: mk("b", 8, 2000, 200), At: at},
+		history.Item{Session: 8, Fight: mk("c", 8, 86400+5000, 400), At: at},
+	)
+	code, got, body := do(runTotalsHandler(ms, h), "/api/v1/combat/run-totals?commander=G&session=7")
+	if code != 200 || got.Fights != 1 || len(got.Bots) != 1 || got.Bots[0].Dmg != 100 {
+		t.Fatalf("session 7: %d %+v (%s)", code, got, body)
+	}
+	code, got, body = do(runTotalsHandler(ms, h), "/api/v1/combat/run-totals?commander=G&session=8")
+	if code != 200 || got.Fights != 2 || len(got.Bots) != 1 || got.Bots[0].Dmg != 600 {
+		t.Fatalf("session 8: %d %+v (%s)", code, got, body)
+	}
+	// A missing session is a 400, like a missing commander.
+	if code, _, body := do(runTotalsHandler(ms, h), "/api/v1/combat/run-totals?commander=G"); code != 400 {
+		t.Fatalf("no session: status = %d, want 400 (%s)", code, body)
+	}
+}
+
+// TestRunTotalsRouteOpensOnlyMatchingRows fills the history with other
+// sessions' fights and asks one session: the handler opens only the matching
+// index rows, newest first, and stops at the cap.
+func TestRunTotalsRouteOpensOnlyMatchingRows(t *testing.T) {
+	mk := func(id string, session uint64, start int64) combat.Fight {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 10000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: 1}}
+		return f
+	}
+	mem := combat.NewStore(nil)
+	runTotalsLive = &runTotalsCache{}
+	fake := &fakeRunHistory{fights: map[string]combat.Fight{}}
+	var rows []history.Row
+	for i := range 1000 {
+		sess := uint64(99)
+		id := "other"
+		start := int64(1000 + i)
+		if i < 3 {
+			sess = 7007
+			id = string(rune('a' + i))
+			start = int64(9000 - i)
+		}
+		key := combat.Key("G", sess, id+"-"+string(rune('0'+i%10))+string(rune('a'+i/10%26))+string(rune('a'+i/100%26)))
+		if i < 3 {
+			key = combat.Key("G", sess, id)
+		}
+		rows = append(rows, history.Row{Key: key, Commander: "G", Session: sess, ID: id, Start: start})
+		fake.fights[key] = mk(id, sess, start)
+	}
+	_ = mem
+	h := &fakeRunHistory{rows: rows, fights: fake.fights}
+	rec := httptest.NewRecorder()
+	runTotalsLive = &runTotalsCache{}
+	runTotalsHandlerCap(nil, h, 1000)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=7007", nil))
+	if rec.Code != 200 || rec.Header().Get("X-More") != "" {
+		t.Fatalf("all three: %d more=%q (%s)", rec.Code, rec.Header().Get("X-More"), rec.Body.String())
+	}
+	var all combat.RunTotals
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil || all.Fights != 3 {
+		t.Fatalf("all three body: %+v err=%v (%s)", all, err, rec.Body.String())
+	}
+	if len(h.opened) != 3 {
+		t.Fatalf("opened %d fights, want the 3 matching rows: %v", len(h.opened), h.opened)
+	}
+	rec = httptest.NewRecorder()
+	h.opened, h.openOrder = nil, nil
+	runTotalsLive = &runTotalsCache{}
+	runTotalsHandlerCap(nil, h, 2)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=7007", nil))
+	if rec.Code != 200 || rec.Header().Get("X-More") != "1" {
+		t.Fatalf("cut: %d more=%q (%s)", rec.Code, rec.Header().Get("X-More"), rec.Body.String())
+	}
+	var got combat.RunTotals
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Fights != 2 {
+		t.Fatalf("body: %+v err=%v (%s)", got, err, rec.Body.String())
+	}
+	// The third matching row is opened to learn the cut, then the oldest is
+	// dropped newest-first: only two are summed, with X-More.
+	if len(h.opened) != 3 {
+		t.Fatalf("opened %d fights, want the 3 matching rows: %v", len(h.opened), h.opened)
+	}
+	for _, key := range h.opened {
+		row, ok := h.byKey(key)
+		if !ok || row.Session != 7007 {
+			t.Fatalf("opened a row outside session 7007: %q", key)
+		}
+	}
+	if h.openOrder[0] != rows[0].Key || h.openOrder[1] != rows[1].Key || h.openOrder[2] != rows[2].Key {
+		t.Fatalf("opened newest first: %v", h.openOrder)
+	}
+}
+
+type fakeRunHistory struct {
+	rows      []history.Row
+	fights    map[string]combat.Fight
+	opened    []string
+	openOrder []string
+}
+
+func (f *fakeRunHistory) ListAll(commander string) []history.Row {
+	var out []history.Row
+	for _, r := range f.rows {
+		if r.Commander == commander {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (f *fakeRunHistory) Fight(key string) (combat.Fight, history.Row, bool) {
+	f.opened = append(f.opened, key)
+	f.openOrder = append(f.openOrder, key)
+	for _, r := range f.rows {
+		if r.Key == key {
+			return f.fights[key], r, true
+		}
+	}
+	return combat.Fight{}, history.Row{}, false
+}
+
+func (f *fakeRunHistory) byKey(key string) (history.Row, bool) {
+	for _, r := range f.rows {
+		if r.Key == key {
+			return r, true
+		}
+	}
+	return history.Row{}, false
+}
+
+// TestRunTotalsEndedEntryRefreshesOnNewFight parks the clock so the first
+// answer is cached as ended, then adds a newer fight: the next request must
+// include it, not the stale ended entry.
+func TestRunTotalsEndedEntryRefreshesOnNewFight(t *testing.T) {
+	mk := func(id string, start int64, dmg uint64) combat.Fight {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 30000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: dmg}}
+		return f
+	}
+	runTotalsLive = &runTotalsCache{}
+	oldNow := runTotalsNow
+	base := time.Unix(5000, 0).UTC()
+	runTotalsNow = func() time.Time { return base }
+	defer func() { runTotalsNow = oldNow }()
+	ms := combat.NewStore(nil)
+	if !ms.Add(1, mk("a", 1000, 100)) {
+		t.Fatal("Add refused")
+	}
+	do := func(target string) combat.RunTotals {
+		rec := httptest.NewRecorder()
+		runTotalsHandler(ms, nil)(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != 200 {
+			t.Fatalf("%s: status = %d (%s)", target, rec.Code, rec.Body.String())
+		}
+		var got combat.RunTotals
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v (%s)", target, err, rec.Body.String())
+		}
+		return got
+	}
+	if got := do("/api/v1/combat/run-totals?commander=G&session=1"); got.Fights != 1 {
+		t.Fatalf("first: %+v, want 1 fight", got)
+	}
+	if !ms.Add(1, mk("b", 2000, 200)) {
+		t.Fatal("Add refused")
+	}
+	runTotalsNow = func() time.Time { return base.Add(30 * time.Second) }
+	if got := do("/api/v1/combat/run-totals?commander=G&session=1"); got.Fights != 2 || len(got.Bots) != 1 || got.Bots[0].Dmg != 300 {
+		t.Fatalf("after new fight: %+v, want 2 fights dmg 300", got)
+	}
+}
+
+// TestRunTotalsCacheCapsEntries asks 300 distinct sessions: the cache must
+// hold at most 256 runs.
+func TestRunTotalsCacheCapsEntries(t *testing.T) {
+	runTotalsLive = &runTotalsCache{}
+	ms := combat.NewStore(nil)
+	for s := uint64(1); s <= 300; s++ {
+		f := combat.Fight{ID: "a", Commander: "G", Start: 1000, DurMS: 10000, Outcome: "kill"}
+		f.Bots = []combat.FightBot{{Name: "Pew", GUID: 3, Class: "mage", Role: "dps", Sub: 0, Dmg: 1}}
+		if !ms.Add(s, f) {
+			t.Fatal("Add refused")
+		}
+		target := "/api/v1/combat/run-totals?commander=G&session=" + strconv.Itoa(int(s))
+		rec := httptest.NewRecorder()
+		runTotalsHandler(ms, nil)(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != 200 {
+			t.Fatalf("%s: status = %d (%s)", target, rec.Code, rec.Body.String())
+		}
+	}
+	if n := len(runTotalsLive.entries); n > 256 {
+		t.Fatalf("cache holds %d entries, want at most 256", n)
+	}
+}
+
+// TestRunTotalsUnknownSessionNotCached asks a session with no fights: the
+// empty answer must not fill the cache.
+func TestRunTotalsUnknownSessionNotCached(t *testing.T) {
+	runTotalsLive = &runTotalsCache{}
+	ms := combat.NewStore(nil)
+	rec := httptest.NewRecorder()
+	runTotalsHandler(ms, nil)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/run-totals?commander=G&session=999", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if n := len(runTotalsLive.entries); n != 0 {
+		t.Fatalf("cache holds %d entries after an unknown session, want none", n)
+	}
+}
