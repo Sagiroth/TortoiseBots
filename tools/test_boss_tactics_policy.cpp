@@ -56,13 +56,72 @@ static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eli
     return c;
 }
 
-static LinkedMember Linked(std::uint64_t guid, int hpPct, bool attackable = true)
+static LinkedMember Linked(std::uint64_t guid, int hpPct, bool attackable = true, std::uint32_t entry = 0)
 {
     LinkedMember m;
     m.guid = guid;
+    m.entry = entry;
     m.hpPct = hpPct;
     m.attackable = attackable;
     return m;
+}
+
+// The core's raise rule over a list of deaths, each (entry, second it died): the chosen raiser is the first living of
+// Lor'Khan (11347) -> Zath (11348) -> Thekal (14599), a corpse's first check is 7 s after its death, a raiser that
+// died by then moves the check 8 s on, and the second check raises the corpse if any sibling still lives. Returns the
+// number of corpses restored (0: the trio stayed down).
+static int ThekalRaises(const std::vector<std::pair<std::uint32_t, int>>& deaths)
+{
+    std::uint32_t const entries[3] = {11347, 11348, 14599};
+    bool alive[3] = {true, true, true};
+    int raiser[3] = {-1, -1, -1};
+    int deadline[3] = {-1, -1, -1};
+    bool extended[3] = {false, false, false};
+    auto firstAlive = [&alive]()
+    {
+        for (int i = 0; i < 3; ++i)
+            if (alive[i])
+                return i;
+        return -1;
+    };
+    int raises = 0;
+    for (int s = 0; s <= 90; ++s)
+    {
+        for (const std::pair<std::uint32_t, int>& died : deaths)
+            if (died.second == s)
+                for (int i = 0; i < 3; ++i)
+                    if (entries[i] == died.first && alive[i])
+                    {
+                        alive[i] = false;
+                        raiser[i] = firstAlive();
+                        deadline[i] = s + (raiser[i] < 0 ? 10 : 7);
+                    }
+        for (int i = 0; i < 3; ++i)
+        {
+            if (deadline[i] != s || alive[i])
+                continue;
+            if (raiser[i] >= 0 && alive[raiser[i]])
+            {
+                ++raises;
+                alive[i] = true;
+                deadline[i] = -1;
+            }
+            else if (!extended[i])
+            {
+                extended[i] = true;
+                deadline[i] = s + 8;
+            }
+            else if (firstAlive() >= 0)
+            {
+                ++raises;
+                alive[i] = true;
+                deadline[i] = -1;
+            }
+            else
+                deadline[i] = -1;
+        }
+    }
+    return raises;
 }
 
 static CastDangerZone Zone(float x, float y, float z, float radius)
@@ -675,20 +734,37 @@ int main()
         CHECK(!table.HasHoldMap(309));  // a linked group is not a hold_kill budget: each map flag answers its own kind
         // The group is read from the anchor alone, so two partner rows name one anchor. A map without rows has none,
         // and an unsealed table has none either.
-        CHECK(table.LinkedDeathAnchors(309).size() == 1);
-        CHECK(table.LinkedDeathAnchors(309)[0] == 14599);
-        CHECK(table.LinkedDeathAnchors(70).empty());
+        CHECK(table.LinkedDeathGroups(309).size() == 1);
+        CHECK(table.LinkedDeathGroups(309)[0].anchor == 14599);
+        CHECK(table.LinkedDeathGroups(309)[0].group == 1);
+        CHECK(table.LinkedDeathGroups(70).empty());
 
         BossTacticTable unsealed;
         CHECK(unsealed.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f)));
-        CHECK(unsealed.LinkedDeathAnchors(309).empty());
+        CHECK(unsealed.LinkedDeathGroups(309).empty());
     }
 
-    // The group: the anchor and every partner its rows list, resolved from either.
-    const std::vector<BossTacticRow> thekal = {
+    // One anchor can carry several groups (its rows' priorities): each key is scanned, so a second group under the
+    // same boss entry is not hidden by the first one's rows.
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 2.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11361, 0, 2, 5.0f)));
+        table.Seal();
+        CHECK(table.LinkedDeathGroups(309).size() == 2);
+        CHECK(table.LinkedDeathGroups(309)[0].group == 1);
+        CHECK(table.LinkedDeathGroups(309)[1].group == 2);
+    }
+
+    // The group: the anchor and every partner its rows list, resolved from either. Its burn order is the raiser chain:
+    // Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal.
+    std::vector<BossTacticRow> thekal = {
         Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f),
         Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 3.0f),
     };
+    thekal[0].burnOrder = {11347, 11348, 14599};
+    thekal[1].burnOrder = thekal[0].burnOrder;
     const ActiveBossRows thekalRows = Active(thekal);
     {
         LinkedDeathGroup group;
@@ -700,8 +776,10 @@ int main()
         CHECK(std::find(group.entries.begin(), group.entries.end(), 14599) != group.entries.end());
         CHECK(std::find(group.entries.begin(), group.entries.end(), 11347) != group.entries.end());
         CHECK(std::find(group.entries.begin(), group.entries.end(), 11348) != group.entries.end());
+        CHECK(group.burnOrder == std::vector<std::uint32_t>({11347, 11348, 14599}));
         CHECK(FindLinkedDeathGroup(thekalRows, 11348, group));  // a partner resolves the same group
         CHECK(group.entries.size() == 3);
+        CHECK(group.burnOrder.size() == 3);
         CHECK(!FindLinkedDeathGroup(thekalRows, 11361, group));  // the tiger is no member
         CHECK(!FindLinkedDeathGroup(ActiveBossRows(), 14599, group));
     }
@@ -740,6 +818,94 @@ int main()
         CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
         members = { Linked(1, 50), Linked(2, 3) };
         CHECK(!LinkedDeathReleased(3.0f, members));  // one above param: not released (the hold runs)
+    }
+
+    // The release burn follows the row's order: all DPS on the first living member of it, then the next. A member out
+    // of reach is passed over, a living member the order does not name is never picked, and the order alone decides
+    // (never the health, so a raised member at 100 % does not steal the burn).
+    {
+        std::vector<std::uint32_t> const order = {11347, 11348, 14599};
+        std::vector<LinkedMember> members = { Linked(1, 2, true, 14599), Linked(2, 2, true, 11347),
+                                              Linked(3, 2, true, 11348) };
+        CHECK(PickLinkedDeathBurn(order, members) == 1);
+        members[1].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == 2);
+        members[2].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == 0);
+        members[0].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == -1);
+        // The order's first living member, even when a member not in the order is the only other one alive.
+        members = { Linked(9, 100, true, 11361) };
+        CHECK(PickLinkedDeathBurn(order, members) == -1);
+        CHECK(PickLinkedDeathBurn(std::vector<std::uint32_t>(), members) == -1);
+    }
+
+    // The release latch: a death while released keeps the burn on after a heal puts a member back above param, or a
+    // raise restores one to full health; it clears when no member lives or after kLinkedDeathLatchMs.
+    {
+        LinkedDeathLatch latch;
+        CHECK(!LinkedDeathLatchTick(latch, true, 3, 1000));   // released, no death yet
+        CHECK(!LinkedDeathLatchTick(latch, true, 3, 2000));
+        CHECK(LinkedDeathLatchTick(latch, true, 2, 3000));    // a member died while released: latched
+        CHECK(LinkedDeathLatchTick(latch, false, 2, 4000));   // a heal or a raise: still latched
+        CHECK(LinkedDeathLatchTick(latch, false, 2, 3000 + kLinkedDeathLatchMs - 1));
+        CHECK(!LinkedDeathLatchTick(latch, false, 2, 3000 + kLinkedDeathLatchMs)); // 15 s: back to the hold
+        // All dead clears it, whatever the clock.
+        LinkedDeathLatch all;
+        CHECK(!LinkedDeathLatchTick(all, true, 3, 1000));
+        CHECK(LinkedDeathLatchTick(all, true, 2, 1500));
+        CHECK(!LinkedDeathLatchTick(all, true, 0, 1600));
+        // A death while the group is not released never latches.
+        LinkedDeathLatch open;
+        CHECK(!LinkedDeathLatchTick(open, false, 3, 1000));
+        CHECK(!LinkedDeathLatchTick(open, false, 2, 1001));
+    }
+
+    // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
+    // dps it is down ~2.2-3 s after the release, and the death order is the row's. The core's raiser rule (7 s, then
+    // the 8 s fallback) then sees every corpse's chosen raiser die before its check: no restore. The raid's old
+    // one-at-a-time pattern (each member from full health, ~60 s for Thekal) leaves the first corpse's raiser alive at
+    // the 7 s check, so it is raised: that is the window the order exists for.
+    {
+        std::vector<std::uint32_t> const order = {11347, 11348, 14599};
+        // Constructed in another order on purpose: an arbitrary pick (the first member of the list) would burn the
+        // wrong entry first, which the death-order check below catches.
+        std::vector<LinkedMember> members = { Linked(1, 2665, true, 14599), Linked(2, 1709, true, 11347),
+                                              Linked(3, 2136, true, 11348) };
+        std::vector<std::pair<std::uint32_t, int>> deaths;
+        double at = 0.0;
+        for (;;)
+        {
+            const int pick = PickLinkedDeathBurn(order, members);
+            if (pick < 0)
+                break;
+            at += members[pick].hpPct / 2200.0; // the walk's measured low end: the slower run is the hard one
+            deaths.push_back(std::make_pair(members[pick].entry, static_cast<int>(at + 0.5)));
+            members[pick].attackable = false;
+        }
+        CHECK(deaths.size() == 3);
+        CHECK(deaths[0].first == 11347 && deaths[1].first == 11348 && deaths[2].first == 14599);
+        CHECK(deaths.back().second - deaths.front().second <= 7); // inside the first corpse's 7 s check
+        CHECK(ThekalRaises(deaths) == 0);
+        // The same trio at 3.0 k dps is quicker still.
+        std::vector<LinkedMember> fast = { Linked(1, 2665, true, 14599), Linked(2, 1709, true, 11347),
+                                           Linked(3, 2136, true, 11348) };
+        std::vector<std::pair<std::uint32_t, int>> fastDeaths;
+        at = 0.0;
+        for (;;)
+        {
+            const int pick = PickLinkedDeathBurn(order, fast);
+            if (pick < 0)
+                break;
+            at += fast[pick].hpPct / 3000.0;
+            fastDeaths.push_back(std::make_pair(fast[pick].entry, static_cast<int>(at + 0.5)));
+            fast[pick].attackable = false;
+        }
+        CHECK(ThekalRaises(fastDeaths) == 0);
+        // A bad burn: the old one-at-a-time pattern, each member from full health (the observed 9-93 % kills), so
+        // Thekal's first corpse waits 60 s for Lor'Khan's 7 s check.
+        std::vector<std::pair<std::uint32_t, int>> bad = { {14599, 61}, {11347, 122}, {11348, 183} };
+        CHECK(ThekalRaises(bad) > 0);
     }
 
     // Area veto: a held member at the threshold beside the action's target is in the blast, so the area cast or the

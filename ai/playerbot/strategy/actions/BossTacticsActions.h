@@ -51,9 +51,16 @@ namespace ai
     struct BossLinkedDeathScan
     {
         bool active = false;
+        std::uint8_t groupId = 0;           // the group (the rows' priority), so one anchor's groups are told apart
         float param = 0.0f;                 // the group's hold percent
+        std::uint32_t anchor = 0;           // the group's anchor (the rows' boss_entry)
         std::vector<LinkedMember> members;  // the group's living, fighting units within kHoldKillRangeYd of the bot
         std::vector<Unit*> units;           // the same order: the unit of each member
+        std::vector<std::uint32_t> order;   // the release burn's order (empty: the ordinary released pick)
+        bool released = false;              // every living member at or below param % (LinkedDeathReleased)
+        // ... and the release latch (kLinkedDeathLatchMs): a member died while released, so the burn runs on even
+        // if a heal or a raise puts a member back above param %.
+        bool latched = false;
     };
     BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot);
 

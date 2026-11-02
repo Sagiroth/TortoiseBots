@@ -28,8 +28,9 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
             std::list<ObjectGuid> kept;
             for (const ObjectGuid& guid : units)
             {
-                Unit* unit = botAi->GetUnit(guid);
-                if (unit && LinkedDeathHolds(scan.param, static_cast<int>(unit->GetHealthPercent()), scan.members))
+                // The group's own rule, by guid: an unrelated low-health attacker beside a healthy member is no
+                // member and stays in the density.
+                if (LinkedDeathHoldsMember(scan.param, scan.members, guid.GetRawValue()))
                     continue;
                 kept.push_back(guid);
             }

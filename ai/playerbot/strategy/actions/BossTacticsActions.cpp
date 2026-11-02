@@ -6,7 +6,9 @@
 #include <limits>
 #include <atomic>
 #include <functional>
+#include <map>
 #include <mutex>
+#include <tuple>
 #include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
@@ -97,6 +99,29 @@ bool IsAreaDamageAction(PlayerbotAI* ai, Action* action)
     AiObjectContext* context = ai->GetAiObjectContext();
     const uint32 spellId = AI_VALUE2(uint32, "spell id", cast->GetSpellName());
     return IsEnemyAreaSpell(sServerFacade.LookupSpellInfo(spellId));
+}
+
+// A buff that turns the bot's own swings into an area: Sweeping Strikes and Blade Flurry copy each melee hit onto
+// nearby enemies, so a held member in melee reach is damaged without the action looking like an area cast.
+bool IsCleaveToggleAction(Action* action)
+{
+    if (!action)
+        return false;
+    std::string const& name = action->GetName();
+    return name == "sweeping strikes" || name == "blade flurry";
+}
+
+// A single-target damage action that lands on the bot's current target: a melee swing or an attack spell. Heals, the
+// attacker debuff and area casts have their own clauses.
+bool IsSingleTargetDamageAction(Action* action)
+{
+    if (!action)
+        return false;
+    if (dynamic_cast<CastHealingSpellAction*>(action) != nullptr)
+        return false;
+    if (action->GetTargetName() != "current target")
+        return false;
+    return dynamic_cast<AttackAction*>(action) != nullptr || dynamic_cast<CastSpellAction*>(action) != nullptr;
 }
 
 // Why every bot leaves `unit` alone right now: a hold_kill row of its entry with its blocker budget over (KillHeld),
@@ -206,6 +231,13 @@ enum class HoldKillLogKind : std::uint8_t
 };
 std::mutex g_holdKillLogMutex;
 std::unordered_map<uint64, uint32> g_holdKillLog;
+
+// The linked_death release latch per group and map instance: map, instance, anchor, group id. Its state is the group's
+// (a heal or a raise must not re-hold it for one bot while another still burns), and a fight at the group's map
+// instance ends with all three dead, which clears it (LinkedDeathLatchTick).
+std::mutex g_linkedDeathLatchMutex;
+std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint8_t>, LinkedDeathLatch>
+    g_linkedDeathLatches;
 
 bool HoldKillLogDue(Player* bot, HoldKillLogKind kind)
 {
@@ -398,21 +430,27 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
 {
     BossLinkedDeathScan scan;
     const BossTacticTable& table = GetBossTactics();
-    for (std::uint32_t anchor : table.LinkedDeathAnchors(bot->GetMapId()))
+    // One anchor can carry several groups (its rows' priorities): each is scanned, so a group the old anchor list
+    // hid under the first row's priority is not lost.
+    for (const LinkedDeathGroupKey& key : table.LinkedDeathGroups(bot->GetMapId()))
     {
-        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), anchor);
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), key.anchor);
         if (!rows)
             continue;
-        ActiveBossRows active;
-        active.reserve(rows->size());
+        ActiveBossRows groupRows;
+        groupRows.reserve(rows->size());
         for (const BossTacticRow& row : *rows)
-            active.push_back(&row);
+            if (row.kind == BossTacticKind::LinkedDeath && row.priority == key.group)
+                groupRows.push_back(&row);
         LinkedDeathGroup group;
-        if (!FindLinkedDeathGroup(active, anchor, group))
+        if (!FindLinkedDeathGroup(groupRows, key.anchor, group))
             continue;
         BossLinkedDeathScan groupScan;
         groupScan.active = true;
+        groupScan.groupId = group.groupId;
+        groupScan.anchor = group.bossEntry;
         groupScan.param = group.param;
+        groupScan.order = group.burnOrder;
         for (std::uint32_t entry : group.entries)
         {
             for (const SoleCandidate& candidate : SoleKillCandidates(ai, entry))
@@ -422,12 +460,22 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
                     continue;
                 LinkedMember member;
                 member.guid = candidate.guid;
+                member.entry = entry;
                 member.hpPct = static_cast<int>(unit->GetHealthPercent());
                 member.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
                 groupScan.members.push_back(member);
                 groupScan.units.push_back(unit);
             }
         }
+        groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);
+        // The latch is per group and instance: a member that dies while the group is released keeps the burn on for
+        // the rest of the group (M2), whichever bot reads it first. Read with no living member too, so the all-dead
+        // read clears it instead of leaving a stale latch behind.
+        std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);
+        LinkedDeathLatch& latch = g_linkedDeathLatches[std::make_tuple(bot->GetMapId(), bot->GetInstanceId(),
+                                                                      groupScan.anchor, groupScan.groupId)];
+        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.released,
+            static_cast<std::uint32_t>(groupScan.members.size()), WorldTimer::getMSTime());
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }
@@ -443,7 +491,11 @@ Unit* ai::FindBossLinkedDeath(PlayerbotAI* ai, Player* bot)
     const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
     if (!scan.active)
         return nullptr;
-    const int pick = PickLinkedDeath(scan.param, scan.members);
+    // Held: the highest member (the equalise). Released, or latched released with a member back above param: the
+    // burn order, every free DPS on the first living member of it, then the next.
+    const bool hold = !scan.released && !scan.latched;
+    const int pick = hold ? PickLinkedDeath(scan.param, scan.members)
+                          : scan.order.empty() ? -1 : PickLinkedDeathBurn(scan.order, scan.members);
     return pick < 0 ? nullptr : scan.units[pick];
 }
 
@@ -671,13 +723,18 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         }
     }
     const bool area = holdsRows && IsAreaDamageAction(ai, action);
-    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff)
+    // The linked_death clauses also answer a tank's area action (Thunder Clap, Consecration, Swipe), a passive cleave
+    // toggle (Sweeping Strikes, Blade Flurry) and a single-target attack on the current target: none of those is a
+    // hold_kill clause, and the area test alone misses the cleave buffs.
+    const bool cleaveToggle = linkedDeath && IsCleaveToggleAction(action);
+    const bool singleTarget = linkedDeath && !area && IsSingleTargetDamageAction(action);
+    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget)
         return 1.0f;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // The log row's veto kind: the action class that was stood down, replaced by "sole" wherever the one_at_a_time
     // pick rather than a hold_kill budget is what holds the subject (the two need different fixes).
-    const char* const veto = dpsAssist || tankAssist ? "assist"
-        : aoe ? "aoe"
+    const char* const veto = dpsAssist || tankAssist || singleTarget ? "assist"
+        : aoe || cleaveToggle ? "aoe"
         : attackerDebuff ? "dot" : "area";
     // A held subject is left alone by every bot that is not a tank or a healer, an explicit attack order included: the
     // bot stands in the same pile, its area cast or grenade would take the held Mad Servants with it, and a DoT on a
@@ -697,21 +754,40 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
             LogHoldKillVeto(ai, bot, held == HoldReason::Sole ? "sole" : veto, subject);
             return 0.0f;
         }
-        // The same veto for a linked_death group: an area cast on another member that stands beside a held one takes
-        // the held member too, and a DoT on it ticks on after the hold. The burn phase releases the group, so the
-        // area casts are allowed again and the members die together.
-        if (linkedDeath)
+    }
+    // The same veto for a linked_death group, on every bot but a healer: an area cast on another member that stands
+    // beside a held one takes the held member too, and a DoT on it ticks on after the hold. A tank's Thunder Clap,
+    // Consecration or Swipe and a cleave buff have the same reach (M3); so has a melee swing or bolt on a held current
+    // target, which a bot left with only held members in reach would otherwise keep doing (M4). The burn phase
+    // releases the group, so the casts are allowed again and the members die together. DoTs already ticking on a
+    // member keep ticking: the veto only stands down new casts (documented limit).
+    if (linkedDeath && !PlayerbotAI::IsHeal(bot) && (area || attackerDebuff || cleaveToggle || singleTarget))
+    {
+        const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
+        Unit* linkedHeld = nullptr;
+        if (singleTarget)
         {
-            const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
+            // A tank's swing counts too: it kills the held member just as a DPS's does. An explicit attack order still
+            // wins, as for the pick; a healer has no damage action here.
+            const bool ordered = !context->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+            Unit* current = ordered ? nullptr : AI_VALUE(Unit*, "current target");
+            if (current && LinkedDeathHoldsMember(scan.param, scan.members,
+                                                  current->GetObjectGuid().GetRawValue()))
+                linkedHeld = current;
+        }
+        else if (cleaveToggle)
+            linkedHeld = LinkedDeathHeldNear(ai, bot, scan, kHoldKillAoeNearYd);
+        else
+        {
             const float reach = attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd;
-            Unit* linkedHeld = LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach);
+            linkedHeld = LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach);
             if (!linkedHeld && area)
                 linkedHeld = LinkedDeathHeldNear(ai, bot, scan, reach);
-            if (linkedHeld)
-            {
-                LogHoldKillVeto(ai, bot, veto, linkedHeld);
-                return 0.0f;
-            }
+        }
+        if (linkedHeld)
+        {
+            LogHoldKillVeto(ai, bot, veto, linkedHeld);
+            return 0.0f;
         }
     }
     // Nothing but the three target-choosing actions goes further: a heal, an area cast or a DoT has no kill_first

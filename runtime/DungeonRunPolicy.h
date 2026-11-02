@@ -72,6 +72,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace TortoiseBots {
@@ -908,6 +909,9 @@ struct Facts
     // The party (the commander's bound bots, the lead bot included).
     std::uint32_t total = 0, alive = 0, dead = 0;
     RaidFacts raid;                       // set on a raid binding with AiPlayerbot.DungeonRunRaid (off: every rule below as before)
+    // AiPlayerbot.DungeonRunLinkedDeath (default off): the boss tactics' die-together groups are live. The raid guard
+    // leaves their members to the group's own pick, and the run line reads the group (LinkedDeathNote).
+    bool linkedDeath = false;
     // The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop): this many near-wipe events within nearWipeStopWindowMs
     // pause the run once the fight is over (0: off; NearWipeStopCount keeps it to raids unless the party key is on).
     std::uint32_t nearWipeStopCount = 0;
@@ -1268,6 +1272,10 @@ struct Run
     // the note is repeated only when it moves (LinkedDeathNote).
     int linkedNotePct = -1;
     std::string linkedNoteText;
+    // The group's entries seen alive on the last fight read, and each member's first death this fight: its entry and
+    // the fight time (ms). The note names them, so a walk tells a 15 s window from the 7 s one.
+    std::vector<std::uint32_t> linkedAlive;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> linkedDeaths;
 
     std::uint32_t phaseMs = 0;
     std::uint32_t stepIdleMs = 0;
@@ -2585,6 +2593,9 @@ inline void ResetStep(Run& r)
     r.guardReturn = false;
     r.offTankTurn = 0;
     r.raidBossFight = false;
+    r.linkedAlive.clear();
+    r.linkedDeaths.clear();
+    r.linkedNotePct = -1;
     r.raidGuardUnits.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
@@ -13067,14 +13078,55 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
     return false;
 }
 
+// A unit entry of a linked_death group the fight has going: one of the group's rows names it, and two or more of the
+// group's living members are among the engaged units. The raid guard leaves such a unit to the group's own pick, the
+// same as a plan boss: an `attack <guid> <bot>` order is an explicit order, which outranks the pick, so the single
+// ordered dps would kill that member alone and the encounter's raiser would restore it. Off without
+// AiPlayerbot.DungeonRunLinkedDeath.
+inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)
+{
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !entry)
+        return false;
+    for (const ai::LinkedDeathGroupKey& key : r.liveTactics->LinkedDeathGroups(r.plan->map))
+    {
+        const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, key.anchor);
+        if (!rows)
+            continue;
+        std::vector<std::uint32_t> entries;
+        bool member = false;
+        for (const ai::BossTacticRow& row : *rows)
+        {
+            if (row.kind != ai::BossTacticKind::LinkedDeath || row.priority != key.group)
+                continue;
+            if (std::find(entries.begin(), entries.end(), row.bossEntry) == entries.end())
+                entries.push_back(row.bossEntry);
+            if (std::find(entries.begin(), entries.end(), row.targetEntry) == entries.end())
+                entries.push_back(row.targetEntry);
+            member = member || entry == row.bossEntry || entry == row.targetEntry;
+        }
+        if (!member)
+            continue;
+        std::uint32_t living = 0;
+        for (const UnitFact& u : f.engagedUnits)
+            if (std::find(entries.begin(), entries.end(), u.entry) != entries.end())
+                ++living;
+        if (living >= 2)
+            return true;
+    }
+    return false;
+}
+
 // The linked_death note of a boss fight (ai_boss_tactic kind linked_death on the current boss step): the group's
-// living members among the engaged units and the highest of their health percentages. `bracket` leaves the highest in
-// 5 % steps (-1 when the note is empty) so the run line moves at most 20 times a fight. "" outside a boss step, with
-// no live table, with no row of the kind, or with fewer than two members engaged.
-inline std::string LinkedDeathNote(const Run& r, const Facts& f, int& bracket)
+// living members among the engaged units, the highest of their health percentages and the burn order, with each
+// member's death time. `bracket` leaves the highest in 5 % steps (-1 when the note is empty) so the run line moves at
+// most 20 times a fight; `death` is set when a member's death was recorded this read, so the run line carries the
+// timing even when the bracket did not move (a walk can then tell a 15 s window from the 7 s one). "" outside a boss
+// step, with no live table, with no row of the kind, with the key off, or with no member engaged.
+inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)
 {
     bracket = -1;
-    if (!r.liveTactics || !r.plan || !Current(r))
+    death = false;
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !Current(r))
         return std::string();
     const PlanStep& step = *Current(r);
     if (step.kind != PlanStepKind::Boss || !step.entry)
@@ -13082,33 +13134,62 @@ inline std::string LinkedDeathNote(const Run& r, const Facts& f, int& bracket)
     const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, step.entry);
     if (!rows)
         return std::string();
-    std::vector<std::uint32_t> entries;
+    ai::ActiveBossRows active;
+    active.reserve(rows->size());
     for (const ai::BossTacticRow& row : *rows)
-        if (row.kind == ai::BossTacticKind::LinkedDeath)
-        {
-            entries.push_back(row.bossEntry);
-            entries.push_back(row.targetEntry);
-        }
-    if (entries.empty())
+        active.push_back(&row);
+    ai::LinkedDeathGroup group;
+    if (!ai::FindLinkedDeathGroup(active, step.entry, group))
         return std::string();
-    std::string list;
-    std::uint32_t living = 0;
+    std::string list, order;
     std::uint32_t highest = 0;
+    std::vector<std::uint32_t> living;
     for (const UnitFact& u : f.engagedUnits)
     {
-        if (std::find(entries.begin(), entries.end(), u.entry) == entries.end())
+        if (std::find(group.entries.begin(), group.entries.end(), u.entry) == group.entries.end())
             continue;
-        ++living;
+        living.push_back(u.entry);
         const std::uint32_t hp = u.maxHealth ? static_cast<std::uint32_t>(u.health * 100 / u.maxHealth) : 100;
         highest = std::max(highest, hp);
         if (!list.empty())
             list += "/";
         list += std::to_string(u.entry);
     }
-    if (living < 2)
+    // A member of the group that was engaged on the last read and is not now died: its first death time, in fight
+    // seconds. A raise puts it back in the list; its first death stays the one the window is read from.
+    for (std::uint32_t entry : r.linkedAlive)
+        if (std::find(living.begin(), living.end(), entry) == living.end() &&
+            std::none_of(r.linkedDeaths.begin(), r.linkedDeaths.end(),
+                [entry](const std::pair<std::uint32_t, std::uint32_t>& had) { return had.first == entry; }))
+        {
+            r.linkedDeaths.push_back(std::make_pair(entry, r.fightMs));
+            death = true;
+        }
+    r.linkedAlive = living;
+    if (living.empty())
         return std::string();
     bracket = static_cast<int>(highest / 5);
-    return "fighting: linked " + list + " at " + std::to_string(highest) + " %";
+    for (std::uint32_t entry : group.burnOrder)
+    {
+        if (!order.empty())
+            order += ">";
+        order += std::to_string(entry);
+    }
+    std::string text = "linked " + list + " at " + std::to_string(highest) + " %";
+    if (!order.empty() || !r.linkedDeaths.empty())
+    {
+        text += " (";
+        if (!order.empty())
+            text += "burn " + order;
+        for (const std::pair<std::uint32_t, std::uint32_t>& had : r.linkedDeaths)
+        {
+            if (text.back() != '(')
+                text += "; ";
+            text += std::to_string(had.first) + " fell at " + std::to_string(had.second / 1000) + " s";
+        }
+        text += ")";
+    }
+    return text;
 }
 
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
@@ -13304,7 +13385,8 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
-            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || GuardLeavesCampAlone(u) ||
+            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
+            GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
             continue;
         auto const had = r.healerGuardDps.find(u.guid);
@@ -13394,7 +13476,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             if (!u.victimName.empty() && u.victimName == name)
             {
                 holds = true;
-                if (PlanBossEntry(r, u.entry))
+                if (PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry))
                     holdsBoss = true;
             }
         if (!holdsBoss)
@@ -13406,7 +13488,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     if (!f.leadAlive || !f.leadIsTank) // no main tank: the lead bot dead, or a living one that is no tank
         for (const UnitFact& u : f.partyAttackers)
         {
-            if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
+            if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
+                !u.hitting || u.evading ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -13422,7 +13505,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kRaidBossGuardYd)
                 continue;
-            if (PlanBossEntry(r, u.entry) || u.victimTank)
+            if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
@@ -16511,6 +16594,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
             r.fightMs = 0;
             r.raidBossFight = false;
+            r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
+            r.linkedDeaths.clear();
+            r.linkedNotePct = -1;
             DropHopWaiver(r);
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
@@ -16623,18 +16709,21 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
-        // A linked_death group of the boss step: the tactic stays in the run line while it runs, and the line moves at
-        // most once per 5 % of the highest living member.
+        // A linked_death group of the boss step: the tactic stays in the run line while it runs, appended to what the
+        // line already says rather than replacing it. The line moves at most once per 5 % of the highest living member
+        // (the bracket alone is compared, never the whole text), and once more when a member's death was recorded, so
+        // a walk sees each death time and the burn order.
         int linkedBracket = -1;
-        const std::string linked = LinkedDeathNote(r, f, linkedBracket);
+        bool linkedDeath = false;
+        const std::string linked = LinkedDeathNote(r, f, linkedBracket, linkedDeath);
         if (!linked.empty())
         {
-            if (linkedBracket != r.linkedNotePct || linked != r.linkedNoteText)
+            if (linkedBracket != r.linkedNotePct || linkedDeath)
             {
                 r.linkedNotePct = linkedBracket;
                 r.linkedNoteText = linked;
             }
-            r.note = r.linkedNoteText;
+            r.note += "; " + r.linkedNoteText;
         }
         else
             r.linkedNotePct = -1;
@@ -16712,6 +16801,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidBossFight = false;
+        r.linkedAlive.clear();
+        r.linkedDeaths.clear();
+        r.linkedNotePct = -1;
         r.raidGuardUnits.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();

@@ -52,6 +52,7 @@ AREA_SPELL_H = (STRATEGY / "actions/EnemyAreaSpell.h").read_text()
 AOE_OFF = (ROOT / "ai/playerbot/policy/combat/AoeOffPolicy.h").read_text()
 POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
+RUN_POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -300,7 +301,9 @@ class HoldKillWiring(unittest.TestCase):
         self.assertIn("const bool freeDps = IsFreeDps(ai, bot);", fn)
         self.assertIn("if (!freeDps)", fn)
         self.assertNotIn("PlayerbotAI::IsTank(bot)", fn)
-        self.assertNotIn("PlayerbotAI::IsHeal(bot)", fn)
+        # The linked_death clauses (M3/M4) are the one place a role is read: every bot but a healer answers them, so a
+        # tank's Thunder Clap or Consecration is vetoed as well.
+        self.assertIn("linkedDeath && !PlayerbotAI::IsHeal(bot)", fn)
         # The AoE clause: a held creature in the pile the AoE would hit (one AoE killed four Servants together).
         self.assertIn("HeldUnitNear(ai, current, fight, countNear)", fn)
         # L-a: the pick the row would send the bot to, not only the current target: the dps aoe target for the AoE rows,
@@ -433,7 +436,10 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
         # raid mark. With nothing unheld left the value returns null instead of the held pick.
         self.assertEqual(DPS_TARGET.count("HeldDpsTarget(ai, ai->GetBot(), attacker)"), 4)
         self.assertIn("HeldDpsTarget(ai, bot, tankTarget)", DPS_TARGET)
-        self.assertIn("HeldDpsTarget(ai, bot, target) ? nullptr : target", DPS_TARGET)
+        self.assertIn("if (HeldDpsTarget(ai, bot, target))", DPS_TARGET)
+        # ... and a held linked_death member (M4): the bot stops instead of nuking it.
+        self.assertIn("LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, "
+                      "target->GetObjectGuid().GetRawValue())", DPS_TARGET)
 
     def test_the_hold_is_opt_in_and_checks_the_rows_first(self):
         # Opt-in like IsTankHoldPickup: a bot without the "boss tactics" strategy in combat never holds. Cheapest first:
@@ -703,6 +709,12 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # is the policy's, unit-tested with the burn phase in tools/test_boss_tactics_policy.cpp.
         self.assertIn("inline int LinkedDeathHeldIndex(", POLICY)
         self.assertIn("LinkedDeathHeldIndex(", POLICY_TEST)
+        # M3: a tank's area action, a passive cleave toggle and M4's single-target attack on the held current target
+        # get the same veto.
+        self.assertIn("const bool cleaveToggle = linkedDeath && IsCleaveToggleAction(action);", fn)
+        self.assertIn("const bool singleTarget = linkedDeath && !area && IsSingleTargetDamageAction(action);", fn)
+        self.assertIn('name == "sweeping strikes" || name == "blade flurry"', ACTIONS)
+        self.assertIn("LinkedDeathHoldsMember(scan.param, scan.members,", fn)
         self.assertIn("LinkedDeathHeldIndex(3.0f, burn, { 5.0f, 0.0f, 5.0f }, near) == -1", POLICY_TEST)
 
 
@@ -725,14 +737,19 @@ class LinkedDeathFightWideScan(unittest.TestCase):
         self.assertNotIn("fight.rows", fn)
         # The anchor list is the table's; each entry's living, fighting units come from the same per-second grid
         # search the sole-kill pick reads.
-        self.assertIn("table.LinkedDeathAnchors(bot->GetMapId())", fn)
-        self.assertIn("active.push_back(&row);", fn)
-        self.assertIn("FindLinkedDeathGroup(active, anchor, group)", fn)
+        self.assertIn("table.LinkedDeathGroups(bot->GetMapId())", fn)
+        self.assertIn("groupRows.push_back(&row);", fn)
+        self.assertIn("FindLinkedDeathGroup(groupRows, key.anchor, group)", fn)
         self.assertEqual(fn.count("SoleKillCandidates(ai, entry)"), 1)
-        # The table keeps one anchor per group, however many partner rows name it, and none before the seal.
-        self.assertIn("std::vector<std::uint32_t>& anchors = linkedDeathAnchors_[row.map];", POLICY)
-        self.assertIn("const std::vector<std::uint32_t>& LinkedDeathAnchors(std::uint32_t map) const", POLICY)
-        self.assertIn("table.LinkedDeathAnchors(309).size() == 1", POLICY_TEST)
+        # One anchor can carry several groups (the rows' priorities): each of them is scanned.
+        self.assertIn("for (const LinkedDeathGroupKey& key : table.LinkedDeathGroups(bot->GetMapId()))", fn)
+        self.assertIn("row.priority == key.group", fn)
+        self.assertIn("std::vector<LinkedDeathGroupKey>& groups = linkedDeathGroups_[row.map];", POLICY)
+        self.assertIn("const std::vector<LinkedDeathGroupKey>& LinkedDeathGroups(std::uint32_t map) const", POLICY)
+        self.assertIn("table.LinkedDeathGroups(309).size() == 1", POLICY_TEST)
+        # The release latch is one state per group and instance, not per bot: a heal or a raise does not re-hold it.
+        self.assertIn("LinkedDeathLatchTick(latch, groupScan.released,", fn)
+        self.assertIn("g_linkedDeathLatches[std::make_tuple(", fn)
 
     def test_the_trigger_and_the_action_read_the_same_scan(self):
         self.assertIn("Unit* pick = FindBossLinkedDeath(ai, bot);", TRIGGERS)
@@ -759,6 +776,7 @@ class LinkedDeathFightWideScan(unittest.TestCase):
         # One scan per pick: the group pick reads the scan the mark was judged against.
         self.assertEqual(fn.count("ScanBossLinkedDeath("), 1)
         self.assertIn("PickLinkedDeath(linkedScan.param, linkedScan.members)", fn)
+        self.assertIn("PickLinkedDeathBurn(linkedScan.order, linkedScan.members)", fn)
         self.assertIn("inline bool LinkedDeathHoldsMember(", POLICY)
         self.assertIn("LinkedDeathHoldsMember(3.0f, members, 1)", POLICY_TEST)
 
@@ -785,8 +803,8 @@ class HoldKillIsLogged(unittest.TestCase):
     def test_every_multiplier_zero_logs_its_veto(self):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
         self.assertEqual(fn.count("LogHoldKillVeto("), 6)
-        self.assertIn('const char* const veto = dpsAssist || tankAssist ? "assist"', fn)
-        self.assertIn(': aoe ? "aoe"', fn)
+        self.assertIn('const char* const veto = dpsAssist || tankAssist || singleTarget ? "assist"', fn)
+        self.assertIn(': aoe || cleaveToggle ? "aoe"', fn)
         self.assertIn(': attackerDebuff ? "dot"', fn)
         self.assertIn(': attackerDebuff ? "dot" : "area";', fn)
         self.assertNotIn('"heal"', fn)
@@ -849,6 +867,52 @@ class TankTakesTheLooseVoidwalker(unittest.TestCase):
         self.assertIn("if (newPickup != oldPickup)", is_better)
         self.assertLess(is_better.index("IsTankHoldPickup(ai, newUnit)"), is_better.index("MainTankSticksToCurrent("))
         self.assertLess(is_better.index("if (newPickup != oldPickup)"), is_better.index("MainTankSticksToCurrent("))
+
+
+class LinkedDeathBurnOrderWiring(unittest.TestCase):
+    """H1/H2/M1/M2/L1/L3: the row's burn order reaches the pick, the release latch is one state per group, the AoE
+    density reads the group rule by guid, and the run leader's guard leaves the group's members alone while the key
+    is on."""
+
+    def test_the_row_carries_the_burn_order(self):
+        self.assertIn("std::vector<std::uint32_t> burnOrder;", POLICY)
+        self.assertIn("std::vector<LinkedDeathGroupKey>& groups = linkedDeathGroups_[row.map];", POLICY)
+        self.assertIn("const std::vector<LinkedDeathGroupKey>& LinkedDeathGroups(std::uint32_t map) const", POLICY)
+        self.assertIn("inline int PickLinkedDeathBurn(", POLICY)
+        self.assertIn("struct LinkedDeathLatch", POLICY)
+        self.assertIn("inline bool LinkedDeathLatchTick(", POLICY)
+        self.assertIn("`burn_order`", LOADER)
+        self.assertIn("row.burnOrder.push_back(entry);", LOADER)
+        # The order is in the group, from whichever of its rows carries it (the shipped rows carry the same list).
+        self.assertIn("out.burnOrder = other->burnOrder;", POLICY)
+
+    def test_the_burn_is_used_and_latched(self):
+        fn = body(ACTIONS, "BossLinkedDeathScan ai::ScanBossLinkedDeath(")
+        self.assertIn("groupScan.order = group.burnOrder;", fn)
+        self.assertIn("groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);", fn)
+        self.assertIn("LinkedDeathLatchTick(latch, groupScan.released,", fn)
+        pick = body(ACTIONS, "Unit* ai::FindBossLinkedDeath(")
+        self.assertIn("const bool hold = !scan.released && !scan.latched;", pick)
+        self.assertIn("PickLinkedDeathBurn(scan.order, scan.members)", pick)
+        fn = body(DPS_TARGET, "Unit* DpsTargetValue::Calculate()")
+        self.assertIn("PickLinkedDeathBurn(linkedScan.order, linkedScan.members)", fn)
+        self.assertIn("linkedHold = linked && !linkedScan.released && !linkedScan.latched;", fn)
+
+    def test_the_aoe_density_reads_the_group_rule(self):
+        self.assertIn("LinkedDeathHoldsMember(scan.param, scan.members, guid.GetRawValue())", AOE_VALUES)
+        self.assertNotIn("LinkedDeathHolds(scan.param, static_cast<int>", AOE_VALUES)
+
+    def test_the_run_guard_leaves_a_group_member_alone(self):
+        self.assertIn("bool linkedDeath = false;", RUN_POLICY)
+        self.assertIn("inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)",
+                      RUN_POLICY)
+        guard = body(RUN_POLICY, "inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, "
+                                 "std::string& order)")
+        self.assertIn("LinkedDeathMemberEntry(r, f, u.entry)", guard)
+        self.assertIn("f.linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath;", COMMANDER)
+        note = body(RUN_POLICY, "inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)")
+        self.assertIn("if (!f.linkedDeath ||", note)
+        self.assertIn("r.note += \"; \" + r.linkedNoteText;", RUN_POLICY)
 
 
 if __name__ == "__main__":

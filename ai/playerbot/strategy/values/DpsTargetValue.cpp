@@ -493,10 +493,14 @@ Unit* DpsTargetValue::Calculate()
         ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) && !PlayerbotAI::IsTank(bot) &&
         !PlayerbotAI::IsHeal(bot);
     BossLinkedDeathScan linkedScan;
+    bool linkedHold = false; // the hold: another living member above param %, so the raid equalises
     if (linked)
     {
         linkedScan = ScanBossLinkedDeath(ai, bot);
-        linked = linkedScan.active && !LinkedDeathReleased(linkedScan.param, linkedScan.members);
+        linked = linkedScan.active;
+        // The release latch keeps the burn on after a member died while released, even if a heal or a raise puts a
+        // member back above param % (BossTacticsPolicy's LinkedDeathLatchTick).
+        linkedHold = linked && !linkedScan.released && !linkedScan.latched;
     }
 
     // A raid mark set aside in a creature aura keep-out falls through to
@@ -519,18 +523,27 @@ Unit* DpsTargetValue::Calculate()
     // pick is the member with the highest health fraction, never one at or below the row's param % while another is
     // above it, and it outranks the tank's victim, so the guard's pickups do not drag the raid onto one member (an
     // explicit order wins above; a raid mark wins unless it names a held member). Once every living member is at or
-    // below param % the group is released (the ordinary pick then burns the lowest, so they die together); while it is
-    // held with nothing above param % reachable, the bot waits instead of turning on a held member.
+    // below param % the group is released: the release burn follows the row's burn order (all DPS on the first living
+    // member, then the next), so the encounter's raiser chain dies in the order that keeps the window open. A group
+    // with no order keeps the old released pick. While it is held with nothing above param % reachable, the bot waits
+    // instead of turning on a held member.
     if (linked)
     {
-        const int pick = PickLinkedDeath(linkedScan.param, linkedScan.members);
-        return pick < 0 ? nullptr : linkedScan.units[pick];
+        const int pick = linkedHold ? PickLinkedDeath(linkedScan.param, linkedScan.members)
+                          : linkedScan.order.empty() ? -1
+                                                     : PickLinkedDeathBurn(linkedScan.order, linkedScan.members);
+        if (pick >= 0)
+            return linkedScan.units[pick];
+        if (linkedHold)
+            return nullptr; // a held group with no member above param % in reach: wait for the equalise
     }
 
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
-            !IsWastedDpsTarget(ai, tankTarget) && !HeldDpsTarget(ai, bot, tankTarget))
+            !IsWastedDpsTarget(ai, tankTarget) && !HeldDpsTarget(ai, bot, tankTarget) &&
+            !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members,
+                                               tankTarget->GetObjectGuid().GetRawValue())))
             return tankTarget;
     }
 
@@ -559,7 +572,14 @@ Unit* DpsTargetValue::Calculate()
     if (!target)
         target = FindLastCcTarget();
     // Nobody attacks a held entry: with nothing unheld left the value returns null and the bot waits for the blocker.
-    return HeldDpsTarget(ai, bot, target) ? nullptr : target;
+    // The same for a held linked_death member (a latch with no order, or a member above param % out of reach): the
+    // bot stops instead of nuking it, which would start the raise the hold exists to prevent.
+    if (HeldDpsTarget(ai, bot, target))
+        return nullptr;
+    if (linked && target &&
+        LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, target->GetObjectGuid().GetRawValue()))
+        return nullptr;
+    return target;
 }
 
 class FindMaxHpTargetStrategy : public FindNonCcTargetStrategy

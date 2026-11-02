@@ -20,7 +20,10 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death"}
-ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
+ROW = re.compile(
+    r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+),"
+    r"(?: '((?:[^']|'')*)',)? '(?:[^']|'')*'\)[,;]$"
+)
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
@@ -117,7 +120,7 @@ class BossTacticsSql(unittest.TestCase):
         self.assertTrue(migration_rows(), "no ai_boss_tactic rows found")
 
     def test_rows_are_loadable(self):
-        for name, map_id, boss, kind, target, spell, priority, param in effective_rows():
+        for name, map_id, boss, kind, target, spell, priority, param, burn_order in effective_rows():
             where = "%s boss %s kind %s" % (name, boss, kind)
             self.assertIn(kind, KINDS, where)
             self.assertGreater(int(map_id), 0, where)
@@ -137,6 +140,10 @@ class BossTacticsSql(unittest.TestCase):
                 self.assertGreater(int(target), 0, where)     # a partner: a row without one lists nobody
                 self.assertGreater(float(param), 0.0, where)  # the hold percent
                 self.assertLessEqual(float(param), 100.0, where)
+                # The burn order is a comma list of creature entries (empty: the ordinary released pick).
+                if burn_order:
+                    for token in burn_order.split(","):
+                        self.assertRegex(token.strip(), r"^\d+$", where)
 
     def test_primary_keys_are_unique(self):
         # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
@@ -145,7 +152,7 @@ class BossTacticsSql(unittest.TestCase):
         seen = set()
         for kind, payload in migration_statements():
             if kind == "insert":
-                name, map_id, boss, row_kind, target, spell, _priority, _param = payload
+                name, map_id, boss, row_kind, target, spell, _priority, _param, _burn = payload
                 key = (int(map_id), int(boss), row_kind, int(target), int(spell))
                 self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
                 seen.add(key)
@@ -300,21 +307,39 @@ class BossTacticsSql(unittest.TestCase):
     def test_linked_death_pairs_the_thekal_zealots(self):
         # Walk 27 C: Thekal 14599 and the Zealots Lor'Khan 11347 and Zath 11348 raise a dead sibling to full health 7 s
         # after the death, so they have to die together. The two rows of one (boss_entry, priority) key are the group;
-        # param 3 % is the hold that leaves ~10 k hp for the burst, inside the 7 s timer (10 % would need 11-15 s).
-        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): (int(row[6]), float(row[7]))
+        # param 2 % leaves ~6.5 k hp for the release burst, 2-3 s at the walk's 2.2-3.0 k dps (inside the 7 s timer),
+        # and the burn order is the raiser chain: Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])):
+                (int(row[6]), float(row[7]), row[8])
                 for row in effective_rows()}
-        self.assertEqual((1, 3.0), live.get((309, 14599, "linked_death", 11347, 0)),
+        self.assertEqual((1, 2.0, "11347,11348,14599"), live.get((309, 14599, "linked_death", 11347, 0)),
                          "the Thekal / Lor'Khan linked_death row is missing or changed")
-        self.assertEqual((1, 3.0), live.get((309, 14599, "linked_death", 11348, 0)),
+        self.assertEqual((1, 2.0, "11347,11348,14599"), live.get((309, 14599, "linked_death", 11348, 0)),
                          "the Thekal / Zath linked_death row is missing or changed")
         self.assertNotIn((309, 14599, "linked_death", 0, 0), live)       # the anchor is no row of its own
         self.assertNotIn((309, 11347, "linked_death", 14599, 0), live)   # partners are not anchors
-        path = os.path.join(ROOT, "data/sql/world/20261102200000_world.sql")
-        self.assertTrue(os.path.isfile(path), "the Thekal linked_death migration is missing")
+        path = os.path.join(ROOT, "data/sql/world/20261102210000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the Thekal burn-order migration is missing")
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
+        self.assertIn("ADD COLUMN `burn_order` varchar(96) NOT NULL DEFAULT '''' AFTER `param`", text)
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14599) "
                       "AND `kind` = 'linked_death';", text)
+        # The two group rows carry the same order: the loader takes the first non-empty one, so they cannot diverge.
+        rows = [line for line in text.splitlines() if line.startswith("(309, 14599, 'linked_death',")]
+        self.assertEqual(2, len(rows))
+        for line in rows:
+            self.assertIn("2.0, '11347,11348,14599'", line)
+
+    def test_the_thekal_heal_is_interrupted(self):
+        # Lor'Khan's Greater Heal 24208 (boss_thekal.cpp) keeps the lowest friendly under 9500 hp alive every 12 s,
+        # which makes staggered kills worse; spell_template interruptFlags 15 makes it kickable.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
+        self.assertIn((309, 11347, "interrupt", 0, 24208), live)
+        with open(os.path.join(ROOT, "data/sql/world/20261102210000_world.sql"), encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (11347) "
+                      "AND `kind` = 'interrupt' AND `target_entry` = 0 AND `spell_id` = 24208;", text)
 
     def test_the_linked_death_delete_spares_another_kind(self):
         # The anchor 14599 can carry other tactic rows (a kill_first on a Zealot, an interrupt); re-applying this
