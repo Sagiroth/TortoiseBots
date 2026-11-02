@@ -104,6 +104,33 @@ func TestMemoryAndHistoryCountOnce(t *testing.T) {
 	}
 }
 
+// A fight the memory store lists but no longer holds when the detail is read
+// (evicted between List and GetKey) must still reach the report from history.
+func TestEvictedBetweenListAndGetKeyStaysInReport(t *testing.T) {
+	start := dayOf(2026, 11, 1) + 12*3600
+	key := combat.Key("T", 7, "f1")
+	f := combat.Fight{ID: "f1", Commander: "T", Start: start, DurMS: 30000, Outcome: "end",
+		Bots: []combat.FightBot{
+			tb(1, "A", "rogue", "dps", 0, 0, 1, 0, 0),
+			tb(2, "B", "mage", "dps", 0, 0, 1, 0, 0),
+			tb(3, "C", "hunter", "dps", 0, 0, 1, 0, 0),
+		}}
+	mem := &fakeMem{
+		rows:   []combat.FightSummary{memRow(key, f, 7)},
+		fights: map[string]combat.Fight{}, // GetKey fails for the listed key
+	}
+	hist := &fakeHist{
+		rows:   []history.Row{{Key: key, Commander: "T", Session: 7, Start: start}},
+		fights: map[string]combat.Fight{key: f},
+	}
+	rules := func() []combat.Rule { return rulesOf(t) }
+	h := Handler(Sources{Mem: mem, Hist: hist, Rules: rules})
+	r := decodeAnswer(t, get(t, h, "/api/v1/combat/underperformers?commander=T&day=2026-11-01"))
+	if r.Fights != 1 {
+		t.Fatalf("fights = %d, want 1 (evicted fight must come from history)", r.Fights)
+	}
+}
+
 func TestBadParams(t *testing.T) {
 	mem := &fakeMem{
 		rows: []combat.FightSummary{memRow(combat.Key("T", 1, "f1"),

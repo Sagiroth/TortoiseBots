@@ -235,11 +235,14 @@ func collect(src Sources, commander string, since, until int64, rules []combat.R
 	out := make([]Input, 0, len(cands))
 	for _, c := range cands {
 		if c.mem {
-			f, warnings, ok := src.Mem.GetKey(c.key)
-			if !ok {
+			if f, warnings, ok := src.Mem.GetKey(c.key); ok {
+				out = append(out, Input{Key: c.key, Session: c.session, Fight: f, Warnings: warnings})
 				continue
 			}
-			out = append(out, Input{Key: c.key, Session: c.session, Fight: f, Warnings: warnings})
+			// Evicted between List and GetKey: the history holds it, so fall
+			// back to it. Its warnings are re-judged, as for any history fight.
+		}
+		if src.Hist == nil {
 			continue
 		}
 		f, _, ok := src.Hist.Fight(c.key)
