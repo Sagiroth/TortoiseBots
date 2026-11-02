@@ -7969,15 +7969,10 @@ bool MemberProgressed(Player* bot, MemberParticipation& clock)
     return progress;
 }
 
-// Fills DungeonRun::MemberFact::targetGuid (the selected target, a fact no rule reads for participation) and
-// actedMs (DungeonRun::MemberParticipates) from the bot's own combat state, read here each run tick.
+// Fills DungeonRun::MemberFact::actedMs (DungeonRun::MemberParticipates) from the bot's own combat state, read
+// here each run tick.
 void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)
 {
-    ObjectGuid const targetGuid = bot->GetTargetGuid();
-    if (!targetGuid.IsEmpty())
-        member.targetGuid = targetGuid.GetRawValue();
-    else if (Unit* victim = bot->GetVictim())
-        member.targetGuid = victim->GetObjectGuid().GetRawValue();
     std::uint32_t const now = WorldTimer::getMSTime();
     if (ParticipationClocks().size() >= kParticipationClocksMax)
         for (auto it = ParticipationClocks().begin(); it != ParticipationClocks().end();)

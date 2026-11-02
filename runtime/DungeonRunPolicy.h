@@ -1091,10 +1091,6 @@ struct MemberFact
     float dz = 0.0f;        // height difference to the lead bot (another floor)
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
-    // Its current attack or cast target (the bot's own, else its victim's: the glue). Selecting a target is no
-    // participation by itself (MemberParticipates never reads it): a bot that keeps a target it cannot reach is
-    // still wedged.
-    std::uint64_t targetGuid = 0;
     // How long ago the glue last saw actual combat progress from the bot: a spell cast started or finished, a melee
     // or ranged swing (DungeonRun::MemberParticipates). 0xFFFFFFFF: none since the glue's clock saw the bot.
     std::uint32_t actedMs = 0xFFFFFFFF;
@@ -1103,7 +1099,8 @@ struct MemberFact
     // (RaidHealerGuard). Read with the raid's roles.
     bool rangedDps = false;
     // The unit the bot has targeted now (the glue's read of its selection): a healer guard assignment whose bot
-    // does not target its add is over (RaidHealerGuard).
+    // does not target its add is over (RaidHealerGuard). Selecting a target is no participation by itself
+    // (MemberParticipates never reads it): a bot that keeps a target it cannot reach is still wedged.
     std::uint64_t targetGuid = 0;
     bool core = false;      // a tank or a healer (the raid's gather waits for every one of them)
     // With Facts::directJoinRead: the glue's own direct-step test for this bot (the one `cmd move ... direct`
