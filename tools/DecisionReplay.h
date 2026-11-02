@@ -892,20 +892,25 @@ inline TickOut OutOf(const DungeonRun::Run& run, const std::string& order)
 
 inline std::vector<std::string> FieldDiffs(const FieldMap& got, const FieldMap& want)
 {
-    std::vector<std::string> diffs;
-    std::size_t count = std::max(got.size(), want.size());
-    for (std::size_t i = 0; i < count; ++i)
+    auto find = [](const FieldMap& fields, const std::string& name) -> const std::string*
     {
-        const std::string* gotText = i < got.size() ? &got[i].second : nullptr;
-        const std::string* wantText = i < want.size() ? &want[i].second : nullptr;
-        std::string const name = i < got.size() ? got[i].first : want[i].first;
-        if (gotText && wantText && got[i].first == want[i].first && *gotText == *wantText)
-            continue;
-        if (gotText && wantText && got[i].first != want[i].first)
-            continue; // only the order changed; the maps below catch the fields
-        diffs.push_back(name + ": got " + (gotText ? Cut(*gotText, 200) : std::string("(missing)")) + ", want " +
-                        (wantText ? Cut(*wantText, 200) : std::string("(missing)")));
+        for (const auto& field : fields)
+            if (field.first == name)
+                return &field.second;
+        return nullptr;
+    };
+    std::vector<std::string> diffs;
+    for (const auto& field : want)
+    {
+        const std::string* have = find(got, field.first);
+        if (!have)
+            diffs.push_back(field.first + ": got (missing), want " + Cut(field.second, 200));
+        else if (*have != field.second)
+            diffs.push_back(field.first + ": got " + Cut(*have, 200) + ", want " + Cut(field.second, 200));
     }
+    for (const auto& field : got)
+        if (!find(want, field.first))
+            diffs.push_back(field.first + ": got " + Cut(field.second, 200) + ", want (missing)");
     return diffs;
 }
 
