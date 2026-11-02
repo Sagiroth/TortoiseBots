@@ -29,6 +29,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.ActionLogMaxTotalMB`](#aiplayerbotactionlogmaxtotalmb) | `2048` | Maximum cumulative disk space in megabytes for the `logs/bots/` folder. |
 | [`AiPlayerbot.ActionLogMaxFileMB`](#aiplayerbotactionlogmaxfilemb) | `100` | Maximum size in megabytes of a single bot log file before rotating. |
 | [`AiPlayerbot.ActionCountsLog`](#aiplayerbotactioncountslog) | `0` | Records cumulative action execution counts and failure rates to CSV. |
+| [`AiPlayerbot.HealerDiagnostics`](#aiplayerbothealerdiagnostics) | `0` | Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`. |
 | [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `0` | Enables non-blocking UDP telemetry stream to the observability daemon. |
 | [`AiPlayerbot.ObservabilityHost`](#aiplayerbotobservabilityhost) | `127.0.0.1` | Destination host IP address or service name for UDP observability telemetry. |
 | [`AiPlayerbot.ObservabilityPort`](#aiplayerbotobservabilityport) | `9195` | Destination UDP port for the observability telemetry daemon. |
@@ -194,6 +195,17 @@ cp logs/action_counts.csv /tmp/actions_early.csv
 cp logs/action_counts.csv /tmp/actions_late.csv
 python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.csv --top 10
 ```
+
+</details>
+
+### `AiPlayerbot.HealerDiagnostics`
+Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`.
+**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts when `bot_events.csv` is in `AiPlayerbot.AllowedLogFiles`, and only for a grouped healer. At most once every 10 seconds per healer it writes a `HealState` row (injured members, those in heal range, mana, movement, casting, the lowest member's health, distance and line of sight, the motion type and destination, and the last action), and at most once every 10 seconds a `HealSkip` row naming why a heal could not be cast (out of range, line of sight, no mana, moving, bad target, and so on). It reads the group roster only, never the world, and does not change any decision.
 
 </details>
 
