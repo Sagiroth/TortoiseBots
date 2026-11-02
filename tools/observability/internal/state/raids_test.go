@@ -233,6 +233,141 @@ func TestIsRaidRun(t *testing.T) {
 	}
 }
 
+// Any session change is a restart, even a lower one: a restarted server whose
+// clock is behind reports a lower session, and the rows reset instead of the
+// packet being refused. A straggler naming the superseded session is dropped
+// by identity, not by numeric order.
+func TestRaidsLowerSessionRestarts(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	if ok := s.ApplyBatch(batch(1, 0, 1, raidBot(1, "Tank", false, 409, 7, 7))); !ok {
+		t.Fatal("batch not published")
+	}
+	ts := c.now.Unix()
+	before := raidsRow(7, "raid#7", "Tank", 1, nil)
+	if !s.ApplyRaids(raidsPayload(9, 3, ts, before)) {
+		t.Fatal("first session refused")
+	}
+	// A lower session still replaces the rows: the state reset with it.
+	after := raidsRow(7, "raid#7", "Heal", 2, nil)
+	if !s.ApplyRaids(raidsPayload(6, 1, ts, after)) {
+		t.Fatal("lower-session restart refused")
+	}
+	if g := s.Raids().Runs[0].Groups[0]; !g.Observed || g.Leader != "Heal" {
+		t.Fatalf("lower session must reset state, got %+v", g)
+	}
+	// A straggler from before the restart names the superseded session.
+	if s.ApplyRaids(raidsPayload(9, 4, ts, before)) {
+		t.Fatal("late packet from the superseded session applied")
+	}
+	if g := s.Raids().Runs[0].Groups[0]; !g.Observed || g.Leader != "Heal" {
+		t.Fatalf("straggler must not clobber the restart, got %+v", g)
+	}
+	// Sequence numbering restarts with the session: an earlier seq of the new
+	// session still applies.
+	next := raidsRow(7, "raid#7", "Off", 3, nil)
+	if !s.ApplyRaids(raidsPayload(6, 2, ts, next)) {
+		t.Fatal("new session seq refused")
+	}
+	if g := s.Raids().Runs[0].Groups[0]; g.Leader != "Off" {
+		t.Fatalf("new session rows must stand, got %+v", g)
+	}
+}
+
+// One group id can stand on two instance copies at once: the RAIDS telemetry
+// for one copy must not leak onto the other.
+func TestRaidsSplitGroupByInstance(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "TankA", false, 409, 7, 7),
+		raidBot(2, "TankB", false, 409, 8, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	ts := c.now.Unix()
+	combat := &model.CommanderCombat{WinS: 10, FightMS: 20000}
+	row := raidsRow(7, "raid#7", "TankA", 1, combat)
+	row.Members = []model.RaidMemberRef{{GUID: 9, Name: "Away", Sub: 0, Offline: true}}
+	if !s.ApplyRaids(raidsPayload(9, 1, ts, row)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	view := s.Raids()
+	if len(view.Runs) != 2 {
+		t.Fatalf("want one run per copy, got %+v", view.Runs)
+	}
+	byRun := map[string]model.RaidRun{}
+	for _, r := range view.Runs {
+		byRun[r.Key] = r
+	}
+	got := byRun["409:7"].Groups[0]
+	if !got.Observed || got.Leader != "TankA" || got.Combat == nil {
+		t.Fatalf("copy with telemetry must join it: %+v", got)
+	}
+	var names []string
+	for _, m := range got.Members {
+		names = append(names, m.Name)
+	}
+	if len(names) != 2 || names[0] != "Away" || names[1] != "TankA" {
+		t.Fatalf("copy members wrong: %+v", got.Members)
+	}
+	other := byRun["409:8"].Groups[0]
+	if other.Observed || other.Leader != "" || other.Combat != nil {
+		t.Fatalf("other copy must stay roster-only: %+v", other)
+	}
+	if len(other.Members) != 1 || other.Members[0].Name != "TankB" {
+		t.Fatalf("other copy members wrong: %+v", other.Members)
+	}
+}
+
+// A RAIDS row member that is not on this run's copy is resolved against the
+// full roster first: an online bot elsewhere keeps its state and fields, and
+// only a guid the roster has nowhere (or the row marks offline) is an offline
+// stub.
+func TestRaidsRowMemberResolvedAgainstFullRoster(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Roamer", false, 409, 8, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	ts := c.now.Unix()
+	row := raidsRow(7, "raid#7", "Tank", 1, nil)
+	row.Members = []model.RaidMemberRef{
+		{GUID: 2, Name: "Roamer", Sub: 1},
+		{GUID: 3, Name: "Gone", Sub: 0, Offline: true},
+		{GUID: 4, Name: "Ghost", Sub: 0},
+	}
+	if !s.ApplyRaids(raidsPayload(9, 1, ts, row)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	byRun := map[string]model.RaidRun{}
+	for _, r := range s.Raids().Runs {
+		byRun[r.Key] = r
+	}
+	g := byRun["409:7"].Groups[0]
+	byGUID := map[uint32]model.DungeonMember{}
+	for _, m := range g.Members {
+		byGUID[m.GUID] = m
+	}
+	if m := byGUID[2]; m.Offline || m.Name != "Roamer" || m.State != "idle" {
+		t.Fatalf("online bot elsewhere must stay online: %+v", byGUID)
+	}
+	if m := byGUID[3]; !m.Offline || m.State != "offline" {
+		t.Fatalf("row-marked offline must be a stub: %+v", byGUID)
+	}
+	if m := byGUID[4]; !m.Offline || m.Name != "Ghost" {
+		t.Fatalf("guid nowhere in the roster must be a stub: %+v", byGUID)
+	}
+	if m := byGUID[2]; m.SubGroup != 0 {
+		t.Fatalf("roster subgroup wins for the online bot: %+v", m)
+	}
+}
+
 // Concurrent Raids() views must not race the listener's ApplyRaids updates:
 // the stored rows are shared read-only once published.
 func TestRaidsConcurrentViewAndUpdate(t *testing.T) {

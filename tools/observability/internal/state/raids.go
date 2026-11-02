@@ -34,6 +34,11 @@ type raidsState struct {
 	list     []model.RaidGroupRow
 	partials uint64
 	pending  *raidsPending
+	// prior holds the sessions this store moved away from, newest last.
+	// Numeric order cannot tell a restart from a straggler (a restarted
+	// server whose clock is behind reports a lower session), so the
+	// rejection of late packets is by identity against this list.
+	prior []uint64
 }
 
 // raidsPending is a RAIDS cycle that arrived in parts and is not complete
@@ -47,11 +52,42 @@ type raidsPending struct {
 	got     map[int][]model.RaidGroupRow
 }
 
-// ApplyRaids replaces the standing raid rows with the datagram's list. A
-// datagram of an older server session, or older than the one held in the same
-// session, is ignored, and a cycle split into parts takes effect only once
-// all of its parts are in. It reports whether the view changed. An empty
-// list clears the rows at once.
+// maxPriorRaidsSessions bounds the superseded sessions ApplyRaids remembers:
+// only recent sessions can still have packets in flight, and a hostile
+// sender must not grow the store one session id per datagram.
+const maxPriorRaidsSessions = 8
+
+// raidsSessionSuperseded reports whether a session id is one this store
+// already moved away from: a packet naming it is in flight from before a
+// restart, not a restart of its own.
+func raidsSessionSuperseded(prior []uint64, session uint64) bool {
+	for _, s := range prior {
+		if s == session {
+			return true
+		}
+	}
+	return false
+}
+
+// rememberRaidsSession records a superseded session, newest last, keeping
+// the bound above.
+func rememberRaidsSession(prior []uint64, session uint64) []uint64 {
+	if raidsSessionSuperseded(prior, session) {
+		return prior
+	}
+	if len(prior) >= maxPriorRaidsSessions {
+		copy(prior, prior[1:])
+		prior = prior[:len(prior)-1]
+	}
+	return append(prior, session)
+}
+
+// ApplyRaids replaces the standing raid rows with the datagram's list. Any
+// session change is a restart: rows, sequence and pending parts reset. A late
+// packet naming a superseded session is dropped by identity, and a datagram
+// older than the one held in the same session is ignored; a cycle split into
+// parts takes effect only once all of its parts are in. It reports whether
+// the view changed. An empty list clears the rows at once.
 func (s *Store) ApplyRaids(p *model.RaidsPayload) bool {
 	if p == nil {
 		return false
@@ -65,17 +101,24 @@ func (s *Store) ApplyRaids(p *model.RaidsPayload) bool {
 	if p.Parts > 1 && (p.Parts > maxRaidsParts || p.Part >= p.Parts) {
 		return false
 	}
-	if p.Session < st.session {
+	if p.Session == st.session {
+		if p.TS < st.ts {
+			return false
+		}
+	} else if raidsSessionSuperseded(st.prior, p.Session) {
+		// A straggler from before a restart, not a restart of its own.
 		return false
-	}
-	if p.Session == st.session && p.TS < st.ts {
-		return false
-	}
-	now := s.now()
-	if p.Session > st.session {
+	} else {
+		// Any session change is a restart, even a lower one: a restarted
+		// server whose clock is behind reports a lower session, and the
+		// roster treats it as a new session the same way.
+		if st.session != 0 {
+			st.prior = rememberRaidsSession(st.prior, st.session)
+		}
 		st.session, st.seq, st.ts = p.Session, 0, 0
 		st.pending = nil
 	}
+	now := s.now()
 	if p.Parts <= 1 {
 		if p.Seq > 0 && p.Seq <= st.seq {
 			return false
@@ -162,10 +205,13 @@ func (s *Store) RaidsPartials() uint64 {
 	return st.partials
 }
 
-// raidRowByGroup returns the fresh RAIDS row for one group, or nil.
-func raidRowByGroup(rows []model.RaidGroupRow, group uint32) *model.RaidGroupRow {
+// raidRowByGroup returns the fresh RAIDS row for one group on one instance
+// copy, or nil. The join is group + map + instance: one group id can stand on
+// several copies at once, and telemetry for one copy must not leak onto
+// another.
+func raidRowByGroup(rows []model.RaidGroupRow, group, mapID, instance uint32) *model.RaidGroupRow {
 	for i := range rows {
-		if rows[i].Group == group {
+		if rows[i].Group == group && rows[i].Map == mapID && rows[i].Instance == instance {
 			return &rows[i]
 		}
 	}
@@ -184,7 +230,6 @@ func (s *Store) Raids() model.RaidsView {
 	// copy them before taking the roster lock so the locks never nest.
 	s.raids.mu.Lock()
 	raidRows := append([]model.RaidGroupRow(nil), s.raids.list...)
-	raidAt := s.raids.at
 	live := !s.raids.at.IsZero() && s.now().Sub(s.raids.at) <= RaidsStaleAfter
 	s.raids.mu.Unlock()
 	if !live {
@@ -238,7 +283,8 @@ func (s *Store) Raids() model.RaidsView {
 		groups := make([]model.RaidGroupView, 0, len(groupIDs))
 		for _, gid := range groupIDs {
 			seen[gid] = true
-			groups = append(groups, raidGroupView(gid, byGroup[gid], raidRowByGroup(raidRows, gid), bindings, raidAt, now))
+			row := raidRowByGroup(raidRows, gid, r.run.MapID, r.run.Instance)
+			groups = append(groups, raidGroupView(gid, byGroup[gid], row, bindings, s.bots))
 		}
 		for i := range raidRows {
 			row := &raidRows[i]
@@ -249,7 +295,7 @@ func (s *Store) Raids() model.RaidsView {
 				continue
 			}
 			seen[row.Group] = true
-			groups = append(groups, raidGroupView(row.Group, nil, row, bindings, raidAt, now))
+			groups = append(groups, raidGroupView(row.Group, nil, row, bindings, s.bots))
 		}
 		sort.Slice(groups, func(i, j int) bool { return groups[i].Group < groups[j].Group })
 
@@ -321,13 +367,13 @@ func boundBindingOf(bindings []model.CommanderBinding, group uint32) *model.Comm
 
 // raidGroupView joins one group: roster members, the fresh RAIDS row (leader,
 // offline members, combat window) and the bound COMMANDERS binding (bound,
-// commander, run).
-func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGroupRow, bindings []model.CommanderBinding, raidAt time.Time, now time.Time) model.RaidGroupView {
+// commander, run). A row member outside this run's subset is resolved against
+// the full roster first, so a bot standing on another copy keeps its online
+// state and fields; only a guid the roster has nowhere, or one the row marks
+// offline, is drawn as an offline stub.
+func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGroupRow, bindings []model.CommanderBinding, full map[uint32]*botEntry) model.RaidGroupView {
 	bound := boundBindingOf(bindings, group)
 	g := model.RaidGroupView{Group: group, Key: raidGroupKey(group, row, bound)}
-	_ = raidAt
-	_ = now
-
 	merged := make([]model.DungeonMember, 0, len(members)+(func() int {
 		if row != nil {
 			return len(row.Members)
@@ -354,6 +400,12 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 			if byGUID[ref.GUID] {
 				continue
 			}
+			if !ref.Offline {
+				if entry, ok := full[ref.GUID]; ok {
+					merged = append(merged, dungeonMember(entry.snap))
+					continue
+				}
+			}
 			merged = append(merged, model.DungeonMember{
 				Name:     ref.Name,
 				GUID:     ref.GUID,
@@ -365,7 +417,6 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 	}
 	sortRunMembers(merged)
 	g.Members = merged
-
 	if bound != nil {
 		g.Bound = true
 		g.Commander = bound.Commander
