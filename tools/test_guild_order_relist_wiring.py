@@ -11,6 +11,7 @@ MAIL = (ROOT / "ai/playerbot/strategy/actions/MailAction.cpp").read_text()
 BANK = (ROOT / "ai/playerbot/strategy/actions/GuildBankAction.cpp").read_text()
 STORE = (ROOT / "runtime/GuildOrderStore.cpp").read_text()
 DELIVERY = (ROOT / "runtime/GuildOrderDelivery.cpp").read_text()
+POLICY = (ROOT / "runtime/GuildOrderRelistPolicy.h").read_text()
 MAINT = (ROOT / "ai/playerbot/strategy/values/MaintenanceValues.cpp").read_text()
 DOC = (ROOT / "docs/developers/guild-supply.md").read_text()
 
@@ -79,13 +80,35 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("RelistQueue::Instance().Enqueue(bot->GetGUIDLow())", BANK)
         drain = body(DELIVERY, "class RelistDrain", "\n};")
         self.assertIn("RelistDeposits(request.botGuidLow)", drain)
-        self.assertIn('"DepositMoney:"', drain)
-        self.assertIn("DepositPass(bot, guild, banker, entry.itemId, 0, quota)", drain)
-        self.assertIn("NoteRelistDeposit(request.botGuidLow, entry.seq, goldMoved, itemsMoved)", drain)
-        # No banker in reach leaves every row for the next trip.
-        no_banker = drain.index("if (!banker)")
-        self.assertLess(no_banker, drain.index("NoteRelistDeposit("))
+        self.assertIn("RelistBankTrip(entry, view, ledger, bank)", drain)
+        self.assertIn("RelistTripBot const view{ guildId, atBank,", drain)
+        # The bank adapter is the one place the bank handler and the bag pass run.
+        writes = body(DELIVERY, "class RelistBankWrites", "\n};")
+        self.assertIn('"DepositMoney:"', writes)
+        self.assertIn("DepositPass(m_bot, m_guild, m_banker, m_itemId, 0, items)", writes)
+        ledger = body(DELIVERY, "struct RelistLedgerWrites", "\n};")
+        self.assertIn("SaveRelistRow(row)", ledger)
+        self.assertIn("DeleteRelistRow(row.botGuidLow, row.seq)", ledger)
+        # A visit with no banker in reach never reserves value: the bank is
+        # looked up before the trip runs.
+        self.assertLess(drain.index("FindNearbyGuildBanker("), drain.index("RelistBankTrip("))
         self.assertIn("UpdateRelistDeposits();", STORE)
+        # The trip writes the ledger before the bank is asked, and restores
+        # what the bank refused after it: the at-most-once order.
+        trip = body(POLICY, "RelistTripOutcome RelistBankTrip(", "\n}\n")
+        self.assertLess(trip.index("ledger.Save(reserved)"), trip.index("bank.Deposit("))
+        self.assertLess(trip.index("ledger.Delete(entry)"), trip.index("bank.Deposit("))
+        self.assertLess(trip.index("bank.Deposit("), trip.index("ledger.Save(owed)"))
+
+    def test_store_row_writes_are_checked(self):
+        save = body(STORE, "bool SaveRelist(", "\n    bool DeleteRelist(")
+        self.assertIn("if (!CharacterDatabase.DirectPExecute(", save)
+        self.assertIn("REPLACE INTO `tortoise_bots_guild_relist`", save)
+        delete = body(STORE, "bool DeleteRelist(", "\n    // Any value collected")
+        self.assertIn("if (!CharacterDatabase.DirectPExecute(", delete)
+        self.assertIn("DELETE FROM `tortoise_bots_guild_relist`", delete)
+        self.assertNotIn("NoteRelistDeposit", STORE)
+        self.assertNotIn("NoteRelistDeposit", DELIVERY)
 
     def test_relist_mail_wakes_the_mail_read(self):
         self.assertIn("RelistEntries(bot->GetGUIDLow())", MAINT)
@@ -95,6 +118,8 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("relist ledger", DOC.lower())
         self.assertIn("tortoise_bots_guild_relist", DOC)
         self.assertIn("three days", DOC)
+        self.assertIn("at most once", DOC.lower())
+        self.assertIn("has since left", DOC.lower())
 
 
 if __name__ == "__main__":

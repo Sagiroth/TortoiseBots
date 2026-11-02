@@ -193,10 +193,11 @@ std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
 // A matched relist mail was collected: the gold or the item is in hand.
 // Map thread only (the mail read).
 bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items);
-// A banker pass paid part of an entry: it drops once nothing is left, and
-// nothing moved (no banker, a refused message) keeps it for the next trip.
-// World thread only (the relist drain). Returns whether the row settled.
-bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved);
+// Writes one ledger row to the table and to memory. Returns false, with memory
+// untouched, when the table write failed. World thread only (the relist drain).
+bool SaveRelistRow(RelistLedgerEntry const& row);
+// Drops one ledger row the same way. World thread only (the relist drain).
+bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq);
 // Value collected from a relist mail is due to the guild bank. Any thread.
 bool RelistDepositPending(uint32_t botGuidLow);
 // The received rows a bank trip has to pay out, oldest first. World thread

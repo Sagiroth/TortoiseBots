@@ -11,6 +11,7 @@
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/GuildOrderCraft.h"
 #include "../ai/playerbot/TravelMgr.h"
+#include "../host/ModuleLog.h"
 #include "PlayerbotAIStorage.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -701,11 +702,51 @@ private:
     }
 };
 
+// The relist ledger as a bank trip writes it: the store's checked row writes.
+struct RelistLedgerWrites
+{
+    bool Save(RelistLedgerEntry const& row) { return SaveRelistRow(row); }
+    bool Delete(RelistLedgerEntry const& row) { return DeleteRelistRow(row.botGuidLow, row.seq); }
+};
+
+// The guild bank as one row's trip sees it: gold and bag items go in through
+// the bank handler, the same path the order drains use.
+class RelistBankWrites
+{
+public:
+    RelistBankWrites(Player* bot, Guild* guild, Unit* banker, uint32_t itemId)
+        : m_bot(bot), m_guild(guild), m_banker(banker), m_itemId(itemId) {}
+
+    RelistMoved Deposit(uint32_t gold, uint32_t items)
+    {
+        RelistMoved moved;
+        if (gold)
+        {
+            uint32_t before = m_bot->GetMoney();
+            std::ostringstream message;
+            message << "DepositMoney:" << gold;
+            m_guild->_Bank->HandleAddonMessages(message.str(), m_bot);
+            uint32_t after = m_bot->GetMoney();
+            if (after < before)
+                moved.gold = before - after;
+        }
+        if (items)
+            moved.items = DepositPass(m_bot, m_guild, m_banker, m_itemId, 0, items);
+        return moved;
+    }
+
+private:
+    Player* m_bot;
+    Guild* m_guild;
+    Unit* m_banker;
+    uint32_t m_itemId;
+};
+
 // Pays collected relist value back to the guild bank. Runs on the world
 // thread like the other drains: the bank handler keeps the acting player in
-// member fields. A row stays in the ledger until the bank actually took its
-// value, so a visit with no banker in reach simply leaves it for the next
-// one.
+// member fields. Each row's trip saves the planned value off the row before
+// the bank is asked (see RelistBankTrip), so a row with no banker in reach
+// waits for the next visit and a row whose guild the bot left is dropped.
 class RelistDrain
 {
 public:
@@ -728,52 +769,50 @@ private:
         if (entries.empty())
             return;
         Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, request.botGuidLow));
-        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() ||
-            !bot->GetGuildId())
+        if (!bot || !bot->IsInWorld())
             return;
-        ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
-        Unit* banker = FindNearbyGuildBanker(bot, ai);
-        if (!banker)
-            return;
-        Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-        if (!guild || !guild->_Bank)
-            return;
+        uint32_t const guildId = bot->GetGuildId();
+        Guild* guild = guildId ? sGuildMgr.GetGuildById(guildId) : nullptr;
+        Unit* banker = nullptr;
+        if (guild && guild->_Bank && bot->IsAlive() && !bot->IsInCombat())
+            banker = FindNearbyGuildBanker(bot, ::PlayerbotAIStorage::Instance().GetAI(bot));
 
+        bool const atBank = banker != nullptr;
         ObjectGuid oldSelection = bot->GetSelectionGuid();
-        bot->SetSelectionGuid(banker->getObjectGuid());
+        if (atBank)
+            bot->SetSelectionGuid(banker->getObjectGuid());
         for (RelistLedgerEntry const& entry : entries)
         {
-            // A bot that changed guilds since the posting cannot pay that
-            // guild: the row stays until the stale sweep or a guild return.
-            if (entry.guildId != bot->GetGuildId())
-                continue;
-            uint32_t goldMoved = 0;
-            uint32_t itemsMoved = 0;
-            if (entry.heldGold)
-            {
-                uint32_t cash = bot->GetMoney();
-                uint32_t take = entry.heldGold < cash ? entry.heldGold : cash;
-                if (take)
-                {
-                    uint32_t before = bot->GetMoney();
-                    std::ostringstream message;
-                    message << "DepositMoney:" << take;
-                    guild->_Bank->HandleAddonMessages(message.str(), bot);
-                    uint32_t after = bot->GetMoney();
-                    if (after < before)
-                        goldMoved = before - after;
-                }
-            }
-            if (entry.heldCount)
-            {
-                uint32_t bagCount = bot->GetItemCount(entry.itemId);
-                uint32_t quota = entry.heldCount < bagCount ? entry.heldCount : bagCount;
-                if (quota)
-                    itemsMoved = DepositPass(bot, guild, banker, entry.itemId, 0, quota);
-            }
-            NoteRelistDeposit(request.botGuidLow, entry.seq, goldMoved, itemsMoved);
+            RelistTripBot const view{ guildId, atBank, bot->GetMoney(), bot->GetItemCount(entry.itemId) };
+            RelistBankWrites bank(bot, guild, banker, entry.itemId);
+            RelistLedgerWrites ledger;
+            LogTripOutcome(request.botGuidLow, entry,
+                RelistBankTrip(entry, view, ledger, bank));
         }
-        bot->SetSelectionGuid(oldSelection);
+        if (atBank)
+            bot->SetSelectionGuid(oldSelection);
+    }
+
+    static void LogTripOutcome(uint32_t botGuidLow, RelistLedgerEntry const& entry,
+        RelistTripOutcome outcome)
+    {
+        switch (outcome)
+        {
+        case RelistTripOutcome::Dropped:
+            TB_LOG_BASIC("TortoiseBots: bot %u left guild %u; dropping its relist row (item %u x%u, seq %u).",
+                botGuidLow, entry.guildId, entry.itemId, entry.count, entry.seq);
+            break;
+        case RelistTripOutcome::Refused:
+            TB_LOG_BASIC("TortoiseBots: relist ledger write failed for bot %u (item %u, seq %u); no deposit this pass, the row stays.",
+                botGuidLow, entry.itemId, entry.seq);
+            break;
+        case RelistTripOutcome::Lost:
+            TB_LOG_BASIC("TortoiseBots: bank took less than planned for bot %u (item %u, seq %u) and the rest could not be written back; that value is lost.",
+                botGuidLow, entry.itemId, entry.seq);
+            break;
+        default:
+            break;
+        }
     }
 };
 

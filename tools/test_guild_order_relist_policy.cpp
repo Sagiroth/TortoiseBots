@@ -93,6 +93,82 @@ void ReadMail(RelistLedgerEntry& entry, RelistMail const& mail, uint64_t nowSec 
     else if (kind == RelistMailKind::Expired)
         RelistNoteMailReceived(entry, kind, 0, mail.count);
 }
+
+// The table: one row per seq, writes that can be made to fail.
+struct FakeLedger
+{
+    std::vector<RelistLedgerEntry> rows;
+    bool failWrites = false;
+    int writes = 0;
+
+    bool Save(RelistLedgerEntry const& row)
+    {
+        if (failWrites)
+            return false;
+        ++writes;
+        for (RelistLedgerEntry& existing : rows)
+        {
+            if (existing.seq == row.seq)
+            {
+                existing = row;
+                return true;
+            }
+        }
+        rows.push_back(row);
+        return true;
+    }
+
+    bool Delete(RelistLedgerEntry const& row)
+    {
+        if (failWrites)
+            return false;
+        ++writes;
+        for (auto it = rows.begin(); it != rows.end(); ++it)
+        {
+            if (it->seq == row.seq)
+            {
+                rows.erase(it);
+                break;
+            }
+        }
+        return true;
+    }
+};
+
+// The guild bank: takes at most the given limits, and can break the table
+// right after the money moved (the crash-after-deposit case).
+struct FakeBank
+{
+    uint32_t goldLimit = 0xFFFFFFFF;
+    uint32_t itemLimit = 0xFFFFFFFF;
+    FakeLedger* breakLedgerAfterDeposit = nullptr;
+    int deposits = 0;
+    uint32_t lastGold = 0;
+    uint32_t lastItems = 0;
+
+    RelistMoved Deposit(uint32_t gold, uint32_t items)
+    {
+        ++deposits;
+        lastGold = gold;
+        lastItems = items;
+        if (breakLedgerAfterDeposit)
+            breakLedgerAfterDeposit->failWrites = true;
+        RelistMoved moved;
+        moved.gold = gold < goldLimit ? gold : goldLimit;
+        moved.items = items < itemLimit ? items : itemLimit;
+        return moved;
+    }
+};
+
+RelistTripBot AtBank(uint32_t cash = 0, uint32_t bagCount = 0, uint32_t guildId = kGuild)
+{
+    RelistTripBot bot;
+    bot.guildId = guildId;
+    bot.atBank = true;
+    bot.cash = cash;
+    bot.bagCount = bagCount;
+    return bot;
+}
 } // namespace
 
 int main()
@@ -181,8 +257,12 @@ int main()
         CHECK(entry.heldGold == 5100);
         CHECK(entry.heldCount == 0);
         CHECK(RelistNeedsDeposit(entry));
-        CHECK(RelistNoteDeposit(entry, 5100, 0));
-        CHECK(!RelistNeedsDeposit(entry));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Deposited);
+        CHECK(bank.deposits == 1 && bank.lastGold == 5100 && bank.lastItems == 0);
+        CHECK(ledger.rows.empty());
     }
 
     // Expired -> the posted stack is back in the bags and the bank trip
@@ -193,29 +273,129 @@ int main()
         CHECK(entry.received);
         CHECK(entry.heldCount == 13);
         CHECK(entry.heldGold == 0);
-        CHECK(RelistNoteDeposit(entry, 0, 13));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        CHECK(RelistBankTrip(entry, AtBank(0, 13), ledger, bank) == RelistTripOutcome::Deposited);
+        CHECK(bank.lastGold == 0 && bank.lastItems == 13);
+        CHECK(ledger.rows.empty());
     }
 
-    // The ledger takes no order input at all, so a row posted by an order that
-    // has since finished (or was never persisted) settles the same way.
-    {
-        RelistLedgerEntry entry = Posted();
-        ReadMail(entry, SoldMail());
-        CHECK(entry.received);
-        CHECK(RelistNoteDeposit(entry, 5100, 0));
-    }
-
-    // Bank unreachable: the pass moved nothing, the row keeps the whole debt
-    // and stays due, and the next trip still pays it.
+    // Ledger write fails -> no deposit at all: the planned value is saved off
+    // the row before the bank is asked, and the row keeps its debt.
     {
         RelistLedgerEntry entry = Posted();
         ReadMail(entry, SoldMail(kItem, 5100));
-        CHECK(!RelistNoteDeposit(entry, 0, 0));
-        CHECK(entry.heldGold == 5100);
-        CHECK(RelistNeedsDeposit(entry));
-        CHECK(!RelistNoteDeposit(entry, 2500, 0)); // partial pass
-        CHECK(entry.heldGold == 2600);
-        CHECK(RelistNoteDeposit(entry, 2600, 0));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        ledger.failWrites = true;
+        FakeBank bank;
+        CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Refused);
+        CHECK(bank.deposits == 0);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].heldGold == 5100);
+    }
+
+    // Deposit refused -> the row is restored with the whole debt. The planned
+    // value settled the row (it was removed before the bank), so the restore
+    // writes it back in full.
+    {
+        RelistLedgerEntry entry = Posted();
+        ReadMail(entry, SoldMail(kItem, 5100));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        bank.goldLimit = 0;
+        CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Returned);
+        CHECK(bank.deposits == 1);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].received);
+        CHECK(ledger.rows[0].heldGold == 5100 && ledger.rows[0].seq == entry.seq);
+    }
+
+    // Partial pass -> the refused rest goes back on the row, nothing more.
+    {
+        RelistLedgerEntry entry = Posted();
+        ReadMail(entry, SoldMail(kItem, 5100));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        bank.goldLimit = 2500;
+        CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Returned);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].heldGold == 2600);
+    }
+
+    // Deposit refused and the restore fails too -> the value is lost, and the
+    // row is not left to be paid a second time.
+    {
+        RelistLedgerEntry entry = Posted();
+        ReadMail(entry, SoldMail(kItem, 5100));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        bank.goldLimit = 0;
+        bank.breakLedgerAfterDeposit = &ledger;
+        CHECK(RelistBankTrip(entry, AtBank(5100), ledger, bank) == RelistTripOutcome::Lost);
+        CHECK(ledger.rows.empty());
+    }
+
+    // Bag short -> only the items the bags hold are planned; the rest of the
+    // row stays owed and is written back with the planned part taken off.
+    {
+        RelistLedgerEntry entry = Posted(13);
+        ReadMail(entry, ExpiredMail(kItem, 13), kNow + kDurationSec);
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        CHECK(RelistBankTrip(entry, AtBank(0, 4), ledger, bank) == RelistTripOutcome::Deposited);
+        CHECK(bank.lastItems == 4);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].heldCount == 9);
+    }
+
+    // Partial item pass -> the refused stack remainder goes back on the row.
+    {
+        RelistLedgerEntry entry = Posted(13);
+        ReadMail(entry, ExpiredMail(kItem, 13), kNow + kDurationSec);
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        bank.itemLimit = 5;
+        CHECK(RelistBankTrip(entry, AtBank(0, 13), ledger, bank) == RelistTripOutcome::Returned);
+        CHECK(ledger.rows.size() == 1 && ledger.rows[0].heldCount == 8);
+    }
+
+    // Bot left the row's guild -> the row is dropped without a bank trip, even
+    // with no banker in reach. A drop whose write fails keeps the row.
+    {
+        RelistLedgerEntry entry = Posted();
+        ReadMail(entry, SoldMail(kItem, 5100));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        RelistTripBot away = AtBank(5100, 0, kOtherGuild);
+        away.atBank = false;
+        CHECK(RelistBankTrip(entry, away, ledger, bank) == RelistTripOutcome::Dropped);
+        CHECK(bank.deposits == 0 && ledger.rows.empty());
+
+        FakeLedger broken;
+        broken.rows.push_back(entry);
+        broken.failWrites = true;
+        CHECK(RelistBankTrip(entry, AtBank(5100, 0, 0), broken, bank) == RelistTripOutcome::Refused);
+        CHECK(broken.rows.size() == 1);
+        CHECK(bank.deposits == 0);
+    }
+
+    // No banker in reach, or nothing carried: the row waits, nothing is written.
+    {
+        RelistLedgerEntry entry = Posted();
+        ReadMail(entry, SoldMail(kItem, 5100));
+        FakeLedger ledger;
+        ledger.rows.push_back(entry);
+        FakeBank bank;
+        RelistTripBot away = AtBank(5100);
+        away.atBank = false;
+        CHECK(RelistBankTrip(entry, away, ledger, bank) == RelistTripOutcome::Idle);
+        CHECK(RelistBankTrip(entry, AtBank(0), ledger, bank) == RelistTripOutcome::Idle);
+        CHECK(ledger.writes == 0 && bank.deposits == 0);
+        CHECK(ledger.rows.size() == 1 && RelistNeedsDeposit(ledger.rows[0]));
     }
 
     // Three days with nothing back drops the row; a row already collected

@@ -1370,50 +1370,59 @@ public:
         return true;
     }
 
-    // A banker pass moved part of the value: the entry drops once nothing is
-    // left. Nothing moved (no banker, a refused message) keeps it whole.
-    // World thread only (the relist drain).
-    bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved)
+    // Writes a ledger row (insert or replace by seq). The table write is
+    // checked and synchronous: memory changes only once it landed. World
+    // thread only (the relist drain).
+    bool SaveRelist(RelistLedgerEntry const& row)
     {
-        bool settled = false;
-        bool found = false;
-        RelistLedgerEntry updated;
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_relist` (`bot_guid`, `seq`, `guild_id`, `item_id`, "
+                "`count`, `unit_price`, `bid`, `buyout`, `deposit`, `posted_at`, `expires_at`, "
+                "`received`, `held_gold`, `held_count`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u')",
+                row.botGuidLow, row.seq, row.guildId, row.itemId, row.count, row.unitPrice,
+                row.bid, row.buyout, row.deposit, static_cast<uint32_t>(row.postedAtSec),
+                static_cast<uint32_t>(row.expiresAtSec), row.received ? 1u : 0u,
+                row.heldGold, row.heldCount))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry>& rows = m_relist[row.botGuidLow];
+        for (RelistLedgerEntry& existing : rows)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            auto it = m_relist.find(botGuidLow);
-            if (it == m_relist.end())
-                return false;
-            std::vector<RelistLedgerEntry>& rows = it->second;
-            for (auto row = rows.begin(); row != rows.end(); ++row)
+            if (existing.seq == row.seq)
             {
-                if (row->seq != seq)
-                    continue;
-                found = true;
-                settled = RelistNoteDeposit(*row, goldMoved, itemsMoved);
-                updated = *row;
-                if (settled)
-                {
-                    rows.erase(row);
-                    if (rows.empty())
-                        m_relist.erase(it);
-                }
+                existing = row;
+                return true;
+            }
+        }
+        rows.push_back(row);
+        return true;
+    }
+
+    // Drops a ledger row from the table and from memory, with the same
+    // checked write as SaveRelist. World thread only (the relist drain).
+    bool DeleteRelist(uint32_t botGuidLow, uint32_t seq)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
+                botGuidLow, seq))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return true;
+        std::vector<RelistLedgerEntry>& rows = it->second;
+        for (auto row = rows.begin(); row != rows.end(); ++row)
+        {
+            if (row->seq == seq)
+            {
+                rows.erase(row);
                 break;
             }
         }
-        if (!found)
-            return false;
-        if (settled)
-        {
-            CharacterDatabase.PExecute(
-                "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
-                botGuidLow, seq);
-            return true;
-        }
-        CharacterDatabase.PExecute(
-            "UPDATE `tortoise_bots_guild_relist` SET `held_gold` = '%u', `held_count` = '%u' "
-            "WHERE `bot_guid` = '%u' AND `seq` = '%u'",
-            updated.heldGold, updated.heldCount, botGuidLow, seq);
-        return false;
+        if (rows.empty())
+            m_relist.erase(it);
+        return true;
     }
 
     // Any value collected from a relist mail is due to the guild.
@@ -3164,9 +3173,14 @@ bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32
     return OrderStore::Instance().NoteRelistReceived(botGuidLow, seq, gold, items);
 }
 
-bool NoteRelistDeposit(uint32_t botGuidLow, uint32_t seq, uint32_t goldMoved, uint32_t itemsMoved)
+bool SaveRelistRow(RelistLedgerEntry const& row)
 {
-    return OrderStore::Instance().NoteRelistDeposit(botGuidLow, seq, goldMoved, itemsMoved);
+    return OrderStore::Instance().SaveRelist(row);
+}
+
+bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq)
+{
+    return OrderStore::Instance().DeleteRelist(botGuidLow, seq);
 }
 
 bool RelistDepositPending(uint32_t botGuidLow)

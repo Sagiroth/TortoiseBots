@@ -143,26 +143,75 @@ inline void RelistNoteMailReceived(RelistLedgerEntry& entry, RelistMailKind kind
         entry.heldCount = items < entry.count ? items : entry.count;
 }
 
-// What a ledger entry still owes the guild after a bank pass moved its
-// value. A pass that moved nothing (no banker, a refused message) leaves the
-// whole amount for the next trip.
-inline uint32_t RelistDepositRemaining(uint32_t held, uint32_t moved)
-{
-    return moved >= held ? 0 : held - moved;
-}
-
 inline bool RelistNeedsDeposit(RelistLedgerEntry const& entry)
 {
     return entry.received && (entry.heldGold > 0 || entry.heldCount > 0);
 }
 
-// Apply one bank pass. Returns true only when nothing is left to deposit, so
-// the caller drops the entry; an unreachable or refusing bank keeps it.
-inline bool RelistNoteDeposit(RelistLedgerEntry& entry, uint32_t goldMoved, uint32_t itemMoved)
+// What one bank visit knows about the bot: its guild now, whether a banker is
+// in reach (alive, out of combat, the guild has a bank), and what it carries.
+struct RelistTripBot
 {
-    entry.heldGold = RelistDepositRemaining(entry.heldGold, goldMoved);
-    entry.heldCount = RelistDepositRemaining(entry.heldCount, itemMoved);
-    return entry.received && !RelistNeedsDeposit(entry);
+    uint32_t guildId = 0;
+    bool atBank = false;
+    uint32_t cash = 0;
+    uint32_t bagCount = 0; // the row's item in the bags
+};
+
+// What the bank took in one pass.
+struct RelistMoved
+{
+    uint32_t gold = 0;
+    uint32_t items = 0;
+};
+
+enum class RelistTripOutcome : uint8_t
+{
+    Idle,      // nothing owed here, or no banker in reach: the row waits
+    Dropped,   // the bot left the row's guild: the row is gone
+    Refused,   // a ledger write failed first: nothing was deposited
+    Deposited, // the bank took the planned value
+    Returned,  // the bank took less: the rest is written back to the row
+    Lost,      // the bank took less and the rest could not be written back
+};
+
+// One bank trip for one ledger row. Order matters: the planned value is saved
+// off the row BEFORE the bank is asked, so a failed ledger write means no
+// deposit and a crash in between loses the value rather than paying it twice.
+// What the bank refused is put back on the row. Ledger needs Save(row) and
+// Delete(row), each false on a failed write; Bank needs
+// Deposit(gold, items) -> RelistMoved.
+template <typename Ledger, typename Bank>
+RelistTripOutcome RelistBankTrip(RelistLedgerEntry const& entry, RelistTripBot const& bot,
+    Ledger& ledger, Bank& bank)
+{
+    if (!RelistNeedsDeposit(entry))
+        return RelistTripOutcome::Idle;
+    if (entry.guildId != bot.guildId)
+        return ledger.Delete(entry) ? RelistTripOutcome::Dropped : RelistTripOutcome::Refused;
+    if (!bot.atBank)
+        return RelistTripOutcome::Idle;
+    uint32_t const gold = entry.heldGold < bot.cash ? entry.heldGold : bot.cash;
+    uint32_t const items = entry.heldCount < bot.bagCount ? entry.heldCount : bot.bagCount;
+    if (!gold && !items)
+        return RelistTripOutcome::Idle;
+
+    RelistLedgerEntry reserved = entry;
+    reserved.heldGold -= gold;
+    reserved.heldCount -= items;
+    bool const saved = RelistNeedsDeposit(reserved) ? ledger.Save(reserved) : ledger.Delete(entry);
+    if (!saved)
+        return RelistTripOutcome::Refused;
+
+    RelistMoved const moved = bank.Deposit(gold, items);
+    uint32_t const goldTook = moved.gold < gold ? moved.gold : gold;
+    uint32_t const itemsTook = moved.items < items ? moved.items : items;
+    if (goldTook == gold && itemsTook == items)
+        return RelistTripOutcome::Deposited;
+    RelistLedgerEntry owed = entry;
+    owed.heldGold -= goldTook;
+    owed.heldCount -= itemsTook;
+    return ledger.Save(owed) ? RelistTripOutcome::Returned : RelistTripOutcome::Lost;
 }
 
 } // namespace GuildOrders
