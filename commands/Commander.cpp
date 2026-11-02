@@ -1417,16 +1417,6 @@ uint32 CurrentSpellId(Unit* unit)
     return 0;
 }
 
-// The auto-repeat spell slot (Auto Shot, a wand): the spell the unit fires on its ranged attack timer, kept in its
-// own current-spell slot while it is on, so neither a cast id nor a swing timer shows a wanding bot's fight.
-uint32 AutoRepeatSpellId(Unit* unit)
-{
-    if (Spell* spell = unit->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
-        if (spell->m_spellInfo)
-            return spell->m_spellInfo->Id;
-    return 0;
-}
-
 // The cast a progress clock reads: the generic or channelled cast now, but not a spell the bot casts on itself (a
 // buff or a heal on itself while it stands wedged is no progress in the fight where it stands).
 uint32 ProgressSpellId(Unit* unit)
@@ -7970,23 +7960,29 @@ std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
     return clocks;
 }
 
+// The ranged timer a fired shot leaves: a shot resets it to the weapon's attack time (Unit::_UpdateAutoRepeatSpell
+// Resets RANGED_ATTACK after the cast), so an increase over the last read is a shot that fired. The auto-repeat
+// re-arm shove is exactly 500 (Unit::_UpdateAutoRepeatSpell sets it when the spell is turned on again), and a bot
+// that cannot shoot re-arms it every time the cast fails: the shove alone is no shot.
+constexpr std::uint32_t kRangedShotTimerMs = 500;
+
 // Whether the bot made actual combat progress since the last read: a spell being cast or channelled now (a cast
-// started, or is still running) that is not cast on the bot itself, the auto-repeat spell (Auto Shot, a wand) on,
-// a cast that started or finished (the current spell differs), or a melee or ranged swing (the attack timer runs
-// down to the swing and the swing resets it, so an increase means one landed). A swing reset is never under 100 ms:
-// Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a victim out of reach, so that
-// shove alone is no swing. Its selected target and its place on a threat list are never read: holding a target it
-// cannot reach is no progress.
+// started, or is still running) that is not cast on the bot itself, a cast that started or finished (the current
+// spell differs), or a melee or ranged swing (the attack timer runs down to the swing and the swing resets it, so an
+// increase means one landed). The auto-repeat spell being on is no progress: it stays on while the bot cannot shoot,
+// and only a shot that fired (the ranged timer reset above kRangedShotTimerMs) counts. A melee swing reset is never
+// under 100 ms: Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a victim out of
+// reach, so that shove alone is no swing. Its selected target and its place on a threat list are never read: holding
+// a target it cannot reach is no progress.
 bool MemberProgressed(Player* bot, MemberParticipation& clock)
 {
     bool const inFight = bot->IsInCombat();
     std::uint32_t const spell = inFight ? ProgressSpellId(bot) : 0;
-    std::uint32_t const autoRepeat = inFight ? AutoRepeatSpellId(bot) : 0;
     std::uint32_t const baseTimer = bot->GetAttackTimer(BASE_ATTACK);
     std::uint32_t const rangedTimer = bot->GetAttackTimer(RANGED_ATTACK);
     bool const baseSwing = baseTimer > 100 && baseTimer > clock.baseTimer;
-    bool const rangedSwing = rangedTimer > 100 && rangedTimer > clock.rangedTimer;
-    bool const progress = TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, autoRepeat, clock.observed,
+    bool const rangedSwing = rangedTimer > kRangedShotTimerMs && rangedTimer > clock.rangedTimer;
+    bool const progress = TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,
         clock.spellId, baseSwing, rangedSwing);
     clock.spellId = spell;
     clock.baseTimer = baseTimer;

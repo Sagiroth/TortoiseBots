@@ -165,19 +165,22 @@ class UnattackableFightWiringTest(unittest.TestCase):
         progress = body(CODE, "bool MemberProgressed(Player* bot, MemberParticipation& clock)")
         self.assertIn("bool const inFight = bot->IsInCombat();", progress)
         self.assertIn("inFight ? ProgressSpellId(bot) : 0", progress)
-        self.assertIn("inFight ? AutoRepeatSpellId(bot) : 0", progress)
-        self.assertIn("TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, autoRepeat, clock.observed,\n"
+        self.assertIn("TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,\n"
                       "        clock.spellId, baseSwing, rangedSwing);", progress)
         self.assertIn("bot->GetAttackTimer(BASE_ATTACK)", progress)
+        # A shot that fired is the ranged timer reset above the auto-repeat re-arm shove (exactly 500 ms): the
+        # auto-repeat spell being on is never progress, so a bot with Auto Shot on and no shot stays stale.
         self.assertIn("bot->GetAttackTimer(RANGED_ATTACK)", progress)
+        self.assertIn("rangedTimer > kRangedShotTimerMs && rangedTimer > clock.rangedTimer", progress)
+        self.assertIn("constexpr std::uint32_t kRangedShotTimerMs = 500;", CODE)
+        self.assertNotIn("AutoRepeatSpellId", progress)
+        self.assertNotIn("CURRENT_AUTOREPEAT_SPELL", progress)
         self.assertNotIn("GetTargetGuid", progress)
         self.assertNotIn("member.engaged", progress)
-        # The cast the clock reads is not a self-cast, and the auto-repeat slot (Auto Shot, a wand) is read too.
+        # The cast the clock reads is not a self-cast.
         spell = body(CODE, "uint32 ProgressSpellId(Unit* unit)")
         self.assertIn("spell->m_targets.getUnitTargetGuid() == unit->GetObjectGuid()", spell)
         self.assertIn("TortoiseBots::DungeonRun::ProgressSpell(spell->m_spellInfo->Id, targetSelf);", spell)
-        auto_repeat = body(CODE, "uint32 AutoRepeatSpellId(Unit* unit)")
-        self.assertIn("unit->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)", auto_repeat)
         participates = body(policy, "inline bool MemberParticipates(const MemberFact& m)\n{")
         self.assertIn("return m.actedMs < kParticipateMs;", participates)
         self.assertNotIn("targetGuid", participates)

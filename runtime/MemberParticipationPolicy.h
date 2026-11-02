@@ -7,9 +7,10 @@
 //
 // A bot's clock is forgotten by when it was last SEEN, never by when it last progressed: a bot that has not
 // progressed yet (a fresh member, or one whose progress the read did not catch) was erased once 64 bots were
-// tracked. Auto-repeat (Auto Shot, a wand) is progress: it fires while the bot shoots and no cast or swing timer
-// shows it. A self-cast is no progress (a buff or a heal on the bot itself while it stands wedged), and neither is
-// a selected target.
+// tracked. An auto-repeat spell (Auto Shot, a wand) being on is NO progress: it stays on while the bot cannot shoot,
+// which is the wedged case. A shot is: the ranged attack timer reset when the shot fired is the glue's reading of
+// it. A self-cast is no progress (a buff or a heal on the bot itself while it stands wedged), and neither is a
+// selected target.
 
 #include <cstddef>
 #include <cstdint>
@@ -35,13 +36,14 @@ inline std::uint32_t ProgressSpell(std::uint32_t spellId, bool targetSelf)
     return targetSelf ? 0 : spellId;
 }
 
-// One progress reading: a cast or channel running (or a changed cast), the auto-repeat spell active, or a swing
-// that landed since the last read. `inFight` gates all of it; `observed` is false for the first read of a bot.
-inline bool ParticipationProgress(bool inFight, std::uint32_t spell, std::uint32_t autoRepeat, bool observed,
-    std::uint32_t lastSpell, bool baseSwing, bool rangedSwing)
+// One progress reading: a cast or channel running (or a changed cast), or a swing that landed since the last read
+// (a ranged one is a shot that fired: its timer reset). The auto-repeat spell being on is deliberately not a reading:
+// it stays on with no shot, which is a wedged bot with Auto Shot or a wand. `inFight` gates all of it; `observed` is
+// false for the first read of a bot.
+inline bool ParticipationProgress(bool inFight, std::uint32_t spell, bool observed, std::uint32_t lastSpell,
+    bool baseSwing, bool rangedSwing)
 {
-    return inFight && (spell != 0 || autoRepeat != 0 ||
-        (observed && (spell != lastSpell || baseSwing || rangedSwing)));
+    return inFight && (spell != 0 || (observed && (spell != lastSpell || baseSwing || rangedSwing)));
 }
 
 // Forgets the clocks of bots unseen for `forgetMs` and, if the map is still at its bound, the least recently seen
