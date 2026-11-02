@@ -148,13 +148,19 @@ func TestPeerMedianExcludesTheBot(t *testing.T) {
 
 func TestAliveTimeNotFightLength(t *testing.T) {
 	var fights []Input
-	for i := range 2 {
+	for i := range 3 {
+		dmg, deaths := uint64(6000), uint32(0)
+		if i < 2 {
+			dmg, deaths = 1200, 1
+		}
 		f := fi("f"+itoa(i), int64(1000+i*100), 60000,
-			tb(1, "A", "rogue", "dps", 1200, 0, 10, 0, 1),
+			tb(1, "A", "rogue", "dps", dmg, 0, 10, 0, deaths),
 			tb(2, "B", "mage", "dps", 6000, 0, 10, 0, 0),
 			tb(3, "C", "hunter", "dps", 6000, 0, 10, 0, 0),
 		)
-		f.Fight.Deaths = []combat.FightDeath{{Name: "A", TMs: 12000}}
+		if i < 2 {
+			f.Fight.Deaths = []combat.FightDeath{{Name: "A", TMs: 12000}}
+		}
 		fights = append(fights, f)
 	}
 	r := Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, defLim())
