@@ -12,7 +12,9 @@
 // rotation. TotalMiB is the registry's sweep (DecisionCapture.h): the oldest
 // ended captures go at every rotation and at the finish, and a folder still
 // over the cap with running captures stops the largest of them. Never the open
-// segment, never a running capture's files.
+// segment, never a running capture's files. A folder is deleted only when its
+// index proves it is one of ours and finished (ReadCaptureIndex); a foreign or
+// malformed folder, and anything behind a symlink, stays.
 //
 // The index is written at open and at every rotation with the counts accepted
 // so far, and rewritten when a writer is reaped with the bytes and records that
@@ -56,17 +58,40 @@ struct FileLimits
     std::uint32_t keyframeEvery = 60;
 };
 
-// What TotalMiB retention needs from a capture folder's index.json.
+// What TotalMiB retention needs from a capture folder's index.json: whether the
+// folder is provably one of ours and finished. Retention deletes nothing else.
 struct CaptureIndexSummary
 {
-    bool ok = false;
-    bool ended = false;
+    bool deletable = false;
     std::uint64_t startedUnixMs = 0;
 };
-CaptureIndexSummary ReadCaptureIndex(std::string const& folder);
+// Accepts <folder>/index.json only when it is a real file (never a symlink),
+// its format and version are ours, `id` equals `expectedId`, `ended` is a UTC
+// yyyy-mm-ddThh:mm:ssZ stamp and `status` is complete, incomplete, failed or
+// stopped. A missing, foreign or malformed index (and a missing `id`) is not
+// deletable.
+CaptureIndexSummary ReadCaptureIndex(std::string const& folder, std::string const& expectedId);
 
 // Every regular file under `path`, recursively (0 when it does not exist).
+// Symlinks are never followed and never counted.
 std::uint64_t DirectoryBytes(std::string const& path);
+
+// One folder as the total cap sees it, measured off the world thread.
+struct CaptureFolderState
+{
+    std::string id;
+    std::uint64_t bytes = 0;
+    std::uint64_t startedUnixMs = 0;
+    bool deletable = false;
+};
+// One pass over `root`: every plain capture folder measured (segments and any
+// stray files) and its index validated. Symlinks are skipped, never followed.
+std::vector<CaptureFolderState> ScanCaptureFolders(std::string const& root);
+
+// Deletes <root>/<id>, and only when it is still a plain folder directly under
+// the root whose index passes ReadCaptureIndex; false otherwise (nothing
+// removed), so a bad id can never reach outside the root.
+bool RemoveCaptureFolder(std::string const& root, std::string const& id);
 
 class FileSink : public DecisionCapture::Sink
 {
@@ -110,6 +135,10 @@ public:
     bool Done() const { return ended_ && !writer_ && finishing_.empty(); }
     std::string const& CaptureId() const { return info_.captureId; }
     std::string const& Root() const { return root_; }
+    std::uint64_t StartedUnixMs() const { return info_.startedUnixMs; }
+    // Bytes the segment writers accepted or reaped and that are still on disk:
+    // the total cap's per-capture number, never a directory walk.
+    std::uint64_t Bytes() const;
 
     // <UTC yyyymmddThhmmssZ>-<plan>-<commander>, everything outside
     // [A-Za-z0-9_] replaced by _, plan cut at 48 and commander at 24; -2, -3

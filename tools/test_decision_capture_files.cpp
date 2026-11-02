@@ -7,6 +7,7 @@
 #include "../runtime/DecisionCapture.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -137,6 +138,25 @@ void WriteDummy(std::string const& path, std::size_t bytes)
     CHECK(static_cast<bool>(out));
 }
 
+void WriteText(std::string const& path, std::string const& text)
+{
+    std::ofstream out(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    CHECK(out.is_open());
+    out << text;
+    CHECK(static_cast<bool>(out));
+}
+
+// A hand-written index.json that looks like a capture of ours, so a foreign
+// folder can be built beside the service.
+std::string IndexText(std::string const& id, std::string const& endedJson, std::string const& status,
+    std::string const& format = "tb-decision-capture", std::string const& version = "1")
+{
+    return "{\"format\":\"" + format + "\",\"v\":" + version + ",\"id\":\"" + id +
+        "\",\"commander\":\"Fionaa\",\"plan\":\"old\",\"map\":309,"
+        "\"started\":\"2025-11-01T12:00:00Z\",\"startedUnixMs\":1761999000000,\"ended\":" + endedJson +
+        ",\"endReason\":\"stopped\",\"status\":\"" + status + "\",\"segments\":[],\"dropped\":0}";
+}
+
 DecisionCaptureSettings SmallSettings(std::string const& dir, std::uint32_t totalMiB)
 {
     DecisionCaptureSettings settings;
@@ -182,6 +202,18 @@ void WaitCaptureEnded(DecisionCaptureRegistry& registry, std::string const& dir,
     }
     std::cerr << "capture never ended: " << id << "\n";
     std::exit(1);
+}
+
+// Starts the service over `dir` and ends one of its own captures, so the total
+// cap runs once over what the start measurement found.
+void SweepOnce(std::string const& dir)
+{
+    DecisionCaptureRegistry registry(SmallSettings(dir, 1));
+    std::string const id = registry.Begin(1, "Fionaa", "own", kStart);
+    CHECK(!id.empty());
+    registry.End(1, "stopped");
+    WaitRegistryIdle(registry);
+    registry.Shutdown();
 }
 
 Facts BigFacts(std::size_t members)
@@ -402,21 +434,26 @@ void TestCaptureRetention()
 void TestTotalRetentionDeletesFinishedAtRotation()
 {
     std::string const dir = (Root() / "total-rotation").string();
+    // The ended capture is on disk before the service starts, so the one start
+    // measurement sees it; the sweep only reads the numbers from then on.
+    std::string const oldId = "20251101T120000Z-old-Fionaa";
+    {
+        Harness old = MakeCapture(dir, oldId, kStart, 1);
+        old.Tick();
+        old.Finish();
+        WriteDummy((std::filesystem::path(dir) / oldId / "blob.bin").string(), 3u * 1024u * 1024u);
+    }
     DecisionCaptureRegistry registry(SmallSettings(dir, 2));
 
-    std::string const oldId = registry.Begin(1, "Fionaa", "old", kStart);
-    CHECK(!oldId.empty());
-    registry.End(1, "stopped");
-    WaitRegistryIdle(registry);
-
-    std::string const activeId = registry.Begin(2, "Fionaa", "active", kStart + kTickMs);
+    std::string const activeId = registry.Begin(1, "Fionaa", "active", kStart + kTickMs);
     CHECK(!activeId.empty());
-    // The finished capture grew after it ended; the running one triggers the
-    // sweep when it rotates.
-    WriteDummy((std::filesystem::path(dir) / oldId / "blob.bin").string(), 3u * 1024u * 1024u);
-
-    CHECK(PumpToRotation(registry, 2, dir, activeId, 400));
-    registry.Update();
+    CHECK(PumpToRotation(registry, 1, dir, activeId, 400));
+    // The rotation queues the sweep; it runs once its writer has flushed.
+    for (int attempt = 0; attempt < 400 && std::filesystem::exists(std::filesystem::path(dir) / oldId); ++attempt)
+    {
+        registry.Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
     CHECK(!std::filesystem::exists(std::filesystem::path(dir) / oldId));
     CHECK(std::filesystem::exists(std::filesystem::path(dir) / activeId));
@@ -426,17 +463,21 @@ void TestTotalRetentionDeletesFinishedAtRotation()
 void TestTotalRetentionStopsLargestAtFinish()
 {
     std::string const dir = (Root() / "total-finish").string();
+    // A folder retention may never touch (no index) still counts, so the
+    // running captures alone are over the cap.
+    std::filesystem::create_directories(std::filesystem::path(dir) / "stale");
+    WriteDummy((std::filesystem::path(dir) / "stale" / "blob.bin").string(), 2u * 1024u * 1024u);
+
     DecisionCaptureRegistry registry(SmallSettings(dir, 1));
 
     std::string const largestId = registry.Begin(1, "Fionaa", "largest", kStart);
     std::string const otherId = registry.Begin(2, "Fionaa", "other", kStart + kTickMs);
     CHECK(!largestId.empty());
     CHECK(!otherId.empty());
-    WriteDummy((std::filesystem::path(dir) / largestId / "blob.bin").string(), 2u * 1024u * 1024u);
-    WriteDummy((std::filesystem::path(dir) / otherId / "blob.bin").string(), 1u * 1024u * 1024u);
+    // Real bytes for the first capture and no update in between, so the sweep
+    // that stops it is the one the finish queues.
+    CHECK(PumpToRotation(registry, 1, dir, largestId, 400));
 
-    // The finish sweeps the folder once its writer has flushed; running
-    // captures alone are over the cap, so the largest one stops.
     registry.End(2, "stopped");
     auto other = IndexObj(dir, otherId);
     CHECK(other->Find("endReason")->text == "stopped");
@@ -445,6 +486,131 @@ void TestTotalRetentionStopsLargestAtFinish()
     auto largest = IndexObj(dir, largestId);
     CHECK(largest->Find("ended")->kind == MiniJson::Value::String);
     CHECK(largest->Find("endReason")->text == "stopped: total cap");
+    CHECK(std::filesystem::exists(std::filesystem::path(dir) / "stale"));
+    registry.Shutdown();
+}
+
+void TestRetentionDeletesOnlyAFinishedCapture()
+{
+    std::string const dir = (Root() / "retention-control").string();
+    std::string const id = "20251101T120000Z-old-Fionaa";
+    std::filesystem::path const folder = std::filesystem::path(dir) / id;
+    std::filesystem::create_directories(folder);
+    WriteText((folder / "index.json").string(), IndexText(id, "\"2025-11-01T12:00:00Z\"", "complete"));
+    WriteDummy((folder / "blob.bin").string(), 2u * 1024u * 1024u);
+
+    SweepOnce(dir);
+    CHECK(!std::filesystem::exists(folder));
+}
+
+// Fail closed: a folder whose index is not provably ours and finished is never
+// deleted, however much space it takes.
+void TestRetentionKeepsForeignFolders()
+{
+    std::vector<std::pair<std::string, std::string>> cases;
+    cases.emplace_back("look-alike-format",
+        IndexText("look-alike-format", "\"2025-11-01T12:00:00Z\"", "complete", "tb-capture-foreign"));
+    cases.emplace_back("version-2",
+        IndexText("version-2", "\"2025-11-01T12:00:00Z\"", "complete", "tb-decision-capture", "2"));
+    cases.emplace_back("id-mismatch", IndexText("other-capture", "\"2025-11-01T12:00:00Z\"", "complete"));
+    cases.emplace_back("bad-stamp", IndexText("bad-stamp", "\"2025-13-01T12:00:00Z\"", "complete"));
+    cases.emplace_back("numeric-ended", IndexText("numeric-ended", "1761999000000", "complete"));
+    cases.emplace_back("null-ended", IndexText("null-ended", "null", "complete"));
+    cases.emplace_back("status-running", IndexText("status-running", "\"2025-11-01T12:00:00Z\"", "running"));
+    cases.emplace_back("status-missing",
+        "{\"format\":\"tb-decision-capture\",\"v\":1,\"id\":\"status-missing\","
+        "\"ended\":\"2025-11-01T12:00:00Z\"}");
+    cases.emplace_back("no-index", "");
+
+    std::filesystem::path const base = Root();
+    for (auto const& item : cases)
+    {
+        std::string const dir = (base / ("foreign-" + item.first)).string();
+        std::filesystem::path const folder = std::filesystem::path(dir) / item.first;
+        std::filesystem::create_directories(folder);
+        if (!item.second.empty())
+            WriteText((folder / "index.json").string(), item.second);
+        WriteDummy((folder / "blob.bin").string(), 2u * 1024u * 1024u);
+
+        SweepOnce(dir);
+        CHECK(std::filesystem::exists(folder));
+        CHECK(std::filesystem::exists(folder / "blob.bin"));
+    }
+}
+
+void TestRetentionKeepsSymlinks()
+{
+    std::filesystem::path const base = Root();
+    std::string const dir = (base / "retention-symlinks").string();
+    std::filesystem::create_directories(dir);
+
+    // index.json itself is a symlink: the folder is not provably ours.
+    std::string const linkedIndex = "linked-index";
+    std::filesystem::path const indexTarget = base / "index-target.json";
+    WriteText(indexTarget.string(), IndexText(linkedIndex, "\"2025-11-01T12:00:00Z\"", "complete"));
+    std::filesystem::path const indexFolder = std::filesystem::path(dir) / linkedIndex;
+    std::filesystem::create_directories(indexFolder);
+    WriteDummy((indexFolder / "blob.bin").string(), 2u * 1024u * 1024u);
+    std::filesystem::create_symlink(indexTarget, indexFolder / "index.json");
+
+    // The folder entry is a symlink: never followed, never counted, never
+    // deleted, and the folder it points at stays.
+    std::string const linkedFolder = "linked-folder";
+    std::filesystem::path const folderTarget = base / "folder-target";
+    std::filesystem::create_directories(folderTarget);
+    WriteText(
+        (folderTarget / "index.json").string(), IndexText(linkedFolder, "\"2025-11-01T12:00:00Z\"", "complete"));
+    WriteDummy((folderTarget / "blob.bin").string(), 2u * 1024u * 1024u);
+    std::filesystem::create_directory_symlink(folderTarget, std::filesystem::path(dir) / linkedFolder);
+
+    SweepOnce(dir);
+
+    CHECK(std::filesystem::exists(indexFolder / "index.json"));
+    CHECK(std::filesystem::exists(indexTarget));
+    CHECK(std::filesystem::is_symlink(std::filesystem::path(dir) / linkedFolder));
+    CHECK(std::filesystem::exists(folderTarget / "index.json"));
+
+    // Whatever the name says, a removal never leaves the root.
+    CHECK(!RemoveCaptureFolder(dir, "../folder-target"));
+    CHECK(!RemoveCaptureFolder(dir, linkedFolder));
+    CHECK(std::filesystem::exists(folderTarget / "index.json"));
+}
+
+// The sweep runs on the world thread; the tree is measured once, on its own
+// thread, at service start.
+void TestSweepMeasuresOffWorldThread()
+{
+    std::string const dir = (Root() / "sweep-thread").string();
+    std::string const oldId = "20251101T120000Z-old-Fionaa";
+    {
+        Harness old = MakeCapture(dir, oldId, kStart, 1);
+        old.Tick();
+        old.Finish();
+        WriteDummy((std::filesystem::path(dir) / oldId / "blob.bin").string(), 2u * 1024u * 1024u);
+    }
+
+    std::thread::id const world = std::this_thread::get_id();
+    std::atomic<int> scans{0};
+    std::atomic<int> scansOffWorld{0};
+    auto counting = [&](std::string const& root)
+    {
+        ++scans;
+        if (std::this_thread::get_id() != world)
+            ++scansOffWorld;
+        return ScanCaptureFolders(root);
+    };
+
+    DecisionCaptureRegistry registry(SmallSettings(dir, 1), counting);
+    std::string const id = registry.Begin(1, "Fionaa", "live", kStart);
+    CHECK(!id.empty());
+    registry.End(1, "stopped");
+    WaitRegistryIdle(registry);
+
+    // One measurement, off the world thread; the sweeps only used the numbers
+    // it left behind (and still deleted the finished capture).
+    CHECK(scans.load() == 1);
+    CHECK(scansOffWorld.load() == 1);
+    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / oldId));
     registry.Shutdown();
 }
 
@@ -521,6 +687,10 @@ int main()
     TestCaptureRetention();
     TestTotalRetentionDeletesFinishedAtRotation();
     TestTotalRetentionStopsLargestAtFinish();
+    TestRetentionDeletesOnlyAFinishedCapture();
+    TestRetentionKeepsForeignFolders();
+    TestRetentionKeepsSymlinks();
+    TestSweepMeasuresOffWorldThread();
     TestWriterFailureStatus();
     TestShutdownLeavesIncomplete();
     TestOffCreatesNothing();

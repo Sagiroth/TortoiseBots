@@ -23,6 +23,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <functional>
+#include <future>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -52,7 +54,12 @@ DecisionCaptureSettings DecisionCaptureSettingsFromConfig();
 class DecisionCaptureRegistry
 {
 public:
-    explicit DecisionCaptureRegistry(DecisionCaptureSettings settings) : settings_(std::move(settings)) {}
+    // The one full measurement of the capture folder (ScanCaptureFolders by
+    // default); tests inject a scanner to record when and where it runs.
+    using CaptureFolderScan = std::function<std::vector<CaptureFolderState>(std::string const& root)>;
+
+    explicit DecisionCaptureRegistry(DecisionCaptureSettings settings, CaptureFolderScan scan = {});
+    ~DecisionCaptureRegistry();
 
     // "" when off or when the folder cannot be made (`lastError()` says why),
     // otherwise the capture id. A capture this commander still has ends first.
@@ -75,7 +82,7 @@ public:
     bool Active() const { return !captures_.empty(); }
     // A finished capture whose writers are still flushing is not active, but
     // its sink must stay alive and be polled.
-    bool HasWork() const { return !captures_.empty() || !retired_.empty(); }
+    bool HasWork() const { return !captures_.empty() || !retired_.empty() || totalCapPending_; }
     std::string const& lastError() const { return lastError_; }
     DecisionCaptureSettings const& settings() const { return settings_; }
 
@@ -87,9 +94,20 @@ private:
         std::uint32_t map = 0;
     };
 
+    // What the total cap knows about one folder on disk without measuring it
+    // again: its bytes, when it started, and whether it may be deleted.
+    struct FolderRecord
+    {
+        std::uint64_t bytes = 0;
+        std::uint64_t startedUnixMs = 0;
+        bool deletable = false;
+    };
+
     std::string SettingsJson() const;
     void SinkSettings(FileLimits& file, DecisionCapture::Limits& recorder) const;
     void EnforceTotalCap(bool stopRunning);
+    // Folds the start scan in once its thread is done; false while it runs.
+    bool ApplyFolderScan();
     void Retire(std::unique_ptr<FileSink> sink);
 
     DecisionCaptureSettings settings_;
@@ -97,6 +115,10 @@ private:
     // Finished captures whose writers still flush: their sinks must outlive
     // End() so Poll() can collect the final counts.
     std::vector<std::unique_ptr<FileSink>> retired_;
+    // Every folder the cap knows, measured at service start and kept from the
+    // segment writers after that; the sweep never walks the tree.
+    std::unordered_map<std::string, FolderRecord> folders_;
+    std::future<std::vector<CaptureFolderState>> scan_;
     bool totalCapPending_ = false;
     bool shuttingDown_ = false;
     CaptureLog log_;
@@ -113,6 +135,42 @@ inline std::uint64_t DecisionCaptureNowUnixMs()
 inline std::uint64_t DecisionCaptureMiB(std::uint32_t mib)
 {
     return static_cast<std::uint64_t>(mib) * 1024ull * 1024ull;
+}
+
+inline DecisionCaptureRegistry::DecisionCaptureRegistry(DecisionCaptureSettings settings, CaptureFolderScan scan)
+    : settings_(std::move(settings))
+{
+    // The only full measurement of the capture folder: off this thread, once,
+    // because the world thread must not walk the tree. Update() folds the
+    // result in when it is ready.
+    if (!settings_.enabled || settings_.dir.empty() || settings_.totalMiB == 0)
+        return;
+    if (!scan)
+        scan = CaptureFolderScan(&ScanCaptureFolders);
+    std::string root = settings_.dir;
+    scan_ = std::async(std::launch::async,
+        [scan = std::move(scan), root = std::move(root)] { return scan(root); });
+}
+
+inline DecisionCaptureRegistry::~DecisionCaptureRegistry()
+{
+    // An injected scanner may be a caller's local; it must not outlive this.
+    if (scan_.valid())
+        scan_.wait();
+}
+
+inline bool DecisionCaptureRegistry::ApplyFolderScan()
+{
+    if (!scan_.valid())
+        return true;
+    if (scan_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+        return false;
+    for (CaptureFolderState const& folder : scan_.get())
+    {
+        // A capture opened while the scan ran already owns its entry.
+        folders_.emplace(folder.id, FolderRecord{folder.bytes, folder.startedUnixMs, folder.deletable});
+    }
+    return true;
 }
 
 inline std::string DecisionCaptureRegistry::SettingsJson() const
@@ -167,6 +225,9 @@ inline std::string DecisionCaptureRegistry::Begin(std::uint64_t commanderRaw, st
         return std::string();
     }
     sink->SetTotalCapHook([this] { totalCapPending_ = true; });
+    // From here the cap knows this capture's folder from its writer counters,
+    // never from a second walk of the tree.
+    folders_.emplace(captureId, FolderRecord{0, nowUnixMs, false});
 
     DecisionCapture::HeaderInfo header;
     header.captureId = captureId;
@@ -256,6 +317,11 @@ inline void DecisionCaptureRegistry::Update()
     for (auto it = retired_.begin(); it != retired_.end();)
     {
         (*it)->Poll();
+        // The final index's numbers, taken from the sink that wrote them.
+        FolderRecord& folder = folders_[(*it)->CaptureId()];
+        folder.bytes = (*it)->Bytes();
+        folder.startedUnixMs = (*it)->StartedUnixMs();
+        folder.deletable = (*it)->Ended();
         if ((*it)->Done())
             it = retired_.erase(it);
         else
@@ -296,42 +362,37 @@ inline void DecisionCaptureRegistry::Shutdown()
     totalCapPending_ = false;
 }
 
-// TotalMiB over the whole capture folder, measured on disk. Ended captures
-// nobody owns any more go oldest first; if the running ones alone are over the
-// cap, the largest is stopped (never its files deleted).
+// TotalMiB over the capture folders: the sweep runs on the world thread but
+// never measures the tree. The one full measurement happens at service start
+// (ScanCaptureFolders on its own thread); after that a running capture's bytes
+// are the segment writers' reaped counters and a finished capture's are its
+// final index's. Ended captures nobody owns any more go oldest first; if the
+// running ones alone are over the cap, the largest is stopped (never its files
+// deleted).
 inline void DecisionCaptureRegistry::EnforceTotalCap(bool stopRunning)
 {
-    if (settings_.dir.empty() || settings_.totalMiB == 0)
+    if (!settings_.enabled || settings_.dir.empty() || settings_.totalMiB == 0)
         return;
-    std::uint64_t const limit = DecisionCaptureMiB(settings_.totalMiB);
-    std::error_code ec;
-    if (!std::filesystem::is_directory(settings_.dir, ec))
+    if (!ApplyFolderScan())
+    {
+        // The start measurement still runs; Update sweeps again once it lands.
+        totalCapPending_ = true;
         return;
-
-    struct Folder
-    {
-        std::string id;
-        std::string path;
-        std::uint64_t startedUnixMs = 0;
-        std::uint64_t bytes = 0;
-        bool ended = false;
-    };
-    std::vector<Folder> folders;
-    std::uint64_t total = 0;
-    for (std::filesystem::directory_iterator it(settings_.dir, ec), end; !ec && it != end; it.increment(ec))
-    {
-        if (!it->is_directory())
-            continue;
-        Folder folder;
-        folder.id = it->path().filename().string();
-        folder.path = it->path().string();
-        folder.bytes = DirectoryBytes(folder.path);
-        CaptureIndexSummary const index = ReadCaptureIndex(folder.path);
-        folder.ended = index.ok && index.ended;
-        folder.startedUnixMs = index.startedUnixMs;
-        total += folder.bytes;
-        folders.push_back(std::move(folder));
     }
+    std::uint64_t const limit = DecisionCaptureMiB(settings_.totalMiB);
+
+    for (auto& entry : captures_)
+    {
+        FileSink* sink = entry.second.sink.get();
+        FolderRecord& folder = folders_[sink->CaptureId()];
+        folder.bytes = sink->Bytes();
+        folder.startedUnixMs = sink->StartedUnixMs();
+        folder.deletable = false;
+    }
+
+    std::uint64_t total = 0;
+    for (auto const& entry : folders_)
+        total += entry.second.bytes;
     if (total <= limit)
         return;
 
@@ -346,21 +407,24 @@ inline void DecisionCaptureRegistry::EnforceTotalCap(bool stopRunning)
         return false;
     };
 
-    std::vector<Folder*> ended;
-    for (Folder& folder : folders)
-        if (folder.ended && !owned(folder.id))
-            ended.push_back(&folder);
+    std::vector<std::pair<std::string, FolderRecord const*>> ended;
+    for (auto const& entry : folders_)
+        if (entry.second.deletable && !owned(entry.first))
+            ended.emplace_back(entry.first, &entry.second);
     std::sort(ended.begin(), ended.end(),
-        [](Folder const* a, Folder const* b) { return a->startedUnixMs < b->startedUnixMs; });
-    for (Folder* folder : ended)
+        [](std::pair<std::string, FolderRecord const*> const& a,
+            std::pair<std::string, FolderRecord const*> const& b)
+        { return a.second->startedUnixMs < b.second->startedUnixMs; });
+    for (auto const& candidate : ended)
     {
         if (total <= limit)
             break;
-        std::error_code removeEc;
-        std::filesystem::remove_all(folder->path, removeEc);
-        if (removeEc)
+        // Checks the folder and its index again: anything that changed since
+        // the start measurement, or was never ours, stays.
+        if (!RemoveCaptureFolder(settings_.dir, candidate.first))
             continue;
-        total = total > folder->bytes ? total - folder->bytes : 0;
+        total = total > candidate.second->bytes ? total - candidate.second->bytes : 0;
+        folders_.erase(candidate.first);
     }
     if (total <= limit || !stopRunning)
         return;
@@ -373,7 +437,7 @@ inline void DecisionCaptureRegistry::EnforceTotalCap(bool stopRunning)
         FileSink* sink = entry.second.sink.get();
         if (sink->Ended())
             continue;
-        std::uint64_t const bytes = DirectoryBytes(sink->Root());
+        std::uint64_t const bytes = sink->Bytes();
         if (bytes > largestBytes)
         {
             largestBytes = bytes;

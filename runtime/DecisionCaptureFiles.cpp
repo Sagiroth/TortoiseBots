@@ -55,38 +55,65 @@ std::string Sanitise(std::string const& text, std::size_t limit)
     return out;
 }
 
-bool NumberValue(MiniJson::Value const* value, std::uint64_t& out)
+// Digits only, in range: a JSON number like "1.0", "-1" or "1e3" is not an
+// id or a version.
+bool DigitValue(MiniJson::Value const* value, std::uint64_t& out)
 {
     if (!value || value->kind != MiniJson::Value::Number || value->text.empty())
         return false;
-    out = std::strtoull(value->text.c_str(), nullptr, 10);
+    std::uint64_t parsed = 0;
+    for (char c : value->text)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        std::uint64_t const digit = static_cast<std::uint64_t>(c - '0');
+        if (parsed > (UINT64_MAX - digit) / 10)
+            return false;
+        parsed = parsed * 10 + digit;
+    }
+    out = parsed;
     return true;
 }
 
-struct IndexSummary
+// UTC yyyy-mm-ddThh:mm:ssZ, the only stamp the index writer produces.
+bool ValidUtcStamp(std::string const& text)
 {
-    bool ok = false;
-    bool ended = false;
-    std::uint64_t startedUnixMs = 0;
-};
+    auto field = [&text](std::size_t pos, std::size_t count, unsigned low, unsigned high)
+    {
+        unsigned value = 0;
+        for (std::size_t i = pos; i < pos + count; ++i)
+        {
+            if (text[i] < '0' || text[i] > '9')
+                return false;
+            value = value * 10 + static_cast<unsigned>(text[i] - '0');
+        }
+        return value >= low && value <= high;
+    };
+    return text.size() == 20 && text[4] == '-' && text[7] == '-' && text[10] == 'T' && text[13] == ':' &&
+        text[16] == ':' && text[19] == 'Z' && field(0, 4, 1, 9999) && field(5, 2, 1, 12) &&
+        field(8, 2, 1, 31) && field(11, 2, 0, 23) && field(14, 2, 0, 59) && field(17, 2, 0, 59);
+}
 
-IndexSummary ReadIndex(std::string const& path)
+// A plain capture folder directly under `root`: never a symlink, never a path
+// that resolves outside the root, whatever the name says.
+bool PlainFolder(std::string const& root, std::string const& id, std::filesystem::path& path)
 {
-    IndexSummary summary;
-    std::ifstream in(path, std::ios::in | std::ios::binary);
-    if (!in.is_open())
-        return summary;
-    std::string const text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    MiniJson::Value root;
-    std::string err;
-    if (!MiniJson::Parse(text, root, err) || root.kind != MiniJson::Value::Object || !root.Find("id"))
-        return summary;
-    MiniJson::Value const* ended = root.Find("ended");
-    summary.ended = !ended || ended->kind != MiniJson::Value::Null;
-    if (MiniJson::Value const* started = root.Find("startedUnixMs"))
-        NumberValue(started, summary.startedUnixMs);
-    summary.ok = true;
-    return summary;
+    if (id.empty() || id == "." || id == ".." || id.find_first_of("/\\") != std::string::npos)
+        return false;
+    path = std::filesystem::path(root) / id;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(std::filesystem::symlink_status(path, ec)) || ec)
+        return false;
+    std::filesystem::path const canonicalRoot = std::filesystem::weakly_canonical(root, ec);
+    if (ec)
+        return false;
+    std::filesystem::path const canonicalPath = std::filesystem::weakly_canonical(path, ec);
+    return !ec && canonicalPath.parent_path() == canonicalRoot;
+}
+
+bool IsEndedStatus(std::string const& status)
+{
+    return status == "complete" || status == "incomplete" || status == "failed" || status == "stopped";
 }
 
 // The record's own seq, for the index: only tick and stub lines carry one.
@@ -104,14 +131,44 @@ bool RecordSeq(std::string const& line, std::uint64_t& seq)
 
 } // namespace
 
-CaptureIndexSummary ReadCaptureIndex(std::string const& folder)
+CaptureIndexSummary ReadCaptureIndex(std::string const& folder, std::string const& expectedId)
 {
-    IndexSummary const summary = ReadIndex((std::filesystem::path(folder) / "index.json").string());
-    CaptureIndexSummary out;
-    out.ok = summary.ok;
-    out.ended = summary.ended;
-    out.startedUnixMs = summary.startedUnixMs;
-    return out;
+    CaptureIndexSummary summary;
+    std::filesystem::path const path = std::filesystem::path(folder) / "index.json";
+    std::error_code ec;
+    // A symlinked index points anywhere; only the file in the folder counts.
+    if (!std::filesystem::is_regular_file(std::filesystem::symlink_status(path, ec)) || ec)
+        return summary;
+    std::ifstream in(path.string(), std::ios::in | std::ios::binary);
+    if (!in.is_open())
+        return summary;
+    std::string const text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    MiniJson::Value root;
+    std::string err;
+    if (!MiniJson::Parse(text, root, err) || root.kind != MiniJson::Value::Object)
+        return summary;
+
+    MiniJson::Value const* format = root.Find("format");
+    MiniJson::Value const* version = root.Find("v");
+    MiniJson::Value const* id = root.Find("id");
+    MiniJson::Value const* ended = root.Find("ended");
+    MiniJson::Value const* status = root.Find("status");
+    std::uint64_t parsedVersion = 0;
+    if (!format || format->kind != MiniJson::Value::String || format->text != "tb-decision-capture")
+        return summary;
+    if (!DigitValue(version, parsedVersion) || parsedVersion != 1)
+        return summary;
+    if (!id || id->kind != MiniJson::Value::String || id->text != expectedId)
+        return summary;
+    if (!ended || ended->kind != MiniJson::Value::String || !ValidUtcStamp(ended->text))
+        return summary;
+    if (!status || status->kind != MiniJson::Value::String || !IsEndedStatus(status->text))
+        return summary;
+
+    if (MiniJson::Value const* started = root.Find("startedUnixMs"))
+        DigitValue(started, summary.startedUnixMs);
+    summary.deletable = true;
+    return summary;
 }
 
 std::uint64_t DirectoryBytes(std::string const& path)
@@ -121,6 +178,8 @@ std::uint64_t DirectoryBytes(std::string const& path)
     for (std::filesystem::recursive_directory_iterator it(path, ec), end; !ec && it != end; it.increment(ec))
     {
         std::error_code fileEc;
+        if (it->is_symlink(fileEc) || fileEc)
+            continue;
         if (!it->is_regular_file(fileEc) || fileEc)
             continue;
         std::uintmax_t const size = it->file_size(fileEc);
@@ -128,6 +187,40 @@ std::uint64_t DirectoryBytes(std::string const& path)
             total += size;
     }
     return total;
+}
+
+std::vector<CaptureFolderState> ScanCaptureFolders(std::string const& root)
+{
+    std::vector<CaptureFolderState> folders;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(std::filesystem::path(root), ec), end; !ec && it != end;
+         it.increment(ec))
+    {
+        std::string const id = it->path().filename().string();
+        std::filesystem::path path;
+        if (!PlainFolder(root, id, path))
+            continue;
+        CaptureIndexSummary const index = ReadCaptureIndex(path.string(), id);
+        CaptureFolderState folder;
+        folder.id = id;
+        folder.bytes = DirectoryBytes(path.string());
+        folder.deletable = index.deletable;
+        folder.startedUnixMs = index.startedUnixMs;
+        folders.push_back(std::move(folder));
+    }
+    return folders;
+}
+
+bool RemoveCaptureFolder(std::string const& root, std::string const& id)
+{
+    std::filesystem::path path;
+    if (!PlainFolder(root, id, path))
+        return false;
+    if (!ReadCaptureIndex(path.string(), id).deletable)
+        return false;
+    std::error_code ec;
+    std::filesystem::remove_all(path, ec);
+    return !ec;
 }
 
 FileSink::FileSink(std::string root, IndexInfo info, FileLimits limits, CaptureLog log)
@@ -374,12 +467,18 @@ void FileSink::WriteIndex()
     RunTrace::WriteFileAtomic(SegmentPath("index.json"), index, err);
 }
 
-void FileSink::ApplyCaptureRetention(std::size_t keep)
+std::uint64_t FileSink::Bytes() const
 {
     std::uint64_t total = 0;
     for (Segment const& segment : segments_)
         if (!segment.deleted)
             total += segment.bytes;
+    return total;
+}
+
+void FileSink::ApplyCaptureRetention(std::size_t keep)
+{
+    std::uint64_t total = Bytes();
     for (std::size_t i = 0; i < segments_.size() && total > limits_.captureBytes; ++i)
     {
         if (i == keep || segments_[i].deleted)
