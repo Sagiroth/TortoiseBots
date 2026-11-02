@@ -14194,7 +14194,7 @@ void SettleCommanderBinding(uint64_t commanderRaw)
 
 // ---------------------------------------------------------------------------
 // Run trace (opt-in): `.bot trace start <run_id> [party|bot <Name>]`,
-// `.bot trace stop`, `.bot trace status`. Behind AiPlayerbot.RunTrace.Enabled
+// `.bot trace stop [<run_id>]`, `.bot trace status`. Behind AiPlayerbot.RunTrace.Enabled
 // (default 0). The recorder is runtime/RunTrace.{h,cpp}; this is the command
 // glue: who may trace which bots, and which group a party trace follows.
 // Replies are the usual TBM:ACTION_ACK / TBM:ACTION_ERR lines with the intent
@@ -14310,7 +14310,7 @@ bool HandleTrace(ChatHandler* handler, char const* args)
     if (verb != "start" && verb != "stop" && verb != "status")
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot trace start <run_id> [party|bot <Name>] [driver=<model>:<effort>:<run>] / stop / status");
+            "Usage: .bot trace start <run_id> [party|bot <Name>] [driver=<model>:<effort>:<run>] / stop [<run_id>] / status");
         return true;
     }
     if (!requester || !requester->GetSession())
@@ -14343,9 +14343,21 @@ bool HandleTrace(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "not-running", "No trace is running.");
             return true;
         }
+        std::string const asked = parts.size() > 1 ? parts[1] : std::string();
+        if (!asked.empty() && !RunTrace::ValidRunId(asked))
+        {
+            SendActionError(handler, intent, "invalid", "Invalid run id: use 1-64 letters, digits, '.', '_' or '-'.");
+            return true;
+        }
         if (!admin && service.RequesterGuid() != requester->GetObjectGuid().GetRawValue())
         {
             SendActionError(handler, intent, "forbidden", "Only a GameMaster or the player who started the trace can stop it.");
+            return true;
+        }
+        if (char const* r = RunTrace::StopRunIdRefusal(service.RunId(), asked))
+        {
+            SendActionError(handler, intent, r,
+                ("The running trace is " + service.RunId() + ", not " + asked + "; nothing was stopped.").c_str());
             return true;
         }
         std::string const run = service.RunId();
