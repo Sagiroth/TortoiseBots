@@ -225,6 +225,17 @@ minute; `tools/test_commander_telemetry.cpp` pins the cap and the order). Parts 
 `part` and `parts` after `seq` only when there is more than one, so a cycle of eight bindings or fewer is byte-identical to what an
 older module sent. A raid binding whose group went through the module's raid layout also carries `layout` (main tank, off-tanks, tank healer pairs and raid healers), and a run's current step its `label` (the plan row's comment, clipped to 80 bytes), with each `run.plan_steps[]` entry carrying its own `c`. An older module simply omits the fields.
 
+The dashboard's `RAIDS` datagram (spec dash-raids-tab, `runtime/RaidTelemetry.h`, built by the observability emitter once
+per 2 s snapshot cycle right after `COMMANDERS`, and only while `AiPlayerbot.ObservabilityRaids = 1`) lists every raid map
+copy that holds a bot, bound or not: per group its id, fight key (`raid#<group id>` unbound, the commander's display name
+when bound), map and instance, whether it is a raid group, the leader, the member rows (guid and subgroup; a name and an
+offline flag for members not online) and the live combat window raw JSON while the group's book fights. Groups are packed
+whole into parts that each stay under 16 000 bytes (a group alone over it drops the window, then the offline names, then
+members, and names the cut section in `trimmed`); one part carries no part fields, and one `"raids":[]` follows the cycle in
+which the last group ended. The same key enables the 1 Hz observed-raid combat sampler, which feeds the books under
+`raid#<group id>` and skips a group whose binding owns its book. The roster's `BOT_BATCH` rows also carry `"raid":true` on a
+raid map (additive, not behind the flag), so the dashboard's Dungeons/Raids split needs no second feed.
+
 The core listener is generic; it does not call a PlayerBots singleton.
 
 Players' `.bot` commands do not arrive on that thread: the core dispatches

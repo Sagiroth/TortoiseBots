@@ -16,7 +16,7 @@ int main()
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
     }
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoAuctioneer); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoListing); ++i)
     {
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
@@ -35,6 +35,8 @@ int main()
     CHECK(StateForReason(OrderReason::NoBanker) == OrderState::Working);
     CHECK(std::string(ReasonToken(OrderReason::NoAuctioneer)) == "noauctioneer");
     CHECK(StateForReason(OrderReason::NoAuctioneer) == OrderState::Working);
+    CHECK(std::string(ReasonToken(OrderReason::NoListing)) == "nolisting");
+    CHECK(StateForReason(OrderReason::NoListing) == OrderState::Working);
 
     for (uint8_t i = 0; i <= uint8_t(SupplyStep::Deliver); ++i)
     {

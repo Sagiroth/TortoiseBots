@@ -76,16 +76,12 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertIn("void NoteAuctioneerInReach(", STORE)
         self.assertIn("void NoteAuctionZoneArrival(", STORE)
 
-    def test_buy_picks_the_smallest_covering_stack(self):
+    def test_buy_picks_the_listing_through_the_policy(self):
         execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
-        # A covering stack is measured against the cheap partials before it
-        # can win; among winners the smallest stack, then the cheaper unit.
-        self.assertIn("PartialFillCost(partials, missing, cheapestPartialUnit)", execute)
-        self.assertIn("AuctionCoveringBeatsPartials(candidate.buyout, candidate.count,",
-            execute)
-        self.assertIn("AuctionPickBeats(candidate.count, candidate.buyout, cover->count,",
-            execute)
-        self.assertIn("CheaperPerUnit(candidate.buyout, candidate.count,", execute)
+        # The listing choice is one policy call (covered by the policy test:
+        # smallest covering stack, then cheaper unit, else cheapest partial).
+        self.assertIn("std::vector<AuctionListing> candidates;", execute)
+        self.assertIn("PickAuctionListing(candidates, missing)", execute)
         self.assertNotIn("count > missing", execute)
         self.assertIn("uint32_t const surplus = BuySurplus(best.count, missing);", execute)
         self.assertIn("NoteRelistSurplus(botGuidLow, itemId, surplus, AuctionUnitPrice(best.buyout, best.count));",
@@ -105,11 +101,53 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertLess(advance.index("if (relistLeg)"),
             advance.index("PlanGuildOrderSources("))
 
-    def test_buy_handoffs_keep_the_order_reason(self):
+    def test_no_fitting_listing_hands_off_in_the_same_tick(self):
         execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
+        self.assertIn("PickAuctionListing(candidates, missing)", execute)
+        miss = execute[execute.index("if (pick == kNoAuctionListing)"):]
+        miss = miss[:miss.index("return false;")]
+        self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing)",
+            miss)
+        self.assertLess(miss.index("AdvanceGuildOrderAfterAuction"), miss.index("RESET_AI_VALUE"))
+
+    def test_buy_handoffs_keep_their_reason(self):
+        execute = body(BUY, "bool GuildOrderBuyAction::Execute(", "\nbool GuildOrderTakeMailAction")
+        # A landed search with nothing fitting is the leg's own dead end; a
+        # blocked gold top-up keeps the bank's reason through the policy; a
+        # lost bid is not a search result and keeps the stored reason.
+        self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, OrderReason::NoListing)"),
+            1)
+        self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored,\n            AuctionTopUpBlockedReason(cappedShortfall < shortfall, stored->reason))",
+            execute)
         self.assertEqual(execute.count("AdvanceGuildOrderAfterAuction(ai, bot, *stored, stored->reason)"),
-            3)
+            1)
         self.assertNotIn("AdvanceGuildOrderAfterAuction(ai, bot, *stored);", execute)
+
+    def test_handoff_records_the_leg_reason_on_the_timeline(self):
+        advance = body(BUY, "void ai::AdvanceGuildOrderAfterAuction(", "\nbool GuildOrderBuyAction::isUseful(")
+        self.assertIn("NoteAuctionLegEnded(order.botGuidLow, reason)", advance)
+        self.assertLess(advance.index("NoteAuctionLegEnded("), advance.index("ClearRelistSurplus("))
+
+    def test_ladder_consults_the_reentry_cycle(self):
+        choose = body(VALUES, "SupplyStep ChooseSourceStep(", "\nSupplyStep MailReturnStep(")
+        self.assertEqual(choose.count("AuctionReentryAllowed("), 2)
+        # The forced bank -> auction branch honours the same cycle.
+        forced = VALUES[VALUES.index("if (step == SupplyStep::Bank)"):]
+        forced = forced[:forced.index("SetSupplyStage(")]
+        self.assertIn("AuctionReentryAllowed(order.botGuidLow, candidate.itemId)", forced)
+
+    def test_store_keeps_the_cycle_and_marks_the_ladder_end(self):
+        self.assertIn("bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId)", STORE)
+        self.assertIn("void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason)", STORE)
+        set_supply = body(STORE, "void SetSupply(uint32_t botGuidLow", "\n    void SetNeedItems(")
+        self.assertIn("NoteAuctionLegEntered(", set_supply)
+        self.assertIn("auctionGoldReturnItemId", set_supply)
+        need = body(STORE, "void SetNeedItems(uint32_t botGuidLow", "\n    void AddNeedItem(")
+        self.assertIn("MarkAuctionLadderEndLocked(", need)
+        add = body(STORE, "void AddNeedItem(uint32_t botGuidLow", "\n    bool ReplaceNeedItems(")
+        self.assertIn("MarkAuctionLadderEndLocked(", add)
+        helper = body(STORE, "static void MarkAuctionLadderEndLocked(Stored& stored", "\n    // A zone move advances")
+        self.assertIn("NoteAuctionLadderEnd(", helper)
 
     def test_relist_posts_the_surplus_at_the_policy_price(self):
         relist = body(BUY, "uint32_t RelistSurplus(", "\n} // namespace")
@@ -139,9 +177,11 @@ class GuildOrderAuctionWiringTest(unittest.TestCase):
         self.assertIn("AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer)",
             arrival)
 
-    def test_contract_carries_noauctioneer(self):
+    def test_contract_carries_both_auction_reasons(self):
         self.assertIn('case OrderReason::NoAuctioneer: return "noauctioneer";', CONTRACT)
         self.assertIn("case OrderReason::NoAuctioneer:return OrderState::Working;", CONTRACT)
+        self.assertIn('case OrderReason::NoListing: return "nolisting";', CONTRACT)
+        self.assertIn("case OrderReason::NoListing:return OrderState::Working;", CONTRACT)
 
 
 if __name__ == "__main__":

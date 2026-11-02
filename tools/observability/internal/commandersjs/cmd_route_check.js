@@ -26,7 +26,7 @@ const location = { _hash: "#/commanders", get hash() { return this._hash; }, set
 Object.assign(ctx, {
   window: { location },
   history: { replaceState: (a, b, h) => { location._hash = h; } },
-  state: { activeTab: "commanders", profileGuid: null, profileTab: "overview", dungeons: { openKey: null } },
+  state: { activeTab: "commanders", profileGuid: null, profileTab: "overview", dungeons: { openKey: null }, raids: { openKey: null, openGroup: null } },
   applyRoute: () => {},
 });
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };

@@ -45,9 +45,9 @@ class RaidConfigWiringTest(unittest.TestCase):
 
 
     def test_healer_guard_key_default_off_and_fed_to_the_raid_facts(self):
-        # AiPlayerbot.DungeonRunRaidHealerGuard: in a raid boss fight whose main tank holds the boss an add on a healer
-        # goes to the nearest ranged dps first (DungeonRun::RaidHealerGuard); off by default, the off-tanks take it.
-        # Only read inside a raid boss fight (DungeonRunRaidBossRules).
+        # AiPlayerbot.DungeonRunRaidHealerGuard: in a raid boss fight whose main tank holds the boss, and in a raid
+        # trash fight whose main tank holds its current target, an add on a healer goes to the nearest ranged dps first
+        # (DungeonRun::RaidHealerGuard); off by default, the off-tanks take it.
         keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
         self.assertIn(
             'dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);', keys)

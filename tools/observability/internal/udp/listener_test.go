@@ -211,6 +211,44 @@ func TestDungeonMobsDatagramJoinsTheDungeonsView(t *testing.T) {
 	}
 }
 
+// RAIDS (the Raids tab): the type reaches the store and pushes one `raids`
+// stream event with the joined view; unknown and garbage types stay silent.
+func TestRaidsDatagramBroadcastsRaidsView(t *testing.T) {
+	l, store, hub := newTestListener()
+	l.processPacket([]byte(`{"v":12,"session":77,"seq":1,"ts":1791990000,"type":"BOT_BATCH","batch_index":0,"total_batches":1,"bots":[
+		{"name":"Tank","guid":1,"class":"warrior","role":"tank","level":60,"hp":100,"max_hp":100,"map":409,"instance":7,"group":7,"raid":true,"zone":2437,"x":1,"y":2,"z":3,"state":"combat"}]}`))
+	if view := store.Raids(); len(view.Runs) != 1 || view.Runs[0].Key != "409:7" {
+		t.Fatalf("roster run: %+v", view.Runs)
+	}
+	events := len(hub.events)
+
+	l.processPacket([]byte(`{"v":12,"session":77,"seq":2,"ts":1791990002,"type":"RAIDS","raids":[
+		{"group":7,"key":"raid#7","map":409,"instance":7,"rg":true,"leader":"Celindra","leader_guid":3,
+		 "members":[{"g":3,"s":0,"n":"Celindra","off":true}],
+		 "combat":{"win_s":10,"fight_ms":20000,"bots":[{"g":1,"dps":500,"hps":10,"c":3,"ls":"Heroic Strike"}]}}]}`))
+	if len(hub.events) != events+1 || hub.events[events] != "raids" {
+		t.Fatalf("RAIDS must push one raids event: %v", hub.events)
+	}
+	view := store.Raids()
+	if !view.Live || len(view.Runs) != 1 {
+		t.Fatalf("raids view: %+v", view)
+	}
+	g := view.Runs[0].Groups[0]
+	if !g.Observed || g.Leader != "Celindra" || g.Combat == nil || g.Combat.WinS != 10 {
+		t.Fatalf("row not joined: %+v", g)
+	}
+
+	// Garbage and an unknown type change nothing and push nothing.
+	l.processPacket([]byte(`{"v":12,"type":"RAIDS","raids":"nope"}`))
+	l.processPacket([]byte(`{"v":12,"session":77,"seq":3,"type":"RAIDS_OLD","raids":[]}`))
+	if len(hub.events) != events+1 {
+		t.Fatalf("unknown/garbage pushed: %v", hub.events)
+	}
+	if got := store.Raids().Runs[0].Groups[0]; !got.Observed {
+		t.Fatalf("last good datagram lost: %+v", got)
+	}
+}
+
 // ---- realtime types (S1): COMMANDER_POS and COMBAT_EVENTS reach the live sink and never the WebSocket.
 
 type fakeLiveSink struct {

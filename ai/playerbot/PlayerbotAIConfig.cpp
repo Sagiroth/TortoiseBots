@@ -141,6 +141,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunNearWipeStopParty = config.GetBoolDefault("AiPlayerbot.DungeonRunNearWipeStopParty", false);
     dungeonRunRezHold = config.GetBoolDefault("AiPlayerbot.DungeonRunRezHold", false);
     dungeonRunPullStand = config.GetBoolDefault("AiPlayerbot.DungeonRunPullStand", false);
+    dungeonRunStandClearance = config.GetBoolDefault("AiPlayerbot.DungeonRunStandClearance", false);
+    dungeonRunStandPullPreCc = config.GetBoolDefault("AiPlayerbot.DungeonRunStandPullPreCc", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);
     dungeonRunRetreatAt2Dead = config.GetBoolDefault("AiPlayerbot.DungeonRunRetreatAt2Dead", false);
     dungeonRunWalkBackRescue = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackRescue", true);
@@ -162,17 +164,23 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
         sLog.outString("TortoiseBots: AiPlayerbot.BotLfgGroups = 1 needs AiPlayerbot.DungeonSelfClear = 1: bot LFG groups stay dormant.");
 }
 
+void PlayerbotAIConfig::LoadObservabilityRaids()
+{
+    observabilityRaids = config.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+}
+
 bool PlayerbotAIConfig::ReloadDungeonRunKeys()
 {
     if (!enabled)
         return false;
     if (!config.Reload())
     {
-        sLog.outError("TortoiseBots: config reload: %s could not be read again; the run leader keys keep their values.",
+        sLog.outError("TortoiseBots: config reload: %s could not be read again; the reloaded keys keep their values.",
             config.GetFilename().c_str());
         return false;
     }
     LoadDungeonRunKeys();
+    LoadObservabilityRaids();
     sLog.outString("TortoiseBots: config reload: run leader keys read again from %s (DungeonSelfClear %d, "
         "DungeonRunWalkBackAfterWonFight %d).", config.GetFilename().c_str(), dungeonSelfClear ? 1 : 0,
         dungeonRunWalkBackAfterWonFight ? 1 : 0);
@@ -953,6 +961,7 @@ bool PlayerbotAIConfig::Initialize()
     observabilityPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityPort", 9195));
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     observabilityDungeonMobs = config.GetBoolDefault("AiPlayerbot.ObservabilityDungeonMobs", true);
+    LoadObservabilityRaids();
     enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", false);
     {
         bool scopeKnown = true;

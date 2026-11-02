@@ -175,7 +175,8 @@ inline std::string NeedWhisperTokenUnion(std::string const& lastToken, std::vect
 inline OrderReason ResetDeadEndReasonOnWorking(OrderReason reason)
 {
     if (reason == OrderReason::NoSource || reason == OrderReason::BankDenied ||
-        reason == OrderReason::NoBanker || reason == OrderReason::NoAuctioneer)
+        reason == OrderReason::NoBanker || reason == OrderReason::NoAuctioneer ||
+        reason == OrderReason::NoListing)
         return OrderReason::None;
     return reason;
 }

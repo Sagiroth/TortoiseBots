@@ -308,6 +308,18 @@ func (l *Listener) processPacket(data []byte) {
 		}
 		l.metricsReg.AddCommandersPartials(l.store.CommandersPartials() - partials)
 
+	case "RAIDS":
+		var raids model.RaidsPayload
+		if err := json.Unmarshal(data, &raids); err != nil {
+			return
+		}
+		partials := l.store.RaidsPartials()
+		if l.store.ApplyRaids(&raids) {
+			// The applied rows: a cycle that arrived in parts applied everything.
+			l.hub.Broadcast("raids", l.store.Raids())
+		}
+		l.metricsReg.AddRaidsPartials(l.store.RaidsPartials() - partials)
+
 	case "COMBAT_FIGHT":
 		if l.combat == nil {
 			return

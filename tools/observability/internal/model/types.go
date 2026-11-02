@@ -47,17 +47,20 @@ type BotSnapshot struct {
 	PowerType string `json:"power_type,omitempty"` // mana, rage, energy, focus, happiness
 	// Guild is the guild name the unit carries (additive: an older module
 	// omits it and it reads empty). Empty = guildless.
-	Guild    string  `json:"guild,omitempty"`
-	MapID     uint32 `json:"map"`
-	ZoneID    uint32 `json:"zone"`
+	Guild  string `json:"guild,omitempty"`
+	MapID  uint32 `json:"map"`
+	ZoneID uint32 `json:"zone"`
 	// Instance is the instance copy the unit is in (v12, issue #895): 0 in
 	// the open world, non-zero inside a dungeon, raid or battleground copy.
 	// A pointer so a pre-v12 module (field absent, nil) and a new one
 	// reporting the open world (present, 0) stay distinguishable: the old
 	// module's dungeon units fall back to one run per map. SubGroup is the
 	// unit's raid subgroup (0 outside a raid or group).
-	Instance    *uint32 `json:"instance,omitempty"`
-	SubGroup    uint32  `json:"subgroup,omitempty"`
+	Instance *uint32 `json:"instance,omitempty"`
+	SubGroup uint32  `json:"subgroup,omitempty"`
+	// Raid is true when the unit stands on a raid map (the core's Map::IsRaid).
+	// Additive: an older module omits it and reads non-raid.
+	Raid        bool    `json:"raid,omitempty"`
 	X           float64 `json:"x"`
 	Y           float64 `json:"y"`
 	Z           float64 `json:"z"`
@@ -948,6 +951,109 @@ type DungeonMember struct {
 	// Both absent from an older module.
 	ID     string `json:"id,omitempty"`
 	Target string `json:"target,omitempty"`
+	// Offline marks a unit the RAIDS datagram lists that the roster does not
+	// have online (an offline member of the group). Never set from a roster
+	// row.
+	Offline bool `json:"offline,omitempty"`
+}
+
+// RaidMemberRef is one member of a group as the RAIDS datagram reports it:
+// the low guid joins the roster row, sub is the raid subgroup. An online
+// member carries only guid and sub; a member the roster does not have online
+// carries its name and offline true.
+type RaidMemberRef struct {
+	GUID    uint32 `json:"g"`
+	Sub     int    `json:"s"`
+	Name    string `json:"n,omitempty"`
+	Offline bool   `json:"off,omitempty"`
+}
+
+// RaidGroupRow is one group of a RAIDS datagram: the group id, the fight key
+// (raid#<group> unbound, the commander's name when bound), the instance, the
+// leader, the offline members and the live combat window. Trimmed names the
+// ladder section dropped to fit the part cap.
+type RaidGroupRow struct {
+	Group      uint32           `json:"group"`
+	Key        string           `json:"key"`
+	Map        uint32           `json:"map"`
+	Instance   uint32           `json:"instance"`
+	RaidGroup  bool             `json:"rg"`
+	Leader     string           `json:"leader"`
+	LeaderGUID uint32           `json:"leader_guid"`
+	Commander  string           `json:"commander,omitempty"`
+	Members    []RaidMemberRef  `json:"members"`
+	More       int              `json:"more,omitempty"`
+	Combat     *CommanderCombat `json:"combat,omitempty"`
+	Trimmed    string           `json:"trimmed,omitempty"`
+}
+
+// RaidsPayload is the RAIDS datagram: the standing raid-map groups the
+// module collected on its 2 s cycle. Part/Parts split one cycle the same
+// way as COMMANDERS: absent when it fits one datagram.
+type RaidsPayload struct {
+	V       int            `json:"v"`
+	Session uint64         `json:"session"`
+	Seq     uint64         `json:"seq"`
+	Part    int            `json:"part,omitempty"`
+	Parts   int            `json:"parts,omitempty"`
+	TS      int64          `json:"ts"`
+	TSMs    int64          `json:"ts_ms,omitempty"`
+	Type    string         `json:"type"`
+	Raids   []RaidGroupRow `json:"raids"`
+}
+
+// RaidGroupView is one raid group inside a raid run: the RAIDS row joined
+// with the roster members and the binding of the group when bound.
+type RaidGroupView struct {
+	Group      uint32           `json:"group"`
+	Key        string           `json:"key"`
+	RaidGroup  bool             `json:"rg"`
+	Leader     string           `json:"leader,omitempty"`
+	LeaderGUID uint32           `json:"leader_guid,omitempty"`
+	Bound      bool             `json:"bound,omitempty"`
+	Commander  string           `json:"commander,omitempty"`
+	Run        *CommanderRun    `json:"run,omitempty"`
+	Observed   bool             `json:"observed,omitempty"`
+	More       int              `json:"more,omitempty"`
+	Members    []DungeonMember  `json:"members"`
+	Combat     *CommanderCombat `json:"combat,omitempty"`
+	Trimmed    string           `json:"trimmed,omitempty"`
+}
+
+// RaidRun is one live raid instance copy (map + instance id).
+type RaidRun struct {
+	Key      string `json:"key"`
+	MapID    uint32 `json:"map"`
+	Instance uint32 `json:"instance"`
+	// FirstSeen is the unix second the daemon first saw this copy with a
+	// bot in it (this game-server session).
+	FirstSeen int64 `json:"first_seen"`
+	// SeenSec is how long the run has been seen (FirstSeen until now).
+	SeenSec float64 `json:"seen_sec"`
+	Bots    int     `json:"bots"`
+	Players int     `json:"players"`
+	Dead    int     `json:"dead"`
+	// Mobs, MobsMap and MobsTotal come from DUNGEON_MOBS: nil = not
+	// reported, a non-nil empty list = reported and nothing near.
+	Mobs      *[]CommanderMob `json:"mobs,omitempty"`
+	MobsMap   *uint32         `json:"mobs_map,omitempty"`
+	MobsTotal int             `json:"mobs_total,omitempty"`
+	// Groups are the run's groups by group id; Ungrouped are the roster
+	// rows of the copy with no group.
+	Groups    []RaidGroupView `json:"groups"`
+	Ungrouped []DungeonMember `json:"ungrouped,omitempty"`
+}
+
+// RaidsView is what GET /api/v1/raids carries.
+type RaidsView struct {
+	Runs []RaidRun `json:"runs"`
+	// GeneratedAt is the unix second the view was built at.
+	GeneratedAt int64 `json:"generated_at"`
+	// Live is true while a RAIDS datagram arrived inside RaidsStaleAfter.
+	Live bool `json:"live"`
+	// StaleModule is true when the game server runs a pre-v12 module that
+	// reports no instance id.
+	StaleModule bool `json:"stale_module,omitempty"`
 }
 
 // DungeonRun is one live instance copy (map + instance id) of a dungeon or
