@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"tortoise-observability/internal/combat"
 )
@@ -27,7 +26,6 @@ func tb(guid uint32, name, class, role string, dmg, heal uint64, casts, healCast
 func fi(key string, start int64, durMS uint32, bots ...combat.FightBot) Input {
 	return Input{
 		Key:      key,
-		Day:      "2026-11-01",
 		Fight:    combat.Fight{ID: key, Commander: "Tacmdbilo", Start: start, DurMS: durMS, Outcome: "end", Bots: bots},
 		Warnings: nil,
 	}
@@ -172,10 +170,15 @@ func TestAliveTimeNotFightLength(t *testing.T) {
 	}
 }
 
-func TestDiedAtOnceNotJudged(t *testing.T) {
+// A fight the bot is not judged in (under MinJudgedS, or alive under
+// MinAliveS) cannot list it: a warning about a bot that died at once says
+// nothing about how it played, and a flag count above the judged fights
+// would read as more evidence than the view has.
+func TestRuleWarningsOnlyInJudgedFights(t *testing.T) {
 	var fights []Input
-	for i := range 3 {
-		f := fi("f"+itoa(i), int64(1000+i*100), 30000,
+	// Two fights Dead dies in at 5 s: not judged, so its warnings are dropped.
+	for i := range 2 {
+		f := fi("s"+itoa(i), int64(1000+i*100), 30000,
 			tb(1, "Dead", "rogue", "dps", 0, 0, 0, 0, 1),
 			tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
 			tb(3, "C", "hunter", "dps", 3000, 0, 10, 0, 0),
@@ -185,23 +188,35 @@ func TestDiedAtOnceNotJudged(t *testing.T) {
 		f.Warnings = []combat.Warning{{Rule: "dps_no_damage", Level: "red", Bot: "Dead", Role: "dps", Text: "Dead did no damage"}}
 		fights = append(fights, f)
 	}
+	if r := Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, defLim()); len(r.Bots) != 0 {
+		t.Fatalf("bots = %+v, want none: only unjudged fights carry a warning", r.Bots)
+	}
+	// Three judged fights where Dead does nothing: listed, and the flags
+	// stop at the judged count (3), not the 5 fights it died in.
+	for i := range 3 {
+		f := fi("j"+itoa(i), int64(2000+i*100), 30000,
+			tb(1, "Dead", "rogue", "dps", 0, 0, 0, 0, 0),
+			tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+			tb(3, "C", "hunter", "dps", 3000, 0, 10, 0, 0),
+			tb(4, "D", "warlock", "dps", 3000, 0, 10, 0, 0),
+		)
+		f.Warnings = []combat.Warning{{Rule: "dps_no_damage", Level: "red", Bot: "Dead", Role: "dps", Text: "Dead did no damage"}}
+		fights = append(fights, f)
+	}
 	r := Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, defLim())
-	if len(r.Bots) != 1 || r.Bots[0].Name != "Dead" {
-		t.Fatalf("bots = %+v, want only Dead (by the rule warning)", r.Bots)
+	row := findBot(t, r, "Dead")
+	if row == nil {
+		t.Fatalf("bots = %+v, want Dead listed by its judged rule warnings", r.Bots)
 	}
-	row := &r.Bots[0]
-	if row.Judged != 0 {
-		t.Errorf("judged = %d, want 0", row.Judged)
+	if row.Judged != 3 || row.Flagged != 3 {
+		t.Errorf("judged = %d, flagged = %d, want 3 and 3 (never more flags than judged fights)", row.Judged, row.Flagged)
 	}
-	for name, v := range map[string]*float64{"dps": row.You.Dps, "hps": row.You.Hps, "hcps": row.You.Hcps, "cps": row.You.Cps, "skill10": row.You.Skill10} {
-		if v != nil {
-			t.Errorf("you.%s = %v, want null", name, *v)
-		}
+	reason := findReason(row, "rule:dps_no_damage")
+	if reason == nil || reason.Fights != 3 {
+		t.Errorf("rule reason = %+v, want 3 judged fights", reason)
 	}
-	for _, reason := range row.Reasons {
-		if len(reason.ID) >= 5 && reason.ID[:5] == "peer:" {
-			t.Errorf("peer reason %q on a bot with no judged fight", reason.ID)
-		}
+	if reason != nil && !strings.Contains(reason.Text, "3 fights") {
+		t.Errorf("reason text = %q, want the 3 judged fights", reason.Text)
 	}
 	if _, err := json.Marshal(r); err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -258,8 +273,8 @@ func TestDeathsComparedOverPeerFights(t *testing.T) {
 	if row.You.Deaths != 2 {
 		t.Errorf("you.deaths = %d, want the 2 deaths over peer fights", row.You.Deaths)
 	}
-	if row.You.DeathsAll != 5 {
-		t.Errorf("you.deaths_all = %d, want all 5 deaths", row.You.DeathsAll)
+	if row.YouAll.Deaths != 5 {
+		t.Errorf("you_all.deaths = %d, want all 5 deaths", row.YouAll.Deaths)
 	}
 	if fv(row.Peers.Deaths) != 0 {
 		t.Errorf("peers.deaths = %v, want 0", fv(row.Peers.Deaths))
@@ -282,6 +297,48 @@ func TestDeathsComparedOverPeerFights(t *testing.T) {
 		t.Errorf("deaths reason = nil, want the excess-death flag")
 	} else if !strings.Contains(got.Text, "died 3 times against 0 expected over 3 fights") {
 		t.Errorf("deaths text = %q, want the judged count against 0 expected", got.Text)
+	}
+}
+
+// The bot's own numbers must cover exactly the fights its peers' median
+// covers: a judged fight with too few peers is in neither side of the
+// ratio, so the row's dps is the ratio's peers times the ratio.
+func TestYouSharesTheRatioFightBasis(t *testing.T) {
+	var fights []Input
+	// Judged, but A has one peer: not a peer fight.
+	fights = append(fights, fi("n0", 1000, 30000,
+		tb(1, "A", "rogue", "dps", 3000, 0, 10, 0, 0),
+		tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+	))
+	for i := range 3 {
+		fights = append(fights, fi("p"+itoa(i), int64(2000+i*100), 30000,
+			tb(1, "A", "rogue", "dps", 300, 0, 10, 0, 0),
+			tb(2, "B", "mage", "dps", 3000, 0, 10, 0, 0),
+			tb(3, "C", "hunter", "dps", 3000, 0, 10, 0, 0),
+		))
+	}
+	row := findBot(t, Build("Tacmdbilo", 0, 1<<62, fights, nil, Floors{}, defLim()), "A")
+	if row == nil {
+		t.Fatal("A unlisted")
+	}
+	if row.PeerFights != 3 || row.Judged != 4 {
+		t.Fatalf("peer_fights = %d, judged = %d, want 3 of 4", row.PeerFights, row.Judged)
+	}
+	if !roundEq(fv(row.You.Dps), 10) {
+		t.Errorf("you.dps = %v, want 10 (over the 3 peer fights, not 32.5 over all 4)", fv(row.You.Dps))
+	}
+	if !roundEq(fv(row.Ratio.Main), 0.1) || !roundEq(fv(row.Peers.Dps), 100) {
+		t.Errorf("ratio.main = %v peers.dps = %v, want 0.1 and 100", fv(row.Ratio.Main), fv(row.Peers.Dps))
+	}
+	if got := fv(row.You.Dps) / fv(row.Peers.Dps); !roundEq(got, fv(row.Ratio.Main)) {
+		t.Errorf("you/peers = %v but ratio.main = %v: the two sides are not the same fights", got, fv(row.Ratio.Main))
+	}
+	if !roundEq(fv(row.YouAll.Dps), 32.5) {
+		t.Errorf("you_all.dps = %v, want 32.5 over every judged fight", fv(row.YouAll.Dps))
+	}
+	reason := findReason(row, "peer:main")
+	if reason == nil || !strings.Contains(reason.Text, "10 dps against a role median of 100") {
+		t.Errorf("peer:main reason = %+v, want the peer-basis dps in its text", reason)
 	}
 }
 
@@ -586,7 +643,7 @@ func TestRunsSplitOnGapAndSession(t *testing.T) {
 
 func TestWindowHalfOpen(t *testing.T) {
 	mk := func(key string, start int64) Input {
-		return Input{Key: key, Day: "2026-11-01", Fight: combat.Fight{ID: key, Start: start, DurMS: 30000,
+		return Input{Key: key, Fight: combat.Fight{ID: key, Start: start, DurMS: 30000,
 			Bots: []combat.FightBot{tb(1, "Solo", "rogue", "dps", 3000, 0, 10, 0, 0)}}}
 	}
 	r := Build("Tacmdbilo", 100, 200, []Input{mk("a", 99), mk("b", 100), mk("c", 199), mk("d", 200)}, nil, Floors{}, defLim())
@@ -723,17 +780,26 @@ type fixtureFight struct {
 	Warnings []combat.Warning `json:"warnings"`
 }
 
-// warnSet is bot -> rule -> fights, red and yellow warnings only: exactly
-// what the view's rule reasons must say.
-func warnSet(in []Input, judge bool, rules []combat.Rule) map[string]map[string]int {
+// warnSet is bot -> rule -> fights, red and yellow warnings only in the
+// fights the view judges the bot in: exactly what its rule reasons must say.
+func warnSet(in []Input, judge bool, rules []combat.Rule, lim Limits) map[string]map[string]int {
 	out := map[string]map[string]int{}
 	for _, f := range in {
 		ws := f.Warnings
 		if judge {
 			ws = combat.Judge(f.Fight, rules)
 		}
+		judged := map[string]bool{}
+		for _, b := range f.Fight.Bots {
+			if f.Fight.DurMS >= uint32(lim.MinJudgedS*1000) && aliveSeconds(b, f.Fight) >= float64(lim.MinAliveS) {
+				judged[b.Name] = true
+			}
+		}
 		for _, w := range ws {
 			if w.Level != "red" && w.Level != "yellow" {
+				continue
+			}
+			if !judged[w.Bot] {
 				continue
 			}
 			if out[w.Bot] == nil {
@@ -790,7 +856,7 @@ func loadFixture(t *testing.T, path string) []Input {
 	out := make([]Input, 0, len(raw))
 	for _, f := range raw {
 		out = append(out, Input{
-			Key: f.Fight.ID, Day: time.Unix(f.Fight.Start, 0).UTC().Format("2006-01-02"), Fight: f.Fight,
+			Key: f.Fight.ID, Fight: f.Fight,
 		})
 	}
 	return out
@@ -803,7 +869,7 @@ func TestZG24Sample(t *testing.T) {
 		saved[i].Warnings = combat.Judge(saved[i].Fight, rules)
 	}
 	r := Build("Tacmdbilo", 0, 1<<62, saved, rules, ParseFloors(rules), defLim())
-	want := warnSet(saved, true, rules)
+	want := warnSet(saved, true, rules, defLim())
 	got := ruleReasonSet(r)
 	if !sameSet(want, got) {
 		t.Fatalf("rule reasons = %v, want %v", got, want)
@@ -827,7 +893,7 @@ func TestZG24Sample(t *testing.T) {
 	for _, f := range raw {
 		savedIn = append(savedIn, Input{Key: f.Fight.ID, Fight: f.Fight, Warnings: f.Warnings})
 	}
-	savedSet := warnSet(savedIn, false, nil)
+	savedSet := warnSet(savedIn, false, nil, defLim())
 	if !sameSet(want, savedSet) {
 		t.Logf("the fixture's saved warnings were judged with an older rules table; comparing against combat.Judge only")
 	} else if len(savedSet) == 0 {
@@ -871,8 +937,7 @@ func TestWalkDir(t *testing.T) {
 			continue
 		}
 		fights = append(fights, Input{
-			Key: ff.Fight.ID, Day: time.Unix(ff.Fight.Start, 0).UTC().Format("2006-01-02"),
-			Fight: ff.Fight, Warnings: combat.Judge(ff.Fight, rules),
+			Key: ff.Fight.ID, Fight: ff.Fight, Warnings: combat.Judge(ff.Fight, rules),
 		})
 	}
 	r := Build("Tacmdbilo", since, until, fights, rules, ParseFloors(rules), defLim())
@@ -888,7 +953,7 @@ func TestWalkDir(t *testing.T) {
 		}
 		t.Logf("%-14s %-6s %-28s %s", row.Name, row.Level, strings.Join(reasons, ", "), main)
 	}
-	want := warnSet(fights, false, nil) // Inputs carry Judge's warnings
+	want := warnSet(fights, false, nil, defLim()) // Inputs carry Judge's warnings
 	if got := ruleReasonSet(r); !sameSet(want, got) {
 		t.Fatalf("rule reasons = %v, want the warnings over the same fights %v", got, want)
 	}

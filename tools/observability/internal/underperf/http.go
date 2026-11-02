@@ -239,26 +239,18 @@ func collect(src Sources, commander string, since, until int64, rules []combat.R
 			if !ok {
 				continue
 			}
-			out = append(out, Input{Key: c.key, Day: utcDay(c.start), Session: c.session, Fight: f, Warnings: warnings})
+			out = append(out, Input{Key: c.key, Session: c.session, Fight: f, Warnings: warnings})
 			continue
 		}
-		f, got, ok := src.Hist.Fight(c.key)
+		f, _, ok := src.Hist.Fight(c.key)
 		if !ok {
 			continue
 		}
-		start := c.start
-		if start == 0 {
-			start = got.Start
-		}
 		out = append(out, Input{
-			Key: c.key, Day: utcDay(start), Session: c.session, Fight: f, Warnings: combat.Judge(f, rules),
+			Key: c.key, Session: c.session, Fight: f, Warnings: combat.Judge(f, rules),
 		})
 	}
 	return out, truncated
-}
-
-func utcDay(unix int64) string {
-	return time.Unix(unix, 0).UTC().Format("2006-01-02")
 }
 
 // fillSpecs names the listed bots' specs, asking the armory once per guid per

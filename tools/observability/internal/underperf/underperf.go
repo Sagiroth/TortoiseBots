@@ -84,7 +84,6 @@ func ParseFloors(rules []combat.Rule) Floors {
 // Input is one stored fight with its warnings and the session it ran in.
 type Input struct {
 	Key      string
-	Day      string
 	Session  uint64
 	Fight    combat.Fight
 	Warnings []combat.Warning
@@ -102,13 +101,22 @@ type Run struct {
 }
 
 type Rates struct {
-	Dps       *float64 `json:"dps"`
-	Hps       *float64 `json:"hps"`
-	Hcps      *float64 `json:"hcps"`
-	Cps       *float64 `json:"cps"`
-	Skill10   *float64 `json:"skill10"`
-	Deaths    int      `json:"deaths"`
-	DeathsAll int      `json:"deaths_all"`
+	Dps     *float64 `json:"dps"`
+	Hps     *float64 `json:"hps"`
+	Hcps    *float64 `json:"hcps"`
+	Cps     *float64 `json:"cps"`
+	Skill10 *float64 `json:"skill10"`
+	Deaths  int      `json:"deaths"`
+}
+
+// AllRates are the same rates over every judged fight, beside the peer-fight
+// figures the row compares.
+type AllRates struct {
+	Dps    *float64 `json:"dps"`
+	Hps    *float64 `json:"hps"`
+	Hcps   *float64 `json:"hcps"`
+	Cps    *float64 `json:"cps"`
+	Deaths int      `json:"deaths"`
 }
 
 // Peers are what a median role peer would have done in the bot's seat.
@@ -139,7 +147,6 @@ type Reason struct {
 // FightRef is one fight that flagged the bot.
 type FightRef struct {
 	Key      string   `json:"key"`
-	Day      string   `json:"day"`
 	Start    int64    `json:"start"`
 	Step     uint32   `json:"step"`
 	Leg      string   `json:"leg"`
@@ -162,6 +169,7 @@ type BotRow struct {
 	PeerFights int        `json:"peer_fights"`
 	Flagged    int        `json:"flagged"`
 	You        Rates      `json:"you"`
+	YouAll     AllRates   `json:"you_all"`
 	Peers      Peers      `json:"peers"`
 	Ratio      Ratio      `json:"ratio"`
 	Main       string     `json:"main"`
@@ -233,7 +241,10 @@ type agg struct {
 	peerFights    int
 	peerAlive     float64
 	peerMainNum   float64
-	peerCasts     float64
+	peerCasts     uint64
+	peerDmg       uint64
+	peerHeal      uint64
+	peerHc        uint64
 	peerMainExp   float64
 	peerCpsExp    float64
 	peerDeathsExp float64
@@ -539,7 +550,10 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 				a2.peerFights++
 				a2.peerAlive += a
 				a2.peerMainNum += botMain * a
-				a2.peerCasts += float64(b.Casts)
+				a2.peerCasts += uint64(b.Casts)
+				a2.peerDmg += b.Dmg
+				a2.peerHeal += b.Heal
+				a2.peerHc += uint64(b.HealCasts)
 				a2.peerMainExp += mMain * a
 				a2.peerCpsExp += mCps * a
 				a2.peerDeathsExp += median(pDeaths)
@@ -580,6 +594,12 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 			}
 			guid, ok := names[w.Bot]
 			if !ok {
+				continue
+			}
+			// The same judged rule as the peer numbers: a bot alive under
+			// MinAliveS, or killed in a fight under MinJudgedS, says nothing
+			// about how it played, so its rule warning cannot list it.
+			if !judged[guid] {
 				continue
 			}
 			b := bots[guid]
@@ -638,7 +658,7 @@ func Build(commander string, since, until int64, fights []Input, rules []combat.
 			a2 := aggs[aggKey{guid, b.Role}]
 			a2.flagged++
 			ref := FightRef{
-				Key: input.Key, Day: input.Day, Start: f.Start, Step: f.Step, Leg: f.Leg,
+				Key: input.Key, Start: f.Start, Step: f.Step, Leg: f.Leg,
 				BossName: f.BossName, Outcome: f.Outcome, Rules: []string{}, Low: low[guid],
 			}
 			for rule := range flagRules[guid] {
@@ -713,15 +733,22 @@ func (a *agg) row(lim Limits) BotRow {
 		Fights: a.fights, Judged: a.judged, PeerFights: a.peerFights,
 		Flagged: a.flagged, Main: mainName(a.role),
 		Reasons: []Reason{}, Causes: []string{}, FightRefs: []FightRef{},
-		You:   Rates{Deaths: a.peerDeaths, DeathsAll: a.deaths},
+		You:   Rates{Deaths: a.peerDeaths},
 		Peers: Peers{},
 	}
-	if a.judged > 0 && a.alive > 0 {
-		row.You.Dps = num(float64(a.dmg)/a.alive, 1)
-		row.You.Hps = num(float64(a.heal)/a.alive, 1)
-		row.You.Hcps = num(float64(a.hc)/a.alive, 2)
-		row.You.Cps = num(float64(a.casts)/a.alive, 2)
+	if a.peerFights > 0 && a.peerAlive > 0 {
+		row.You.Dps = num(float64(a.peerDmg)/a.peerAlive, 1)
+		row.You.Hps = num(float64(a.peerHeal)/a.peerAlive, 1)
+		row.You.Hcps = num(float64(a.peerHc)/a.peerAlive, 2)
+		row.You.Cps = num(float64(a.peerCasts)/a.peerAlive, 2)
 	}
+	if a.judged > 0 && a.alive > 0 {
+		row.YouAll.Dps = num(float64(a.dmg)/a.alive, 1)
+		row.YouAll.Hps = num(float64(a.heal)/a.alive, 1)
+		row.YouAll.Hcps = num(float64(a.hc)/a.alive, 2)
+		row.YouAll.Cps = num(float64(a.casts)/a.alive, 2)
+	}
+	row.YouAll.Deaths = a.deaths
 	if a.skillAlive > 0 {
 		row.You.Skill10 = num(10*float64(a.skillCasts)/a.skillAlive, 2)
 	}
@@ -739,7 +766,7 @@ func (a *agg) row(lim Limits) BotRow {
 		row.Ratio.Main = num(a.peerMainNum/a.peerMainExp, 2)
 	}
 	if a.peerCpsExp > 0 {
-		row.Ratio.Cps = num(a.peerCasts/a.peerCpsExp, 2)
+		row.Ratio.Cps = num(float64(a.peerCasts)/a.peerCpsExp, 2)
 	}
 
 	for id := range a.ruleFights {
