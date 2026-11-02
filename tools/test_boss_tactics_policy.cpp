@@ -840,11 +840,12 @@ int main()
         CHECK(PickLinkedDeathBurn(std::vector<std::uint32_t>(), members) == -1);
     }
 
-    // The release latch, by guid. A member counts as dead only when the observing bot finds that known guid dead (or as
-    // a corpse); one merely not seen (out of range, not cached) never does. A death while released latches the burn
-    // (kept on after a heal or a raise), it clears after kLinkedDeathLatchMs, and every known member confirmed dead
-    // clears it at once.
+    // The release latch, by guid and instance-wide. A member counts as dead only when the observing bot finds that known
+    // guid dead (or as a corpse); one merely not seen (out of range, not cached) never does. A death while the release is
+    // armed (every known guid last seen at or below param % within kLinkedDeathSeenMs) latches the burn, kept on after a
+    // heal or a raise; it clears after kLinkedDeathLatchMs, and every known member confirmed dead clears it at once.
     {
+        const float p = 3.0f;
         const std::vector<std::uint64_t> none;
         const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
         const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };  // guid 3 out of this observer's range
@@ -856,54 +857,81 @@ int main()
 
         // Two observers alternately see 3 and 2 living members, no death: the release never latches.
         LinkedDeathLatch alt;
-        CHECK(!LinkedDeathLatchTick(alt, true, three, none, 1000));                 // A sees 3 living
-        CHECK(LinkedDeathUnseen(alt, two) == std::vector<std::uint64_t>{3});        // B sees 2: 3 unseen, not dead
-        CHECK(!LinkedDeathLatchTick(alt, true, two, none, 1100));                   // B's read: no death found
-        CHECK(!LinkedDeathLatchTick(alt, true, three, none, 1200));                 // A again
-        CHECK(!LinkedDeathLatchTick(alt, true, two, none, 1300));                   // B again
+        CHECK(!LinkedDeathLatchTick(alt, p, three, none, 1000));                // A sees 3 living
+        CHECK(LinkedDeathUnseen(alt, two) == std::vector<std::uint64_t>{3});     // B sees 2: 3 unseen, not dead
+        CHECK(!LinkedDeathLatchTick(alt, p, two, none, 1100));                  // B's read: no death found
+        CHECK(!LinkedDeathLatchTick(alt, p, three, none, 1200));                // A again
+        CHECK(!LinkedDeathLatchTick(alt, p, two, none, 1300));                  // B again
         CHECK(!alt.latched);
         // A heal above param puts a member back: the group is held again, no latch to keep it released.
-        CHECK(!LinkedDeathLatchTick(alt, false, healed, none, 1400));
+        CHECK(!LinkedDeathLatchTick(alt, p, healed, none, 1400));
         CHECK(!alt.latched);
         CHECK(!LinkedDeathReleased(3.0f, healed));
         CHECK(PickLinkedDeath(3.0f, healed) == 0);  // the hold: the highest member (guid 1 at 80 %)
 
-        // A real death of a known member, found dead by the observer, latches it while released.
+        // A real death of a known member, found dead by the observer, latches it while armed.
         LinkedDeathLatch death;
-        CHECK(!LinkedDeathLatchTick(death, true, three, none, 1000));
-        CHECK(!LinkedDeathLatchTick(death, true, two, none, 2000));                 // 3 not seen, not dead: no latch
-        CHECK(LinkedDeathLatchTick(death, true, two, dead3, 3000));                 // 3 found dead: latched
+        CHECK(!LinkedDeathLatchTick(death, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(death, p, two, none, 2000));                // 3 not seen, not dead: no latch
+        CHECK(LinkedDeathLatchTick(death, p, two, dead3, 3000));                // 3 found dead: latched
         CHECK(death.deadGuid == 3);
-        CHECK(LinkedDeathLatchTick(death, false, healedTwo, none, 4000));           // a heal of 1 (guid 3 is a corpse)
-        CHECK(LinkedDeathLatchTick(death, false, healedTwo, none, 3000 + kLinkedDeathLatchMs - 1));
-        CHECK(!LinkedDeathLatchTick(death, false, healedTwo, none, 3000 + kLinkedDeathLatchMs)); // 15 s: back to the hold
+        CHECK(LinkedDeathLatchTick(death, p, healedTwo, none, 4000));           // a heal of 1 (guid 3 is a corpse)
+        CHECK(LinkedDeathLatchTick(death, p, healedTwo, none, 3000 + kLinkedDeathLatchMs - 1));
+        CHECK(!LinkedDeathLatchTick(death, p, healedTwo, none, 3000 + kLinkedDeathLatchMs)); // 15 s: back to the hold
         // The corpse counts once: it is not looked up again, and a later read that finds it still dead does not re-latch.
         CHECK(LinkedDeathUnseen(death, two).empty());
-        CHECK(!LinkedDeathLatchTick(death, true, two, none, 19000));
-        CHECK(!LinkedDeathLatchTick(death, true, two, dead3, 20000));
+        CHECK(!LinkedDeathLatchTick(death, p, two, none, 19000));
+        CHECK(!LinkedDeathLatchTick(death, p, two, dead3, 20000));
         CHECK(!death.latched);
+
+        // Codex round 2: a bot sees two low members while a known healthy third is omitted (another observer saw it
+        // healthy). One of the two dies: the release is not armed, so the burn does not latch.
+        LinkedDeathLatch partial;
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2), Linked(3, 100) }, none, 1000));
+        CHECK(!LinkedDeathArmed(partial, p, 1000));                             // 3 known healthy: disarmed
+        CHECK(!LinkedDeathLatchTick(partial, p, two, none, 1500));              // 3 omitted, still known healthy
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(2, 2) }, { 1 }, 2000)); // 1 found dead, 3 still healthy
+        CHECK(!partial.latched);
+
+        // All three seen low, then one dies while the other two are still low: armed, so the death latches.
+        LinkedDeathLatch lowThenDeath;
+        CHECK(!LinkedDeathLatchTick(lowThenDeath, p, three, none, 1000));
+        CHECK(LinkedDeathArmed(lowThenDeath, p, 1000));
+        CHECK(LinkedDeathLatchTick(lowThenDeath, p, two, dead3, 2000));
+        CHECK(lowThenDeath.deadGuid == 3);
+
+        // A known living member not seen for longer than kLinkedDeathSeenMs blocks the arming (fail safe: hold), so a
+        // death in that read does not latch either.
+        LinkedDeathLatch stale;
+        CHECK(!LinkedDeathLatchTick(stale, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(stale, p, { Linked(2, 2), Linked(3, 1) }, none, 1000 + kLinkedDeathSeenMs + 1));
+        CHECK(!LinkedDeathArmed(stale, p, 1000 + kLinkedDeathSeenMs + 1));      // 1 last seen too long ago
+        CHECK(!LinkedDeathLatchTick(stale, p, two, dead3, 1000 + kLinkedDeathSeenMs + 2));
+        CHECK(!stale.latched);
 
         // Every known member confirmed dead clears the latch, whatever the clock.
         LinkedDeathLatch all;
-        CHECK(!LinkedDeathLatchTick(all, true, three, none, 1000));
-        CHECK(LinkedDeathLatchTick(all, true, two, dead3, 1500));
+        CHECK(!LinkedDeathLatchTick(all, p, three, none, 1000));
+        CHECK(LinkedDeathLatchTick(all, p, two, dead3, 1500));
         CHECK(LinkedDeathUnseen(all, nobody) == dead12);
-        CHECK(!LinkedDeathLatchTick(all, true, nobody, dead12, 1600));
+        CHECK(!LinkedDeathLatchTick(all, p, nobody, dead12, 1600));
         CHECK(!all.latched);
         CHECK(all.known.empty());
 
-        // A death while the group is not released never latches (the read before it has to be released too).
+        // A death while the release is not armed never latches: the read before it has to be armed too.
         LinkedDeathLatch open;
-        CHECK(!LinkedDeathLatchTick(open, false, three, none, 1000));
-        CHECK(!LinkedDeathLatchTick(open, false, two, dead3, 1001));
+        const std::vector<LinkedMember> oneHealthy = { Linked(1, 50), Linked(2, 2), Linked(3, 1) };
+        CHECK(!LinkedDeathLatchTick(open, p, oneHealthy, none, 1000));          // 1 above param: not armed
+        CHECK(!LinkedDeathArmed(open, p, 1000));
+        CHECK(!LinkedDeathLatchTick(open, p, two, dead3, 1001));                // 1 low again, 3 dies in the same read
         CHECK(!open.latched);
 
         // A raise undoes the earlier death: the member living again counts as a death once more when it dies again.
         LinkedDeathLatch raise;
-        CHECK(!LinkedDeathLatchTick(raise, true, three, none, 1000));
-        CHECK(LinkedDeathLatchTick(raise, true, two, dead3, 2000));
-        CHECK(!LinkedDeathLatchTick(raise, true, three, none, 2000 + kLinkedDeathLatchMs));  // 3 back: window over
-        CHECK(LinkedDeathLatchTick(raise, true, two, dead3, 2000 + kLinkedDeathLatchMs + 1000)); // 3 dies again
+        CHECK(!LinkedDeathLatchTick(raise, p, three, none, 1000));
+        CHECK(LinkedDeathLatchTick(raise, p, two, dead3, 2000));
+        CHECK(!LinkedDeathLatchTick(raise, p, three, none, 2000 + kLinkedDeathLatchMs));  // 3 back: window over
+        CHECK(LinkedDeathLatchTick(raise, p, two, dead3, 2000 + kLinkedDeathLatchMs + 1000)); // 3 dies again
     }
 
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k

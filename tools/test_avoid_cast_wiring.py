@@ -748,7 +748,7 @@ class LinkedDeathFightWideScan(unittest.TestCase):
         self.assertIn("const std::vector<LinkedDeathGroupKey>& LinkedDeathGroups(std::uint32_t map) const", POLICY)
         self.assertIn("table.LinkedDeathGroups(309).size() == 1", POLICY_TEST)
         # The release latch is one state per group and instance, not per bot: a heal or a raise does not re-hold it.
-        self.assertIn("LinkedDeathLatchTick(latch, groupScan.released,", fn)
+        self.assertIn("LinkedDeathLatchTick(latch, groupScan.param, groupScan.members,", fn)
         self.assertIn("g_linkedDeathLatches[std::make_tuple(", fn)
 
     def test_the_trigger_and_the_action_read_the_same_scan(self):
@@ -890,7 +890,7 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         fn = body(ACTIONS, "BossLinkedDeathScan ai::ScanBossLinkedDeath(")
         self.assertIn("groupScan.order = group.burnOrder;", fn)
         self.assertIn("groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);", fn)
-        self.assertIn("LinkedDeathLatchTick(latch, groupScan.released,", fn)
+        self.assertIn("LinkedDeathLatchTick(latch, groupScan.param, groupScan.members,", fn)
         # Deaths are explicit: a known guid this bot did not see living is looked up by guid, and only a unit found dead
         # (or a corpse) counts. A member count drop is never a death, so the count is not passed to the latch.
         self.assertIn("LinkedDeathUnseen(latch, groupScan.members)", fn)
@@ -899,6 +899,8 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertNotIn("static_cast<std::uint32_t>(groupScan.members.size())", fn)
         self.assertIn("inline std::vector<std::uint64_t> LinkedDeathUnseen(", POLICY)
         self.assertIn("latch.dead.push_back(guid);", POLICY)
+        # The arming reads every observer's union (LinkedDeathArmed over the known guids), never this bot's scan alone.
+        self.assertIn("const bool armedNow = LinkedDeathArmed(latch, param, nowMs);", POLICY)
         pick = body(ACTIONS, "Unit* ai::FindBossLinkedDeath(")
         self.assertIn("const bool hold = !scan.released && !scan.latched;", pick)
         self.assertIn("PickLinkedDeathBurn(scan.order, scan.members)", pick)

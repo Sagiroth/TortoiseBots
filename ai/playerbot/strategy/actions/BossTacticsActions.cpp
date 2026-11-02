@@ -468,10 +468,11 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
             }
         }
         groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);
-        // The latch is per group and instance: a member that dies while the group is released keeps the burn on for
-        // the rest of the group (M2), whichever bot reads it first. A known member this bot did not see living is looked
-        // up by its own guid: only a unit found dead (or a corpse) is a death. One that is merely out of this bot's range
-        // or cache is not, so two bots with different views cannot latch the release between them.
+        // The latch is per group and instance: a known member that dies while the release is armed keeps the burn on for
+        // the rest of the group (M2), whichever bot reads it first. The arming is over every known member (the union of
+        // all bots' reads, LinkedDeathArmed), never this bot's scan alone: a bot that sees two low members but not a
+        // healthy third does not arm it. A known member this bot did not see living is looked up by its own guid: only
+        // a unit found dead (or a corpse) is a death. One merely out of this bot's range or cache is not.
         std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);
         LinkedDeathLatch& latch = g_linkedDeathLatches[std::make_tuple(bot->GetMapId(), bot->GetInstanceId(),
                                                                       groupScan.anchor, groupScan.groupId)];
@@ -482,7 +483,7 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
             if (known && !known->IsAlive())
                 deadNow.push_back(guid);
         }
-        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.released, groupScan.members, deadNow,
+        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
                                                  WorldTimer::getMSTime());
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
