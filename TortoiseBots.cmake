@@ -204,6 +204,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/Hire.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Upkeep.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Inventory.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/Professions.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Party.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Totem.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Action.cpp"

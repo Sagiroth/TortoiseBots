@@ -84,12 +84,13 @@ func (s *Service) Authenticate(username, password string) (*SessionData, error) 
 
 	hash := CalculateShaPassHash(username, password)
 
-	// Primary query: Penqle tw_logon uses account.rank. Hash comparison is
+	// Primary query: Penqle tw_logon uses account.rank. RANK is reserved on
+	// MySQL 8, so the column is always table-qualified. Hash comparison is
 	// case-insensitive so lowercase-computed hashes match uppercase storage.
 	var accountID uint32
 	var rank uint32
 
-	query := `SELECT id, rank FROM account WHERE UPPER(username) = UPPER(?) AND UPPER(sha_pass_hash) = UPPER(?) LIMIT 1`
+	query := `SELECT a.id, a.rank FROM account a WHERE UPPER(a.username) = UPPER(?) AND UPPER(a.sha_pass_hash) = UPPER(?) LIMIT 1`
 	err := s.db.QueryRow(query, username, hash).Scan(&accountID, &rank)
 	if err != nil {
 		// Fallback query: check if account_access table exists (legacy MaNGOS/Trinity style)
@@ -143,7 +144,7 @@ func (s *Service) minLevel() uint32 {
 // the client reconnects and the login path decides again.
 func (s *Service) RecheckAccount(accountID uint32) error {
 	var rank uint32
-	if err := s.db.QueryRow(`SELECT rank FROM account WHERE id = ? LIMIT 1`, accountID).Scan(&rank); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := s.db.QueryRow(`SELECT a.rank FROM account a WHERE a.id = ? LIMIT 1`, accountID).Scan(&rank); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("rank check: %w", err)
 	}
 	var accessRank uint32

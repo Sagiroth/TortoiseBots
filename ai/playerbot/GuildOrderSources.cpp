@@ -11,6 +11,7 @@
 #include "playerbot/policy/travel/TravelRouteDangerPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderCraftPolicy.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include "runtime/GuildOrderRefundPolicy.h"
@@ -612,9 +613,27 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type, b
     {
         // One scan for planner, action and values: the same check the craft
         // action casts with, so search, give and cast never disagree on
-        // whether the bot knows the recipe.
+        // whether the bot knows the recipe. The orderable rule runs on top:
+        // enchants, bound/quest items, profession-locked items and long
+        // cooldowns refuse with their own verdict instead of a bare norecipe.
         uint32_t craftSpellId = FindCraftSpellFor(bot, itemId);
         plan.verdict = TortoiseBots::GuildOrders::CraftRecipeVerdict(craftSpellId != 0);
+        SpellEntry const* craftSpell = craftSpellId ? sServerFacade.LookupSpellInfo(craftSpellId) : nullptr;
+        if (plan.verdict == OrderReason::None && craftSpell)
+        {
+            TortoiseBots::GuildOrders::CraftOrderableInputs inputs;
+            inputs.known = true;
+            for (uint32 e = 0; e < MAX_EFFECT_INDEX && !inputs.createsItem; ++e)
+                inputs.createsItem = craftSpell->Effect[e] == SPELL_EFFECT_CREATE_ITEM &&
+                    craftSpell->EffectItemType[e] == itemId;
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId))
+            {
+                inputs.itemOrderable = TortoiseBots::GuildOrders::IsOrderableItem(proto);
+                inputs.itemNeedsProfession = proto->RequiredSkill != 0;
+            }
+            inputs.spellRecoveryMs = craftSpell->GetRecoveryTime();
+            plan.verdict = TortoiseBots::GuildOrders::CraftOrderableVerdict(inputs);
+        }
         if (plan.verdict != OrderReason::None)
             return plan;
         plan.sources = SourceCraft;
