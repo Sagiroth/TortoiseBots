@@ -52,6 +52,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
+| [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.DungeonRunWalkBackAfterWonFight`](#aiplayerbotdungeonrunwalkbackafterwonfight) | `0` | `1` walks the tank and party back to the stand after every guarded fight (the old way); `0` goes on from where the tank stands once the pack is cleared. |
 | [`AiPlayerbot.DungeonSelfClear`](#aiplayerbotdungeonselfclear) | `1` | Turns on the run leader (`.bot run`) for in-party, player-led and server-owned runs. |
@@ -424,6 +425,17 @@ Whether the run leader pulls the living back to the last stand when two party me
 <summary>How it works in detail</summary>
 
 **Retreat at two dead:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-10-23 for the wipes of that day (30 notes *3 dead: fighting on, a regroup follows*, each one a wipe and a corpse walk back of 4-28 min). With `1`, in a fight with two members dead (one fewer than the 3 that make the run regroup by itself), the lead bot alive, and the fight being lost (the fight ceiling's hp watch had read the engaged units for at least 15 s and none of them set a new low in that time), the run sends one `cmd move` to its last stand (the last point it walked the party to, at most 40 yd away; again once after 5 s), note *retreat: 2 dead and no engaged unit lost hp in 15 s: the living pull back to the last stand at x y z*. The retreat ends at the stand, after 20 s, at a third death or when the lead bot dies, and the fight is the bots' own again; once per fight. A refused move ends it without a pause. Never inside a scripted event, on the steps leading into one, on a `hold` step or on a boss step that is an event (an encounter, or done by instance data or an object). Whether the mobs follow the party back or let it go is the game's (the module adds no leash); this was not proven in a live run when it was added. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunUseObject`
+Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Use object:** a boss tactic row of the `use_object` kind names a game object to click (the row's target entry), the aura on the boss that calls for a click or a repeat window in seconds (or both), the clicker's role (free damage, healer or any non-tank), how far the boss may be from the object when the click goes out, and optionally the mode `tank_anchor`. The group picks one clicker by itself — the eligible bot nearest the object that is nearest the boss, the lowest guid on a tie — and the fight keeps the claim in one shared record: one clicker at a time, a claim nobody acted on for 30 s is released, at most two attempts per object and at least 8 s between them. The clicker walks in 15 s before the row is due and holds at the object until the boss stands still inside the row's range; only then does the click go out (the effect lands several seconds later, so a moving boss wastes it). With `tank_anchor`, the tank the boss is on walks the boss to a point short of the object during that same lead, so the click lands in range; the anchor never runs while the boss is on someone else, and it stays below every survival move. With this key off the rows are not read at all; with it on an Ossirian crystal row, the old crystal runner stands down. Logged to `bot_events.csv` as `BossTacticsUseObject` (claim, walk, click, skip) and `BossTacticsAnchor`.
 
 </details>
 

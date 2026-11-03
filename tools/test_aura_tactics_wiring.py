@@ -28,6 +28,11 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
+STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
+TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
+ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
+OSSIRIAN = (ROOT / "ai/playerbot/strategy/triggers/RuinsOfAhnqirajDungeonTriggers.cpp").read_text()
+DOCS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -172,6 +177,66 @@ class LinkedDeathWindowWiring(unittest.TestCase):
         self.assertIn("LinkedDeathWindowMs(group.windowSec)", scan)
         # The row's own window reaches the group, never the constant directly.
         self.assertNotIn("kLinkedDeathLatchMs)", scan)
+
+
+class UseObjectWiring(unittest.TestCase):
+    """The use_object kind's game side: the rows reach a consumer, one claim decides the clicker, the anchor walks the
+    boss, and dev's Ossirian runner stands down for it."""
+
+    def test_the_scan_drops_the_rows_with_the_key_off(self):
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
+        self.assertIn("bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;", scan)
+        self.assertIn("if (!useObjectOn && row.kind == BossTacticKind::UseObject)", scan)
+        gated = scan[scan.index("for (const BossTacticRow& row : *rows)"):]
+        self.assertIn("continue;", gated[gated.index("row.kind == BossTacticKind::UseObject"):])
+
+    def test_the_clicker_is_claimed_from_the_policy(self):
+        finder = body(ACTIONS, "UseObjectTask ai::FindBossUseObject(")
+        self.assertIn("UseObjectDue(row.spellId != 0, bossHasAura", body(ACTIONS, "UseObjectEval EvaluateUseObject("))
+        self.assertIn("PickUseObjectClicker(candidates)", finder)
+        self.assertIn("kUseObjectClaimTimeoutMs", finder)
+        self.assertIn("kUseObjectLeadMs", finder)
+        self.assertIn("UseObjectClickReady(task.due, task.bossToObject, task.row->param, task.bossMoving, "
+                      "task.attemptReady)", body(ACTIONS, "bool BossTacticsUseObjectAction::Execute("))
+        self.assertIn("record.attempts.Take(", body(ACTIONS, "bool TakeUseObjectAttempt("))
+        # The object is the ready one nearest the boss, cached per record, spending at most two attempts.
+        object_scan = body(ACTIONS, "GameObject* ReadyUseObject(")
+        self.assertIn("boss->GetGameObjectListWithEntryInGrid(objects, row.targetEntry, kUseObjectSearchYd)", object_scan)
+        self.assertIn("kUseObjectObjectScanMs", object_scan)
+
+    def test_the_anchor_walks_the_tank_the_boss_is_on(self):
+        finder = body(ACTIONS, "UseObjectAnchor ai::FindBossUseObjectAnchor(")
+        self.assertIn("boss->GetVictim() != bot", finder)
+        anchor = body(ACTIONS, "UseObjectAnchor ai::FindBossUseObjectAnchor(")
+        self.assertIn("TankAnchorWanted(true, eval.msToDue, eval.bossToObject, row->param)", anchor)
+        self.assertIn("row->param * 0.4f", anchor)
+
+    def test_both_triggers_and_actions_are_registered_at_the_stated_priorities(self):
+        strategy = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
+        self.assertIn('new NextAction("boss tactics use object", ACTION_INTERRUPT + 2)', strategy)
+        self.assertIn('new NextAction("boss tactics object anchor", ACTION_HIGH + 5)', strategy)
+        self.assertIn('creators["boss tactics use object"]', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics object anchor"]', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics use object"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics object anchor"]', ACTION_CONTEXT)
+
+    def test_the_use_checks_interaction_before_the_packet(self):
+        execute = body(ACTIONS, "bool BossTacticsUseObjectAction::Execute(")
+        self.assertLess(execute.index("GetGameObjectIfCanInteractWith"), execute.index("CMSG_GAMEOBJ_USE"))
+
+    def test_devs_ossirian_runner_yields(self):
+        trigger = body(OSSIRIAN, "bool OssirianCrystalRunTrigger::IsActive(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunUseObject", trigger)
+        self.assertIn("HasKindFor(bot->GetMapId(), kOssirianEntry, BossTacticKind::UseObject)", trigger)
+        # The yield is the first line: before the role gate, not after the boss lookup.
+        self.assertLess(trigger.index("HasKindFor("), trigger.index("IsOssirianCrystalRunner"))
+
+    def test_the_key_is_read_reloaded_and_documented(self):
+        self.assertIn("bool dungeonRunUseObject = false;", CONFIG_H)
+        load = body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()")
+        self.assertIn('dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);', load)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunUseObject = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunUseObject", DOCS)
 
 
 if __name__ == "__main__":
