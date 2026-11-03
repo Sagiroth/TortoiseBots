@@ -15783,12 +15783,11 @@ static void TestPullEstimateCacheRereadsOnNewStepPass()
     CHECK(cache.Find(3, 1, 31) == &fresh);
 }
 
-// The pull order's note says the bodies the ring estimate expects.
-// A re-pull keeps the step's last ring reading: on the re-pull the target is in
-// combat, so this tick's read carries no estimate (ReadPullJoiners skips it) and
-// the pull fell back to the cheap joiners + 1. ZG walk 32 e-r1 846: "5 bodies
-// expected" on a pack the ring read at 16, and 15 came.
-static void TestRePullKeepsTheRingEstimate()
+// A tick whose read carries no ring estimate (the target fights now) counts the row's own pullable pack: the step
+// keeps no memory of the ring's last answer. ZG walk 32 e-r1 846's "5 bodies expected" at 11:42:34 was the pull's own
+// fresh read of 0xf130002c5d00c991 (the same guid read 15 bodies at 11:47:04), not a re-pull of a pack read before: the
+// memory changed no case, and its reading would never have come down as the pack died.
+static void TestRePullWithoutAFreshRingReadKeepsNoEstimate()
 {
     DungeonPlan plan;
     plan.steps = {BodiesPullStep(40, {4852}, 20)}; // a plan ceiling over the estimate: no rest
@@ -15800,17 +15799,16 @@ static void TestRePullKeepsTheRingEstimate()
     f.units[0].joinersRead = true;
     CHECK(Tick(r, f) == "pullback 31");
     CHECK(r.note.find("16 bodies expected") != std::string::npos);
-    CHECK(r.ringSeen[31] == 16);
-    // The re-pull: the unit fights now, so the estimate is not read this tick.
+    // The re-pull: the unit fights now, so this tick's read carries no estimate.
     f.units[0].joinersRead = false;
     f.units[0].estBodies = 0;
     f.units[0].joiners = 4;
-    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 16); // not the cheap 4 + 1
-    // A tick that does read the ring again wins over the memory.
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 1); // the row's own pack, as before
+    // A tick that reads the ring again says its bodies.
     f.units[0].joinersRead = true;
     f.units[0].estBodies = 15;
     CHECK(RunAutoCcBodies(r, f, f.units[0]) == 15);
-    // The key off: the ring memory is never consulted, the row's own pack is counted.
+    // The key off: the row's own pack is counted.
     f.aggroWalkRing = false;
     f.units[0].joinersRead = false;
     CHECK(RunAutoCcBodies(r, f, f.units[0]) == 1);
@@ -32659,7 +32657,7 @@ int main()
     TestPullEstimateCacheKeepsOneReadPerRow();
     TestPullEstimateCacheRereadsOnNewStepPass();
     TestRingPullNoteSaysBodiesExpected();
-    TestRePullKeepsTheRingEstimate();
+    TestRePullWithoutAFreshRingReadKeepsNoEstimate();
     TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
