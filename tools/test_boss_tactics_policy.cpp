@@ -29,6 +29,14 @@ static BossTacticRow Row(std::uint32_t map, std::uint32_t boss, BossTacticKind k
     return row;
 }
 
+static BossTacticRow Gated(BossTacticRow row, std::uint8_t hpMin, std::uint8_t hpMax, std::uint32_t botAura = 0)
+{
+    row.hpMin = hpMin;
+    row.hpMax = hpMax;
+    row.botAura = botAura;
+    return row;
+}
+
 static ActiveBossRows Active(const std::vector<BossTacticRow>& rows)
 {
     ActiveBossRows out;
@@ -153,6 +161,38 @@ int main()
     CHECK(ParseBossTacticKind("one-at-a-time") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("dispel") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("dps_hold_after") == BossTacticKind::DpsHoldAfter);
+    CHECK(ParseBossTacticKind("dispel_priority") == BossTacticKind::DispelPriority);
+    CHECK(ParseBossTacticKind("flee_on_aura") == BossTacticKind::FleeOnAura);
+    CHECK(ParseBossTacticKind("freeze_on_aura") == BossTacticKind::FreezeOnAura);
+    CHECK(ParseBossTacticKind("taunt_after_cast") == BossTacticKind::TauntAfterCast);
+    CHECK(ParseBossTacticKind("swap_on_aura") == BossTacticKind::SwapOnAura);
+    // The values continue at 9, so a stored row never changes meaning; taunt_after_cast is the longest kind name and
+    // still fits varchar(16).
+    CHECK(static_cast<int>(BossTacticKind::DpsHoldAfter) == 9);
+    CHECK(static_cast<int>(BossTacticKind::DispelPriority) == 10);
+    CHECK(static_cast<int>(BossTacticKind::FleeOnAura) == 11);
+    CHECK(static_cast<int>(BossTacticKind::FreezeOnAura) == 12);
+    CHECK(static_cast<int>(BossTacticKind::TauntAfterCast) == 13);
+    CHECK(static_cast<int>(BossTacticKind::SwapOnAura) == 14);
+
+    // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "now") == TacticMode::Now);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "clear") == TacticMode::Clear);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "never") == TacticMode::Never);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "away") == TacticMode::Away);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "to_tank") == TacticMode::ToTank);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "engage") == TacticMode::Engage);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "blink") == TacticMode::Blink);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "to_tank") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "clear") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "never") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "now") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Interrupt, "now") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Interrupt, "") == TacticMode::Default);
 
     // Loader: nothing is visible before the seal, and the first row of a key wins.
     {
@@ -191,6 +231,72 @@ int main()
         CHECK(table.Size() == 0);
         table.Seal();
         CHECK(!table.HasMap(70));  // an empty sealed table has no map: the tactics stay off
+    }
+
+    // Row gates: a boss health band and a bot aura. The band is inclusive, and with the master key off a gated row is
+    // closed (today's behaviour, before the columns existed); an ungated row stays open either way.
+    {
+        BossTacticRow band = Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 75);
+        CHECK(RowGateOpen(band, true, 75, false));    // the band's edge is inside
+        CHECK(!RowGateOpen(band, true, 76, false));   // 76 % is out of a [0, 75] band
+        CHECK(RowGateOpen(band, true, 0, false));
+        CHECK(!RowGateOpen(band, false, 75, false));  // key off: a gated row is closed
+        BossTacticRow lowBand = Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 76, 100);
+        CHECK(!RowGateOpen(lowBand, true, 75, false));
+        CHECK(RowGateOpen(lowBand, true, 76, false));
+        CHECK(RowGateOpen(lowBand, true, 100, false));
+        BossTacticRow plain = Row(70, 6910, BossTacticKind::Interrupt, 0, 16006);
+        CHECK(RowGateOpen(plain, false, 50, false));  // no gate: the key changes nothing
+        BossTacticRow aura = Gated(Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 0), 0, 100, 24306);
+        CHECK(!RowGateOpen(aura, true, 100, false));  // the bot does not carry Delusions
+        CHECK(RowGateOpen(aura, true, 100, true));
+        CHECK(!RowGateOpen(aura, false, 100, true));  // key off
+        CHECK(RowGateSet(band));
+        CHECK(!RowGateSet(plain));
+    }
+
+    // Loader: the band is a percentage range, the duplicate key includes it, and only a scan-read kind may gate.
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 75)));
+        CHECK(table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 50)));  // another band
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 50)));  // same key
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 101, 100)));  // > 100
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 80, 70)));    // inverted
+        CHECK(!table.Add(Gated(Row(309, 15111, BossTacticKind::HoldKill, 15146), 0, 90)));       // read from the table
+        CHECK(!table.Add(Gated(Row(309, 15146, BossTacticKind::TankHold), 0, 100, 24306)));
+        CHECK(!table.Add(Gated(Row(309, 15111, BossTacticKind::OneAtATime), 50, 100)));
+        CHECK(!table.Add(Gated(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f), 90, 100)));
+        CHECK(table.Size() == 2);
+    }
+
+    // Loader: the new kinds' own shape checks.
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 0.0f)));   // no seconds
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 31.0f)));  // longer than 30 s
+        CHECK(table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f)));
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DispelPriority)));                 // no aura
+        BossTacticRow hex = Row(309, 11380, BossTacticKind::DispelPriority, 0, 17172);
+        hex.mode = TacticMode::Now;
+        CHECK(table.Add(hex));
+        BossTacticRow wrongMode = Row(309, 11380, BossTacticKind::DispelPriority, 0, 24306);
+        wrongMode.mode = ParseTacticMode(wrongMode.kind, "away");                            // flee's word
+        CHECK(wrongMode.mode == TacticMode::Invalid);
+        CHECK(!table.Add(wrongMode));
+        CHECK(!table.Add(Row(309, 11382, BossTacticKind::FleeOnAura)));                     // no aura
+        CHECK(!table.Add(Row(309, 14515, BossTacticKind::FleeOnAura, 0, 24210, 0, -1.0f)));
+        CHECK(!table.Add(Row(309, 11382, BossTacticKind::FreezeOnAura)));                   // no aura
+        CHECK(!table.Add(Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 0, 0.0f)));  // no deadline
+        CHECK(!table.Add(Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 1, 2.0f)));  // no trigger
+        BossTacticRow blink = Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 1, 2.0f);
+        blink.mode = TacticMode::Blink;
+        CHECK(table.Add(blink));
+        CHECK(!table.Add(Row(309, 15932, BossTacticKind::SwapOnAura, 0, 25646, 1, 5.0f)));  // one tank
+        CHECK(table.Add(Row(309, 15932, BossTacticKind::SwapOnAura, 0, 25646, 2, 5.0f)));
+        BossTacticRow noWindow = Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f);
+        noWindow.windowSec = 0.0f;
+        CHECK(!table.Add(noWindow));
     }
 
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
@@ -784,6 +890,26 @@ int main()
         CHECK(!FindLinkedDeathGroup(ActiveBossRows(), 14599, group));
     }
 
+    // The group's own window (`window_s`) is the max over its rows: a partner with 15 s gives the group 15 s, so the
+    // Thekal trio keeps its 15 s script retry while a new group defaults to 7.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f),
+            Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 2.0f),
+        };
+        std::vector<BossTacticRow> timed = rows;
+        timed[0].windowSec = 7.0f;
+        timed[1].windowSec = 15.0f;
+        const ActiveBossRows active = Active(timed);
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(active, 11347, group));
+        CHECK(group.windowSec == 15.0f);
+        CHECK(LinkedDeathWindowMs(group.windowSec) == 15000);
+        const ActiveBossRows plain = Active(rows);
+        CHECK(FindLinkedDeathGroup(plain, 11347, group));
+        CHECK(group.windowSec == 7.0f);
+    }
+
     // Equalise: the pick is the living member with the highest health fraction, never one at or below param while
     // another stands above it, and never one this bot cannot attack.
     {
@@ -1021,6 +1147,33 @@ int main()
         CHECK(!LinkedDeathLatchTick(failsafe, p, three, none, 1000));
         CHECK(!LinkedDeathLatchTick(failsafe, p, { Linked(2, 2) }, { 1 }, 6600));
         CHECK(!failsafe.latched);
+    }
+
+    // The latch's window comes from the group's rows (`window_s`): 7 s by default, Thekal's trio 15 s. The constant is
+    // only the fallback for a group without a window, which the loader refuses.
+    {
+        CHECK(LinkedDeathWindowMs(7.0f) == 7000);
+        CHECK(LinkedDeathWindowMs(15.0f) == 15000);
+        CHECK(LinkedDeathWindowMs(0.0f) == kLinkedDeathLatchMs);
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+        const std::vector<std::uint64_t> dead3 = { 3 };
+
+        LinkedDeathLatch seven;
+        CHECK(!LinkedDeathLatchTick(seven, p, three, none, 1000, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(LinkedDeathLatchTick(seven, p, two, dead3, 3000, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(LinkedDeathLatchTick(seven, p, two, none, 3000 + 6999, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(!LinkedDeathLatchTick(seven, p, two, none, 3000 + 7000, {}, LinkedDeathWindowMs(7.0f)));  // 7 s: the hold
+
+        LinkedDeathLatch fifteen;
+        CHECK(!LinkedDeathLatchTick(fifteen, p, three, none, 1000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, dead3, 3000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(fifteen.latched);
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 7000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 14999, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(!LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 15000, {}, LinkedDeathWindowMs(15.0f)));
     }
 
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k

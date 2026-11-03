@@ -58,8 +58,8 @@ namespace ai
         std::vector<Unit*> units;           // the same order: the unit of each member
         std::vector<std::uint32_t> order;   // the release burn's order (empty: the ordinary released pick)
         bool released = false;              // every living member at or below param % (LinkedDeathReleased)
-        // ... and the release latch (kLinkedDeathLatchMs): a member died while released, so the burn runs on even
-        // if a heal or a raise puts a member back above param %.
+        // ... and the release latch (the group's window_s): a member died while released, so the burn runs on for
+        // that long even if a heal or a raise puts a member back above param %.
         bool latched = false;
     };
     BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot);

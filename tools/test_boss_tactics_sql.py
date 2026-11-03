@@ -19,11 +19,26 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
-         "linked_death"}
-ROW = re.compile(
-    r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+),"
-    r"(?: '((?:[^']|'')*)',)? '(?:[^']|'')*'\)[,;]$"
-)
+         "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
+         "taunt_after_cast", "swap_on_aura"}
+# Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
+# of one of them cannot answer a gate, so the loader refuses one.
+TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
+# The mode word each kind takes (`tactic_mode`); an empty word is the kind's own behaviour.
+MODE_WORDS = {
+    "dispel_priority": {"now", "clear", "never"},
+    "flee_on_aura": {"away", "to_tank"},
+    "dps_hold_after": {"engage", "blink", "until_tank"},
+    "taunt_after_cast": {"engage", "blink", "until_tank"},
+}
+# A row as the replay hands it around: (file,) + the table columns in this order.
+FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
+          "hp_min", "hp_max", "bot_aura", "tactic_mode", "window_s")
+INSERT_COLUMNS = {
+    "map": 0, "boss_entry": 0, "kind": "", "target_entry": 0, "spell_id": 0, "priority": 0, "param": 0.0,
+    "burn_order": None, "comment": "", "hp_min": 0, "hp_max": 100, "bot_aura": 0, "tactic_mode": "",
+    "window_s": 7.0,
+}
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
@@ -31,44 +46,135 @@ DELETE = re.compile(
     r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?;?$"
 )
 DELETE_LINE = re.compile(r"DELETE\s+FROM\s+`?ai_boss_tactic`?(?=\s|;|$)", re.IGNORECASE)
+INSERT = re.compile(
+    r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_tactic`\s*\(([^)]*)\)\s*VALUES\s*(.+)$", re.IGNORECASE | re.S
+)
+UPDATE = re.compile(r"^UPDATE\s+`ai_boss_tactic`\s+SET\s+(.+?)\s+WHERE\s+(.+)$", re.IGNORECASE | re.S)
 
 
 def migration_paths():
     return sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql")))
 
 
+def _row_dict(name, columns, tuple_text):
+    """One VALUES tuple as {column: value}, the absent columns at their table default."""
+    values = _selected_values(tuple_text, set(range(len(columns))))
+    if len(values) != len(columns):
+        raise AssertionError("unparsable ai_boss_tactic row in %s: (%s)" % (name, tuple_text.strip()))
+    row = dict(INSERT_COLUMNS)
+    for column, index in zip(columns, range(len(columns))):
+        if column not in INSERT_COLUMNS:
+            raise AssertionError("unknown ai_boss_tactic column `%s` in %s" % (column, name))
+        row[column] = _value(values[index])
+    if row["map"] is None or row["boss_entry"] is None or not row["kind"]:
+        raise AssertionError("ai_boss_tactic row without map/boss/kind in %s: (%s)" % (name, tuple_text.strip()))
+    row["map"] = int(row["map"])
+    row["boss_entry"] = int(row["boss_entry"])
+    row["target_entry"] = int(row["target_entry"] or 0)
+    row["spell_id"] = int(row["spell_id"] or 0)
+    row["priority"] = int(row["priority"] or 0)
+    row["param"] = float(row["param"] or 0.0)
+    row["hp_min"] = int(row["hp_min"] or 0)
+    row["hp_max"] = 100 if row["hp_max"] is None else int(row["hp_max"])
+    row["bot_aura"] = int(row["bot_aura"] or 0)
+    row["tactic_mode"] = row["tactic_mode"] or ""
+    row["window_s"] = 7.0 if row["window_s"] is None else float(row["window_s"])
+    return row
+
+
+def _payload(row, name):
+    row = dict(row)
+    row["file"] = name
+    return tuple(row[field] for field in FIELDS)
+
+
+def _payload_dict(payload):
+    return dict(zip(FIELDS, payload))
+
+
 def migration_statements():
-    """Yield ("insert", row) and ("delete", (name, match)) in file and line order."""
+    """Yield ("insert", payload) and ("delete", (name, match)) in file and statement order."""
     for path in migration_paths():
         name = os.path.basename(path)
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
         if "`ai_boss_tactic`" not in text:
             continue
-        in_insert = False
-        for line in text.splitlines():
-            if line.startswith("INSERT INTO `ai_boss_tactic`"):
-                in_insert = True
+        for statement in _sql_statements(text):
+            line = statement.strip()
+            match = INSERT.match(line)
+            if match:
+                columns = [column.strip().strip("`") for column in match.group(1).split(",")]
+                for tuple_text in _tuples(match.group(2)):
+                    yield "insert", _payload(_row_dict(name, columns, tuple_text), name)
                 continue
             if DELETE_LINE.match(line):
-                in_insert = False
                 match = DELETE.match(line)
                 if not match:
                     raise AssertionError("unparsable DELETE in %s: %s" % (name, line))
                 yield "delete", (name, match)
-                continue
-            if not in_insert or line.startswith("--") or not line.strip():
-                continue
-            match = ROW.match(line)
-            if not match:
-                raise AssertionError("unparsable ai_boss_tactic row in %s: %s" % (name, line))
-            yield "insert", (name,) + match.groups()
-            if line.endswith(";"):
-                in_insert = False
 
 
 def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
+
+
+def migration_updates():
+    """The scoped `UPDATE ai_boss_tactic SET ... WHERE ...` statements the replay applies, in file order."""
+    updates = []
+    for path in migration_paths():
+        name = os.path.basename(path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        if "`ai_boss_tactic`" not in text:
+            continue
+        for statement in _sql_statements(text):
+            match = UPDATE.match(statement.strip())
+            if not match:
+                continue
+            changes = {}
+            for part in re.split(r"\s*,\s*", match.group(1).strip()):
+                found = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part, re.S)
+                if not found:
+                    raise AssertionError("unparsable SET in %s: %s" % (name, part))
+                column, value = found.groups()
+                if column not in INSERT_COLUMNS:
+                    continue  # a column the replay does not track
+                changes[column] = _value(value)
+            updates.append((name, changes, _conditions(match.group(2), name)))
+    return updates
+
+
+def _conditions(text, name):
+    """{column: value or set of values} of a WHERE clause over the row columns the replay tracks."""
+    wanted = {}
+    for part in re.split(r"\s+AND\s+", text.strip(), re.I):
+        found = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part.strip(), re.S)
+        if found:
+            column, raw = found.groups()
+            if column not in INSERT_COLUMNS:
+                continue
+            wanted[column] = _value(raw)
+            continue
+        found = re.fullmatch(r"`(\w+)`\s+IN\s*\((.+)\)", part.strip(), re.I | re.S)
+        if found:
+            column, raw = found.groups()
+            if column not in INSERT_COLUMNS:
+                continue
+            wanted[column] = {_value(item) for item in raw.split(",")}
+            continue
+        raise AssertionError("unsupported WHERE clause in %s: %s" % (name, part.strip()))
+    return wanted
+
+
+def _matches(row, wanted):
+    for column, value in wanted.items():
+        if isinstance(value, set):
+            if row[column] not in value:
+                return False
+        elif row[column] != value:
+            return False
+    return True
 
 
 def delete_scope(match):
@@ -102,17 +208,25 @@ def delete_covers(scope, key):
 
 
 def effective_rows():
-    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it."""
+    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it, plus the scoped UPDATEs."""
     live = {}
     for kind, payload in migration_statements():
         if kind == "insert":
-            live[(int(payload[1]), int(payload[2]), payload[3], int(payload[4]), int(payload[5]))] = payload
+            # The key includes the health band, so one boss carries the same kind once per band.
+            live[(payload[1], payload[2], payload[3], payload[4], payload[5], payload[9], payload[10])] = payload
             continue
         _name, match = payload
         scope = delete_scope(match)
-        for key in [key for key in live if delete_covers(scope, key)]:
+        for key in [key for key in live if delete_covers(scope, key[:5])]:
             del live[key]
-    return list(live.values())
+    rows = list(live.values())
+    for _name, changes, wanted in migration_updates():
+        for index, payload in enumerate(rows):
+            row = _payload_dict(payload)
+            if _matches(row, wanted):
+                row.update(changes)
+                rows[index] = _payload(row, payload[0])
+    return rows
 
 
 class BossTacticsSql(unittest.TestCase):
@@ -120,12 +234,23 @@ class BossTacticsSql(unittest.TestCase):
         self.assertTrue(migration_rows(), "no ai_boss_tactic rows found")
 
     def test_rows_are_loadable(self):
-        for name, map_id, boss, kind, target, spell, priority, param, burn_order in effective_rows():
+        for row in effective_rows():
+            name, map_id, boss, kind, target, spell, priority, param, burn_order = row[:9]
+            hp_min, hp_max, bot_aura, mode, window_s = row[9:]
             where = "%s boss %s kind %s" % (name, boss, kind)
             self.assertIn(kind, KINDS, where)
             self.assertGreater(int(map_id), 0, where)
             self.assertGreater(int(boss), 0, where)
             self.assertLess(int(priority), 256, where)
+            # The shared gates: a percentage band and a bot aura. A gate only a fight scan can answer.
+            self.assertGreaterEqual(hp_min, 0, where)
+            self.assertLessEqual(hp_max, 100, where)
+            self.assertLessEqual(hp_min, hp_max, where)
+            if hp_min != 0 or hp_max != 100 or bot_aura:
+                self.assertNotIn(kind, TABLE_READ_KINDS,
+                                 "%s: a gate on a kind read straight from the table" % where)
+            # The mode word is the kind's, or empty for its own behaviour.
+            self.assertIn(mode, MODE_WORDS.get(kind, set()) | {""}, where)
             if kind == "interrupt":
                 self.assertGreater(int(spell), 0, where)
             if kind == "behind":
@@ -140,10 +265,25 @@ class BossTacticsSql(unittest.TestCase):
                 self.assertGreater(int(target), 0, where)     # a partner: a row without one lists nobody
                 self.assertGreater(float(param), 0.0, where)  # the hold percent
                 self.assertLessEqual(float(param), 100.0, where)
+                self.assertGreater(float(window_s), 0.0, where)
                 # The burn order is a comma list of creature entries (empty: the ordinary released pick).
                 if burn_order:
                     for token in burn_order.split(","):
                         self.assertRegex(token.strip(), r"^\d+$", where)
+            if kind == "dps_hold_after":
+                self.assertGreater(float(param), 0.0, where)   # the hold in seconds
+                self.assertLessEqual(float(param), 30.0, where)
+            if kind == "dispel_priority":
+                self.assertGreater(int(spell), 0, where)        # the aura to rank
+            if kind in ("flee_on_aura", "freeze_on_aura"):
+                self.assertGreater(int(spell), 0, where)        # the aura that sends the carrier out
+                self.assertGreaterEqual(float(param), 0.0, where)
+            if kind == "taunt_after_cast":
+                self.assertGreater(float(param), 0.0, where)    # the deadline in seconds
+                self.assertTrue(int(spell) > 0 or mode in ("blink", "until_tank"), where)
+            if kind == "swap_on_aura":
+                self.assertGreater(int(spell), 0, where)        # the aura the tanks swap on
+                self.assertGreaterEqual(int(priority), 2, where)  # at least two tanks in the rotation
 
     def test_primary_keys_are_unique(self):
         # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
@@ -152,14 +292,14 @@ class BossTacticsSql(unittest.TestCase):
         seen = set()
         for kind, payload in migration_statements():
             if kind == "insert":
-                name, map_id, boss, row_kind, target, spell, _priority, _param, _burn = payload
-                key = (int(map_id), int(boss), row_kind, int(target), int(spell))
+                name, map_id, boss, row_kind, target, spell = payload[:6]
+                key = (int(map_id), int(boss), row_kind, int(target), int(spell), payload[9], payload[10])
                 self.assertNotIn(key, seen, "duplicate key %s in %s" % (key, name))
                 seen.add(key)
                 continue
             _name, match = payload
             scope = delete_scope(match)
-            seen = {key for key in seen if not delete_covers(scope, key)}
+            seen = {key for key in seen if not delete_covers(scope, key[:5])}
 
     def test_deletes_are_map_scoped(self):
         for path in migration_paths():
@@ -214,6 +354,52 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((531, 15275, "interrupt", 0, 7393), live)
         self.assertNotIn((531, 15276, "interrupt", 0, 7393), live)
         self.assertNotIn((532, 61224, "interrupt", 0, 57094), live)
+
+    def test_step_one_schema_and_windows(self):
+        # The shared columns of the aura-tactic kinds and the row gates (20261103010000): a health band a row applies
+        # in, a bot aura it needs, a per-kind mode word, and the linked_death window. The primary key gains the band, so
+        # one boss can carry the same kind once per band. A gated row is closed while the master key is off; that is
+        # the C++ policy's business (tools/test_boss_tactics_policy.cpp), here only the table's shape is pinned.
+        path = os.path.join(ROOT, "data/sql/world/20261103010000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the row-gate migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for column, definition in (
+            ("hp_min", "tinyint unsigned NOT NULL DEFAULT 0"),
+            ("hp_max", "tinyint unsigned NOT NULL DEFAULT 100"),
+            ("bot_aura", "int unsigned NOT NULL DEFAULT 0"),
+            ("tactic_mode", "varchar(16) NOT NULL DEFAULT \'\'\'\'"),
+            ("window_s", "float NOT NULL DEFAULT 7"),
+        ):
+            self.assertIn("ADD COLUMN `%s` %s" % (column, definition), text)
+            self.assertIn("COLUMN_NAME = '%s'" % column, text)
+        self.assertIn("information_schema.STATISTICS", text)
+        self.assertIn("DROP PRIMARY KEY, ADD PRIMARY KEY (`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, "
+                      "`hp_min`, `hp_max`)", text)
+
+        # Thekal's group keeps the 15 s its burn order relies on (the script's retry), every other group the 7 s
+        # default. The UPDATE is replayed by effective_rows, so a wrong scope fails here.
+        self.assertIn("UPDATE `ai_boss_tactic` SET `window_s` = 15 WHERE `map` = 309 AND `boss_entry` = 14599 "
+                      "AND `kind` = 'linked_death';", text)
+        live = {(row[1], row[2], row[3], row[4], row[5]): row for row in effective_rows()}
+        for entry in (11347, 11348):
+            row = live.get((309, 14599, "linked_death", entry, 0))
+            self.assertIsNotNone(row, "the Thekal / %s linked_death row is missing" % entry)
+            self.assertEqual(15.0, row[13], "Thekal / %s window_s is not 15" % entry)
+        for key, row in live.items():
+            if key[2] == "linked_death" and key[:2] != (309, 14599):
+                self.assertEqual(7.0, row[13], "%s: a new group's window is not the 7 s default" % (key,))
+
+        # Hakkar's Bloodsiphon interrupt can never fire (instant, interruptFlags 0); the key stays deleted.
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'interrupt' AND `target_entry` = 0 AND `spell_id` = 24324;", text)
+        self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
+
+        # Every old row takes the column defaults, so adding the columns changes no existing row's behaviour.
+        for key, row in live.items():
+            if key[2] != "linked_death":
+                self.assertEqual((0, 100, 0, "", 7.0), (row[9], row[10], row[11], row[12], row[13]),
+                                 "%s carries a gate, mode or window unexpectedly" % (key,))
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
