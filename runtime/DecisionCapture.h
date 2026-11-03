@@ -302,10 +302,25 @@ inline void DecisionCaptureRegistry::Update()
 {
     for (auto& entry : captures_)
         entry.second.sink->Poll();
+    // A passing outage heals here; only a still-failed index below stops the
+    // capture, so a full disk that was cleared costs no capture.
+    for (auto& entry : captures_)
+        if (!entry.second.sink->Ended())
+            entry.second.sink->RetryIndex();
     // A capture the total cap stopped has already written its end record; its
     // recorder and sink leave the active map here.
     for (auto it = captures_.begin(); it != captures_.end();)
     {
+        FileSink* sink = it->second.sink.get();
+        if (!sink->Ended() && sink->IndexFailed())
+        {
+            // The folder is unindexable: stop the capture instead of piling up
+            // segments retention can never prove its own.
+            sink->Finish(*it->second.recorder, DecisionCaptureNowUnixMs(), "stopped: index write failed");
+            if (log_)
+                log_("decision capture " + sink->CaptureId() + ": stopped: index write failed (" +
+                     sink->IndexError() + ")");
+        }
         if (it->second.sink->Ended())
         {
             Retire(std::move(it->second.sink));
@@ -321,7 +336,7 @@ inline void DecisionCaptureRegistry::Update()
         FolderRecord& folder = folders_[(*it)->CaptureId()];
         folder.bytes = (*it)->Bytes();
         folder.startedUnixMs = (*it)->StartedUnixMs();
-        folder.deletable = (*it)->Ended();
+        folder.deletable = (*it)->Ended() && !(*it)->IndexFailed();
         if ((*it)->Done())
             it = retired_.erase(it);
         else

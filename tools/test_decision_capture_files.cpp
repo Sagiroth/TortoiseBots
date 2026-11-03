@@ -678,6 +678,172 @@ void TestRotationOpenFailureMarksFailed()
     CHECK(lines.back().find("\"k\":\"end\"") == std::string::npos);
 }
 
+// The first index write fails: Open reports it and leaves no folder behind, so
+// no unindexable folder is ever created.
+void TestIndexWriteFailureAtOpen()
+{
+    std::string const dir = (Root() / "index-open-failure").string();
+    std::filesystem::create_directories(dir);
+    std::string const id = "20251101T122640Z-zul_gurub-Fionaa";
+    IndexInfo info;
+    info.captureId = id;
+    info.commander = "Fionaa";
+    info.plan = "zul_gurub";
+    info.startedUnixMs = kStart;
+    FileLimits fileLimits;
+
+    FileSink::SetFailIndexWriteForTest(true);
+    std::string err;
+    std::unique_ptr<FileSink> sink =
+        FileSink::Open(dir, id, info, fileLimits, err, [](std::string const&) {});
+    FileSink::SetFailIndexWriteForTest(false);
+
+    CHECK(sink == nullptr);
+    CHECK(!err.empty());
+    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / id));
+}
+
+// The rotation's index write fails and never recovers: the recorder stops at
+// once (nothing piles up unindexed), the failure is logged once, the orphan
+// segment stays an empty inert file, and the folder proves nothing to
+// retention: no ended index ever lands, so it is not deletable and never
+// removed.
+void TestIndexWriteFailureAtRotation()
+{
+    std::string const dir = (Root() / "index-rotation-failure").string();
+    int logs = 0;
+    std::vector<std::string> messages;
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1, 512ull * 1024ull * 1024ull,
+        [&logs, &messages](std::string const& message)
+        {
+            ++logs;
+            messages.push_back(message);
+        });
+    FileSink::SetFailIndexWriteForTest(true);
+    h.Tick(); // the first record fills a one-byte segment
+    h.Tick(); // rotation: the new segment's index cannot be written, the recorder stops
+    h.Tick(); // ignored
+    CHECK(h.recorder->Stopped());
+    CHECK(h.sink->IndexFailed());
+    h.Finish();
+    FileSink::SetFailIndexWriteForTest(false);
+
+    CHECK(h.sink->Status() == "failed");
+    CHECK(logs == 1);
+    CHECK(messages[0].find("index.json") != std::string::npos);
+    std::filesystem::path const folder = std::filesystem::path(dir) / h.id;
+    CHECK(std::filesystem::exists(folder));
+    // The orphan rotation holds no records: the recorder stopped before any
+    // header or tick could reach it.
+    CHECK(ReadLines((folder / "seg-0002.jsonl").string()).empty());
+    // On disk is still the open-time index: running, never ended.
+    auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("status")->text == "running");
+    CHECK(!index->Find("ended") || index->Find("ended")->kind != MiniJson::Value::String);
+    CHECK(!ReadCaptureIndex(folder.string(), h.id).deletable);
+    CHECK(!RemoveCaptureFolder(dir, h.id));
+    CHECK(std::filesystem::exists(folder));
+}
+
+// The final index writes fail: the capture still ends failed (never complete),
+// the failure is logged once, and retention cannot mistake the folder for a
+// healthy finished capture.
+void TestIndexWriteFailureAtFinish()
+{
+    std::string const dir = (Root() / "index-finish-failure").string();
+    int logs = 0;
+    std::vector<std::string> messages;
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1ull * 1024ull * 1024ull,
+        512ull * 1024ull * 1024ull, [&logs, &messages](std::string const& message)
+        {
+            ++logs;
+            messages.push_back(message);
+        });
+    h.Tick();
+    FileSink::SetFailIndexWriteForTest(true);
+    h.Finish();
+    FileSink::SetFailIndexWriteForTest(false);
+
+    CHECK(h.sink->IndexFailed());
+    CHECK(h.sink->Status() == "failed");
+    CHECK(logs == 1);
+    CHECK(messages[0].find("index.json") != std::string::npos);
+    auto index = IndexObj(dir, h.id);
+    CHECK(!index->Find("ended") || index->Find("ended")->kind != MiniJson::Value::String);
+    std::filesystem::path const folder = std::filesystem::path(dir) / h.id;
+    CHECK(!ReadCaptureIndex(folder.string(), h.id).deletable);
+    CHECK(!RemoveCaptureFolder(dir, h.id));
+    CHECK(std::filesystem::exists(folder));
+}
+
+// A passing outage heals: the retry lands, segment writes resume, and the
+// capture still finishes complete.
+void TestIndexWriteTransientHeals()
+{
+    std::string const dir = (Root() / "index-transient").string();
+    int logs = 0;
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1ull * 1024ull * 1024ull,
+        512ull * 1024ull * 1024ull, [&logs](std::string const&) { ++logs; });
+    h.Tick();
+    FileSink::SetFailIndexWriteForTest(true);
+    h.sink->SetMap(309); // the map rewrite fails
+    CHECK(h.sink->IndexFailed());
+    FileSink::SetFailIndexWriteForTest(false);
+    h.sink->RetryIndex();
+    CHECK(!h.sink->IndexFailed());
+    h.Tick();
+    h.Finish();
+
+    auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("status")->text == "complete");
+    CHECK(Number(*index, "map") == 309);
+    CHECK(logs == 1);
+}
+
+// Through the registry: a capture whose index keeps failing is stopped with a
+// logged reason instead of accumulating segments. While nothing can be written
+// its folder proves nothing to retention (kept, never deleted); once writes
+// heal the final index lands failed and the folder rejoins normal collection.
+void TestIndexWriteFailureStopsRegistryCapture()
+{
+    std::string const dir = (Root() / "index-registry-stop").string();
+    std::filesystem::create_directories(dir);
+    std::vector<std::string> messages;
+    DecisionCaptureRegistry registry(SmallSettings(dir, 1));
+    registry.SetLog([&messages](std::string const& message) { messages.push_back(message); });
+
+    std::string const id = registry.Begin(1, "Fionaa", "active", kStart);
+    CHECK(!id.empty());
+    FileSink::SetFailIndexWriteForTest(true);
+    CHECK(PumpToRotation(registry, 1, dir, id, 400));
+    registry.Update();
+    WaitRegistryIdle(registry);
+
+    bool stopped = false;
+    for (std::string const& message : messages)
+        stopped = stopped || message.find("stopped: index write failed") != std::string::npos;
+    CHECK(stopped);
+    CHECK(!registry.Active());
+    std::filesystem::path const folder = std::filesystem::path(dir) / id;
+    CHECK(std::filesystem::exists(folder));
+    CHECK(!ReadCaptureIndex(folder.string(), id).deletable);
+    CHECK(!RemoveCaptureFolder(dir, id));
+    FileSink::SetFailIndexWriteForTest(false);
+
+    // A valid finished capture beside it, over the cap: the sweep must collect
+    // that one and still never touch the folder that proves nothing.
+    std::string const goodId = "20251101T120000Z-good-Fionaa";
+    {
+        Harness done = MakeCapture(dir, goodId, kStart, 1ull * 1024ull * 1024ull);
+        done.Tick();
+        done.Finish();
+        WriteDummy((std::filesystem::path(dir) / goodId / "blob.bin").string(), 2u * 1024u * 1024u);
+    }
+    SweepOnce(dir);
+    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / goodId));
+    CHECK(std::filesystem::exists(folder));
+    registry.Shutdown();
+}
 // Every DecisionCapture limit clamps signed input low, never by wrapping a
 // negative into a uint32 and landing on the high bound.
 void TestLimitClamps()
@@ -830,6 +996,11 @@ int main()
     TestWriterFailureStatus();
     TestShutdownLeavesIncomplete();
     TestRotationOpenFailureMarksFailed();
+    TestIndexWriteFailureAtOpen();
+    TestIndexWriteFailureAtRotation();
+    TestIndexWriteFailureAtFinish();
+    TestIndexWriteTransientHeals();
+    TestIndexWriteFailureStopsRegistryCapture();
     TestLimitClamps();
     TestFileRoundTrip();
     TestOffCreatesNothing();

@@ -20,11 +20,15 @@
 // so far, and rewritten when a writer is reaped with the bytes and records that
 // actually reached the disk. At the finish it first says "incomplete"; the last
 // reaped writer turns it into "complete" or "failed". A shutdown that lets a
-// writer go leaves "incomplete" (or "failed").
+// writer go leaves "incomplete" (or "failed"). A failed index write marks the
+// capture failed and stops it: Open fails when the first write fails, and the
+// registry ends a running capture whose index failed, so an unindexable folder
+// never piles up segments retention cannot prove its own.
 
 #include "DecisionCaptureRecorder.h"
 #include "RunTraceWriter.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -99,7 +103,8 @@ public:
     ~FileSink() override;
 
     // Creates <dir>/<captureId>, opens seg-0001 and writes index.json. Null with
-    // `err` filled when the folder or the file cannot be made.
+    // `err` filled when the folder, the file or the first index cannot be made
+    // (the folder is removed again, so no unindexable folder stays behind).
     static std::unique_ptr<FileSink> Open(std::string const& dir, std::string const& captureId,
         IndexInfo const& info, FileLimits const& limits, std::string& err, CaptureLog log = {});
 
@@ -118,6 +123,10 @@ public:
     // into the index and, once every writer is gone, writes the final status.
     // World thread.
     void Poll();
+    // Rewrites the index after a failed write (a disk that filled and was
+    // cleared): clears the failure when it lands, so a passing outage does not
+    // stop the capture. No-op once the capture ended.
+    void RetryIndex();
     // Shutdown: lets every writer go without waiting for the disk; the index
     // keeps "incomplete" (or "failed").
     void Detach();
@@ -129,15 +138,23 @@ public:
     void SetFailFinalFlushForTest(bool fail);
     // Test seam: make the next rotation's segment open fail.
     void SetFailSegmentOpenForTest(bool fail) { failSegmentOpenForTest_ = fail; }
+    // Test seam: make every index write fail.
+    static void SetFailIndexWriteForTest(bool fail);
 
     // Writers still finishing (tests, Shutdown's decision to log).
     std::size_t FinishingWriters() const { return finishing_.size() + (writer_ ? 1 : 0); }
     bool Ended() const { return ended_; }
     // Every writer has ended and the final index is written.
     bool Done() const { return ended_ && !writer_ && finishing_.empty(); }
+    // The status the last index write carried (tests).
+    std::string const& Status() const { return status_; }
     std::string const& CaptureId() const { return info_.captureId; }
     std::string const& Root() const { return root_; }
     std::uint64_t StartedUnixMs() const { return info_.startedUnixMs; }
+    // The last index write failed: the folder is unusable, and the owner must
+    // stop the capture rather than keep writing segments into it.
+    bool IndexFailed() const { return indexFailed_; }
+    std::string const& IndexError() const { return indexError_; }
     // Bytes the segment writers accepted or reaped and that are still on disk:
     // the total cap's per-capture number, never a directory walk.
     std::uint64_t Bytes() const;
@@ -169,7 +186,8 @@ private:
     FileSink(std::string root, IndexInfo info, FileLimits limits, CaptureLog log);
 
     bool StartSegment(std::uint32_t seg, std::uint64_t firstSeq, std::string& err);
-    void WriteIndex();
+    // False when index.json could not be written; the caller stops the capture.
+    bool WriteIndex();
     void ApplyCaptureRetention(std::size_t keep);
     void EndWriter();
     void ApplyWriterResult(Finishing& finishing, RunTrace::WriterStats const& stats, std::string const& failure);
@@ -192,10 +210,13 @@ private:
     bool failed_ = false;
     bool failureLogged_ = false;
     bool failSegmentOpenForTest_ = false;
+    bool indexFailed_ = false;
+    std::string indexError_;
     bool finalized_ = false;
     std::string status_ = "running";
     std::string endReason_;
     std::uint64_t endedUnixMs_ = 0;
+    static std::atomic<bool> failIndexWriteForTest_;
 };
 
 } // namespace TortoiseBots

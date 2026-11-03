@@ -222,6 +222,7 @@ bool RemoveCaptureFolder(std::string const& root, std::string const& id)
     std::filesystem::remove_all(path, ec);
     return !ec;
 }
+std::atomic<bool> FileSink::failIndexWriteForTest_{false};
 
 FileSink::FileSink(std::string root, IndexInfo info, FileLimits limits, CaptureLog log)
     : root_(std::move(root)), info_(std::move(info)), limits_(limits), log_(std::move(log))
@@ -233,6 +234,10 @@ FileSink::~FileSink()
     Detach();
 }
 
+void FileSink::SetFailIndexWriteForTest(bool fail)
+{
+    failIndexWriteForTest_.store(fail, std::memory_order_relaxed);
+}
 std::unique_ptr<FileSink> FileSink::Open(std::string const& dir, std::string const& captureId,
     IndexInfo const& info, FileLimits const& limits, std::string& err, CaptureLog log)
 {
@@ -245,14 +250,22 @@ std::unique_ptr<FileSink> FileSink::Open(std::string const& dir, std::string con
         return nullptr;
     }
     std::unique_ptr<FileSink> sink(new FileSink(root.string(), info, limits, std::move(log)));
-    if (!sink->StartSegment(1, 1, err))
-        return nullptr;
-    return sink;
+    if (sink->StartSegment(1, 1, err))
+        return sink;
+    // A capture without its first index is unusable and retention could never
+    // prove it its own: report the failure and leave no folder behind.
+    sink.reset();
+    std::error_code rmEc;
+    std::filesystem::remove_all(root, rmEc);
+    return nullptr;
 }
 
 bool FileSink::Push(std::string line)
 {
-    if (!writer_)
+    // The folder is unusable once its index failed: refuse rather than pile up
+    // segments retention can never prove its own. The recorder counts the drop
+    // and writes a gap line once the capture is restarted elsewhere.
+    if (!writer_ || indexFailed_)
         return false;
     std::uint64_t const size = line.size();
     std::uint64_t seq = 0;
@@ -278,7 +291,10 @@ bool FileSink::NewSegment(std::uint32_t seg, std::uint64_t firstSeq)
         return true;
     // The recorder stops on a refused rotation. The current writer is already
     // closed, so the capture is over: say "failed" rather than let the final
-    // index call a truncated capture complete.
+    // index call a truncated capture complete. An orphan writer the failed
+    // rotation opened is parked for the normal reap, never destroyed here: its
+    // destructor would wait for the disk on the world thread.
+    EndWriter();
     if (err.empty())
         err = "test failure";
     failed_ = true;
@@ -305,7 +321,7 @@ void FileSink::Finish(DecisionCapture::Recorder& recorder, std::uint64_t nowUnix
     ended_ = true;
     // The writers have not flushed yet: this says so until Poll() has reaped
     // every one of them.
-    status_ = failed_ ? "failed" : "incomplete";
+    status_ = (failed_ || indexFailed_) ? "failed" : "incomplete";
     WriteIndex();
     EndWriter();
     if (totalCapHook_)
@@ -332,12 +348,19 @@ void FileSink::Poll()
         return;
     if (ended_ && !writer_ && finishing_.empty())
     {
-        status_ = failed_ ? "failed" : "complete";
+        status_ = (failed_ || indexFailed_) ? "failed" : "complete";
         finalized_ = true;
         changed = true;
     }
     if (changed)
         WriteIndex();
+}
+
+void FileSink::RetryIndex()
+{
+    if (!indexFailed_ || ended_)
+        return;
+    WriteIndex();
 }
 
 void FileSink::Detach()
@@ -417,17 +440,21 @@ bool FileSink::StartSegment(std::uint32_t seg, std::uint64_t firstSeq, std::stri
         return false;
     }
     writer_ = std::move(writer);
-    WriteIndex();
-    if (seg > 1 && totalCapHook_)
-        totalCapHook_();
-    return true;
+    if (WriteIndex())
+    {
+        if (seg > 1 && totalCapHook_)
+            totalCapHook_();
+        return true;
+    }
+    err = indexError_;
+    return false;
 }
 
 // Written here, on the world thread, not through the segment writers' queues:
 // two writer threads of one capture would race on the same path and the older
 // index could land last. It is a few hundred bytes at capture open, at each
 // rotation and at the end, never per tick.
-void FileSink::WriteIndex()
+bool FileSink::WriteIndex()
 {
     std::string index = "{\"format\":\"tb-decision-capture\",\"v\":1,\"id\":";
     index += DecisionCapture::JsonString(info_.captureId);
@@ -473,7 +500,28 @@ void FileSink::WriteIndex()
     index += std::to_string(recorderDropped_ + writerDropped_);
     index += '}';
     std::string err;
-    RunTrace::WriteFileAtomic(SegmentPath("index.json"), index, err);
+    bool written;
+    if (failIndexWriteForTest_.load(std::memory_order_relaxed))
+    {
+        err = "test failure";
+        written = false;
+    }
+    else
+        written = RunTrace::WriteFileAtomic(SegmentPath("index.json"), index, err);
+    if (written)
+    {
+        // A healed outage leaves no trace: the index on disk is current again.
+        indexFailed_ = false;
+        indexError_.clear();
+        return true;
+    }
+    // `failed_` stays clear: a passing outage heals through RetryIndex, and
+    // only a still-failed index at the end turns the status. `indexFailed_`
+    // stops segment writes meanwhile, so nothing piles up unindexed.
+    indexFailed_ = true;
+    indexError_ = err;
+    LogFailureOnce("cannot write " + SegmentPath("index.json") + ": " + err);
+    return false;
 }
 
 std::uint64_t FileSink::Bytes() const

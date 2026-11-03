@@ -87,6 +87,7 @@ The capture id is `<UTC yyyymmddThhmmssZ>-<plan>-<commander>`: the plan name and
 ```
 
 `status` is `running` while the capture runs, `incomplete` from the moment it ends until every segment writer has flushed, then `complete`; a writer that failed, or a rotation whose next segment cannot be opened (a full disk, a permission change), makes it `failed` and the failure is logged once. The final rewrite carries the bytes and records that actually reached the disk, and `dropped` counts the records lost on the way. A shutdown that does not wait for a busy writer leaves `incomplete` (or `failed`), never a false `complete`. The open segment's `lastSeq`, `records` and `bytes` are what was known at the last index write.
+An `index.json` write that fails (a full disk, a permission change) marks the capture `failed` and is logged once with the path and reason. A first write that fails stops the capture before it starts (the folder is removed again, so none stays behind); a later one stops the recorder at once, so no segment piles up without an index, and the next update either rewrites the index when the disk heals or ends the capture (`stopped: index write failed`). A folder without a landed ended index never counts as a finished capture for retention: it is kept, its bytes still count toward the cap, and it is never deleted.
 
 ## Records
 
