@@ -7368,9 +7368,9 @@ bool RunOffMapReturn(Player* commander, std::string const& order, std::string& a
 
 // The teleport return of party bots on the lead bot's map (DungeonRun::FarReturnTick, lead decision 2026-11-03, ZG
 // walk 29: 57 bots revived 300-650 yd from the raid died walking back, the summons skipped for their fights or
-// dropped by the portal): "fetch x y z <name> [<name> ...]". The same gates and moves as RunOffMapReturn (bot-only
-// parties, rechecked here; a living lead bot), for bots alive in the lead bot's copy of its map: each one's pet and
-// itself leave combat first, then it is teleported to x y z at once. A bot gone, dead, elsewhere or busy with a
+// dropped by the portal): "fetch x y z <name> [<name> ...]". The same gates as RunOffMapReturn (bot-only parties,
+// rechecked here; a living lead bot), for bots alive in the lead bot's copy of its map: each one is teleported to
+// x y z at once (no summon portal), then its combat and its pet's are dropped. A bot gone, dead, elsewhere or busy with a
 // summon is left out and named. True when at least one went; the run checks each one's arrival itself.
 bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer)
 {
@@ -7433,14 +7433,8 @@ bool RunFetchReturn(Player* commander, std::string const& order, std::string& an
             refused += (refused.empty() ? "" : ", ") + name + " (" + why + ")";
             continue;
         }
-        Pet* const pet = bot->GetPet();
-        if (pet && pet->IsAlive() && pet->IsInWorld())
-        {
-            sServerFacade.GetHostileRefManager(pet).deleteReferences();
-            pet->CombatStop();
-        }
-        sServerFacade.GetHostileRefManager(bot).deleteReferences();
-        bot->CombatStop();
+        // The teleport first (a near one, on the lead bot's map): a refused one leaves the bot's fight as it was.
+        // Only then its combat and its pet's are dropped (off every threat list), so nothing follows it in.
         bot->GetMotionMaster()->Clear(false);
         bot->StopMoving();
         if (!bot->TeleportTo(lead->GetMapId(), x, y, z, lead->GetOrientation(), 0))
@@ -7455,6 +7449,14 @@ bool RunFetchReturn(Player* commander, std::string const& order, std::string& an
             else if (bot->IsBeingTeleportedFar())
                 bot->GetSession()->HandleMoveWorldportAckOpcode();
         }
+        Pet* const pet = bot->GetPet();
+        if (pet && pet->IsAlive() && pet->IsInWorld())
+        {
+            sServerFacade.GetHostileRefManager(pet).deleteReferences();
+            pet->CombatStop();
+        }
+        sServerFacade.GetHostileRefManager(bot).deleteReferences();
+        bot->CombatStop();
         fetched += (fetched.empty() ? "" : ", ") + name;
     }
     if (fetched.empty())
