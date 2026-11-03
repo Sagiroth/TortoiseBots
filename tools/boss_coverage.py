@@ -80,6 +80,9 @@ TACTIC_FIELDS = {
     "param": ("param", float),
     "comment": ("comment", str),
 }
+# The tactic coverage key is (map, boss, kind, target, spell): a row's health band is a per-row gate the coverage
+# projection does not carry, so a DELETE or UPDATE scoped by it applies to the key.
+TACTIC_ROW_GATE_COLUMNS = ("hp_min", "hp_max")
 STAND_FIELDS = {
     "map": ("map", int),
     "boss_entry": ("boss", int),
@@ -301,13 +304,15 @@ def _row_from(columns, values, fields, defaults, where):
     return row
 
 
-def _conditions(text, fields, where):
+def _conditions(text, fields, where, ignored=()):
     wanted = []
     for part in re.split(r"\s+AND\s+", text.strip(), flags=re.I):
         match = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part.strip(), re.S)
         if match:
             column, raw = match.groups()
             values = [_parse_condition_value(raw, where)]
+            if column in ignored:
+                continue
         elif ABS_RE.fullmatch(part.strip()):
             column, center, tolerance = ABS_RE.fullmatch(part.strip()).groups()
             spec = fields.get(column)
@@ -321,6 +326,8 @@ def _conditions(text, fields, where):
                 raise boss_data.DataError(f"{where}: unsupported WHERE clause {part.strip()!r}")
             column, raw = match.groups()
             values = [_parse_condition_value(item.strip(), where) for item in raw.split(",")]
+        if column in ignored:
+            continue
         spec = fields.get(column)
         if spec is None:
             raise boss_data.DataError(f"{where}: unknown column {column!r}")
@@ -524,7 +531,7 @@ def migration_rows(sql_dir):
                 if table not in SQL_TABLES:
                     continue
                 if table == "ai_boss_tactic":
-                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where)
+                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where, TACTIC_ROW_GATE_COLUMNS)
                     for key in [k for k, row in tactics.items() if _matches(row, wanted)]:
                         del tactics[key]
                 elif table == "ai_boss_stand":
@@ -546,7 +553,7 @@ def migration_rows(sql_dir):
                     continue
                 if table == "ai_boss_tactic":
                     changes = _set_values(set_text, TACTIC_FIELDS, where)
-                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where)
+                    wanted = _conditions(conditions_text, TACTIC_FIELDS, where, TACTIC_ROW_GATE_COLUMNS)
                     updated = {}
                     for row in tactics.values():
                         if _matches(row, wanted):

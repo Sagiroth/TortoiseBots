@@ -456,6 +456,8 @@ def _deleted_by(statement, key):
         match = re.fullmatch(r"`(\w+)` = ('[^']*'|\d+)", part)
         if match:
             column, raw = match.groups()
+            if column in ("hp_min", "hp_max"):
+                continue  # the health band is not part of this test's five-column key
             value = raw[1:-1] if raw.startswith("'") else int(raw)
             if key[columns[column]] != value:
                 return False
