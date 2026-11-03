@@ -50,12 +50,21 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertNotIn("step.kind = ParsePlanStepKind(", loader)
 
     def test_cmd_move_checks_the_lead_distance(self):
-        self.assertIn("facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);", COMMANDS)
-        self.assertIn("RemoteCommander::MoveVerdict verdict = RemoteCommander::CheckMove(facts);", COMMANDS)
+        # The distance and the verdict live in the shared check (CheckLeadMove),
+        # which `cmd move` hands the lead bot's own spot as the origin.
+        self.assertIn("Vector3 const origin(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ());",
+                      COMMANDS)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("RemoteCommander::LeadMoveFacts(originPoint, point,", check)
+        self.assertIn("check.verdict = RemoteCommander::CheckMove(check.facts);", check)
 
     def test_only_the_run_leaders_gather_gets_the_lead_spot_pass(self):
-        # A player's `cmd move` never sets it: only IssueRunOrder, for the run's own gather.
-        self.assertIn("facts.leadSpotGather = s_runIssuing && s_runGather;", COMMANDS)
+        # A player's `cmd move` never sets it: only IssueRunOrder, for the run's own gather, and
+        # the check only takes it from a run order (`fromRunLeader` is s_runIssuing at the call).
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("fromRunLeader && s_runGather, fromRunLeader);", check)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
         issue = body(COMMANDS, "bool IssueRunOrder(", "\n}\n")
         self.assertIn("s_runGather = gather;", issue)
         self.assertIn("s_runGather = false;", issue)
@@ -522,7 +531,8 @@ class RunLeaderWiringTest(unittest.TestCase):
 
     def test_live_fixes_2026_10_16_are_wired(self):
         # 1. `cmd move` takes the floor at or below the point before a surface above it (a low ceiling).
-        move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
+        # The snap lives in the shared check `cmd move` and `.bot scout path` both use.
+        move = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
         self.assertIn("RemoteCommander::ChooseFloorZ(point.z, belowZ,", move)
         # 1b. Karazhan Crypt kc316 step 292: a water point is not lifted out of the water onto a surface the
         # lead bot cannot reach. The glue reads the point's liquid (the swim line's own test) only when the
@@ -545,18 +555,18 @@ class RunLeaderWiringTest(unittest.TestCase):
                 close_at = i
                 break
         rare = above[open_at:close_at + 1]  # the rare branch's own block, brace-matched
-        self.assertIn("waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);", rare)
-        self.assertIn("raisedPath.calculate(point.x, point.y, aboveZ, false);", rare)
+        self.assertIn("waterSwimmable = terrain->IsSwimmable(point.x, point.y, point.z);", rare)
+        self.assertIn("raisedPath.calculate(origin, Vector3(point.x, point.y, aboveZ), false);", rare)
         # ... and only for a swimmable water point (a shallow one keeps the old rule without a path query).
         self.assertIn("if (waterSwimmable)\n", rare)
-        self.assertLess(rare.index("if (waterSwimmable)\n"), rare.index("PathFinder raisedPath(lead);"))
-        self.assertIn("raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);",
+        self.assertLess(rare.index("if (waterSwimmable)\n"), rare.index("PathFinder raisedPath(mover);"))
+        self.assertIn("raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atOrigin);",
                       rare)
         # The raised point's path query happens nowhere else: once in the function, inside the rare branch.
-        self.assertEqual(move.count("PathFinder raisedPath(lead);"), 1)
+        self.assertEqual(move.count("PathFinder raisedPath(mover);"), 1)
         self.assertEqual(move.count("WaterSnapAsksPath("), 1)
-        self.assertLess(move.index("if (RemoteCommander::WaterSnapAsksPath("), move.index("PathFinder raisedPath(lead);"))
-        self.assertLess(move.index("PathFinder raisedPath(lead);"), move.index("float const snapped = RemoteCommander::ChooseFloorZ("))
+        self.assertLess(move.index("if (RemoteCommander::WaterSnapAsksPath("), move.index("PathFinder raisedPath(mover);"))
+        self.assertLess(move.index("PathFinder raisedPath(mover);"), move.index("float const snapped = RemoteCommander::ChooseFloorZ("))
         self.assertIn('#include "../ai/playerbot/SwimPathPolicy.h"', COMMANDS)
         # 2. A follower off the lead bot's line walks its own; the refusal still names the bot for the summon.
         direct = body(COMMANDS, "static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,\n"
@@ -616,10 +626,11 @@ class RunLeaderWiringTest(unittest.TestCase):
 
 
     def test_small_batch_2026_10_17_is_wired(self):
-        # 1. `cmd move` hands the policy how far the path's end is from the lead bot (an incomplete path that goes nowhere).
-        move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
-        self.assertIn("facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);", move)
-        self.assertIn("facts.fromRunLeader = s_runIssuing;", move)
+        # 1. `cmd move` hands the policy how far the path's end is from the lead bot (an incomplete path that goes
+        # nowhere): the shared check does it, and `cmd move` makes it the run leader's own flag (fromRunLeader).
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);", check)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
         # 2. The run's time limit ends the run with its own note; `run stop` takes a reason.
         tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")
         self.assertIn("RunTimeLimitReached(slot.elapsedMs, sPlayerbotAIConfig.dungeonRunMaxMinutes)", tick)

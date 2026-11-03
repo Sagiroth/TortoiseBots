@@ -430,3 +430,27 @@ TBM:VIEW|v1|12|H|0xF130000C5E0012AB,3874,-8900.0,560.0,94.0,64,0x2A,0,-,h,-
 TBM:VIEW|v1|12|T|0xF130000C5E0012AB,0x2A:100,0x2B:41
 TBM:VIEW|v1|12|E|5
 ```
+
+---
+
+## `.bot scout` (GM, test tooling)
+
+**GameMaster only, with GM mode on** (`.gm on`); anyone else gets `TBM:ACTION_ERR|scout|gm-only|…`. A test tool for checking a dungeon plan's points on a live server before a walk: it checks the run leader's own move rules from any start, walks the GM as the bots' mover walks, and reads the GM's server position. It hires, binds, moves and orders no bot, and the only world change is the GM's own position for `walk`. Never part of a normal play session; the driver that uses it runs on test servers only.
+
+`#<id>` is a request id of 1 to 9 digits, echoed on the reply (digits only, without the `#`), so the driver can match answers that come back out of order.
+
+```text
+.bot scout cfg #<id>
+.bot scout path #<id> <x> <y> <z> [from <fx> <fy> <fz>]
+.bot scout walk #<id> <x> <y> <z>
+.bot scout where #<id>
+```
+
+| Form | Does | Answers |
+| :--- | :--- | :--- |
+| `cfg` | Reads the live aggro numbers. | `TBM:SCOUT_CFG\|<id>\|<reactDistance>\|<rateCreatureAggro>\|<familyAssistRadius>` (`%.2f` each) |
+| `path` | The run leader's move check — the same floor snap and `CheckMove` as `.bot cmd move` — from `from` (default: the GM) to the point, on the GM's map. Nobody moves. | `TBM:SCOUT_PATH\|<id>\|<ok\|too-far\|unreachable\|off-mesh>\|0x<path type>\|<length>\|<ex> <ey> <ez>\|<endOffset>\|<snapped z>\|<startSwim>\|<endSwim>` |
+| `walk` | Starts one server-moved walk of the GM to the point, with the bots' own mover call (`MOVE_RUN_MODE \| MOVE_PATHFINDING`, the one the lead bot's stay walk ends with). | `TBM:SCOUT_WALK\|<id>\|started\|0x<path type>` |
+| `where` | The GM's server position and movement state. | `TBM:SCOUT_POS\|<id>\|<x> <y> <z>\|<moving>\|<inWater>\|<swimming>` |
+
+The path type is the path finder's raw bits: `0x81` is the core's straight two-point swim line (`0x80` underwater with a normal path), which a move across water takes when both ends are swimmable — the plan walk then never walks the mesh. `startSwim`/`endSwim` say whether the origin and the snapped point are swimmable (core terrain, not the navmesh). A `wrong-map` error means the point or the start is outside the map's coordinate bounds: the command names no map and always paths on the caller's (the scout's GM stands in the plan's dungeon). The parser also refuses any coordinate past `|17066|` (`invalid`, the usage line), so `path` and `walk` never reach the path finder or the mover with a point outside the core's bound.
