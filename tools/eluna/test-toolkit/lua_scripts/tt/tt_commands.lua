@@ -284,11 +284,15 @@ function Q.los(player, req)
         if not u then
             los[#los + 1] = { g = hex, err = why or "not_a_unit" }
         else
-            local seen = false
             local good, res = pcall(function() return u:IsWithinLoS(x, y, eye) end)
-            if good then seen = res and true or false end
-            los[#los + 1] = { g = TT.objHex(u) or hex, ["in"] = seen,
-                d = TT.round(TT.dist3(x, y, z, u:GetX(), u:GetY(), u:GetZ()), 1) }
+            if not good then
+                -- The core has no sight read (a different Eluna build): say so,
+                -- never answer "out of sight".
+                los[#los + 1] = { g = TT.objHex(u) or hex, err = "los_failed" }
+            else
+                los[#los + 1] = { g = TT.objHex(u) or hex, ["in"] = res and true or false,
+                    d = TT.round(TT.dist3(x, y, z, u:GetX(), u:GetY(), u:GetZ()), 1) }
+            end
         end
     end
     local t = mapInfo(map)

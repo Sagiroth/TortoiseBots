@@ -12,8 +12,8 @@ _G.RegisterServerEvent = function() end
 io.write = function() end -- the stdout echo of every reply
 
 local world = {}
-local function creature(entry, counter, x, y, z, sees)
-    local c = { entry = entry, counter = counter, x = x, y = y, z = z, sees = sees }
+local function creature(entry, counter, x, y, z, sees, throws)
+    local c = { entry = entry, counter = counter, x = x, y = y, z = z, sees = sees, throws = throws }
     c.GetX = function() return c.x end
     c.GetY = function() return c.y end
     c.GetZ = function() return c.z end
@@ -22,6 +22,7 @@ local function creature(entry, counter, x, y, z, sees)
     c.GetGUIDLow = function() return counter end
     c.ToUnit = function() return c end
     c.IsWithinLoS = function(_, x, y, z)
+        if c.throws then error("no such method") end
         c.losX, c.losY, c.losZ = x, y, z
         return c.sees
     end
@@ -89,6 +90,12 @@ check("the found guid still answers", reply:find('"in":true', 1, true))
 check("absent guid", reply:find('"err":"not_found"', 1, true))
 check("bad guid", reply:find('"err":"bad_guid"', 1, true))
 check("three entries", reply:find('"n":3', 1, true))
+
+-- A sight read that throws is reported, never answered as "out of sight".
+world = { creature(1137, 103, 30, 0, 100, nil, true) }
+handler(42, gm, "tt q los 0 0 100 " .. guidOf(1137, 103))
+check("failed sight read is not out of sight",
+      last():find('"err":"los_failed"', 1, true) and not last():find('"in":false', 1, true))
 
 -- No guid at all: usage, nothing looked up.
 handler(42, gm, "tt q los 0 0 100")
