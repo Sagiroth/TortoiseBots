@@ -19427,12 +19427,14 @@ static UnitFact StragglerUnit(std::uint64_t guid = 0xd001, std::uint32_t entry =
     return u;
 }
 
-// The way was read clear for this guid and tank (the glue's answer).
-static void StragglerWayClear(Facts& f, std::uint64_t guid, const std::string& tank)
+// The way was read clear for this guid and tank (the glue's answer), to the point the tank was sent to or to the
+// unit's live position (the attack's read).
+static void StragglerWayClear(Facts& f, std::uint64_t guid, const std::string& tank, bool toUnit = false)
 {
     f.stragglerPathRead = true;
     f.stragglerPathFor = guid;
     f.stragglerPathTank = tank;
+    f.stragglerPathToUnit = toUnit;
     f.stragglerPathOk = true;
 }
 
@@ -23593,19 +23595,60 @@ static void TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint()
         CHECK(Tick(r, f).empty());
     CHECK(r.state == State::Running && r.step == 1 && r.standPullMs == 29000);
     CHECK(Tick(r, f).empty()); // one loop (30 s) is over: the way to its nearest point is read
-    CHECK(r.state == State::Running && r.stragglerPathWanted == 9);
+    CHECK(r.state == State::Running && r.stragglerPathWanted == 9 && !r.stragglerAttackPath);
     StragglerWayClear(f, 9, "Tanky");
     CHECK(Tick(r, f) == "move -12240.0 -1490.0 130.9");
     f.leadX = -12240.0f;
     f.leadY = -1490.0f;
     f.leadZ = kPatrolPullFloorZ;
-    CHECK(Tick(r, f).empty()); // at the loop point: the way is read once more before the attack
+    // The patrol walked on to the loop point the tank stands at: the attack's
+    // read is asked for the unit's live position, not the point.
+    f.units.front().x = -12240.0f;
+    f.units.front().y = -1490.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerPathWanted == 9 && r.stragglerAttackPath);
+    StragglerWayClear(f, 9, "Tanky", true);
     CHECK(Tick(r, f) == "attack 9 Tanky");
     CHECK(r.state == State::Running && r.step == 1);
     // It comes into the fight: the gate is done for the step, the fight handles it.
     f.anyInCombat = true;
     CHECK(Tick(r, f).empty());
     CHECK(r.stragglerGuid == 0);
+}
+
+// The patrol is on the far side of its loop when the tank reaches the point: no attack goes out until it comes
+// within reach of the point (bounded by the try's 45 s budget). Before, the tank attacked at once and ran the whole
+// loop, through packs the way check never saw.
+static void TestStragglerPullWaitsAtTheLoopPointForThePatrolToComeNear()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    f.units.front().entry = 11368;
+    f.units.front().cycleMs = 30000;
+    f.units.front().loop = {ai::ApproachPoint{-12240.0f, -1490.0f, kPatrolPullFloorZ}};
+    f.standPatrols = {f.units.front()};
+    for (int i = 0; i < 30; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerPathWanted == 9 && !r.stragglerAttackPath);
+    StragglerWayClear(f, 9, "Tanky");
+    CHECK(Tick(r, f) == "move -12240.0 -1490.0 130.9");
+    f.leadX = -12240.0f;
+    f.leadY = -1490.0f;
+    f.leadZ = kPatrolPullFloorZ;
+    // The patrol is 60 yd away on its loop: no order, no read asked for.
+    f.units.front().x = -12300.0f;
+    f.units.front().y = -1490.0f;
+    for (int i = 0; i < 10; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(!r.stragglerAttackSent && r.stragglerPathWanted == 0);
+    // The try's budget still ends the wait: no tank left, so the run pauses naming it.
+    for (int i = 0; i < 35; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("Tanky did not pull it within 45 s") != std::string::npos);
 }
 
 static void TestPatrolStandPullShootsAPatrollerInShot()
@@ -32901,6 +32944,7 @@ int main()
     TestStragglerPullRecheckAbortsOnANewBlocker();
     TestStragglerPullNeverTakesABossKillFirstOrLinkedDeathUnit();
     TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint();
+    TestStragglerPullWaitsAtTheLoopPointForThePatrolToComeNear();
     TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
     TestFightStepEndWaitsOnResidue();
     TestZeroPullClearNamesNearestLeft();

@@ -112,5 +112,21 @@ class StragglerWalkWiringTest(unittest.TestCase):
         self.assertIn("if (StragglerWalkRefused(r, order, answer))", refused)
 
 
+class StragglerLivePathWiring(unittest.TestCase):
+    """A patrol is pulled from its loop point at its live position, not at the point."""
+
+    def test_attack_read_ends_at_the_units_live_position(self):
+        fn = body(COMMANDS, "void ReadStragglerWay(Player* lead", "// A leg toward (x,y,z)")
+        self.assertIn("f.stragglerPathToUnit = run.stragglerAttackPath;", fn)
+        self.assertIn("lead->GetMap()->GetUnit(::ObjectGuid(wanted))", fn)
+        self.assertIn("targetX = unit->GetPositionX();", fn)
+        self.assertIn("DirectNavPath(tank, targetX, targetY, targetZ, way)", fn)
+
+    def test_the_policy_waits_at_the_point_and_matches_the_read(self):
+        self.assertIn("constexpr float kStragglerPatrolReachYd", POLICY)
+        self.assertIn("f.stragglerPathToUnit != r.stragglerAttackPath", POLICY)
+        self.assertIn("r.stragglerAttackPath = loopPoint; // to the patrol's live position, not the loop point", POLICY)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -609,6 +609,10 @@ constexpr float kStragglerPullAggroMarginYd = 5.0f;
 // The way is re-read right before a movement order and every this often while the tank walks or waits (a pack that
 // comes into the way after the first read aborts that tank's try, as a blocked way does).
 constexpr std::uint32_t kStragglerRecheckMs = 2000;
+// A patrol is pulled from its loop point only once the patrol comes within this reach of it: the tank then walks at
+// the unit from the point, so the way is short. Attacking while the patrol stands on the far side of its loop sent
+// the tank across the whole loop, through packs the way check never saw.
+constexpr float kStragglerPatrolReachYd = 8.0f;
 // A stand-pull pull row's patrol is waited for one full loop at most when the glue could not read the loop's time.
 constexpr std::uint32_t kPatrolPullCycleMs = 90000;
 // The pack-cleared gate (AiPlayerbot.DungeonRunPackClearMarginYd): a pull step
@@ -1648,6 +1652,9 @@ struct Facts
     bool stragglerPathRead = false;
     std::uint64_t stragglerPathFor = 0;
     std::string stragglerPathTank; // ... and the tank whose walk it is
+    // ... the point it ends at: false the walk point the tank was sent to, true the unit's live position (a patrol's
+    // attack). A read of the other one is not an answer to the current request.
+    bool stragglerPathToUnit = false;
     bool stragglerPathOk = false;
     std::uint32_t stragglerPathBlockEntry = 0;
     float stragglerPathBlockYd = 0.0f;
@@ -2186,6 +2193,9 @@ struct Run
     float stragglerX = 0.0f, stragglerY = 0.0f, stragglerZ = 0.0f;
     bool stragglerWalkSent = false;
     bool stragglerAttackSent = false;
+    // The glue's way read is for the attack: to the unit's live position, not to the point the tank walked to (a
+    // patrol walks its loop; the attack goes at where it stands now).
+    bool stragglerAttackPath = false;
     std::uint64_t stragglerPathWanted = 0;
     std::string stragglerOrder;
     std::string stragglerFail;
@@ -13392,6 +13402,7 @@ inline void ResetStragglerPull(Run& r)
     r.stragglerX = r.stragglerY = r.stragglerZ = 0.0f;
     r.stragglerWalkSent = false;
     r.stragglerAttackSent = false;
+    r.stragglerAttackPath = false;
     r.stragglerPathWanted = 0;
     r.stragglerOrder.clear();
     r.stragglerFail.clear();
@@ -13438,6 +13449,7 @@ inline bool StartStragglerTry(Run& r, const Facts& f, const UnitFact& u, bool lo
     r.stragglerRecheckMs = 0;
     r.stragglerWalkSent = false;
     r.stragglerAttackSent = false;
+    r.stragglerAttackPath = false;
     r.stragglerPathWanted = u.guid;
     r.stragglerOrder.clear();
     r.stragglerFail.clear();
@@ -13505,7 +13517,8 @@ inline StragglerVerdict StragglerPullTick(Run& r, const Facts& f, const UnitFact
     bool readNow = false;
     if (r.stragglerPathWanted)
     {
-        if (!f.stragglerPathRead || f.stragglerPathFor != u.guid || f.stragglerPathTank != r.stragglerTank)
+        if (!f.stragglerPathRead || f.stragglerPathFor != u.guid || f.stragglerPathTank != r.stragglerTank ||
+            f.stragglerPathToUnit != r.stragglerAttackPath)
         {
             // The glue reads it next tick (for this tank); the try's clock keeps running meanwhile.
             if (r.stragglerWalkSent || r.stragglerAttackSent)
@@ -13539,6 +13552,7 @@ inline StragglerVerdict StragglerPullTick(Run& r, const Facts& f, const UnitFact
         if (!readNow)
         {
             r.stragglerPathWanted = u.guid; // a fresh look right before the walk goes out
+            r.stragglerAttackPath = false;
             r.stragglerRecheckMs = 0;
             return StragglerVerdict::Held;
         }
@@ -13557,13 +13571,25 @@ inline StragglerVerdict StragglerPullTick(Run& r, const Facts& f, const UnitFact
             if (r.stragglerRecheckMs >= kStragglerRecheckMs)
             {
                 r.stragglerPathWanted = u.guid;
+                r.stragglerAttackPath = false;
                 r.stragglerRecheckMs = 0;
             }
+            return StragglerVerdict::Held;
+        }
+        if (loopPoint &&
+            ai::PlanDistance(u.x, u.y, u.z, r.stragglerX, r.stragglerY, r.stragglerZ) > kStragglerPatrolReachYd)
+        {
+            // The patrol is elsewhere on its loop: wait at the point (inside the try's 45 s budget) until it comes
+            // within reach, then attack at where it stands.
+            r.stragglerMs += dt;
+            if (r.stragglerMs >= kStragglerPullMs)
+                return timedOut();
             return StragglerVerdict::Held;
         }
         if (!readNow)
         {
             r.stragglerPathWanted = u.guid; // a fresh look right before the attack goes out
+            r.stragglerAttackPath = loopPoint; // to the patrol's live position, not the loop point
             r.stragglerRecheckMs = 0;
             return StragglerVerdict::Held;
         }
@@ -13579,6 +13605,7 @@ inline StragglerVerdict StragglerPullTick(Run& r, const Facts& f, const UnitFact
     if (r.stragglerRecheckMs >= kStragglerRecheckMs)
     {
         r.stragglerPathWanted = u.guid;
+        r.stragglerAttackPath = loopPoint;
         r.stragglerRecheckMs = 0;
     }
     return StragglerVerdict::Held;

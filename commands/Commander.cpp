@@ -7004,7 +7004,9 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
 // The straggler pull's way (DungeonRun::StragglerPullTick): the acting tank's navmesh path to the point it was sent
 // to, and the first living hostile of another pack the way passes within its own aggro reach plus the margin of. One
 // path and one grid search, only on a try's first tick (the read the policy asked for). Read with the lead bot dead
-// too: the tank that holds the main tank role is the one that goes (an off-tank).
+// too: the tank that holds the main tank role is the one that goes (an off-tank). For the attack's read the way ends
+// at the unit's LIVE position: a patrol walks its loop, and the attack walks the tank from its loop point to where
+// the patrol stands now, not to the point the tank already stands on.
 void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
@@ -7014,10 +7016,22 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
     f.stragglerPathRead = true;
     f.stragglerPathFor = wanted;
     f.stragglerPathTank = run.stragglerTank;
+    f.stragglerPathToUnit = run.stragglerAttackPath;
     Player* tank = run.stragglerTank.empty() ? lead : FindOnlineByName(run.stragglerTank);
+    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId())
+        return;
+    float targetX = run.stragglerX, targetY = run.stragglerY, targetZ = run.stragglerZ;
+    if (run.stragglerAttackPath)
+    {
+        Unit* const unit = lead->GetMap() ? lead->GetMap()->GetUnit(::ObjectGuid(wanted)) : nullptr;
+        if (!unit || !unit->IsAlive())
+            return; // gone from the world read: no way to it
+        targetX = unit->GetPositionX();
+        targetY = unit->GetPositionY();
+        targetZ = unit->GetPositionZ();
+    }
     std::vector<PathPoint> way;
-    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId() ||
-        !DirectNavPath(tank, run.stragglerX, run.stragglerY, run.stragglerZ, way))
+    if (!DirectNavPath(tank, targetX, targetY, targetZ, way))
         return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
     float length = 0.0f;
     for (std::size_t i = 1; i < way.size(); ++i)
