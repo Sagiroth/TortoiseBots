@@ -17,6 +17,7 @@ bool HandleAhBot(ChatHandler* handler, char const* args);
 bool HandleAction(ChatHandler* handler, char const* args);
 bool HandleCommander(ChatHandler* handler, char const* args);
 bool HandleCommanderOrder(ChatHandler* handler, char const* args);
+bool HandleScout(ChatHandler* handler, char const* args);
 bool HandleTrace(ChatHandler* handler, char const* args);
 bool HandleDungeonRun(ChatHandler* handler, char const* args);
 uint64 BindSystemParty(Player* lead, std::vector<Player*> const& joiners, std::string& code, std::string& message);

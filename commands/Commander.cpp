@@ -3212,6 +3212,148 @@ static_assert(TortoiseBots::DungeonRun::kStallDirectMaxYd == RemoteCommander::kD
     TortoiseBots::DungeonRun::kStallDirectMaxVertical == RemoteCommander::kDirectMaxVertical,
     "a stalled walk's direct move keeps the direct step's limits");
 
+// The run leader's move rules in one place: the floor snap of a move point, the
+// path from `origin`, and CheckMove. CommanderMove sends the lead bot with it;
+// `.bot scout path` asks the same question from any start and moves nobody, so
+// the scout and the run leader cannot drift apart.
+struct LeadMoveCheck
+{
+    RemoteCommander::MovePoint point;      // after the floor snap
+    RemoteCommander::MoveFacts facts;
+    RemoteCommander::MoveVerdict verdict = RemoteCommander::MoveVerdict::Ok;
+    uint32 rawPathType = 0;                // path.getPathType(), all bits
+    float actualEnd[3] = {0, 0, 0};
+    float length = 0.0f;                   // sum of the path's segments
+    bool startSwim = false, endSwim = false; // Terrain::IsSwimmable at origin / the snapped point
+    bool snapped = false, keptInWater = false;
+    float waterLevel = 0.0f;               // the kept-in-water message's numbers
+    float raisedZ = 0.0f;
+    uint32 raisedPathType = 0;
+};
+
+static LeadMoveCheck CheckLeadMove(Unit* mover, Vector3 const& origin, RemoteCommander::MovePoint point,
+    bool fromRunLeader)
+{
+    LeadMoveCheck check;
+    TerrainInfo const* terrain = mover->GetMap()->GetTerrain();
+    // The scout reads these two (the run leader's move check ignores them).
+    check.startSwim = terrain->IsSwimmable(origin.x, origin.y, origin.z);
+
+    // Snap the point to the map floor at its x,y (a point a few yd under the
+    // floor has no navmesh poly within the path finder's reach: NOPATH). The
+    // floor at or just below the point comes first, so a low ceiling above it
+    // is never taken for the floor (RemoteCommander::ChooseFloorZ).
+    if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z + RemoteCommander::kFloorSnapRange))
+    {
+        float const belowZ = mover->GetMap()->GetHeight(point.x, point.y, point.z, true,
+            RemoteCommander::kFloorBelowBand + RemoteCommander::kFloorBelowHeadroom);
+        float aboveZ = INVALID_HEIGHT;
+        // A point in water is not lifted out of it onto a surface the lead bot cannot reach (Karazhan Crypt
+        // kc316 step 292; RemoteCommander::WaterSnapAsksPath). Its liquid is read only when the search from
+        // above counts, with the swim line's own test (all liquids, water or ocean by type flags, in or under
+        // the surface: SwimPathPolicy.h). Only in the rare case (that floor would lift a water point out of
+        // the water) is the core asked for the mover's path to the raised point and whether the water
+        // point is swimmable: a pier the lead bot has a path onto keeps the old snap.
+        bool pointInWater = false;
+        float waterLevel = 0.0f;
+        bool waterSwimmable = false;
+        bool raisedReachable = true;
+        uint32 raisedPathType = 0;
+        if (!RemoteCommander::FloorBelowUsable(point.z, belowZ, belowZ > INVALID_HEIGHT))
+        {
+            aboveZ = mover->GetMap()->GetHeight(point.x, point.y,
+                point.z + RemoteCommander::kFloorSnapRange, true,
+                2.0f * RemoteCommander::kFloorSnapRange);
+            if (aboveZ > INVALID_HEIGHT)
+            {
+                GridMapLiquidData liquid{};
+                uint32 const status = static_cast<uint32>(terrain->getLiquidStatus(point.x,
+                    point.y, point.z, ai::kSwimLiquidRequest, &liquid));
+                pointInWater = ai::SwimSampleInWater(status, status != LIQUID_MAP_NO_WATER ? liquid.type_flags : 0);
+                waterLevel = liquid.level;
+            }
+            if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ, belowZ > INVALID_HEIGHT, aboveZ,
+                    aboveZ > INVALID_HEIGHT, pointInWater, waterLevel))
+            {
+                waterSwimmable = terrain->IsSwimmable(point.x, point.y, point.z);
+                if (waterSwimmable)
+                {
+                    float const rx = point.x - origin.x;
+                    float const ry = point.y - origin.y;
+                    float const rz = aboveZ - origin.z;
+                    bool const atOrigin = RemoteCommander::IsAtLead(std::sqrt(rx * rx + ry * ry + rz * rz));
+                    float raisedEndOffset = 0.0f;
+                    if (!atOrigin)
+                    {
+                        PathFinder raisedPath(mover);
+                        raisedPath.calculate(origin, Vector3(point.x, point.y, aboveZ), false);
+                        raisedPathType = static_cast<uint32>(raisedPath.getPathType());
+                        Vector3 const raisedEnd = raisedPath.getActualEndPosition();
+                        float const ex = raisedEnd.x - point.x;
+                        float const ey = raisedEnd.y - point.y;
+                        float const ez = raisedEnd.z - aboveZ;
+                        raisedEndOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+                    }
+                    raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atOrigin);
+                }
+            }
+        }
+        float const snapped = RemoteCommander::ChooseFloorZ(point.z, belowZ, belowZ > INVALID_HEIGHT,
+            aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);
+        if (snapped == point.z && !raisedReachable && waterSwimmable)
+        {
+            check.keptInWater = true;
+            check.waterLevel = waterLevel;
+            check.raisedZ = aboveZ;
+            check.raisedPathType = raisedPathType;
+        }
+        if (snapped != point.z)
+        {
+            point.z = snapped;
+            check.snapped = true;
+        }
+    }
+    check.point = point;
+    check.endSwim = terrain->IsSwimmable(point.x, point.y, point.z);
+
+    RemoteCommander::MovePoint originPoint;
+    originPoint.x = origin.x;
+    originPoint.y = origin.y;
+    originPoint.z = origin.z;
+    // leadSpotGather is the run leader's gather on the lead bot's own spot:
+    // fromRunLeader is s_runIssuing at the callers, so this is CommanderMove's
+    // old s_runIssuing && s_runGather exactly.
+    check.facts = RemoteCommander::LeadMoveFacts(originPoint, point, 0, 0.0f, -1.0f,
+        sPlayerbotAIConfig.reactDistance, fromRunLeader && s_runGather, fromRunLeader);
+    // The mover already stands on the point ("hold here"): the path finder
+    // answers NOPATH for a zero-length path, so skip it; CheckMove accepts it.
+    if (!RemoteCommander::IsAtLead(check.facts.distanceFromLead))
+    {
+        PathFinder path(mover);
+        path.calculate(origin, Vector3(point.x, point.y, point.z), false);
+        check.rawPathType = static_cast<uint32>(path.getPathType());
+        check.facts.pathType = check.rawPathType;
+        Vector3 const end = path.getActualEndPosition();
+        check.actualEnd[0] = end.x;
+        check.actualEnd[1] = end.y;
+        check.actualEnd[2] = end.z;
+        float const ex = end.x - point.x;
+        float const ey = end.y - point.y;
+        float const ez = end.z - point.z;
+        check.facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+        float const lx = end.x - origin.x;
+        float const ly = end.y - origin.y;
+        float const lz = end.z - origin.z;
+        check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
+        // PathInfo::Length asserts a non-empty path; a shortcut path always has
+        // two points, a refused one may have none.
+        if (path.getPath().size() >= 2)
+            check.length = path.Length();
+    }
+    check.verdict = RemoteCommander::CheckMove(check.facts);
+    return check;
+}
+
 static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std::string const& args,
     std::string const& intent)
 {
@@ -3227,7 +3369,6 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         request.direct ? "a direct move point" : "a move point");
     if (request.direct)
         return CommanderMoveDirect(handler, order, request.point, intent);
-    RemoteCommander::MovePoint point = request.point;
     Player* lead = order.lead;
     if (!lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported())
     {
@@ -3241,109 +3382,25 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         return true;
     }
 
-    // Snap the point to the map floor at its x,y (a point a few yd under the
-    // floor has no navmesh poly within the path finder's reach: NOPATH). The
-    // floor at or just below the point comes first, so a low ceiling above it
-    // is never taken for the floor (RemoteCommander::ChooseFloorZ).
-    if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z + RemoteCommander::kFloorSnapRange))
-    {
-        float const belowZ = lead->GetMap()->GetHeight(point.x, point.y, point.z, true,
-            RemoteCommander::kFloorBelowBand + RemoteCommander::kFloorBelowHeadroom);
-        float aboveZ = INVALID_HEIGHT;
-        // A point in water is not lifted out of it onto a surface the lead bot cannot reach (Karazhan Crypt
-        // kc316 step 292; RemoteCommander::WaterSnapAsksPath). Its liquid is read only when the search from
-        // above counts, with the swim line's own test (all liquids, water or ocean by type flags, in or under
-        // the surface: SwimPathPolicy.h). Only in the rare case (that floor would lift a water point out of
-        // the water) is the core asked for the lead bot's path to the raised point and whether the water
-        // point is swimmable: a pier the lead bot has a path onto keeps the old snap.
-        bool pointInWater = false;
-        float waterLevel = 0.0f;
-        bool waterSwimmable = false;
-        bool raisedReachable = true;
-        uint32 raisedPathType = 0;
-        if (!RemoteCommander::FloorBelowUsable(point.z, belowZ, belowZ > INVALID_HEIGHT))
-        {
-            aboveZ = lead->GetMap()->GetHeight(point.x, point.y,
-                point.z + RemoteCommander::kFloorSnapRange, true,
-                2.0f * RemoteCommander::kFloorSnapRange);
-            if (aboveZ > INVALID_HEIGHT)
-            {
-                GridMapLiquidData liquid{};
-                uint32 const status = static_cast<uint32>(lead->GetMap()->GetTerrain()->getLiquidStatus(point.x,
-                    point.y, point.z, ai::kSwimLiquidRequest, &liquid));
-                pointInWater = ai::SwimSampleInWater(status, status != LIQUID_MAP_NO_WATER ? liquid.type_flags : 0);
-                waterLevel = liquid.level;
-            }
-            if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ, belowZ > INVALID_HEIGHT, aboveZ,
-                    aboveZ > INVALID_HEIGHT, pointInWater, waterLevel))
-            {
-                waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);
-                if (waterSwimmable)
-                {
-                    float const rx = point.x - lead->GetPositionX();
-                    float const ry = point.y - lead->GetPositionY();
-                    float const rz = aboveZ - lead->GetPositionZ();
-                    bool const atLead = RemoteCommander::IsAtLead(std::sqrt(rx * rx + ry * ry + rz * rz));
-                    float raisedEndOffset = 0.0f;
-                    if (!atLead)
-                    {
-                        PathFinder raisedPath(lead);
-                        raisedPath.calculate(point.x, point.y, aboveZ, false);
-                        raisedPathType = static_cast<uint32>(raisedPath.getPathType());
-                        Vector3 const raisedEnd = raisedPath.getActualEndPosition();
-                        float const ex = raisedEnd.x - point.x;
-                        float const ey = raisedEnd.y - point.y;
-                        float const ez = raisedEnd.z - aboveZ;
-                        raisedEndOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
-                    }
-                    raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);
-                }
-            }
-        }
-        float const snapped = RemoteCommander::ChooseFloorZ(point.z, belowZ, belowZ > INVALID_HEIGHT,
-            aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);
-        if (snapped == point.z && !raisedReachable && waterSwimmable)
-            handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
-                "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, waterLevel, aboveZ, raisedPathType);
-        if (snapped != point.z)
-        {
-            point.z = snapped;
-            handler->PSendSysMessage("Move point snapped to the floor: %.1f %.1f %.1f",
-                point.x, point.y, point.z);
-        }
-    }
+    Vector3 const origin(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ());
+    LeadMoveCheck const check = CheckLeadMove(lead, origin, request.point, s_runIssuing);
+    RemoteCommander::MovePoint const& point = check.point;
+    if (check.keptInWater)
+        handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
+            "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, check.waterLevel, check.raisedZ,
+            check.raisedPathType);
+    if (check.snapped)
+        handler->PSendSysMessage("Move point snapped to the floor: %.1f %.1f %.1f",
+            point.x, point.y, point.z);
 
-    float const dx = point.x - lead->GetPositionX();
-    float const dy = point.y - lead->GetPositionY();
-    float const dz = point.z - lead->GetPositionZ();
-    RemoteCommander::MoveFacts facts;
-    facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);
-    facts.maxDistance = sPlayerbotAIConfig.reactDistance;
-    facts.leadSpotGather = s_runIssuing && s_runGather;
-    facts.fromRunLeader = s_runIssuing;
-    // The lead bot already stands on the point ("hold here"): the path finder
-    // answers NOPATH for a zero-length path, so skip it; CheckMove accepts it.
-    if (!RemoteCommander::IsAtLead(facts.distanceFromLead))
+    RemoteCommander::MoveFacts const& facts = check.facts;
+    // The run leader's stuck note: the path type its own move's check saw.
+    if (s_runOrderCapture.active && !RemoteCommander::IsAtLead(facts.distanceFromLead))
     {
-        PathFinder path(lead);
-        path.calculate(point.x, point.y, point.z, false);
-        facts.pathType = static_cast<uint32>(path.getPathType());
-        if (s_runOrderCapture.active)
-        {
-            s_runOrderCapture.movePathRead = true;
-            s_runOrderCapture.movePathType = facts.pathType;
-        }
-        Vector3 const end = path.getActualEndPosition();
-        float const ex = end.x - point.x;
-        float const ey = end.y - point.y;
-        float const ez = end.z - point.z;
-        facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
-        float const lx = end.x - lead->GetPositionX();
-        float const ly = end.y - lead->GetPositionY();
-        float const lz = end.z - lead->GetPositionZ();
-        facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
+        s_runOrderCapture.movePathRead = true;
+        s_runOrderCapture.movePathType = facts.pathType;
     }
-    RemoteCommander::MoveVerdict verdict = RemoteCommander::CheckMove(facts);
+    RemoteCommander::MoveVerdict const verdict = check.verdict;
     if (verdict != RemoteCommander::MoveVerdict::Ok)
     {
         std::string message;
@@ -3381,6 +3438,86 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
             followers.push_back(bot);
     uint32 following = FormUpOnLead(order.commander, lead, followers, false);
     SendActionAck(handler, intent, "party", following + 1, lead->GetName());
+    return true;
+}
+
+// `.bot scout` (plan-scout spec 4.2): GM-only test tooling for a plan walk. It
+// hires, binds, moves and orders no bot; the only world change is the caller's
+// own move for `walk`. The scout's driver runs it on a test server only.
+bool HandleScout(ChatHandler* handler, char const* args)
+{
+    std::string const intent = "scout";
+    Player* caller = Requester(handler);
+    if (!caller || !caller->GetSession() || caller->GetSession()->GetSecurity() < SEC_GAMEMASTER ||
+        !caller->IsGameMaster())
+    {
+        SendActionError(handler, intent, "gm-only", "Only a Game Master with GM mode on may use the scout.");
+        return true;
+    }
+    if (!caller->IsInWorld())
+    {
+        SendActionError(handler, intent, "requester", "You must be in-game.");
+        return true;
+    }
+    RemoteCommander::ScoutArgs request;
+    if (!RemoteCommander::ParseScoutArgs(args ? args : "", request))
+    {
+        SendActionError(handler, intent, "invalid",
+            "Usage: .bot scout cfg|where #<id> / path #<id> <x> <y> <z> [from <fx> <fy> <fz>] / walk #<id> <x> <y> <z>");
+        return true;
+    }
+    if (request.form == RemoteCommander::ScoutForm::Cfg)
+    {
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutCfgLine(request.id,
+            sPlayerbotAIConfig.reactDistance, sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO),
+            sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS)).c_str());
+        return true;
+    }
+    if (request.form == RemoteCommander::ScoutForm::Where)
+    {
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutPosLine(request.id,
+            caller->GetPositionX(), caller->GetPositionY(), caller->GetPositionZ(),
+            caller->IsMoving(), caller->IsInWater(), caller->IsSwimming()).c_str());
+        return true;
+    }
+
+    Vector3 const origin(caller->GetPositionX(), caller->GetPositionY(), caller->GetPositionZ());
+    if (request.form == RemoteCommander::ScoutForm::Path)
+    {
+        Vector3 start = origin;
+        if (request.hasFrom)
+            start = Vector3(request.from.x, request.from.y, request.from.z);
+        // The point and the start are on the caller's map (the command names no
+        // map: the scout's GM stands in the plan's dungeon).
+        if (!MaNGOS::IsValidMapCoord(start.x, start.y, start.z) ||
+            !MaNGOS::IsValidMapCoord(request.point.x, request.point.y, request.point.z))
+        {
+            SendActionError(handler, intent, "wrong-map",
+                "The point or the start is outside the map's coordinate bounds: the scout paths on the caller's map only.");
+            return true;
+        }
+        LeadMoveCheck const check = CheckLeadMove(caller, start, request.point, true);
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutPathLine(request.id, check.verdict,
+            check.rawPathType, check.length, check.actualEnd, check.facts.endOffset, check.point.z,
+            check.startSwim, check.endSwim).c_str());
+        return true;
+    }
+
+    // Walk: the option set the bots' own mover ends a path with
+    // (MovementActions.cpp MoveTo2 -> DispatchMovement), on the headless GM.
+    uint32 pathType = 0;
+    float const dx = request.point.x - origin.x;
+    float const dy = request.point.y - origin.y;
+    float const dz = request.point.z - origin.z;
+    if (!RemoteCommander::IsAtLead(std::sqrt(dx * dx + dy * dy + dz * dz)))
+    {
+        PathFinder path(caller);
+        path.calculate(origin, Vector3(request.point.x, request.point.y, request.point.z), false);
+        pathType = static_cast<uint32>(path.getPathType());
+    }
+    caller->GetMotionMaster()->MovePoint(0, request.point.x, request.point.y, request.point.z,
+        MOVE_RUN_MODE | MOVE_PATHFINDING);
+    handler->PSendSysMessage("%s", RemoteCommander::ScoutWalkLine(request.id, pathType).c_str());
     return true;
 }
 

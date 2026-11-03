@@ -539,6 +539,7 @@ static BotCommandEntry const botCommands[] = {
     {"cmd", HandleCommanderOrder, "cmd <order>", {}, CommanderVisible},
     {"trace", HandleTrace, "trace <start|stop|status> ...", {}, TraceVisible},
     {"run", HandleDungeonRun, "run <start|pause|resume|skip|stop|status|list|here> ...", {}, RunVisible},
+    {"scout", HandleScout, "scout <cfg|path|walk|where> ...", {}, CommanderVisible},
     {"add", HandleAdd, "add <characterName>", {}, AlwaysVisible},
     {"remove", HandleRemove, "remove <characterName>", {"rm"}, AlwaysVisible},
     {"logout", HandleLogout, "logout <online bot name>", {}, AlwaysVisible},
