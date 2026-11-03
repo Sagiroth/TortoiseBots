@@ -65,6 +65,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics object anchor",
         NextAction::array(0, new NextAction("boss tactics object anchor", ACTION_HIGH + 5), NULL)));
 
+    // taunt_after_cast (mode until_tank, Hakkar's Cause Insanity): the row's off-tank takes the boss back once its
+    // victim is no tank. Above the target picks, below the survival rows: a taunt is worth nothing to a dead tank.
+    triggers.push_back(new TriggerNode(
+        "boss tactics taunt after",
+        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

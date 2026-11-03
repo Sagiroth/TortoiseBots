@@ -1877,6 +1877,33 @@ namespace ai
         return -1;
     }
 
+    // taunt_after_cast (mode until_tank), the `priority` tank of the raid order: the first ALIVE tank at or after it,
+    // wrapping to the front, so a dead first off-tank hands the taunt to the next one instead of leaving the subject
+    // loose. -1 when no tank is alive or the row names no index. `tankAlive` is the raid order (GetRaidTankRoles), so
+    // its own list already drops a tank that is dead or out of the group.
+    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted)
+    {
+        int const count = static_cast<int>(tankAlive.size());
+        if (count == 0 || wanted < 0)
+            return -1;
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (tankAlive[index])
+                return index;
+        }
+        return -1;
+    }
+
+    // The taunt_after_cast deadline: `triggered` is an episode the rising edge opened, `sinceMs` how long ago it did
+    // and `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
+    inline bool TauntAfterDue(bool triggered, std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
+    {
+        if (!triggered || victimIsAssigned)
+            return false;
+        return sinceMs < deadlineMs;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
