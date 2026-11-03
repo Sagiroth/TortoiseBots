@@ -8977,7 +8977,8 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
 {
     using namespace TortoiseBots::DungeonRun;
     bool const standStep = StandThisStep(slot);
-    if ((!f.pullStand && !standStep) || !lead->IsAlive() || !lead->IsInWorld())
+    // The stand discipline alone reads the same range and firing stand (DungeonRun::PullStandRuleOn runs for it).
+    if ((!f.pullStand && !standStep && !f.standDiscipline) || !lead->IsAlive() || !lead->IsInWorld())
         return;
     PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
     PullStrategy* const pull = leadAi ? PullStrategy::Get(leadAi) : nullptr;
@@ -10230,8 +10231,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.ccImmune = RunCcImmune(creature);
                     unit.attackable = GroupCanAttack(judge, creature); // never pulled when it cannot be attacked
                     // The pull stand: can the tank shoot it from where it stands (one ray, key on only, or any
-                    // stand-pull boss or pull step whatever the key says).
-                    if (f.pullStand || StandThisStep(slot))
+                    // stand-pull boss or pull step whatever the key says, or the stand discipline's key).
+                    if (f.pullStand || StandThisStep(slot) || f.standDiscipline)
                         unit.losLead = lead->IsWithinLOSInMap(creature);
                     if (standPull)
                     {

@@ -774,7 +774,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         # The clearance key owns an authored stand-pull step's stand rule (PullStandRuleOn).
         self.assertIn("f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;", read)
         # The step units (pull/boss) and the residue units carry losLead, from the lead bot's own sight test.
-        self.assertIn("if (f.pullStand || StandThisStep(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
+        self.assertIn("if (f.pullStand || StandThisStep(slot) || f.standDiscipline)\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
         self.assertIn("if (residue)\n                    {\n                        unit.x = creature->GetPositionX();\n"
                       "                        unit.y = creature->GetPositionY();\n"
                       "                        unit.distSpot = read.fromPoint2d;", read)
@@ -783,7 +783,7 @@ class RunLeaderWiringTest(unittest.TestCase):
                       "                f.hopUnits.push_back(fact);", read)
         self.assertTrue(read.rstrip().endswith("ReadRunNeedFacts(slot, lead, f);"))
         stand = body(COMMANDS, "void ReadPullStand(DungeonRunSlot const& slot,", "\n}\n")
-        self.assertIn("if ((!f.pullStand && !standStep) || !lead->IsAlive() || !lead->IsInWorld())\n        return;", stand)
+        self.assertIn("if ((!f.pullStand && !standStep && !f.standDiscipline) || !lead->IsAlive() || !lead->IsInWorld())\n        return;", stand)
         # leadShotYd is the module's PullStrategy::GetRange(), for a ranged weapon shot only (0 for spell and body pulls).
         self.assertIn('if (pull && pull->GetPullActionName() == "shoot")\n        f.leadShotYd = pull->GetRange();',
                       stand)
@@ -804,15 +804,17 @@ class RunLeaderWiringTest(unittest.TestCase):
         gate = pull.index("HoldForShot(r, f, u, dt, order, hop))\n            return;")
         # The authored half is the clearance key's, and never a hop or walk-back pull's (H1).
         self.assertIn("bool const authored = f.standClearance && !hop && AuthoredStandStep(r);", pull)
-        self.assertLess(pull.index("if ((f.pullStand || authored) && r.standPullShotGuid != u.guid)\n"), gate)
+        self.assertLess(pull.index("if ((f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)\n"), gate)
         self.assertLess(gate, pull.index('order = "pullback " + std::to_string(u.guid);'))
         self.assertLess(gate, pull.index("++tries;"))
-        self.assertIn('order = "pullback " + std::to_string(u.guid);\n    if (f.pullStand || authored)', pull)
+        self.assertIn('order = "pullback " + std::to_string(u.guid);\n    if (f.pullStand || authored || discipline)', pull)
+        self.assertIn("bool const discipline = f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;", pull)
         on = body(policy, "inline bool PullStandOn(", "\n}\n")
         self.assertIn("return f.pullStand && f.leadShotYd > kShotMarginYd && !InEvent(r);", on)
         rule = body(policy, "inline bool PullStandRuleOn(", "\n}\n")
-        self.assertIn("return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r))) && "
-                      "f.leadShotYd > kShotMarginYd &&\n        !InEvent(r);", rule)
+        self.assertIn("return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r)) ||\n"
+                      "               (f.standDiscipline && !hop && AuthoredApproach(r) != nullptr)) &&\n"
+                      "        f.leadShotYd > kShotMarginYd && !InEvent(r);", rule)
         authored = body(policy, "inline bool AuthoredStandStep(", "\n}\n")
         self.assertIn("s->kind == PlanStepKind::Boss || s->kind == PlanStepKind::Pull", authored)
         self.assertIn("StandPullStand(r, *s) != nullptr", authored)
@@ -1175,6 +1177,12 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("constexpr float kStandDisciplineYd = 5.0f;", policy)
         self.assertIn("constexpr std::uint32_t kStandDisciplineWaitMs = 10000;", policy)
         self.assertIn("no LOS from the authored stand; holding", policy)
+        # The no-LOS hold lasts kStandLosWaitMs for one unit, then the firing-stand search runs for it (the give-up tick's note).
+        self.assertIn("constexpr std::uint32_t kStandLosWaitMs = 20000;", policy)
+        self.assertIn("no LOS from the authored stand after 20 s; searching a firing stand", policy)
+        self.assertIn("r.standLosMs += dt;", policy)
+        self.assertIn("r.standLosMs >= kStandLosWaitMs", policy)
+        self.assertIn("bool const losSpent = r.standLosGuid == u.guid && r.standLosMs >= kStandLosWaitMs;", policy)
         for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
             self.assertIn("AiPlayerbot.DungeonRunStandDiscipline", (ROOT / doc).read_text())
 

@@ -234,6 +234,9 @@ constexpr std::uint32_t kShotStillWaitMs = 3000;  // a moving tank is waited for
 constexpr float kStandDisciplineYd = 5.0f;
 constexpr float kStandDisciplineRingYd = 20.0f;
 constexpr std::uint32_t kStandDisciplineWaitMs = 10000;
+// The no-LOS hold at the plan's stand: a tank that cannot shoot from there holds at most this long for one unit, then the
+// firing-stand search runs for it (the walk back to the plan's stand never resumes for that unit).
+constexpr std::uint32_t kStandLosWaitMs = 20000;
 // A stand walk that gains nothing for kWalkRetryMs, or takes longer than this
 // in all, is given up: the order goes out from where the tank is (never a pause).
 constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
@@ -2182,6 +2185,10 @@ struct Run
     // (kStandClearWaitMs), and the unit it waited for.
     std::uint32_t shotClearMs = 0;
     std::uint64_t shotClearGuid = 0;
+    // AiPlayerbot.DungeonRunStandDiscipline: the no-LOS hold at the plan's stand, for this unit and how long it has held
+    // (kStandLosWaitMs). Past it the firing-stand search runs for the unit (the hold is not taken again for it).
+    std::uint64_t standLosGuid = 0;
+    std::uint32_t standLosMs = 0;
     // HoldForShot ran on this tick. A tick it did not run on (a fight, a
     // gather, a dead member, a joiner rest, a regroup, another step kind) ends
     // the hold: the stand request, the walk and the wait are dropped (Tick).
@@ -2701,6 +2708,8 @@ inline void ResetShotStand(Run& r)
     r.shotHow.clear();
     r.shotClearMs = 0;
     r.shotClearGuid = 0;
+    r.standLosMs = 0;
+    r.standLosGuid = 0;
 }
 
 // The big pack's stand walk gate is over (the pull went out, a fight, the step).
@@ -8305,10 +8314,13 @@ inline bool PullStandOn(const Run& r, const Facts& f)
 // stand's clearance), whichever way AiPlayerbot.DungeonRunPullStand says.
 // Never a hop or a walk-back pull, the step's own included: their stand would
 // walk the tank off the point the step's pull stands on.
+// AiPlayerbot.DungeonRunStandDiscipline alone runs it too for a pull row with an authored approach (the plan's stand is
+// the only stand that row fires from; the walk and the no-LOS hold are its own).
 inline bool PullStandRuleOn(const Run& r, const Facts& f, bool hop)
 {
-    return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r))) && f.leadShotYd > kShotMarginYd &&
-        !InEvent(r);
+    return (f.pullStand || (f.standClearance && !hop && AuthoredStandStep(r)) ||
+               (f.standDiscipline && !hop && AuthoredApproach(r) != nullptr)) &&
+        f.leadShotYd > kShotMarginYd && !InEvent(r);
 }
 
 // The tank's shot can go out from where it stands: the unit in sight and
@@ -8695,16 +8707,24 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
     {
         r.shotHow = std::string(tries ? "shot from firing stand " + std::to_string(tries) : "shot from where it stands") +
             (moving ? ", still moving" : "");
+        if (r.standLosGuid == u.guid)
+        {
+            r.standLosGuid = 0; // the shot is good: the next pull of this unit holds afresh
+            r.standLosMs = 0;
+        }
         return false;
     }
     // AiPlayerbot.DungeonRunStandDiscipline: a pull row with an authored approach fires from that stand only. A tank
     // that cannot shoot from there walks back to it and the row holds there: never a closer stand the path offers (the
     // ZG terrace's 8.7 yd stand stood 24 yd nearer the middle packs than the authored approach), and never a stand the
     // plan did not author. The plan's next authored stand is where the run goes once this step gives up.
+    // The no-LOS hold lasts kStandLosWaitMs for the unit; then the firing-stand search below takes it (the way the
+    // stand rule ran before this key), and the walk back to the plan's stand is not resumed for it.
     if (f.standDiscipline)
     {
         const PlanStep* const stand = AuthoredApproach(r);
-        if (stand)
+        bool const losSpent = r.standLosGuid == u.guid && r.standLosMs >= kStandLosWaitMs;
+        if (stand && !losSpent)
         {
             if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, stand->x, stand->y, stand->z) > kStandDisciplineYd)
             {
@@ -8719,11 +8739,22 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
                 }
                 EnterPhase(r, Phase::Begin); // arrived (the anchor is the stand now)
             }
-            r.shotHow = "no LOS from the authored stand; holding";
-            r.shotStandPrep = true;
+            if (r.standLosGuid != u.guid)
+            {
+                r.standLosGuid = u.guid;
+                r.standLosMs = 0;
+            }
+            r.standLosMs += dt;
             r.standPullShotGuid = 0;
-            r.note = "no LOS from the authored stand; holding";
-            return true;
+            if (r.standLosMs >= kStandLosWaitMs)
+            {
+                // The give-up tick: the glue reads a firing stand for the next tick, and this note names the change.
+                r.shotHow = "no LOS from the authored stand after 20 s; searching a firing stand";
+                r.shotStandFor = u.guid;
+                return hold("no LOS from the authored stand after 20 s; searching a firing stand");
+            }
+            r.shotHow = "no LOS from the authored stand; holding";
+            return hold("no LOS from the authored stand; holding");
         }
     }
     if (tries >= kShotStandTries)
@@ -9015,7 +9046,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // (PullStandRuleOn); its hop and walk-back pulls never take it.
     // The stand-pull gate's authorization covers only the unit it picked in shot.
     bool const authored = f.standClearance && !hop && AuthoredStandStep(r);
-    if ((f.pullStand || authored) && r.standPullShotGuid != u.guid)
+    // AiPlayerbot.DungeonRunStandDiscipline alone: the plan's stand is enforced for a pull row with an authored approach.
+    bool const discipline = f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;
+    if ((f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)
     {
         auto const done = r.pullTries.find(u.guid);
         if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order, hop))
@@ -9095,7 +9128,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     EnterPhase(r, Phase::AwaitPull);
     r.note = "pulling " + std::to_string(u.entry);
     order = "pullback " + std::to_string(u.guid);
-    if (f.pullStand || authored)
+    if (f.pullStand || authored || discipline)
     {
         // Each order its own status line (the trace keeps only changes): the
         // target's guid, the how-many-th order to it, and how its shot stood.

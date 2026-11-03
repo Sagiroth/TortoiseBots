@@ -1131,8 +1131,10 @@ AiPlayerbot.DungeonRunStandPullPreCc = 0
 
 # The plan's stand is the only stand a pull row uses. With this key the run leader
 # never searches a closer firing stand when the plan's authored approach cannot see
-# the pulled unit: it walks the tank back to that approach and holds there (status
-# note "no LOS from the authored stand; holding"). Before the row fires it also
+# the pulled unit: it walks the tank back to that approach and holds there for up to
+# 20 s per unit (status note "no LOS from the authored stand; holding"), then searches a
+# firing stand as with 0 (note "no LOS from the authored stand after 20 s; searching a
+# firing stand"). It needs no AiPlayerbot.DungeonRunPullStand. Before the row fires it also
 # waits for every living tank and melee to stand at that approach (within 5 yd) or
 # clear of the next pull's pack (farther than its radius plus the core's 20 yd aggro
 # ring from its point): up to 10 s, then the row fires and its note names those still
