@@ -31456,6 +31456,58 @@ static void TestAutoCcPicksTheFamilyThatFits()
     }
 }
 
+// A dotted demon is still Banish's: the party's DoT cannot break a banish (the unit is immune while it lasts), and a
+// feared unit is not broken by damage either. The legacy pick exempts both for that reason, and so does the run's.
+static void TestAutoCcBanishesADottedDemon()
+{
+    {
+        // Before the pull: the dotted demon is marked for the warlock, the dotted humanoid is no polymorph's.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Locky", CcFamily::Banish)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 300, 20, kCreatureDemon)};
+        f.units[1].partyDots = true;
+        CHECK(Tick(r, f) == "cc moon 2 Locky banish");
+        CHECK(r.ccSent.size() == 1);
+        CHECK(r.note.find("Banish") != std::string::npos);
+    }
+    {
+        // A dotted humanoid is no polymorph's: the ticks break the sheep. No mark, the pull goes (the pack's own
+        // target is undead here: no polymorph fits it).
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {Typed(1, 101, 10, kCreatureUndead), AutoHumanoid(2, 20)};
+        f.units[1].partyDots = true;
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+    }
+    {
+        // In the fight: the dotted demon joiner gets the warlock's banish.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Locky", CcFamily::Banish)};
+        f.units = {AutoHumanoid(1, 10)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        std::vector<UnitFact> engaged;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            engaged.push_back(hit);
+        }
+        UnitFact demon = Typed(900, 300, 25, kCreatureDemon);
+        demon.partyDots = true;
+        engaged.push_back(demon);
+        f.partyAttackers = engaged;
+        CHECK(Tick(r, f) == "cc moon 900 Locky banish");
+    }
+}
+
 // Freezing Trap is no automatic family: a trap freezes only a mob that walks
 // over it, so a pre-pull or in-fight order on a joiner never lands (ZG walk 32:
 // 54 in-fight orders, none landed). The hunter is no CC bot for the automatic
@@ -32268,6 +32320,7 @@ int main()
     TestAutoCcStopsAtTheThreshold();
     TestAutoCcCastersFirstThenPlanRank();
     TestAutoCcPicksTheFamilyThatFits();
+    TestAutoCcBanishesADottedDemon();
     TestAutoCcNeverPicksFreezingTrap();
     TestAutoCcSkipsDottedUnits();
     TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();

@@ -9104,6 +9104,11 @@ inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFac
                 continue;
             if (!CcFits(c.family, u.creatureType) || (u.ccImmune & CcBit(c.family)))
                 continue;
+            // The party's DoT on a unit breaks its hold the moment it ticks, but a banished unit is immune while the
+            // banish lasts and a feared one is not broken by damage: Banish and Fear stay open (the legacy pick's own
+            // exemption, CcTargetValue).
+            if (u.partyDots && c.family != CcFamily::Banish && c.family != CcFamily::Fear)
+                continue;
             for (const MemberFact& m : f.members)
                 if (fits(m, c))
                 {
@@ -9333,7 +9338,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
         auto const reapplied = r.ccReapplied.find(u.guid);
         if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
-            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyDots || u.partyHits ||
+            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
             r.healerGuardAssigned.count(u.guid) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
@@ -9397,8 +9402,10 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
         if (r.ccOpenSent.count(entry->first) || r.ccLandedSeen.count(entry->first))
             continue; // sent once already, or its aura was seen: a break is RunCcReapplyTick's
         const UnitFact* const u = FightUnit(f, entry->first);
-        if (!u || u->polymorphed || u->partyDots || !u->hostile || !u->attackable || u->evading)
+        if (!u || u->polymorphed || !u->hostile || !u->attackable || u->evading)
             continue;
+        if (u->partyDots && entry->second.family != CcFamily::Banish && entry->second.family != CcFamily::Fear)
+            continue; // a party DoT's ticks break the hold; Banish and Fear are immune to that
         bool botAlive = false;
         for (const MemberFact& m : f.members)
             if (m.name == entry->second.bot)
@@ -9502,7 +9509,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         for (const UnitFact& u : *list)
         {
             auto const reapplied = r.ccReapplied.find(u.guid);
-            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || u.partyDots ||
+            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
                 r.ccSent.count(u.guid) || u.partyHits || u.victimTank || u.guid == f.leadTargetGuid ||
                 (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
@@ -9579,9 +9586,11 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
-        if (!u || u->polymorphed || u->partyDots || u->partyHits || u->victimTank ||
+        if (!u || u->polymorphed || u->partyHits || u->victimTank ||
             u->guid == f.leadTargetGuid || (r.focusGuid && u->guid == r.focusGuid))
             continue;
+        if (u->partyDots && entry.second.family != CcFamily::Banish && entry.second.family != CcFamily::Fear)
+            continue; // a party DoT's ticks break the hold; Banish and Fear are immune to that
         auto const had = r.ccReapplied.find(entry.first);
         std::uint32_t const times = had == r.ccReapplied.end() ? 0 : had->second;
         if (times >= kRunCcReapplies)
