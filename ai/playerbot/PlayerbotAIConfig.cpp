@@ -504,7 +504,7 @@ bool PlayerbotAIConfig::Initialize()
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
     fleeingEnabled = config.GetBoolDefault("AiPlayerbot.FleeingEnabled", true);
     poolMeleeHoldGround = config.GetBoolDefault("AiPlayerbot.PoolMeleeHoldGround", false);
-    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", false);
+    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", true);
     altBotsLogoutWithOwner = config.GetBoolDefault("AiPlayerbot.AltBotsLogoutWithOwner", false);
     bombRunoutDistance = config.GetFloatDefault("AiPlayerbot.BombRunoutDistance", 30.0f);
     hazardEvasionDistance = config.GetFloatDefault("AiPlayerbot.HazardEvasionDistance", 12.0f);

@@ -2295,13 +2295,13 @@ AiPlayerbot.FleeingEnabled = 1
 # master never get this flee anyway. Takes effect after a server restart.
 #AiPlayerbot.PoolMeleeHoldGround = 0
 
-# Alt-bots (issue #872, opt-in). 1 = an alt you brought in with `.bot add`
+# Alt-bots (issue #872, on by default). 1 = an alt you brought in with `.bot add`
 # keeps playing on its own when you kick it from your party (or the party
 # breaks up): it quests, grinds and travels like a pool bot, with protections
 # for your gear, gold and talents, and takes one pool bot's slot while it is
 # out. `.bot remove`, `.bot add` again or logging in on the alt ends it.
 # Hardcore characters are refused. 0 = a kicked alt stays your companion.
-#AiPlayerbot.AltBots = 0
+#AiPlayerbot.AltBots = 1
 
 # 1 = alt-bots log out when their owner logs out. 0 = they keep playing until
 # `.bot remove` (or a server restart; they do not come back after one).
