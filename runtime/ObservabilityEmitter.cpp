@@ -460,8 +460,9 @@ void FillLiveUnitSnapshot(Player* unit, BotTelemetrySnapshot& snap)
     Group* group = unit->GetGroup();
     snap.groupId = group ? group->GetId() : 0;
     snap.subgroupId = unit->GetSubGroup();
-    snap.instanceId = unit->GetMap() ? unit->GetMap()->GetInstanceId() : 0;
-    snap.raidMap = unit->GetMap() && unit->GetMap()->IsRaid();
+    Map const* map = unit->FindMap();
+    snap.instanceId = map ? map->GetInstanceId() : 0;
+    snap.raidMap = map && map->IsRaid();
     if (unit->InBattleGround())
     {
         snap.pvp = "bg";

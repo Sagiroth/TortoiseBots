@@ -154,7 +154,7 @@ void BotPlayerAdapter::OnMapChanged(Player* player)
         return;
     }
 
-    if (!player->IsInWorld() || !player->GetMap() || player->GetMap()->IsDungeon())
+    if (!player->IsInWorld() || !player->FindMap() || player->FindMap()->IsDungeon())
     {
         return;
     }
@@ -164,7 +164,7 @@ void BotPlayerAdapter::OnMapChanged(Player* player)
     // summon and its cancellation/completion state.
     for (Player* bot : BotManager::Instance().GetBotsForMaster(player->GetObjectGuid()))
     {
-        if (!bot || !bot->GetMap() || !bot->GetMap()->IsDungeon())
+        if (!bot || !bot->FindMap() || bot->FindMap()->IsDungeon())
             continue;
         // Issue #884: a bot in the group this player commands remotely stays
         // with its lead bot; leading from outside the dungeon is the point.

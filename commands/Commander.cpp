@@ -1509,7 +1509,7 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
 {
     if (guid.IsEmpty() || guid == bot->GetObjectGuid())
         return nullptr;
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     Unit* unit = map ? map->GetUnit(guid) : nullptr;
     if (!unit || !unit->IsInWorld() || !unit->IsAlive())
         return nullptr;
@@ -1545,7 +1545,7 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
         // lists repeat is dropped here before any unit lookup.
         if (std::find(nonBosses.begin(), nonBosses.end(), guid) != nonBosses.end())
             return;
-        Map* map = bot->GetMap();
+        Map* map = bot->FindMap();
         Unit* seen = map ? map->GetUnit(guid) : nullptr;
         // A guid that does not resolve here (a stale list, another instance
         // copy) says nothing about the unit; only this occurrence is skipped.

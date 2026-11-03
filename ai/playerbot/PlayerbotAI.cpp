@@ -1046,7 +1046,7 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 // pair leaves an instance group, so it never carries a stale route.
 void PlayerbotAI::UpdateLeadTrail()
 {
-    Map* map = bot ? bot->GetMap() : nullptr;
+    Map* map = bot ? bot->FindMap() : nullptr;
     if (!bot || !map || !bot->GetGroup() || !(map->IsDungeon() || map->IsRaid()) || !aiObjectContext)
     {
         leadTrail.clear();
@@ -1201,7 +1201,7 @@ bool PlayerbotAI::IsInRaid()
     bool inRaidFight = false;
     if (IsSafe(bot))
     {
-        const Map* map = bot->GetMap();
+        const Map* map = bot->FindMap();
         if (map && (map->IsDungeon() || map->IsRaid()))
         {
             inRaidFight = true;
@@ -4980,7 +4980,7 @@ float PlayerbotAI::GetRange(std::string type)
 
     // In dungeons and raids the follow leash stays tight (raid distance)
     // so bots trail the master instead of cutting corners into side packs.
-    if (type == "follow" && bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()))
+    if (type == "follow" && bot->FindMap() && (bot->FindMap()->IsDungeon() || bot->FindMap()->IsRaid()))
         type = "followraid";
 
     if (aiObjectContext) val = aiObjectContext->GetValue<float>("range", type)->Get();
