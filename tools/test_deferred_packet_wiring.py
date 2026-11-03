@@ -31,8 +31,16 @@ class DrainGateWiringTest(unittest.TestCase):
     def test_gate_holds_and_drops_off_map_packets(self):
         gate = body(ADAPTER, "void DeliverOrHold(WorldThreadQueue<DeferredPacket>::Entry& entry)")
         self.assertIn("DeferredDelivery::Decide(bot->IsInWorld(), bot->IsBeingTeleportedFar(),", gate)
-        self.assertIn("g_heldBacklogs[entry.key].push_back(", gate)
-        self.assertIn("g_heldBacklogs.find(entry.key)", gate)
+        self.assertIn("g_heldBacklogs.Append(entry.key, entry.seq, std::move(entry.item), SteadyNowMs());", gate)
+        self.assertIn("g_heldBacklogs.Contains(entry.key)", gate)
+
+    def test_backlog_is_the_unit_tested_header(self):
+        # The order, the before-bound and the staleness are the header class,
+        # covered by tools/test_bot_packet_backlog.cpp.
+        self.assertIn("BotPacketBacklog<DeferredPacket> g_heldBacklogs;", ADAPTER)
+        self.assertIn("g_heldBacklogs.Drain(before, SteadyNowMs(), DeferredDelivery::kMaxHeldMs,", ADAPTER)
+        held = body(ADAPTER, "bool BotPacketAdapter::HasHeldPacketsBefore(uint64_t masterGuid, uint64_t before)")
+        self.assertIn("g_heldBacklogs.AnyBefore(", held)
 
 
 if __name__ == "__main__":
