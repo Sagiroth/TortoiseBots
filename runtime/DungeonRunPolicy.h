@@ -1193,9 +1193,13 @@ constexpr float kRunCcFleeRoomYd = 35.0f;
 constexpr std::uint32_t kRunCcMaxLevelOver = 3;
 constexpr std::uint32_t kRunCcHealersKept = 4;
 constexpr std::uint32_t kRunCcFightGapMs = 2000;
-// The fight's opening: this long after it began, every pre-pull mark whose aura
-// is not read gets its order again (RunAutoCcPrePullOpenTick).
+// The fight's opening: this long after it began (and at most kRunCcOpenOrders
+// joiner orders) the auto crowd control sends without kRunCcFightGapMs, and
+// every pre-pull mark whose aura is not read gets its order again
+// (RunAutoCcPrePullOpenTick). A fight the party walked into starts over the
+// threshold, so the first orders are the ones that save the healers.
 constexpr std::uint32_t kRunCcOpenWindowMs = 5000;
+constexpr std::uint32_t kRunCcOpenOrders = 3;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
@@ -2404,8 +2408,10 @@ struct Run
     std::uint32_t ccAutoGapMs = 0;
     bool ccAutoNoBotNoted = false;
     // The fight's opening (set when it begins, kRunCcOpenWindowMs): the pre-pull
-    // marks are cast at once (ccOpenSent: those already re-sent).
+    // marks are cast at once (ccOpenSent: those already re-sent) and the first
+    // kRunCcOpenOrders joiner orders go out without the 2 s gap (ccOpenOrders).
     bool ccOpenDue = false;
+    std::uint32_t ccOpenOrders = 0;
     std::unordered_set<std::uint64_t> ccOpenSent;
     // The units marked before this fight began (the pull's pre-pull marks): the
     // opening re-sends their orders, and only theirs.
@@ -9295,7 +9301,11 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         }
         return false;
     }
-    if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs)
+    // The fight's opening: its first kRunCcOpenOrders orders go out one tick
+    // after the other, no kRunCcFightGapMs (a walk-in fight starts over the
+    // threshold, and the healers are dying while the orders wait).
+    bool const opening = r.ccOpenDue && r.fightMs <= kRunCcOpenWindowMs && r.ccOpenOrders < kRunCcOpenOrders;
+    if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs && !opening)
         return false;
     // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
     // union is by guid so a guid reaching the count from two lists still counts once).
@@ -9368,6 +9378,8 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     r.ccAutoPending = Run::CcAutoOrder{order, best->guid, true, false, false, r.ccAutoGapMs};
     RegisterCcOrder(r, pick, best->guid);
     ++r.ccAutoOrders;
+    if (opening)
+        ++r.ccOpenOrders;
     r.ccAutoGapMs = 0;
     r.note = "auto cc: joiner " + std::to_string(best->entry) + " (" + pick.bot + ": " + RunCcOf(pick.family)->spell +
         "), engaged " + std::to_string(engaged - held) + " over " + std::to_string(threshold);
@@ -19644,6 +19656,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         {
             r.fighting = true;
             r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
+            r.ccOpenOrders = 0;
             r.ccOpenSent.clear();
             r.ccOpenPrepull.clear();
             for (auto const& hold : r.ccHolds)

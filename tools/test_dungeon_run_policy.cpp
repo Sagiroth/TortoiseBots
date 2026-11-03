@@ -31348,8 +31348,10 @@ static void TestAutoCcJoinerInTheFight()
     f.leadTargetGuid = 901;
     CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
     CHECK(r.note.find("engaged 12 over 6") != std::string::npos);
-    CHECK(Tick(r, f).empty());                        // 1 s: the 2 s spacing
-    CHECK(Tick(r, f) == "cc square 902 Magetwo polymorph");     // 2 s
+    // The fight's opening: the next order follows at once, no kRunCcFightGapMs
+    // (the healers are dying while the orders would wait).
+    CHECK(Tick(r, f) == "cc square 902 Magetwo polymorph");
+    CHECK(Tick(r, f).empty());                        // both mages hold a unit: no free bot
     CHECK(r.ccSent.count(901) == 0);                  // never the tank's
 }
 
@@ -31464,6 +31466,32 @@ static void TestPrePullMarksCastWhenThePackOpens()
     CHECK(Tick(q, g) == "cc diamond 2 Magethree polymorph");
     CHECK(Tick(q, g) == "cc square 3 Magetwo polymorph");
     CHECK(Tick(q, g).empty());
+}
+
+// A fight the party walked into (no pull order) opens already over the
+// threshold: its first orders go out one tick after the other, not two seconds
+// apart, then the usual gap resumes.
+static void TestAWalkInFightSendsItsFirstOrdersAtOnce()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = AutoParty(2);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph), AutoCcMem("Magefour", CcFamily::Polymorph)};
+    f.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 105; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true; // engaged bodies nobody ordered
+        f.partyAttackers.push_back(hit);
+    }
+    for (std::uint64_t guid = 200; guid <= 202; ++guid)
+        f.partyAttackers.push_back(AutoHumanoid(guid, 20));
+    CHECK(Tick(r, f) == "cc moon 200 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 201 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 202 Magethree polymorph");
+    CHECK(Tick(r, f).empty()); // the opening is over: kRunCcFightGapMs holds
 }
 
 static void TestAutoCcReappliesTwiceThenStops()
@@ -31753,6 +31781,7 @@ int main()
     TestAutoCcLevelGap();
     TestAutoCcJoinerInTheFight();
     TestPrePullMarksCastWhenThePackOpens();
+    TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcReappliesTwiceThenStops();
     TestAutoCcBudget();
