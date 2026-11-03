@@ -5512,7 +5512,6 @@
   }
 
   // ---- Fight debugger mode: one tab per raid, All raids first ------------------------------
-  // The Commanders page has two views, kept per browser: Live keeps today's stacked cards, the Fight debugger shows the tab
   // strip and renders the one open commander's card (or the All raids grid). The open tab is in the URL hash, so a reload,
   // Back and Forward land on the same card. The strip reads only the /api/v1/commanders report; fight summaries are the one
   // extra request (one per commander, at most every 10 s), and fight details/track/plan belong to the open tab alone.
@@ -6174,10 +6173,23 @@
   // The commanders the visible cards draw: the Commanders tab's cards (all of them on the Live page, the one open tab in the
   // debugger). No demo or dungeon bindings: the daemon knows nothing of them.
   function cmdLiveNames() {
-    if (state.activeTab !== 'commanders') return [];
-    let list = state.commanders.list || [];
-    if (cmdPageMode() === 'debug' && fdPage.open) list = list.filter(b => b.commander === fdPage.open);
-    return list.map(b => b.commander);
+    const names = [];
+    const push = list => (list || []).forEach(b => { if (b && b.commander && names.indexOf(b.commander) < 0) names.push(b.commander); });
+    if (state.activeTab === 'commanders') {
+      let list = state.commanders.list || [];
+      if (cmdPageMode() === 'debug' && fdPage.open) list = list.filter(b => b.commander === fdPage.open);
+      push(list);
+    } else if (state.activeTab === 'raids') {
+      // The open raid group's fight key: the strip paints its live events
+      // and the map glides its 2 s RAIDS positions (G1).
+      const run = state.raids.openKey != null ? (state.raids.runs || []).find(r => r.key === state.raids.openKey) : null;
+      const group = run && state.raids.openGroup != null
+        ? (run.groups || []).find(g => String(g.group) === String(state.raids.openGroup)) || null
+        : null;
+      const bind = group ? (state.raids.binds || []).find(b => b && b.commander === group.key) : null;
+      if (bind) push([bind]);
+    }
+    return names;
   }
 
   function cmdLiveSync() {
@@ -6191,14 +6203,32 @@
   function cmdLiveHandlers() {
     return {
       // The stream's own snapshot: the same merge as a commander frame while the WebSocket is down.
+      // Raid rows refresh the binds' positions so an open raid card draws at once.
       snapshot: d => {
         if (!d) return;
         (d.commanders || []).forEach(b => { if (!state.wsConnected) cmdLiveMergeBinding(b); });
+        (d.raids || []).forEach(r => cmdLiveMergeRaidRow(r));
       },
       // Only while the WebSocket is down: otherwise the 2 s report is the one path into the list (no double render).
       commander: d => { if (!state.wsConnected && d) cmdLiveMergeBinding(d); },
       pos: d => {
         if (!d || !LiveView.posAllowed(refreshGate.interval())) return;
+        // Raid fight keys merge into the raids binds, keyed by commander;
+        // the card key resolves them for the map (drawCmdMap keys by
+        // cardKey, the scheduler marks by fight key).
+        const raidBind = (state.raids.binds || []).find(b => b && b.commander === d.commander);
+        if (raidBind) {
+          const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
+          const now = performance.now(), ts = d.ts_ms;
+          Glide.sampled(st, now, ts, d.session, true);
+          (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now, ts, undefined, true); });
+          (d.mobs || []).forEach(m => {
+            if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, raidBind.mobs_map || null, true, now, ts, typeof m.o === 'number' ? m.o : undefined, true);
+          });
+          cmdSched.mark(raidBind.cardKey, true);
+          if (state.activeTab === 'raids') drawCmdMap(raidBind.cardKey);
+          return;
+        }
         const list = LiveView.applyPos(state.commanders.list, d);
         if (list === state.commanders.list) return;
         state.commanders.list = list;
@@ -6250,6 +6280,26 @@
     list.push(bind);
     applyCommanders({ commanders: list, fresh: true, updated_at: Math.round(Date.now() / 1000) });
   }
+  // A raid row of the stream merged into the raids binds: the snapshot
+  // path while the WebSocket is down. Positions refresh through the same
+  // bind shape the RAIDS fetch builds.
+  function cmdLiveMergeRaidRow(row) {
+    if (!row || typeof row.key !== 'string') return;
+    const run = (state.raids.runs || []).find(r => String(r.key) === String(row.map) + ':' + String(row.instance));
+    if (!run) return;
+    const group = (run.groups || []).find(g => g && (g.key === row.key || Number(g.group) === Number(row.group))) || null;
+    if (!group) return;
+    const i = (state.raids.binds || []).findIndex(b => b && b.commander === row.key);
+    if (i < 0) return;
+    const next = Object.assign({}, group, { combat: row.combat || group.combat, members: group.members });
+    const fresh = RaidView.bindOf(run, next);
+    state.raids.binds[i] = fresh;
+    if (state.activeTab === 'raids' && state.raids.openGroup != null
+      && String(state.raids.openGroup) === String(group.group)
+      && String(state.raids.openKey) === String(run.key)) {
+      raidRenderCard(run, next);
+    }
+  }
 
   // A live fight opened, ended or finished: the fights list changed. Its own gate key, so it never replaces a pending report.
   // A fight key also resets the raid card showing that fight (its card key rides bind.cardKey).
@@ -6300,10 +6350,16 @@
   }
 
   // The card's "Live events" strip: the newest 12 events, newest first.
+  // A raid card is keyed by cardKey ('raid:<run>:<key>'), not by the fight
+  // key the stream names, so it shares the fight key's ring.
   function cmdLivePaintEvents(commander) {
-    const card = cmdCards.get(commander);
+    let ring = cmdLiveEvents[commander] || [];
+    let card = cmdCards.get(commander);
+    if (!card) {
+      const raid = (state.raids.binds || []).find(b => b && b.commander === commander && b.cardKey);
+      if (raid) card = cmdCards.get(raid.cardKey);
+    }
     if (!card) return;
-    const ring = cmdLiveEvents[commander] || [];
     const box = card.querySelector('.cmd-live-events');
     if (box) {
       // Newest first: a new row pushes the older ones down (and the 12-event cap drops the oldest, so the box's total height can
@@ -6514,9 +6570,11 @@
       : '<span class="cmd-meter cmd-deadtxt">Dead</span><span class="cmd-meter"></span>';
     const away = b.away ? ' <span class="cmd-flag" title="Off the run\u2019s gather rule or the plan\u2019s map">away</span>' : '';
     const cast = b.cast ? `<span class="muted"> · ${esc(b.cast)}</span>` : '';
+    const tgt = RaidView.targetName ? RaidView.targetName(bind, b) : '';
+    const tgtHtml = tgt ? `<span class="muted"> → ${esc(tgt)}</span>` : '';
     return `<div class="cmd-row ${r.alive ? '' : 'dead'}">
       ${cmdIcon(r.role, r.alive ? r.roleLabel : r.roleLabel + ' (dead)')}
-      <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}${b.act ? ' · ' + esc(b.act) + (b.res ? b.res : '') : ''}</span>${cast}${cmdDoingHtml(bind, r.guid)}</span>
+      <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}${b.act ? ' · ' + esc(b.act) + (b.res ? b.res : '') : ''}${cast}</span>${cmdDoingHtml(bind, r.guid)}${tgtHtml}</span>
       ${bars}<span class="cmd-dist">${dist}${away}</span></div>`;
   }
 
@@ -8045,10 +8103,16 @@
         </div>
         <p class="fd-nofight" hidden></p>
         <section class="fd-bosses" aria-label="Boss abilities" hidden><div class="fd-bosslist"></div></section>
-        <div class="cmd-panels">
+        <div class="cmd-panels raid-panels">
           <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Roles</h3><div class="raid-roles"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Run totals</h3><div class="raid-totals"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Underperforming bots</h3><details class="raid-underbox"><summary class="cmd-h">Underperforming bots</summary><div class="raid-underbody"></div></details></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Ready check</h3><div class="raid-ready"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Boss debuffs</h3><div class="raid-debuffs"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Orders</h3><div class="raid-orders-note">controls need a bound commander</div></div>
           <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
       </div>`;
@@ -10402,6 +10466,7 @@
 
     if (open && openRun) {
       raidRenderCard(openRun, open);
+      cmdLiveSync();
       return;
     }
 
@@ -10501,6 +10566,8 @@
     const fightsHost = card.querySelector('.cmd-fights');
     if (fightsHost) setHtml(fightsHost, fightsBtn);
     mountFightPanel(card, bind);
+    raidInlineSync(card, bind);
+    raidLiveSync(card, bind);
     drawCmdMap(key);
   }
   // The live combat window as a per-bot table (dps/hps/casts/last spell), reusing the debugger's live-table renderer.
@@ -10509,6 +10576,190 @@
     const bots = (bind && bind.combat && bind.combat.bots) || [];
     if (!bots.length || typeof FightDebug === 'undefined' || !FightDebug.liveTables) return '';
     return `<h4 class="cmd-subgroup">Window &middot; last ${bind.combat.win_s || 0} s</h4>` + fdLiveTableHtml(FightDebug.liveTables(bind), null, bind.combat.win_s || 0);
+  }
+  // The raid card's inline fight sections: the This fight | Total role
+  // tables (#18), run totals (#22) and Underperforming bots (#23), reusing
+  // the debugger's renderers keyed by the raid fight key. The role tables
+  // read the fights list through cmdFightsCache (fetched by mountFightPanel
+  // with the same key); the pick is the newest finished fight. Controls stay
+  // hidden by design (#8, #15, #29): a one-line note says a bound commander
+  // is needed.
+  function raidRolesHtml(card, bind) {
+    if (typeof FightDebug === 'undefined' || !FightDebug.roleTables) return '';
+    const entry = cmdFightsCache[bind.commander];
+    const list = entry && Array.isArray(entry.list) ? entry.list.filter(f => f && !f.live) : [];
+    if (!list.length) return '<p class="empty-hint">No fight yet: the first pull shows here.</p>';
+    const fight = list[0];
+    const mode = card && card.dataset ? (card.dataset.raidTotals === 'run' ? 'run' : 'fight') : 'fight';
+    let tables = FightDebug.roleTables(fight, bind.layout || null), title = '', chips = '';
+    const secs = Math.max(1, (Number(fight.dur_ms) || 0) / 1000);
+    const dmg = (fight.bots || []).reduce((n, b) => n + (Number(b && b.dmg) || 0), 0);
+    const heal = (fight.bots || []).reduce((n, b) => n + (Number(b && b.heal) || 0), 0);
+    if (mode === 'run' && card && card._raidTotals && card._raidTotals.json) {
+      const totals = card._raidTotals.json;
+      tables = FightDebug.runRoleTables ? FightDebug.runRoleTables(totals, bind.layout || null) : tables;
+      title = fdTotalTitleHtml(totals, card._raidTotals.session, !!card._raidTotals.more);
+      chips = fdTotalChipsHtml(totals);
+    } else {
+      title = (fight.boss_name || fight.label || 'trash') + ' · ' + secs.toFixed(1) + ' s';
+      chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
+        + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`;
+    }
+    const three = fdRolesHtml(tables, null, mode);
+    return fdTotalsSegHtml(mode)
+      + `<p class="fd-title">${esc(title)}</p><div class="fd-chips">${chips}</div>`
+      + three[0] + three[1] + three[2];
+  }
+
+  // The run totals row under the role tables (#22): the run's sums from the
+  // same fight key, or nothing while unfetched.
+  function raidTotalsLineHtml(card) {
+    const t = card && card._raidTotals && card._raidTotals.json;
+    if (!t) return '';
+    return `<p class="fd-undsum">${FightDebug.fmtInt(t.fights || 0)} fights · ${FightDebug.fmtInt((t.bots || []).length)} bots</p>`;
+  }
+
+  // Underperforming bots inline (#23): the same report the debugger draws,
+  // fetched for the raid fight key while its box is open.
+  function raidUnderBodyHtml(card) {
+    const st = card && card._raidUnder;
+    if (!st || !st.body) return '<p class="empty-hint">Loading…</p>';
+    return st.body;
+  }
+  // Paints and refetches the raid card's inline fight sections (#18, #22,
+  // #23) plus the ready check and boss debuffs when the detail feed carries
+  // them (#24, #25). The role tables switch rerenders in place; the totals
+  // and underperformers fetch once per fight key until they answer. Ready
+  // and debuffs reuse the raid frames renderer so the chips match the
+  // debugger exactly; with the detail key off the card names the key.
+  function raidInlineSync(card, bind) {
+    if (!card || !bind) return;
+    const roles = card.querySelector('.raid-roles');
+    if (roles) setHtml(roles, raidRolesHtml(card, bind));
+    const totals = card.querySelector('.raid-totals');
+    if (totals) setHtml(totals, raidTotalsLineHtml(card));
+    raidReadyPaint(card, bind);
+    raidDebuffPaint(card, bind);
+    raidTotalsFetch(card, bind);
+    raidUnderFetch(card, bind);
+    if (roles && !roles._segBound) {
+      roles._segBound = true;
+      roles.addEventListener('click', e => {
+        const btn = e.target.closest && e.target.closest('[data-fd-totals]');
+        if (!btn) return;
+        card.dataset.raidTotals = btn.dataset.fdTotals === 'run' ? 'run' : 'fight';
+        setHtml(roles, raidRolesHtml(card, bind));
+        raidTotalsFetch(card, bind);
+      });
+    }
+    const box = card.querySelector('.raid-underbox'), body = card.querySelector('.raid-underbody');
+    if (box && body) {
+      if (!box.dataset.raidBound) {
+        box.dataset.raidBound = '1';
+        box.addEventListener('toggle', () => { if (box.open) raidUnderFetch(card, bind, true); });
+      }
+      setHtml(body, raidUnderBodyHtml(card));
+    }
+  }
+
+  // The raid roles' Total mode fetches the run's sums once per fight key
+  // until they answer (the pick is the newest finished fight). A key with no
+  // fight yet has no session to ask for, so nothing is fetched.
+  function raidTotalsFetch(card, bind) {
+    if (!card || !bind || card._raidTotalsFetch) return;
+    if (card.dataset.raidTotals !== 'run') return;
+    const entry = cmdFightsCache[bind.commander];
+    const list = entry && Array.isArray(entry.list) ? entry.list.filter(f => f && !f.live && f.key) : [];
+    if (!list.length) return;
+    const session = fdTotalsSession(list[0].key);
+    if (session === '' || session == null) return;
+    card._raidTotalsFetch = true;
+    fetch('/api/v1/combat/run-totals?commander=' + encodeURIComponent(bind.commander) + '&session=' + encodeURIComponent(session))
+      .then(r => {
+        const more = !!(r && r.headers && r.headers.get && r.headers.get('X-More') === '1');
+        return jsonOrThrow(r).then(json => ({ json: json, more: more }));
+      }).then(got => {
+        card._raidTotals = { at: Date.now(), session: String(session), json: got.json || null, more: got.more };
+      }).catch(() => {
+        card._raidTotals = { at: Date.now(), session: String(session), json: null, more: false };
+      }).then(() => {
+        card._raidTotalsFetch = false;
+        const roles = card.querySelector('.raid-roles'), totals = card.querySelector('.raid-totals');
+        if (roles) setHtml(roles, raidRolesHtml(card, bind));
+        if (totals) setHtml(totals, raidTotalsLineHtml(card));
+      });
+  }
+
+  // Underperforming bots for the raid fight key (#23): the same report the
+  // debugger draws, one request per 30 s while the box is open.
+  function raidUnderFetch(card, bind, now) {
+    if (!card || !bind || typeof Underperf === 'undefined') return;
+    const box = card.querySelector('.raid-underbox');
+    if (!box || !box.open) return;
+    if (!card._raidUnder) card._raidUnder = { qs: '', at: 0, res: null, err: '', pending: false, pick: null, body: '' };
+    const st = card._raidUnder;
+    if (st.pending) return;
+    const qs = Underperf.query(bind, { day: '' }, Date.now(), st.pick, fdNightParams());
+    if (!now && st.qs === qs && Date.now() - st.at < Underperf.POLL_MS && st.body) return;
+    st.pending = true;
+    fetch('/api/v1/combat/underperformers?commander=' + encodeURIComponent(bind.commander) + '&' + qs, { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(json => { st.res = json; st.err = ''; })
+      .catch(e => { st.err = (e && e.message) || 'request failed'; })
+      .then(() => {
+        st.pending = false;
+        st.qs = qs;
+        st.at = Date.now();
+        st.body = Underperf.html({ res: st.res, err: st.err }, { pick: st.pick, bindBots: bind.bots || [], live: true });
+        const body = card.querySelector('.raid-underbody');
+        if (body) setHtml(body, st.body);
+      });
+  }
+
+  // The ready check inline (#24): the raid frames renderer over the bind,
+  // or the off-key note. The frames carry the rdy dot and the header names
+  // who is not ready, exactly as in the debugger.
+  function raidReadyPaint(card, bind) {
+    const host = card && card.querySelector('.raid-ready');
+    if (!host || typeof FightDebug === 'undefined' || !FightDebug.raidFrames) return;
+    const frames = FightDebug.raidFrames(bind);
+    const ready = typeof ReadyCheck !== 'undefined' ? ReadyCheck.raid(bind, cmdPlanFor(bind)) : null;
+    if (!ready || !ready.known) {
+      setHtml(host, '<p class="empty-hint">detail off (AiPlayerbot.ObservabilityRaidsDetail)</p>');
+      return;
+    }
+    setHtml(host, fdReadyHtml(frames) + fdFramesHtml(frames, null, ready));
+  }
+
+  // Boss debuffs inline (#25): the frames' chips carry each bot's boss
+  // debuffs and MC tag; the off key names the key instead.
+  function raidDebuffPaint(card, bind) {
+    const host = card && card.querySelector('.raid-debuffs');
+    if (!host || typeof FightDebug === 'undefined' || !FightDebug.raidFrames) return;
+    const frames = FightDebug.raidFrames(bind);
+    const tiles = frames.reduce((a, g) => a.concat((g && g.tiles) || []), []);
+    const marked = tiles.filter(t => (t.debuffs && t.debuffs.length) || t.mc);
+    if (!marked.length) {
+      const anyDb = (bind.bots || []).some(b => (b.db && b.db.length) || b.mc);
+      setHtml(host, anyDb ? '' : '<p class="empty-hint">detail off (AiPlayerbot.ObservabilityRaidsDetail)</p>');
+      if (anyDb) setHtml(host, fdFramesHtml(frames, null, null));
+      return;
+    }
+    setHtml(host, marked.map(t =>
+      `<div class="cmd-row"><span class="cmd-who"><b>${esc(t.name)}</b></span><span>${esc((t.debuffs || []).map(d => d.n).join(', '))}${t.mc ? ' · MC' : ''}</span></div>`).join(''));
+  }
+
+  // The live events strip on the raid card (#16): same renderer as the
+  // Commander card, looked up by the raid fight key through its card key.
+  function raidLiveSync(card, bind) {
+    if (!card || !bind) return;
+    const live = card.querySelector('.cmd-live');
+    if (!live) return;
+    let cmd = null;
+    cmdCards.forEach((c, k) => { if (c === card) cmd = k; });
+    card.dataset.commander = cmd || bind.commander;
+    cmdLivePaintEvents(bind.commander);
+    if (live) live.hidden = !(cmdLiveEvents[bind.commander] || []).length && !bind.combat;
   }
 
   // The copy's units with no group: one muted block, as the list shows. A copy with only ungrouped bots shows this,
