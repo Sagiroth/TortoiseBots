@@ -618,6 +618,12 @@ public:
     // The approach row before a stand-pull step holds outside the pulled pack's wake reach and the pull's crowd
     // control goes out there, before the walk in wakes the pack (DungeonRunPolicy.h NextStandPull; default off).
     bool dungeonRunStandPullPreCc;
+    // The run leader marks crowd control on a pack from what the raid has when the pull brings more than
+    // dungeonRunAutoCcAbove bodies (DungeonRunPolicy.h RunAutoCcPickOrder; default off), the fear families only with
+    // dungeonRunAutoCcRisky.
+    bool dungeonRunAutoCc;
+    uint32 dungeonRunAutoCcAbove;
+    bool dungeonRunAutoCcRisky;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;

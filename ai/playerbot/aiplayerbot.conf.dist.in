@@ -1161,6 +1161,32 @@ AiPlayerbot.DungeonRunStandClearance = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunStandPullPreCc = 0
 
+# Automatic crowd control: the run leader marks crowd control on a pack from what the raid
+# actually has, not only the plan's cc_priority/cc_always entries. Before a pull that brings
+# more than DungeonRunAutoCcAbove bodies it marks the pack's best targets (casters and healers
+# first, then the plan's rank, then the class families Polymorph, Shackle, Banish, Hibernate,
+# Seduction, Freezing Trap, Sap, Repentance) until the unmarked bodies fit the threshold; in
+# the fight it marks a joiner while more than the threshold of unheld units fight it, and it
+# re-sends a crowd control that broke (twice a unit a step). The pack's own units are the only
+# pre-pull candidates; a tank, the lead bot, a healer while fewer than 4 healers (1 in a party)
+# would stay free, and the unit the tank or an off-tank holds are never marked. With the key on
+# the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; skull stays
+# the fight's focus); a player's icon is never moved.
+# 0 - off, the plan's cc list only, as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunAutoCc = 0
+
+# How many bodies a pull may bring before the automatic crowd control starts (CC starts above
+# it), and the ceiling a plan row's own max_bodies still lowers.
+# 6 - default (CC from 7 bodies); 2 to 40. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcAbove = 6
+
+# The risky crowd control families (Fear, Scare Beast): the mob runs. Only with 35 yd of room
+# to the nearest creature outside its pack, and only when no other family has a free bot.
+# 0 - off (Default); 1 - on. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcRisky = 0
+
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
 # e.g. Uldaman, Revelosh's Shaft of Tsol). With 1 the lead bot (it leads the bound group) sets
