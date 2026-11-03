@@ -410,9 +410,7 @@ class BossTacticsSql(unittest.TestCase):
             (309, 14834, "dispel_priority", 0, 24321): (0, 0.0, 0, "never"),
             (309, 14834, "dispel_priority", 0, 24687): (1, 0.0, 0, "now"),
             (309, 14834, "dispel_priority", 0, 24688): (2, 0.0, 0, "now"),
-            (309, 14834, "dps_hold_after", 0, 0): (0, 4.0, 0, "until_tank"),
             (309, 11382, "freeze_on_aura", 0, 24314): (0, 0.0, 0, ""),
-            (309, 11382, "dps_hold_after", 0, 0): (0, 4.0, 0, "until_tank"),
             (309, 14988, "hold_kill", 11382, 0): (0, 0.0, 0, ""),
             (309, 11380, "dispel_priority", 0, 17172): (0, 0.0, 0, "now"),
             (309, 11380, "dispel_priority", 0, 24306): (0, 0.0, 0, "never"),
@@ -442,6 +440,12 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn((309, 14510, "interrupt", 0, 24300), live)
         self.assertIn((309, 14515, "behind", 0, 26350), live)
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
+        # The two spell-less dps_hold_after rows (Hakkar 14834, Mandokir 11382) are gone: a spell-less hold fires only
+        # its engage edge, once per fight, so "until_tank" never recurred. Their triggers are auras on players (or an
+        # instant cast, Cause Insanity 24327, castingTimeIndex 1), which the hold's cast/aura edge cannot see on the
+        # boss. Re-add only with a trigger that recurs (follow-up in docs/play/boss-tactics.md, Known limits).
+        self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
+        self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
