@@ -276,6 +276,10 @@ struct DungeonRunSlot
     };
     std::unordered_map<uint64, std::vector<GivenItem>> given;
     std::unordered_set<uint64> bagsFullLogged; // bots whose full bags were logged + noted once this run (not every tick)
+    // The revive hold (AiPlayerbot.DungeonReviveHoldYd, SyncReturnHolds): the bots seen dead, and the bots revived
+    // far from the lead bot with the time they have stood waiting.
+    std::unordered_set<uint64> reviveSeenDead;
+    std::unordered_map<uint64, uint32> reviveHoldMs;
 };
 std::unordered_map<uint64, DungeonRunSlot>& DungeonRuns()
 {
@@ -6541,6 +6545,7 @@ bool RunIslandEscape(Player* commander, std::string const& order, std::string& a
 bool RunBotWalk(Player* commander, std::string const& order, std::string& answer);
 bool RunStrandedTeleport(Player* commander, std::string const& order, std::string& answer);
 bool RunOffMapReturn(Player* commander, std::string const& order, std::string& answer);
+bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer);
 bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer);
 
 // ta252: the named bot stands on the lead bot's map id in another copy of it (another instance id): a run summon of it
@@ -6578,6 +6583,8 @@ bool IssueRunOrder(Player* commander, std::string const& text, std::string& answ
         return RunStrandedTeleport(commander, text, answer);
     if (text.compare(0, 7, "return ") == 0)
         return RunOffMapReturn(commander, text, answer);
+    if (text.compare(0, 6, "fetch ") == 0)
+        return RunFetchReturn(commander, text, answer);
     if (text.compare(0, 7, "rejoin ") == 0)
         return RunInstanceRejoin(commander, text, answer);
     // ta252: the run's summon of a bot in another copy of the instance would land in that copy (a same-map
@@ -7356,6 +7363,109 @@ bool RunOffMapReturn(Player* commander, std::string const& order, std::string& a
     }
     TB_LOG_DETAIL("TortoiseBots: run leader: %s returned to the lead bot from outside the instance", bot->GetName());
     answer = "returned " + std::string(name) + " to " + lead->GetName();
+    return true;
+}
+
+// The teleport return of party bots on the lead bot's map (DungeonRun::FarReturnTick, lead decision 2026-11-03, ZG
+// walk 29: 57 bots revived 300-650 yd from the raid died walking back, the summons skipped for their fights or
+// dropped by the portal): "fetch x y z <name> [<name> ...]". The same gates and moves as RunOffMapReturn (bot-only
+// parties, rechecked here; a living lead bot), for bots alive in the lead bot's copy of its map: each one's pet and
+// itself leave combat first, then it is teleported to x y z at once. A bot gone, dead, elsewhere or busy with a
+// summon is left out and named. True when at least one went; the run checks each one's arrival itself.
+bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer)
+{
+    RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    int consumed = 0;
+    if (std::sscanf(order.c_str(), "fetch %f %f %f%n", &x, &y, &z, &consumed) != 3 || consumed <= 0)
+    {
+        answer = "invalid: " + order;
+        return false;
+    }
+    std::vector<std::string> names;
+    {
+        std::istringstream rest(order.substr(static_cast<std::size_t>(consumed)));
+        std::string name;
+        while (rest >> name)
+            names.push_back(name);
+    }
+    if (names.empty())
+    {
+        answer = "invalid: no bot named";
+        return false;
+    }
+    if (!lead || !lead->IsInWorld() || !lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported() ||
+        !lead->GetMap() || !MaNGOS::IsValidMapCoord(x, y, z))
+    {
+        answer = "lead-unavailable: the lead bot is dead, on a taxi or teleporting, or the point is off the map";
+        return false;
+    }
+    Group* const group = lead->GetGroup();
+    if (!group)
+    {
+        answer = "lead-unavailable: the lead bot has no group";
+        return false;
+    }
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        if (!BotManager::Instance().IsBot(slot.guid))
+        {
+            answer = "player: a real player is in the party";
+            return false;
+        }
+    std::vector<Player*> const members = CommandedBots(group, lead);
+    std::string fetched, refused;
+    for (std::string const& name : names)
+    {
+        Player* bot = nullptr;
+        for (Player* member : members)
+            if (member && member != lead && std::string(member->GetName()) == name)
+                bot = member;
+        std::string why;
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
+            why = "gone, dead, on a taxi or teleporting";
+        else if (bot->GetMap() != lead->GetMap() || bot->GetTransport())
+            why = "not in the lead bot's copy of the map";
+        else if (PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid()))
+            why = "a summon of it is pending";
+        if (!why.empty())
+        {
+            refused += (refused.empty() ? "" : ", ") + name + " (" + why + ")";
+            continue;
+        }
+        Pet* const pet = bot->GetPet();
+        if (pet && pet->IsAlive() && pet->IsInWorld())
+        {
+            sServerFacade.GetHostileRefManager(pet).deleteReferences();
+            pet->CombatStop();
+        }
+        sServerFacade.GetHostileRefManager(bot).deleteReferences();
+        bot->CombatStop();
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
+        if (!bot->TeleportTo(lead->GetMapId(), x, y, z, lead->GetOrientation(), 0))
+        {
+            refused += (refused.empty() ? "" : ", ") + name + " (the teleport was refused)";
+            continue;
+        }
+        if (bot->GetSession() && bot->GetSession()->IsHeadless())
+        {
+            if (bot->IsBeingTeleportedNear())
+                bot->ExecuteTeleportNear();
+            else if (bot->IsBeingTeleportedFar())
+                bot->GetSession()->HandleMoveWorldportAckOpcode();
+        }
+        fetched += (fetched.empty() ? "" : ", ") + name;
+    }
+    if (fetched.empty())
+    {
+        answer = "unavailable: " + refused;
+        return false;
+    }
+    TB_LOG_DETAIL("TortoiseBots: run leader: %s teleported back to %s", fetched.c_str(), lead->GetName());
+    answer = "fetched " + fetched + " to " + TortoiseBots::DungeonRun::Num(x) + " " + TortoiseBots::DungeonRun::Num(y) +
+        " " + TortoiseBots::DungeonRun::Num(z) +
+        (refused.empty() ? std::string() : "; left out " + refused);
     return true;
 }
 
@@ -9653,6 +9763,63 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     }
 }
 
+// The teleport return's read of the lead bot's ground (DungeonRun::FetchPoint), only while the run asks for it
+// (Run::fetchReadWanted): the living hostile creatures within kFetchScanYd that are in no fight, with their aggro
+// reach at the party's lowest level, and points on rings around the lead bot (kFetchRingsYd x kFetchRingSteps), on
+// its floor (kFetchFloorDzYd) and in its sight, nearest ring first.
+constexpr float kFetchScanYd = 80.0f;
+constexpr float kFetchRingsYd[] = {10.0f, 20.0f, 30.0f, 40.0f};
+constexpr int kFetchRingSteps = 12;
+constexpr float kFetchFloorDzYd = 6.0f;
+static void ReadFetchFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMap() == map && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    std::list<Unit*> found;
+    HostileCreaturesAround(lead, kFetchScanYd, found);
+    for (Unit* unit : found)
+    {
+        Creature* const c = unit->ToCreature();
+        if (!c || !c->IsAlive() || c->IsInCombat() || c->GetVictim() || c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
+            continue;
+        ai::AggroMob mob;
+        mob.level = c->GetLevel();
+        mob.detectionYd = c->GetDetectionRange();
+        StandPackReach reach;
+        reach.entry = c->GetEntry();
+        reach.x = c->GetPositionX();
+        reach.y = c->GetPositionY();
+        reach.z = c->GetPositionZ();
+        reach.reachYd = ai::AggroRadius(mob, lowest, rate);
+        f.fetchReach.push_back(reach);
+    }
+    float const lx = lead->GetPositionX(), ly = lead->GetPositionY(), lz = lead->GetPositionZ();
+    for (float ring : kFetchRingsYd)
+        for (int i = 0; i < kFetchRingSteps; ++i)
+        {
+            float const angle = 6.2831853f * static_cast<float>(i) / kFetchRingSteps;
+            float const px = lx + std::cos(angle) * ring;
+            float const py = ly + std::sin(angle) * ring;
+            float const ground = map->GetHeight(px, py, lz + kFetchFloorDzYd, true, 2.0f * kFetchFloorDzYd);
+            if (ground <= INVALID_HEIGHT || std::fabs(ground - lz) > kFetchFloorDzYd ||
+                !lead->IsWithinLOS(px, py, ground + 2.0f))
+                continue;
+            ai::ApproachPoint point;
+            point.x = px;
+            point.y = py;
+            point.z = ground + 0.5f;
+            f.fetchSpots.push_back(point);
+        }
+    f.fetchRead = true;
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -9674,6 +9841,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
     f.retreatAt2Dead = sPlayerbotAIConfig.dungeonRunRetreatAt2Dead;
     f.walkBackRescue = sPlayerbotAIConfig.dungeonRunWalkBackRescue;
+    // The teleport return and the stand-still hold (DungeonRun::FarReturnTick, ai::ReturnHoldPolicy).
+    f.teleportReturnYd = sPlayerbotAIConfig.runTeleportReturnYd;
+    f.reviveHoldYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    if (slot.run.fetchReadWanted && lead->IsAlive() && lead->IsInWorld())
+        ReadFetchFacts(lead, bots, f);
     f.fightForward = sPlayerbotAIConfig.dungeonRunFightForward;
     f.lightRest = sPlayerbotAIConfig.dungeonRunLightRest;
     // A loot step's free-for-all detour (DungeonRun::LootFfaStep, AiPlayerbot.DungeonRunLootFfa): off, and no detour
@@ -9846,6 +10018,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.offMapReturnable = !bot->InBattleGround() && bot->GetMap() && !bot->GetMap()->Instanceable() &&
             !bot->GetTransport() && !offMapBusy && bot->IsInWorld();
         member.offMapBlock = offMapBusy ? MemberFact::OffMapBlock::Busy : MemberFact::OffMapBlock::OpenWorld;
+        // Summons the portal dropped for it (DungeonRun::UpdateSummonOutcomes).
+        member.summonCancels = PlayerConvenience::Instance().SummonCancels(bot->GetObjectGuid());
         member.dz = bot->GetMap() == lead->GetMap() ? std::fabs(bot->GetPositionZ() - lead->GetPositionZ()) : 0.0f;
         member.polymorph = bot->GetClass() == CLASS_MAGE && KnowsPolymorph(bot);
         member.cc = KnownRunCc(bot);
@@ -11186,6 +11360,78 @@ std::vector<TortoiseBots::PlayerLed::Engaged> ReadPlayerLedEngaged(Player* comma
     return out;
 }
 
+// The stand-still hold of a run's bots (AiPlayerbot.DungeonReviveHoldYd, ai::ReturnHoldPolicy), every tick whatever
+// the run's state: a bot is held while the run is bringing it back (DungeonRun::Run::returnHold), while a summon of
+// it is pending, or for up to ai::kReturnHoldMs after it was revived inside a dungeon farther than the key from the
+// lead bot (any revive, the run paused too) until it stands with the lead bot or the run takes it over. Each held
+// bot gets the mark its CanMove reads (ai::RETURN_HOLD_MARK_MS ahead, so a run that stops ticking frees it); the
+// others get 0. Key 0: nobody is held.
+static void SyncReturnHolds(Player* commander, RemoteCommander::Binding const& binding, DungeonRunSlot& slot, uint32 dt)
+{
+    float const holdYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    Player* const lead = FindCharacter(binding.leadGuid);
+    Group* const group = lead && lead->IsInWorld() ? lead->GetGroup() : nullptr;
+    if (!group)
+        return; // between maps: the marks run out by themselves
+    uint32 const now = WorldTimer::getMSTime();
+    for (Player* bot : CommandedBots(group, lead))
+    {
+        if (!bot || bot == lead || !bot->IsInWorld())
+            continue;
+        uint64 const raw = bot->GetObjectGuid().GetRawValue();
+        std::string const name = bot->GetName();
+        bool held = false;
+        if (holdYd <= 0.0f)
+        {
+            slot.reviveSeenDead.clear();
+            slot.reviveHoldMs.clear();
+        }
+        else if (!bot->IsAlive())
+        {
+            slot.reviveSeenDead.insert(raw);
+            slot.reviveHoldMs.erase(raw);
+        }
+        else
+        {
+            bool const sameCopy = bot->GetMap() == lead->GetMap();
+            float const yd = sameCopy ? bot->GetDistance(lead) : 1000.0f;
+            bool const runOwns = slot.run.returnHold.count(name) > 0;
+            if (slot.reviveSeenDead.erase(raw) && bot->GetMap() &&
+                ai::ShouldArmReviveHold(holdYd, bot->GetMap()->IsDungeon(), yd))
+            {
+                slot.reviveHoldMs[raw] = 0;
+                bot->GetMotionMaster()->Clear(false);
+                bot->StopMoving();
+                TB_LOG_DETAIL("TortoiseBots: run leader: %s revived %.0f yd from the lead bot: holds still for a summon",
+                    bot->GetName(), yd);
+            }
+            auto const revived = slot.reviveHoldMs.find(raw);
+            if (revived != slot.reviveHoldMs.end())
+            {
+                revived->second += dt;
+                if (ai::ReviveHoldReleased(yd, runOwns))
+                    slot.reviveHoldMs.erase(revived);
+                else if (revived->second >= ai::kReturnHoldMs)
+                {
+                    slot.reviveHoldMs.erase(revived);
+                    slot.run.note = name + " was revived " + TortoiseBots::DungeonRun::Num(yd) +
+                        " yd from the lead bot and waited " + std::to_string(ai::kReturnHoldMs / 1000) +
+                        " s for a summon or teleport: released";
+                    TB_LOG_DETAIL("TortoiseBots: run leader: %s", slot.run.note.c_str());
+                    if (commander)
+                        SendRunLine(commander, slot, false);
+                }
+                else
+                    held = true;
+            }
+            held = held || runOwns || PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid());
+        }
+        if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+            botAi->GetAiObjectContext()->GetValue<int32>("manual int", "return hold until ms")->Set(
+                held ? int32((now + ai::RETURN_HOLD_MARK_MS - 1) | 1) : 0); // `| 1`: never 0, still within the mark
+    }
+}
+
 void TickDungeonRun(uint64 commanderRaw, uint32 dt)
 {
     auto it = DungeonRuns().find(commanderRaw);
@@ -11198,6 +11444,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         return;
     DungeonRunSlot& slot = it->second;
     Player* commander = FindCharacter(commanderRaw);
+    SyncReturnHolds(commander, *binding, slot, dt);
     // The run's own time limit: it ends the run with its own note, not as a plain stop.
     slot.elapsedMs += dt;
     if (slot.run.state != TortoiseBots::DungeonRun::State::Done &&

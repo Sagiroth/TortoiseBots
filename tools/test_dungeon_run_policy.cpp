@@ -12036,14 +12036,24 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     freed.members[4].inCombat = false;
     CHECK(Tick(r, freed) == "summon Bowjangles");
     CHECK(r.summoned.count("Bowjangles"));
-    CHECK(Tick(r, freed).compare(0, 7, "summon ") != 0 && !r.strandSummon && r.state == State::Running);
+    // A summon is done only on arrival (within 10 yd of the lead bot), not when it goes out: still away, they hold
+    // the summons open; there, the summons end.
+    CHECK(Tick(r, freed).compare(0, 7, "summon ") != 0 && r.strandSummon);
+    CHECK(r.note.find("to arrive") != std::string::npos);
+    Facts landed = freed;
+    for (MemberFact& m : landed.members)
+    {
+        m.yd = 5.0f;
+        m.dz = 0.0f;
+    }
+    CHECK(Tick(r, landed).compare(0, 7, "summon ") != 0 && !r.strandSummon && r.state == State::Running);
     // Attackers alone count as a fight too (asked of the summon tick itself: Tick's regroup takes such a
     // bot first, "running back with 1 attacker").
     Facts hit = atPoint;
     hit.members[4].inCombat = false;
     hit.members[4].attackers = 1;
     Run att = fightLeft;
-    att.strandSummoned = {"Yssia", "Beardinator", "Wendrick"};
+    att.strandSummoned = {{"Yssia", 0}, {"Beardinator", 0}, {"Wendrick", 0}};
     std::string attOrder;
     CHECK(StrandedTeleportTick(att, hit, kTickMs, attOrder) && attOrder.empty() && att.strandSummon);
     CHECK(att.note.find("waiting for Bowjangles") != std::string::npos);

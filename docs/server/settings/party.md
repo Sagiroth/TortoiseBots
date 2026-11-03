@@ -77,7 +77,7 @@ Prevents follower bots from running through unpulled monster packs when trailing
 <details>
 <summary>How it works in detail</summary>
 
-Inside a dungeon or raid instance, while neither the bot nor the leader is in combat (aggro: the radius in which monsters attack), a bot whose leader is more than 30 yards ahead calculates its own travel path along the route.
+Inside a dungeon or raid instance, while the bot is not in combat (aggro: the radius in which monsters attack), a bot whose leader is more than 30 yards ahead calculates its own travel path along the route. The leader may be fighting: a bot far behind still stops before the packs on its way to that fight (the pack the leader fights is already in combat and never holds the bot).
 
 If an unpulled hostile creature stands along that path, the bot stops 3 yards outside the creature aggro radius and holds its position rather than running through. The bot whispers its master once per pack (at most every 30 seconds): `Pack in the way: <name>. Waiting here - pull it or come back for me.`
 

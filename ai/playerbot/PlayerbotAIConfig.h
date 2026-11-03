@@ -615,6 +615,11 @@ public:
     bool dungeonRunWalkBackAfterWonFight;
     bool dungeonRunRetreatAt2Dead;
     bool dungeonRunWalkBackRescue;
+    // A member a run brings back from farther than this is teleported with its combat dropped (0: the old summon).
+    float runTeleportReturnYd;
+    // A run's bot revived farther than this from the lead bot, and any bot the run brings back, stands still
+    // until it arrives (0: off).
+    float dungeonReviveHoldYd;
     bool dungeonRunFightForward;
     bool dungeonRunLightRest;
     // A run leader loot step whose item is another member's under the group's loot rules sets free-for-all for the

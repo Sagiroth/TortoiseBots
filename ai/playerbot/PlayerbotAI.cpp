@@ -1,6 +1,7 @@
 #include <vector>
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
+#include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/CommandedGroupQuery.h"
@@ -4974,8 +4975,19 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
     return hostileUnitsNonPlayers;
 }
 
-bool PlayerbotAI::CanMove()
+bool PlayerbotAI::ReturnHeld()
 {
+    return ai::ReturnHoldOn((uint32)aiObjectContext->GetValue<int32>("manual int", "return hold until ms")->Get(),
+        WorldTimer::getMSTime());
+}
+
+bool PlayerbotAI::CanMove(bool ignoreReturnHold)
+{
+    // No follow, walk, chase or pull while the run brings the bot back: it fights from where it stands.
+    if (!ignoreReturnHold && ReturnHeld())
+    {
+        return false;
+    }
     if (sServerFacade.IsFrozen(bot))
     {
         return false;
