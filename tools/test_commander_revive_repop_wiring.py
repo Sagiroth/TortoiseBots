@@ -30,6 +30,9 @@ class RevivePartyRepopTest(unittest.TestCase):
         self.assertLess(guard, repop)
         # Never for a living bot: RepopAtGraveyard would far-teleport it.
         self.assertLess(block.index("!member->IsAlive()"), repop)
+        # Never while a far teleport is already under way: it repops there
+        # already, and a second TeleportTo would be issued.
+        self.assertLess(block.index("!member->IsBeingTeleportedFar()"), repop)
 
 
 if __name__ == "__main__":

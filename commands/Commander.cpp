@@ -6423,8 +6423,11 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                     // out of the instance. Run it now, while the bot is still
                     // a corpse: in a dungeon a managed bot comes back at the
                     // entrance, so nothing was lost by not waiting.
+                    // A far teleport already under way (a corpse run that
+                    // started first) repops there already: a second
+                    // TeleportTo would be issued for the same graveyard.
                     if ((released || running) && !member->IsAlive() &&
-                        IsLiveHeadlessBot(member, memberRecord) &&
+                        IsLiveHeadlessBot(member, memberRecord) && !member->IsBeingTeleportedFar() &&
                         member->IsInWorld() && member->FindMap())
                         member->RepopAtGraveyard();
                     if (released || running)
@@ -8410,14 +8413,14 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
-    Map* const map = lead->GetMap();
+    Map* const map = lead->FindMap();
     if (!map)
         return;
     Player* const judge = RunJudge(lead, bots);
     std::unordered_set<uint64> party;
     for (Player* bot : bots)
     {
-        if (!bot || bot->GetMap() != map)
+        if (!bot || bot->FindMap() != map)
             continue;
         party.insert(bot->GetObjectGuid().GetRawValue());
         if (Pet* const pet = bot->GetPet())
