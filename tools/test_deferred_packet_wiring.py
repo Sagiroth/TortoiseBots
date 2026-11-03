@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADAPTER = (ROOT / "host/BotPacketAdapter.cpp").read_text()
+CHAT = (ROOT / "host/BotChatAdapter.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -41,6 +42,16 @@ class DrainGateWiringTest(unittest.TestCase):
         self.assertIn("g_heldBacklogs.Drain(before, SteadyNowMs(), DeferredDelivery::kMaxHeldMs,", ADAPTER)
         held = body(ADAPTER, "bool BotPacketAdapter::HasHeldPacketsBefore(uint64_t masterGuid, uint64_t before)")
         self.assertIn("g_heldBacklogs.AnyBefore(", held)
+
+
+class CommandDeferWiringTest(unittest.TestCase):
+    def test_command_drain_runs_before_the_defer_check(self):
+        # tools/test_bot_packet_backlog.cpp proves the gate order; this pins
+        # that the chat adapter calls it with the adapter's drain and check.
+        self.assertIn("return DeferCommandForHeldPackets(requester->GetObjectGuid().GetRawValue(), command.seq,",
+            CHAT)
+        self.assertIn("BotPacketAdapter::DrainDeferredPackets(before)", CHAT)
+        self.assertIn("BotPacketAdapter::HasHeldPacketsBefore(masterGuid, before)", CHAT)
 
 
 if __name__ == "__main__":

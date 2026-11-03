@@ -2,6 +2,7 @@
 
 #include "BotAddonAdapter.h"
 #include "BotPacketAdapter.h"
+#include "BotPacketBacklog.h"
 #include "../commands/BotCommandQueue.h"
 #include "../commands/BotCommands.h"
 #include "Chat.h"
@@ -103,12 +104,16 @@ uint64_t BotChatAdapter::DrainQueuedCommands()
         },
         [](Player* requester, PendingBotCommand const& command)
         {
-            // A bot still holding chat or packets between maps has not acked
-            // the earlier order yet; run this command after it, on the next
-            // drain, so the older `stay` cannot land on top of the newer
-            // `follow`. Only items queued before the command count: a newer
-            // held item ages out, and waiting on it would lose the command.
-            return BotPacketAdapter::HasHeldPacketsBefore(requester->GetObjectGuid().GetRawValue(), command.seq);
+            // The drain runs first: the chat and packets this command would
+            // overtake are exactly what it moves into the backlog, so the
+            // check sees them. Asking first would find no backlog and let the
+            // command overtake its own `/p stay`.
+            return DeferCommandForHeldPackets(requester->GetObjectGuid().GetRawValue(), command.seq,
+                [](uint64_t before) { BotPacketAdapter::DrainDeferredPackets(before); },
+                [](uint64_t masterGuid, uint64_t before)
+                {
+                    return BotPacketAdapter::HasHeldPacketsBefore(masterGuid, before);
+                });
         });
     return BotCommandQueue::Instance().DeferredRunLimit();
 }
