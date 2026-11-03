@@ -116,6 +116,15 @@ namespace ai
         return watched && !forced;
     }
 
+    // An "order vendor" trip is picked forced, but the forced pin must not
+    // veto the rescue: the drop below unforces anyway, and every re-pick
+    // re-forces, so exempting the pin only lets this trip teleport like any
+    // other unwatched service trip. Every other forced trip keeps the veto.
+    inline bool ServiceTripRescueIgnoresForced(std::string const& purpose)
+    {
+        return purpose == "order vendor";
+    }
+
     // Rescue gate: every clause must hold. `busy` folds combat / taxi /
     // teleport-in-flight; `watched` folds players near either end.
     inline bool ServiceTripRescueEligible(bool atMaxRetry, bool randomMasterless,

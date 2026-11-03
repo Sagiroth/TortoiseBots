@@ -49,6 +49,22 @@ type botActivityState struct {
 	// with the expiry in worldPvpFightingLocked.
 	pvpFighting string
 	pvpFightAt  time.Time
+	// trail is the bot's last item, trade and death events, newest last,
+	// for the guild orders view (the pool-wide loot feed rolls over in
+	// minutes on a big pool).
+	trail []model.BotTrailItem
+}
+
+const botTrailCap = 40
+
+// trailEvents maps the forwarded events the guild orders view shows to a
+// short kind.
+var trailEvents = map[string]string{
+	"StoreLootAction": "loot", "RollWon": "roll", "GatherLoot": "gather",
+	"BuyAction": "vendor buy", "SellAction": "vendor sell",
+	"AhBidAction": "AH buy", "AhMarketBuy": "AH buy", "GuildAhBuy": "AH buy",
+	"AhAction": "AH list", "AhMarket": "AH list", "BotDeath": "died",
+	"GuildAhRelist": "AH relist", "GuildAhRelistFailed": "AH relist failed", "MailAction": "mail",
 }
 
 // LootFilter selects rows from the pool-wide loot feed. Zero values mean "no
@@ -131,6 +147,27 @@ func (s *Store) applyBotEventLocked(ev model.BotEvent, now time.Time) {
 		}
 		a.lastMoney = ev.Money
 		a.hasMoney = true
+	}
+
+	if kind, ok := trailEvents[ev.Event]; ok {
+		item := ev.Info1
+		if ev.Event == "GatherLoot" {
+			item = "" // info1 is the gathering skill id
+		}
+		if ev.Event == "GatherLoot" && uint32(parseUint(ev.Info1)) == skillSkinning {
+			kind = "skin"
+		}
+		// GatherLoot follows the StoreLootAction of the same item: retag that
+		// row instead of adding a nameless duplicate.
+		if n := len(a.trail); ev.Event == "GatherLoot" && n > 0 && a.trail[n-1].Kind == "loot" && a.trail[n-1].ItemID == ev.ItemID {
+			a.trail[n-1].Kind = kind
+		} else {
+			a.trail = append(a.trail, model.BotTrailItem{At: now.Unix(), Kind: kind, Item: item, ItemID: ev.ItemID,
+				Quality: ev.Quality, ZoneID: ev.ZoneID})
+		}
+		if len(a.trail) > botTrailCap {
+			a.trail = a.trail[len(a.trail)-botTrailCap:]
+		}
 	}
 
 	questID := uint32(parseUint(ev.Info2))
@@ -358,6 +395,21 @@ func (s *Store) activityForLocked(guid uint32) *model.BotActivity {
 	cp := a.counters
 	cp.Levels = nil
 	return &cp
+}
+
+// BotTrail returns the bot's last item, trade and death events, newest first.
+func (s *Store) BotTrail(guid uint32) []model.BotTrailItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a := s.activity[guid]
+	if a == nil {
+		return nil
+	}
+	out := make([]model.BotTrailItem, len(a.trail))
+	for i, it := range a.trail {
+		out[len(a.trail)-1-i] = it
+	}
+	return out
 }
 
 // LootFeed returns the pool-wide loot feed, newest first, filtered.

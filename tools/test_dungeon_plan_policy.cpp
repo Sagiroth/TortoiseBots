@@ -855,8 +855,29 @@ static void TestNeedsOfLegSorted()
     CHECK(ofLeg[0]->item == 11000 && ofLeg[1]->item == 12000);
 }
 
+// A pull row's `item` is the bodies ceiling of the aggro estimate (max_bodies); over
+// kPlanMaxPullBodies the row is refused. A move row's item is not read by this rule.
+static void TestPullRowItemIsTheBodiesCeiling()
+{
+    CHECK(kPlanMaxPullBodies == 80);
+    PlanStep pull = Step(0, 1, PlanStepKind::Pull);
+    pull.entries = {51590};
+    pull.item = 27;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None);
+    pull.item = 80;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None);
+    pull.item = 81;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 2, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.item = 81;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::None);
+    move.item = 14000;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::None);
+}
+
 int main()
 {
+    TestPullRowItemIsTheBodiesCeiling();
     TestLegNeedRowsRefused();
     TestNeedsOfLegSorted();
     TestOpenProofRowParses();

@@ -24,7 +24,9 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "policy/combat/RearFlankPolicy.h"
@@ -42,6 +44,7 @@ namespace ai
         TankHold = 5,   // opt-in: a tank may stay in this caster's avoid_cast blast while the caster is on a non-tank
         HoldKill = 6,   // DPS leave `boss_entry` alone while more than `priority` living units of `target_entry` are near
         OneAtATime = 7, // all DPS kill one living unit of `boss_entry` at a time: the lowest health, the lowest guid on a tie
+        LinkedDeath = 8, // a group that must die together: equalise its health, hold every member at <= `param` %, then burn
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -60,6 +63,8 @@ namespace ai
             return BossTacticKind::HoldKill;
         if (text == "one_at_a_time")
             return BossTacticKind::OneAtATime;
+        if (text == "linked_death" || text == "together")
+            return BossTacticKind::LinkedDeath;
         return BossTacticKind::None;
     }
 
@@ -72,6 +77,9 @@ namespace ai
         std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell
         std::uint8_t priority = 0;      // kill_first: lower is killed first
         float param = 0.0f;             // behind, avoid_cast: radius in yards
+        // linked_death: the release burn's order, a comma list of the group's entries in `burn_order` (the loader
+        // fills it). Empty for every other kind and for a group without one.
+        std::vector<std::uint32_t> burnOrder;
     };
 
     // The creature a row is about.
@@ -87,6 +95,13 @@ namespace ai
         static std::atomic<std::uint64_t> counter{0};
         return counter.fetch_add(1, std::memory_order_relaxed) + 1;
     }
+    // One linked_death group: its anchor (the anchor's rows) and its group id (`priority`). One anchor can carry
+    // several groups on one map.
+    struct LinkedDeathGroupKey
+    {
+        std::uint32_t anchor = 0;
+        std::uint8_t group = 0;
+    };
 
     class BossTacticTable
     {
@@ -122,6 +137,11 @@ namespace ai
             // target_entry would leave the row's entry and the paced entry disagreeing.
             if (row.kind == BossTacticKind::OneAtATime && row.targetEntry != 0)
                 return false;
+            // A linked_death row is one partner of a group, its boss_entry the anchor: a row without a partner lists
+            // nobody, and the hold percent has to be a percentage.
+            if (row.kind == BossTacticKind::LinkedDeath &&
+                (row.targetEntry == 0 || !(row.param > 0.0f) || row.param > 100.0f))
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -134,6 +154,17 @@ namespace ai
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::LinkedDeath)
+            {
+                linkedDeathMaps_[row.map] = true;
+                // The group rows are read from the anchor, and the anchor alone: a partner has no row of its own.
+                // One anchor can carry several groups (its rows' priorities): each is its own key.
+                std::vector<LinkedDeathGroupKey>& groups = linkedDeathGroups_[row.map];
+                LinkedDeathGroupKey const key{row.bossEntry, row.priority};
+                if (std::find_if(groups.begin(), groups.end(), [&key](const LinkedDeathGroupKey& have)
+                        { return have.anchor == key.anchor && have.group == key.group; }) == groups.end())
+                    groups.push_back(key);
+            }
             ++size_;
             return true;
         }
@@ -162,10 +193,30 @@ namespace ai
         }
 
         // Whether the map has a hold_kill or one_at_a_time row (the hold multiplier's scan for heals, buffs and moves
-        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). False before the seal.
+        // runs only there: a map with only kill_first or interrupt rows has no hold to answer). A linked_death map has
+        // its own flag (HasLinkedDeathMap). False before the seal.
         bool HasHoldMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
+        // Whether the map has a linked_death row (the hold multiplier's area and DoT veto runs there: a map without a
+        // die-together group has no held member to keep at its percent). False before the seal.
+        bool HasLinkedDeathMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && linkedDeathMaps_.find(map) != linkedDeathMaps_.end();
+        }
+
+        // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link
+        // scan reads these instead of a fight's rows, which under "focus rti targets" are the raid mark's entry only.
+        // Empty before the seal or for a map without rows of the kind.
+        const std::vector<LinkedDeathGroupKey>& LinkedDeathGroups(std::uint32_t map) const
+        {
+            static const std::vector<LinkedDeathGroupKey> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = linkedDeathGroups_.find(map);
+            return it == linkedDeathGroups_.end() ? none : it->second;
         }
 
         // The rows of one boss entry, or null. Null before the seal.
@@ -212,6 +263,8 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
+        std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
+        std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
         std::uint64_t revision_;
@@ -622,6 +675,363 @@ namespace ai
                 return static_cast<int>(i);
         }
         return -1;
+    }
+
+    // A linked_death group: its anchor (the rows' boss_entry), the group id (the rows' priority, so one map can carry
+    // several groups) and every partner its rows list. Any member resolves the same group from the anchor's rows.
+    struct LinkedDeathGroup
+    {
+        std::uint32_t bossEntry = 0;
+        std::uint8_t groupId = 0;
+        float param = 0.0f;                 // the hold percent
+        std::vector<std::uint32_t> entries; // the anchor first, then each partner
+        // The release burn's order (`burn_order` of the group's rows, in the encounter's own death order): the first
+        // living member of the list is burned, then the next. Empty: the ordinary released pick (the lowest), for a
+        // group whose order does not matter.
+        std::vector<std::uint32_t> burnOrder;
+    };
+
+    // The group a creature of `entry` belongs to, or false. A partner resolves the same group, but the anchor's rows
+    // have to be among `active` (a partner has no rows of its own): they are when the anchor joined the fight.
+    inline bool FindLinkedDeathGroup(const ActiveBossRows& active, std::uint32_t entry, LinkedDeathGroup& out)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind != BossTacticKind::LinkedDeath || (row->bossEntry != entry && row->targetEntry != entry))
+                continue;
+            out = LinkedDeathGroup();
+            out.bossEntry = row->bossEntry;
+            out.groupId = row->priority;
+            out.param = row->param;
+            out.entries.push_back(row->bossEntry);
+            for (const BossTacticRow* other : active)
+            {
+                if (other->kind != BossTacticKind::LinkedDeath || other->bossEntry != row->bossEntry ||
+                    other->priority != row->priority)
+                    continue;
+                out.param = std::max(out.param, other->param);
+                if (std::find(out.entries.begin(), out.entries.end(), other->targetEntry) == out.entries.end())
+                    out.entries.push_back(other->targetEntry);
+                if (out.burnOrder.empty() && !other->burnOrder.empty())
+                    out.burnOrder = other->burnOrder;
+            }
+            if (out.burnOrder.empty() && !row->burnOrder.empty())
+                out.burnOrder = row->burnOrder;
+            return true;
+        }
+        return false;
+    }
+
+    // A living member of a linked_death group, as the pick sees it. `attackable` is the caller's candidate rule
+    // (alive, attackable, within the engage range).
+    struct LinkedMember
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t entry = 0; // the creature entry: the burn order names entries
+        int hpPct = 100;
+        bool attackable = true;
+        bool inCombat = false; // only read for the idle units of an encounter-end check (LinkedDeathEncounterEnded)
+    };
+
+    // Whether the group is released: fewer than two living members, or every one of them at or below `param` %. Then
+    // the ordinary pick stands and all DPS burn the lowest, so the members die together.
+    inline bool LinkedDeathReleased(float param, const std::vector<LinkedMember>& members)
+    {
+        if (members.size() < 2)
+            return true;
+        for (const LinkedMember& member : members)
+            if (static_cast<float>(member.hpPct) > param)
+                return false;
+        return true;
+    }
+
+    // The member a free DPS bot attacks while the group is held: the attackable one with the highest health fraction,
+    // the lowest guid on a tie. A member at or below `param` % is never it while another living member stands above
+    // that (the hold), so the raid equalises the group and brings every member down to param, not past it. -1 when the
+    // group is released (LinkedDeathReleased) or no member above param % can be attacked: the ordinary pick then.
+    inline int PickLinkedDeath(float param, const std::vector<LinkedMember>& members)
+    {
+        if (LinkedDeathReleased(param, members))
+            return -1;
+        int best = -1;
+        for (std::size_t i = 0; i < members.size(); ++i)
+        {
+            if (!members[i].attackable || static_cast<float>(members[i].hpPct) <= param)
+                continue;
+            if (best < 0 || members[i].hpPct > members[best].hpPct ||
+                (members[i].hpPct == members[best].hpPct && members[i].guid < members[best].guid))
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // Index of the first living member of the group in the released burn's order, or -1. An entry out of the bot's
+    // reach (not attackable) is passed over for the next, so a member the bot cannot attack does not stall the burn;
+    // a living member the order does not name is never picked. The order is the encounter's own: the Thekal trio's
+    // raiser is the first living of Lor'Khan -> Zath -> Thekal, so killing in that order makes each death kill the
+    // corpse's chosen raiser before its 7 s check and extends the window to the 8 s fallback.
+    inline int PickLinkedDeathBurn(const std::vector<std::uint32_t>& order,
+                                   const std::vector<LinkedMember>& members)
+    {
+        for (std::uint32_t entry : order)
+            for (std::size_t i = 0; i < members.size(); ++i)
+                if (members[i].entry == entry && members[i].attackable)
+                    return static_cast<int>(i);
+        return -1;
+    }
+
+    // The release latch, one state per group and instance. Once a known member dies while the release is armed, the
+    // burn runs on for the rest of the group even if a heal brings one back above `param` or a raise restores a member
+    // to full health (both would otherwise re-hold the group mid-burn and split the raid's damage again).
+    // Every bot's read feeds this one state, so the armed release is the union of what all observers have seen, never
+    // one bot's range-limited view: a bot that sees two low members but not a healthy third must not arm it.
+    //   Known: every member guid any observer has seen living, with that guid's last seen health and time.
+    //   Armed (LinkedDeathArmed): every known guid not confirmed dead was last seen at or below `param` % within
+    //   kLinkedDeathSeenMs. A known guid seen above `param` disarms it; a known guid not seen for longer blocks it (fail
+    //   safe: hold).
+    //   Latch: a death latches only when the previous read left the release armed AND the read that finds the death
+    //   still has it armed. The death is explicit: a known guid the observing bot finds dead or as a corpse
+    //   (LinkedDeathUnseen lists the known guids the read did not see living, for the caller to look up). A member merely
+    //   not seen (out of range, not cached) is never a death. Each death counts once.
+    //   Cleared once every known member is confirmed dead, or `kLinkedDeathLatchMs` after the death, so a fight that
+    //   cannot finish the trio goes back to the equalise hold instead of burning one member at a time forever.
+    //   Encounter end (no latch): the known set, armed and latch reset when no member fights and every non-dead known
+    //   guid is accounted for: out of combat at full health this scan (an evade), or not seen for kLinkedDeathEndMs. So an
+    //   evade or a wipe does not leave old guids to block the next pull's arming; a respawn under new guids starts clean.
+    //   A known guid not seen for kLinkedDeathDropMs while the group is seen (a member despawned) is forgotten too. Within
+    //   those windows an unseen member still blocks the arming (fail safe).
+    constexpr std::uint32_t kLinkedDeathLatchMs = 15000;
+    constexpr std::uint32_t kLinkedDeathSeenMs = 5000;
+    constexpr std::uint32_t kLinkedDeathEndMs = 30000;
+    constexpr std::uint32_t kLinkedDeathDropMs = 60000;
+    struct LinkedDeathKnown
+    {
+        std::uint64_t guid = 0;
+        int hpPct = 100;          // the last read that saw it living
+        std::uint32_t seenMs = 0; // when that read was
+    };
+    struct LinkedDeathLatch
+    {
+        bool latched = false;
+        std::uint32_t sinceMs = 0;           // when the latch was set (the read that saw the death)
+        std::uint64_t deadGuid = 0;          // the member whose death set it
+        bool armed = false;                  // the release was armed at the end of the last read
+        std::vector<LinkedDeathKnown> known; // every member guid seen living in this fight
+        std::vector<std::uint64_t> dead;     // the known guids confirmed dead (each counted once)
+    };
+
+    inline bool LinkedDeathHasGuid(const std::vector<std::uint64_t>& guids, std::uint64_t guid)
+    {
+        return std::find(guids.begin(), guids.end(), guid) != guids.end();
+    }
+
+    // Whether the release is armed: every known guid not yet confirmed dead was seen at or below `param` % within
+    // kLinkedDeathSeenMs of `nowMs`. True with no living known member (the latch clears then anyway).
+    inline bool LinkedDeathArmed(const LinkedDeathLatch& latch, float param, std::uint32_t nowMs)
+    {
+        for (const LinkedDeathKnown& known : latch.known)
+        {
+            if (LinkedDeathHasGuid(latch.dead, known.guid))
+                continue;
+            if (static_cast<float>(known.hpPct) > param || nowMs - known.seenMs > kLinkedDeathSeenMs)
+                return false;
+        }
+        return true;
+    }
+
+    // The known members this read did not see living and that are not yet counted dead: the guids the caller looks up
+    // with its own unit lookup. Not seeing one is not a death; only a unit found dead is (LinkedDeathLatchTick's
+    // `deadNow`).
+    inline std::vector<std::uint64_t> LinkedDeathUnseen(const LinkedDeathLatch& latch,
+                                                        const std::vector<LinkedMember>& members)
+    {
+        std::vector<std::uint64_t> unseen;
+        for (const LinkedDeathKnown& known : latch.known)
+        {
+            if (LinkedDeathHasGuid(latch.dead, known.guid))
+                continue;
+            bool living = false;
+            for (const LinkedMember& member : members)
+                if (member.guid == known.guid)
+                    living = true;
+            if (!living)
+                unseen.push_back(known.guid);
+        }
+        return unseen;
+    }
+
+    // Whether the group's encounter has ended without a latch: no member of it fights (`members` empty), and every
+    // non-dead known guid is accounted for: either it is in this scan's `idle` set (seen, out of combat, full health:
+    // an evade, the bosses reset), or it was not seen for kLinkedDeathEndMs (the 30 s no-sighting timeout). One
+    // idle-full-health guid does not end the encounter while another known guid is unresolved and recent: that guid
+    // may still be fighting. An idle unit below full health, or still in combat, is a fight.
+    inline bool LinkedDeathEncounterEnded(const LinkedDeathLatch& latch, const std::vector<LinkedMember>& members,
+                                          const std::vector<LinkedMember>& idle, std::uint32_t nowMs)
+    {
+        if (!members.empty())
+            return false;
+        for (const LinkedMember& member : idle)
+            if (member.inCombat || member.hpPct < 100)
+                return false;
+        for (const LinkedDeathKnown& known : latch.known)
+        {
+            if (LinkedDeathHasGuid(latch.dead, known.guid))
+                continue;
+            const bool idleNow = std::any_of(idle.begin(), idle.end(),
+                                             [&known](const LinkedMember& member) { return member.guid == known.guid; });
+            if (!idleNow && nowMs - known.seenMs < kLinkedDeathEndMs)
+                return false;
+        }
+        return true;
+    }
+
+    // Forgets each known living guid not seen for kLinkedDeathDropMs: a member that despawned, not one that died (a
+    // dead guid is counted once and never blocks the arming). The caller runs it only while the group is seen.
+    inline void LinkedDeathDropStale(LinkedDeathLatch& latch, std::uint32_t nowMs)
+    {
+        for (auto it = latch.known.begin(); it != latch.known.end();)
+        {
+            if (!LinkedDeathHasGuid(latch.dead, it->guid) && nowMs - it->seenMs >= kLinkedDeathDropMs)
+                it = latch.known.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    // One read of the group updates the latch and answers whether it is on. `param`: the hold percent; `members`: the
+    // living members this read saw, in combat; `deadNow`: the LinkedDeathUnseen guids the caller found dead; `nowMs`:
+    // the world clock; `idle`: the known guids this read did not see fighting but found alive (read only when `members`
+    // is empty; `inCombat` marks one still fighting; a known guid's sighting, never a new registration). The sightings
+    // are applied first (a member above `param` disarms, a low one re-arms once every other known member is fresh), then
+    // the encounter end (resets the latch when it has ended, see LinkedDeathEncounterEnded) and the stale guids, then the
+    // deaths; a death latches only when armed both before this read and after it.
+    inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
+                                     const std::vector<LinkedMember>& idle = std::vector<LinkedMember>())
+    {
+        for (const LinkedMember& member : members)
+        {
+            auto known = std::find_if(latch.known.begin(), latch.known.end(),
+                                      [&member](const LinkedDeathKnown& k) { return k.guid == member.guid; });
+            if (known == latch.known.end())
+            {
+                LinkedDeathKnown added;
+                added.guid = member.guid;
+                added.hpPct = member.hpPct;
+                added.seenMs = nowMs;
+                latch.known.push_back(added);
+            }
+            else
+            {
+                known->hpPct = member.hpPct;
+                known->seenMs = nowMs;
+            }
+            // A living member is no death: a raise undoes an earlier one, so its next death counts again.
+            latch.dead.erase(std::remove(latch.dead.begin(), latch.dead.end(), member.guid), latch.dead.end());
+        }
+        // An idle unit is a sighting of a known guid only (its health and time): an idle unit above param disarms it.
+        for (const LinkedMember& member : idle)
+        {
+            auto known = std::find_if(latch.known.begin(), latch.known.end(),
+                                      [&member](const LinkedDeathKnown& k) { return k.guid == member.guid; });
+            if (known == latch.known.end())
+                continue;
+            known->hpPct = member.hpPct;
+            known->seenMs = nowMs;
+        }
+        if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
+            latch.latched = false;
+        if (!latch.latched)
+        {
+            // An ended encounter forgets the whole fight (known, dead, armed): the next pull arms on its own guids.
+            if (LinkedDeathEncounterEnded(latch, members, idle, nowMs))
+            {
+                latch = LinkedDeathLatch();
+                return false;
+            }
+            if (!members.empty() || !idle.empty())
+                LinkedDeathDropStale(latch, nowMs);
+        }
+        const bool armedBefore = latch.armed;
+        std::vector<std::uint64_t> newDeaths;
+        for (std::uint64_t guid : deadNow)
+        {
+            bool known = false;
+            for (const LinkedDeathKnown& k : latch.known)
+                if (k.guid == guid)
+                    known = true;
+            if (!known || LinkedDeathHasGuid(latch.dead, guid))
+                continue;
+            latch.dead.push_back(guid);
+            newDeaths.push_back(guid);
+        }
+        const bool armedNow = LinkedDeathArmed(latch, param, nowMs);
+        if (!latch.latched && armedBefore && armedNow && !newDeaths.empty())
+        {
+            latch.latched = true;
+            latch.sinceMs = nowMs;
+            latch.deadGuid = newDeaths.front();
+        }
+        latch.armed = armedNow;
+        if (members.empty() && latch.dead.size() == latch.known.size())
+        {
+            latch = LinkedDeathLatch();
+            return false;
+        }
+        return latch.latched;
+    }
+
+    // Whether a member at `hpPct` % is held right now: at or below `param` while another living member stands above it.
+    inline bool LinkedDeathHolds(float param, int hpPct, const std::vector<LinkedMember>& members)
+    {
+        if (static_cast<float>(hpPct) > param)
+            return false;
+        for (const LinkedMember& member : members)
+            if (static_cast<float>(member.hpPct) > param)
+                return true;
+        return false;
+    }
+
+    // Whether `guid` names a member the tactic holds right now (LinkedDeathHolds). Target selection falls through such
+    // a raid mark to the group's pick: the mark would otherwise park the bot on a member that has to live to the burn.
+    // A guid outside the group is never held here.
+    inline bool LinkedDeathHoldsMember(float param, const std::vector<LinkedMember>& members, std::uint64_t guid)
+    {
+        for (const LinkedMember& member : members)
+            if (member.guid == guid)
+                return LinkedDeathHolds(param, member.hpPct, members);
+        return false;
+    }
+
+    // Index of the held member of a linked_death group within `maxDistance` of the action (`distance[i]`, infinity for
+    // one that could not be resolved), or -1. While the group is held, an area cast on another member that stands next
+    // to a held one takes the held member too, and a DoT on it ticks on after the hold: both start the raise the hold
+    // exists to avoid. Once every living member is at or below `param` % the group is released and the burn may AoE.
+    inline int LinkedDeathHeldIndex(float param, const std::vector<LinkedMember>& members,
+                                    const std::vector<float>& distance, float maxDistance)
+    {
+        for (std::size_t i = 0; i < members.size() && i < distance.size(); ++i)
+        {
+            if (distance[i] > maxDistance)
+                continue;
+            if (LinkedDeathHolds(param, members[i].hpPct, members))
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    // The gated linked_death pick: -1 when the key (AiPlayerbot.DungeonRunLinkedDeath) or the boss tactics strategy is
+    // off, `entry` is in no group, or the group is released; else the index into `members` (the group's living units,
+    // the same list LinkedDeathHolds reads).
+    inline int PickLinkedDeathTarget(bool keyOn, bool tacticsOn, const ActiveBossRows& active, std::uint32_t entry,
+                                     const std::vector<LinkedMember>& members)
+    {
+        if (!keyOn || !tacticsOn)
+            return -1;
+        LinkedDeathGroup group;
+        if (!FindLinkedDeathGroup(active, entry, group))
+            return -1;
+        return PickLinkedDeath(group.param, members);
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

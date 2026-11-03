@@ -927,6 +927,19 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # 1 - on for every bot on a map that has rows
 AiPlayerbot.DungeonTactics = 0
 
+# The "die together" boss tactic (ai_boss_tactic kind linked_death, docs/play/boss-tactics.md).
+# A linked_death row lists one partner of a group (its boss_entry is the group's anchor) and a hold percent
+# (param). While more than one member lives, the free DPS bots spread their damage to equalise the members'
+# health: the pick is the living member with the highest health, and never one at or below param % while
+# another stands above it. Once every living member is at or below param % the hold ends and the ordinary pick
+# burns the lowest, so the group dies together. On Zul'Gurub's Thekal (14599 with the Zealots Lor'Khan 11347
+# and Zath 11348) the row's 3 % is the point inside the 7 s in which a dead sibling is raised to full health.
+# This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because it changes every
+# free DPS bot's target pick. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: DPS bots pick as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunLinkedDeath = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills
@@ -952,7 +965,7 @@ AiPlayerbot.DungeonRunRaid = 0
 # 1 - on
 AiPlayerbot.DungeonRunRaidBossRules = 0
 
-# A raid binding's boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1: an add that attacks a healer goes to the raid's nearest ranged dps within 35 yd of it (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss is never sent at an add. An order refused by its bot counts for nothing (the next ranged dps is tried), and one the bot does not take up (its target is not the add) is over after 6 s: that bot is passed over for the add too. A further order waits 2 s, and the pick passes over a plan boss, an add the run holds (crowd control ordered or in place, or the fight's kill_first focus), a camp caster the tank would walk to, and an add that had two orders this fight until 20 s after its last one. A ranged dps busy with a commander task is not picked. Adds not on a healer are left to the dps. Without boss rules the dungeon guard applies.
+# A raid binding's healer guard (only read with AiPlayerbot.DungeonRunRaid = 1): in a boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1 whose main tank holds the boss, and in a trash fight whose main tank holds its current target, an add that attacks a healer goes to the raid's nearest ranged dps within 35 yd of it (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss (or, in a trash fight, its own add) is never sent at another. An order refused by its bot counts for nothing (the next ranged dps is tried), and one the bot does not take up (its target is not the add) is over after 6 s: that bot is passed over for the add too. A further order waits 2 s, and the pick passes over a plan boss, an add the run holds (crowd control ordered or in place, or the fight's kill_first focus), a camp caster the tank would walk to, and an add that had two orders this fight until 20 s after its last one. A ranged dps busy with a commander task is not picked. Adds not on a healer are left to the dps. In a trash fight the main tank is never sent at a healer's add: with no ranged dps and no off-tank free for it, the add stays where it hits. The trash fight's guard needs no boss rules; without them the boss fight keeps the dungeon guard.
 # 0 - off: the off-tanks take the adds, as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunRaidHealerGuard = 0
@@ -1069,6 +1082,23 @@ AiPlayerbot.DungeonRunAggroEstimate = 0
 # Joiners (creatures besides the pulled one) above which the estimate rests the party first.
 # 6 - default; 1 and up. Only read while AiPlayerbot.DungeonRunAggroEstimate = 1.
 AiPlayerbot.DungeonRunAggroCeiling = 6
+
+# The ring estimate: instead of counting only from where the party stands, the estimate also
+# counts every creature the walk to the pull, the stand and the fight point would wake, and
+# every creature within the ring below of one already counted (a call for help carries: two
+# hops). The count is compared with a pull row's own ceiling (a plan's max_bodies, the target
+# included), else with DungeonRunAggroCeiling + 1. A pull over its ceiling rests once and notes
+# "pull estimate: N bodies over the ceiling M"; the last approach row also notes once how many
+# the coming pull would bring ("ahead: pull N brings ..."). Advice only: no order changes.
+# 0 - off, the estimate as before (Default)
+# 1 - on; only read while AiPlayerbot.DungeonRunAggroEstimate = 1
+AiPlayerbot.DungeonRunAggroWalkRing = 0
+
+# How far a call for help carries in the ring estimate, in yards (the measured wakes were
+# 11.0-19.5 yd; the server's own CreatureFamilyAssistanceRadius is 10). The larger of the two
+# is used.
+# 20 - default; 5 to 40
+AiPlayerbot.DungeonRunAggroRingYd = 20
 
 # The run leader's pack-cleared gate. A `pull` step is done only when nothing of its
 # entries is left: no living unit in its radius, no unit in the band around it

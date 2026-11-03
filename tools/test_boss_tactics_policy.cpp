@@ -56,6 +56,74 @@ static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eli
     return c;
 }
 
+static LinkedMember Linked(std::uint64_t guid, int hpPct, bool attackable = true, std::uint32_t entry = 0)
+{
+    LinkedMember m;
+    m.guid = guid;
+    m.entry = entry;
+    m.hpPct = hpPct;
+    m.attackable = attackable;
+    return m;
+}
+
+// The core's raise rule over a list of deaths, each (entry, second it died): the chosen raiser is the first living of
+// Lor'Khan (11347) -> Zath (11348) -> Thekal (14599), a corpse's first check is 7 s after its death, a raiser that
+// died by then moves the check 8 s on, and the second check raises the corpse if any sibling still lives. Returns the
+// number of corpses restored (0: the trio stayed down).
+static int ThekalRaises(const std::vector<std::pair<std::uint32_t, int>>& deaths)
+{
+    std::uint32_t const entries[3] = {11347, 11348, 14599};
+    bool alive[3] = {true, true, true};
+    int raiser[3] = {-1, -1, -1};
+    int deadline[3] = {-1, -1, -1};
+    bool extended[3] = {false, false, false};
+    auto firstAlive = [&alive]()
+    {
+        for (int i = 0; i < 3; ++i)
+            if (alive[i])
+                return i;
+        return -1;
+    };
+    int raises = 0;
+    for (int s = 0; s <= 90; ++s)
+    {
+        for (const std::pair<std::uint32_t, int>& died : deaths)
+            if (died.second == s)
+                for (int i = 0; i < 3; ++i)
+                    if (entries[i] == died.first && alive[i])
+                    {
+                        alive[i] = false;
+                        raiser[i] = firstAlive();
+                        deadline[i] = s + (raiser[i] < 0 ? 10 : 7);
+                    }
+        for (int i = 0; i < 3; ++i)
+        {
+            if (deadline[i] != s || alive[i])
+                continue;
+            if (raiser[i] >= 0 && alive[raiser[i]])
+            {
+                ++raises;
+                alive[i] = true;
+                deadline[i] = -1;
+            }
+            else if (!extended[i])
+            {
+                extended[i] = true;
+                deadline[i] = s + 8;
+            }
+            else if (firstAlive() >= 0)
+            {
+                ++raises;
+                alive[i] = true;
+                deadline[i] = -1;
+            }
+            else
+                deadline[i] = -1;
+        }
+    }
+    return raises;
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -643,6 +711,432 @@ int main()
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Started)) == "started");
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Deferred)) == "deferred");
         CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::None)) == "none");
+    }
+
+    // linked_death: kind text (and its alias), and the loader's shape checks.
+    CHECK(ParseBossTacticKind("linked_death") == BossTacticKind::LinkedDeath);
+    CHECK(ParseBossTacticKind("together") == BossTacticKind::LinkedDeath);
+    CHECK(ParseBossTacticKind("Linked_Death") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("linked-death") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("linkeddeath") == BossTacticKind::None);
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 0, 0, 1, 3.0f)));      // no partner
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 0.0f)));  // no hold percent
+        CHECK(!table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 101.0f))); // over 100 %
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 3.0f)));
+        CHECK(table.Size() == 2);
+        table.Seal();
+        CHECK(table.HasMap(309));
+        CHECK(table.HasLinkedDeathMap(309));
+        CHECK(!table.HasLinkedDeathMap(70));
+        CHECK(!table.HasHoldMap(309));  // a linked group is not a hold_kill budget: each map flag answers its own kind
+        // The group is read from the anchor alone, so two partner rows name one anchor. A map without rows has none,
+        // and an unsealed table has none either.
+        CHECK(table.LinkedDeathGroups(309).size() == 1);
+        CHECK(table.LinkedDeathGroups(309)[0].anchor == 14599);
+        CHECK(table.LinkedDeathGroups(309)[0].group == 1);
+        CHECK(table.LinkedDeathGroups(70).empty());
+
+        BossTacticTable unsealed;
+        CHECK(unsealed.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f)));
+        CHECK(unsealed.LinkedDeathGroups(309).empty());
+    }
+
+    // One anchor can carry several groups (its rows' priorities): each key is scanned, so a second group under the
+    // same boss entry is not hidden by the first one's rows.
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 2.0f)));
+        CHECK(table.Add(Row(309, 14599, BossTacticKind::LinkedDeath, 11361, 0, 2, 5.0f)));
+        table.Seal();
+        CHECK(table.LinkedDeathGroups(309).size() == 2);
+        CHECK(table.LinkedDeathGroups(309)[0].group == 1);
+        CHECK(table.LinkedDeathGroups(309)[1].group == 2);
+    }
+
+    // The group: the anchor and every partner its rows list, resolved from either. Its burn order is the raiser chain:
+    // Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal.
+    std::vector<BossTacticRow> thekal = {
+        Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 3.0f),
+        Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 3.0f),
+    };
+    thekal[0].burnOrder = {11347, 11348, 14599};
+    thekal[1].burnOrder = thekal[0].burnOrder;
+    const ActiveBossRows thekalRows = Active(thekal);
+    {
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(thekalRows, 14599, group));
+        CHECK(group.bossEntry == 14599);
+        CHECK(group.groupId == 1);
+        CHECK(group.param == 3.0f);
+        CHECK(group.entries.size() == 3);
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 14599) != group.entries.end());
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 11347) != group.entries.end());
+        CHECK(std::find(group.entries.begin(), group.entries.end(), 11348) != group.entries.end());
+        CHECK(group.burnOrder == std::vector<std::uint32_t>({11347, 11348, 14599}));
+        CHECK(FindLinkedDeathGroup(thekalRows, 11348, group));  // a partner resolves the same group
+        CHECK(group.entries.size() == 3);
+        CHECK(group.burnOrder.size() == 3);
+        CHECK(!FindLinkedDeathGroup(thekalRows, 11361, group));  // the tiger is no member
+        CHECK(!FindLinkedDeathGroup(ActiveBossRows(), 14599, group));
+    }
+
+    // Equalise: the pick is the living member with the highest health fraction, never one at or below param while
+    // another stands above it, and never one this bot cannot attack.
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 80), Linked(3, 60) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 0);
+        members[0].hpPct = 40;
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 11347, members) == 1);  // the highest now
+        members = { Linked(1, 3), Linked(2, 60), Linked(3, 40) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // 3 % is held, 60 % is not
+        CHECK(LinkedDeathHolds(3.0f, 3, members));   // at the param, another member above it
+        CHECK(!LinkedDeathHolds(3.0f, 4, members));
+        // A raid mark on a held member names a member that has to live to the burn, so target selection falls
+        // through to the group's pick; a mark on an above-threshold member, on a non-member, or with the group
+        // released stands as it is.
+        CHECK(LinkedDeathHoldsMember(3.0f, members, 1));
+        CHECK(!LinkedDeathHoldsMember(3.0f, members, 2));
+        CHECK(!LinkedDeathHoldsMember(3.0f, members, 77));
+        std::vector<LinkedMember> burnAll = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(!LinkedDeathHoldsMember(3.0f, burnAll, 1));
+        members = { Linked(1, 70, false), Linked(2, 50), Linked(3, 40) };
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == 1);  // the highest is out of reach
+    }
+
+    // Release: every living member at or below param, or one member left, hands the pick back so all DPS burn the
+    // lowest (the deaths come together then).
+    {
+        std::vector<LinkedMember> members = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(LinkedDeathReleased(3.0f, members));
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
+        members = { Linked(1, 50) };
+        CHECK(LinkedDeathReleased(3.0f, members));
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 14599, members) == -1);
+        members = { Linked(1, 50), Linked(2, 3) };
+        CHECK(!LinkedDeathReleased(3.0f, members));  // one above param: not released (the hold runs)
+    }
+
+    // The release burn follows the row's order: all DPS on the first living member of it, then the next. A member out
+    // of reach is passed over, a living member the order does not name is never picked, and the order alone decides
+    // (never the health, so a raised member at 100 % does not steal the burn).
+    {
+        std::vector<std::uint32_t> const order = {11347, 11348, 14599};
+        std::vector<LinkedMember> members = { Linked(1, 2, true, 14599), Linked(2, 2, true, 11347),
+                                              Linked(3, 2, true, 11348) };
+        CHECK(PickLinkedDeathBurn(order, members) == 1);
+        members[1].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == 2);
+        members[2].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == 0);
+        members[0].attackable = false;
+        CHECK(PickLinkedDeathBurn(order, members) == -1);
+        // The order's first living member, even when a member not in the order is the only other one alive.
+        members = { Linked(9, 100, true, 11361) };
+        CHECK(PickLinkedDeathBurn(order, members) == -1);
+        CHECK(PickLinkedDeathBurn(std::vector<std::uint32_t>(), members) == -1);
+    }
+
+    // The release latch, by guid and instance-wide. A member counts as dead only when the observing bot finds that known
+    // guid dead (or as a corpse); one merely not seen (out of range, not cached) never does. A death while the release is
+    // armed (every known guid last seen at or below param % within kLinkedDeathSeenMs) latches the burn, kept on after a
+    // heal or a raise; it clears after kLinkedDeathLatchMs, and every known member confirmed dead clears it at once.
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };  // guid 3 out of this observer's range
+        const std::vector<LinkedMember> healed = { Linked(1, 80), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> healedTwo = { Linked(1, 80), Linked(2, 2) };  // guid 3 dead, not living
+        const std::vector<LinkedMember> nobody;
+        const std::vector<std::uint64_t> dead3 = { 3 };
+        const std::vector<std::uint64_t> dead12 = { 1, 2 };
+
+        // Two observers alternately see 3 and 2 living members, no death: the release never latches.
+        LinkedDeathLatch alt;
+        CHECK(!LinkedDeathLatchTick(alt, p, three, none, 1000));                // A sees 3 living
+        CHECK(LinkedDeathUnseen(alt, two) == std::vector<std::uint64_t>{3});     // B sees 2: 3 unseen, not dead
+        CHECK(!LinkedDeathLatchTick(alt, p, two, none, 1100));                  // B's read: no death found
+        CHECK(!LinkedDeathLatchTick(alt, p, three, none, 1200));                // A again
+        CHECK(!LinkedDeathLatchTick(alt, p, two, none, 1300));                  // B again
+        CHECK(!alt.latched);
+        // A heal above param puts a member back: the group is held again, no latch to keep it released.
+        CHECK(!LinkedDeathLatchTick(alt, p, healed, none, 1400));
+        CHECK(!alt.latched);
+        CHECK(!LinkedDeathReleased(3.0f, healed));
+        CHECK(PickLinkedDeath(3.0f, healed) == 0);  // the hold: the highest member (guid 1 at 80 %)
+
+        // A real death of a known member, found dead by the observer, latches it while armed.
+        LinkedDeathLatch death;
+        CHECK(!LinkedDeathLatchTick(death, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(death, p, two, none, 2000));                // 3 not seen, not dead: no latch
+        CHECK(LinkedDeathLatchTick(death, p, two, dead3, 3000));                // 3 found dead: latched
+        CHECK(death.deadGuid == 3);
+        CHECK(LinkedDeathLatchTick(death, p, healedTwo, none, 4000));           // a heal of 1 (guid 3 is a corpse)
+        CHECK(LinkedDeathLatchTick(death, p, healedTwo, none, 3000 + kLinkedDeathLatchMs - 1));
+        CHECK(!LinkedDeathLatchTick(death, p, healedTwo, none, 3000 + kLinkedDeathLatchMs)); // 15 s: back to the hold
+        // The corpse counts once: it is not looked up again, and a later read that finds it still dead does not re-latch.
+        CHECK(LinkedDeathUnseen(death, two).empty());
+        CHECK(!LinkedDeathLatchTick(death, p, two, none, 19000));
+        CHECK(!LinkedDeathLatchTick(death, p, two, dead3, 20000));
+        CHECK(!death.latched);
+
+        // Codex round 2: a bot sees two low members while a known healthy third is omitted (another observer saw it
+        // healthy). One of the two dies: the release is not armed, so the burn does not latch.
+        LinkedDeathLatch partial;
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2), Linked(3, 100) }, none, 1000));
+        CHECK(!LinkedDeathArmed(partial, p, 1000));                             // 3 known healthy: disarmed
+        CHECK(!LinkedDeathLatchTick(partial, p, two, none, 1500));              // 3 omitted, still known healthy
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(2, 2) }, { 1 }, 2000)); // 1 found dead, 3 still healthy
+        CHECK(!partial.latched);
+
+        // All three seen low, then one dies while the other two are still low: armed, so the death latches.
+        LinkedDeathLatch lowThenDeath;
+        CHECK(!LinkedDeathLatchTick(lowThenDeath, p, three, none, 1000));
+        CHECK(LinkedDeathArmed(lowThenDeath, p, 1000));
+        CHECK(LinkedDeathLatchTick(lowThenDeath, p, two, dead3, 2000));
+        CHECK(lowThenDeath.deadGuid == 3);
+
+        // A known living member not seen for longer than kLinkedDeathSeenMs blocks the arming (fail safe: hold), so a
+        // death in that read does not latch either.
+        LinkedDeathLatch stale;
+        CHECK(!LinkedDeathLatchTick(stale, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(stale, p, { Linked(2, 2), Linked(3, 1) }, none, 1000 + kLinkedDeathSeenMs + 1));
+        CHECK(!LinkedDeathArmed(stale, p, 1000 + kLinkedDeathSeenMs + 1));      // 1 last seen too long ago
+        CHECK(!LinkedDeathLatchTick(stale, p, two, dead3, 1000 + kLinkedDeathSeenMs + 2));
+        CHECK(!stale.latched);
+
+        // Every known member confirmed dead clears the latch, whatever the clock.
+        LinkedDeathLatch all;
+        CHECK(!LinkedDeathLatchTick(all, p, three, none, 1000));
+        CHECK(LinkedDeathLatchTick(all, p, two, dead3, 1500));
+        CHECK(LinkedDeathUnseen(all, nobody) == dead12);
+        CHECK(!LinkedDeathLatchTick(all, p, nobody, dead12, 1600));
+        CHECK(!all.latched);
+        CHECK(all.known.empty());
+
+        // A death while the release is not armed never latches: the read before it has to be armed too.
+        LinkedDeathLatch open;
+        const std::vector<LinkedMember> oneHealthy = { Linked(1, 50), Linked(2, 2), Linked(3, 1) };
+        CHECK(!LinkedDeathLatchTick(open, p, oneHealthy, none, 1000));          // 1 above param: not armed
+        CHECK(!LinkedDeathArmed(open, p, 1000));
+        CHECK(!LinkedDeathLatchTick(open, p, two, dead3, 1001));                // 1 low again, 3 dies in the same read
+        CHECK(!open.latched);
+
+        // A raise undoes the earlier death: the member living again counts as a death once more when it dies again.
+        LinkedDeathLatch raise;
+        CHECK(!LinkedDeathLatchTick(raise, p, three, none, 1000));
+        CHECK(LinkedDeathLatchTick(raise, p, two, dead3, 2000));
+        CHECK(!LinkedDeathLatchTick(raise, p, three, none, 2000 + kLinkedDeathLatchMs));  // 3 back: window over
+        CHECK(LinkedDeathLatchTick(raise, p, two, dead3, 2000 + kLinkedDeathLatchMs + 1000)); // 3 dies again
+    }
+
+    // Encounter reset (Codex round 3): a stale guid must not block the arming forever. An evade (every visible member out
+    // of combat at full health, every known guid of the scan) resets the known set, armed and latch, so respawned members under new guids arm on the
+    // next pull; a quiet group (no member seen for kLinkedDeathEndMs) resets too; a guid unseen for kLinkedDeathDropMs
+    // while the group is seen is forgotten (a despawn).
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> nobody;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+        const std::vector<LinkedMember> idleFull = { Linked(1, 100, false), Linked(2, 100, false) };
+
+        // Evade: 1 and 2 low and armed, then both leave combat at full health. The reset clears them.
+        LinkedDeathLatch evade;
+        CHECK(!LinkedDeathLatchTick(evade, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(LinkedDeathArmed(evade, p, 1000));
+        CHECK(!LinkedDeathLatchTick(evade, p, nobody, none, 2000, idleFull));
+        CHECK(evade.known.empty());
+        CHECK(!evade.armed);
+        CHECK(!evade.latched);
+        // The respawn under new guids 4 and 5 arms on the next pull; the death of 4 latches the burn.
+        CHECK(!LinkedDeathLatchTick(evade, p, { Linked(4, 2), Linked(5, 2) }, none, 60000));
+        CHECK(LinkedDeathArmed(evade, p, 60000));
+        CHECK(LinkedDeathLatchTick(evade, p, { Linked(5, 2) }, { 4 }, 61000));
+        CHECK(evade.deadGuid == 4);
+
+        // An idle unit below full health is a fight, not an evade: nothing resets, the known guids stay.
+        LinkedDeathLatch wiped;
+        CHECK(!LinkedDeathLatchTick(wiped, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(wiped, p, nobody, none, 2000, { Linked(1, 2, false), Linked(2, 100, false) }));
+        CHECK(wiped.known.size() == 2);
+        CHECK(!LinkedDeathArmed(wiped, p, 2000)); // 2 is idle at 100 %, a known sighting above param: disarmed
+
+        // A known unit at full health that still fights (out of this bot's view, so not a member) is no evade either.
+        LinkedDeathLatch stillFights;
+        CHECK(!LinkedDeathLatchTick(stillFights, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        std::vector<LinkedMember> fighting = { Linked(1, 100, false), Linked(2, 100, false) };
+        fighting[1].inCombat = true;
+        CHECK(!LinkedDeathLatchTick(stillFights, p, nobody, none, 2000, fighting));
+        CHECK(stillFights.known.size() == 2);
+        CHECK(!LinkedDeathEncounterEnded(stillFights, nobody, fighting, 2000));
+
+        // One visible idle member at full health is no evade while another known member is unresolved and recent (it may
+        // still fight out of view). The reset waits until every known guid is idle at full health in one scan.
+        LinkedDeathLatch partial;
+        CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(partial.known.size() == 2);                                       // 2 unresolved, seen 1 s ago: no reset
+        CHECK(!LinkedDeathEncounterEnded(partial, nobody, { Linked(1, 100, false) }, 2000));
+        CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 3000, idleFull)); // all known idle at full health: reset
+        CHECK(partial.known.empty());
+
+        // An unresolved known member not seen for kLinkedDeathEndMs times out even while another member is idle.
+        LinkedDeathLatch timedOut;
+        CHECK(!LinkedDeathLatchTick(timedOut, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(timedOut, p, nobody, none, 1000 + kLinkedDeathEndMs - 1, { Linked(1, 100, false) }));
+        CHECK(timedOut.known.size() == 2);                                      // 2 unseen 29.999 s: still the fight
+        CHECK(!LinkedDeathLatchTick(timedOut, p, nobody, none, 1000 + kLinkedDeathEndMs, { Linked(1, 100, false) }));
+        CHECK(timedOut.known.empty());
+
+        // Quiet group: no member in combat or idle, none seen for kLinkedDeathEndMs: the fight is gone, reset.
+        LinkedDeathLatch quiet;
+        CHECK(!LinkedDeathLatchTick(quiet, p, two, none, 1000));
+        CHECK(!LinkedDeathLatchTick(quiet, p, nobody, none, 1000 + kLinkedDeathEndMs - 1)); // 29 s: still the fight
+        CHECK(quiet.known.size() == 2);
+        CHECK(!LinkedDeathLatchTick(quiet, p, nobody, none, 1000 + kLinkedDeathEndMs));     // 30 s: ended
+        CHECK(quiet.known.empty());
+
+        // Despawn: guid 3 is never seen again while 1 and 2 are. Within kLinkedDeathSeenMs it is not blocking, then it
+        // blocks the arming (fail safe), and only after kLinkedDeathDropMs is it forgotten.
+        LinkedDeathLatch despawn;
+        CHECK(!LinkedDeathLatchTick(despawn, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 6500));                 // 3 out of sight for 5.5 s
+        CHECK(!LinkedDeathArmed(despawn, p, 6500));                                // blocks the arming (fail safe)
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 1000 + kLinkedDeathDropMs - 1));
+        CHECK(!LinkedDeathArmed(despawn, p, 1000 + kLinkedDeathDropMs - 1));       // still blocking at 59.999 s
+        CHECK(!LinkedDeathLatchTick(despawn, p, two, none, 1000 + kLinkedDeathDropMs));
+        CHECK(despawn.known.size() == 2);                                          // 3 forgotten at 60 s
+        CHECK(LinkedDeathArmed(despawn, p, 1000 + kLinkedDeathDropMs));
+        CHECK(LinkedDeathLatchTick(despawn, p, { Linked(2, 2) }, { 1 }, 1000 + kLinkedDeathDropMs + 1000));
+        CHECK(despawn.deadGuid == 1);
+
+        // Fail safe in a real fight: 3 unseen for 5.6 s while 1 dies in the same window. Not armed: no latch.
+        LinkedDeathLatch failsafe;
+        CHECK(!LinkedDeathLatchTick(failsafe, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(failsafe, p, { Linked(2, 2) }, { 1 }, 6600));
+        CHECK(!failsafe.latched);
+    }
+
+    // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
+    // dps it is down ~2.2-3 s after the release, and the death order is the row's. The core's raiser rule (7 s, then
+    // the 8 s fallback) then sees every corpse's chosen raiser die before its check: no restore. The raid's old
+    // one-at-a-time pattern (each member from full health, ~60 s for Thekal) leaves the first corpse's raiser alive at
+    // the 7 s check, so it is raised: that is the window the order exists for.
+    {
+        std::vector<std::uint32_t> const order = {11347, 11348, 14599};
+        // Constructed in another order on purpose: an arbitrary pick (the first member of the list) would burn the
+        // wrong entry first, which the death-order check below catches.
+        std::vector<LinkedMember> members = { Linked(1, 2665, true, 14599), Linked(2, 1709, true, 11347),
+                                              Linked(3, 2136, true, 11348) };
+        std::vector<std::pair<std::uint32_t, int>> deaths;
+        double at = 0.0;
+        for (;;)
+        {
+            const int pick = PickLinkedDeathBurn(order, members);
+            if (pick < 0)
+                break;
+            at += members[pick].hpPct / 2200.0; // the walk's measured low end: the slower run is the hard one
+            deaths.push_back(std::make_pair(members[pick].entry, static_cast<int>(at + 0.5)));
+            members[pick].attackable = false;
+        }
+        CHECK(deaths.size() == 3);
+        CHECK(deaths[0].first == 11347 && deaths[1].first == 11348 && deaths[2].first == 14599);
+        CHECK(deaths.back().second - deaths.front().second <= 7); // inside the first corpse's 7 s check
+        CHECK(ThekalRaises(deaths) == 0);
+        // The same trio at 3.0 k dps is quicker still.
+        std::vector<LinkedMember> fast = { Linked(1, 2665, true, 14599), Linked(2, 1709, true, 11347),
+                                           Linked(3, 2136, true, 11348) };
+        std::vector<std::pair<std::uint32_t, int>> fastDeaths;
+        at = 0.0;
+        for (;;)
+        {
+            const int pick = PickLinkedDeathBurn(order, fast);
+            if (pick < 0)
+                break;
+            at += fast[pick].hpPct / 3000.0;
+            fastDeaths.push_back(std::make_pair(fast[pick].entry, static_cast<int>(at + 0.5)));
+            fast[pick].attackable = false;
+        }
+        CHECK(ThekalRaises(fastDeaths) == 0);
+        // A bad burn: the old one-at-a-time pattern, each member from full health (the observed 9-93 % kills), so
+        // Thekal's first corpse waits 60 s for Lor'Khan's 7 s check.
+        std::vector<std::pair<std::uint32_t, int>> bad = { {14599, 61}, {11347, 122}, {11348, 183} };
+        CHECK(ThekalRaises(bad) > 0);
+    }
+
+    // Area veto: a held member at the threshold beside the action's target is in the blast, so the area cast or the
+    // DoT is vetoed. `distance[1]` is the target itself (an above-threshold member), `distance[0]` the held one.
+    {
+        const float near = kHoldKillAoeNearYd;
+        const float anywhere = std::numeric_limits<float>::max();
+        std::vector<LinkedMember> held = { Linked(1, 3), Linked(2, 60), Linked(3, 50) };
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 5.0f, 0.0f, 30.0f }, near) == 0);   // held next to the target
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 30.0f, 0.0f, 5.0f }, near) == -1);  // held out of the area
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { 0.0f, 0.0f, 30.0f }, anywhere) == 0);  // the DoT lands on it
+        CHECK(LinkedDeathHeldIndex(3.0f, held, { std::numeric_limits<float>::infinity(), 0.0f, 5.0f }, anywhere)
+              == -1);  // unresolved: never in reach
+        // Burn phase: every living member at or below param, so the release allows the AoE that kills them together.
+        std::vector<LinkedMember> burn = { Linked(1, 3), Linked(2, 2), Linked(3, 1) };
+        CHECK(LinkedDeathHeldIndex(3.0f, burn, { 5.0f, 0.0f, 5.0f }, near) == -1);
+        // One member above param keeps the others held, even with no held member near this target.
+        std::vector<LinkedMember> oneAbove = { Linked(1, 3), Linked(2, 2), Linked(3, 60) };
+        CHECK(LinkedDeathHeldIndex(3.0f, oneAbove, { 50.0f, 50.0f, 0.0f }, near) == -1);
+        CHECK(LinkedDeathHeldIndex(3.0f, oneAbove, { 5.0f, 50.0f, 0.0f }, near) == 0);
+    }
+
+    // Flag off (the key, or the tactics strategy): today's pick stands. A non-linked boss is untouched too.
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 80), Linked(3, 60) };
+        CHECK(PickLinkedDeathTarget(false, true, thekalRows, 14599, members) == -1);
+        CHECK(PickLinkedDeathTarget(true, false, thekalRows, 14599, members) == -1);
+        CHECK(PickLinkedDeathTarget(false, false, thekalRows, 14599, members) == -1);
+        const std::vector<BossTacticRow> others = { Row(309, 14507, BossTacticKind::KillFirst) };
+        CHECK(PickLinkedDeathTarget(true, true, Active(others), 14507, members) == -1);
+        CHECK(PickLinkedDeathTarget(true, true, thekalRows, 11361, members) == -1);  // not a group member
+    }
+
+    // The burn window, as a tick loop: a second of the raid's damage to the pick. The hold takes every member down
+    // to param and no further; once all are there the release lets them die, and they die inside the script's 7 s
+    // resurrect timer (boss_thekal.cpp's RESSURECT_TIMER).
+    {
+        std::vector<LinkedMember> members = { Linked(1, 100), Linked(2, 100), Linked(3, 100) };
+        int deathTick[3] = {0, 0, 0};
+        for (int tick = 1; tick <= 600; ++tick)
+        {
+            if (!members[0].attackable && !members[1].attackable && !members[2].attackable)
+                break;
+            int pick = PickLinkedDeathTarget(true, true, thekalRows, 14599, members);
+            if (pick >= 0)
+                CHECK(members[pick].hpPct > 3);  // the hold: never damage a member at or below param
+            else
+            {
+                // Released: the ordinary pick, the lowest health among the living.
+                pick = -1;
+                for (int i = 0; i < 3; ++i)
+                    if (members[i].attackable && (pick < 0 || members[i].hpPct < members[pick].hpPct))
+                        pick = i;
+                if (pick < 0)
+                    break;
+            }
+            members[pick].hpPct -= 1;
+            if (members[pick].hpPct <= 0)
+            {
+                members[pick].hpPct = 0;
+                members[pick].attackable = false;
+                deathTick[pick] = tick;
+            }
+        }
+        CHECK(!members[0].attackable && !members[1].attackable && !members[2].attackable);
+        CHECK(deathTick[0] > 0 && deathTick[1] > 0 && deathTick[2] > 0);
+        const int first = std::min(deathTick[0], std::min(deathTick[1], deathTick[2]));
+        const int last = std::max(deathTick[0], std::max(deathTick[1], deathTick[2]));
+        CHECK(last - first <= 7);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

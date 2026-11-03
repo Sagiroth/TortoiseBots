@@ -14,6 +14,8 @@ using ai::VENDOR_TRIP_PURPOSE_ID;
 using ai::VENDOR_TRIP_REPICK_WINDOW;
 using ai::VendorTripAlreadyUnderway;
 using ai::VendorTripSuppressedByRecentTrip;
+using ai::BagPressureSaleRelievesBags;
+using ai::ORDER_BAG_PRESSURE_MIN_SELL_SLOTS;
 
 int main()
 {
@@ -44,6 +46,18 @@ int main()
     CHECK(!VendorTripAlreadyUnderway(true, 131072));
     CHECK(!VendorTripAlreadyUnderway(false, 512));
     CHECK(!VendorTripAlreadyUnderway(false, 0));
+
+    // Order-stock bag pressure: the walk is worth it only when the sale frees
+    // a bag row or gets the bags under the pressure line.
+    CHECK(ORDER_BAG_PRESSURE_MIN_SELL_SLOTS == 4);
+    CHECK(!BagPressureSaleRelievesBags(70, 72, 1, 85));
+    CHECK(!BagPressureSaleRelievesBags(70, 72, 3, 85));
+    CHECK(BagPressureSaleRelievesBags(70, 72, 4, 85));
+    CHECK(BagPressureSaleRelievesBags(62, 72, 1, 85));
+    CHECK(!BagPressureSaleRelievesBags(72, 72, 0, 85));
+    CHECK(!BagPressureSaleRelievesBags(18, 20, 1, 85));
+    CHECK(BagPressureSaleRelievesBags(0, 0, 0, 85));
+    CHECK(BagPressureSaleRelievesBags(2, 16, 3, 85));
 
     std::cout << "vendor trip policy: OK\n";
     return 0;

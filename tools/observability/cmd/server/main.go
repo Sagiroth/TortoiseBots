@@ -241,6 +241,11 @@ func main() {
 	}
 	log.Printf("[Armory] Service initialized for %s and %s", *dbChar, *dbWorld)
 
+	// Guild orders: the order table is polled every 10 s and every change is
+	// kept as the order's step history for the Guild orders tab.
+	guildOrders := armory.NewGuildOrderTracker(armoryService, filepath.Join(filepath.Dir(*activityStateFile), "guild-order-steps.json"))
+	go guildOrders.Run(10 * time.Second)
+
 	// Background DB sweeps: runs immediately then every 5 minutes.
 	// 1. Equipped-gear rollup feeding roster item-level and armory.
 	// 2. Lifetime completed quests and spells backfill from character DB.
@@ -948,6 +953,19 @@ func main() {
 			return
 		}
 		writeJSON(w, page)
+	}))
+	// Guild orders: every order with its step history, plus each order bot's
+	// recent loot, trades and deaths from the live event stream.
+	mux.HandleFunc("GET /api/v1/guild-orders", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		view := guildOrders.View()
+		trails := map[uint32][]model.BotTrailItem{}
+		for _, o := range view.Orders {
+			trails[o.BotGUID] = store.BotTrail(o.BotGUID)
+		}
+		writeJSON(w, struct {
+			armory.GuildOrdersView
+			Trails map[uint32][]model.BotTrailItem `json:"trails"`
+		}{view, trails})
 	}))
 	// The raid control relay: allow-listed GM lines forwarded to the game
 	// server over SOAP. Only when a SOAP URL, user and a mode-0600 password

@@ -745,7 +745,8 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.joinerCeiling = sPlayerbotAIConfig.dungeonRunAggroEstimate ? "
                       "sPlayerbotAIConfig.dungeonRunAggroCeiling : 0;", read)
         self.assertIn("if (step->kind == ai::PlanStepKind::Pull)\n"
-                      "                ReadPullJoiners(lead, bots, *step, toPoint, f.joinerCeiling, slot.run.joinerHeld, f);", read)
+                      "                ReadPullJoiners(lead, bots, *step, slot.run.step, slot.run.stepPass, toPoint, f.joinerCeiling, "
+                      "slot.run.joinerHeld, f,\n                    slot.pullEstCache);", read)
         joiners = body(COMMANDS, "void ReadPullJoiners(", "\n}\n")
         self.assertIn("if (!ceiling || f.units.empty())\n        return;", joiners)
         self.assertIn("ai::EstimateAggro(mobs, it->second, params)", joiners)
@@ -765,6 +766,52 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("jrad7/mod-dungeon-clear", header)
         self.assertIn("@ da0bdfbc (AGPL-3.0-or-later;", header)
         self.assertIn("Copyright (C) 2026+ Jared Wright and", header)
+
+    def test_aggro_walk_ring_is_wired_behind_its_keys(self):
+        # AiPlayerbot.DungeonRunAggroWalkRing (needs the estimate on): the glue reads it, the policy
+        # compares bodies against the row's ceiling and notes the look-ahead once on the row before a pull.
+        read = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
+        self.assertIn("f.aggroWalkRing = sPlayerbotAIConfig.dungeonRunAggroEstimate && "
+                      "sPlayerbotAIConfig.dungeonRunAggroWalkRing;", read)
+        self.assertLess(read.index("ReadStandPullHold(slot, lead, bots, f);"),
+                        read.index("ReadPullAhead(slot, lead, bots, f);"))
+        joiners = body(COMMANDS, "void ReadPullJoiners(", "\n}\n")
+        self.assertLess(joiners.index("sPlayerbotAIConfig.dungeonRunAggroWalkRing"),
+                        joiners.index("ai::AggroGeometry geometry;"))
+        self.assertIn("ai::EstimateAggroRing(mobs, it->second, geometry, ring)", joiners)
+        self.assertIn("unit.estBodies = estimate.bodies;", joiners)
+        self.assertIn("unit.estGuids.push_back(mobs[member.index].guid);", joiners)
+        self.assertIn("m.guid = c->GetObjectGuid().GetRawValue();", joiners)
+        # One estimate a row: the cached entry is refilled, and an in-combat unit is not judged.
+        self.assertIn("estimates.Find(stepIndex, stepPass, unit.guid)", joiners)
+        self.assertIn("estimates.At(stepIndex, stepPass, unit.guid)", joiners)
+        self.assertLess(joiners.index("if (target->IsInCombat())"), joiners.index("ai::EngagePoint("))
+        ahead = body(COMMANDS, "void ReadPullAhead(", "\n}\n")
+        self.assertIn("NextPullOfChain(slot, &at)", ahead)
+        self.assertIn("ai::EstimateAggroRing(mobs, target, geometry, params)", ahead)
+        self.assertIn("cache.pass != slot.run.stepPass", ahead)
+        self.assertIn("ai::PickAheadTarget(picks, pull->entries, slot.run.plan->killFirst,", ahead)
+        self.assertIn("ai::EngagePoint(lead->GetPositionX(), lead->GetPositionY(),", ahead)
+        self.assertIn("2.0f * kSeeYd), found);", ahead)
+        self.assertIn("cache.unavailable = true;", ahead)
+        self.assertIn("if (c->IsAlive())\n                    f.aheadGuids.push_back(guid);", ahead)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        self.assertIn("f.aheadLosBudget = cache.losBudgetSpent;", ahead)
+        self.assertIn("inline std::string AheadNoteText(const Facts& f)", policy)
+        self.assertIn("r.aheadNotedPass == r.stepPass", policy)
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn('"AiPlayerbot.DungeonRunAggroWalkRing", false', config)
+        self.assertIn('"AiPlayerbot.DungeonRunAggroRingYd", 20.0f', config)
+        self.assertIn("AiPlayerbot.DungeonRunAggroWalkRing = 0", template)
+        self.assertIn("AiPlayerbot.DungeonRunAggroRingYd = 20", template)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        self.assertIn("inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)", policy)
+        self.assertIn("inline std::string EstimateNote(", policy)
+        self.assertIn("bool const aheadDue = f.aggroWalkRing && f.aheadStep == r.step + 1 &&", policy)
+        self.assertIn("std::to_string(u.estBodies) + \" bodies expected\"", policy)
+        plan = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
+        self.assertIn("step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies", plan)
 
     def test_pull_stand_is_wired_behind_its_key(self):
         # AiPlayerbot.DungeonRunPullStand (default 0): the glue reads sight, the shot range and the stand only with
@@ -1056,12 +1103,12 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertNotIn("!f.holdAheadReach.empty()", move)
         self.assertLess(move.index("r.holdAheadStep = r.step;"), move.index("if (!f.holdAheadKnown)"))
         self.assertIn("if (r.holdAheadMs < kHoldAheadWaitMs)", move)
-        self.assertIn('r.note = "reading the last point outside the pack\'s wake reach";', move)
+        self.assertIn('note("reading the last point outside the pack\'s wake reach");', move)
         self.assertIn("r.holdAheadDone = true; // unread past the wait:", move)
         self.assertIn('NextStep(r, "arrived at the hold point outside the pack\'s wake reach (the pull\'s CC goes out here)");',
                       move)
         self.assertIn('noPreCcNote = "stand_pull: no pre-cc point for " +', move)
-        self.assertIn('r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;', move)
+        self.assertIn('note(noPreCcNote.empty() ? "walking" : noPreCcNote);', move)
         pull = body(policy, "inline void PullUnit(", "\n}\n")
         # The marks first: the approach walk sits after the CC branch's own return, and the marks are waited for.
         self.assertLess(pull.index('order = "cc " + ccPick.mark'),

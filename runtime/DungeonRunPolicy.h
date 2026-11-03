@@ -56,6 +56,7 @@
 
 #include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
+#include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
 #include "RemoteCommanderTasks.h"
@@ -75,6 +76,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace TortoiseBots {
@@ -708,6 +710,13 @@ constexpr float kRaidHealerGuardRangeYd = 35.0f;
 // ... and an accepted order that the bot does not take up (its current target is not the add) is over this long, its
 // slot free again: a bot walked off, held or turned away never covers the add for the rest of the fight.
 constexpr std::uint32_t kRaidHealerGuardExpireMs = 6000;
+// ... and an add on a healer that no ranged dps and no free off-tank took waits this long for the main tank's last
+// resort (CheckGuard), while the main tank's own target is a trash mob it may leave: a healer's add otherwise hits the
+// healer until something frees up (ZG walk 26c's pulls, two off-tanks both on their own bats).
+constexpr std::uint32_t kRaidHealerGuardLastResortMs = 8000;
+// ... the last resort has its own budget, which the guard's ordinary budgets and spacing do not hold back: one order an
+// add at most, and kRaidHealerGuardLastResortsPerFight of them a fight at most (Run::healerGuardLastResortGuids).
+constexpr std::uint32_t kRaidHealerGuardLastResortsPerFight = 3;
 // The kill_first focus (PickKillFirst) sends every bot, the tank too, at its
 // unit. Zul'Farrak r5-19z23 step 27: the camp's witch doctors aggroed on the
 // tank from 20 yd (wipe 1: the focus took it into the camp, next to the north
@@ -873,6 +882,11 @@ struct UnitFact
     bool joinersPatrol = false; // ... and a lone patrol alone puts that over the ceiling
     bool joinersRead = false;   // the count above is this step's (ReadPullJoiners judged the unit; a held
                                 // or off-index unit keeps its earlier read)
+    // The ring estimate (Facts::aggroWalkRing, ai::EstimateAggroRing): the bodies that come if this one is
+    // pulled, the target included, with their guids and whether its sight budget ran out.
+    std::uint32_t estBodies = 0;
+    std::vector<std::uint64_t> estGuids;
+    bool estLosBudget = false;
     // Pull step and hop units, when Facts::pullStand is set: the lead bot sees
     // it now (Unit::IsWithinLOSInMap).
     bool losLead = false;
@@ -1272,6 +1286,9 @@ struct Facts
     // The party (the commander's bound bots, the lead bot included).
     std::uint32_t total = 0, alive = 0, dead = 0;
     RaidFacts raid;                       // set on a raid binding with AiPlayerbot.DungeonRunRaid (off: every rule below as before)
+    // AiPlayerbot.DungeonRunLinkedDeath (default off): the boss tactics' die-together groups are live. The raid guard
+    // leaves their members to the group's own pick, and the run line reads the group (LinkedDeathNote).
+    bool linkedDeath = false;
     // The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop): this many near-wipe events within nearWipeStopWindowMs
     // pause the run once the fight is over (0: off; NearWipeStopCount keeps it to raids unless the party key is on).
     std::uint32_t nearWipeStopCount = 0;
@@ -1558,6 +1575,18 @@ struct Facts
     // (AiPlayerbot.DungeonRunAggroCeiling) while the estimate is on, 0 = off.
     // Off, the units carry no estimate and no pull ever waits for it.
     std::uint32_t joinerCeiling = 0;
+    // AiPlayerbot.DungeonRunAggroWalkRing: the ring estimate (ai::EstimateAggroRing) judges the units by
+    // their bodies against the row's own ceiling (a pull row's `item`, else joinerCeiling + 1), and the
+    // look-ahead estimate below is read. Off: every joiner note stays as it was.
+    bool aggroWalkRing = false;
+    // The look-ahead (ReadPullAhead), read on the last move row before a pull: the bodies that pull would
+    // bring, its ceiling, the pull row and the guids. aheadStep npos: not read.
+    std::uint32_t aheadBodies = 0;
+    std::uint32_t aheadCeiling = 0;
+    std::size_t aheadStep = static_cast<std::size_t>(-1);
+    std::vector<std::uint64_t> aheadGuids;
+    bool aheadLosBudget = false;    // its sight budget ran out: the count is high side
+    bool aheadUnavailable = false;  // the pull row lists no creature on the map: not read
     // AiPlayerbot.DungeonRunPullStand (HoldForShot): the key is on. Off (the
     // default) nothing below is read and the pull goes out as before, byte for byte.
     bool pullStand = false;
@@ -1649,6 +1678,9 @@ struct Run
 {
     const DungeonPlan* plan = nullptr;
     std::size_t step = 0;
+    // How many times the run entered the current step (ResetStep counts one): a walk back that
+    // revisits a row is a new pass, and the reads cached for the old one are stale.
+    std::uint32_t stepPass = 0;
     // Area triggers the plan's move steps name (ArmReachedTriggers): armed from the step on until one
     // fired for the run (NoteTriggerFired), then never again. triggerScan: the next step index to look at.
     std::size_t triggerScan = 0;
@@ -1657,6 +1689,14 @@ struct Run
     State state = State::Running;
     Phase phase = Phase::Begin;
     std::string note;        // what it does now, or why it paused
+    // The last health bracket of the linked_death note (the highest living member's hp in 5 % steps; -1 none read):
+    // the note is repeated only when it moves (LinkedDeathNote).
+    int linkedNotePct = -1;
+    std::string linkedNoteText;
+    // The group's entries seen alive on the last fight read, and each member's first death this fight: its entry and
+    // the fight time (ms). The note names them, so a walk tells a 15 s window from the 7 s one.
+    std::vector<std::uint32_t> linkedAlive;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> linkedDeaths;
 
     std::uint32_t phaseMs = 0;
     std::uint32_t stepIdleMs = 0;
@@ -2139,7 +2179,11 @@ struct Run
     bool joinerRest = false;                  // the rest check is due before the pull
     bool restForJoiners = false;              // the rest phase is the joiner rest: its time is not step idle time
     std::uint32_t joinerRests = 0;            // joiner rests used this step (kMaxJoinerRests)
-    std::string joinerNote;                   // "N joiners expected ..."
+    std::string joinerNote;                   // "N joiners expected ..." or the ring estimate's note
+    // The move row whose walk note already carries the look-ahead estimate (Facts::aheadStep), so the
+    // prefix goes out once a row (npos: none).
+    std::size_t aheadNotedStep = static_cast<std::size_t>(-1);
+    std::uint32_t aheadNotedPass = 0; // ... on which pass of that step
     // The pull stand (Facts::pullStand, HoldForShot): the unit the glue reads a
     // firing stand for on the next tick (0: none), the stands walked to per
     // unit this step, the stand walk under way (its unit and point), the time
@@ -2509,6 +2553,16 @@ struct Run
     std::uint32_t raidBossJoinMs = 0;
     std::uint64_t raidBossJoinGuid = 0;
     std::unordered_map<std::uint64_t, std::uint32_t> raidBossJoined;
+    // A raid trash fight's healer guard, latched on once its gate held this fight (RaidHealerGuardOn): the main tank's
+    // current target comes and goes (killed, or a mob walks out of its reach), and the guard does not flicker off with
+    // it. Cleared with the fight.
+    bool trashHealerGuard = false;
+    // ... the add on a healer that no ranged dps and no free off-tank took, and how long it has waited for the main
+    // tank's last resort (kRaidHealerGuardLastResortMs).
+    std::uint64_t healerGuardLooseGuid = 0;
+    std::uint32_t healerGuardLooseMs = 0;
+    // ... and the adds the last resort sent the main tank at this fight (one order an add, kRaidHealerGuardLastResortsPerFight a fight).
+    std::unordered_set<std::uint64_t> healerGuardLastResortGuids;
     // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
     // has waited for it (the wait belongs to one mob: raidAssistGuid), and the units it was sent at this fight.
     std::uint32_t raidAssistMs = 0;
@@ -2562,6 +2616,67 @@ struct Run
     std::unordered_map<std::string, RunBackState> runBackState;
     std::unordered_set<std::string> runBackDone; // stalled or out of time in this wait: not again until it ends
     std::uint32_t runBacks = 0;  // run backs this run (the report)
+};
+
+// The look-ahead estimate's one answer for a row (ReadPullAhead): the row it was computed on, the bodies, the
+// ceiling and their guids. Kept on the slot, so later ticks refill Facts from it instead of reading again.
+struct AheadEstimate
+{
+    std::size_t step = static_cast<std::size_t>(-1);
+    std::uint32_t pass = 0; // the pass of the step it was computed on (a walk back recomputes)
+    bool done = false;
+    std::uint32_t bodies = 0;
+    std::uint32_t ceiling = 0;
+    std::vector<std::uint64_t> guids;
+    bool losBudgetSpent = false;
+    bool unavailable = false; // the pull row lists no creature on the map
+};
+
+// The pull row's ring estimate, one per (row, pass, unit) (ReadPullJoiners): the glue reads it on the row's
+// first tick and refills the unit facts from it on the rest, so one row is one estimate, not one a tick.
+struct PullUnitEstimate
+{
+    bool read = false;
+    std::uint32_t bodies = 0;
+    std::vector<std::uint64_t> guids;
+    bool losBudgetSpent = false;
+};
+
+struct PullEstimateCache
+{
+    std::size_t step = static_cast<std::size_t>(-1);
+    // The run's stepPass the entries were read in (ResetStep bumps it: a wipe, a resume or a revisit
+    // of the row is a new pass, and the estimate read in the old one is stale).
+    std::uint32_t pass = 0;
+    std::unordered_map<std::uint64_t, PullUnitEstimate> units;
+
+    // Holds the entries for (row `at`, pass `passNo`). Another row or pass clears them, so entries of
+    // older passes are dropped as soon as a newer one is read.
+    void Hold(std::size_t at, std::uint32_t passNo)
+    {
+        if (step != at || pass != passNo)
+        {
+            step = at;
+            pass = passNo;
+            units.clear();
+        }
+    }
+
+    // The entry for `guid` on row `at` of pass `passNo`, cleared when another row or pass is read.
+    PullUnitEstimate& At(std::size_t at, std::uint32_t passNo, std::uint64_t guid)
+    {
+        Hold(at, passNo);
+        return units[guid];
+    }
+
+    // The row's read for `guid` in pass `passNo`, or null (another row or pass was read since).
+    PullUnitEstimate const* Find(std::size_t at, std::uint32_t passNo, std::uint64_t guid) const
+    {
+        if (step != at || pass != passNo)
+            return nullptr;
+        auto const it = units.find(guid);
+        return it == units.end() ? nullptr : &it->second;
+    }
 };
 
 inline const PlanStep* Current(const Run& r)
@@ -2646,6 +2761,60 @@ inline std::string GuidArg(std::uint64_t guid)
 inline std::string EntryArg(std::uint32_t entry, float x, float y, float z)
 {
     return "entry:" + std::to_string(entry) + "@" + Num(x) + "," + Num(y) + "," + Num(z);
+}
+
+// The bodies ceiling of a row (the ring estimate): a pull row's own `item`
+// (the plan's max_bodies), else the config ceiling in joiners + 1. 0: none.
+inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)
+{
+    return ai::PullCeilingBodies(s.kind == PlanStepKind::Pull ? s.item : 0, f.joinerCeiling);
+}
+
+// A pull estimate note with at most eight guids: "pull estimate: N bodies over
+// the ceiling M (plan|config): 0x..., 0x... (+K more)"; the sight budget is said.
+inline std::string EstimateNote(std::uint32_t bodies, std::uint32_t ceiling, bool plan,
+    const std::vector<std::uint64_t>& guids, bool budget)
+{
+    std::string note = "pull estimate: " + std::to_string(bodies) + " bodies over the ceiling " +
+        std::to_string(ceiling) + (plan ? " (plan)" : " (config)");
+    std::size_t const shown = std::min<std::size_t>(guids.size(), 8);
+    std::string list;
+    for (std::size_t i = 0; i < shown; ++i)
+        list += (i ? ", " : "") + GuidArg(guids[i]);
+    if (!list.empty())
+        note += ": " + list;
+    if (guids.size() > shown)
+        note += " (+" + std::to_string(guids.size() - shown) + " more)";
+    if (budget)
+        note += " (LOS budget spent)";
+    return note;
+}
+
+// The look-ahead's note (ReadPullAhead, Facts::ahead*): "" when there is nothing to say (no
+// ceiling, or the walk stays at or under it), else "ahead: pull <seq> brings N (ceiling M):
+// <guids> [(LOS budget spent)]", or "ahead: pull <seq> estimate unavailable" when the pull
+// row lists no creature on the map. At most eight guids, as the pull estimate's note.
+inline std::string AheadNoteText(const Facts& f)
+{
+    if (f.aheadStep == static_cast<std::size_t>(-1))
+        return std::string();
+    if (f.aheadUnavailable)
+        return "ahead: pull " + std::to_string(f.aheadStep + 1) + " estimate unavailable";
+    if (!f.aheadCeiling || f.aheadBodies <= f.aheadCeiling)
+        return std::string();
+    std::string ahead = "ahead: pull " + std::to_string(f.aheadStep + 1) + " brings " +
+        std::to_string(f.aheadBodies) + " (ceiling " + std::to_string(f.aheadCeiling) + ")";
+    std::size_t const shown = std::min<std::size_t>(f.aheadGuids.size(), 8);
+    std::string list;
+    for (std::size_t i = 0; i < shown; ++i)
+        list += (i ? ", " : "") + GuidArg(f.aheadGuids[i]);
+    if (!list.empty())
+        ahead += ": " + list;
+    if (f.aheadGuids.size() > shown)
+        ahead += " (+" + std::to_string(f.aheadGuids.size() - shown) + " more)";
+    if (f.aheadLosBudget)
+        ahead += " (LOS budget spent)";
+    return ahead;
 }
 
 inline void EnterPhase(Run& r, Phase p)
@@ -2870,6 +3039,8 @@ inline void DropFocus(Run& r)
 // fresh tries and ceilings).
 inline void ResetStep(Run& r)
 {
+    ++r.stepPass;
+    r.aheadNotedStep = static_cast<std::size_t>(-1); // a step entered again notes its walk again
     EnterPhase(r, Phase::Begin);
     r.stepIdleMs = 0;
     r.restDue = true;
@@ -3040,6 +3211,9 @@ inline void ResetStep(Run& r)
     r.guardReturn = false;
     r.offTankTurn = 0;
     r.raidBossFight = false;
+    r.linkedAlive.clear();
+    r.linkedDeaths.clear();
+    r.linkedNotePct = -1;
     r.raidGuardUnits.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
@@ -3051,6 +3225,10 @@ inline void ResetStep(Run& r)
     r.raidBossJoinMs = 0;
     r.raidBossJoinGuid = 0;
     r.raidBossJoined.clear();
+    r.trashHealerGuard = false;
+    r.healerGuardLooseGuid = 0;
+    r.healerGuardLooseMs = 0;
+    r.healerGuardLastResortGuids.clear();
     r.raidAssistMs = 0;
     r.raidAssistGuid = 0;
     r.raidAssisted.clear();
@@ -8962,7 +9140,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // judged; a unit held or out of the index keeps its earlier read, and its
     // count is not claimed). The joiners the pull really drew are read from the
     // fight and reported by JoinerReport, estimated or not.
-    if (f.joinerCeiling > 0 && u.joinersRead)
+    if (f.aggroWalkRing && u.joinersRead)
+        r.note += "; " + std::to_string(u.estBodies) + " bodies expected";
+    else if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
 }
 
@@ -11853,7 +12033,29 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         // kMaxJoinerRests such waits a step (counted when a rest really starts);
         // after that the pull goes out.
         std::string budgetNote;
-        if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
+        if (f.aggroWalkRing)
+        {
+            // The ring estimate: bodies against the row's own ceiling (a pull
+            // row's `item` first, deliberately sized pulls never rest).
+            std::uint32_t const ceiling = RowCeilingBodies(s, f);
+            if (ceiling && pick->estBodies > ceiling && !r.joinerHeld.count(pick->guid))
+            {
+                std::string const note = EstimateNote(pick->estBodies, ceiling,
+                    s.kind == PlanStepKind::Pull && s.item != 0, pick->estGuids, pick->estLosBudget);
+                if (r.joinerRests >= kMaxJoinerRests)
+                    budgetNote = note + ", rest budget used";
+                else
+                {
+                    r.joinerHeld.insert(pick->guid);
+                    r.joinerRest = true;
+                    r.standPullShotGuid = 0; // the pull never went out (the joiner rest holds this tick)
+                    r.joinerNote = note;
+                    r.note = r.joinerNote;
+                    return;
+                }
+            }
+        }
+        else if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
         {
             if (r.joinerRests >= kMaxJoinerRests)
                 budgetNote = std::to_string(pick->joiners) + " joiners expected, rest budget used";
@@ -12065,6 +12267,29 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
 
 inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
 {
+    // The look-ahead estimate (Facts::aheadBodies): the last move row before the pull says once what
+    // the walk and the pull bring, over the pull's ceiling. Advice only: no order changes. It prefixes
+    // every note this row sets (a stand-pull row's hold note too) and marks the row done only where
+    // that note survives the tick.
+    bool const aheadDue = f.aggroWalkRing && f.aheadStep == r.step + 1 &&
+        !(r.aheadNotedStep == r.step && r.aheadNotedPass == r.stepPass);
+    std::string const ahead = aheadDue ? AheadNoteText(f) : std::string();
+    auto note = [&](std::string const& text)
+    {
+        r.note = ahead.empty() ? text : ahead + "; " + text;
+        if (aheadDue)
+        {
+            r.aheadNotedStep = r.step;
+            r.aheadNotedPass = r.stepPass;
+        }
+    };
+    // A later call (a pause, a stall) wrote its own note over the one above: the row's note did not
+    // survive the tick, so it is not marked and the next tick says it again.
+    auto keepNote = [&](std::string const& said)
+    {
+        if (aheadDue && r.note != said)
+            r.aheadNotedStep = static_cast<std::size_t>(-1);
+    };
     if (r.phase == Phase::AwaitPull)
     {
         AwaitPull(r);
@@ -12131,7 +12356,7 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         if (r.phase != Phase::Gather)
         {
             EnterPhase(r, Phase::Gather);
-            r.note = "gathering before a direct step";
+            note("gathering before a direct step");
             SendGather(r, f, order);
         }
         else if (StragglerLadderTick(r, f, order))
@@ -12148,7 +12373,8 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         return;
     if (r.detour)
     {
-        r.note = "walking around: the plan's point is off the walkable way";
+        note("walking around: the plan's point is off the walkable way");
+        std::string const said = r.note;
         if (WalkTo(r, f, r.detourX, r.detourY, r.detourZ, false, dt, order))
         {
             // A navmesh walk to a stand-in point: for a direct step it proves
@@ -12158,16 +12384,21 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
             NextStep(r, "arrived at the nearest reachable point, " +
                 Num(ai::PlanDistance(r.detourX, r.detourY, r.detourZ, s.x, s.y, s.z)) + " yd from the plan's");
         }
+        else
+            keepNote(said);
         return;
     }
     if (IsExactPoint(r.plan, r.step))
     {
-        r.note = "walking to an exact point";
+        note("walking to an exact point");
+        std::string const said = r.note;
         if (ExactWalkTo(r, f, r.step, dt, order))
         {
             NoteCheckpoint(r, r.step);
             NextStep(r, "arrived: the lead bot stands on the exact point");
         }
+        else
+            keepNote(said);
         return;
     }
     // AiPlayerbot.DungeonRunStandPullPreCc: the approach row of an authored stand-pull step ends at the last point of
@@ -12202,7 +12433,7 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
             else if (r.holdAheadMs < kHoldAheadWaitMs)
             {
                 r.holdAheadMs += dt;
-                r.note = "reading the last point outside the pack's wake reach";
+                note("reading the last point outside the pack's wake reach");
                 return;
             }
             else
@@ -12216,16 +12447,19 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
                 NextStep(r, "arrived at the hold point outside the pack's wake reach (the pull's CC goes out here)");
             }
             else
-                r.note = "to the hold point outside the pack's wake reach";
+                note("to the hold point outside the pack's wake reach");
             return;
         }
     }
-    r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;
+    note(noPreCcNote.empty() ? "walking" : noPreCcNote);
+    std::string const said = r.note;
     if (WalkTo(r, f, s.x, s.y, s.z, s.kind == PlanStepKind::MoveDirect, dt, order))
     {
         NoteReached(r, f, r.step);
-        NextStep(r, "arrived");
+        NextStep(r, "arrived"); // this tick's note is "arrived": the row's walk note did not survive it
     }
+    else
+        keepNote(said);
 }
 
 // How far from a move step's point a stand-in may be (UseDetour, the glue's
@@ -13986,6 +14220,120 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
     return false;
 }
 
+// A unit entry of a linked_death group the fight has going: one of the group's rows names it, and two or more of the
+// group's living members are among the engaged units. The raid guard leaves such a unit to the group's own pick, the
+// same as a plan boss: an `attack <guid> <bot>` order is an explicit order, which outranks the pick, so the single
+// ordered dps would kill that member alone and the encounter's raiser would restore it. Off without
+// AiPlayerbot.DungeonRunLinkedDeath.
+inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)
+{
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !entry)
+        return false;
+    for (const ai::LinkedDeathGroupKey& key : r.liveTactics->LinkedDeathGroups(r.plan->map))
+    {
+        const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, key.anchor);
+        if (!rows)
+            continue;
+        std::vector<std::uint32_t> entries;
+        bool member = false;
+        for (const ai::BossTacticRow& row : *rows)
+        {
+            if (row.kind != ai::BossTacticKind::LinkedDeath || row.priority != key.group)
+                continue;
+            if (std::find(entries.begin(), entries.end(), row.bossEntry) == entries.end())
+                entries.push_back(row.bossEntry);
+            if (std::find(entries.begin(), entries.end(), row.targetEntry) == entries.end())
+                entries.push_back(row.targetEntry);
+            member = member || entry == row.bossEntry || entry == row.targetEntry;
+        }
+        if (!member)
+            continue;
+        std::uint32_t living = 0;
+        for (const UnitFact& u : f.engagedUnits)
+            if (std::find(entries.begin(), entries.end(), u.entry) != entries.end())
+                ++living;
+        if (living >= 2)
+            return true;
+    }
+    return false;
+}
+
+// The linked_death note of a boss fight (ai_boss_tactic kind linked_death on the current boss step): the group's
+// living members among the engaged units, the highest of their health percentages and the burn order, with each
+// member's death time. `bracket` leaves the highest in 5 % steps (-1 when the note is empty) so the run line moves at
+// most 20 times a fight; `death` is set when a member's death was recorded this read, so the run line carries the
+// timing even when the bracket did not move (a walk can then tell a 15 s window from the 7 s one). "" outside a boss
+// step, with no live table, with no row of the kind, with the key off, or with no member engaged.
+inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)
+{
+    bracket = -1;
+    death = false;
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !Current(r))
+        return std::string();
+    const PlanStep& step = *Current(r);
+    if (step.kind != PlanStepKind::Boss || !step.entry)
+        return std::string();
+    const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, step.entry);
+    if (!rows)
+        return std::string();
+    ai::ActiveBossRows active;
+    active.reserve(rows->size());
+    for (const ai::BossTacticRow& row : *rows)
+        active.push_back(&row);
+    ai::LinkedDeathGroup group;
+    if (!ai::FindLinkedDeathGroup(active, step.entry, group))
+        return std::string();
+    std::string list, order;
+    std::uint32_t highest = 0;
+    std::vector<std::uint32_t> living;
+    for (const UnitFact& u : f.engagedUnits)
+    {
+        if (std::find(group.entries.begin(), group.entries.end(), u.entry) == group.entries.end())
+            continue;
+        living.push_back(u.entry);
+        const std::uint32_t hp = u.maxHealth ? static_cast<std::uint32_t>(u.health * 100 / u.maxHealth) : 100;
+        highest = std::max(highest, hp);
+        if (!list.empty())
+            list += "/";
+        list += std::to_string(u.entry);
+    }
+    // A member of the group that was engaged on the last read and is not now died: its first death time, in fight
+    // seconds. A raise puts it back in the list; its first death stays the one the window is read from.
+    for (std::uint32_t entry : r.linkedAlive)
+        if (std::find(living.begin(), living.end(), entry) == living.end() &&
+            std::none_of(r.linkedDeaths.begin(), r.linkedDeaths.end(),
+                [entry](const std::pair<std::uint32_t, std::uint32_t>& had) { return had.first == entry; }))
+        {
+            r.linkedDeaths.push_back(std::make_pair(entry, r.fightMs));
+            death = true;
+        }
+    r.linkedAlive = living;
+    if (living.empty())
+        return std::string();
+    bracket = static_cast<int>(highest / 5);
+    for (std::uint32_t entry : group.burnOrder)
+    {
+        if (!order.empty())
+            order += ">";
+        order += std::to_string(entry);
+    }
+    std::string text = "linked " + list + " at " + std::to_string(highest) + " %";
+    if (!order.empty() || !r.linkedDeaths.empty())
+    {
+        text += " (";
+        if (!order.empty())
+            text += "burn " + order;
+        for (const std::pair<std::uint32_t, std::uint32_t>& had : r.linkedDeaths)
+        {
+            if (text.back() != '(')
+                text += "; ";
+            text += std::to_string(had.first) + " fell at " + std::to_string(had.second / 1000) + " s";
+        }
+        text += ")";
+    }
+    return text;
+}
+
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
 // AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight). `raidTrashOffTanks`: a raid's trash fight whose off-tanks
 // pick up (RaidTrashFight with a living off-tank: GuardTarget's dead-lead branch).
@@ -14123,10 +14471,44 @@ inline bool GuardHeldByRun(const Run& r, std::uint64_t guid)
     return r.ccHolds.count(guid) != 0 || r.focusGuid == guid;
 }
 
-// A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank holding the boss): an add
-// that hits a healer is the ranged dps' job, not the off-tank's. The nearest free ranged dps within
+// A raid trash fight's off-tank that holds an add of its own (UnitFact::victimTank, its victim's name): the healer
+// guard keeps it there, and the round robin passes it over (RaidTrashFight, CheckGuard). Only the guard's pick filters
+// the busy off-tanks; with the key off every living one stays in the round robin, as before.
+inline bool RaidTrashOffTankHolds(const Facts& f, const std::string& name)
+{
+    for (const UnitFact& u : f.partyAttackers)
+        if (u.victimTank && u.victimName == name)
+            return true;
+    return false;
+}
+
+// The healer guard's gate: a raid boss fight whose main tank holds a plan boss (LeadHoldsPlanBoss), or a raid trash
+// fight whose main tank held its current target when the guard turned on (Run::trashHealerGuard, its latch: the
+// target comes and goes as mobs die and reposition, and the guard does not flicker off with it). With it off the
+// off-tanks take the adds as before.
+inline bool RaidHealerGuardOn(const Run& r, const Facts& f, bool trash)
+{
+    if (!f.raid.healerGuard || !f.leadAlive || !f.leadIsTank)
+        return false;
+    return trash ? (RaidTrashFight(r, f) && (f.leadHasAttacker || r.trashHealerGuard)) : LeadHoldsPlanBoss(r, f);
+}
+
+// A raid trash fight's guard turns on with the main tank holding its current target (RaidHealerGuardOn) and stays on
+// for the rest of the fight (Run::trashHealerGuard): the check runs every fight tick, before the guard itself, so a
+// tick whose gate dropped from the main tank's target still runs the healer guard (its clocks and assignments go on).
+inline void LatchTrashHealerGuard(Run& r, const Facts& f)
+{
+    if (r.trashHealerGuard || !f.raid.healerGuard || !f.leadAlive || !f.leadIsTank || !f.leadHasAttacker ||
+        !RaidTrashFight(r, f))
+        return;
+    r.trashHealerGuard = true;
+}
+
+// A raid boss fight's or a raid trash fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank
+// holding the boss or its current target): an add that hits a healer is the ranged dps' job, not the off-tank's. The
+// nearest free ranged dps within
 // kRaidHealerGuardRangeYd of the add is sent at it, kRaidHealerGuardDps at most per add (at most one order a tick,
-// nearest first), and its dps assist puts it back on the boss once the add dies: the run orders no return. A bot is
+// nearest first), and its dps assist puts it back on its own target once the add dies: the run orders no return. A bot is
 // free when no living add of this fight has it yet. A bot is recorded as sent only once the glue reports its order
 // taken (HealerGuardOrderTaken), so a refused order covers no slot; the refused bot is left out of that add's pick for
 // kRaidHealerGuardExpireMs, and the next tick tries the next one. An assignment is over when its add leaves the fight,
@@ -14135,12 +14517,13 @@ inline bool GuardHeldByRun(const Run& r, std::uint64_t guid)
 // that add's pick like a refused one. Orders space by kGuardRepeatMs, and the add's pick passes over what the off-tank
 // path does (RaidGuardTick): a plan boss, an add under a run cc order or hold, a camp caster the tank would walk to,
 // and a unit that had kGuardOrdersPerUnit orders this fight (kRaidGuardRearmMs). Never an evading, polymorphed or
-// unattackable add, and only while the main tank holds the boss (LeadHoldsPlanBoss): with it dead or off the boss the
-// dungeon rules above still stand. With the gate off a pending order is dropped: the glue answers on the tick it went
-// out. True when `order` holds it.
-inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+// unattackable add, and only while the main tank holds the boss (LeadHoldsPlanBoss) or, in a trash fight, once it held
+// its current target this fight (RaidHealerGuardOn, latched in Run::trashHealerGuard: the fight keeps the guard when its
+// target dies): with the boss lost or the tank dead the dungeon rules above still stand. With the gate off a pending
+// order is dropped: the glue answers on the tick it went out. True when `order` holds it.
+inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order, bool trash = false)
 {
-    if (!f.raid.healerGuard || !f.leadAlive || !f.leadIsTank || !LeadHoldsPlanBoss(r, f))
+    if (!RaidHealerGuardOn(r, f, trash))
     {
         r.healerGuardOrder.clear();
         r.healerGuardOrderGuid = 0;
@@ -14179,7 +14562,8 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
-            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || GuardLeavesCampAlone(u) ||
+            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
+            GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
             continue;
         auto const had = r.healerGuardDps.find(u.guid);
@@ -14269,7 +14653,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             if (!u.victimName.empty() && u.victimName == name)
             {
                 holds = true;
-                if (PlanBossEntry(r, u.entry))
+                if (PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry))
                     holdsBoss = true;
             }
         if (!holdsBoss)
@@ -14281,7 +14665,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     if (!f.leadAlive || !f.leadIsTank) // no main tank: the lead bot dead, or a living one that is no tank
         for (const UnitFact& u : f.partyAttackers)
         {
-            if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
+            if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
+                !u.hitting || u.evading ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -14297,7 +14682,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kRaidBossGuardYd)
                 continue;
-            if (PlanBossEntry(r, u.entry) || u.victimTank)
+            if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
@@ -14404,24 +14789,35 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     return true;
 }
 
+// Whether the guard may pick `u` at all (GuardPick, GuardPickHealerAdd): a mob hitting a party bot within kGuardYd of
+// the lead bot, not running home or polymorphed; in a raid trash fight never one an off-tank holds; and none the run
+// already capped, holds, or a caster the tank would have to walk to its own camp for. `holdRadius` > 0 bounds the pick
+// to a hold's area.
+inline bool GuardEligible(const UnitFact& u, float holdRadius, const Run* capped, const Run* ccRun, bool raidTrash)
+{
+    if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+        return false;
+    // A mob an off-tank holds is not loose: the raid trash guard never sends the main tank off its stand for it.
+    if (raidTrash && u.victimTank)
+        return false;
+    if (capped && GuardUnitCapped(*capped, u.guid))
+        return false;
+    if (ccRun && CcOrderOut(*ccRun, u.guid))
+        return false;
+    if (holdRadius <= 0.0f && GuardLeavesCampAlone(u))
+        return false;
+    if (holdRadius > 0.0f && (u.distSpot < 0.0f || u.distSpot > holdRadius))
+        return false;
+    return true;
+}
+
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
     bool raidTrash = false)
 {
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
-            continue;
-        // A mob an off-tank holds is not loose: the raid trash guard never sends the main tank off its stand for it.
-        if (raidTrash && u.victimTank)
-            continue;
-        if (capped && GuardUnitCapped(*capped, u.guid))
-            continue;
-        if (ccRun && CcOrderOut(*ccRun, u.guid))
-            continue;
-        if (holdRadius <= 0.0f && GuardLeavesCampAlone(u))
-            continue;
-        if (holdRadius > 0.0f && (u.distSpot < 0.0f || u.distSpot > holdRadius))
+        if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
             continue;
         if (f.leadHit && !u.victimHealer)
             continue;
@@ -14437,6 +14833,38 @@ inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* ca
             best = &u;
     }
     return best;
+}
+
+// A raid trash fight's healer guard pick (CheckGuard): the nearest add on a healer that the guard's off-tank fallback
+// has to take. GuardPick returns one add, so a covered or capped nearer add would hold a farther one behind it for the
+// whole tick (ZG walk 26c: several bats on several healers at once); this loops every add as RaidGuardTick does, skips
+// the ones the healer guard already covers (a ranged dps on it, or a free one in reach) and the ones the run caps or
+// holds (its order budget, its cc, the kill_first focus), and never a mob on the main tank itself or one an off-tank
+// holds. Null when every add on a healer is covered.
+inline const UnitFact* GuardPickHealerAdd(const Run& r, const Facts& f)
+{
+    std::unordered_set<std::string> const taken = HealerGuardTaken(r);
+    const UnitFact* best = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!u.victimHealer || u.victimLead || !GuardEligible(u, 0.0f, &r, &r, true))
+            continue;
+        if (GuardHeldByRun(r, u.guid) || r.healerGuardDps.count(u.guid) || HealerGuardHasFreeDps(r, f, u, taken))
+            continue;
+        if (!best || u.distLead < best->distLead)
+            best = &u;
+    }
+    return best;
+}
+
+// Whether a raid trash fight's main tank may take an add on a healer as the last resort (CheckGuard, after
+// kRaidHealerGuardLastResortMs): its own target is a trash mob it can leave, not a plan boss and not a unit the run
+// holds (the kill_first focus, a cc hold). On a boss the main tank stays; on a held unit the run's order keeps it there.
+inline bool HealerGuardMainTankMayTake(const Run& r, const Facts& f)
+{
+    return f.leadHasAttacker && f.leadAttacker.hostile && f.leadAttacker.attackable && !f.leadAttacker.evading &&
+        !f.leadAttacker.polymorphed && !PlanBossEntry(r, f.leadAttacker.entry) &&
+        !GuardHeldByRun(r, f.leadAttacker.guid);
 }
 
 // The current step is a hold whose event is on and the lead bot, a living
@@ -14607,11 +15035,14 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     // With none and the main tank holding a plan boss (LeadHoldsPlanBoss), it stays on her: only she is engaged.
     bool const holdsBoss = RaidBossRulesFight(r, f) && LeadHoldsPlanBoss(r, f);
     bool const raidBoss = RaidBossRulesFight(r, f) && (!f.raid.bossOffTanksAlive.empty() || holdsBoss);
+    // A raid trash fight's healer guard (RaidHealerGuard): the healer's add is the ranged dps' first, not the main
+    // tank's on arrival.
+    bool const trashGuard = RaidHealerGuardOn(r, f, true);
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (raidBoss || !u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-            u.distLead > kGuardYd)
+        if (raidBoss || trashGuard || !u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
+            !u.hitting || u.distLead > kGuardYd)
             continue;
         if (GuardUnitCapped(r, u.guid))
             continue;
@@ -14893,6 +15324,10 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     }
     if (!hold)
     {
+        // The trash guard's latch (RaidHealerGuardOn), before the engage on arrival below: once the gate held, a tick
+        // whose main tank target just died neither sends the tank at a healer's add nor hands the adds back to busy
+        // off-tanks.
+        LatchTrashHealerGuard(r, f);
         // A unit not seen in this fight before joins it (a summon, a mob that
         // crossed into the party) once a budget is spent: both budgets start
         // over (kGuardOrdersPerFight each), under kGuardOrdersFightCap. A unit
@@ -14971,39 +15406,101 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
                 return false;
             }
         }
+        // A raid trash fight's healer guard (RaidHealerGuard): with the main tank holding its current target an add on
+        // a healer goes to the ranged dps first, and the off-tanks take it only when none is free (the round robin
+        // below).
+        else if (RaidHealerGuard(r, f, dt, order, true))
+            return true;
         if (RaidWalkJoin(r, f, dt, order))
             return true;
         if (RaidSwarmJoin(r, f, order, dt))
             return true;
     }
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
+    // A raid trash fight's healer guard: every add on a healer the guard would take counts, not only GuardPick's nearest
+    // one (GuardPickHealerAdd), so a covered or capped nearer add does not stall the off-tank fallback for a farther one.
+    bool const trashGuardOn = !hold && RaidHealerGuardOn(r, f, true);
+    if (trashGuardOn && u)
+        u = GuardPickHealerAdd(r, f);
     const UnitFact* engage = hold && !u ? HoldEngageTarget(r, f) : nullptr;
     if (!u && !engage)
     {
         r.guardMs = 0;
+        r.healerGuardLooseGuid = 0;
+        r.healerGuardLooseMs = 0;
         return !hold && RaidAssist(r, f, dt, order);
     }
     if (u)
         r.guardMs += dt;
     std::uint32_t const wait = engage ? 0u : u->victimHealer ? kGuardHealerWaitMs : kGuardWaitMs;
-    if ((u && r.guardMs < wait) || r.guardOrders >= kGuardOrdersPerFight ||
-        (!hold && r.fightOrders >= kGuardOrdersFightCap) ||
-        ((r.guardOrders > 0 || (!hold && r.fightOrders > 0)) && r.guardSinceOrderMs < kGuardRepeatMs))
+    // A raid trash fight's healer guard add (RaidHealerGuard): the ranged dps take it, and the off-tanks only when
+    // none is free for it (RaidGuardTick's rule). The main tank holds its own target (RaidHealerGuardOn): with no
+    // off-tank free for the add it waits, and after kRaidHealerGuardLastResortMs the main tank takes it while its
+    // target is a trash mob it can leave (HealerGuardMainTankMayTake). Both decisions come before the counters and
+    // clocks below, so an add the dps cover costs no order budget; the guard's own orders count in healerGuardOrders.
+    // Under the trash guard the pick above is an add on a healer that no ranged dps covers (GuardPickHealerAdd), so it
+    // is the off-tank fallback's.
+    bool const healerGuardAdd = !hold && u->victimHealer && !u->victimLead && trashGuardOn;
+    // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
+    // main tank keeps its stand (no guardReturn): the mob is on a healer or a
+    // DPS, not on the lead bot. Under the healer guard an off-tank holding its
+    // own add is kept there (RaidTrashOffTankHolds), and with every off-tank
+    // busy no order goes out but the healer guard's last resort; the pick with
+    // the key off is today's round robin over every living off-tank, busy ones included.
+    bool const trashOffTank = !hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead;
+    bool const trashGuard = trashOffTank && trashGuardOn;
+    std::vector<const std::string*> free;
+    if (trashOffTank)
+        for (const std::string& name : f.raid.offTanksAlive)
+            if (!trashGuard || !RaidTrashOffTankHolds(f, name))
+                free.push_back(&name);
+    // The last resort's clock: a healer's add no ranged dps took (RaidHealerGuard would have ordered one) and no free
+    // off-tank takes waits for the main tank, kRaidHealerGuardLastResortMs from when it became that add. It runs
+    // before the spacing and budget exits below, so a recent order or a spent budget does not hold the clock back.
+    if (healerGuardAdd && free.empty())
+    {
+        if (u->guid != r.healerGuardLooseGuid)
+        {
+            r.healerGuardLooseGuid = u->guid;
+            r.healerGuardLooseMs = 0;
+        }
+        r.healerGuardLooseMs += dt;
+    }
+    else
+    {
+        r.healerGuardLooseGuid = 0;
+        r.healerGuardLooseMs = 0;
+    }
+    // The last resort (mainTankLastResort) has its own budget: the add has not had one from the main tank this fight, and
+    // fewer than kRaidHealerGuardLastResortsPerFight adds have. The guard's spacing and ordinary budgets do not hold it.
+    bool const mainTankLastResort = healerGuardAdd && free.empty() &&
+        r.healerGuardLooseMs >= kRaidHealerGuardLastResortMs && HealerGuardMainTankMayTake(r, f) &&
+        r.healerGuardLastResortGuids.count(u->guid) == 0 &&
+        r.healerGuardLastResortGuids.size() < kRaidHealerGuardLastResortsPerFight;
+    if ((u && r.guardMs < wait) ||
+        (!mainTankLastResort && (r.guardOrders >= kGuardOrdersPerFight || (!hold && r.fightOrders >= kGuardOrdersFightCap) ||
+            ((r.guardOrders > 0 || (!hold && r.fightOrders > 0) || r.healerGuardOrders > 0) &&
+                r.guardSinceOrderMs < kGuardRepeatMs))))
+        return false;
+    if (free.empty() && (healerGuardAdd || trashGuard) && !mainTankLastResort)
         return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
-    ++r.guardOrders;
-    if (!hold)
+    // The last resort is not an ordinary pick-up: its orders leave guardOrders, fightOrders and guardUnitOrders alone,
+    // so three saves cannot spend the ordinary budget (Codex HIGH, 2026-11-02). It counts only in
+    // healerGuardLastResortGuids (one an add, kRaidHealerGuardLastResortsPerFight a fight).
+    if (!mainTankLastResort)
     {
-        ++r.fightOrders;
-        ++r.guardUnitOrders[u->guid];
+        ++r.guardOrders;
+        if (!hold)
+        {
+            ++r.fightOrders;
+            ++r.guardUnitOrders[u->guid];
+        }
     }
-    // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
-    // main tank keeps its stand (no guardReturn): the mob is on a healer or a
-    // DPS, not on the lead bot.
-    if (!hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead)
+    if (trashOffTank && !free.empty())
     {
-        std::string const& offTank = f.raid.offTanksAlive[r.offTankTurn++ % f.raid.offTanksAlive.size()];
+        std::string const& offTank = *free[r.offTankTurn++ % free.size()];
         r.note = "fighting: off-tank " + offTank + " picks up " + std::to_string(u->entry) + " off " +
             (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) +
             " yd)" + RefillNote(r);
@@ -15033,9 +15530,16 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         r.guardY = f.leadStayKnown ? f.leadStayY : f.leadY;
         r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
     }
-    r.note = std::string(hold ? "event" : "fighting") + ": the tank picks up " + std::to_string(u->entry) + " off " +
-        (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) + " yd)" +
-        RefillNote(r);
+    if (mainTankLastResort)
+    {
+        r.healerGuardLastResortGuids.insert(u->guid);
+        r.note = "fighting: no ranged dps and no off-tank free: the main tank takes " + std::to_string(u->entry) +
+            " off the healer (" + Num(u->distLead) + " yd)";
+    }
+    else
+        r.note = std::string(hold ? "event" : "fighting") + ": the tank picks up " + std::to_string(u->entry) + " off " +
+            (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) + " yd)" +
+            RefillNote(r);
     order = "attack " + std::to_string(u->guid) + " " + f.carrier;
     return true;
 }
@@ -17523,6 +18027,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
             r.fightMs = 0;
             r.raidBossFight = false;
+            r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
+            r.linkedDeaths.clear();
+            r.linkedNotePct = -1;
             DropHopWaiver(r);
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
@@ -17635,6 +18142,24 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
+        // A linked_death group of the boss step: the tactic stays in the run line while it runs, appended to what the
+        // line already says rather than replacing it. The line moves at most once per 5 % of the highest living member
+        // (the bracket alone is compared, never the whole text), and once more when a member's death was recorded, so
+        // a walk sees each death time and the burn order.
+        int linkedBracket = -1;
+        bool linkedDeath = false;
+        const std::string linked = LinkedDeathNote(r, f, linkedBracket, linkedDeath);
+        if (!linked.empty())
+        {
+            if (linkedBracket != r.linkedNotePct || linkedDeath)
+            {
+                r.linkedNotePct = linkedBracket;
+                r.linkedNoteText = linked;
+            }
+            r.note += "; " + r.linkedNoteText;
+        }
+        else
+            r.linkedNotePct = -1;
         if (pastCeiling)
             r.note += "; past the " + std::to_string(cap / 1000) + " s ceiling: " +
                 (progress == FightProgress::Losing
@@ -17713,16 +18238,24 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidBossFight = false;
+        r.linkedAlive.clear();
+        r.linkedDeaths.clear();
+        r.linkedNotePct = -1;
         r.raidGuardUnits.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();
         r.healerGuardClockMs = 0;
+        r.healerGuardOrders = 0;
         r.healerGuardOrderGuid = 0;
         r.healerGuardOrderBot.clear();
         r.healerGuardOrder.clear();
         r.raidBossJoinMs = 0;
         r.raidBossJoinGuid = 0;
         r.raidBossJoined.clear();
+        r.trashHealerGuard = false;
+        r.healerGuardLooseGuid = 0;
+        r.healerGuardLooseMs = 0;
+        r.healerGuardLastResortGuids.clear();
         r.raidAssistMs = 0;
         r.raidAssistGuid = 0;
         r.raidAssisted.clear();

@@ -51,6 +51,15 @@ inline bool CollectOrderProtectedItems(uint32_t orderItemId, bool orderFinished,
     frontier.push_back(orderItemId);
     std::unordered_set<uint32_t> expanded;
     expanded.insert(orderItemId);
+    // The supply item joined the set above, so the walk below would skip it
+    // as already seen and never reach its reagents. Seed it as a second root
+    // and always expand it: while the leg crafts an intermediate, its
+    // reagents are live stock (even when a vendor also sells it).
+    if (supplyItemId != 0 && supplyItemId != orderItemId)
+    {
+        expanded.insert(supplyItemId);
+        frontier.push_back(supplyItemId);
+    }
     for (std::size_t step = 0; step < kOrderProtectedTreeDepth && !frontier.empty(); ++step)
     {
         std::vector<uint32_t> next;

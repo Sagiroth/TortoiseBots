@@ -23,6 +23,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderAuctionPolicy.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
 #include "runtime/GuildOrderTelemetryPolicy.h"
@@ -172,6 +173,13 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         if (!atLimit(SupplyStep::Bank, record->supplyItemId))
             return false;
         NoteBankEmpty(bot->GetGUIDLow(), record->supplyItemId);
+        // A counter already searched for this reagent is not entered again
+        // before the rest of the ladder; the hand-off skips it.
+        if (!AuctionReentryAllowed(bot->GetGUIDLow(), record->supplyItemId))
+        {
+            AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoBanker);
+            return true;
+        }
         SetSupply(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
             record->supplyItemId, record->supplyCount, SupplyStep::Farm,
             OrderReason::NoBanker);
@@ -180,9 +188,13 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
     if (record->supplyStep == SupplyStep::AuctionHouse && purposeKey == "guild order" &&
         !bankerSearch)
     {
-        if (!atLimit(SupplyStep::AuctionHouse, record->supplyItemId))
+        // One search per auction leg: the first empty or rejected auctioneer
+        // search moves down the ladder instead of parking for three tries.
+        uint32_t const fails = NoteSupplySearchFailed(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
+            record->supplyItemId);
+        if (!AuctionSearchMovesLadder(fails))
             return false;
-        AdvanceGuildOrderAfterAuction(ai, bot, *record);
+        AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer);
         return true;
     }
     if (record->supplyStep == SupplyStep::Bags && purposeKey == "guild order" && !bankerSearch)
@@ -194,6 +206,15 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         if (!atLimit(SupplyStep::Bags, mailItemId))
             return false;
         NoteMailEmpty(bot->GetGUIDLow(), mailItemId);
+        // The mail will not empty: the ladder moves on instead of walking
+        // back to a mailbox it cannot empty. A covered auction leg hands
+        // back through the empty step, never to the counter with a zero
+        // count, so the next ladder pass routes to delivery or the source.
+        if (record->supplyReturnStep == SupplyStep::AuctionHouse && record->supplyCount == 0)
+        {
+            SetSupply(bot->GetGUIDLow(), SupplyStep::None, 0, 0);
+            return true;
+        }
         SupplyStep next = record->supplyReturnStep;
         SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : mailItemId, 0,
             SupplyStep::None, record->reason);
@@ -2731,7 +2752,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
             auto planFor = [&](uint32_t planItem)
             {
-                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm);
+                return PlanGuildOrderSources(bot, planItem, TortoiseBots::GuildOrders::OrderType::Farm,
+                    true);
             };
 
             // The planned zone only changes when it runs dry (the plan no
