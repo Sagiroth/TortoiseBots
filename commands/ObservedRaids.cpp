@@ -95,6 +95,61 @@ std::vector<uint32_t> HeldGroupIds()
 
 } // namespace
 
+// The G2 detail (ready check + boss debuffs) of one group, at most every 5 s: the same reads the bound path does per bot
+// per 2 s (ready cache, aura holders), keyed by member. A group with no online bot member keeps no detail; the detail flag
+// off keeps every group empty. The cache holds the last read per group, so the cycles between two 5 s reads repeat it.
+struct DetailCache
+{
+    uint32_t atMs = 0;
+    std::vector<RaidTelemetry::DetailEntry> entries;
+};
+std::unordered_map<uint32_t, DetailCache>& DetailCaches()
+{
+    static std::unordered_map<uint32_t, DetailCache> caches;
+    return caches;
+}
+constexpr uint32_t kDetailCadenceMs = 5000;
+void FillRaidDetail(Group* group, RaidTelemetry::GroupInfo& info)
+{
+    if (!ObservabilityEmitter::Instance().RaidsDetailEnabled())
+        return;
+    uint32_t const now = WorldTimer::getMSTime();
+    DetailCache& cache = DetailCaches()[info.groupId];
+    if (now - cache.atMs < kDetailCadenceMs && !cache.entries.empty())
+    {
+        info.detail = cache.entries;
+        return;
+    }
+    cache.entries.clear();
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        Player* bot = ObjectAccessor::FindPlayer(slot.guid);
+        if (!bot || !bot->IsInWorld())
+            continue;
+        RaidTelemetry::DetailEntry entry;
+        entry.guid = slot.guid.GetCounter();
+        CommanderTelemetry::BotExtra extra;
+        extra.id = slot.guid.GetRawValue();
+        ReadRaidReadyFacts(bot, extra, now);
+        FillRaidBotDebuffs(bot, extra);
+        if (extra.hasReady)
+        {
+            entry.hasReady = true;
+            entry.readyBuffs = extra.readyBuffs;
+            entry.readyCons = extra.readyCons;
+            entry.cdReady = extra.cdReady;
+            entry.cdKnown = extra.cdKnown;
+            entry.cdLongestS = extra.cdLongestS;
+        }
+        entry.debuffs = std::move(extra.debuffs);
+        entry.mc = extra.mc;
+        if (entry.hasReady || !entry.debuffs.empty() || entry.mc)
+            cache.entries.push_back(std::move(entry));
+    }
+    cache.atMs = now;
+    info.detail = cache.entries;
+}
+
 void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players,
                           std::vector<RaidTelemetry::GroupInfo>& out)
 {
@@ -172,6 +227,7 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
         }
         if (CombatMonitorService::Instance().InFight(groupId))
             info.combatJson = CombatMonitorService::Instance().WindowJson(groupId);
+        FillRaidDetail(group, info);
         found.push_back(std::move(info));
     }
 

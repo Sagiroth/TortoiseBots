@@ -580,10 +580,10 @@ void ObservabilityEmitter::Initialize()
     // Gates the RAIDS datagram and the observed-raid combat sampler.
     m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+    m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
+    m_raidDetailTimerMs = 0;
     m_raidsSent = false;
-    m_raidOffset = 0;
-    m_raidTrimLoggedAt.clear();
-
     // The live fight stream and the cast poller; a `.reload config` re-reads them.
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
     m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
@@ -685,9 +685,9 @@ void ObservabilityEmitter::Shutdown()
 
     m_enabled = false;
     m_raids = ObservabilityFlag::Feed();
+    m_raidsDetail = ObservabilityFlag::Feed();
+    m_raidDetailTimerMs = 0;
     m_raidsSent = false;
-    m_raidOffset = 0;
-    m_raidTrimLoggedAt.clear();
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
@@ -759,6 +759,8 @@ void ObservabilityEmitter::ReloadRealtimeKeys()
     // the aiplayerbot.conf half again in ReloadDungeonRunKeys, which runs before this on the same world tick.
     m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+    m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1057,6 +1059,7 @@ void ObservabilityEmitter::Update(uint32 diff)
     if (!IsEnabled())
         return;
     m_tickWindow.Add(diff);
+    m_raidDetailTimerMs += diff;
 
     if (!m_hostResolved)
         RetryHostResolution(diff);
@@ -1818,6 +1821,13 @@ void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vect
     if (!m_raidProvider)
         return;
     m_raidProvider(bots, players, m_raidGroups);
+    // G2 detail at most every 5 s: the collection fills it only on due
+    // cycles, and every other cycle drops it again so the line stays lean.
+    if (m_raidDetailTimerMs < 5000 || !RaidsDetailEnabled())
+        for (RaidTelemetry::GroupInfo& group : m_raidGroups)
+            group.detail.clear();
+    else
+        m_raidDetailTimerMs = 0;
     if (m_raidGroups.empty())
     {
         if (m_raidsSent)

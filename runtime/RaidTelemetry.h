@@ -68,6 +68,22 @@ struct MemberRef
     std::string name;      // only written (and only read) for a member not online
 };
 
+// The ready check and boss debuffs of one member (G2): the same wire
+// objects the bound path writes, keyed by low guid. Sent at most every
+// 5 s, appended at the END of the RAIDS group object.
+struct DetailEntry
+{
+    uint32_t guid = 0;
+    bool hasReady = false;
+    uint32_t readyBuffs = 0;
+    uint32_t readyCons = 0;
+    uint8_t cdReady = 0;
+    uint8_t cdKnown = 0;
+    uint32_t cdLongestS = 0;
+    std::vector<CommanderTelemetry::AuraInfo> debuffs;
+    bool mc = false;
+};
+
 // One qualifying group as it goes on the wire. The commands layer fills it; the emitters below only serialize it.
 struct GroupInfo
 {
@@ -80,6 +96,7 @@ struct GroupInfo
     std::string commander;     // the bound commander's display name while a binding stands on the group, else empty
     std::vector<MemberRef> members;
     std::string combatJson;    // the live window raw JSON while the group's book is in a fight, else empty
+    std::vector<DetailEntry> detail; // G2: ready + debuffs, filled at most every 5 s, empty when off or not due
 };
 
 // One group trimmed to fit a part, for the caller's log (once per group per minute).
@@ -127,6 +144,57 @@ inline std::vector<size_t> RotationWindow(size_t total, size_t offset, size_t ma
     return out;
 }
 
+// The G2 detail array: one entry per online member with ready facts or
+  // boss debuffs, in member order. Level 1+ trim drops it with the window.
+  inline void AppendDetailJson(std::ostringstream& ss, GroupInfo const& group, uint8_t trim)
+  {
+    if (trim >= 1 || group.detail.empty())
+        return;
+    bool first = true;
+    for (DetailEntry const& d : group.detail)
+    {
+        if (d.guid == 0 && !d.hasReady && d.debuffs.empty() && !d.mc)
+            continue;
+        if (first)
+        {
+            ss << ",\"detail\":[";
+            first = false;
+        }
+        else
+            ss << ",";
+        ss << "{\"g\":" << d.guid;
+        if (d.hasReady)
+        {
+            ss << ",\"rdy\":{\"b\":" << d.readyBuffs
+               << ",\"c\":" << d.readyCons
+               << ",\"cr\":" << static_cast<uint32_t>(d.cdReady)
+               << ",\"cn\":" << static_cast<uint32_t>(d.cdKnown);
+            if (d.cdLongestS)
+                ss << ",\"cl\":" << d.cdLongestS;
+            ss << "}";
+        }
+        if (!d.debuffs.empty())
+    {
+        size_t listed = 0;
+        for (CommanderTelemetry::AuraInfo const& a : d.debuffs)
+        {
+            if (a.id == 0 || listed >= CommanderTelemetry::kMaxBotDebuffs)
+                continue;
+            ss << (listed ? "," : ",\"db\":[");
+            ++listed;
+            CommanderTelemetry::AppendAuraJson(ss, a, true);
+        }
+        if (listed)
+            ss << "]";
+    }
+    if (d.mc)
+        ss << ",\"mc\":1";
+    ss << "}";
+    }
+    if (!first)
+        ss << "]";
+  }
+
 // One group's JSON object at a trim level (0 none). `memberLimit` is the level-3 cut; from level 2 on the offline names are
 // left out. `more` counts every member not listed, the kMaxMembersPerGroup overflow included.
 inline std::string BuildGroupJson(GroupInfo const& group, uint8_t trim = 0, size_t memberLimit = kMaxMembersPerGroup)
@@ -164,13 +232,16 @@ inline std::string BuildGroupJson(GroupInfo const& group, uint8_t trim = 0, size
         ss << ",\"more\":" << (group.members.size() - limit);
     if (trim < 1 && !group.combatJson.empty())
         ss << ",\"combat\":" << group.combatJson;
+    // G2 detail goes last, after every G0/G1 key, so an older dashboard
+    // keeps working while ignoring the tail.
+    AppendDetailJson(ss, group, trim);
     if (trim)
         ss << ",\"trimmed\":\"" << TrimSectionName(trim) << "\"";
     ss << "}";
     return ss.str();
-}
+  }
 
-// One serialized payload. `trims` (one level per group) and `memberLimits` (one level-3 cut per group) are optional; a null
+  // One serialized payload. `trims` (one level per group) and `memberLimits` (one level-3 cut per group) are optional; a null
 // vector writes every group whole.
 inline std::string BuildRaidsPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts, int64_t tsMs,
                                      std::vector<GroupInfo const*> const& groups, int part = 0, int parts = 1,

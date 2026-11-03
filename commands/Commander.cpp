@@ -13315,9 +13315,14 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
 // The boss debuffs one bound bot carries and whether it is charmed: the negative auras from outside its own group, read off
 // the bot's holders it already has. memberLow: the low guids of every player of the bot's group and of the binding, so a
 // debuff the group cast on itself is not the boss's work.
-static void FillBotDebuffs(Player* bot, std::unordered_set<uint32> const& memberLow,
-    CommanderTelemetry::BotExtra& extra)
+void BotCommands::FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra)
 {
+    std::unordered_set<uint32_t> memberLow;
+    memberLow.reserve(41);
+    memberLow.insert(bot->GetGUIDLow());
+    if (Group* group = bot->GetGroup())
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            memberLow.insert(slot.guid.GetCounter());
     std::vector<CommanderTelemetry::AuraRead> reads;
     for (auto const& entry : bot->GetSpellAuraHolderMap())
     {
@@ -13734,6 +13739,13 @@ static void ReadReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uin
     ApplyReadyCache(entry, extra);
 }
 
+// The G2 raid detail shares the bound path's ready read (same cache, same
+// cadence) without a binding.
+void BotCommands::ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
+{
+    ReadReadyFacts(bot, extra, nowMs);
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -13842,7 +13854,7 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (member.target && map)
             if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
                 extra.targetName = target->GetName();
-        FillBotDebuffs(bot, memberLow, extra);
+        TortoiseBots::BotCommands::FillRaidBotDebuffs(bot, extra);
         ReadReadyFacts(bot, extra, WorldTimer::getMSTime());
         ref.botExtras.push_back(std::move(extra));
     }
