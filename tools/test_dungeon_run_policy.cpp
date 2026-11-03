@@ -28743,6 +28743,55 @@ static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
         f.raid.offTanksAlive.clear();
         CHECK(!RaidHealerGuardOn(r, f, true));
     }
+    {
+        // The lead bot dead and the healer guard on: the ranged dps take the add on the healer, and the off-tank round
+        // robin takes every loose mob that is no healer's. It used to narrow the off-tank pick to healer adds
+        // (GuardPickHealerAdd), so a mob on a dps went to nobody.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        f.raid.healerGuard = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.leadAlive = false;
+        f.leadHasAttacker = false;
+        MemberFact tank = Mem("Brun", 0);
+        MemberFact healer = Mem("Healy", 10);
+        healer.healer = true;
+        MemberFact dps = Mem("Ranged", 12);
+        dps.ranged = true;
+        dps.rangedDps = true;
+        f.members = {tank, healer, dps};
+        UnitFact onHealer = Hitter(50081, 12129, 20, true);
+        onHealer.x = 10.0f;
+        UnitFact onDps = Hitter(50082, 12129, 22); // on a dps: no healer's
+        UnitFact own = TankHeld(50080, 12129, 25); // Brun holds one: the guard's latch
+        own.victimName = "Brun";
+        f.partyAttackers = {own, onHealer, onDps};
+        CHECK(GuardTick(r, f) == "attack 50081 Ranged"); // the healer's add first, to the ranged dps
+        CHECK(r.trashHealerGuard);
+        // The loose mob on the dps (kGuardWaitMs, then an off-tank's): the healer guard narrowed the pick before, so
+        // it went to nobody.
+        std::string picked;
+        for (int k = 0; k < 8 && picked.empty(); ++k)
+            picked = GuardTick(r, f);
+        CHECK(picked == "attack 50082 Brun");
+        CHECK(r.note.find("off-tank Brun picks up 12129 off the party") != std::string::npos);
+    }
+    {
+        // The engage on arrival with the lead bot dead: the first living off-tank engages the mob on it at once, as
+        // the lead bot's own stay would (its role is the off-tank's until the lead bot is up again).
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        Run r = StartRaidTrashFight(plan, f);
+        f.leadAlive = false;
+        f.members = {Mem("Brun", 0), Mem("Healy", 10)};
+        UnitFact own = TankHeld(50091, 12129, 12);
+        own.victimName = "Brun";
+        f.partyAttackers = {own};
+        CHECK(GuardTick(r, f) == "attack 50091 Brun");
+        CHECK(r.note == "fighting: the tank engages 12129 on arrival (12.0 yd)");
+        CHECK(r.engageOrders == 1 && r.guardOrders == 0);
+        CHECK(!r.guardReturn); // the dead main tank has no stand to walk back to
+    }
 }
 
 static void TestRaidMainTankHelpsOnAMobAnOffTankHolds()

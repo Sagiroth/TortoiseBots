@@ -16278,18 +16278,24 @@ inline bool RaidTrashOffTankHolds(const Facts& f, const std::string& name)
     return false;
 }
 
-// The main tank's role is held: the lead bot while it lives (a tank), else a living off-tank of the layout
-// (RaidFacts::offTanksAlive, the layout's order). The lead bot dying mid-pull does not leave the fight without a main
-// tank: the first living off-tank takes the role for the rest of the fight (its pick-ups and the healer guard), and
-// the lead bot takes it back when it is up again. A gate on the role does not depend on the lead bot's name.
-inline bool MainTankRoleHeld(const Facts& f)
+// The engage tank (the main tank's role holder): the lead bot while it lives (a tank), else the first living off-tank
+// of the layout (RaidFacts::offTanksAlive, the layout's order). The lead bot dying mid-pull does not leave the fight
+// without a main tank: the first living off-tank takes the role for the rest of the fight (its pick-ups, the healer
+// guard and the engage on arrival), and the lead bot takes it back when it is up again. Empty: no tank at all.
+inline std::string MainTankName(const Facts& f)
 {
     if (f.leadAlive)
-        return f.leadIsTank;
+        return f.leadIsTank ? f.carrier : std::string();
     for (std::string const& name : f.raid.offTanksAlive)
         if (!name.empty())
-            return true;
-    return false;
+            return name;
+    return std::string();
+}
+
+// The role is held at all (a gate on it does not depend on the lead bot's name).
+inline bool MainTankRoleHeld(const Facts& f)
+{
+    return !MainTankName(f).empty();
 }
 
 // The healer guard's gate: a raid boss fight whose main tank holds a plan boss (LeadHoldsPlanBoss), or a raid trash
@@ -16297,8 +16303,10 @@ inline bool MainTankRoleHeld(const Facts& f)
 // target comes and goes as mobs die and reposition, and the guard does not flicker off with it). With it off the
 // off-tanks take the adds as before. The role's holder decides the gate (MainTankRoleHeld): a trash fight keeps the
 // guard with the lead bot dead while an off-tank lives, which is the moment the healers need the ranged dps most (ZG
-// walk 32: with the lead dead the guard switched off and the adds on the healers had no answer). A boss fight's guard
-// is the one holding the plan boss, so with the lead bot dead it stays off there (RaidGuardTick owns that fight).
+// walk 32: with the lead dead the guard switched off and the adds on the healers had no answer). With the lead bot
+// dead the guard takes the healer adds alone: every other loose mob is the off-tank round robin's (CheckGuard). A boss
+// fight's guard is the one holding the plan boss, so with the lead bot dead it stays off there (RaidGuardTick owns
+// that fight).
 inline bool RaidHealerGuardOn(const Run& r, const Facts& f, bool trash)
 {
     if (!f.raid.healerGuard || !MainTankRoleHeld(f))
@@ -16663,12 +16671,14 @@ inline bool GuardEligible(const UnitFact& u, float holdRadius, const Run* capped
 }
 
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
-    bool raidTrash = false)
+    bool raidTrash = false, bool skipHealer = false)
 {
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
+            continue;
+        if (skipHealer && u.victimHealer)
             continue;
         if (f.leadHit && !u.victimHealer)
             continue;
@@ -16733,10 +16743,10 @@ inline const PlanStep* InHoldArea(const Run& r, const Facts& f)
 
 inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
 {
-    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands a
+    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands every
     // loose mob to a living off-tank (GuardPick, and CheckGuard's off-tank round robin), so the mobs the main tank
     // held do not stay on the healers (ZG walk 22 test2 r4 step 99: the Mad Voidwalkers went to nobody once the
-    // main tank died). Nobody's stand: no guard return, no engage.
+    // main tank died). Nobody's stand: no guard return; the engage on arrival is the acting off-tank's (EngageTarget).
     if (!f.leadAlive)
         return RaidTrashOffTanks(r, f) ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
     // Watching: fightOrders too, so a refill (guardOrders and engageOrders back
@@ -16872,17 +16882,20 @@ inline const UnitFact* HoldEngageTarget(const Run& r, const Facts& f)
 // fights nothing, so a mob that reaches it, or one hitting the healer, waited
 // for the guard's wait rule or for nothing (RFC 19z19 step 25: idle 21 s with a
 // Trogg on the mage and the rogue 2-4 yd away; Uldaman 19z19 step 85: three
-// mobs on it and no target for 14 s). While the lead bot, a living tank, is on
-// stay outside an event, the one to send it at at once: a healer's attacker
-// (hitting, not polymorphed or evading, within kGuardYd, the nearest), else the
-// nearest mob on the tank itself in melee reach (Facts::leadAttacker). A DPS's
-// attacker is not engaged here: it stays with GuardTarget's wait, so a mob
-// that will come to the tank does not draw it from its stand. Null for none.
+// mobs on it and no target for 14 s). While the engage tank (MainTankName: the
+// lead bot, or the first living off-tank that took the role when the lead bot
+// died) is on its stand outside an event, the one to send it at at once: a
+// healer's attacker (hitting, not polymorphed or evading, within kGuardYd, the
+// nearest), else the nearest mob on the tank itself (Facts::leadAttacker; a mob
+// an off-tank holds, with the lead bot dead). A DPS's attacker is not engaged
+// here: it stays with GuardTarget's wait, so a mob that will come to the tank
+// does not draw it from its stand. Null for none.
 inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
 {
-    // The lead bot's own engage on arrival: the off-tank that took the main tank's role with it dead has the guard's
-    // pick-ups (RaidGuardTick, GuardTarget's dead-lead branch), not this one.
-    if (!f.leadAlive || !f.leadIsTank || !f.leadStaying || InEvent(r) || f.carrier.empty())
+    std::string const tank = MainTankName(f);
+    if (tank.empty() || InEvent(r) || f.carrier.empty())
+        return nullptr;
+    if (f.leadAlive && !f.leadStaying)
         return nullptr;
     // A raid's boss fight with an off-tank (RaidBossRulesFight): the mob on the healer is an off-tank's (RaidGuardTick).
     // With none and the main tank holding a plan boss (LeadHoldsPlanBoss), it stays on her: only she is engaged.
@@ -16891,28 +16904,40 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     // A raid trash fight's healer guard (RaidHealerGuard): the healer's add is the ranged dps' first, not the main
     // tank's on arrival.
     bool const trashGuard = RaidHealerGuardOn(r, f, true);
-    const UnitFact* best = nullptr;
-    for (const UnitFact& u : f.partyAttackers)
+    // With the lead bot dead the acting off-tank engages in a raid's trash fight, behind the healer guard: a boss
+    // fight's adds are RaidGuardTick's, and an add on a healer is the ranged dps' first.
+    if (!f.leadAlive && (trashGuard || !RaidTrashFight(r, f)))
+        return nullptr;
+    auto const engageable = [&r](const UnitFact& u)
     {
-        if (raidBoss || trashGuard || !u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
-            !u.hitting || u.distLead > kGuardYd)
-            continue;
-        if (GuardUnitCapped(r, u.guid))
-            continue;
-        if (GuardLeavesCampAlone(u))
-            continue;
-        if (CcOrderOut(r, u.guid))
-            continue;
-        if (!best || u.distLead < best->distLead)
-            best = &u;
-    }
+        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
+            !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+    };
+    const UnitFact* best = nullptr;
+    // With the lead bot dead the healer's add is the healer guard's and the round robin's (the acting tank's mob is
+    // the one that reaches it), so only the living lead bot engages a healer's attacker here.
+    if (f.leadAlive && !raidBoss && !trashGuard)
+        for (const UnitFact& u : f.partyAttackers)
+        {
+            if (!u.victimHealer || !engageable(u))
+                continue;
+            if (!best || u.distLead < best->distLead)
+                best = &u;
+        }
     if (best)
         return best;
-    if (f.leadHasAttacker && f.leadAttacker.hostile && f.leadAttacker.attackable && !f.leadAttacker.evading &&
-        !f.leadAttacker.polymorphed && !GuardUnitCapped(r, f.leadAttacker.guid) &&
-        !CcOrderOut(r, f.leadAttacker.guid) && (!holdsBoss || PlanBossEntry(r, f.leadAttacker.entry)))
-        return &f.leadAttacker;
-    return nullptr;
+    if (f.leadAlive)
+    {
+        if (f.leadHasAttacker && engageable(f.leadAttacker) &&
+            (!holdsBoss || PlanBossEntry(r, f.leadAttacker.entry)))
+            return &f.leadAttacker;
+        return nullptr;
+    }
+    // The lead bot dead: the acting off-tank's own mob.
+    for (const UnitFact& u : f.partyAttackers)
+        if (u.victimTank && u.victimName == tank && engageable(u) && (!best || u.distLead < best->distLead))
+            best = &u;
+    return best;
 }
 
 // A hold's fight in which a living ranged bot (the healer too) is more than kHoldFollowRangedYd from the
@@ -17227,13 +17252,14 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             r.fightOrders < kGuardOrdersFightCap &&
             (r.fightOrders == 0 || r.guardSinceOrderMs >= kGuardRepeatMs))
         {
+            std::string const engageTank = MainTankName(f);
             r.engageGuid = arrival->guid;
             ++r.engageOrders;
             ++r.fightOrders;
             ++r.guardUnitOrders[arrival->guid];
             r.guardMs = 0;
             r.guardSinceOrderMs = 0; // a pick-up follows it no sooner than kGuardRepeatMs
-            if (!r.guardReturn)
+            if (!r.guardReturn && f.leadAlive)
             {
                 // The stand it leaves, as at the first pick-up.
                 r.guardReturn = true;
@@ -17243,7 +17269,8 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             }
             r.note = "fighting: the tank engages " + std::to_string(arrival->entry) + " on arrival (" +
                 Num(arrival->distLead) + " yd)" + RefillNote(r);
-            order = "attack " + std::to_string(arrival->guid) + " " + f.carrier;
+            order = "attack " + std::to_string(arrival->guid) + " " +
+                (engageTank.empty() ? f.carrier : engageTank);
             return true;
         }
         // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules has its own pick-ups (RaidGuardTick): the
@@ -17282,9 +17309,15 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
     // A raid trash fight's healer guard: every add on a healer the guard would take counts, not only GuardPick's nearest
     // one (GuardPickHealerAdd), so a covered or capped nearer add does not stall the off-tank fallback for a farther one.
+    // With the lead bot dead the off-tank round robin takes every loose mob (GuardTarget's dead-lead branch) and the
+    // healer guard adds only healer adds on top: the pick is narrowed to healer adds only while the lead bot lives (ZG
+    // walk 22: a mob on a dps went to nobody once the lead bot died).
     bool const trashGuardOn = !hold && RaidHealerGuardOn(r, f, true);
-    if (trashGuardOn && u)
+    if (trashGuardOn && u && f.leadAlive)
         u = GuardPickHealerAdd(r, f);
+    else if (trashGuardOn && u && u->victimHealer)
+        if (const UnitFact* const loose = GuardPick(f, 0.0f, &r, &r, true, true))
+            u = loose;
     const UnitFact* engage = hold && !u ? HoldEngageTarget(r, f) : nullptr;
     if (!u && !engage)
     {
@@ -17311,7 +17344,9 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     // busy no order goes out but the healer guard's last resort; the pick with
     // the key off is today's round robin over every living off-tank, busy ones included.
     bool const trashOffTank = !hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead;
-    bool const trashGuard = trashOffTank && trashGuardOn;
+    // With the lead bot dead the round robin keeps every living off-tank in turn, busy ones included (walk 22): the
+    // busy-off-tank filter is the living main tank's, which stays on its own target.
+    bool const trashGuard = trashOffTank && trashGuardOn && f.leadAlive;
     std::vector<const std::string*> free;
     if (trashOffTank)
         for (const std::string& name : f.raid.offTanksAlive)
@@ -17345,7 +17380,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             ((r.guardOrders > 0 || (!hold && r.fightOrders > 0) || r.healerGuardOrders > 0) &&
                 r.guardSinceOrderMs < kGuardRepeatMs))))
         return false;
-    if (free.empty() && (healerGuardAdd || trashGuard) && !mainTankLastResort)
+    if (free.empty() && (healerGuardAdd || trashGuard || (!f.leadAlive && trashOffTank)) && !mainTankLastResort)
         return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
@@ -17382,7 +17417,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             return true;
         }
     }
-    else if (!r.guardReturn)
+    else if (!r.guardReturn && f.leadAlive)
     {
         // The first pick-up: the tank's stay point (its stand), not where it
         // is now: a tank on stay may still be dragging a pullback in (Uldaman
