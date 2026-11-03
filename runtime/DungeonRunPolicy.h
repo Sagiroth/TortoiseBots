@@ -834,9 +834,16 @@ struct UnitFact
     bool hostile = true;     // not friendly to the party (hostile or neutral): it may be pulled
     bool stealthed = false;
     bool evading = false;    // running home: not pulled this tick
-    // A run crowd-control aura is on it: Polymorph, Shackle Undead, Banish or
-    // Sap (kRunCc's spells; the name is from when the run had only Polymorph).
+    // A run crowd-control aura is on it, any family (kRunCc's auras; the name
+    // is from when the run had only Polymorph).
     bool polymorphed = false;
+    // Automatic crowd control (Facts::autoCc): a mana user (caster or healer)
+    // goes before a melee unit, and its level bounds which bot may take it
+    // (kRunCcMaxLevelOver). fleeRoomYd: for a fear family, the 3D distance to
+    // the nearest living creature outside its pack; -1 not read (no room).
+    bool caster = false;
+    std::uint32_t level = 0;
+    float fleeRoomYd = -1.0f;
     // The core's creature type (kCreatureHumanoid ...): which run cc fits it
     // (CcFits). 0: not read, Polymorph only (the facts before #1159).
     std::uint32_t creatureType = 0;
@@ -1028,6 +1035,7 @@ constexpr std::uint32_t kSapSpells[] = {6770, 2070, 11297};
 
 // The core's creature types (CreatureType, SharedDefines.h).
 constexpr std::uint32_t kCreatureBeast = 1;
+constexpr std::uint32_t kCreatureDragonkin = 2;
 constexpr std::uint32_t kCreatureDemon = 3;
 constexpr std::uint32_t kCreatureElemental = 4;
 constexpr std::uint32_t kCreatureUndead = 6;
@@ -1036,29 +1044,68 @@ constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
-// The run's crowd-control spells (issue #1159), in the order of their
-// reliability: the bot for a unit is the free one whose spell comes first
-// here. Fear is not one (a feared mob runs into the next pack), nor Freezing
-// Trap (the hunter's "freezing trap on cc" walks to the marked mob and lays
-// the trap at its feet in the fight, TrapOnCcTargetAction; there is no trap
-// laid at the stand before the pull to model).
-enum class CcFamily : std::uint8_t { None = 0, Polymorph, Shackle, Banish, Sap };
+// The run's crowd-control spells, in the order of their reliability: the bot
+// for a unit is the free one whose spell comes first here. Tier A holds a unit
+// through the fight, S is short (Repentance: 6 s, a patroller tool), R is the
+// risky fear (the mob runs; only with AiPlayerbot.DungeonRunAutoCcRisky and
+// room to run). `autoOnly` marks the families the automatic crowd control
+// (Facts::autoCc) uses: with the key off they are never picked, so the order
+// and the marks stay the plan's four. Gouge, Turn Undead, Wyvern Sting, Blind,
+// Entangling Roots, Hammer of Justice and the mage Sleep are not here: no bot
+// action fires on a run mark for them (or, a root, the caster keeps casting).
+enum class CcFamily : std::uint8_t
+{
+    None = 0,
+    Polymorph,
+    Shackle,
+    Banish,
+    Sap,
+    Hibernate,
+    FreezingTrap,
+    Seduction,
+    Repentance,
+    Fear,
+    ScareBeast
+};
 constexpr std::uint32_t CcBit(CcFamily family) { return 1u << static_cast<unsigned>(family); }
+
+// Every rank of each family, as the class knows it (MemberFact::cc) and as its
+// aura shows on the unit (UnitFact::polymorphed). Seduction is the succubus'
+// pet spell and is read off MemberFact::succubus instead.
+constexpr std::uint32_t kHibernateSpells[] = {2637, 18657, 18658};
+constexpr std::uint32_t kFreezingTrapSpells[] = {1499, 14310, 14311, 27753};
+constexpr std::uint32_t kFreezingTrapAuras[] = {3355, 14308, 14309};
+constexpr std::uint32_t kSeductionSpells[] = {6358};
+constexpr std::uint32_t kRepentanceSpells[] = {20066, 51557, 51558};
+constexpr std::uint32_t kFearSpells[] = {5782, 6213, 6215};
+constexpr std::uint32_t kScareBeastSpells[] = {1513, 14326, 14327};
 
 struct RunCcSpell
 {
+    enum class Tier : std::uint8_t { A, S, R };
     CcFamily family;
     const char* spell;   // for the note
     const char* held;    // "<entry> is <held>" once its aura shows
     std::uint32_t types; // CreatureBit of each creature type it works on
     bool prePull;        // only on a unit out of combat, by a bot out of combat, before the pull (Sap)
+    Tier tier;
+    bool autoOnly;       // only with Facts::autoCc: the four plan families stay byte-identical key off
 };
 constexpr RunCcSpell kRunCc[] = {
     {CcFamily::Polymorph, "Polymorph", "polymorphed",
-        CreatureBit(kCreatureHumanoid) | CreatureBit(kCreatureBeast) | CreatureBit(kCreatureCritter), false},
-    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false},
-    {CcFamily::Banish, "Banish", "banished", CreatureBit(kCreatureDemon) | CreatureBit(kCreatureElemental), false},
-    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true},
+        CreatureBit(kCreatureHumanoid) | CreatureBit(kCreatureBeast) | CreatureBit(kCreatureCritter), false,
+        RunCcSpell::Tier::A, false},
+    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false, RunCcSpell::Tier::A, false},
+    {CcFamily::Banish, "Banish", "banished", CreatureBit(kCreatureDemon) | CreatureBit(kCreatureElemental), false,
+        RunCcSpell::Tier::A, false},
+    {CcFamily::Hibernate, "Hibernate", "hibernating",
+        CreatureBit(kCreatureBeast) | CreatureBit(kCreatureDragonkin), false, RunCcSpell::Tier::A, true},
+    {CcFamily::Seduction, "Seduction", "seduced", CreatureBit(kCreatureHumanoid), false, RunCcSpell::Tier::A, true},
+    {CcFamily::FreezingTrap, "Freezing Trap", "frozen", 0xFFFFu, false, RunCcSpell::Tier::A, true},
+    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true, RunCcSpell::Tier::A, false},
+    {CcFamily::Repentance, "Repentance", "repenting", 0xFFFFu, false, RunCcSpell::Tier::S, true},
+    {CcFamily::ScareBeast, "Scare Beast", "feared", CreatureBit(kCreatureBeast), false, RunCcSpell::Tier::R, true},
+    {CcFamily::Fear, "Fear", "feared", 0xFFFFu, false, RunCcSpell::Tier::R, true},
 };
 
 inline const RunCcSpell* RunCcOf(CcFamily family)
@@ -1083,11 +1130,15 @@ inline bool CcFits(CcFamily family, std::uint32_t creatureType)
 // order moves the mark onto its unit and sets the bot's "rti cc" to it, so two
 // held units need two marks). Moon first, as before.
 constexpr const char* kCcMarks[] = {"moon", "square", "diamond", "triangle"};
+// With Facts::autoCc the run may hold seven units at once (skull stays the
+// fight's focus); a player's icon is still never moved.
+constexpr const char* kRunCcMarksAuto[] = {"moon", "square", "diamond", "triangle", "star", "circle", "cross"};
 // ... their raid icon slots (RtiTargetValue::GetRtiIndex): moon 4, square 5,
-// diamond 2, triangle 3. -1 for any other name.
+// diamond 2, triangle 3, star 0, circle 1, cross 6. -1 for any other name.
 inline int CcMarkIcon(const std::string& mark)
 {
-    return mark == "moon" ? 4 : mark == "square" ? 5 : mark == "diamond" ? 2 : mark == "triangle" ? 3 : -1;
+    return mark == "moon" ? 4 : mark == "square" ? 5 : mark == "diamond" ? 2 : mark == "triangle" ? 3 :
+        mark == "star" ? 0 : mark == "circle" ? 1 : mark == "cross" ? 6 : -1;
 }
 // The raid icon slot of the run's kill_first focus (CommanderFocus puts the skull on its unit; RtiTargetValue::GetRtiIndex).
 constexpr int kFocusIcon = 7;
@@ -1095,6 +1146,20 @@ constexpr int kFocusIcon = 7;
 // lead bot (the party is gathered on it): beyond it the warlock's "fear on
 // cc" row (20 yd) is the one that can fire on the mark.
 constexpr float kBanishYd = 30.0f;
+// Automatic crowd control (Facts::autoCc): a feared unit is only picked with
+// this much room to the nearest creature outside its pack, a unit more than
+// kRunCcMaxLevelOver levels over the bot is left to another bot (the core's
+// spell hit falls steeply past +3), a raid keeps this many healers off crowd
+// control (a party one), auto orders space by kRunCcFightGapMs, a broken hold
+// is re-sent after kRunCcReapplyGapMs at most kRunCcReapplies times a step, and
+// a step pass sends at most kRunCcAutoOrdersPerStep auto orders.
+constexpr float kRunCcFleeRoomYd = 35.0f;
+constexpr std::uint32_t kRunCcMaxLevelOver = 3;
+constexpr std::uint32_t kRunCcHealersKept = 4;
+constexpr std::uint32_t kRunCcFightGapMs = 2000;
+constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
+constexpr std::uint32_t kRunCcReapplies = 2;
+constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
 // A Sap goes out before the pull, which waits this long for its aura (the
 // rogue stealths and walks to the mob), then goes without it.
 constexpr std::uint32_t kSapWaitMs = 15000;
@@ -1133,8 +1198,17 @@ struct MemberFact
     // or within kDirectNearLead yd of it on its floor in its sight, or its own line to the point). Unread: true.
     bool withLead = true;
     // The run cc it knows besides `polymorph` (CcBit: a priest's Shackle
-    // Undead, a warlock's Banish, a rogue's Sap; issue #1159).
+    // Undead, a warlock's Banish and Fear, a rogue's Sap, a druid's Hibernate,
+    // a hunter's Freezing Trap and Scare Beast, a paladin's Repentance).
     std::uint32_t cc = 0;
+    // Automatic crowd control (Facts::autoCc): a healer stays on heals while
+    // kRunCcHealersKept of them are free, a tank is never a cc bot, and a
+    // warlock with a living succubus may Seduce. level: its own, against the
+    // unit's (kRunCcMaxLevelOver).
+    bool healer = false;
+    bool tank = false;
+    bool succubus = false;
+    std::uint32_t level = 0;
     // A rogue whose pre-pull Sap trigger ("sap cc mark") can fire at all: its
     // master is a live client (PlayerbotAI::HasRealPlayerMaster) and Sap is
     // not switched off ("no sap"). Without it no Sap is ordered.
@@ -1650,6 +1724,13 @@ struct Facts
     bool holdAheadRead = false; // ... the glue looked for the point (holdAheadKnown false: the walk has no clear point)
     bool holdAheadKnown = false;
     float holdAheadX = 0.0f, holdAheadY = 0.0f, holdAheadZ = 0.0f;
+    // AiPlayerbot.DungeonRunAutoCc: the run leader marks the pack's crowd control from what the raid has, above
+    // autoCcAbove bodies (RunAutoCcThreshold). autoCcRisky: the fear families may be used. leadTargetGuid: the
+    // unit the lead bot (the tank) has selected: never crowd-controlled.
+    bool autoCc = false;
+    bool autoCcRisky = false;
+    std::uint32_t autoCcAbove = 6;
+    std::uint64_t leadTargetGuid = 0;
 };
 
 // Task A5: declared here (used from the first gate), defined next to PartyDead.
@@ -2167,6 +2248,19 @@ struct Run
     std::vector<std::uint64_t> ccLandedDrop; // the glue drops every bot's order on these (CC landed this tick)
     bool ccSapFailed = false; // a Sap did not land this step: no other Sap in it
     bool ccRegather = false;  // a Sap wait ended: gather (the rogue is by its mob) before the pull
+    // Automatic crowd control (Facts::autoCc): the holds whose aura was seen
+    // this step, how often each unit was re-sent after a break, the auto orders
+    // of this step pass (pre-pull, fight and re-apply; kRunCcAutoOrdersPerStep),
+    // the time since the last auto order in the fight and its spacing
+    // (kRunCcFightGapMs, kRunCcReapplyGapMs), and whether the "no free crowd
+    // control fits" note went out. healerGuardAssigned: the adds the raid's
+    // healer guard has a bot on (a view the guard keeps current): never cc'd.
+    std::unordered_set<std::uint64_t> ccLandedSeen;
+    std::unordered_map<std::uint64_t, std::uint32_t> ccReapplied;
+    std::uint32_t ccAutoOrders = 0;
+    std::uint32_t ccAutoGapMs = 0;
+    bool ccAutoNoBotNoted = false;
+    std::unordered_set<std::uint64_t> healerGuardAssigned;
     // The raid icons the run's cc orders set, icon slot -> the unit (for the
     // whole run, not the step): the run reuses only these and clears them at
     // its end (CcIconsToClear), and never moves an icon it did not set.
@@ -3182,6 +3276,12 @@ inline void ResetStep(Run& r)
     r.ccLandedDrop.clear();
     r.ccSapFailed = false;
     r.ccRegather = false;
+    r.ccLandedSeen.clear();
+    r.ccReapplied.clear();
+    r.ccAutoOrders = 0;
+    r.ccAutoGapMs = 0;
+    r.ccAutoNoBotNoted = false;
+    r.healerGuardAssigned.clear();
     r.sapWalkDue.clear();
     r.straggle.clear();
     r.walkBackDue = false;
@@ -7219,6 +7319,7 @@ inline RestLines LightLines(const RestLines& full)
 inline const PlanStep* EventHoldAhead(const Run& r);
 inline bool InEvent(const Run& r);
 inline std::size_t OpenUnits(const Run& r, const std::vector<UnitFact>& units);
+inline bool PlanBossEntry(const Run& r, std::uint32_t entry);
 
 // With the aggro estimate off (Facts::joinerCeiling 0): a pull step still to be pulled whose pack in sight has
 // kBigPackUnits open units or more (the Opus review of 0d9957be: a big pack had only the estimate to show it).
@@ -8030,6 +8131,21 @@ inline const UnitFact* StepUnit(const Facts& f, std::uint64_t guid)
     return nullptr;
 }
 
+// The unit of `guid` as a fight reads it: the step's units first, else a unit
+// attacking the party (a joiner) or one of the walk attackers.
+inline const UnitFact* FightUnit(const Facts& f, std::uint64_t guid)
+{
+    if (const UnitFact* u = StepUnit(f, guid))
+        return u;
+    for (const UnitFact& u : f.partyAttackers)
+        if (u.guid == guid)
+            return &u;
+    for (const UnitFact& u : f.raid.walkAttackers)
+        if (u.guid == guid)
+            return &u;
+    return nullptr;
+}
+
 // ccPending, ccResent and ccWaitMs mirror the first watched order.
 inline void SyncCcWatch(Run& r)
 {
@@ -8096,7 +8212,10 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
             if (held && spell)
                 r.note = "fighting: " + std::to_string(held->entry) + " is " + spell->held;
             if (held && held->polymorphed && spell)
+            {
                 r.ccLandedDrop.push_back(w.guid);
+                r.ccLandedSeen.insert(w.guid); // a break is re-applied later (RunCcReapplyTick)
+            }
             r.ccWatch.erase(r.ccWatch.begin() + static_cast<std::ptrdiff_t>(i));
             continue;
         }
@@ -8302,6 +8421,239 @@ struct CcPick
     std::uint32_t noMarkEntry = 0;
 };
 
+// Automatic crowd control (Facts::autoCc). The bodies of the pull against the
+// row's own ceiling (a deliberate max_bodies still gets cc) and the config's.
+inline std::uint32_t RunAutoCcThreshold(const PlanStep& s, const Facts& f)
+{
+    std::uint32_t const ceiling = RowCeilingBodies(s, f);
+    return ceiling && ceiling < f.autoCcAbove ? ceiling : f.autoCcAbove;
+}
+
+// How many bodies the pull brings: the ring estimate's count when it read this
+// pick, else the old joiner estimate with the target, else the row's own
+// pullable pack.
+inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFact& pick)
+{
+    if (f.aggroWalkRing && pick.joinersRead)
+        return pick.estBodies;
+    if (pick.joinersRead)
+        return pick.joiners + 1;
+    std::uint32_t bodies = 0;
+    for (const UnitFact& u : f.units)
+        if (Pullable(r, u))
+            ++bodies;
+    return bodies;
+}
+
+// The step's units this step's cc orders marked and that are still alive.
+inline std::uint32_t CcMarkedLive(const Run& r, const Facts& f)
+{
+    std::uint32_t marked = 0;
+    for (std::uint64_t guid : r.ccSent)
+        if (StepUnit(f, guid))
+            ++marked;
+    return marked;
+}
+
+// How far a cc candidate stands from the pack's pull target: its own distance
+// from the lead bot (the tank pulls from the front) unless both it and the
+// target were read with a place (a stand-pull row's units).
+inline float RunAutoCcFromPullYd(const UnitFact& u, const UnitFact* pullTarget)
+{
+    if (pullTarget && (pullTarget->x != 0.0f || pullTarget->y != 0.0f) && (u.x != 0.0f || u.y != 0.0f))
+        return ai::PlanDistance(u.x, u.y, u.z, pullTarget->x, pullTarget->y, pullTarget->z);
+    return u.distLead;
+}
+
+inline int RunCcTierRank(RunCcSpell::Tier tier)
+{
+    return tier == RunCcSpell::Tier::A ? 0 : tier == RunCcSpell::Tier::S ? 1 : 2;
+}
+
+// Whether cc candidate `a` (spell `aSpell` of kRunCc) goes before `b`: plan
+// rank (cc_always, then cc_priority) before an unlisted unit, then a caster,
+// then the family's tier, then the higher level, then the unit farther from
+// the pull target, then the guid.
+inline bool RunAutoCcBetter(const Run& r, const UnitFact& a, std::size_t aSpell, const UnitFact& b,
+    std::size_t bSpell, const UnitFact* pullTarget)
+{
+    int const aRank = r.plan ? r.plan->CcRank(a.entry) : -1;
+    int const bRank = r.plan ? r.plan->CcRank(b.entry) : -1;
+    if ((aRank >= 0) != (bRank >= 0))
+        return aRank >= 0;
+    if (aRank >= 0 && aRank != bRank)
+        return aRank < bRank;
+    if (a.caster != b.caster)
+        return a.caster;
+    int const aTier = RunCcTierRank(kRunCc[aSpell].tier);
+    int const bTier = RunCcTierRank(kRunCc[bSpell].tier);
+    if (aTier != bTier)
+        return aTier < bTier;
+    if (a.level != b.level)
+        return a.level > b.level;
+    float const aYd = RunAutoCcFromPullYd(a, pullTarget);
+    float const bYd = RunAutoCcFromPullYd(b, pullTarget);
+    if (aYd != bYd)
+        return aYd > bYd;
+    return a.guid < b.guid;
+}
+
+// The bots that hold a unit the fight or the step still lists (Run::ccHolds):
+// not free for another unit or for the guard.
+inline std::unordered_set<std::string> RunCcHolders(const Run& r, const Facts& f)
+{
+    std::unordered_set<std::string> out;
+    for (auto const& h : r.ccHolds)
+        if (StepUnit(f, h.first) || FightUnit(f, h.first))
+            out.insert(h.second.bot);
+    return out;
+}
+
+inline bool RunCcKnows(const MemberFact& m, CcFamily family)
+{
+    return family == CcFamily::Seduction ? m.succubus : (MemberCc(m) & CcBit(family)) != 0;
+}
+
+// The free bot whose spell for `u` comes first in kRunCc (RunCcBotFor's rules):
+// never a tank or the lead, a run-back bot or one with attackers, a healer only
+// while kRunCcHealersKept healers stay free (a party one), a unit more than
+// kRunCcMaxLevelOver levels over the bot is left to another. A fear family only
+// with Facts::autoCcRisky and room to run, and only when no A/S family fits.
+inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFact& u,
+    const std::unordered_set<std::string>& busy, std::size_t& spellIdx)
+{
+    spellIdx = 0;
+    std::unordered_set<std::string> const holders = RunCcHolders(r, f);
+    std::uint32_t healers = 0, healerHolders = 0;
+    for (const MemberFact& m : f.members)
+        if (m.healer)
+        {
+            ++healers;
+            if (holders.count(m.name))
+                ++healerHolders;
+        }
+    std::uint32_t const kept = f.raid.on ? kRunCcHealersKept : 1;
+    auto const fits = [&](const MemberFact& m, const RunCcSpell& c)
+    {
+        if (m.name.empty() || busy.count(m.name) || m.tank || m.name == f.carrier)
+            return false;
+        if (!RunCcKnows(m, c.family))
+            return false;
+        if (c.family == CcFamily::Sap && !m.canSap)
+            return false;
+        if (c.prePull && (f.anyInCombat || r.ccSapFailed || m.inCombat))
+            return false;
+        if (c.family == CcFamily::Banish && u.distLead > kBanishYd)
+            return false;
+        if (u.level && m.level && u.level > m.level + kRunCcMaxLevelOver)
+            return false;
+        if (m.healer && healers < healerHolders + 1 + kept)
+            return false;
+        if (m.attackers || std::find(r.runBack.begin(), r.runBack.end(), m.name) != r.runBack.end())
+            return false;
+        return true;
+    };
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        bool const risky = pass == 1;
+        if (risky && !(f.autoCcRisky && u.fleeRoomYd >= kRunCcFleeRoomYd))
+            break;
+        for (std::size_t i = 0; i < sizeof(kRunCc) / sizeof(kRunCc[0]); ++i)
+        {
+            const RunCcSpell& c = kRunCc[i];
+            if (!f.autoCc && c.autoOnly)
+                continue;
+            if ((c.tier == RunCcSpell::Tier::R) != risky)
+                continue;
+            if (!CcFits(c.family, u.creatureType) || (u.ccImmune & CcBit(c.family)))
+                continue;
+            for (const MemberFact& m : f.members)
+                if (fits(m, c))
+                {
+                    spellIdx = i;
+                    return &m;
+                }
+        }
+    }
+    return nullptr;
+}
+
+// The first cc mark of the run's list whose raid icon is empty, or set by the
+// run and on no living held unit: kRunCcMarksAuto with Facts::autoCc, else the
+// plan's four. Another icon (a player's) is never moved.
+inline const char* RunCcMarkFree(const Run& r, const Facts& f, const std::unordered_set<std::string>& marks)
+{
+    const char* const* list = f.autoCc ? kRunCcMarksAuto : kCcMarks;
+    std::size_t const count = f.autoCc ? sizeof(kRunCcMarksAuto) / sizeof(kRunCcMarksAuto[0])
+                                       : sizeof(kCcMarks) / sizeof(kCcMarks[0]);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const char* const m = list[i];
+        if (marks.count(m))
+            continue;
+        int const icon = CcMarkIcon(m);
+        if (icon < 0)
+            continue;
+        std::uint64_t const live = f.raidIcons[icon];
+        auto const set = r.ccIcons.find(icon);
+        if (!live || (set != r.ccIcons.end() && set->second == live))
+            return m;
+    }
+    return nullptr;
+}
+
+// A cc order's record: the unit marked, its bot and spell, the icon onto it and
+// the watch that waits for its aura (CheckCc).
+inline void RegisterCcOrder(Run& r, const CcPick& pick, std::uint64_t guid)
+{
+    r.ccSent.insert(guid);
+    r.ccHolds[guid] = Run::CcHold{pick.bot, pick.mark, pick.family};
+    r.ccIcons[CcMarkIcon(pick.mark)] = guid;
+    Run::CcWatch watch;
+    watch.guid = guid;
+    r.ccWatch.push_back(watch);
+    SyncCcWatch(r);
+}
+
+// The pre-pull note of an auto cc order.
+inline std::string RunAutoCcMarkNote(const Run& r, const UnitFact& u, const CcPick& pick)
+{
+    const RunCcSpell* const spell = RunCcOf(pick.family);
+    std::string note = "auto cc: " + std::to_string(u.entry) + " " + std::to_string(u.guid) + " (" + pick.bot + ": " +
+        (spell ? spell->spell : "") + ")";
+    if (u.caster)
+        note += " [caster]";
+    int const rank = r.plan ? r.plan->CcRank(u.entry) : -1;
+    if (rank >= 0)
+        note += " [plan rank " + std::to_string(rank) + "]";
+    return note;
+}
+
+// The note when an over-threshold pull has no free crowd control that fits its
+// pack: the pack's entries not marked yet, at most eight.
+inline std::string RunAutoCcNoBotNote(const Run& r, const Facts& f, std::uint32_t bodies, std::uint32_t threshold)
+{
+    std::string entries;
+    std::size_t shown = 0;
+    for (const UnitFact& u : f.units)
+    {
+        if (!Pullable(r, u) || r.ccSent.count(u.guid) || u.polymorphed)
+            continue;
+        std::string const entry = std::to_string(u.entry);
+        if (entries.find(entry) != std::string::npos)
+            continue;
+        if (shown == 8)
+        {
+            entries += ", +more";
+            break;
+        }
+        entries += (shown ? ", " : "") + entry;
+        ++shown;
+    }
+    return "auto cc: " + std::to_string(bodies) + " bodies over " + std::to_string(threshold) +
+        ", no free crowd control fits (" + entries + ")";
+}
+
 // Issue #1159: the unit as above, by rank, then the spell's reliability
 // (kRunCc's order), then the nearest; only a unit some free bot has a spell
 // for: the unit's creature type in the spell's (CcFits) and the unit not
@@ -8313,7 +8665,7 @@ struct CcPick
 // unit is never given a second one. Its mark is the first of kCcMarks whose
 // raid icon is empty, or set by the run and on no living held unit; another
 // icon (a player's) is never moved, and with none free no cc goes out.
-inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
+inline CcPick PickCcOrderPlan(const Run& r, const Facts& f, std::uint64_t pullGuid)
 {
     CcPick pick;
     if (!r.plan)
@@ -8357,6 +8709,8 @@ inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
         for (; spellIdx < sizeof(kRunCc) / sizeof(kRunCc[0]) && !bot; ++spellIdx)
         {
             const RunCcSpell& c = kRunCc[spellIdx];
+            if (c.autoOnly) // the automatic cc's families: never a plan pick
+                continue;
             if (!CcFits(c.family, u.creatureType) || (u.ccImmune & CcBit(c.family)))
                 continue;
             if (c.prePull && (f.anyInCombat || r.ccSapFailed))
@@ -8397,9 +8751,220 @@ inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
     return pick;
 }
 
+// Facts::autoCc: the pack's best candidate for the raid's crowd control, the
+// plan's cc_priority/cc_always only a hint (RunAutoCcBetter) and RunCcBotFor
+// picking the bot. Never the pull target, the lead bot's target, a unit an
+// off-tank holds, the fight's focus, a kill_first or boss-step unit, a held
+// unit, one marked this step, one the party hits, or a healer guard's add.
+// Only the row's own pack is a candidate before the pull; joiners are the
+// fight tick's (RunAutoCcFightTick).
+inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
+{
+    CcPick pick;
+    if (!r.plan || InEvent(r))
+        return pick;
+    std::unordered_set<std::string> busy = RunCcHolders(r, f);
+    std::unordered_set<std::string> marks;
+    for (auto const& h : r.ccHolds)
+        if (StepUnit(f, h.first) || FightUnit(f, h.first))
+            marks.insert(h.second.mark);
+    const PlanStep* const step = Current(r);
+    std::size_t bestSpell = 0;
+    for (const UnitFact& u : f.units)
+    {
+        auto const reapplied = r.ccReapplied.find(u.guid);
+        if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
+            PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || u.polymorphed || u.partyHits ||
+            u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
+            r.healerGuardAssigned.count(u.guid) ||
+            (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
+            continue;
+        std::size_t spellIdx = 0;
+        const MemberFact* const bot = RunCcBotFor(r, f, u, busy, spellIdx);
+        if (!bot)
+            continue;
+        if (!pick.unit || RunAutoCcBetter(r, u, spellIdx, *pick.unit, bestSpell, nullptr))
+        {
+            pick.unit = &u;
+            pick.bot = bot->name;
+            pick.family = kRunCc[spellIdx].family;
+            bestSpell = spellIdx;
+        }
+    }
+    const char* const mark = RunCcMarkFree(r, f, marks);
+    if (pick.unit && !mark)
+    {
+        pick.noMarkEntry = pick.unit->entry;
+        pick.unit = nullptr;
+        pick.bot.clear();
+        pick.family = CcFamily::None;
+    }
+    else if (pick.unit)
+        pick.mark = mark;
+    return pick;
+}
+
+inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
+{
+    return f.autoCc ? RunAutoCcPickOrder(r, f, pullGuid) : PickCcOrderPlan(r, f, pullGuid);
+}
+
 inline const UnitFact* PickCc(const Run& r, const Facts& f, std::uint64_t pullGuid)
 {
     return PickCcOrder(r, f, pullGuid).unit;
+}
+
+// Facts::autoCc, in a fight: the living hostiles engaged with the party that
+// no run cc holds now; while more than the row's threshold of them fight, one
+// auto cc order a tick (kRunCcFightGapMs after the last one) on the best of
+// them (RunAutoCcBetter, RunCcBotFor). Returns true when it sent one.
+inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
+{
+    static_cast<void>(dt); // the spacing clock is RunCcReapplyTick's (it runs first)
+    if (!f.autoCc)
+        return false;
+    if (r.ccAutoOrders >= kRunCcAutoOrdersPerStep)
+    {
+        if (!r.ccAutoNoBotNoted)
+        {
+            r.ccAutoNoBotNoted = true;
+            r.note = "auto cc: " + std::to_string(r.ccAutoOrders) + " orders this step: the budget is spent";
+        }
+        return false;
+    }
+    if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs)
+        return false;
+    std::uint32_t engaged = 0, held = 0;
+    for (const std::vector<UnitFact>* const list : {&f.partyAttackers, &f.raid.walkAttackers})
+        for (const UnitFact& u : *list)
+        {
+            if (!u.guid || !u.hostile || !u.attackable || u.evading)
+                continue;
+            ++engaged;
+            if (u.polymorphed)
+                ++held;
+        }
+    std::uint32_t const threshold = RunAutoCcThreshold(s, f);
+    if (engaged <= held || engaged - held <= threshold)
+        return false;
+    std::unordered_set<std::string> const busy = RunCcHolders(r, f);
+    std::unordered_set<std::string> marks;
+    for (auto const& h : r.ccHolds)
+        if (StepUnit(f, h.first) || FightUnit(f, h.first))
+            marks.insert(h.second.mark);
+    const UnitFact* best = nullptr;
+    const MemberFact* bestBot = nullptr;
+    std::size_t bestSpell = 0;
+    for (const std::vector<UnitFact>* const list : {&f.partyAttackers, &f.raid.walkAttackers})
+        for (const UnitFact& u : *list)
+        {
+            auto const reapplied = r.ccReapplied.find(u.guid);
+            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || r.ccSent.count(u.guid) ||
+                u.partyHits || u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
+                BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
+                (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||
+                r.healerGuardAssigned.count(u.guid) ||
+                (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
+                continue;
+            std::size_t spellIdx = 0;
+            const MemberFact* const bot = RunCcBotFor(r, f, u, busy, spellIdx);
+            if (!bot)
+                continue;
+            if (!best || RunAutoCcBetter(r, u, spellIdx, *best, bestSpell, nullptr))
+            {
+                best = &u;
+                bestBot = bot;
+                bestSpell = spellIdx;
+            }
+        }
+    if (!best || !bestBot)
+        return false;
+    const char* const mark = RunCcMarkFree(r, f, marks);
+    if (!mark)
+        return false;
+    CcPick pick;
+    pick.unit = best;
+    pick.bot = bestBot->name;
+    pick.family = kRunCc[bestSpell].family;
+    pick.mark = mark;
+    RegisterCcOrder(r, pick, best->guid);
+    ++r.ccAutoOrders;
+    r.ccAutoGapMs = 0;
+    order = "cc " + pick.mark + " " + std::to_string(best->guid) + " " + pick.bot;
+    r.note = "auto cc: joiner " + std::to_string(best->entry) + " (" + pick.bot + ": " + RunCcOf(pick.family)->spell +
+        "), engaged " + std::to_string(engaged - held) + " over " + std::to_string(threshold);
+    return true;
+}
+
+// Facts::autoCc, in a fight: a hold whose aura was seen this step and is gone
+// now, on a unit still alive, not hit by the party and not the tank's target,
+// is sent again (same bot, mark and spell) kRunCcReapplyGapMs after the last
+// auto order, at most kRunCcReapplies times a unit a step. A hold whose bot
+// died is dropped, so another bot may take the unit (the same limit counts).
+// Returns true when it sent one.
+inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    if (!f.autoCc)
+        return false;
+    r.ccAutoGapMs += dt;
+    if (r.ccAutoOrders >= kRunCcAutoOrdersPerStep || (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcReapplyGapMs))
+        return false;
+    std::vector<std::uint64_t> deadBots;
+    std::uint64_t guid = 0;
+    Run::CcHold hold;
+    const UnitFact* unit = nullptr;
+    std::uint32_t done = 0;
+    for (auto const& entry : r.ccHolds)
+    {
+        bool botAlive = false;
+        for (const MemberFact& m : f.members)
+            if (m.name == entry.second.bot)
+            {
+                botAlive = true;
+                break;
+            }
+        if (!botAlive)
+        {
+            deadBots.push_back(entry.first);
+            continue;
+        }
+        if (!r.ccLandedSeen.count(entry.first))
+            continue;
+        const UnitFact* const u = FightUnit(f, entry.first);
+        if (!u || u->polymorphed || u->partyHits || u->victimTank || u->guid == f.leadTargetGuid ||
+            (r.focusGuid && u->guid == r.focusGuid))
+            continue;
+        auto const had = r.ccReapplied.find(entry.first);
+        std::uint32_t const times = had == r.ccReapplied.end() ? 0 : had->second;
+        if (times >= kRunCcReapplies)
+            continue;
+        if (!unit || entry.first < guid) // deterministic: the lowest guid of the broken holds
+        {
+            unit = u;
+            guid = entry.first;
+            hold = entry.second;
+            done = times;
+        }
+    }
+    for (std::uint64_t dead : deadBots)
+        r.ccHolds.erase(dead);
+    if (!unit)
+        return false;
+    CcPick pick;
+    pick.unit = unit;
+    pick.bot = hold.bot;
+    pick.family = hold.family;
+    pick.mark = hold.mark;
+    RegisterCcOrder(r, pick, guid);
+    std::uint32_t& count = r.ccReapplied[guid];
+    count = done + 1;
+    ++r.ccAutoOrders;
+    r.ccAutoGapMs = 0;
+    order = "cc " + pick.mark + " " + std::to_string(guid) + " " + pick.bot;
+    const RunCcSpell* const spell = RunCcOf(pick.family);
+    r.note = "auto cc: " + std::to_string(unit->entry) + " broke free: " + (spell ? spell->spell : "") + " again (" +
+        std::to_string(count) + "/" + std::to_string(kRunCcReapplies) + ")";
+    return true;
 }
 
 // The raid icons the run set that the glue clears at the run's end (only
@@ -9053,18 +9618,13 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         // one), where the fight gate checks the aura (CheckCc). A Sap is cast
         // out of combat (the rogue's "sap cc mark"): the pull waits for it
         // (SapWait). One unit per bot, each with its own mark (PickCcOrder).
-        r.ccSent.insert(cc->guid);
-        r.ccHolds[cc->guid] = Run::CcHold{ccPick.bot, ccPick.mark, ccPick.family};
-        r.ccIcons[CcMarkIcon(ccPick.mark)] = cc->guid; // the order moves that icon onto it
-        Run::CcWatch watch;
-        watch.guid = cc->guid;
-        r.ccWatch.push_back(watch);
-        SyncCcWatch(r);
+        RegisterCcOrder(r, ccPick, cc->guid);
         // Still getting the pull ready: the next tick's pull is not counted
         // as a second pull attempt (FightStep's fruitless count).
         EnterPhase(r, Phase::Gather);
-        r.note = "crowd control on " + std::to_string(cc->entry) + " (" + ccPick.bot + ": " +
-            RunCcOf(ccPick.family)->spell + ") before the pull";
+        r.note = f.autoCc ? RunAutoCcMarkNote(r, *cc, ccPick)
+                          : "crowd control on " + std::to_string(cc->entry) + " (" + ccPick.bot + ": " +
+                                RunCcOf(ccPick.family)->spell + ") before the pull";
         order = "cc " + ccPick.mark + " " + std::to_string(cc->guid) + " " + ccPick.bot;
         r.ccOrderMs = 0;
         r.standPullShotGuid = 0; // the pull never went out (the mark goes out first)
@@ -12142,10 +12702,47 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
                 " pulls that killed nothing");
             return;
         }
-        CcPick const ccPick = PickCcOrder(r, f, pick->guid);
+        CcPick ccPick = PickCcOrder(r, f, pick->guid);
+        std::string autoCcNote;
+        if (f.autoCc)
+        {
+            // Automatic crowd control: a mark only while the pull is over the
+            // threshold (or the unit is one the plan lists, offered as today).
+            std::uint32_t const marked = CcMarkedLive(r, f);
+            std::uint32_t const bodies = RunAutoCcBodies(r, f, *pick);
+            std::uint32_t const threshold = RunAutoCcThreshold(s, f);
+            bool const listed = ccPick.unit && r.plan && r.plan->CcRank(ccPick.unit->entry) >= 0;
+            bool const over = bodies > marked && bodies - marked > threshold;
+            if (r.ccAutoOrders >= kRunCcAutoOrdersPerStep)
+            {
+                ccPick = CcPick();
+                if (!r.ccAutoNoBotNoted)
+                {
+                    r.ccAutoNoBotNoted = true;
+                    autoCcNote = "auto cc: " + std::to_string(r.ccAutoOrders) + " orders this step: the budget is spent";
+                }
+            }
+            else if (!over && !listed)
+                ccPick = CcPick();
+            else if (!ccPick.unit && !ccPick.noMarkEntry && over && !r.ccAutoNoBotNoted)
+            {
+                r.ccAutoNoBotNoted = true;
+                autoCcNote = RunAutoCcNoBotNote(r, f, bodies, threshold);
+            }
+        }
+        std::size_t const sentBefore = r.ccSent.size();
         PullUnit(r, f, *pick, order, ccPick.unit, false, dt);
+        if (f.autoCc && r.ccSent.size() > sentBefore)
+            ++r.ccAutoOrders;
         if (ccPick.noMarkEntry && order.compare(0, 9, "pullback ") == 0)
             r.note += "; no free raid mark for crowd control on " + std::to_string(ccPick.noMarkEntry);
+        if (!autoCcNote.empty())
+        {
+            if (order.compare(0, 9, "pullback ") == 0)
+                r.note += "; " + autoCcNote;
+            else
+                r.note = r.note.empty() ? autoCcNote : autoCcNote + "; " + r.note;
+        }
         if (!budgetNote.empty() && r.phase == Phase::AwaitPull)
             r.note = f.pullStand ? budgetNote + "; " + r.note : budgetNote;
         return;
@@ -14577,6 +15174,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
         r.healerGuardOrder.clear();
         r.healerGuardOrderGuid = 0;
         r.healerGuardOrderBot.clear();
+        r.healerGuardAssigned.clear();
         return false;
     }
     r.healerGuardClockMs += dt;
@@ -14604,7 +15202,16 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     // The assignments still in the fight, and the refused tries (an expired assignment joins them).
     prune(r.healerGuardDps, &r.healerGuardTried, true);
     prune(r.healerGuardTried, nullptr, false);
-    std::unordered_set<std::string> const taken = HealerGuardTaken(r);
+    std::unordered_set<std::string> taken = HealerGuardTaken(r);
+    // A bot holding a live unit for the run's crowd control is no guard pick
+    // (Facts::autoCc; with the key off the picks are the plan's own, as before).
+    if (f.autoCc)
+        for (std::string const& holder : RunCcHolders(r, f))
+            taken.insert(holder);
+    // The adds the guard has a bot on now: the fight's crowd control never marks one.
+    r.healerGuardAssigned.clear();
+    for (auto const& sent : r.healerGuardDps)
+        r.healerGuardAssigned.insert(sent.first);
     // The nearest healer add still short of kRaidHealerGuardDps, with its nearest free ranged dps in reach of it.
     const UnitFact* pick = nullptr;
     const MemberFact* dps = nullptr;
@@ -14647,6 +15254,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     // order for the unit's cap either.
     r.healerGuardOrderGuid = pick->guid;
     r.healerGuardOrderBot = dps->name;
+    r.healerGuardAssigned.insert(pick->guid);
     r.healerGuardOrder = "attack " + std::to_string(pick->guid) + " " + dps->name;
     r.note = "fighting: " + dps->name + " takes " + std::to_string(pick->entry) + " off the healer (" +
         Num(pick->distLead) + " yd)";
@@ -14725,7 +15333,12 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         }
     std::unordered_set<std::string> healerTaken;
     if (healerGuardOn)
+    {
         healerTaken = HealerGuardTaken(r);
+        if (f.autoCc)
+            for (std::string const& holder : RunCcHolders(r, f))
+                healerTaken.insert(holder);
+    }
     if (!pick)
         for (const UnitFact& u : f.partyAttackers)
         {
@@ -18266,6 +18879,11 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         ReleaseHoldStands(r, f);
         CheckReach(r, f);
         if (CheckCc(r, f, dt, order))
+            return order;
+        // Automatic crowd control in the fight: a broken hold first, then a joiner (Facts::autoCc).
+        if (RunCcReapplyTick(r, f, dt, order))
+            return order;
+        if (RunAutoCcFightTick(r, f, *s, dt, order))
             return order;
         // A raid member wedged on another floor (its combat dropped above) is summoned before the guard looks: the
         // guard would never send it anywhere while it stands there.
