@@ -56,7 +56,8 @@ struct Unit{unsigned entry;unsigned GetEntry(){return entry;}}boss{15299},glob{1
 Unit* GetViscidusCombatTarget(void*){return &glob;}
 Unit* GetFankrissDpsTarget(void*){return nullptr;}Unit* GetFankrissSpawnTarget(void*){return nullptr;}
 Unit* GetExplicitAttackTarget(){return &boss;}
-Unit* Pick(){void* ai=nullptr;
+bool OrderedOneAtATimeNonPick(void*,void*,Unit*){return false;}
+Unit* Pick(){void* ai=nullptr;void* bot=nullptr;
 '''+prefix+r'''
 return nullptr;}
 int main(){assert(Pick()==&glob);}
