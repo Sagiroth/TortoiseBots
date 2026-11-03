@@ -217,6 +217,7 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+                creators["hurricane channel check"] = [](PlayerbotAI* ai) { return new HurricaneChannelCheckTrigger(ai); };
                 creators["balance mana depleted"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::ENTER_MELEE); };
                 creators["balance mana recovered"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::RETURN_RANGED); };
                 creators["balance mana melee"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::KEEP_MELEE); };
@@ -351,7 +352,6 @@ namespace ai
                 creators["revive"] = [](PlayerbotAI* ai) { return new CastReviveAction(ai); };
                 creators["barkskin"] = [](PlayerbotAI* ai) { return new CastBarkskinAction(ai); };
                 creators["hurricane"] = [](PlayerbotAI* ai) { return new CastHurricaneAction(ai); };
-                creators["hurricane channel check"] = [](PlayerbotAI* ai) { return new HurricaneChannelCheckTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new CastInnervateAction(ai); };
                 creators["tranquility"] = [](PlayerbotAI* ai) { return new CastTranquilityAction(ai); };
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new CastBashOnEnemyHealerAction(ai); };

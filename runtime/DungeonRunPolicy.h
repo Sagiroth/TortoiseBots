@@ -1519,6 +1519,11 @@ struct Facts
     // The teleport return's read of the lead bot's ground (Run::fetchReadWanted): the unpulled hostiles around it
     // with their aggro reach, and points around it on its floor in its sight, nearest first (FetchPoint).
     bool fetchRead = false;
+    // The rescue teleport's read of a plan point (Run::rescueScanWanted): the living, not evading hostile creatures
+    // within kRescueScanYd of the point, with their aggro reach (LiveHostileNearPoint). A rescue never teleports the
+    // lead bot alone onto a point this read holds.
+    bool rescueRead = false;
+    std::vector<StandPackReach> rescueReach;
     std::vector<StandPackReach> fetchReach;
     std::vector<ai::ApproachPoint> fetchSpots;
     // AiPlayerbot.DungeonRunFightForward (default 1): FightForwardTick may leave the moves to a close pack out.
@@ -2293,6 +2298,16 @@ struct Run
     std::set<std::string> fetchGaveUp;
     bool fetchOn = false;
     bool fetchReadWanted = false;
+    // The rescue teleport's read of the point it is armed for (a rescue never sends the lead bot alone onto a point
+    // live hostiles hold): the glue reads the living hostiles around (rescueScanX/Y/Z) on the tick after the request,
+    // Facts::rescueRead, and StrandedTeleportTick refuses the point then. Cleared when the rescue is sent or reset.
+    bool rescueScanWanted = false;
+    float rescueScanX = 0.0f, rescueScanY = 0.0f, rescueScanZ = 0.0f;
+    // The rescue's destination when it is no plan point (the party's spot, the point being held by live hostiles), and
+    // the hold's clock while there is neither a safe point nor a group to join.
+    bool strandParty = false;
+    float strandPartyX = 0.0f, strandPartyY = 0.0f, strandPartyZ = 0.0f;
+    std::uint32_t rescueHoldMs = 0;
     // Summons the portal dropped (UpdateSummonOutcomes): each bot's count as last seen, and this tick's new ones.
     std::unordered_map<std::string, std::uint32_t> summonCancelSeen;
     std::set<std::string> summonCancelled;
@@ -3500,6 +3515,9 @@ inline void ResetStep(Run& r)
     r.strandFromOtherPart = false;
     r.strandMs = 0;
     r.strandSummon = false;
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
+    r.rescueScanWanted = false;
     r.strandSummoned.clear();
     r.strandArrived.clear();
     r.strandSummonTries.clear();
@@ -4218,6 +4236,16 @@ inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (use
 constexpr std::uint32_t kFetchTries = 3;
 constexpr std::uint32_t kFetchRetryMs = 5000;
 constexpr float kFetchClearMarginYd = 3.0f;      // a return point stands this far outside every unpulled unit's reach
+// A point is held by live hostiles when one stands within its own aggro reach plus this much of it (the rescue
+// teleports that must not happen; ZG walk 32: the pack spread 50 yd wider than its plan radius and engaged the lead
+// bot 0.6 yd after a "safe" teleport).
+constexpr float kLiveHostileMarginYd = 8.0f;
+// The glue's scan around a rescue point for those hostiles: a pack's units stand a few tens of yards off it, and the
+// widest aggro reach stays inside this.
+constexpr float kRescueScanYd = 80.0f;
+// A rescue with no safe point (live hostiles) and no out-of-combat member group to join holds this long, then pauses
+// for the party to be brought together.
+constexpr std::uint32_t kRescueHoldMs = 30000;
 constexpr std::uint32_t kStrandSummonTries = 3;  // the stranded lead bot's summons per bot left behind
 
 // Bot-only parties only: a real player would see his party mates teleport.
@@ -4306,6 +4334,44 @@ inline int FetchPoint(const Facts& f, ai::ApproachPoint& point, bool& clear)
         }
     clear = false;
     return -1;
+}
+
+// Where a fetched member is brought back (FarReturnTick): never alone onto a point live hostiles hold. The lead bot's
+// own spot while it lives and is out of combat (FetchPoint moves it off the reach of a pack not pulled yet), else the
+// nearest living member out of combat (a real standing position). False: no such member — the member holds where it is
+// until the party regroups (a revived bot teleported into a fight dies again, and the next fetch finds nobody).
+inline bool FarReturnPoint(const Facts& f, const std::vector<std::string>& due, ai::ApproachPoint& point,
+    std::string& why)
+{
+    why.clear();
+    if (f.leadAlive && !f.leadInCombat)
+    {
+        bool clear = true;
+        int const at = FetchPoint(f, point, clear);
+        if (clear)
+        {
+            if (at >= 0)
+                why = "beside the lead bot, outside the reach of the pack it stands by";
+            return true;
+        }
+    }
+    const MemberFact* best = nullptr;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.name.empty() || m.inCombat || m.attackers > 0 || m.yd >= 1000.0f)
+            continue; // fighting, or on another map
+        if (std::find(due.begin(), due.end(), m.name) != due.end())
+            continue; // one of the members being brought back
+        if (!best || m.yd < best->yd)
+            best = &m;
+    }
+    if (!best)
+        return false;
+    point.x = best->x;
+    point.y = best->y;
+    point.z = best->z;
+    why = "beside " + best->name + ", out of combat";
+    return true;
 }
 
 constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
@@ -7166,6 +7232,9 @@ inline void RearmStrandIfLeadMovedAway(Run& r, const Facts& f)
 inline void StrandFailed(Run& r, const std::string& why)
 {
     StrandCountsForStep(r);
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
+    r.rescueScanWanted = false; // a re-arm asks again
     ++r.strandTries;
     if (r.strandTries < kStrandTries)
     {
@@ -7893,7 +7962,8 @@ inline bool StallFallback(Run& r, const Facts& f, float x, float y, float z, boo
     return false;
 }
 
-inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last);
+inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last,
+    const std::vector<StandPackReach>* live = nullptr);
 inline bool ApproachWalkStuck(Run& r, const Facts& f, float dist, float x, float y, float z);
 
 // The rescue teleport's bounds (StrandedLead's): out of combat, at most once a step, kStrandTries failed tries a step,
@@ -7909,6 +7979,17 @@ inline void RescueDue(Run& r, const Facts& f, std::size_t target)
     StrandCountsForStep(r);
     r.strandDue = true;
     r.strandIdx = target;
+    // The glue reads the live hostiles around the point next tick: StrandedTeleportTick never sends the lead bot
+    // alone onto a point they hold.
+    if (r.plan && target < r.plan->steps.size())
+    {
+        r.rescueScanWanted = true;
+        r.rescueScanX = r.plan->steps[target].x;
+        r.rescueScanY = r.plan->steps[target].y;
+        r.rescueScanZ = r.plan->steps[target].z;
+    }
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
     r.strandX = f.leadX;
     r.strandY = f.leadY;
     r.strandZ = f.leadZ;
@@ -7929,7 +8010,7 @@ inline std::size_t OtherPartSafePoint(const Run& r, const Facts& f)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (!r.plan || last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
-    return SafePointAtOrBefore(r, f.team, last);
+    return SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
 }
 
 // Why the rescue teleport for a lead bot in another part (LeadInOtherPart, which the caller has asked) does not go
@@ -8014,7 +8095,7 @@ inline bool WalkBackStuckRescue(Run& r, const Facts& f, float dist, float x, flo
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
     if (target == static_cast<std::size_t>(-1))
     {
         // Never a teleport beside a live pack: the pause says so.
@@ -11415,10 +11496,72 @@ inline bool WalkBackPackLive(const Run& r, std::size_t i)
     return i >= LiveFrom(r, true) || r.notCleared.count(i) || i < r.startStep;
 }
 
-// Whether (x, y, z) lies within a live pull or boss group's radius plus kPackClearanceYd (PathCrossesUnclearedPack's
-// reach), for the party's team.
-inline bool PointNearLivePack(const Run& r, std::uint32_t team, float x, float y, float z)
+// A live hostile stands within its own aggro reach plus kLiveHostileMarginYd of (x, y, z): the glue's rescue read
+// (Facts::rescueReach: living, not evading creatures with their aggro reach at the party's lowest level). An empty
+// read holds nothing; a read that never came (Facts::rescueRead false) is the caller's to refuse, not this test's.
+inline bool LiveHostileNearPoint(const std::vector<StandPackReach>& reach, float x, float y, float z)
 {
+    for (const StandPackReach& u : reach)
+        if (ai::PlanDistance(x, y, z, u.x, u.y, u.z) <= u.reachYd + kLiveHostileMarginYd)
+            return true;
+    return false;
+}
+
+// The biggest group of the party a rescued lead bot joins when its plan point is held by live hostiles: the living
+// members out of combat (no attackers, on the plan's map), clustered within kGatherYd of each other. The group's point
+// is one member's own spot (a real standing position), the cluster's member nearest the point being replaced on a tie,
+// then the first by name. False: no member stands out of combat (everyone fights or is dead) — the rescue then holds
+// and the party regroups.
+struct MemberGroup
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    float toPoint = 0.0f;
+    std::uint32_t count = 0;
+    std::string nearest;
+};
+inline bool MemberGroupPoint(const Facts& f, float px, float py, float pz, MemberGroup& out)
+{
+    auto const free = [&f](const MemberFact& m)
+    {
+        // The lead bot itself is the one being teleported; another map (yd 1000) cannot be reached.
+        return !m.name.empty() && m.name != f.carrier && !m.inCombat && m.attackers == 0 && m.yd < 1000.0f;
+    };
+    out = MemberGroup();
+    bool found = false;
+    for (const MemberFact& a : f.members)
+    {
+        if (!free(a))
+            continue;
+        std::uint32_t count = 0;
+        for (const MemberFact& b : f.members)
+            if (free(b) && ai::PlanDistance(a.x, a.y, a.z, b.x, b.y, b.z) <= kGatherYd)
+                ++count;
+        float const toPoint = ai::PlanDistance(a.x, a.y, a.z, px, py, pz);
+        bool const better = !found || count > out.count ||
+            (count == out.count &&
+                (toPoint < out.toPoint || (toPoint == out.toPoint && a.name < out.nearest)));
+        if (!better)
+            continue;
+        found = true;
+        out.x = a.x;
+        out.y = a.y;
+        out.z = a.z;
+        out.toPoint = toPoint;
+        out.count = count;
+        out.nearest = a.name;
+    }
+    return found;
+}
+
+// Whether (x, y, z) lies within a live pull or boss group's radius plus kPackClearanceYd (PathCrossesUnclearedPack's
+// reach), for the party's team. `live` (the glue's rescue read): a live hostile within its aggro reach of the point
+// holds it too — the plan's radius says where the pack was authored to stand, not where its units are (ZG walk 32:
+// step 573 lay "clear" of the 574 pack and the lead bot was engaged 0.6 yd after the teleport).
+inline bool PointNearLivePack(const Run& r, std::uint32_t team, float x, float y, float z,
+    const std::vector<StandPackReach>* live = nullptr)
+{
+    if (live && LiveHostileNearPoint(*live, x, y, z))
+        return true;
     if (!r.plan)
         return false;
     for (std::size_t i = 0; i < r.plan->steps.size(); ++i)
@@ -11448,7 +11591,8 @@ inline std::unordered_set<std::size_t> UnclearedForPath(const Run& r)
 // checkpoint (the Opus re-review of a4a16e14: after a wipe the checkpoint is the stand beside the pack that wiped the
 // party, so a search from it found nothing and the rescue teleported there); a direct step still ends the search,
 // so no point behind a navmesh hole is chosen.
-inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_t from, float minYd)
+inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_t from, float minYd,
+    const std::vector<StandPackReach>* live = nullptr)
 {
     if (!r.plan || from >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
@@ -11463,7 +11607,7 @@ inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_
             continue;
         if (minYd > 0.0f && ai::PlanDistance(p.x, p.y, p.z, t.x, t.y, t.z) < minYd)
             continue;
-        if (!PointNearLivePack(r, team, p.x, p.y, p.z))
+        if (!PointNearLivePack(r, team, p.x, p.y, p.z, live))
             return j;
     }
     return static_cast<std::size_t>(-1);
@@ -11471,14 +11615,15 @@ inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_
 
 // A safe point at or before `last`: `last` when no live pack is near it, else the latest plain move point before it
 // that is clear (ClearPointBefore); npos when there is none.
-inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last)
+inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last,
+    const std::vector<StandPackReach>* live)
 {
     if (!r.plan || last >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
     const PlanStep& p = r.plan->steps[last];
-    if (!PointNearLivePack(r, team, p.x, p.y, p.z))
+    if (!PointNearLivePack(r, team, p.x, p.y, p.z, live))
         return last;
-    return ClearPointBefore(r, team, last, 0.0f);
+    return ClearPointBefore(r, team, last, 0.0f, live);
 }
 
 // The straight walk back's target: the safe point (SafePointAtOrBefore), or `last` itself when there is none (the walk
@@ -11528,7 +11673,7 @@ inline bool PlacedRunRescue(Run& r, const Facts& f)
     {
         std::size_t const last = LastReachedBefore(r, r.step);
         if (last != static_cast<std::size_t>(-1) && last >= r.startStep && last < r.plan->steps.size())
-            target = SafePointAtOrBefore(r, f.team, last); // never before the start step (ClearPointBefore's floor)
+            target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr); // never before the start step (ClearPointBefore's floor)
     }
     bool const byTheWipe = target != static_cast<std::size_t>(-1);
     for (std::size_t j = r.startStep; !byTheWipe && j < r.step && j < r.plan->steps.size(); ++j)
@@ -11593,7 +11738,7 @@ inline bool ReplayRescue(Run& r, const Facts& f, const std::string& why)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
     if (target == static_cast<std::size_t>(-1))
         return false; // never a teleport beside a live pack: the replay as before
     const PlanStep& p = r.plan->steps[target];
@@ -11648,7 +11793,7 @@ inline bool BackoffRescue(Run& r, const Facts& f, const std::string& why, std::s
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
     if (target == static_cast<std::size_t>(-1))
         return false; // never a teleport beside a live pack: the backoff as before
     const PlanStep& p = r.plan->steps[target];
@@ -11682,7 +11827,7 @@ inline bool IslandWalkBackRescue(Run& r, const Facts& f, const std::string& why)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
     if (target == static_cast<std::size_t>(-1))
         return false;
     const PlanStep& p = r.plan->steps[target];
@@ -11846,7 +11991,7 @@ inline bool HoleReplayRescue(Run& r, const Facts& f, std::size_t hole)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, f.rescueRead ? &f.rescueReach : nullptr);
     if (target == static_cast<std::size_t>(-1) || target <= hole)
         return false; // a safe point before the hole: the straight walk there is the short way
     const PlanStep& t = r.plan->steps[target];
@@ -11952,21 +12097,29 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         r.strandOn = false;
         r.strandMs = 0;
         EnterPhase(r, Phase::Begin);
-        float const away = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
-        if (away > kArriveYd)
+        float const away = r.strandParty
+            ? ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.strandPartyX, r.strandPartyY, r.strandPartyZ)
+            : ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
+        if (away > (r.strandParty ? kGatherYd : kArriveYd))
         {
-            StrandFailed(r, "the lead bot stands " + Num(away) + " yd from the point after it");
+            StrandFailed(r, "the lead bot stands " + Num(away) + " yd from " + (r.strandParty ? "the party" : "the point") +
+                " after it");
             return true;
         }
         r.strandStep = r.step;
-        NoteCheckpoint(r, r.strandIdx); // the lead bot stands on that point (kArriveYd): past every hole before it
+        if (!r.strandParty)
+            NoteCheckpoint(r, r.strandIdx); // the lead bot stands on that point (kArriveYd): past every hole before it
         r.strandReplay = false; // used: no replay after it
         r.strandBotOnly = false; // used: no player recheck after it
         r.strandFromOtherPart = false; // used: no player pause after it
         r.strandSummon = true;
         r.strandSummoned.clear();
         r.strandSummonMs = 0;
-        r.note = "the lead bot was stranded at " + spot + " with no way back: teleported to " + target;
+        r.note = "the lead bot was stranded at " + spot + " with no way back: teleported " +
+            (r.strandParty ? "to the party, the point it would have gone to is held by live hostiles" : "to " + target);
+        r.strandParty = false;
+        r.rescueScanWanted = false;
+        r.rescueHoldMs = 0;
         return true;
     }
     if (r.strandSummon)
@@ -12069,6 +12222,8 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         r.strandDue = false;
         r.strandBotOnly = false;
         r.strandFromOtherPart = false;
+        r.rescueScanWanted = false; // the rescue is dropped: no more reads of its point
+        r.strandParty = false;
         if (fromOtherPart)
         {
             PauseOtherPart(r, f, OtherPartBlock::Player);
@@ -12090,6 +12245,43 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         return true;
     }
 
+    // The point is held by live hostiles (the glue's read, alive and not evading, within their aggro reach plus
+    // kLiveHostileMarginYd): never send the lead bot there alone (ZG walk 32: step 573 lay "clear" of the 574 pack and
+    // the lead bot was engaged 0.6 yd after the teleport, with the party 360-475 yd away). It joins the biggest group
+    // of members out of combat instead; with none it holds and the party regroups.
+    float tx = p.x, ty = p.y, tz = p.z;
+    std::string chosen = target;
+    if (f.rescueRead && LiveHostileNearPoint(f.rescueReach, p.x, p.y, p.z))
+    {
+        MemberGroup group;
+        if (!MemberGroupPoint(f, p.x, p.y, p.z, group))
+        {
+            r.rescueHoldMs += dt;
+            if (r.rescueHoldMs >= kRescueHoldMs)
+            {
+                Pause(r, "the stranded lead bot has nowhere safe to go: the point of step " +
+                    std::to_string(r.strandIdx + 1) + " is held by live hostiles and no member stands out of combat to " +
+                    "join (put the party together, then .bot run resume)");
+                return true;
+            }
+            r.note = "the lead bot is stranded: the point of step " + std::to_string(r.strandIdx + 1) +
+                " is held by live hostiles and no member stands out of combat to join it to (regrouping)";
+            return true;
+        }
+        r.strandParty = true;
+        r.strandPartyX = group.x;
+        r.strandPartyY = group.y;
+        r.strandPartyZ = group.z;
+        tx = group.x;
+        ty = group.y;
+        tz = group.z;
+        chosen = "the party (" + group.nearest + "'s spot, " + std::to_string(group.count) + " out of combat)";
+    }
+    else
+    {
+        r.strandParty = false;
+        r.rescueHoldMs = 0;
+    }
     // The spot as the facts read it now (the lead bot may have moved on the island); a send keeps strandReplay
     // and strandFromOtherPart (they say what the teleport was, cleared when StrandFailed gives it up or the lead
     // bot arrives).
@@ -12107,8 +12299,9 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     r.passSpotKnown = false;
     r.approachHops = 0;
     r.walkBackRefusals = 0;
-    order = "rescue from " + now + " to " + Num(p.x) + " " + Num(p.y) + " " + Num(p.z);
-    r.note = "the lead bot is stranded at " + now + " with no way back: teleporting it to " + target;
+    order = "rescue from " + now + " to " + Num(tx) + " " + Num(ty) + " " + Num(tz);
+    r.note = "the lead bot is stranded at " + now + " with no way back: teleporting it to " + chosen;
+    r.rescueScanWanted = false; // the read was used (a later rescue asks again)
     return true;
 }
 
@@ -17362,8 +17555,16 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         if (gaveUp.empty() && !due.empty() && f.fetchRead)
         {
             ai::ApproachPoint point;
-            bool clear = true;
-            int const at = FetchPoint(f, point, clear);
+            std::string why;
+            if (!FarReturnPoint(f, due, point, why))
+            {
+                std::string names;
+                for (const std::string& name : due)
+                    names += (names.empty() ? "" : ", ") + name;
+                r.note = "the teleport return waits: no member stands out of combat to bring " + names +
+                    " to (the party is regrouping)";
+                return true;
+            }
             order = "fetch " + Num(point.x) + " " + Num(point.y) + " " + Num(point.z);
             std::string names;
             for (const std::string& name : due)
@@ -17387,9 +17588,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                     std::to_string(kFetchTries) + ")";
             }
             r.note = "teleporting " + names + " back to the lead bot" +
-                (at >= 0 ? std::string(": beside it, outside the reach of the pack it stands by")
-                         : clear ? std::string()
-                                 : std::string(": no point near it is outside the packs' reach, onto the lead bot"));
+                (why.empty() ? std::string() : ": " + why);
             return true;
         }
     }

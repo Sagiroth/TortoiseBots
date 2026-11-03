@@ -12158,6 +12158,152 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
 // teleported to; the walk back that followed could not teleport it a second time (RescueAllowed false), so it gave
 // the point up and the lead bot ended stuck in the river. The latch re-arms, out of combat and in the same step,
 // when the lead bot stands farther than kStrandRearmYd from the point it was teleported to.
+// ZG walk 32 c-r1: after a wipe the lead bot is revived at the graveyard, rescue-teleported alone to step 573 beside
+// the 574 pack and engaged 0.6 yd after it, while the other 19 members stood 360-475 yd away and the healers got no
+// cast off. A rescue never sends the lead bot alone onto a point live hostiles hold: it joins the party's group
+// instead, or holds until the party is together.
+static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f),
+        Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f), Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f),
+        Step(PlanStepKind::Rest)};
+    // A live hostile at the point, its aggro reach 20 yd: kLiveHostileMarginYd makes 28 yd the held radius.
+    std::vector<StandPackReach> live;
+    StandPackReach mob;
+    mob.x = -422.4f;
+    mob.y = 82.4f;
+    mob.z = -172.9f;
+    mob.reachYd = 20.0f;
+    live.push_back(mob);
+    CHECK(LiveHostileNearPoint(live, -422.4f, 82.4f, -172.9f));
+    CHECK(LiveHostileNearPoint(live, -422.4f, 82.4f + 28.0f, -172.9f));
+    CHECK(!LiveHostileNearPoint(live, -422.4f, 82.4f + 29.0f, -172.9f));
+
+    // The plan alone calls the point clear; the live read does not.
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 0);
+        CHECK(SafePointAtOrBefore(r, 2, 1) == 1);
+        CHECK(SafePointAtOrBefore(r, 2, 1, &live) == 0);
+    }
+    // A member group: two members together away from the point, one alone elsewhere.
+    Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
+    MemberFact a = Mem("Aaa", 0);
+    a.x = -900.0f;
+    a.y = 600.0f;
+    a.z = -172.9f;
+    a.yd = 100.0f;
+    MemberFact b = Mem("Bbb", 0);
+    b.x = -905.0f;
+    b.y = 604.0f;
+    b.z = -172.9f;
+    b.yd = 105.0f;
+    MemberFact c = Mem("Ccc", 0);
+    c.x = -300.0f;
+    c.y = 300.0f;
+    c.z = -172.9f;
+    c.yd = 500.0f;
+    f.members = {f.members[0], a, b, c}; // the lead bot, then the party
+    MemberGroup group;
+    CHECK(MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group));
+    CHECK(group.count == 2 && group.nearest == "Aaa");
+    CHECK(group.x == -900.0f && group.y == 600.0f);
+    // Nobody out of combat: no group.
+    f.members[1].inCombat = true;
+    f.members[2].inCombat = true;
+    f.members[3].attackers = 3;
+    CHECK(!MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group));
+    f.members[1].inCombat = false;
+    f.members[2].inCombat = false;
+    f.members[3].attackers = 0;
+
+    // The rescue: the point is held, so the lead bot goes to the party.
+    auto stranded = [&]()
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 0);
+        r.walkBack = true;
+        r.walkBackIdx = 1;
+        r.walkBackStart = 1;
+        r.strandDue = true;
+        r.strandIdx = 1;
+        r.rescueScanWanted = true;
+        r.rescueScanX = -422.4f;
+        r.rescueScanY = 82.4f;
+        r.rescueScanZ = -172.9f;
+        return r;
+    };
+    {
+        Facts g = f;
+        g.rescueRead = true;
+        g.rescueReach = live;
+        Run r = stranded();
+        std::string const order = Tick(r, g);
+        CHECK(order == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+        CHECK(r.note.find("the party (Aaa's spot, 2 out of combat)") != std::string::npos);
+        CHECK(r.strandOn && r.strandParty);
+    }
+    {
+        // No member out of combat: it holds, nothing goes out.
+        Facts g = f;
+        g.rescueRead = true;
+        g.rescueReach = live;
+        g.members[1].inCombat = true;
+        g.members[2].inCombat = true;
+        g.members[3].attackers = 3;
+        Run r = stranded();
+        CHECK(Tick(r, g).empty());
+        CHECK(r.note.find("held by live hostiles and no member stands out of combat") != std::string::npos);
+        CHECK(!r.strandOn);
+        // And after kRescueHoldMs the run pauses for the party to be put together.
+        for (std::uint32_t ms = kTickMs; ms < kRescueHoldMs; ms += kTickMs)
+            Tick(r, g);
+        CHECK(r.state == State::Paused);
+        CHECK(r.note.find("put the party together") != std::string::npos);
+    }
+    {
+        // No live read (the glue did not answer): the plan point stands, as before.
+        Facts g = f;
+        Run r = stranded();
+        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+        CHECK(!r.strandParty);
+    }
+}
+
+// A fetched member (a revived bot, a dropped summon) is never teleported alone into a fight: the lead bot's spot while
+// it lives out of combat, else the nearest member out of combat, else nowhere (it holds where it is).
+static void TestAFetchedMemberIsNotTeleportedIntoAFight()
+{
+    Facts f = Party(0);
+    f.fetchRead = true;
+    ai::ApproachPoint point;
+    std::string why;
+    std::vector<std::string> due = {"Revived"};
+    CHECK(FarReturnPoint(f, due, point, why)); // the lead bot's own spot, nothing near it
+    CHECK(point.x == 0.0f && point.y == 0.0f);
+    CHECK(why.empty());
+    // The lead bot fights: the nearest member out of combat takes the fetch.
+    MemberFact front = Mem("Front", 25);
+    front.inCombat = true;
+    MemberFact back = Mem("Back", 40);
+    MemberFact revived = Mem("Revived", 300);
+    f.members = {front, back, revived};
+    f.leadInCombat = true;
+    CHECK(FarReturnPoint(f, due, point, why));
+    CHECK(point.x == 40.0f);
+    CHECK(why.find("Back") != std::string::npos);
+    // Nobody out of combat: the member holds where it is.
+    back.inCombat = true;
+    f.members[1] = back;
+    CHECK(!FarReturnPoint(f, due, point, why));
+    // The lead bot out of combat again: its spot.
+    f.leadInCombat = false;
+    f.members[1].inCombat = false;
+    CHECK(FarReturnPoint(f, due, point, why));
+    CHECK(point.x == 0.0f);
+}
+
 static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
 {
     DungeonPlan plan;
@@ -32312,6 +32458,8 @@ int main()
     TestStandClearanceIgnoresAnotherStoreyOutOfSight();
     TestStandClearanceJudgesAPatrolByItsLoopStorey();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
+    TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
+    TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();
     TestPullStandNeedsMoreRangeThanTheMargin();

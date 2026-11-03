@@ -10370,6 +10370,63 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     }
 }
 
+// The rescue teleport's read of a plan point (DungeonRun::LiveHostileNearPoint), only while the run asks for it
+// (Run::rescueScanWanted): the living, not evading hostile creatures within kRescueScanYd of the point, with their
+// aggro reach at the party's lowest level. One bounded grid visit around the point, never a load.
+namespace
+{
+struct RescueHostileNear
+{
+    Player* lead;
+    float x, y, z, range;
+    bool operator()(Unit* unit) const
+    {
+        if (!unit || !unit->IsCreature() || !unit->IsAlive() || !unit->GetOwnerGuid().IsEmpty() ||
+            !lead->IsHostileTo(unit))
+            return false;
+        if (static_cast<Creature*>(unit)->IsInEvadeMode())
+            return false;
+        float const dx = unit->GetPositionX() - x, dy = unit->GetPositionY() - y;
+        return dx * dx + dy * dy <= range * range;
+    }
+};
+}
+
+static void ReadRescueFacts(Player* lead, std::vector<Player*> const& bots, float x, float y, float z,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMap() == map && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    std::list<Unit*> found;
+    RescueHostileNear check{ lead, x, y, z, kRescueScanYd };
+    MaNGOS::UnitListSearcher<RescueHostileNear> searcher(found, check);
+    Cell::VisitAllObjects(x, y, map, searcher, kRescueScanYd, true);
+    for (Unit* unit : found)
+    {
+        Creature* const creature = unit->ToCreature();
+        if (!creature)
+            continue;
+        ai::AggroMob mob;
+        mob.level = creature->GetLevel();
+        mob.detectionYd = creature->GetDetectionRange();
+        StandPackReach reach;
+        reach.entry = creature->GetEntry();
+        reach.x = creature->GetPositionX();
+        reach.y = creature->GetPositionY();
+        reach.z = creature->GetPositionZ();
+        reach.reachYd = ai::AggroRadius(mob, lowest, rate);
+        f.rescueReach.push_back(reach);
+    }
+    f.rescueRead = true;
+}
+
 // The teleport return's read of the lead bot's ground (DungeonRun::FetchPoint), only while the run asks for it
 // (Run::fetchReadWanted): the living hostile creatures within kFetchScanYd that are in no fight, with their aggro
 // reach at the party's lowest level, and points on rings around the lead bot (kFetchRingsYd x kFetchRingSteps), on
@@ -10465,6 +10522,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // The teleport return and the stand-still hold (DungeonRun::FarReturnTick, ai::ReturnHoldPolicy).
     f.teleportReturnYd = sPlayerbotAIConfig.runTeleportReturnYd;
     f.reviveHoldYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    // The rescue teleport's read of its point (StrandedTeleportTick): the live hostiles that hold it.
+    if (slot.run.rescueScanWanted && lead->IsAlive() && lead->IsInWorld())
+        ReadRescueFacts(lead, bots, slot.run.rescueScanX, slot.run.rescueScanY, slot.run.rescueScanZ, f);
     if (slot.run.fetchReadWanted && lead->IsAlive() && lead->IsInWorld())
         ReadFetchFacts(lead, bots, f);
     f.fightForward = sPlayerbotAIConfig.dungeonRunFightForward;
