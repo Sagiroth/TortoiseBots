@@ -62,9 +62,14 @@ struct AbilityRow
     bool learnOnGetSkill = false;
 };
 
-inline bool IsProfessionCategory(uint32_t categoryId)
+// The secondary category also holds non-professions (Tauren Racial), so only
+// First Aid, Cooking and Fishing count there.
+inline bool IsProfessionSkill(uint32_t categoryId, uint32_t skillId)
 {
-    return categoryId == kCategoryProfession || categoryId == kCategorySecondary;
+    if (categoryId == kCategoryProfession)
+        return true;
+    return categoryId == kCategorySecondary &&
+        (skillId == kSkillFirstAid || skillId == kSkillCooking || skillId == kSkillFishing);
 }
 
 // Known-recipe filter: the spell is on one of the bot's profession lines,
@@ -73,8 +78,6 @@ inline bool IsProfessionCategory(uint32_t categoryId)
 inline bool IsKnownRecipe(AbilityRow const& ability)
 {
     if (!ability.known || ability.passive)
-        return false;
-    if (ability.learnOnGetSkill)
         return false;
     if (ability.isSkillStep)
         return false;
@@ -127,7 +130,8 @@ struct MissingRow
 // Missing-recipe filter: a profession recipe the bot does not know yet, on a
 // profession it holds, learnable at its current rank (required skill at or
 // below the rank cap), and obtainable (trainer-taught or sold as a recipe
-// item). Recipes with neither source never reach a bot, so they stay hidden.
+// item). reqSkillValue here is the trainer's or the recipe item's required
+// skill; the DBC value is 1 for almost every recipe. Recipes with neither source never reach a bot, so they stay hidden.
 inline bool IsMissingRecipe(AbilityRow const& ability, uint32_t skillMax,
     bool taughtByTrainer, uint32_t recipeItemId)
 {

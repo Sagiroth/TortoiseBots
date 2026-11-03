@@ -37,12 +37,16 @@ static AbilityRow KnownRecipe(uint32_t skillId = 164, uint32_t spellId = 2661)
 
 int main()
 {
-    // Profession lines only: primary (11) and secondary (9) categories pass.
-    CHECK(IsProfessionCategory(11));
-    CHECK(IsProfessionCategory(9));
-    CHECK(!IsProfessionCategory(7));
-    CHECK(!IsProfessionCategory(6));
-    CHECK(!IsProfessionCategory(0));
+    // Profession lines only: every primary profession, and First Aid,
+    // Cooking and Fishing from the secondary category (not Tauren Racial).
+    CHECK(IsProfessionSkill(11, 164));
+    CHECK(IsProfessionSkill(9, kSkillFirstAid));
+    CHECK(IsProfessionSkill(9, kSkillCooking));
+    CHECK(IsProfessionSkill(9, kSkillFishing));
+    CHECK(!IsProfessionSkill(9, 124));
+    CHECK(!IsProfessionSkill(7, 164));
+    CHECK(!IsProfessionSkill(6, 43));
+    CHECK(!IsProfessionSkill(0, 0));
 
     // A known Blacksmithing recipe passes the filter.
     CHECK(IsKnownRecipe(KnownRecipe()));
@@ -59,8 +63,9 @@ int main()
     smelt.maxValue = 55;
     CHECK(IsKnownRecipe(smelt));
 
-    // Rank/learn spells excluded: the Apprentice teaching spell (SKILL_STEP),
-    // a LEARN_SPELL row, and skill-granted rows (learnOnGetSkill).
+    // Rank/learn spells excluded: the Apprentice teaching spell (SKILL_STEP)
+    // and a LEARN_SPELL row. Recipes granted with the skill (Smelt Copper,
+    // Linen Bandage) are real recipes and stay.
     AbilityRow rank = KnownRecipe(164, 9787);
     rank.isSkillStep = true;
     CHECK(!IsKnownRecipe(rank));
@@ -69,7 +74,7 @@ int main()
     CHECK(!IsKnownRecipe(learn));
     AbilityRow granted = KnownRecipe();
     granted.learnOnGetSkill = true;
-    CHECK(!IsKnownRecipe(granted));
+    CHECK(IsKnownRecipe(granted));
 
     // Passives and unknown spells excluded.
     AbilityRow passive = KnownRecipe();

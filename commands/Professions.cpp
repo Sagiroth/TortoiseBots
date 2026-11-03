@@ -24,6 +24,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAI.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -86,40 +87,36 @@ uint32_t RecipeItemFor(uint32_t spellId)
     return found;
 }
 
+// Lowest required skill among this trainer's rows that teach the spell.
 bool TaughtByTrainer(uint32_t spellId, uint32_t trainerType,
-    TrainerSpellData const* spells, Player* bot)
+    TrainerSpellData const* spells, uint32_t& reqSkill)
 {
-    if (!spells || !bot)
+    if (!spells || trainerType != TRAINER_TYPE_TRADESKILLS)
         return false;
-    if (trainerType != TRAINER_TYPE_TRADESKILLS)
-        return false;
+    bool found = false;
     for (auto const& entry : spells->spellList)
     {
         TrainerSpell const* tSpell = &entry.second;
         if (!tSpell || !tSpell->spell)
             continue;
-        SpellEntry const* teaching = sSpellMgr.GetSpellEntry(tSpell->spell);
-        if (!teaching)
+        bool teaches = tSpell->spell == spellId;
+        if (SpellEntry const* teaching = sSpellMgr.GetSpellEntry(tSpell->spell))
+            for (uint32 e = 0; e < MAX_EFFECT_INDEX && !teaches; ++e)
+                teaches = teaching->Effect[e] == SPELL_EFFECT_LEARN_SPELL &&
+                    teaching->EffectTriggerSpell[e] == spellId;
+        if (!teaches)
             continue;
-        for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
-        {
-            if (teaching->Effect[e] != SPELL_EFFECT_LEARN_SPELL ||
-                teaching->EffectTriggerSpell[e] != spellId)
-                continue;
-            if (bot->GetTrainerSpellState(tSpell) != TRAINER_SPELL_RED)
-                return true;
-            return false;
-        }
-        if (tSpell->spell == spellId && bot->GetTrainerSpellState(tSpell) != TRAINER_SPELL_RED)
-            return true;
+        if (!found || tSpell->reqSkillValue < reqSkill)
+            reqSkill = tSpell->reqSkillValue;
+        found = true;
     }
-    return false;
+    return found;
 }
 
 // Any trade-skill trainer anywhere teaching this spell (the bot visits the
 // trainer to learn it; reachability is the travel layer's job, not this
 // listing's). Cached per run like the factory's trainer sweeps.
-bool TaughtByAnyTrainer(uint32_t spellId, Player* bot)
+bool TaughtByAnyTrainer(uint32_t spellId, uint32_t& reqSkill)
 {
     struct TrainerCache
     {
@@ -150,10 +147,17 @@ bool TaughtByAnyTrainer(uint32_t spellId, Player* bot)
         }
         cached = true;
     }
+    bool found = false;
     for (TrainerCache const& entry : tradeskillTrainers)
-        if (TaughtByTrainer(spellId, entry.trainerType, entry.spells, bot))
-            return true;
-    return false;
+    {
+        uint32_t need = 0;
+        if (!TaughtByTrainer(spellId, entry.trainerType, entry.spells, need))
+            continue;
+        if (!found || need < reqSkill)
+            reqSkill = need;
+        found = true;
+    }
+    return found;
 }
 
 void FillAbilityRow(AbilityRow& row, SkillLineAbilityEntry const* ability, Player* bot)
@@ -217,7 +221,7 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
     for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
     {
         SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
-        if (!skill || !IsProfessionCategory(uint32_t(skill->categoryId)))
+        if (!skill || !IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
             continue;
         if (!bot->HasSkill(skill->id))
             continue;
@@ -251,8 +255,17 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
             if (cached == recipeItemCache.end())
                 cached = recipeItemCache.emplace(row.spellId, RecipeItemFor(row.spellId)).first;
             recipeItem = cached->second;
-            if (!IsMissingRecipe(row, skillMax[skillId],
-                TaughtByAnyTrainer(row.spellId, bot), recipeItem))
+            uint32_t trainerSkill = 0;
+            bool const fromTrainer = TaughtByAnyTrainer(row.spellId, trainerSkill);
+            ItemPrototype const* recipeProto = recipeItem ? sObjectMgr.GetItemPrototype(recipeItem) : nullptr;
+            uint32_t const itemSkill = recipeProto ? recipeProto->RequiredSkillRank : 0;
+            if (fromTrainer && recipeProto)
+                row.reqSkillValue = std::min(trainerSkill, itemSkill);
+            else if (fromTrainer)
+                row.reqSkillValue = trainerSkill;
+            else if (recipeProto)
+                row.reqSkillValue = itemSkill;
+            if (!IsMissingRecipe(row, skillMax[skillId], fromTrainer, recipeItem))
                 continue;
             missing.push_back({ row.skillId, row.spellId, row.createdItemId,
                 row.reqSkillValue, recipeItem });
