@@ -7233,11 +7233,11 @@ inline float StandDistance(float lx, float ly, float lz, float x, float y, float
 // The executor's deadband for a `cmd move`: the order puts the lead bot on stay and runs
 // "return to stay position", which acts only beyond GetRange("follow") of the point in raw
 // 3D (StayPointReached, StayArrivalPolicy.h); inside a dungeon that range is
-// AiPlayerbot.RaidFollowDistance, 5.0 yd. A stall that close is a stalled arrival already:
+// AiPlayerbot.RaidFollowDistance, 4.0 yd. A stall that close is a stalled arrival already:
 // StandDistance is never more than the 3D distance, and kStalledArriveYd is wider. (A
 // separate deadband rule, InFollowDeadband, was removed in round 1 of the 442a2bdf review:
 // on the 3D rule it added nothing.)
-static_assert(kStalledArriveYd >= 5.0f, "a stall inside the executor's 5.0 yd stay range must count as arrived");
+static_assert(kStalledArriveYd >= 4.0f, "a stall inside the executor's 4.0 yd stay range must count as arrived");
 
 // A plain `cmd move` the run sent was acked: keep the path type its check saw
 // (RemoteCommander::CheckMove's facts) for the stuck note.
