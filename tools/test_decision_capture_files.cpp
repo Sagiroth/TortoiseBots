@@ -5,6 +5,7 @@
 //       runtime/RunTraceWriter.cpp runtime/DecisionCaptureFiles.cpp -pthread -o /tmp/t
 //   /tmp/t [tmpdir]
 #include "../runtime/DecisionCapture.h"
+#include "../runtime/DecisionCaptureLimits.h"
 #include "DecisionReplay.h"
 #include "DecisionReplayScenario.h"
 
@@ -653,6 +654,59 @@ void TestShutdownLeavesIncomplete()
     CHECK(after->Find("status")->text == "incomplete");
 }
 
+// A rotation whose segment cannot be opened ends the capture; the index must
+// say failed, not complete, and the failure is logged once.
+void TestRotationOpenFailureMarksFailed()
+{
+    std::string const dir = (Root() / "rotation-failure").string();
+    int logs = 0;
+    Harness h = MakeCapture(dir, "20251101T122640Z-zul_gurub-Fionaa", kStart, 1, 512ull * 1024ull * 1024ull,
+        [&logs](std::string const&) { ++logs; });
+    h.sink->SetFailSegmentOpenForTest(true);
+    h.Tick(); // the first record fills a one-byte segment
+    h.Tick(); // rotation: the next file cannot be opened, the recorder stops
+    h.Tick(); // ignored
+    CHECK(h.recorder->Stopped());
+    h.Finish();
+
+    auto index = IndexObj(dir, h.id);
+    CHECK(index->Find("status")->text == "failed");
+    CHECK(logs == 1);
+    CHECK(!std::filesystem::exists(std::filesystem::path(dir) / h.id / "seg-0002.jsonl"));
+    std::vector<std::string> const lines = ReadLines((std::filesystem::path(dir) / h.id / "seg-0001.jsonl").string());
+    CHECK(!lines.empty());
+    CHECK(lines.back().find("\"k\":\"end\"") == std::string::npos);
+}
+
+// Every DecisionCapture limit clamps signed input low, never by wrapping a
+// negative into a uint32 and landing on the high bound.
+void TestLimitClamps()
+{
+    using namespace TortoiseBots::DecisionCapture;
+    CHECK(ClampSegmentMiB(-1) == kMinSegmentMiB);
+    CHECK(ClampSegmentMiB(0) == kMinSegmentMiB);
+    CHECK(ClampSegmentMiB(32) == 32);
+    CHECK(ClampSegmentMiB(100000) == kMaxSegmentMiB);
+
+    CHECK(ClampCaptureMiB(-1, 32) == 32);
+    CHECK(ClampCaptureMiB(16, 32) == 32);
+    CHECK(ClampCaptureMiB(512, 32) == 512);
+    CHECK(ClampCaptureMiB(100000, 32) == kMaxCaptureMiB);
+
+    CHECK(ClampTotalMiB(-1, 512) == 512);
+    CHECK(ClampTotalMiB(256, 512) == 512);
+    CHECK(ClampTotalMiB(4096, 512) == 4096);
+    CHECK(ClampTotalMiB(1000000, 512) == kMaxTotalMiB);
+
+    CHECK(ClampRecordKiB(-1) == kMinRecordKiB);
+    CHECK(ClampRecordKiB(512) == 512);
+    CHECK(ClampRecordKiB(100000) == kMaxRecordKiB);
+
+    CHECK(ClampKeyframeEvery(-1) == kMinKeyframeEvery);
+    CHECK(ClampKeyframeEvery(60) == 60);
+    CHECK(ClampKeyframeEvery(100000) == kMaxKeyframeEvery);
+}
+
 // The whole offline path: the shared scenario recorded through the real
 // recorder and the real file sink into a temp folder, then the segment loaded,
 // cut into a fixture and replayed exactly as `replay_decisions run` does.
@@ -775,6 +829,8 @@ int main()
     TestSweepMeasuresOffWorldThread();
     TestWriterFailureStatus();
     TestShutdownLeavesIncomplete();
+    TestRotationOpenFailureMarksFailed();
+    TestLimitClamps();
     TestFileRoundTrip();
     TestOffCreatesNothing();
     std::cout << "decision capture files: all checks passed\n";

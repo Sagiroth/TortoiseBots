@@ -127,6 +127,8 @@ public:
 
     // Test seam: make the final flush of every segment writer fail.
     void SetFailFinalFlushForTest(bool fail);
+    // Test seam: make the next rotation's segment open fail.
+    void SetFailSegmentOpenForTest(bool fail) { failSegmentOpenForTest_ = fail; }
 
     // Writers still finishing (tests, Shutdown's decision to log).
     std::size_t FinishingWriters() const { return finishing_.size() + (writer_ ? 1 : 0); }
@@ -189,6 +191,7 @@ private:
     bool ended_ = false;
     bool failed_ = false;
     bool failureLogged_ = false;
+    bool failSegmentOpenForTest_ = false;
     bool finalized_ = false;
     std::string status_ = "running";
     std::string endReason_;

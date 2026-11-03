@@ -14,6 +14,7 @@
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/DecisionCaptureLimits.h"
 #include "../../runtime/GossipOrderPolicy.h"
 #include <cerrno>
 #include <cstring>
@@ -723,31 +724,16 @@ bool PlayerbotAIConfig::Initialize()
     // Decision capture (opt-in, test servers): see docs/server/decision-capture.md.
     decisionCapture = config.GetBoolDefault("AiPlayerbot.DecisionCapture.Enabled", false);
     decisionCaptureDir = config.GetStringDefault("AiPlayerbot.DecisionCapture.Dir", "decisions");
-    decisionCaptureSegmentMiB = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.DecisionCapture.SegmentMiB", 32));
-    if (decisionCaptureSegmentMiB < 1)
-        decisionCaptureSegmentMiB = 1;
-    if (decisionCaptureSegmentMiB > 256)
-        decisionCaptureSegmentMiB = 256;
-    decisionCaptureCaptureMiB = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.DecisionCapture.CaptureMiB", 512));
-    if (decisionCaptureCaptureMiB < decisionCaptureSegmentMiB)
-        decisionCaptureCaptureMiB = decisionCaptureSegmentMiB;
-    if (decisionCaptureCaptureMiB > 4096)
-        decisionCaptureCaptureMiB = 4096;
-    decisionCaptureTotalMiB = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.DecisionCapture.TotalMiB", 4096));
-    if (decisionCaptureTotalMiB < decisionCaptureCaptureMiB)
-        decisionCaptureTotalMiB = decisionCaptureCaptureMiB;
-    if (decisionCaptureTotalMiB > 65536)
-        decisionCaptureTotalMiB = 65536;
-    decisionCaptureRecordKiB = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.DecisionCapture.RecordKiB", 512));
-    if (decisionCaptureRecordKiB < 64)
-        decisionCaptureRecordKiB = 64;
-    if (decisionCaptureRecordKiB > 4096)
-        decisionCaptureRecordKiB = 4096;
-    decisionCaptureKeyframeEvery = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.DecisionCapture.KeyframeEvery", 60));
-    if (decisionCaptureKeyframeEvery < 1)
-        decisionCaptureKeyframeEvery = 1;
-    if (decisionCaptureKeyframeEvery > 600)
-        decisionCaptureKeyframeEvery = 600;
+    decisionCaptureSegmentMiB = TortoiseBots::DecisionCapture::ClampSegmentMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.SegmentMiB", 32));
+    decisionCaptureCaptureMiB = TortoiseBots::DecisionCapture::ClampCaptureMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.CaptureMiB", 512), decisionCaptureSegmentMiB);
+    decisionCaptureTotalMiB = TortoiseBots::DecisionCapture::ClampTotalMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.TotalMiB", 4096), decisionCaptureCaptureMiB);
+    decisionCaptureRecordKiB = TortoiseBots::DecisionCapture::ClampRecordKiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.RecordKiB", 512));
+    decisionCaptureKeyframeEvery = TortoiseBots::DecisionCapture::ClampKeyframeEvery(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.KeyframeEvery", 60));
     {
         // Issue #1012: the NPCs `.bot cmd gossip` may talk to. Empty (the default) = off.
         std::string const gossipText = config.GetStringDefault("AiPlayerbot.BotGossipNpcs", "");

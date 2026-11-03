@@ -86,7 +86,7 @@ The capture id is `<UTC yyyymmddThhmmssZ>-<plan>-<commander>`: the plan name and
  "dropped":0}
 ```
 
-`status` is `running` while the capture runs, `incomplete` from the moment it ends until every segment writer has flushed, then `complete`; a writer that failed makes it `failed` and the failure is logged once. The final rewrite carries the bytes and records that actually reached the disk, and `dropped` counts the records lost on the way. A shutdown that does not wait for a busy writer leaves `incomplete` (or `failed`), never a false `complete`. The open segment's `lastSeq`, `records` and `bytes` are what was known at the last index write.
+`status` is `running` while the capture runs, `incomplete` from the moment it ends until every segment writer has flushed, then `complete`; a writer that failed, or a rotation whose next segment cannot be opened (a full disk, a permission change), makes it `failed` and the failure is logged once. The final rewrite carries the bytes and records that actually reached the disk, and `dropped` counts the records lost on the way. A shutdown that does not wait for a busy writer leaves `incomplete` (or `failed`), never a false `complete`. The open segment's `lastSeq`, `records` and `bytes` are what was known at the last index write.
 
 ## Records
 

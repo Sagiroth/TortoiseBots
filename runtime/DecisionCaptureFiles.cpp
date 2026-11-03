@@ -274,7 +274,16 @@ bool FileSink::Push(std::string line)
 bool FileSink::NewSegment(std::uint32_t seg, std::uint64_t firstSeq)
 {
     std::string err;
-    return StartSegment(seg, firstSeq, err);
+    if (!failSegmentOpenForTest_ && StartSegment(seg, firstSeq, err))
+        return true;
+    // The recorder stops on a refused rotation. The current writer is already
+    // closed, so the capture is over: say "failed" rather than let the final
+    // index call a truncated capture complete.
+    if (err.empty())
+        err = "test failure";
+    failed_ = true;
+    LogFailureOnce("segment " + std::to_string(seg) + " not opened: " + err);
+    return false;
 }
 
 void FileSink::SetMap(std::uint32_t map)
