@@ -30168,6 +30168,98 @@ static void TestLinkedDeathNoteFollowsTheGroupHealth()
     CHECK(LinkedDeathNote(r, f, bracket, death).empty());
 }
 
+// The linked_death state notes: one note and one queued row per state change, none on a read that changes nothing.
+// Hold at the start, release armed when every living member is at or below the group's percent, a disarm back to hold,
+// a death while armed releases the group, and an evade (an armed group leaves the engaged units) resets it.
+static void TestLinkedDeathStateNotesOncePerChange()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    UnitFact thekal = Unit(1, 14599, 10);
+    thekal.health = 133250;
+    thekal.maxHealth = 133250;
+    UnitFact lor = Unit(2, 11347, 12);
+    lor.health = 51282;
+    lor.maxHealth = 85470;
+    UnitFact zath = Unit(3, 11348, 9);
+    zath.health = 96138;
+    zath.maxHealth = 106820;
+    f.engagedUnits = {thekal, lor, zath};
+    int bracket = -1;
+    bool death = false;
+    // One read as the glue sees it: the kinds it queued this tick (comma list, "" for none).
+    const auto read = [&]() {
+        LinkedDeathNote(r, f, bracket, death);
+        std::string kinds;
+        for (const Run::LinkedEvent& ev : TakeLinkedEvents(r))
+            kinds += (kinds.empty() ? "" : ",") + ev.kind;
+        return kinds;
+    };
+    const std::string holdNote = "linked_death hold: 14599/11347/11348 at 100 %";
+    CHECK(read() == "hold");
+    CHECK(r.linkedStateNote == holdNote);
+    CHECK(read() == "");                           // the same state: no row, the note stays
+    CHECK(r.linkedStateNote == holdNote);
+    // Every living member at or below 2 %: the release is armed.
+    f.engagedUnits[0].health = 2665;               // 2 %
+    f.engagedUnits[1].health = 1000;               // 1 %
+    f.engagedUnits[2].health = 2136;               // 2 %
+    CHECK(read() == "armed");
+    CHECK(r.linkedStateNote == "linked_death release armed");
+    CHECK(read() == "");
+    // Lor climbs back above the percent: the hold runs again (a state change, so one row and a new note).
+    f.engagedUnits[1].health = 51282;              // 60 %
+    CHECK(read() == "hold");
+    CHECK(r.linkedStateNote == "linked_death hold: 14599/11347/11348 at 60 %");
+    f.engagedUnits[1].health = 1000;               // 1 %
+    CHECK(read() == "armed");
+    // Evade: the armed group leaves the engaged units with no release first. One reset row, and the note says so.
+    f.engagedUnits.clear();
+    CHECK(read() == "reset");
+    CHECK(r.linkedStateNote == "linked_death reset (evade)");
+    CHECK(r.linkedState == Run::LinkedState::None);
+    CHECK(read() == "");
+    // The group re-engages at low health: armed again, then zath dies while armed, which releases the group.
+    f.engagedUnits = {thekal, lor, zath};
+    f.engagedUnits[0].health = 2665;
+    f.engagedUnits[1].health = 1000;
+    f.engagedUnits[2].health = 2136;
+    CHECK(read() == "armed");
+    r.fightMs = 12000;
+    f.engagedUnits.erase(f.engagedUnits.begin() + 2);
+    CHECK(read() == "released");
+    CHECK(r.linkedStateNote == "linked_death released: 3 died first at 12 s");
+    CHECK(death);
+    CHECK(read() == "");                           // released sticks; no second row for the next reads
+    CHECK(r.linkedState == Run::LinkedState::Released);
+    // The key off: the state and its note go, and the group reads nothing.
+    f.linkedDeath = false;
+    CHECK(read() == "");
+    CHECK(r.linkedState == Run::LinkedState::None && r.linkedStateNote.empty());
+}
+
 // The run line: the linked line is appended to what the line already says (never replacing the "fighting" clause), and
 // it stays there across quiet ticks; a bracket move or a member's death updates it.
 static void TestLinkedDeathNoteIsAppendedToTheFightLine()
@@ -30224,6 +30316,7 @@ int main()
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();
     TestLinkedDeathNoteIsAppendedToTheFightLine();
+    TestLinkedDeathStateNotesOncePerChange();
     TestRunArmsAMoveTriggerUntilItFired();
     TestPatrollerOutsideTheRadiusIsWaitedForThenPulled();
     TestPatrollerWaitIsBounded();

@@ -938,5 +938,43 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("r.note += \"; \" + r.linkedNoteText;", RUN_POLICY)
 
 
+class LinkedDeathStateIsLogged(unittest.TestCase):
+    """Walk 29 (two Thekal kills): the burn-order note printed, but no TBM:RUN note and no bot_events row for the hold or
+    the release latch. The run line now carries one sticky note per state change (hold, release armed, released, reset),
+    and the glue logs each change as a BossTacticsLinkedDeath row, gated by bot_events.csv like the other boss rows."""
+
+    def test_each_state_note_is_emitted_by_the_state_step(self):
+        step = body(RUN_POLICY, "inline void LinkedStateStep(")
+        self.assertIn('"linked_death hold: " + list', step)
+        self.assertIn('"linked_death release armed"', step)
+        self.assertIn('"linked_death released: "', step)
+        self.assertIn('"linked_death reset (evade)"', step)
+        # One change per state: the four notes, each through LinkedStateChange (the only place the queue grows).
+        self.assertEqual(step.count("LinkedStateChange("), 4)
+        self.assertIn("if (next == prev)\n        return;", step)
+
+    def test_the_death_note_runs_the_step_once_per_read(self):
+        note = body(RUN_POLICY, "inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)")
+        self.assertEqual(note.count("LinkedStateStep("), 1)
+        self.assertIn("LinkedStateStep(r, group.param, members, newDeaths, hadLiving,", note)
+        # The queue is cleared on every read, and each early exit (no group, not a boss step) drops the state.
+        self.assertIn("r.linkedEvents.clear();", note)
+        self.assertGreaterEqual(note.count("LinkedStateLeave(r);"), 4)
+        # An empty read records no deaths: the whole group leaving the fight is not a death.
+        self.assertIn("if (!members.empty())\n        for (const std::pair<std::uint32_t, std::uint64_t>& was : r.linkedAlive)", note)
+
+    def test_the_run_line_carries_the_sticky_state_note(self):
+        self.assertIn("if (!r.linkedStateNote.empty())\n            r.note += \"; \" + r.linkedStateNote;", RUN_POLICY)
+        self.assertIn("inline std::vector<Run::LinkedEvent> TakeLinkedEvents(Run& r)", RUN_POLICY)
+
+    def test_the_glue_drains_each_tick_and_logs_when_the_log_is_on(self):
+        tick = COMMANDER.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);")
+        drain = COMMANDER.index("TortoiseBots::DungeonRun::TakeLinkedEvents(slot.run)")
+        self.assertLess(tick, drain)
+        self.assertLess(drain, COMMANDER.index("The lead bot says what the run needs on /s", tick))
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', COMMANDER[drain:drain + 400])
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedDeath", event.kind, event.detail);', COMMANDER)
+
+
 if __name__ == "__main__":
     unittest.main()
