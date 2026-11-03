@@ -12,6 +12,7 @@
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/values/PeriodicDamageAura.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/strategy/values/MountValues.h"
@@ -604,6 +605,45 @@ bool CastAuraSpellAction::isUseful()
     }
     return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr,
         aura ? aura->GetAuraDuration() : 0, aura ? aura->GetAuraMaxDuration() : 0);
+}
+
+namespace
+{
+    // Whether the spell applies a periodic damage aura: only a DoT's ticks break a crowd control.
+    bool SpellAppliesPeriodicDamage(uint32 spellId)
+    {
+        SpellEntry const* const info = sServerFacade.LookupSpellInfo(spellId);
+        if (!info)
+            return false;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
+                return true;
+        return false;
+    }
+
+    // A DoT cast at the bot's current target: no periodic damage while that target is a CC mark or under
+    // damage-breakable CC, or the tick breaks the hold the moment it lands (CcDotCastAllowed). The caster's rotation
+    // used to keep Corruption, Immolate or Serpent Sting on its target after the mark went out.
+    bool DotCastAtTarget(PlayerbotAI* ai, Unit* target, uint32 spellId)
+    {
+        if (!ai || !target || !SpellAppliesPeriodicDamage(spellId))
+            return true;
+        CcGuard ccGuard(ai);
+        bool const ccMarkOrControlled = sPlayerbotAIConfig.dungeonRunAutoCc &&
+            (ccGuard.IsCcMarkedUnit(target) || ccGuard.IsCrowdControlledUnit(target));
+        return CcDotCastAllowed(true, sPlayerbotAIConfig.dungeonRunAutoCc, ccGuard.IsHeldCcMark(target),
+            ccMarkOrControlled);
+    }
+}
+
+bool CastMeleeDebuffSpellAction::isUseful()
+{
+    return DotCastAtTarget(ai, GetTarget(), GetSpellID()) && CastAuraSpellAction::isUseful();
+}
+
+bool CastRangedDebuffSpellAction::isUseful()
+{
+    return DotCastAtTarget(ai, GetTarget(), GetSpellID()) && CastAuraSpellAction::isUseful();
 }
 
 bool CastBuffSpellAction::isUseful()

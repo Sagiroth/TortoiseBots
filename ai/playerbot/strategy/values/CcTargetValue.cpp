@@ -98,8 +98,10 @@ public:
             // has dotted: the ticks break the hold the moment it lands (ZG
             // walk 32: joiners dotted by the warlocks' and hunters' DoTs before
             // their mark went out). The order stays on the mark; the cast does
-            // not go out.
-            if (sPlayerbotAIConfig.dungeonRunAutoCc)
+            // not go out. Banish and Fear are exempt, as the legacy pick below
+            // is: a banished unit is immune while the banish lasts, and damage
+            // never breaks a fear.
+            if (sPlayerbotAIConfig.dungeonRunAutoCc && spell != "fear" && spell != "banish")
             {
                 CcGuard ccGuard(ai);
                 if (ccGuard.PartyDotOn(creature))

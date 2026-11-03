@@ -112,12 +112,9 @@ namespace ai
         // such a unit and its CC bot never casts on it (an enemy's aura is no
         // reason to skip it).
         bool PartyDotOn(Unit* unit);
-        // A unit no DoT goes on: a CC mark (the group's Moon, a member's "rti
-        // cc", a bot's "rti cc target") or one already under damage-breakable
-        // CC. The DoT ticks would break the hold the moment it lands.
-        bool NoDotTarget(Unit* unit);
-        // The two halves of NoDotTarget, for the DoT rows' own policy call
-        // (CcDotTargetAllowed): a CC mark, and crowd control right now.
+        // The two halves of the DoT rule (CcDotTargetAllowed): a CC mark (the
+        // group's Moon, a member's "rti cc", a bot's "rti cc target"), and
+        // crowd control right now.
         bool IsCcMarkedUnit(Unit* unit);
         bool IsCrowdControlledUnit(Unit* unit);
         // A unit under the group's damage-breakable crowd control stands inside
