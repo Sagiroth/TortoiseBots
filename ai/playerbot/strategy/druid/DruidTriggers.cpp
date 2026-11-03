@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/actions/EnemyAreaSpell.h"
+#include "playerbot/strategy/values/TargetValue.h"
 #include "playerbot/policy/heal/OocRebirthPolicy.h"
 #include "playerbot/policy/class/BearRagePolicy.h"
 #include "DruidTriggers.h"
@@ -165,4 +167,13 @@ bool SavageBiteTrigger::IsActive()
         return false;
 
     return ShouldSavageBite(AI_VALUE2(uint8, "rage", "self target"), ai->HasAura("clearcasting", bot));
+}
+
+bool HurricaneChannelCheckTrigger::IsActive()
+{
+    Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+    if (!spell || !spell->m_spellInfo || !IsEnemyAreaSpell(spell->m_spellInfo))
+        return false;
+    CcGuard ccGuard(ai);
+    return ccGuard.CcInRunningArea(spell);
 }

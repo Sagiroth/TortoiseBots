@@ -120,6 +120,11 @@ namespace ai
         // (CcDotTargetAllowed): a CC mark, and crowd control right now.
         bool IsCcMarkedUnit(Unit* unit);
         bool IsCrowdControlledUnit(Unit* unit);
+        // A unit under the group's damage-breakable crowd control stands inside
+        // the area of the running channel or ground effect `spell`: it is
+        // cancelled (the spell's cast-start guard only saw the area before the
+        // sheep landed). The area's centre and radius come from the spell data.
+        bool CcInRunningArea(Spell const* spell);
 
     private:
         bool OnlyMarksLeftCached();

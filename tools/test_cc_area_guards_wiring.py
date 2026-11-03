@@ -3,9 +3,14 @@
 The pure rules live in ai/playerbot/strategy/values/CcMarkHoldPolicy.h
 (CcDotTargetAllowed, CcCancelSwingSplashBuff; behaviour in
 tools/test_cc_mark_hold_policy.cpp) and the game-state reads in
-ai/playerbot/strategy/values/TargetValue.cpp (CcGuard::IsCcMarkedUnit and
-CcGuard::IsCrowdControlledUnit). These pins only prove the live code calls them:
+ai/playerbot/strategy/values/TargetValue.cpp (CcGuard::CcInRunningArea,
+CcGuard::PartyDotOn, CcGuard::IsCcMarkedUnit/IsCrowdControlledUnit). These pins
+only prove the live code calls them:
 
+ - a running Rain of Fire, Volley, Blizzard or Hurricane channel is cancelled when
+   a unit under the party's crowd control stands inside its area: the spells'
+   cast-start guard (BreaksCcInArea) ran before the sheep landed, and the channel
+   kept ticking on it;
  - Sweeping Strikes is not started beside a protected enemy, and a running one is
    dropped ("remove sweeping strikes" on the "sweeping strikes near cc" trigger),
    the warrior's copy of the Blade Flurry rule;
@@ -21,6 +26,13 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STRATEGY = ROOT / "ai/playerbot/strategy"
 VALUES = STRATEGY / "values"
+WARLOCK_TRIGGERS = (STRATEGY / "warlock/WarlockTriggers.cpp").read_text()
+HUNTER_TRIGGERS = (STRATEGY / "hunter/HunterTriggers.cpp").read_text()
+MAGE_TRIGGERS = (STRATEGY / "mage/MageTriggers.cpp").read_text()
+DRUID_TRIGGERS = (STRATEGY / "druid/DruidTriggers.cpp").read_text()
+DRUID_TRIGGERS_H = (STRATEGY / "druid/DruidTriggers.h").read_text()
+DRUID_CONTEXT = (STRATEGY / "druid/DruidAiObjectContext.cpp").read_text()
+BALANCE = (STRATEGY / "druid/BalanceDruidStrategy.cpp").read_text()
 WARRIOR_ACTIONS = (STRATEGY / "warrior/WarriorActions.h").read_text()
 WARRIOR_TRIGGERS = (STRATEGY / "warrior/WarriorTriggers.cpp").read_text()
 WARRIOR_TRIGGERS_H = (STRATEGY / "warrior/WarriorTriggers.h").read_text()
@@ -30,11 +42,50 @@ TARGET_VALUE = (VALUES / "TargetValue.cpp").read_text()
 TARGET_VALUE_H = (VALUES / "TargetValue.h").read_text()
 DOT_TARGET = (VALUES / "AttackerWithoutAuraTargetValue.cpp").read_text()
 POLICY = (VALUES / "CcMarkHoldPolicy.h").read_text()
+AREA_SPELL_H = (STRATEGY / "actions/EnemyAreaSpell.h").read_text()
 
 
 def body(text, start, end="\n}\n"):
     i = text.index(start)
     return text[i:text.index(end, i + len(start))]
+
+
+class ChannelCancelWiring(unittest.TestCase):
+    """A running area channel is cancelled when our CC'd unit stands inside it."""
+
+    def test_the_area_guard_reads_the_spell_data_and_the_nearby_targets(self):
+        area = body(TARGET_VALUE, "bool CcGuard::CcInRunningArea(")
+        self.assertIn("EnemyAreaOf(spell->m_spellInfo, atTarget, radius)", area)
+        self.assertIn("spell->m_targets.getDestination(x, y, z)", area)
+        # A crowd-controlled unit attacks nobody: the attackers list the other
+        # guards read cannot see it, so this one reads the sight list.
+        self.assertIn('GetValue<std::list<ObjectGuid>>("possible targets no los")', area)
+        self.assertIn("PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot)", area)
+        self.assertIn("CcInRunningArea(Spell const* spell)", TARGET_VALUE_H)
+        # The shape helper is shared with the cast-start guard's own derivation.
+        self.assertIn("inline bool EnemyAreaOf(SpellEntry const* spellInfo, bool& atTarget, float& radius)", AREA_SPELL_H)
+        self.assertIn("EffectRadiusIndex[i]", AREA_SPELL_H)
+
+    def test_every_area_channel_checks_it(self):
+        for text, name, marker in (
+                (WARLOCK_TRIGGERS, "RainOfFireChannelCheckTrigger", 'uint8 aoeCount = AI_VALUE(uint8, "aoe count");'),
+                (HUNTER_TRIGGERS, "VolleyChannelCheckTrigger", 'return AI_VALUE(uint8, "aoe count") < 2;'),
+                (MAGE_TRIGGERS, "BlizzardChannelCheckTrigger", 'return AI_VALUE(uint8, "attackers count") < 2;')):
+            fn = body(text, "bool %s::IsActive()" % name)
+            self.assertIn("CcGuard ccGuard(ai);", fn)
+            self.assertIn("CcInRunningArea(spell)", fn)
+            # The CC test is the fast veto: it runs before the density count.
+            self.assertLess(fn.index("CcInRunningArea(spell)"), fn.index(marker))
+        # Hurricane had no channel check at all: a new one, keyed on the spell
+        # data (no rank list), on the cancel row.
+        self.assertIn("class HurricaneChannelCheckTrigger", DRUID_TRIGGERS_H)
+        hurricane = body(DRUID_TRIGGERS, "bool HurricaneChannelCheckTrigger::IsActive(")
+        self.assertIn("GetCurrentSpell(CURRENT_CHANNELED_SPELL)", hurricane)
+        self.assertIn("IsEnemyAreaSpell(spell->m_spellInfo)", hurricane)
+        self.assertIn("CcInRunningArea(spell)", hurricane)
+        self.assertIn('creators["hurricane channel check"]', DRUID_CONTEXT)
+        self.assertIn('"hurricane channel check"', BALANCE)
+        self.assertIn('new NextAction("cancel channel"', BALANCE)
 
 
 class SweepingStrikesWiring(unittest.TestCase):
