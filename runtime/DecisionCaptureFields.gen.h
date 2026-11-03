@@ -42,7 +42,7 @@ namespace DecisionCapture {
 #define TB_DCAP_FIELDS_WaitSight(X) X(entry) X(x) X(y) X(z)
 #define TB_DCAP_FIELDS_Member(X) X(dead) X(name) X(rez) X(blocksDruid) X(healer) X(tank) X(inCombat) X(mana) X(rezCost) X(corpseYd) X(placed) X(bodyX) X(bodyY) X(bodyZ) X(x) X(y) X(z) X(seesBody)
 #define TB_DCAP_FIELDS_ApproachPoint(X) X(x) X(y) X(z)
-#define TB_DCAP_FIELDS_BossTacticRow(X) X(map) X(bossEntry) X(kind) X(targetEntry) X(spellId) X(priority) X(param) X(burnOrder) X(hpMin) X(hpMax) X(botAura) X(mode) X(windowSec)
+#define TB_DCAP_FIELDS_BossTacticRow(X) X(map) X(bossEntry) X(kind) X(targetEntry) X(spellId) X(priority) X(param) X(burnOrder) X(hpMin) X(hpMax) X(botAura) X(mode) X(windowSec) X(cycleSpell) X(cycleSec) X(spotX) X(spotY) X(spotZ)
 #define TB_DCAP_FIELDS_DungeonPlan(X) X(name) X(map) X(legs) X(needs) X(steps) X(ccPriority) X(ccAlways) X(killFirst)
 #define TB_DCAP_FIELDS_PlanLeg(X) X(leg) X(name)
 #define TB_DCAP_FIELDS_PlanLegNeed(X) X(leg) X(item) X(mode) X(pick) X(object) X(name) X(how)
@@ -98,7 +98,7 @@ namespace DecisionCapture {
 #define TB_DCAP_ENUMVALUES_Run_LinkedState(X) X(0) X(1) X(2) X(3)
 #define TB_DCAP_ENUMVALUES_State(X) X(0) X(1) X(2)
 #define TB_DCAP_ENUMVALUES_RezClass(X) X(0) X(1) X(2) X(3) X(4)
-#define TB_DCAP_ENUMVALUES_BossTacticKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14) X(15)
+#define TB_DCAP_ENUMVALUES_BossTacticKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14) X(15) X(16) X(17) X(18)
 #define TB_DCAP_ENUMVALUES_LegNeedMode(X) X(0) X(1) X(2) X(3)
 #define TB_DCAP_ENUMVALUES_PlanStepKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14)
 #define TB_DCAP_ENUMVALUES_TacticMode(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10)
@@ -1176,6 +1176,11 @@ struct BossTacticRow
   botAura: std::uint32_t
   mode: TacticMode
   windowSec: float
+  cycleSpell: std::uint32_t
+  cycleSec: float
+  spotX: float
+  spotY: float
+  spotZ: float
 struct DungeonPlan
   name: std::string
   map: std::uint32_t
@@ -1222,13 +1227,13 @@ enum Run::CombatDropKind: Unattackable=0,FarHeld=1,Wedged=2
 enum Run::LinkedState: None=0,Hold=1,Armed=2,Released=3
 enum State: Running=0,Paused=1,Done=2
 enum RezClass: None=0,Priest=1,Paladin=2,Shaman=3,Druid=4
-enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7,LinkedDeath=8,DpsHoldAfter=9,DispelPriority=10,FleeOnAura=11,FreezeOnAura=12,TauntAfterCast=13,SwapOnAura=14,UseObject=15
+enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7,LinkedDeath=8,DpsHoldAfter=9,DispelPriority=10,FleeOnAura=11,FreezeOnAura=12,TauntAfterCast=13,SwapOnAura=14,UseObject=15,SeekAura=16,PullGate=17,Spread=18
 enum LegNeedMode: None=0,Optional=1,Door=2,Blocking=3
 enum PlanStepKind: None=0,Move=1,MoveDirect=2,Pull=3,Boss=4,Loot=5,Open=6,UseItem=7,WaitObject=8,WaitClear=9,Rest=10,Ritual=11,Hold=12,Gossip=13,UseOn=14
 enum TacticMode: Default=0,Now=1,Clear=2,Never=3,Away=4,ToTank=5,Engage=6,Blink=7,UntilTank=8,Invalid=9,TankAnchor=10
 )TBSCHEMA";
 
-inline constexpr char kDecisionSchemaHash[] = "c23f848b392d1ece";
+inline constexpr char kDecisionSchemaHash[] = "91ac73999bb08412";
 
 struct DecisionSampleField
 {
@@ -1412,7 +1417,7 @@ inline constexpr DecisionSampleField kDecisionSamples_ApproachPoint[] = {
 };
 
 inline constexpr DecisionSampleField kDecisionSamples_BossTacticRow[] = {
-    {"map", R"TBSAMPLE(7)TBSAMPLE"}, {"bossEntry", R"TBSAMPLE(7)TBSAMPLE"}, {"kind", R"TBSAMPLE(1)TBSAMPLE"}, {"targetEntry", R"TBSAMPLE(7)TBSAMPLE"}, {"spellId", R"TBSAMPLE(7)TBSAMPLE"}, {"priority", R"TBSAMPLE(7)TBSAMPLE"}, {"param", R"TBSAMPLE(1.5)TBSAMPLE"}, {"burnOrder", R"TBSAMPLE([7])TBSAMPLE"}, {"hpMin", R"TBSAMPLE(7)TBSAMPLE"}, {"hpMax", R"TBSAMPLE(7)TBSAMPLE"}, {"botAura", R"TBSAMPLE(7)TBSAMPLE"}, {"mode", R"TBSAMPLE(1)TBSAMPLE"}, {"windowSec", R"TBSAMPLE(1.5)TBSAMPLE"},
+    {"map", R"TBSAMPLE(7)TBSAMPLE"}, {"bossEntry", R"TBSAMPLE(7)TBSAMPLE"}, {"kind", R"TBSAMPLE(1)TBSAMPLE"}, {"targetEntry", R"TBSAMPLE(7)TBSAMPLE"}, {"spellId", R"TBSAMPLE(7)TBSAMPLE"}, {"priority", R"TBSAMPLE(7)TBSAMPLE"}, {"param", R"TBSAMPLE(1.5)TBSAMPLE"}, {"burnOrder", R"TBSAMPLE([7])TBSAMPLE"}, {"hpMin", R"TBSAMPLE(7)TBSAMPLE"}, {"hpMax", R"TBSAMPLE(7)TBSAMPLE"}, {"botAura", R"TBSAMPLE(7)TBSAMPLE"}, {"mode", R"TBSAMPLE(1)TBSAMPLE"}, {"windowSec", R"TBSAMPLE(1.5)TBSAMPLE"}, {"cycleSpell", R"TBSAMPLE(7)TBSAMPLE"}, {"cycleSec", R"TBSAMPLE(1.5)TBSAMPLE"}, {"spotX", R"TBSAMPLE(1.5)TBSAMPLE"}, {"spotY", R"TBSAMPLE(1.5)TBSAMPLE"}, {"spotZ", R"TBSAMPLE(1.5)TBSAMPLE"},
     {nullptr, nullptr},
 };
 

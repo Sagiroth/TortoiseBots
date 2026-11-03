@@ -54,6 +54,9 @@ namespace ai
         TauntAfterCast = 13,  // the row's tank index taunts the subject back after the row's trigger
         SwapOnAura = 14,      // the tanks rotate the boss at `param` stacks of the row's aura
         UseObject = 15,       // one bot clicks the ready game object of `target_entry` nearest the boss
+        SeekAura = 16,        // the raid gathers in the cloud of a dying `target_entry` to carry `spell_id`
+        PullGate = 17,        // the run leader never pulls the boss while it wears `spell_id` above the stack band
+        Spread = 18,          // the ranged raid keeps `param` yd apart while the boss fights
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -151,6 +154,12 @@ namespace ai
             return BossTacticKind::SwapOnAura;
         if (text == "use_object")
             return BossTacticKind::UseObject;
+        if (text == "seek_aura")
+            return BossTacticKind::SeekAura;
+        if (text == "pull_gate")
+            return BossTacticKind::PullGate;
+        if (text == "spread")
+            return BossTacticKind::Spread;
         return BossTacticKind::None;
     }
 
@@ -175,6 +184,13 @@ namespace ai
         TacticMode mode = TacticMode::Default;
         // linked_death: the release latch's window in seconds (`window_s`).
         float windowSec = 7.0f;
+        // seek_aura: the spell whose aura on a group member restarts the cycle (`cycle_spell`), the cycle's length in
+        // seconds (`cycle_s`), and the spot the source is held at (`spot_x/y/z`). 0 for every other kind.
+        std::uint32_t cycleSpell = 0;
+        float cycleSec = 0.0f;
+        float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+
+        bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
 
     // Whether the row carries a gate at all. Only the scan-read kinds may: hold_kill, tank_hold, one_at_a_time and
@@ -330,6 +346,32 @@ namespace ai
                 (row.targetEntry == 0 || row.priority > 2 || !(row.param > 0.0f) || row.param > 60.0f ||
                     (row.windowSec != 0.0f && row.windowSec < 10.0f) || (row.spellId == 0 && row.windowSec == 0.0f)))
                 return false;
+            // seek_aura: the source whose death leaves the cloud, the aura the bots must carry, the cycle spell and
+            // length, and the spot the source is held at. `param` is the gather radius around the source, `priority`
+            // the health % the DPS stop at, and the dose window has to fit inside the cycle.
+            if (row.kind == BossTacticKind::SeekAura &&
+                (row.targetEntry == 0 || row.spellId == 0 || row.cycleSpell == 0 || !row.HasSpot() ||
+                    !(row.param > 0.0f) || row.param > 10.0f || row.priority > 99 ||
+                    !(row.cycleSec > 0.0f) || row.cycleSec > 600.0f ||
+                    !(row.windowSec > 0.0f) || row.windowSec > row.cycleSec))
+                return false;
+            // pull_gate: the boss itself (target_entry 0), the stake spell it wears and the seconds the run holds
+            // before it ends. priority is the most stacks allowed.
+            if (row.kind == BossTacticKind::PullGate &&
+                (row.targetEntry != 0 || row.spellId == 0 || !(row.param > 0.0f) || row.param > 300.0f))
+                return false;
+            // spread: the spacing the answer needs, in yards; the spell only documents the splash.
+            if (row.kind == BossTacticKind::Spread &&
+                (row.targetEntry != 0 || row.param < 5.0f || row.param > 30.0f))
+                return false;
+            // The cycle and spot columns are the seek_aura kind's.
+            if (row.kind != BossTacticKind::SeekAura &&
+                (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
+                return false;
+            // A gate is a fight-scan question; these three are not asked it (a pull gate already decides the run).
+            if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
+                    row.kind == BossTacticKind::Spread))
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -355,6 +397,12 @@ namespace ai
                 dispelMaps_[row.map] = true;
             if (row.kind == BossTacticKind::UseObject)
                 useObjectMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::SeekAura)
+                seekAuraMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::PullGate)
+                pullGateMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::Spread)
+                spreadMaps_[row.map] = true;
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -426,6 +474,25 @@ namespace ai
         bool HasUseObjectMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && useObjectMaps_.find(map) != useObjectMaps_.end();
+        }
+
+        // Whether the map has a seek_aura row (the cloud exemption and the seek walk run only there). False before the
+        // seal.
+        bool HasSeekAuraMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && seekAuraMaps_.find(map) != seekAuraMaps_.end();
+        }
+
+        // Whether the map has a pull_gate row (the run leader's gate lookup runs only there). False before the seal.
+        bool HasPullGateMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && pullGateMaps_.find(map) != pullGateMaps_.end();
+        }
+
+        // Whether the map has a spread row (the ranged spacing widens only there). False before the seal.
+        bool HasSpreadMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
         }
 
         // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
@@ -523,6 +590,9 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
         std::unordered_map<std::uint32_t, bool> useObjectMaps_;
+        std::unordered_map<std::uint32_t, bool> seekAuraMaps_;
+        std::unordered_map<std::uint32_t, bool> pullGateMaps_;
+        std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
