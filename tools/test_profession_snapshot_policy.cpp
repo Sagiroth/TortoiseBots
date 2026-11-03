@@ -29,6 +29,7 @@ static AbilityRow KnownRecipe(uint32_t skillId = 164, uint32_t spellId = 2661)
     row.effect0 = kEffectCreateItem;
     row.createdItemId = 2856;
     row.createsItem = true;
+    row.reqSkillValue = 65;
     row.minValue = 75;
     row.maxValue = 105;
     return row;
@@ -96,8 +97,8 @@ int main()
     CHECK(FormatProfession(prof) == "TBM:PROF|164|237|300");
     CHECK(FormatBegin("Dudette") == "TBM:PROF_BEGIN|Dudette");
     AbilityRow recipe = KnownRecipe();
-    CHECK(FormatRecipe(recipe, "ok") == "TBM:RECIPE|164|2661|2856|75|90|105|105|ok");
-    CHECK(FormatRecipe(recipe, "norecipe") == "TBM:RECIPE|164|2661|2856|75|90|105|105|norecipe");
+    CHECK(FormatRecipe(recipe, "ok") == "TBM:RECIPE|164|2661|2856|65|75|90|105|ok");
+    CHECK(FormatRecipe(recipe, "norecipe") == "TBM:RECIPE|164|2661|2856|65|75|90|105|norecipe");
     MissingRow missing{164, 2663, 2859, 100, 2881};
     CHECK(FormatMissing(missing) == "TBM:RECIPE_MISSING|164|2663|2859|100|2881");
     CHECK(FormatEnd("Dudette", 3, 2) == "TBM:PROF_END|Dudette|3|2");

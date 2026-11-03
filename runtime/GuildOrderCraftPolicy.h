@@ -38,13 +38,15 @@ inline OrderReason CraftOrderableVerdict(CraftOrderableInputs const& inputs)
     if (inputs.known && inputs.createsItem && inputs.itemOrderable &&
         !inputs.itemNeedsProfession && inputs.spellRecoveryMs <= kNormalGcdMaxMs)
         return OrderReason::None;
-    if (!inputs.createsItem)
+    if (!inputs.known)
         return OrderReason::NoRecipe;
+    if (!inputs.createsItem)
+        return OrderReason::Enchant;
     if (!inputs.itemOrderable)
-        return OrderReason::NoSource;
+        return OrderReason::Bound;
     if (inputs.itemNeedsProfession)
-        return OrderReason::NoSkill;
-    return OrderReason::Timeout;
+        return OrderReason::NeedsProfession;
+    return OrderReason::Cooldown;
 }
 
 // Wire token for the RECIPE line: "ok" when orderable, else the reason
@@ -60,10 +62,10 @@ inline char const* CraftOrderRefusal(OrderReason verdict)
 {
     switch (verdict)
     {
-        case OrderReason::NoRecipe: return "Enchants cannot be ordered yet.";
-        case OrderReason::NoSource: return "That item is bound when picked up, so the bot cannot hand it over.";
-        case OrderReason::NoSkill:   return "That item needs a profession to use.";
-        case OrderReason::Timeout:  return "That recipe has a long cooldown, so the bot cannot make it on order.";
+        case OrderReason::Enchant:  return "Enchants cannot be ordered yet.";
+        case OrderReason::Bound:    return "That item is bound when picked up, so the bot cannot hand it over.";
+        case OrderReason::NeedsProfession: return "That item needs a profession to use.";
+        case OrderReason::Cooldown: return "That recipe has a long cooldown, so the bot cannot make it on order.";
         default:                    return "The bot does not know that recipe.";
     }
 }

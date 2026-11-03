@@ -13,10 +13,10 @@
 //
 // Colour steps mirror the core's craft skill-up roll
 // (Player::UpdateCraftSkill in the core checkout, same shape as
-// ShouldCraftSpellValue::SpellGivesSkillUp): a recipe is orange while the
-// skill is below the row's min_value, yellow below the midpoint, green below
-// the row's max_value, grey once the skill reaches max_value - the skill-up
-// chance the client colours hits zero there.
+// ShouldCraftSpellValue::SpellGivesSkillUp). Each step is the skill where
+// that colour starts: orange at req_skill_value (learnable), yellow at
+// min_value, green at the midpoint, grey at max_value, where the skill-up
+// chance hits zero.
 
 namespace TortoiseBots
 {
@@ -87,12 +87,12 @@ inline bool IsKnownRecipe(AbilityRow const& ability)
     return ability.createsItem || ability.isEnchant;
 }
 
-inline void SkillSteps(uint32_t minValue, uint32_t maxValue,
+inline void SkillSteps(uint32_t reqSkillValue, uint32_t minValue, uint32_t maxValue,
     uint32_t& orange, uint32_t& yellow, uint32_t& green, uint32_t& grey)
 {
-    orange = minValue;
-    yellow = (minValue + maxValue) / 2;
-    green = maxValue;
+    orange = reqSkillValue;
+    yellow = minValue;
+    green = (minValue + maxValue) / 2;
     grey = maxValue;
 }
 
@@ -107,7 +107,7 @@ inline std::string FormatProfession(ProfessionRow const& row)
 inline std::string FormatRecipe(AbilityRow const& ability, std::string const& order)
 {
     uint32_t orange = 0, yellow = 0, green = 0, grey = 0;
-    SkillSteps(ability.minValue, ability.maxValue, orange, yellow, green, grey);
+    SkillSteps(ability.reqSkillValue, ability.minValue, ability.maxValue, orange, yellow, green, grey);
     char line[112];
     std::snprintf(line, sizeof(line), "TBM:RECIPE|%u|%u|%u|%u|%u|%u|%u|%s",
         ability.skillId, ability.spellId, ability.createdItemId,

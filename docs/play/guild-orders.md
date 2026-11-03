@@ -125,7 +125,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 | `stocked` | Keep order: delivered, the bank holds the ordered amount, watching it (checks about every 10 minutes). |
 | `mailed` | The bank refused, mailed to the guild master. |
 | `noskill` | The item needs a profession the bot lacks, or its skill is too low. |
-| `cant` | No source in level range, no source at all, only elite sources, a craft recipe the bot may not make (unknown, enchant, bound item, profession-locked item, or long cooldown), farm time ran out (`timeout`), no new item in 3 worked hours (`noprogress`), or stuck while crafting or delivering. |
+| `cant` | No source in level range, no source at all, only elite sources, a craft recipe the bot may not make (`norecipe` unknown, `enchant`, `bound` item, `needsprofession` item, or `cooldown` recipe), farm time ran out (`timeout`), no new item in 3 worked hours (`noprogress`), or stuck while crafting or delivering. |
 
 ## Requirements
 

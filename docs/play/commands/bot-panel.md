@@ -167,7 +167,7 @@ Lists a bot's professions with skill values, the recipes it knows, and the recip
 Emits structured protocol records:
 - `TBM:PROF_BEGIN|<bot>`: Starts one bot's reply.
 - `TBM:PROF|<skillId>|<value>|<max>`: One profession with its skill, including Cooking, First Aid and Fishing.
-- `TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>|<order>`: One known recipe. The skill steps let the addon colour it for the bot's current skill; item `0` means an enchant or another spell with no made item. `<order>` is `ok` when the recipe may be ordered as Craft, else the reason (`norecipe` for enchants, `nosource` for bound items, `noskill` for profession-locked items, `timeout` for long-cooldown recipes); old addons ignore the extra field.
+- `TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>|<order>`: One known recipe. Each skill step is the skill where that colour starts, so the addon colours it for the bot's current skill; item `0` means an enchant or another spell with no made item. `<order>` is `ok` when the recipe may be ordered as Craft, else the reason (`enchant` for enchants, `bound` for items bound when picked up, `needsprofession` for items that need a profession to use, `cooldown` for long-cooldown recipes); old addons ignore the extra field.
 - `TBM:RECIPE_MISSING|<skillId>|<spellId>|<itemId or 0>|<reqSkill>|<recipeItemId or 0>`: One recipe of a profession the bot has that it does not know yet and could learn at its current rank. `recipeItemId` is the item that teaches it (`0` when only a trainer teaches it).
 - `TBM:PROF_END|<bot>|<recipeCount>|<missingCount>`: Ends the reply; the addon keeps it only when both counts match.
 
