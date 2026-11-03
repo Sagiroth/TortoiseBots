@@ -59,8 +59,9 @@ command and the reply carries `"id":"<id>"`. Guids are hex strings
 
 ### Tests
 
-`sh check.sh` runs `luac -p`, luacheck and `tests/mock_window_test.lua` (plain Lua with fake
-players and creatures: dz window, skip filter, the friendly rule and its refusals). It does not
+`sh check.sh` runs `luac -p`, luacheck and the mock tests in `tests/` (plain Lua with fake
+players and creatures: `mock_window_test.lua` for the dz window, skip filter, the friendly rule and
+its refusals; `mock_los_test.lua` for `q los`'s shape, limits and eye height). They do not
 need a server; a live check is still the final proof.
 
 ### Limits worth knowing
