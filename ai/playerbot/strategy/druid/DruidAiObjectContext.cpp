@@ -9,6 +9,7 @@
 #include "LevelingDruidStrategy.h"
 #include "playerbot/strategy/NamedObjectContext.h"
 #include "DruidTriggers.h"
+#include "BalanceDruidMana.h"
 #include "RestorationDruidStrategy.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 
@@ -21,6 +22,7 @@ namespace ai
         public:
             StrategyFactoryInternal()
             {
+                creators["oom melee"] = [](PlayerbotAI* ai) { return new OomMeleeStrategy(ai); };
                 creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "faerie fire", "dire bear form"); };
                 creators["aoe"] = [](PlayerbotAI* ai) { return new AoePlaceholderStrategy(ai); };
                 creators["buff"] = [](PlayerbotAI* ai) { return new BuffPlaceholderStrategy(ai); };
@@ -215,6 +217,9 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+                creators["balance mana depleted"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::ENTER_MELEE); };
+                creators["balance mana recovered"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::RETURN_RANGED); };
+                creators["balance mana melee"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::KEEP_MELEE); };
                 creators["omen of clarity"] = [](PlayerbotAI* ai) { return new OmenOfClarityTrigger(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new ThornsTrigger(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new ThornsOnPartyTrigger(ai); };

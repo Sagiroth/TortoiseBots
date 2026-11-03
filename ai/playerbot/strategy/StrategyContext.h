@@ -153,7 +153,6 @@ namespace ai
             creators["debug grind"] = [](PlayerbotAI* ai) { return new DebugGrindStrategy(ai); };
             creators["debug loot"] = [](PlayerbotAI* ai) { return new DebugLootStrategy(ai); };
             creators["debug log"] = [](PlayerbotAI* ai) { return new DebugLogStrategy(ai); };
-            creators["debug llm"] = [](PlayerbotAI* ai) { return new DebugLLMStrategy(ai); };
             creators["debug stuck"] = [](PlayerbotAI* ai) { return new DebugStuckStrategy(ai); };
             creators["debug xp"] = [](PlayerbotAI* ai) { return new DebugXpStrategy(ai); };
             creators["debug equip"] = [](PlayerbotAI* ai) { return new DebugEquipStrategy(ai); };
@@ -174,7 +173,6 @@ namespace ai
             // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
-            creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
             // Dungeon Strategies

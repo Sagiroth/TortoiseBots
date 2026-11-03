@@ -38,7 +38,28 @@
 
   function spellCount(b, name) {
     const spells = (b && b.spells) || [];
+    if (!Array.isArray(spells)) return num(spells[name]) || 0;
     return spells.reduce((s, x) => s + (x.n === name ? num(x.c) || 0 : 0), 0);
+  }
+
+  // Spells the module always lists first (runtime/CombatMonitorPolicy.h AlwaysListed): a full 3-spell row ending in
+  // one of these may still hide casts past the cap, so the Sunder rate cannot be judged on it.
+  const ALWAYS_LISTED = ["Sunder Armor", "Maul", "Swipe", "Taunt", "Revenge", "Shield Block", "Righteous Fury",
+    "Auto Shot", "Hunter's Mark"];
+
+  // A cut spell list cannot prove Sunder went uncast: the bounded short form lists no spells, any other degraded
+  // rung cuts the tail first (only a full 3-spell row ending in an always-listed spell may still hide it).
+  function spellListCut(fight, mt) {
+    if (!fight) return false;
+    if (fight.truncated) return true;
+    const cut = num(fight.spells_cut);
+    if (cut === null || cut <= 0 || cut === 3) {
+      if (cut !== 3) return false;
+      const spells = (mt && mt.spells) || [];
+      if (spells.length < 3) return false;
+      return ALWAYS_LISTED.indexOf(spells[spells.length - 1] && spells[spells.length - 1].n) >= 0;
+    }
+    return true;
   }
 
   function mainTank(fight, layout) {
@@ -64,7 +85,7 @@
     return bots.filter((b) => roleOf(b) === "tank" && b !== mt);
   }
 
-  const LEVEL = { fail: 0, warn: 1, ok: 2 };
+  const LEVEL = { fail: 0, warn: 1, unknown: 1, ok: 2 };
 
   // Deaths right after an enemy's cast, from a finished fight's log: one row per caster name and spell, with how often it
   // was cast and every death in the windowMs after one of those casts (each death once per row, measured from the newest
@@ -113,21 +134,35 @@
     const out = [];
 
     // The main tank's Sunder Armor stack: under 0.8 per 10 s it never reaches 5 in a real fight. Below 0.4 is a
-    // problem, but only past 30 s: a trash pull that short cannot be judged on a 10 s rate.
+    // problem, but only past 30 s: a trash pull that short cannot be judged on a 10 s rate. A cut spell list cannot
+    // prove Sunder went uncast: the bounded short form lists no spells, any other degraded rung cuts the tail first,
+    // so a full 3-spell row ending in an always-listed spell may still hide it.
     if (mt && mt.class === "warrior" && durMs >= LIMITS.minFightMs) {
+      const cut = spellListCut(fight, mt);
       const n = spellCount(mt, "Sunder Armor");
       const shieldSlam = spellCount(mt, "Shield Slam");
-      const rate = (n / secs) * 10;
-      const lvl = rate >= LIMITS.sunderOk ? "ok"
-        : rate < LIMITS.sunderFail && durMs >= LIMITS.sunderFailMinMs ? "fail" : "warn";
-      out.push({
-        id: "mt_sunder",
-        lvl,
-        title: "Main tank Sunder rate",
-        num: rate.toFixed(1) + "/10 s",
-        ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
-          + "×). Under 0.8 per 10 s the stack never reaches 5.",
-      });
+      if (cut) {
+        out.push({
+          id: "mt_sunder",
+          lvl: "unknown",
+          title: "Main tank Sunder rate",
+          num: "unknown (spell list cut)",
+          ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
+            + "×). The payload cut the spell list, so the rate cannot be judged.",
+        });
+      } else {
+        const rate = (n / secs) * 10;
+        const lvl = rate >= LIMITS.sunderOk ? "ok"
+          : rate < LIMITS.sunderFail && durMs >= LIMITS.sunderFailMinMs ? "fail" : "warn";
+        out.push({
+          id: "mt_sunder",
+          lvl,
+          title: "Main tank Sunder rate",
+          num: rate.toFixed(1) + "/10 s",
+          ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
+            + "×). Under 0.8 per 10 s the stack never reaches 5.",
+        });
+      }
     }
 
     // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that. casts counts spells only
@@ -379,9 +414,9 @@
     const list = checks(fight, layout, warnings, extra);
     if (list.some((c) => c.lvl === "fail")) return "fail";
     if (list.some((c) => c.lvl === "warn")) return "warn";
+    if (list.some((c) => c.lvl === "unknown")) return "check";
     return "ok";
   }
-
   // The worst finished fight: most fails, then most warns, then most deaths; ties keep the earliest (the newest fight).
   function worstIndex(details, layout) {
     let best = -1;
@@ -391,7 +426,7 @@
       const list = checks(det.fight, layout, det.warnings || [], det.extra || null);
       const score = [
         list.filter((c) => c.lvl === "fail").length,
-        list.filter((c) => c.lvl === "warn").length,
+        list.filter((c) => c.lvl === "warn" || c.lvl === "unknown").length,
         (det.fight.deaths || []).length,
       ];
       const worse = !bestScore
@@ -625,6 +660,61 @@
       maxDps: dpsRows.length ? dpsRows[0].dps : 0,
     };
   }
+  // The Total view of the role tables: the same rows as roleTables but summed
+  // over a run (/api/v1/combat/run-totals). DPS and HPS divide by the bot's own
+  // fight time (fight_ms), not the run's: a bot that sat half the run out still
+  // shows its own rate. Deaths are the summed count (no per-fight death list
+  // survives the sum); the Tank table's Sunder and taunts read the spells map
+  // the totals carry.
+  function runRoleTables(totals, layout) {
+    totals = totals || {};
+    const bots = Array.isArray(totals.bots) ? totals.bots : [];
+    const deck = { bots: bots.map((b) => ({ name: b.name, role: b.role, taken: b.taken })) };
+    const mt = mainTank(deck, layout);
+    const mtName = mt ? mt.name : (bots.filter((b) => roleOf(b) === "tank")[0] || {}).name || null;
+    const tanks = bots.filter((b) => roleOf(b) === "tank");
+    const tankRows = tanks.filter((b) => b.name === mtName).concat(tanks.filter((b) => b.name !== mtName)).map((b) => ({
+      name: b.name,
+      guid: b.guid,
+      cls: b.class || "",
+      main: b.name === mtName,
+      sunder: spellCount(b, "Sunder Armor"),
+      taunts: TAUNTS.reduce((s, n) => s + spellCount(b, n), 0),
+      taken: num(b.taken) || 0,
+      died: num(b.deaths) || 0,
+    }));
+    const healerRows = bots.filter((b) => roleOf(b) === "heal").map((b) => {
+      const heal = num(b.heal) || 0;
+      const over = num(b.over) || 0;
+      const secs = Math.max(1, (num(b.fight_ms) || 0) / 1000);
+      return {
+        name: b.name,
+        guid: b.guid,
+        cls: b.class || "",
+        hps: heal / secs,
+        overPct: heal + over > 0 ? Math.round((over / (heal + over)) * 100) : 0,
+        casts: num(b.casts) || 0,
+      };
+    }).sort(byDesc("hps"));
+    const dpsRows = bots.filter((b) => roleOf(b) === "dps").map((b) => {
+      const secs = Math.max(1, (num(b.fight_ms) || 0) / 1000);
+      return {
+        name: b.name,
+        guid: b.guid,
+        cls: b.class || "",
+        dps: (num(b.dmg) || 0) / secs,
+        taken: num(b.taken) || 0,
+        casts: num(b.casts) || 0,
+      };
+    }).sort(byDesc("dps"));
+    return {
+      tanks: tankRows,
+      healers: healerRows,
+      dps: dpsRows,
+      maxHps: healerRows.length ? healerRows[0].hps : 0,
+      maxDps: dpsRows.length ? dpsRows[0].dps : 0,
+    };
+  }
 
   function botPanel(fight, name) {
     const bots = (fight && fight.bots) || [];
@@ -646,23 +736,25 @@
     };
   }
 
-  const utcDay = (t) => {
+  const nightOf = (t) => {
     const n = num(t);
     if (n === null) return "";
     const d = new Date(n * 1000);
-    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (d.getHours() < ((typeof FightHistory !== 'undefined' && FightHistory.NIGHT_ROLLOVER_H) || 6)) day.setDate(day.getDate() - 1);
+    return day.getFullYear() + "-" + ("0" + (day.getMonth() + 1)).slice(-2) + "-" + ("0" + day.getDate()).slice(-2);
   };
 
   // Pack numbers count inside a run, not across the whole list: a night restarts at Pack 1 when the session does (a new bind is
-  // a new run), and so does a new day. rows are newest first, as the daemon lists them; walking them backwards gives the oldest
-  // fight of each group Pack 1.
+  // a new run), and so does a new night (06:00 local rollover). rows are newest first, as the daemon lists them; walking them
+  // backwards gives the oldest fight of each group Pack 1.
   function packNumbers(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const out = new Array(list.length);
     const count = {};
     for (let i = list.length - 1; i >= 0; i--) {
       const r = list[i] || {};
-      const day = utcDay(r.start);
+      const day = nightOf(r.start);
       const run = r.session != null && r.session !== "" ? String(r.session) : "";
       const group = day + "|" + run;
       count[group] = (count[group] || 0) + 1;
@@ -691,7 +783,7 @@
       const waiting = !det && !failed && (i < asked || row.key === (st && st.loadingKey) || row.key === (st && st.sel));
       return {
         key: row.key,
-        // Pack N inside the fight's own day and run: the oldest of that group is Pack 1.
+        // Pack N inside the fight's own night and run: the oldest of that group is Pack 1.
         label: "Pack " + packs[i],
         mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
@@ -704,8 +796,90 @@
         detail: det ? "ready" : failed ? "failed" : waiting ? "loading" : "unasked",
         // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
         live: !!row.live,
+        // What the summary alone says (details load only for the fight the reader opens): a wipe or a death is a problem, a
+        // rule the daemon fired is a check, anything else looks clean from the summary.
+        sum: summaryVerdict(row),
+        boss: !!row.boss_name,
+        wipe: row.outcome === "wipe",
+        leg: row.leg != null ? String(row.leg) : "",
+        group: nightOf(row.start) + "|" + (row.session != null && row.session !== "" ? String(row.session) : ""),
+        start: num(row.start) || 0,
       };
     });
+  }
+
+  // A summary's verdict, without the fight's bot rows: the same rule as the tab's red dot (FdTabs.problem) split in two.
+  function summaryVerdict(row) {
+    if (!row || row.live) return null;
+    if (row.outcome === "wipe" || (num(row.deaths) || 0) > 0) return "fail";
+    if ((num(row.warnings) || 0) > 0) return "warn";
+    return "ok";
+  }
+
+  // The worst finished fight by its summary alone: a wipe first, then the most deaths, then the most fired rules; ties keep the
+  // earliest (the newest fight). -1 when every row is clean, so the caller opens on the newest. The debugger picks with this
+  // because it no longer fetches every fight's detail up front.
+  function worstSummaryIndex(rows) {
+    let best = -1;
+    let bestScore = null;
+    (Array.isArray(rows) ? rows : []).forEach((r, i) => {
+      if (!r || r.live || !r.key) return;
+      const score = [r.outcome === "wipe" ? 1 : 0, num(r.deaths) || 0, num(r.warnings) || 0];
+      if (!score[0] && !score[1] && !score[2]) return;
+      const worse = !bestScore || score[0] > bestScore[0]
+        || (score[0] === bestScore[0] && (score[1] > bestScore[1] || (score[1] === bestScore[1] && score[2] > bestScore[2])));
+      if (worse) { best = i; bestScore = score; }
+    });
+    return best;
+  }
+
+  // A card the rail always shows in full: a boss, a wipe, any death, the running fight, and any fight that is not clean (a rule
+  // the daemon fired, or a loaded detail whose checks warn, fail or cannot judge on a cut spell list). Only clean trash folds.
+  function railFull(c) {
+    return !!(c && (c.boss || c.wipe || c.deaths > 0 || c.live || c.sum === "warn" || c.sum === "fail"
+      || c.verdict === "warn" || c.verdict === "fail" || c.verdict === "check"));
+  }
+
+  // The rail in reading order (oldest first): full cards, and runs of two or more clean trash fights folded into one line per
+  // leg and run. cards are railCards' output (newest first). opts: {showAll, open: {foldId: true|false}, sel}. A fold's id is
+  // "fold:" + its run + leg + its NEWEST fight's key; when a new pull joins (or the oldest scrolls out of the window) the id
+  // changes, and the reader's open or close carries over from the fold id naming one of this fold's fights. The fold holding
+  // the selected fight opens by itself.
+  // Items: {kind: "card", card} or {kind: "fold", id, cards (oldest first), open, leg, n, durMs}.
+  function railItems(cards, opts) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    const list = (Array.isArray(cards) ? cards : []).slice().reverse();
+    if (o.showAll) return list.map((card) => ({ kind: "card", card }));
+    const out = [];
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const base = "fold:" + run[0].group + "|" + run[0].leg + "|";
+        const id = base + run[run.length - 1].key;
+        const hasSel = o.sel != null && run.some((c) => c.key === o.sel);
+        let forced = o.open && typeof o.open[id] === "boolean" ? o.open[id] : undefined;
+        if (forced === undefined && o.open) {
+          for (let i = run.length - 2; i >= 0 && forced === undefined; i--) {
+            const v = o.open[base + run[i].key];
+            if (typeof v === "boolean") forced = v;
+          }
+        }
+        out.push({
+          kind: "fold", id, cards: run, leg: run[0].leg || "", n: run.length,
+          durMs: run.reduce((t, c) => t + (c.durMs || 0), 0),
+          // The reader's own open or close wins; untouched, the fold holding the picked fight is open.
+          open: forced !== undefined ? forced : hasSel,
+        });
+      } else run.forEach((card) => out.push({ kind: "card", card }));
+      run = [];
+    };
+    list.forEach((c) => {
+      if (railFull(c)) { flush(); out.push({ kind: "card", card: c }); return; }
+      if (run.length && (run[0].group !== c.group || run[0].leg !== c.leg)) flush();
+      run.push(c);
+    });
+    flush();
+    return out;
   }
 
   // A live fight is one with a hostile unit engaged with the group: a hostile mob whose victim is a group member, or
@@ -796,8 +970,10 @@
 
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS, CAST_DEATH_MS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
-    spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
+    roleOf, spellCount, spellListCut, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
+    roleOf, spellCount, spellListCut, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
+    spellForHit, deathRecaps, timeline, raidFrames, roleTables, runRoleTables, botPanel, railCards, liveEngaged,
+    summaryVerdict, worstSummaryIndex, railFull, railItems, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
 })(typeof self !== "undefined" ? self : this);

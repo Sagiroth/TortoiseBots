@@ -199,13 +199,6 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class RpgAIChatTrigger : public RpgTrigger
-    {
-    public:
-        RpgAIChatTrigger(PlayerbotAI* ai, std::string name = "rpg ai chat") : RpgTrigger(ai, name, checkInterval = 1) {}
-        virtual bool IsActive() override;
-    };
-
     class RpgSpellTrigger : public RpgTrigger
     {
     public:

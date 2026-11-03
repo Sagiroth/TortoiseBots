@@ -2478,7 +2478,6 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     // Mature PlayerbotAI still exposes a donor-shaped population view for
     // perception/social queries. Refresh it from the authoritative native
     // records immediately before any AI update; it never owns sessions.
-    PlayerbotAI::ProcessDelayedPackets();
     sRandomBotFacade.SyncNativePlayers();
     UpdateBots(diff);
     SweepDeadBots(diff);

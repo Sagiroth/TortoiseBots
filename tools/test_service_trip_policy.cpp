@@ -26,6 +26,7 @@ using ai::SERVICE_TRIP_RESCUE_COOLDOWN_SEC;
 using ai::ServiceTripArrivalRadius;
 using ai::ServiceTripIsServicePurpose;
 using ai::ServiceTripRescueEligible;
+using ai::ServiceTripRescueIgnoresForced;
 using ai::ServiceTripStableOffset;
 using ai::WatchedRescueMayStep;
 
@@ -100,6 +101,13 @@ int main()
     CHECK(!ServiceTripRescueEligible(true, true, true, false, true, false, false, true));    // forced
     std::cout << "  [PASS] rescue gate holds every conservative clause\n";
 
+    // The forced "order vendor" leg is picked forced, so its pin is exempt:
+    // the drop unforces and every re-pick re-forces.
+    CHECK(ServiceTripRescueIgnoresForced("order vendor"));
+    CHECK(!ServiceTripRescueIgnoresForced("order focus"));
+    CHECK(!ServiceTripRescueIgnoresForced("guild order"));
+    CHECK(!ServiceTripRescueIgnoresForced("city"));
+    std::cout << "  [PASS] order vendor exempt from the forced rescue veto\n";
     // A watched rescue falls back to the step walk (never silent), except a
     // forced trip, whose guards own it.
     CHECK(WatchedRescueMayStep(true, false));

@@ -22,6 +22,11 @@ assert.strictEqual(rows[0].boss, "Magmadar");
 assert.strictEqual(rows[0].deaths, 1);
 assert.strictEqual(rows[0].warnings, 2);
 assert.deepStrictEqual(F.fightRows(null), []);
+// A fight whose boss changed entry (Thekal 14599 -> 14509) shows the phase after his name; phase 1 (or none) does not.
+assert.strictEqual(F.fightRows([{ id: "55-9", boss_name: "High Priest Thekal", boss_phase: 2, boss_phase_entry: 14509 }])[0].boss,
+  "High Priest Thekal · phase 2 (14509)");
+assert.strictEqual(F.fightRows([{ id: "55-1", boss_name: "Magmadar", boss_phase: 1, boss_phase_entry: 11502 }])[0].boss, "Magmadar");
+assert.strictEqual(F.fightRows([{ id: "55-0", boss_name: "", boss_phase: 2, boss_phase_entry: 14509 }])[0].boss, "–");
 
 // ---- bot table: subgroup then name, dps math
 let table = F.botTable(fight());

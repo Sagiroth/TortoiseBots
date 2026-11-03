@@ -115,37 +115,16 @@ bool OnWorldThread()
     return WorldThread().IsCurrent();
 }
 
-// Issue #846: whether a channel name is the Trade channel, the way
-// PlayerbotAI::GetChatChannelSource decides it ("World" is its own source; a
-// built-in channel's id comes from ObjectMgr's channel table, loaded at startup
-// and read-only afterwards, so any thread may read it). One channel line
-// reaches every member in a row, so the last answer is kept per thread.
-bool IsTradeChannelName(char const* name, size_t length)
-{
-    thread_local std::string lastName;
-    thread_local bool lastIsTrade = false;
-    thread_local bool hasLast = false;
-    if (hasLast && lastName.size() == length && std::memcmp(lastName.data(), name, length) == 0)
-        return lastIsTrade;
-    lastName.assign(name, length);
-    ChatChannelsEntry const* entry = lastName == "World" ? nullptr : sObjectMgr.GetChannelEntryFor(lastName);
-    lastIsTrade = entry && entry->id == ChatChannelId::TRADE;
-    hasLast = true;
-    return lastIsTrade;
-}
-
-// Issue #846: false when the bot's AI would drop this chat line before it
-// does anything with it (runtime/BotChatGate.h), so it is not copied.
-bool BotWantsChat(ObjectGuid botGuid, TortoiseBots::BotChatGate const& gate, WorldPacket const& packet)
+// False when the bot's AI would drop this chat line before it does anything
+// with it (runtime/BotChatGate.h), so it is not copied.
+bool BotWantsChat(TortoiseBots::BotChatGate const& gate, WorldPacket const& packet)
 {
     if (gate.ignoreAllChat)
         return false;
-    if (!gate.ignoreUnaddressedTrade || packet.contents()[0] != CHAT_MSG_CHANNEL)
+    if (!gate.onlyOrders)
         return true;
-    ChannelChatLine line;
-    if (!ParseChannelChatLine(packet.contents(), packet.size(), line))
-        return true;
-    return !BotIgnoresChannelLine(gate, botGuid.GetRawValue(), line, IsTradeChannelName);
+    uint8 const type = packet.contents()[0];
+    return type == CHAT_MSG_PARTY || type == CHAT_MSG_WHISPER;
 }
 
 // Issue #846: drops over a queue's cap are logged at debug level, once per bot
@@ -216,7 +195,7 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
         // channel cannot crowd out invites or loot.
         if (opcode == SMSG_MESSAGECHAT)
         {
-            if (IsBotHandledChatType(packet) && BotWantsChat(botGuid, gate, packet))
+            if (IsBotHandledChatType(packet) && BotWantsChat(gate, packet))
                 DeferredBotChat().Enqueue(botGuid.GetRawValue(), std::make_unique<WorldPacket>(packet));
             return true;
         }

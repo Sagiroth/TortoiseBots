@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"tortoise-observability/internal/combat"
 	"tortoise-observability/web"
 )
 
@@ -118,5 +119,65 @@ func TestTrashDataRouteServed(t *testing.T) {
 		if mob.Entry == 0 || mob.Danger < 1 || len(mob.Roles) == 0 || len(mob.Abilities) == 0 {
 			t.Errorf("mob %s is incomplete: %+v", key, mob)
 		}
+	}
+}
+
+// TestFightsListQueryWired drives the live fights list's handler: no params answer the old list, limit cuts it with X-More,
+// the before cursor pages on, the filters filter, and a bad param is a 400.
+func TestFightsListQueryWired(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))`) {
+		t.Fatal("the route does not serve combatFightsHandler behind requireAuth")
+	}
+	st := combat.NewStore(nil)
+	add := func(id string, start int64, deaths int, boss, outcome string) {
+		f := combat.Fight{ID: id, Commander: "G", Start: start, DurMS: 30000, Outcome: outcome, BossName: boss}
+		for i := 0; i < deaths; i++ {
+			f.Deaths = append(f.Deaths, combat.FightDeath{Name: "T"})
+		}
+		if !st.Add(1, f) {
+			t.Fatalf("Add %s refused", id)
+		}
+	}
+	add("a", 100, 0, "", "end")
+	add("b", 200, 2, "", "end")
+	add("c", 300, 0, "Onyxia", "kill")
+	add("d", 400, 5, "", "wipe")
+	h := combatFightsHandler(st, nil)
+	do := func(q string) (int, []combat.FightSummary, string, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/fights?commander=G"+q, nil))
+		var rows []combat.FightSummary
+		_ = json.Unmarshal(rec.Body.Bytes(), &rows)
+		return rec.Code, rows, rec.Header().Get("X-More"), rec.Body.String()
+	}
+	ids := func(rows []combat.FightSummary) string {
+		out := []string{}
+		for _, r := range rows {
+			out = append(out, r.ID)
+		}
+		return strings.Join(out, " ")
+	}
+	cases := []struct{ q, want, more string }{
+		{"", "d c b a", ""},
+		{"&limit=2", "d c", "1"},
+		{"&before=300", "b a", ""},
+		{"&before=300&limit=1", "b", "1"},
+		{"&since=200&limit=10", "d c b", ""},
+		{"&boss=1", "c", ""},
+		{"&deaths=1", "d b", ""},
+		{"&outcome=wipe", "d", ""},
+	}
+	for _, c := range cases {
+		code, rows, more, body := do(c.q)
+		if code != 200 || ids(rows) != c.want || more != c.more {
+			t.Errorf("%q: %d %q more=%q (%s), want %q more=%q", c.q, code, ids(rows), more, body, c.want, c.more)
+		}
+	}
+	if code, _, _, body := do("&limit=0"); code != 400 || !strings.Contains(body, "bad limit") {
+		t.Errorf("limit=0: %d %s", code, body)
 	}
 }

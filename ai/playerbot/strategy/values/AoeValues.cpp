@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AttackersAoeDensityPolicy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 using namespace ai;
 
 #include <set>
@@ -16,6 +17,26 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
 
     PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
     std::list<ObjectGuid> units = *botAi->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
+
+    // A linked_death member the tactic holds (at or below the row's param % while another living member stands above
+    // it) is left out of the density: an AoE is not aimed at a member that still has to live to the burn.
+    if (sPlayerbotAIConfig.dungeonRunLinkedDeath && botAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+    {
+        const BossLinkedDeathScan scan = ScanBossLinkedDeath(botAi, bot);
+        if (scan.active)
+        {
+            std::list<ObjectGuid> kept;
+            for (const ObjectGuid& guid : units)
+            {
+                // The group's own rule, by guid: an unrelated low-health attacker beside a healthy member is no
+                // member and stays in the density.
+                if (LinkedDeathHoldsMember(scan.param, scan.members, guid.GetRawValue()))
+                    continue;
+                kept.push_back(guid);
+            }
+            units = kept;
+        }
+    }
 
     // Dedup, cluster scoring, tie-breaking and result ordering are the pure
     // rules in AttackersAoeDensityPolicy; lookup and distance stay here.

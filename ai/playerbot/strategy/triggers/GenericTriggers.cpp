@@ -7,6 +7,7 @@
 #include "playerbot/TankAddPickupPolicy.h"
 #include "playerbot/policy/combat/AoeTauntPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
@@ -22,7 +23,9 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/strategy/values/HazardsValue.h"
+#include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/actions/PositionAction.h"
+#include "playerbot/AvoidAoePolicy.h"
 
 #include <regex>
 
@@ -1614,8 +1617,19 @@ bool AoeThreatNearbyTrigger::IsActive()
             SET_AI_VALUE(Hazard, "add hazard", std::move(hazard));
         }
     }
-    // Any one sensor firing is enough; each read is value-cached (dynobj
-    // aura check, 30yd trap scan, 15yd trigger scan).
+    // Any one sensor firing is enough; each read is value-cached (dynobj scan,
+    // dynobj aura check, 30yd trap scan, 15yd trigger scan).
+    // The cloud's own centre test, ahead of the aura check: the step must fire
+    // as the cloud forms, before its first 1 s tick lands. Creature-cast clouds
+    // only, the same sensor the step-out uses, so the open world and PvP
+    // against players are unchanged.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
+    for (AoeHazardCircle const& cloud : clouds)
+    {
+        if (InsideAoeHazard(cloud, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return true;
+    }
     if (AI_VALUE2(bool, "has area debuff", "self target"))
         return true;
     if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())
@@ -2030,4 +2044,13 @@ bool PetAttackTrigger::IsActive()
         return false;
 
     return true;
+}
+
+bool DangerousEliteNearTrigger::IsActive()
+{
+    // Standing elites are already kept out of grind and travel picks by their
+    // spawn point; only one that walks around comes to the bot.
+    Creature* elite = dynamic_cast<Creature*>(AI_VALUE(Unit*, "dangerous elite"));
+    return elite && elite->GetDefaultMovementType() != IDLE_MOTION_TYPE &&
+        bot->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD);
 }

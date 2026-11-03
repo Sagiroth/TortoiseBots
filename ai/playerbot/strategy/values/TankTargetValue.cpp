@@ -7,6 +7,7 @@
 #include "playerbot/FourHorsemenRotationPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/MainTankPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
@@ -74,6 +75,73 @@ namespace
         return FourHorsemenRotationTargetRaw<Unit>(fromIdx, toIdx, getStacks, findHorseman,
             ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT));
     }
+
+    // A loose add a tank_hold row lists (its own entry is the caster of a listed avoid_cast blast,
+    // docs/play/boss-tactics.md) and that is on a non-tank player: the tank takes it before the nearest add. A ZG Mad
+    // Voidwalker held by a non-tank channels, then shocks the whole raid (15 yd, ~1000-1200 shadow) once its target
+    // walks away; a tank on it stops both. The preference is part of the boss tactics tactic, so it is armed only
+    // while the bot runs "boss tactics" in combat: without it a comparison is exactly as on 5ef9e9771 (nearest loose
+    // add first).
+    bool IsTankHoldPickup(PlayerbotAI* ai, Unit* unit)
+    {
+        if (!unit || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(unit->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        bool listed = false;
+        for (const BossTacticRow& row : *rows)
+        {
+            if (row.kind == BossTacticKind::TankHold)
+            {
+                listed = true;
+                break;
+            }
+        }
+        if (!listed)
+            return false;
+        Player* victimPlayer = unit->GetVictim() ? dynamic_cast<Player*>(unit->GetVictim()) : nullptr;
+        return victimPlayer && !ai->IsTank(victimPlayer);
+    }
+
+    // Whether the mark's own entry is listed by a tank_hold row: it is then the loose caster the row covers.
+    bool MarkHasTankHoldRow(Unit* mark)
+    {
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(mark->GetMapId(), mark->GetEntry());
+        if (!rows)
+            return false;
+        for (const BossTacticRow& row : *rows)
+        {
+            if (row.kind == BossTacticKind::TankHold)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a tank_hold pickup stands nearer to this bot than `mark`: the mark then yields, so the tank takes the
+    // loose add the row covers (the tournament's loose bucket ranks pickups first) instead of walking to the skull.
+    bool MarkYieldsToNearerPickup(PlayerbotAI* ai, Player* bot, Unit* mark)
+    {
+        if (!MarkHasTankHoldRow(mark))
+            return false;
+        const std::list<ObjectGuid> candidates =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        bool hasPickup = false;
+        float nearestPickup = 0.0f;
+        for (ObjectGuid const& guid : candidates)
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!unit || unit == mark || !IsTankHoldPickup(ai, unit))
+                continue;
+            float const distance = bot->GetDistance(unit);
+            if (!hasPickup || distance < nearestPickup)
+            {
+                hasPickup = true;
+                nearestPickup = distance;
+            }
+        }
+        return !TankTakesMark(true, hasPickup, nearestPickup, bot->GetDistance(mark));
+    }
 } // namespace
 
 // mod-playerbots FindTankTargetSmartStrategy (a63c6b67, refined by 0a76fc1d):
@@ -111,6 +179,15 @@ public:
     bool IsBetter(Unit* newUnit, Unit* oldUnit)
     {
         Player* bot = ai->GetBot();
+        // A loose add a tank_hold row lists, on a non-tank, outranks the explicit main tank's stickiness below (a ZG
+        // Mad Voidwalker shocks the raid while a non-tank holds it): only when exactly one of the two candidates is
+        // such a pickup, so a tank holding its pickup keeps it. Without the row or the strategy both are false and the
+        // order below is the pre-row one (5ef9e9771).
+        bool const newPickup = IsTankHoldPickup(ai, newUnit);
+        bool const oldPickup = IsTankHoldPickup(ai, oldUnit);
+        if (newPickup != oldPickup)
+            return newPickup;
+
         // Explicit main tank with an off-tank beside it holds the skull-side
         // mob it has (donor TankTargetValue.cpp:76-83): current first, every
         // other candidate after, so loose adds never pull it off. Explicit-
@@ -130,9 +207,11 @@ public:
         if (GetIntervalLevel(newUnit) != GetIntervalLevel(oldUnit))
             return GetIntervalLevel(newUnit) > GetIntervalLevel(oldUnit);
 
-        // Loose adds: nearest first so the pickup is quick.
+        // Loose adds: nearest first, so the pickup is quick (a tank_hold pickup was already decided above).
         if (GetIntervalLevel(newUnit) == 2)
+        {
             return bot->GetDistance(newUnit) < bot->GetDistance(oldUnit);
+        }
 
         // Among mobs the tank already holds, stay on the current one; lowest
         // threat only orders the others, so two held mobs never ping-pong.
@@ -145,7 +224,7 @@ public:
         return newThreat < oldThreat;
     }
 
-    // 2 = the tank holds nothing here (loose add: pick up first, nearest).
+    // 2 = the tank holds nothing here (loose add: a tank_hold caster on a non-tank first, then nearest).
     // 1 = held and in melee reach (finish it). 0 = held but out of reach.
     int GetIntervalLevel(Unit* unit)
     {
@@ -184,6 +263,7 @@ public:
             return ai->IsTank(victimPlayer);
         return false;
     }
+
 };
 
 
@@ -223,6 +303,14 @@ Unit* TankTargetValue::Calculate()
                     rti = nullptr;
             }
         }
+    }
+    if (rti)
+    {
+        // The mark's own entry is a tank_hold caster on a non-tank: a loose add the row covers, nearer than the mark,
+        // is the real pickup. The mark drops so the tournament's loose bucket (pickups first) takes it, instead of the
+        // tank walking to the skull while the Voidwalker stands in the pile.
+        if (MarkYieldsToNearerPickup(ai, bot, rti))
+            rti = nullptr;
     }
     if (rti)
     {

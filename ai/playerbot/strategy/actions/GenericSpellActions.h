@@ -46,10 +46,12 @@ namespace ai
 
         bool HasReachAction() { return !GetReachActionName().empty(); }
 
+        // The spell this action casts, for readers that need the spell rather than the action name (the spell-id value
+        // is keyed by spell name).
+        const std::string& GetSpellName() const { return spellName; }
         const uint32& GetSpellID() const { return spellId; }
 
     protected:
-        const std::string& GetSpellName() const { return spellName; }
         void SetSpellName(const std::string& name, std::string spellIDContextName = "spell id", bool force = false);
         // Downrank swap: point this action at an already-chosen rank id
         // (same spell line) and refresh the cached range. The id is an

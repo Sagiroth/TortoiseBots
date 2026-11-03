@@ -86,6 +86,10 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("remove blade flurry", ACTION_INTERRUPT + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "no energy available",
+        NextAction::array(0, new NextAction("thistle tea", ACTION_HIGH + 5), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2),
                              new NextAction("vanish", ACTION_EMERGENCY + 1),

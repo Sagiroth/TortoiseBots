@@ -15,7 +15,14 @@ const src = fs.readFileSync(process.argv[3], "utf8");
 // ---- css
 const body = css.match(/\.cmd-card\.fd-on \.cmd-body \{([^}]*)\}/);
 assert.ok(body, "the debugger's card body rule exists");
-assert.ok(/"rail centre roles"\s*"rail live roles"/.test(body[1]), "live sits under the centre column, between rail and roles");
+// The live events head the right column: beside the map (the centre spans the rows) and above the Tanks table (roles under it).
+assert.ok(/"rail centre live"\s*"rail centre roles"\s*"rail centre roles"/.test(body[1]), "live sits at the top of the right column, above the roles, beside the centre");
+// Between phone and wide desktop: two columns, live and roles under the centre; on a phone one column, live just above the roles.
+const mid = css.match(/@media \(max-width: 1180px\) and \(min-width: 761px\) \{\s*\.cmd-card\.fd-on \.cmd-body \{([^}]*)\}/);
+assert.ok(mid && /"rail centre"\s*"rail live"\s*"rail roles"/.test(mid[1]) && /grid-template-columns:\s*220px minmax\(0, 1fr\)/.test(mid[1]),
+  "a mid-width card keeps the rail and stacks live above the roles under the centre");
+const phoneLive = css.match(/@media \(max-width: 760px\) \{\s*\.cmd-card\.fd-on \.cmd-body \{([^}]*)\}/);
+assert.ok(phoneLive && /"rail" "centre" "live" "roles"/.test(phoneLive[1]), "a phone stacks rail, centre, live events, roles");
 assert.ok(/"frames frames frames"\s*"controls controls controls"/.test(body[1]), "controls sit under the raid frames, full width");
 const rowsDecl = body[1].match(/grid-template-rows:\s*([^;]*);/);
 assert.ok(rowsDecl, "the body states its rows");
@@ -116,6 +123,22 @@ mctx.cmdPlaceLiveStrip(mcard, false); // back to Live
 assert.strictEqual(mlive.parentElement, mcard, "back on the Live page the strip returns under the fights panel");
 assert.strictEqual(mlive.previousElementSibling.className, "cmd-fights");
 assert.ok(/cmdPlaceLiveStrip\(card, debug\);\s*\n\s*cmdLivePaintEvents\(key\)/.test(src), "the card paint places the strip before it paints the events");
+
+// The card markup puts the live events just before the roles (the reading order matches the right column), and the debugger's
+// placement puts a strip moved out by the Live page back there, not at the body's end.
+const markup = src.slice(src.indexOf("function newCmdCard("), src.indexOf("bindCmdMap(card, key);"));
+assert.ok(markup.indexOf('<section class="cmd-live"') > 0 && markup.indexOf('<section class="cmd-live"') < markup.indexOf('<section class="fd-roles"')
+  && markup.indexOf('<section class="fd-roles"') - markup.indexOf("</section>", markup.indexOf('<section class="cmd-live"')) < 30,
+  "the live events section sits right before the roles in the card markup");
+{
+  const rcard = node("card"), rbody = node("cmd-body", rcard), rrail = node("fd-railcol", rbody), rroles = node("fd-roles", rbody), rlive = node("cmd-live", rcard);
+  rbody.insertBefore = function (c, ref) { if (c.parent) c.parent.kids.splice(c.parent.kids.indexOf(c), 1); c.parent = this; this.kids.splice(this.kids.indexOf(ref), 0, c); return c; };
+  [rcard, rbody, rrail, rroles, rlive].forEach((n) => Object.defineProperty(n, "nextElementSibling", { get() { const i = this.parent ? this.parent.kids.indexOf(this) : -1; return i >= 0 ? this.parent.kids[i + 1] || null : null; } }));
+  mctx.cmdPlaceLiveStrip(rcard, true);
+  assert.deepStrictEqual(rbody.kids.map((k) => k.cls), ["fd-railcol", "cmd-live", "fd-roles"], "debug: the strip goes back right before the roles");
+  mctx.cmdPlaceLiveStrip(rcard, true);
+  assert.deepStrictEqual(rbody.kids.map((k) => k.cls), ["fd-railcol", "cmd-live", "fd-roles"], "and stays there");
+}
 
 // ---- the page must not scroll by itself
 const calls = [];

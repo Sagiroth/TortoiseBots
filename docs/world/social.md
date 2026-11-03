@@ -34,8 +34,6 @@ Autonomous pool bots can participate in cooperative grouping:
 | **Elite & boss veto** | Bots only veto pulls if actively about to leave (bags over 80% full with a sellable stock in the overworld). | See [Dungeons & raids](../play/dungeons-and-raids.md). |
 | **Conjured item sharing** | Mages trade conjured food and water to group members who lack them (give-food/give-water triggers). | See [Sustenance](living-world.md#sustenance--resting). |
 
-When sending party invites to a real player, bots announce the invitation in say or guild chat only if [`AiPlayerbot.InviteChat`](../server/settings/world-population.md#aiplayerbotinvitechat) and [`AiPlayerbot.EnableBroadcasts`](../server/settings/chat.md#aiplayerbotenablebroadcasts) are enabled; bot-to-bot invites stay silent.
-
 <details>
 <summary>Player invites & DND in detail</summary>
 
@@ -69,8 +67,7 @@ Bots establish player-like social organizations across the realm:
 
 - **Guild charters & petition signing:** Unguilded bots with a non-solo grouper and guilder type travel to petitioner NPCs, purchase a Guild Charter for 1000 copper, and solicit signatures from nearby unguilded bots in sight range. Bots approached for a signature decline when already guilded, invited, hired, or an autonomous alt outside the owner's account.
 - **Guild founding:** Once the core's required signature count is collected, the bot registers the charter, names the guild `<BotName>'s Guild`, and displays the guild tag above members' heads.
-- **Member recruitment & caps:** Founded guilds actively invite both unguilded bots and interested human players to join. Bots leave guilds that exceed 1000 members or their preferred size; the guild-management invite path also refuses full guilds at [`AiPlayerbot.GuildMaxBotLimit`](../server/settings/world-population.md#aiplayerbotguildmaxbotlimit) (default `1000`); humans in guild chat see a leave announcement only when broadcasts are on.
-- **Guild chat & socialization:** Bots share achievements, quest milestones, and chatter in guild chat when automated broadcasts are enabled ([`AiPlayerbot.EnableBroadcasts`](../server/settings/chat.md#aiplayerbotenablebroadcasts)).
+- **Member recruitment & caps:** Founded guilds actively invite both unguilded bots and interested human players to join. Bots leave guilds that exceed 1000 members or their preferred size; the guild-management invite path also refuses full guilds at [`AiPlayerbot.GuildMaxBotLimit`](../server/settings/world-population.md#aiplayerbotguildmaxbotlimit) (default `1000`).
 - **Whisper guild management:** Human players in bot guilds can issue direct roster commands by whispering bot officers and guild leaders (`guild invite`, `guild join`, `guild leave`, `guild promote`, `guild demote`, `guild leader`, `guild remove`; see [Whisper Commands](../play/commands/whispers.md#guild-management)).
 - **Configuration:** Guild creation is controlled by [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild).
 - **Reset protection:** A pool reset aborts when a bot-led guild contains even one human player, so the reset never disbands player guilds. For details, see [Pool reset safety guarantees](../server/bot-pool.md#safety-guarantees--multi-phase-execution).

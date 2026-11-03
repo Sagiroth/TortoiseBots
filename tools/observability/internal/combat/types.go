@@ -75,30 +75,43 @@ type FightDeath struct {
 // COMBAT_FIGHT "fight" object (keys identical so the module's own test and
 // this package read the same bytes).
 type Fight struct {
-	ID            string         `json:"id"`
-	Commander     string         `json:"commander"`
-	CommanderGUID uint32         `json:"commander_guid"`
-	Group         uint32         `json:"group"`
-	Map           uint32         `json:"map"`
-	Plan          string         `json:"plan"`
-	Leg           string         `json:"leg"`
-	Step          uint32         `json:"step"`
-	Kind          string         `json:"kind"`
-	Start         int64          `json:"start"`
-	DurMS         uint32         `json:"dur_ms"`
-	Outcome       string         `json:"outcome"`
-	Boss          uint32         `json:"boss"`
-	BossName      string         `json:"boss_name"`
-	Planned       []uint32       `json:"planned"`
-	Engaged       []EngagedEntry `json:"engaged"`
-	Bots          []FightBot     `json:"bots"`
-	Debuffs       FightDebuffs   `json:"debuffs"`
-	Deaths        []FightDeath   `json:"deaths"`
+	ID            string `json:"id"`
+	Commander     string `json:"commander"`
+	CommanderGUID uint32 `json:"commander_guid"`
+	Group         uint32 `json:"group"`
+	Map           uint32 `json:"map"`
+	Plan          string `json:"plan"`
+	Leg           string `json:"leg"`
+	Step          uint32 `json:"step"`
+	Kind          string `json:"kind"`
+	Start         int64  `json:"start"`
+	DurMS         uint32 `json:"dur_ms"`
+	Outcome       string `json:"outcome"`
+	Boss          uint32 `json:"boss"`
+	BossName      string `json:"boss_name"`
+	// The boss's phase (1 + the entry changes the monitor saw of his unit) and the entry he reads now.
+	BossPhase      uint32         `json:"boss_phase"`
+	BossPhaseEntry uint32         `json:"boss_phase_entry"`
+	Planned        []uint32       `json:"planned"`
+	Engaged        []EngagedEntry `json:"engaged"`
+	Bots           []FightBot     `json:"bots"`
+	Debuffs        FightDebuffs   `json:"debuffs"`
+	Deaths         []FightDeath   `json:"deaths"`
 
 	// The live events of the fight, in order: the casts, interrupts, taunts and deaths the module reported while it ran,
 	// copied from the live row when the fight is filed. LogDropped counts the oldest events past the cap.
 	Log        []json.RawMessage `json:"log,omitempty"`
 	LogDropped int               `json:"log_dropped,omitempty"`
+
+	// SpellsCut is the emitter's degraded-build marker (runtime/
+	// CombatMonitorPolicy.h TakeFightPayloads): 0 = full build, otherwise the
+	// per-bot spell cap of the build that was sent. Absent on old payloads.
+	// The 0-spell rung reads 0 like a full build, so it is told apart by
+	// Truncated: the emitter bounds every field there.
+	SpellsCut int `json:"spells_cut,omitempty"`
+	// Truncated marks the emitter's bounded short form (cut texts, at most 40
+	// bot rows, no spells, engaged list, debuff times or deaths).
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // FightDatagram is the COMBAT_FIGHT datagram envelope. The module sends each
@@ -121,10 +134,14 @@ type FightSummary struct {
 	Dur      uint32 `json:"dur"`
 	Outcome  string `json:"outcome"`
 	BossName string `json:"boss_name"`
-	Leg      string `json:"leg"`
-	Step     uint32 `json:"step"`
-	Deaths   int    `json:"deaths"`
-	Warnings int    `json:"warnings"`
+	// The boss's phase and the entry he reads now (0 on a fight with no boss); the dashboard shows
+	// `phase N (E)` after the name when N > 1.
+	BossPhase      uint32 `json:"boss_phase,omitempty"`
+	BossPhaseEntry uint32 `json:"boss_phase_entry,omitempty"`
+	Leg            string `json:"leg"`
+	Step           uint32 `json:"step"`
+	Deaths         int    `json:"deaths"`
+	Warnings       int    `json:"warnings"`
 	// Live marks the row of a fight still running (COMBAT_EVENTS opened it and
 	// no COMBAT_FIGHT has arrived yet): it has no per-bot numbers and no
 	// detail to load, and the card shows it as it happens.
@@ -148,11 +165,12 @@ type Warning struct {
 
 // Rule is one row of rules.json.
 type Rule struct {
-	ID        string `json:"id"`
-	Level     string `json:"level"`
-	Role      string `json:"role"`
-	Class     string `json:"class"`
-	Text      string `json:"text"`
-	MinFightS int    `json:"min_fight_s"`
-	Condition string `json:"condition"`
+	ID            string `json:"id"`
+	Level         string `json:"level"`
+	Role          string `json:"role"`
+	Class         string `json:"class"`
+	Text          string `json:"text"`
+	MinFightS     int    `json:"min_fight_s"`
+	MinRoleMedian int    `json:"min_role_median"`
+	Condition     string `json:"condition"`
 }

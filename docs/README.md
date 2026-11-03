@@ -111,7 +111,6 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Guild order settings](server/settings/guild-orders.md) | Guild bank material withdrawals, guild bank gold, and sub-orders between guild bots. |
 | [Queue settings](server/settings/queues.md) | Dungeon finder backfill intervals and battleground queue parameters. |
 | [Performance settings](server/settings/performance.md) | AI tick time budgets, activity throttling, and core server optimizations. |
-| [Chat settings](server/settings/chat.md) | Automated public broadcasts, frequency throttles, and masterless say chat. |
 | [Logging settings](server/settings/logging.md) | Module verbosity, structured CSV logs, action traces, and UDP telemetry. |
 | [Hire gear sets](reference/hire-gear.md) | Static level-60 hire equipment sets per class and tier. |
 

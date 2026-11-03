@@ -1,11 +1,15 @@
 #pragma once
 
 #include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderRelistPolicy.h"
+#include "runtime/GuildOrderStepHistoryPolicy.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 class Player;
 struct ItemPrototype;
@@ -39,8 +43,9 @@ bool Give(OrderRecord record);
 std::vector<OrderRecord> All();
 
 // Remove the bot's order (cancel, character deleted, guild left). Cancelling
-// a parent removes its whole branch; children keep what they gathered (the
-// bank deposit path stands alone per order).
+// a parent removes its whole branch; a child removed with its quota in the
+// bags keeps its row as a live top-level delivery instead, and the normal
+// bank deposit path stands alone per order.
 bool Cancel(uint32_t botGuidLow);
 // True when the item is reserved for the bot's unfinished order: the order
 // item, the current supply item, or (craft orders) a known-recipe reagent
@@ -106,6 +111,19 @@ void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
     SupplyStep returnStep = SupplyStep::None, OrderReason reason = OrderReason::None, uint32_t goldCount = 0);
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
+// Put one item on the need list without parking: a craft order keeps working
+// while the player owes it something. A working row drops its supply leg so
+// the ladder re-plans around the item, clears any dead-end reason the leg
+// left behind, and records whether the guild bank refused this order.
+void AddNeedItem(uint32_t botGuidLow, uint32_t itemId, uint32_t count, bool bankDenied = false);
+// Replace the list with the player's items the whole-tree walk still names
+// (empty clears it), but only while the stored list still equals `expected`:
+// the walk pruned a snapshot, and a merge or clear in between must win.
+// Returns whether the write landed; a false leaves the caller's copy stale,
+// so it re-reads the row. State and reason never change here: the ladder
+// decides when to park.
+bool ReplaceNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& expected,
+    std::vector<NeedItem> const& items);
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
 void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
 // Guild gold still spendable anywhere on the order's branch: the smallest
@@ -147,6 +165,67 @@ void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId);
 // the consecutive count; the caller moves the ladder down at the visit
 // limit. Map thread only (arrival).
 uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach);
+// Either auction clock ran out: the bot arrived in the auctioneer's city and
+// spent the reach deadline there, or the leg spent its whole travel cap.
+// Entering the leg no longer starts the reach deadline, so a bot in the field
+// keeps its walk. Map thread only (the ladder refresh).
+bool AuctionLegUnreachable(uint32_t botGuidLow, uint32_t nowMs);
+// An auctioneer came into interact range on the auction leg: both clocks
+// clear (the walk is over), so a later arrival never trips the deadline.
+// Map thread only.
+void NoteAuctioneerInReach(uint32_t botGuidLow);
+// The bot reached the auctioneer's city (the travel target landed, or it
+// stands within sight of a house): the reach deadline starts now. Never
+// restarts a deadline already running. Map thread only.
+void NoteAuctionZoneArrival(uint32_t botGuidLow, uint32_t nowMs);
+// The auction leg is not re-entered for the same reagent until the ladder
+// reached its last source for it, and then only once more. Memory only (a
+// restart starts a fresh cycle). Map thread only (the ladder refresh).
+bool AuctionReentryAllowed(uint32_t botGuidLow, uint32_t itemId);
+// The auction leg ended for `reason`: the cause is recorded on the step
+// timeline with the leg's own `ah` step, so `.bot order <bot> steps` shows
+// whether the counter was unreachable or had nothing fitting. Memory only.
+void NoteAuctionLegEnded(uint32_t botGuidLow, OrderReason reason);
+// An oversized listing was bought: remember what has to go back to the
+// auction house. Memory only (a restart leaves the surplus to the delivery
+// leftover path, which is the same fallback as a failed relist).
+void NoteRelistSurplus(uint32_t botGuidLow, uint32_t itemId, uint32_t count, uint32_t unitPrice);
+// The pending relist, if any (item 0 = none). Map thread only.
+bool PendingRelist(uint32_t botGuidLow, uint32_t& itemId, uint32_t& count, uint32_t& unitPrice);
+// The pending relist is over: posted, abandoned, or the leg handed off.
+void ClearRelistSurplus(uint32_t botGuidLow);
+
+// Relist ledger, persisted next to the order rows: one row per surplus stack
+// the order posted on the auction house. A sale or an expired listing comes
+// back by mail, often after the order is gone, and its value belongs to the
+// guild until the bank trip pays it back.
+// A relist was posted, with the listing terms the auction mail reports back
+// and its duration (the row's expiry is the posting plus that duration). The
+// row is written with a checked synchronous execute and only then kept in
+// memory, so the ledger never holds a debt the table lost. Map thread only
+// (the buy action).
+void NoteRelistPosted(uint32_t botGuidLow, uint32_t guildId, uint32_t itemId, uint32_t count,
+    uint32_t unitPrice, uint32_t bid, uint32_t buyout, uint32_t deposit, uint32_t durationSec);
+// The bot's ledger rows, oldest first. Any thread.
+std::vector<RelistLedgerEntry> RelistEntries(uint32_t botGuidLow);
+// A matched relist mail is about to be taken: the row names the mail and the
+// value it promises. Same checked write: false means the table did not take
+// the change, so the mail must not be taken. Map thread only (the mail read).
+bool NoteRelistClaimed(uint32_t botGuidLow, uint32_t seq, uint32_t mailId, uint32_t gold,
+    uint32_t items);
+// A claimed mail was collected: the gold or the item is in hand. Same checked
+// write: false means the table did not take the change and the row stays
+// claimed. Map thread only (the mail read).
+bool NoteRelistReceived(uint32_t botGuidLow, uint32_t seq, uint32_t gold, uint32_t items);
+// Writes one ledger row to the table and to memory. Returns false, with memory
+// untouched, when the table write failed. World thread only (the relist drain).
+bool SaveRelistRow(RelistLedgerEntry const& row);
+// Drops one ledger row the same way. World thread only (the relist drain).
+bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq);
+// The received rows a bank trip has to pay out, oldest first. Any thread:
+// the bank action checks what the bot can pay now, the drain pays it.
+std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow);
+
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
 // A keep round landed in the bank: the order watches it from now on. Sets
@@ -166,6 +245,18 @@ void NoteFarmRest(uint32_t botGuidLow);
 // The bot died while the order ran. Only deaths in Working count.
 void NoteDeath(uint32_t botGuidLow);
 
+// The farm leg's travel probe found no route to one target point in the
+// planned zone (a mesh hole or a partial path): remember that point per bot
+// and zone, so the plan leaves the zone out once two different points in it
+// failed inside kFarmZoneUnreachableMs. Only the zone the order currently
+// farms and a Farm supply step count. Map thread only (travel move).
+void NoteFarmZoneTargetFailed(uint32_t botGuidLow, uint32_t zoneId, uint32_t mapId,
+    float x, float y, float z);
+// The failed farm-leg travel targets remembered for the zone, policy-shaped:
+// the planner asks FarmZoneSkipped whether enough of them are still fresh.
+std::vector<FarmZoneTargetFailure> FarmZoneFailures(uint32_t botGuidLow,
+    uint32_t zoneId);
+
 // An order-leg search came back rejected or empty in the planned zone.
 // Counts consecutive failures there; the third moves the order to the next
 // plan zone through the zone-move path. World thread only (travel pick).
@@ -182,14 +273,20 @@ void NoteBagsFull(uint32_t botGuidLow);
 // What the bot already delivered into the bank or by mail.
 void AddDelivered(uint32_t botGuidLow, uint32_t count);
 
-// Current progress: delivered plus bags plus order items in the mailbox.
-// World thread only (reads the live Player when it is online).
-uint32_t Progress(Player* bot, OrderRecord const& order);
+// What the bot carries for the order but has not delivered: bags plus
+// mailbox. World thread only. A live Player is read; an offline bot reports
+// the last carry Tick stored on its row, so the list reply never claims zero.
+uint32_t Carry(Player* bot, OrderRecord const& order);
 
 // One TBM:ORDER line for the row (the list reply and live updates share it).
 // World thread only. The caller passes the reported have count, which never
-// drops (offline bots report max(delivered, last reported)).
-std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have);
+// drops (offline bots report max(delivered, last reported)), and the carry:
+// bags plus mailbox not yet delivered.
+std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t have, uint32_t carry);
+
+// Step history of the bot's running or finished order (memory only, bounded);
+// nullopt for no order or a cancelled stub.
+std::optional<OrderStepHistory> FindStepHistory(uint32_t botGuidLow);
 
 // Live updates and startup. World thread only.
 void Initialize();

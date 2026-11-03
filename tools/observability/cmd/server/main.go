@@ -20,6 +20,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -42,6 +43,7 @@ import (
 	"tortoise-observability/internal/ringbuf"
 	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
+	"tortoise-observability/internal/underperf"
 	"tortoise-observability/internal/ws"
 	"tortoise-observability/web"
 )
@@ -238,6 +240,11 @@ func main() {
 		log.Fatalf("Failed to initialize armory service: %v", err)
 	}
 	log.Printf("[Armory] Service initialized for %s and %s", *dbChar, *dbWorld)
+
+	// Guild orders: the order table is polled every 10 s and every change is
+	// kept as the order's step history for the Guild orders tab.
+	guildOrders := armory.NewGuildOrderTracker(armoryService, filepath.Join(filepath.Dir(*activityStateFile), "guild-order-steps.json"))
+	go guildOrders.Run(10 * time.Second)
 
 	// Background DB sweeps: runs immediately then every 5 minutes.
 	// 1. Equipped-gear rollup feeding roster item-level and armory.
@@ -671,12 +678,19 @@ func main() {
 	}))
 
 	// The live dungeon runs (issue #895): one entry per instance copy (map +
-	// instance id) of a dungeon or raid that has bots in it, members (bots and
-	// real players) included. Read-only: the tab draws, it never orders.
+	// instance id) of a dungeon that has bots in it, members (bots and
+	// real players) included. Raid copies leave for /api/v1/raids.
+	// Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/dungeons", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Dungeons())
 	}))
 
+	// The live raid runs: one entry per raid instance copy that has bots in
+	// it, groups with their leaders, offline members and live combat window.
+	// Read-only: the tab draws, it never orders.
+	mux.HandleFunc("/api/v1/raids", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Raids())
+	}))
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 
 	// The boss tactic rows the coverage view compares with the boss table:
@@ -686,17 +700,11 @@ func main() {
 	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
 	// commander, newest first; each fight carries the v1 warnings with it.
-	mux.HandleFunc("/api/v1/combat/fights", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		rows := combatStore.List(r.URL.Query().Get("commander"))
-		if historyStore != nil {
-			for i := range rows {
-				if row, ok := historyStore.Lookup(rows[i].Key); ok {
-					rows[i].PackKey, rows[i].NonTankMs = row.PackKey, row.NonTankMs
-				}
-			}
-		}
-		writeJSON(w, rows)
-	}))
+	// The optional combat.ListQuery params (limit, before, since, boss, deaths, outcome) page and filter the list; without
+	// them it answers as it always did. A page cut by limit answers the header X-More: 1. The run-totals route below sums one
+	// run's fights per bot for the debugger's "Total" view.
+	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
+	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// The detail key is (commander, session, id): fight ids repeat
 		// across commanders and sessions. The list rows carry the composed
@@ -739,6 +747,17 @@ func main() {
 	mux.HandleFunc("GET /api/v1/combat/history/commanders", requireAuth(history.CommandersHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/history", requireAuth(history.ListHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/packs", requireAuth(history.PackHandler(historyStore)))
+
+	// The underperforming bots of a window or one of its runs: each flagged bot next to the median of its role peers,
+	// the rules that fired on it and the fights that flagged it. With the history off it answers from memory only; a
+	// typed-nil *history.Store inside the interface would panic, so the interface value stays nil.
+	var histSource underperf.HistSource
+	if historyStore != nil {
+		histSource = historyStore
+	}
+	mux.HandleFunc("GET /api/v1/combat/underperformers", requireAuth(underperf.Handler(underperf.Sources{
+		Mem: combatStore, Hist: histSource, Rules: combatStore.Rules, Specs: armoryService.SpecsFor, Now: time.Now,
+	})))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
 	// {"<commander>": {"<bot guid>": {"map": 209, "pts": [[x, y, unix seconds], ...]}}}, oldest point first. A point where something
@@ -935,6 +954,19 @@ func main() {
 		}
 		writeJSON(w, page)
 	}))
+	// Guild orders: every order with its step history, plus each order bot's
+	// recent loot, trades and deaths from the live event stream.
+	mux.HandleFunc("GET /api/v1/guild-orders", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		view := guildOrders.View()
+		trails := map[uint32][]model.BotTrailItem{}
+		for _, o := range view.Orders {
+			trails[o.BotGUID] = store.BotTrail(o.BotGUID)
+		}
+		writeJSON(w, struct {
+			armory.GuildOrdersView
+			Trails map[uint32][]model.BotTrailItem `json:"trails"`
+		}{view, trails})
+	}))
 	// The raid control relay: allow-listed GM lines forwarded to the game
 	// server over SOAP. Only when a SOAP URL, user and a mode-0600 password
 	// file are all configured; otherwise the route answers 404 and the log
@@ -1125,4 +1157,32 @@ func qUint(s string) uint32 {
 		return 0
 	}
 	return uint32(v)
+}
+
+// combatFightsHandler serves GET /api/v1/combat/fights?commander=: the memory list, newest first, with the stored pack key and
+// non-tank seconds of each row the history knows. The optional combat.ListQuery params (limit, before, since, boss, deaths,
+// outcome) page and filter it; without them it answers as it always did. A page cut by its limit answers X-More: 1, and a bad
+// param is a 400.
+func combatFightsHandler(combatStore *combat.Store, historyStore *history.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		lq, err := combat.ParseListQuery(r.URL.Query())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"` + err.Error() + `"}`))
+			return
+		}
+		rows, more := lq.Apply(combatStore.List(r.URL.Query().Get("commander")))
+		if more {
+			w.Header().Set("X-More", "1")
+		}
+		if historyStore != nil {
+			for i := range rows {
+				if row, ok := historyStore.Lookup(rows[i].Key); ok {
+					rows[i].PackKey, rows[i].NonTankMs = row.PackKey, row.NonTankMs
+				}
+			}
+		}
+		writeJSON(w, rows)
+	}
 }

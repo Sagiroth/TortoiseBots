@@ -180,13 +180,6 @@ namespace ai
         ScareBeastTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "scare beast") {}
     };
 
-    class HunterLowAmmoTrigger : public AmmoCountTrigger
-    {
-    public:
-        HunterLowAmmoTrigger(PlayerbotAI* ai) : AmmoCountTrigger(ai, "ammo", 1, 30) {}
-        virtual bool IsActive() override { return bot->GetGroup() && (AI_VALUE2(uint32, "item count", "ammo") < 100) && (AI_VALUE2(uint32, "item count", "ammo") > 0); }
-    };
-
     class VolleyChannelCheckTrigger : public Trigger
     {
     public:

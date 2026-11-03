@@ -131,7 +131,7 @@ nodes:
   - id: play-boss-tactics
     path: play/boss-tactics.md
     category: play
-    summary: The per-boss tactics table (ai_boss_tactic) and the opt-in boss tactics strategy that applies it.
+    summary: The per-boss tactics table (ai_boss_tactic), the stand sets (ai_boss_stand) and the opt-in boss tactics strategy that applies them.
   - id: play-known-limitations
     path: play/known-limitations.md
     category: play
@@ -204,10 +204,6 @@ nodes:
     path: server/settings/performance.md
     category: server
     summary: Configuration settings for AI time budgets, activity throttling, world tick targets, and core server tuning for large bot populations.
-  - id: server-settings-chat
-    path: server/settings/chat.md
-    category: server
-    summary: Configuration settings for bot chatter, world/general channel broadcasts, and autonomous speech.
   - id: server-settings-logging
     path: server/settings/logging.md
     category: server

@@ -71,4 +71,5 @@ int main()
     CHECK(GuildGoldShortfall(300, 300, 100, 200) == 0);
     CHECK(GuildGoldShortfall(500, 300, 100, 50) == 50);
 
+    return failures ? 1 : 0;
 }

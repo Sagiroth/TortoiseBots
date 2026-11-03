@@ -28,7 +28,7 @@ vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, {
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.checks === "function", "fightdebug.js loads as the global FightDebug");
 vm.runInContext(
   [grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdFightMarksSvg"), grab("fdFramesHtml"),
-    grab("fdRailHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
+    grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
     grab("fdLiveTableHtml"), grab("fdBotHtml")].join("\n") +
   "\nvar CmdView = { project: (x, y) => ({ x: -y, y: -x }) };" +
   "\nvar cmdBotLink = (guid, name) => '<a class=\"cmd-botlink\" href=\"#bot/' + guid + '\">' + esc(name) + '</a>';", ctx);
@@ -130,6 +130,11 @@ assert.strictEqual((railHtml.match(/<button type="button" class="fd-fight/g) || 
 assert.strictEqual((railHtml.match(/aria-pressed="true"/g) || []).length, 1);
 assert.deepStrictEqual([...railHtml.matchAll(/data-fd-fight="([^"]*)" aria-pressed="true"/g)].map((m) => m[1]), ["5-4"]);
 assert.ok(railHtml.includes(">problem<") && railHtml.includes(">check<") && railHtml.includes(">clean<"), "the verdict words");
+// An unknown-only fight reads as incomplete data, styled like a warn.
+const checkCard = { key: "k", label: "Pack 1", mob: "trash", step: 1, durMs: 60000, dmg: 0, deaths: 0, lenPct: 100, verdict: "check", detail: "ready" };
+const checkHtml = run("fdRailHtml(cards, null, null)", { cards: [checkCard] });
+assert.ok(checkHtml.includes('class="fd-fight v-warn"'), "an unknown-only fight renders like a warn: " + checkHtml.slice(0, 160));
+assert.ok(checkHtml.includes(">check: incomplete data<"), "the label names the incomplete data: " + checkHtml.slice(0, 200));
 // Pack N counts the fights oldest first, the rail reads Pack 1 at the top, the mob is the subtitle.
 assert.deepStrictEqual([...railHtml.matchAll(/<span class="fd-fl">([^<]*)<\/span>/g)].map((m) => m[1]),
   ["Pack 1", "Pack 2", "Pack 3", "Pack 4", "Pack 5"]);
@@ -158,7 +163,14 @@ assert.deepStrictEqual(stateCards.map((c) => c.detail), ["failed", "loading", "u
 const stateHtml = run("fdRailHtml(cards, null, null)", { cards: stateCards });
 assert.ok(stateHtml.includes(">details not available<"), "a failed detail says so: " + stateHtml.slice(0, 400));
 assert.ok(stateHtml.includes(">loading<"), "the card on its way still says loading");
-assert.ok(stateHtml.includes(">details not loaded<"), "an older row the page never asked says so");
+// Details load on demand: a row never opened says what its summary says (here no deaths, no wipe, no fired rule).
+assert.ok(stateHtml.includes(">no deaths<") && stateHtml.includes("v-ok v-sum"), "an unopened row reads its summary: " + stateHtml);
+assert.ok(!stateHtml.includes(">details not loaded<"), "no card says 'details not loaded' when its summary has the answer");
+const sumCards = run("FightDebug.railCards(rows, {}, null, { asked: 0 })", { rows: [
+  { key: "w", dur: 1000, outcome: "wipe", deaths: 5 }, { key: "d", dur: 1000, deaths: 1 }, { key: "r", dur: 1000, warnings: 2 },
+] });
+const sumHtml = run("fdRailHtml(cards, null, null)", { cards: sumCards });
+assert.ok(sumHtml.includes(">wipe<") && sumHtml.includes(">deaths<") && sumHtml.includes(">check<"), "wipe, deaths, check from summaries: " + sumHtml);
 assert.ok(!stateHtml.includes(">loading<") || stateHtml.indexOf(">loading<") < stateHtml.indexOf(">details not available<"), "no card loads for ever");
 
 // ---- map marks: one skull per death, the selected one bigger and named ---------------------------------------------
@@ -213,7 +225,7 @@ assert.ok(liveHtml.includes("Frostbolt") && liveHtml.includes('class="sel"'), li
 
 // ---- the page wires it up ------------------------------------------------------------------------------------------
 assert.ok(src.includes("'/api/v1/combat/fight/' + encodeURIComponent("), "the fight detail is fetched by its encoded key");
-assert.ok(src.includes("FightDebug.worstIndex("), "the debugger opens on the worst fight");
+assert.ok(src.includes("FightDebug.worstSummaryIndex(list)"), "the debugger opens on the worst fight by its summary");
 const html = fs.readFileSync(path.join(dir, "..", "..", "index.html"), "utf8");
 assert.ok(src.includes("cmdPageMode("), "the page decides the view for every commander card");
 assert.ok(html.includes('data-page-mode="debug"'), "the page offers the debugger mode");

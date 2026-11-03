@@ -2,7 +2,11 @@
 
 #include "GuildOrderContract.h"
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 // Pure rules for guild-order source finding: which sources a bot may use for
 // an item and how its farm zones rank. Header-only and free of core types so
@@ -114,6 +118,156 @@ inline bool FactionTemplatesHostile(FactionTemplateMasks const& bot, FactionTemp
 inline double ZoneScore(uint32_t spawns, float chancePct)
 {
     return double(spawns) * double(chancePct);
+}
+
+// A failed farm-leg travel attempt is remembered per target point, not per
+// zone: one mesh hole where a zone's spawn sample sat says nothing about the
+// zone's other farm spots, and the travel pick tries those next. A zone stays
+// out of the plan only once this many different target points in it failed
+// inside the window. Stamps are server uptime ms, 0 = never failed; uint32
+// wrap keeps the subtraction meaningful.
+inline constexpr uint32_t kFarmZoneUnreachableMs = 30 * 60 * 1000;
+inline constexpr size_t kFarmZoneFailedTargets = 2;
+
+// Target points within this many yards count as the same target: the travel
+// pick's approach point for one spawn moves a few yards between picks.
+inline constexpr float kFarmZoneTargetCellYd = 10.0f;
+
+inline bool FarmZoneFailureFresh(uint32_t failedAtMs, uint32_t nowMs)
+{
+    return failedAtMs != 0 && nowMs - failedAtMs < kFarmZoneUnreachableMs;
+}
+
+struct FarmZoneTargetPoint
+{
+    uint32_t mapId = 0;
+    int32_t cellX = 0, cellY = 0, cellZ = 0;
+
+    bool operator==(FarmZoneTargetPoint const& other) const
+    {
+        return mapId == other.mapId && cellX == other.cellX && cellY == other.cellY &&
+            cellZ == other.cellZ;
+    }
+};
+
+inline FarmZoneTargetPoint FarmZoneTargetPointAt(uint32_t mapId, float x, float y, float z)
+{
+    auto cell = [](float value) { return int32_t(std::floor(value / kFarmZoneTargetCellYd)); };
+    FarmZoneTargetPoint point;
+    point.mapId = mapId;
+    point.cellX = cell(x);
+    point.cellY = cell(y);
+    point.cellZ = cell(z);
+    return point;
+}
+
+struct FarmZoneTargetFailure
+{
+    FarmZoneTargetPoint point;
+    uint32_t failedAtMs = 0;
+};
+
+// Distinct target points of one zone whose last failure is still inside the
+// window: repeats at the same point are one target, not two.
+inline size_t FarmZoneFailedTargets(std::vector<FarmZoneTargetFailure> const& failures, uint32_t nowMs)
+{
+    size_t distinct = 0;
+    for (size_t i = 0; i < failures.size(); ++i)
+    {
+        if (!FarmZoneFailureFresh(failures[i].failedAtMs, nowMs))
+            continue;
+        bool repeat = false;
+        for (size_t j = 0; j < i; ++j)
+            repeat = repeat || (failures[j].point == failures[i].point &&
+                FarmZoneFailureFresh(failures[j].failedAtMs, nowMs));
+        if (!repeat)
+            ++distinct;
+    }
+    return distinct;
+}
+
+// The zone is left out of the plan: at least two different targets in it
+// could not be walked to inside the window.
+inline bool FarmZoneSkipped(std::vector<FarmZoneTargetFailure> const& failures, uint32_t nowMs)
+{
+    return FarmZoneFailedTargets(failures, nowMs) >= kFarmZoneFailedTargets;
+}
+
+// Record one failed target point: the point keeps its latest stamp, repeats
+// refresh it, and stamps older than the window drop out on the way.
+inline void RecordFarmZoneTargetFailure(std::vector<FarmZoneTargetFailure>& failures,
+    FarmZoneTargetPoint const& point, uint32_t nowMs)
+{
+    if (!nowMs)
+        return;
+    for (size_t i = 0; i < failures.size();)
+    {
+        if (!FarmZoneFailureFresh(failures[i].failedAtMs, nowMs))
+            failures.erase(failures.begin() + i);
+        else
+            ++i;
+    }
+    for (FarmZoneTargetFailure& failure : failures)
+    {
+        if (failure.point == point)
+        {
+            failure.failedAtMs = nowMs;
+            return;
+        }
+    }
+    failures.push_back(FarmZoneTargetFailure{ point, nowMs });
+}
+
+// The travel layer's navmesh verdict names a zone the leg cannot serve: a
+// mesh hole (nopath) or a partial path (incomplete). A complete path whose
+// dispatch still failed is a movement problem, and crossmap was never probed,
+// so neither says anything about the zone.
+inline bool TravelPathUnreachable(std::string const& pathTag)
+{
+    return pathTag == "incomplete" || pathTag == "nopath";
+}
+
+// Farm-zone plan order: zones on the bot's map first, then the ones the
+// travel layer's route gate accepts, then the nearest farm point (the
+// planner's own sample spawn), then the richer zone. A zone with no spawn on
+// the bot's map has no distance and ranks after every same-map zone, by score
+// among the rest. Distance is straight-line: the only node-graph cost the
+// travel layer offers is a full A* per pair (TravelNodeMap::getRoute), so the
+// gate's verdict is the reachability signal and the walk itself is measured
+// in a straight line from where the bot stands.
+inline bool FarmZoneBefore(FarmZone const& a, FarmZone const& b)
+{
+    if (a.onBotMap != b.onBotMap)
+        return a.onBotMap;
+    if (a.onBotMap && a.reachable != b.reachable)
+        return a.reachable;
+    if (a.onBotMap && a.distanceSq != b.distanceSq)
+        return a.distanceSq < b.distanceSq;
+    if (a.score != b.score)
+        return a.score > b.score;
+    return a.zoneId < b.zoneId;
+}
+
+// Drop the zones whose last travel attempt failed on the mesh; `unreachable`
+// is index-parallel to `zones`. When every zone is flagged the plan keeps
+// them: an empty plan reads as nosource and would end the order, while the
+// travel layer's own retry and teleport may still get there. No zone is
+// added, so the search stays inside the planner's existing limits.
+inline void DropUnreachableFarmZones(std::vector<FarmZone>& zones,
+    std::vector<uint8_t> const& unreachable)
+{
+    if (zones.size() != unreachable.size())
+        return;
+    bool anyReachable = false;
+    for (uint8_t flagged : unreachable)
+        anyReachable = anyReachable || !flagged;
+    if (!anyReachable)
+        return;
+    size_t kept = 0;
+    for (size_t i = 0; i < zones.size(); ++i)
+        if (!unreachable[i])
+            zones[kept++] = zones[i];
+    zones.resize(kept);
 }
 
 // A drop row is usable for the farm plan when it is not a quest row and its

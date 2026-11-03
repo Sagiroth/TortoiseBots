@@ -44,7 +44,9 @@ type Registry struct {
 	historyBroken  prometheus.Counter
 	// COMMANDERS cycles that arrived in parts and were applied incomplete (their missing bindings carried over).
 	commandersPartials prometheus.Counter
-	udpDropped         *prometheus.CounterVec
+	// RAIDS cycles that arrived split across parts and never completed.
+	raidsPartials prometheus.Counter
+	udpDropped    *prometheus.CounterVec
 }
 
 func New() *Registry {
@@ -136,6 +138,10 @@ func New() *Registry {
 		commandersPartials: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "tortoisebots_commanders_partial_total",
 			Help: "COMMANDERS cycles applied incomplete, their bindings completed from the previous report",
+		}),
+		raidsPartials: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_raids_partial_total",
+			Help: "RAIDS cycles that arrived split across parts and never completed",
 		}),
 		udpDropped: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "tortoisebots_udp_dropped_total",
@@ -230,6 +236,13 @@ func (r *Registry) RecordRealtimeDatagram(typ string, bytes int) {
 func (r *Registry) AddCommandersPartials(n uint64) {
 	if n > 0 {
 		r.commandersPartials.Add(float64(n))
+	}
+}
+
+// AddRaidsPartials adds RAIDS cycles that arrived split and never completed since the last call.
+func (r *Registry) AddRaidsPartials(n uint64) {
+	if n > 0 {
+		r.raidsPartials.Add(float64(n))
 	}
 }
 

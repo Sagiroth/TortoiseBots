@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <sstream>
 
 namespace TortoiseBots {
@@ -543,13 +544,51 @@ bool HandleOrderList(ChatHandler* handler, Player* requester)
     for (OrderRecord const& order : orders)
     {
         Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
-        bool online = bot && bot->IsInWorld();
-        uint32_t bags = online ? bot->GetItemCount(order.itemId) : 0;
         handler->PSendSysMessage("%s",
             GuildOrders::FormatOrderLine(requester->GetGuildId(), order,
-                GuildOrders::ReportedHave(order.delivered, bags, online, order.reportedHave)).c_str());
+                GuildOrders::ReportedHave(order.delivered, order.reportedHave),
+                GuildOrders::Carry(bot, order)).c_str());
     }
     handler->PSendSysMessage("TBM:ORDER_END");
+    return true;
+}
+
+// Read-only (no CheckGiver): the requester only needs to be in the bot's
+// guild, like `order list`. An order-less or cancelled bot answers with an
+// empty pair, which is a real answer.
+bool HandleOrderSteps(ChatHandler* handler, Player* requester, std::string const& botName)
+{
+    Player* bot = nullptr;
+    ObjectGuid guid;
+    if (!ResolveOrderBot(botName, bot, guid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!IsOrderBot(bot, guid))
+    {
+        OrderError(handler, "no-bot", "That character is not a bot.");
+        return true;
+    }
+    if (!requester->GetGuildId() || GuildOf(bot, guid) != requester->GetGuildId())
+    {
+        OrderError(handler, "not-guild", "The bot is not in your guild.");
+        return true;
+    }
+    std::string name;
+    if (bot)
+        name = bot->GetName();
+    else
+    {
+        std::string stored;
+        name = sObjectMgr.GetPlayerNameByGUID(guid, stored) ? stored : botName;
+    }
+    name = ProtocolSafe(name);
+    std::optional<GuildOrders::OrderStepHistory> h = GuildOrders::FindStepHistory(guid.GetCounter());
+    std::vector<std::string> lines = GuildOrders::FormatOrderStepLines(name,
+        h ? *h : GuildOrders::OrderStepHistory{}, static_cast<uint64_t>(std::time(nullptr)));
+    for (std::string const& line : lines)
+        handler->PSendSysMessage("%s", line.c_str());
     return true;
 }
 
@@ -575,7 +614,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::string rest = Trim(args ? args : "");
     if (rest.empty())
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel> ... | order list | order search ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps> ... | order list | order search ....");
         return true;
     }
 
@@ -666,13 +705,15 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::string second;
     if (!(in >> second))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel> ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps> ....");
         return true;
     }
     std::string lowerSecond = second;
     std::transform(lowerSecond.begin(), lowerSecond.end(), lowerSecond.begin(), ::tolower);
     if (lowerSecond == "cancel")
         return HandleOrderCancel(handler, requester, first);
+    if (lowerSecond == "steps")
+        return HandleOrderSteps(handler, requester, first);
 
 
     return HandleOrderGive(handler, requester, rest);

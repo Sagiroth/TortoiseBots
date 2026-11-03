@@ -50,8 +50,6 @@ static bool IsFreeLearnBot(Player* bot)
 
 void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
 {
-    BroadcastHelper::BroadcastLevelup(ai, bot);
-
     if (!ai->HasActivePlayerMaster())
     {
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");

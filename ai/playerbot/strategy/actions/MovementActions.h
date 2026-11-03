@@ -176,11 +176,21 @@ namespace ai
     class FleeAction : public MovementAction
     {
     public:
-        FleeAction(PlayerbotAI* ai, float distance = sPlayerbotAIConfig.spellDistance) : MovementAction(ai, "flee"), distance(distance) {}
+        FleeAction(PlayerbotAI* ai, float distance = sPlayerbotAIConfig.spellDistance, std::string name = "flee") : MovementAction(ai, name), distance(distance) {}
         virtual bool Execute(Event& event) override;
 
     private:
         float distance;
+    };
+
+    // The "has area debuff" fallback flee (the reactive row below the avoid-aoe
+    // step-out). Same movement as "flee"; it alone refuses a tank that holds its
+    // boss and a bot covered by a hostile avoidable cloud (the strafe owns it).
+    class FleeFromAreaAction : public FleeAction
+    {
+    public:
+        FleeFromAreaAction(PlayerbotAI* ai) : FleeAction(ai, sPlayerbotAIConfig.spellDistance, "flee from area") {}
+        virtual bool isUseful() override;
     };
 
     // Proactive AoE avoidance (donor AvoidAoeAction shape): three sensors —
@@ -210,6 +220,15 @@ namespace ai
         ObjectGuid keepoutSource;
         CreatureAuraKeepout const* keepoutRow = nullptr; // the row of keepoutSource
         uint32 keepoutNoLandingUntilMs = 0;
+    };
+
+    // Steps away from the roaming elite of the "dangerous elite" value.
+    class AvoidEliteAction : public MovementAction
+    {
+    public:
+        AvoidEliteAction(PlayerbotAI* ai) : MovementAction(ai, "avoid elite") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     };
 
     class FleeWithPetAction : public MovementAction

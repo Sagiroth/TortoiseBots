@@ -14,7 +14,6 @@ relates_to:
   - server-settings-economy
   - server-settings-queues
   - server-settings-performance
-  - server-settings-chat
   - server-settings-logging
 ---
 
@@ -93,7 +92,6 @@ Every configuration setting is documented across specialized settings pages:
 | [Economy & auction house](settings/economy.md) | `aiplayerbot.conf` | Synthetic auction house market supply, bidding, buyouts, and trade limits. |
 | [Dungeon finder & battlegrounds](settings/queues.md) | `aiplayerbot.conf` | Looking for Turtles (LFT) autofill and autonomous battleground queues. |
 | [Performance & tick budget](settings/performance.md) | `aiplayerbot.conf` + `mangosd.conf` | Per-tick AI turn limits, self-tuning tick controllers, and core map caching. |
-| [Bot chatter & broadcasts](settings/chat.md) | `aiplayerbot.conf` | Channel chat rates, emote lines, say-without-master, and broadcast chances. |
 | [Diagnostic logging](settings/logging.md) | `aiplayerbot.conf` + `tortoise_bots.conf` | Module log levels, telemetry streams, CSV logs, and per-bot action log rotation. |
 
 ## Removed keys

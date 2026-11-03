@@ -1,5 +1,6 @@
 #include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
+#include "playerbot/BossTacticsStand.h"
 #include "playerbot/strategy/triggers/DungeonTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -478,6 +479,13 @@ bool FourHorsemenRotateAction::Execute(Event& event)
     return MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true);
 }
 
+bool DragonFlankAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    return !FindBossStand(ai, bot).valid;
+}
+
 bool DragonFlankAction::Execute(Event& event)
 {
     (void)event;
@@ -502,6 +510,13 @@ bool DragonFlankAction::Execute(Event& event)
         side += M_PI_F / 2.0f;
     }
     return false;
+}
+
+bool RaidSpreadAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    return !FindBossStand(ai, bot).valid;
 }
 
 bool RaidSpreadAction::Execute(Event& event)

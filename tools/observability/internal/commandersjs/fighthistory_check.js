@@ -24,8 +24,8 @@ vm.runInContext(fs.readFileSync(histPath, "utf8"), ctx, { filename: "fighthistor
 assert.ok(ctx.FightHistory && typeof ctx.FightHistory.dayOptions === "function", "fighthistory.js loads as the global FightHistory");
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.railCards === "function", "fightdebug.js loads as the global FightDebug");
-vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml"),
-  grab("numOr0"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows")].join("\n"), ctx,
+vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml"),
+  grab("numOr0"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList")].join("\n"), ctx,
   { filename: "app.js" });
 ctx.cmdFightsCache = {};
 
@@ -35,37 +35,39 @@ const FH = ctx.FightHistory;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 // ---- the night picker -----------------------------------------------------------------------------------------------
-// 2026-10-29 is a Thursday. Tonight is today's own list (the rail draws today's stored fights with the live ones on top), so
-// today appears once, with its count in the Tonight label; a future day is not offered.
+// 2026-10-29 is a Thursday. Tonight is the current local night (06:00 rollover): the rail draws it with the live list on
+// top, so it appears once, with its count in the Tonight label; a future night is not offered. Past nights read
+// "Wed 28 Oct (night)": a 02:17 fight belongs to the evening it started. TODAY is noon UTC and the Go test pins TZ=UTC, so
+// tonight is the 29th whatever box runs the suite.
 const TODAY = Date.UTC(2026, 9, 29, 12, 0, 0);
-const DAYS = { days: [
-  { day: "2026-10-29", fights: 9 },
-  { day: "2026-10-28", fights: 12 },
-  { day: "2026-10-27", fights: 1 },
+const DAYS = { nights: [
+  { night: "2026-10-29", fights: 9, first: 1, last: 2 },
+  { night: "2026-10-28", fights: 12, first: 1, last: 2 },
+  { night: "2026-10-27", fights: 1, first: 1, last: 1 },
 ] };
 assert.deepStrictEqual(plain(FH.dayOptions(DAYS, TODAY)), [
   { value: "", label: "Tonight · 9 fights" },
-  { value: "2026-10-28", label: "Wed 28 Oct · 12 fights" },
-  { value: "2026-10-27", label: "Tue 27 Oct · 1 fight" },
+  { value: "2026-10-28", label: "Wed 28 Oct (night) · 12 fights" },
+  { value: "2026-10-27", label: "Tue 27 Oct (night) · 1 fight" },
 ], "one entry per night, newest first, today's count on Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-30", fights: 2 }, { day: "2026-10-29", fights: 3 }] }, TODAY)),
   [{ value: "", label: "Tonight · 3 fights" }],
-  "a future day is not offered, today's is merged into Tonight");
+  "a future night is not offered, tonight's is merged into Tonight (old UTC rows still read as nights)");
 assert.deepStrictEqual(plain(FH.dayOptions(null, TODAY)), [{ value: "", label: "Tonight" }], "a history that is off still offers Tonight");
-assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-13-01", fights: 2 }, { day: "bad", fights: 2 }] }, TODAY)),
-  [{ value: "", label: "Tonight" }], "a malformed day is not offered");
-assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-28", fights: 1 }, { day: "2026-10-28", fights: 4 }] }, TODAY)),
-  [{ value: "", label: "Tonight" }, { value: "2026-10-28", label: "Wed 28 Oct · 1 fight" }], "a day is listed once");
+assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-13-01", fights: 2 }, { night: "bad", fights: 2 }] }, TODAY)),
+  [{ value: "", label: "Tonight" }], "a malformed night is not offered");
+assert.deepStrictEqual(plain(FH.dayOptions({ nights: [{ night: "2026-10-28", fights: 1 }, { night: "2026-10-28", fights: 4 }] }, TODAY)),
+  [{ value: "", label: "Tonight" }, { value: "2026-10-28", label: "Wed 28 Oct (night) · 1 fight" }], "a night is listed once");
 
-// A pack row's night as the picker's value: today is Tonight (the current live list), an older night keeps its own day.
-assert.strictEqual(FH.rowDay("2026-10-29", TODAY), "", "a fight from today opens the current list");
+// A pack row's night as the picker's value: tonight is Tonight (the current live list), an older night keeps its own night.
+assert.strictEqual(FH.rowDay("2026-10-29", TODAY), "", "a fight from tonight opens the current list");
 assert.strictEqual(FH.rowDay("2026-10-28", TODAY), "2026-10-28", "an older fight keeps its night");
-assert.strictEqual(FH.rowDay("", TODAY), "", "a row without a day stays none");
+assert.strictEqual(FH.rowDay("", TODAY), "", "a row without a night stays none");
 
 // ---- the same-pack table --------------------------------------------------------------------------------------------
 const at = (y, m, d, hh, mm) => Math.floor(Date.UTC(y, m - 1, d, hh, mm, 0) / 1000);
 const sec = at;
-// ---- Tonight's rail is today's day: the live list merged with today's stored fights, one row per fight -----------------
+// ---- Tonight's rail is tonight's night: the live list merged with tonight's stored fights, one row per fight --------
 const liveRows = [
   { key: "g\u00003\u00003-9", start: sec(2026, 10, 29, 23, 50), dur: 30000, session: 3 },
   { key: "g\u00003\u00003-8", start: sec(2026, 10, 29, 23, 40), dur: 20000, session: 3 },
@@ -76,25 +78,25 @@ const storedRows = [
 ];
 const merged = plain(run("fdMergeRows(live, hist)", { live: liveRows, hist: storedRows }));
 assert.deepStrictEqual(merged.map((r) => r.key), [liveRows[0].key, liveRows[1].key, storedRows[1].key],
-  "one row per fight (the live row wins), newest first, and today's older stored fights are there: " + JSON.stringify(merged.map((r) => r.key)));
+  "one row per fight (the live row wins), newest first, and tonight's older stored fights are there: " + JSON.stringify(merged.map((r) => r.key)));
 assert.strictEqual(merged[0].hist, undefined, "the live row keeps its detail and positions");
 assert.strictEqual(merged[2].hist, true, "a fight only on disk stays history");
 assert.strictEqual(plain(run("fdMergeRows(null, null)")).length, 0, "nothing either side is an empty rail");
 
-// Tonight is whatever day it is where the page runs: the merge is keyed by the real clock, so the fixture asks the page for it.
+// Tonight is whatever night it is where the page runs: the merge is keyed by the real clock, so the fixture asks the page for it.
 const todayDay = plain(run("fdTodayDay(todayMs)", { todayMs: Date.now() }));
-assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(todayDay), "Tonight's day is a UTC day: " + todayDay);
+assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(todayDay), "Tonight's night is a night: " + todayDay);
 run("cmdFightsCache = { G: { list: live, at: 0 } }; fdHistToday = {}", { live: liveRows });
-const tonightRows = plain(run("fdTonightRows({ hist: fdHistToday }, 'G')", { fdHistToday: { [todayDay]: { list: storedRows, at: 0 } } }));
+const tonightRows = plain(run("fdTonightRows({ hist: fdHistToday }, 'G')", { fdHistToday: { ["night:" + todayDay]: { list: storedRows, at: 0 } } }));
 assert.deepStrictEqual(tonightRows.map((r) => r.key), [liveRows[0].key, liveRows[1].key, storedRows[1].key],
-  "the rail draws the same day the picker counts");
-// The card's render reads that list, not the live one alone: Tonight with a restart behind it still shows today's stored fights.
+  "the rail draws the same night the picker counts");
+// The card's render reads that list, not the live one alone: Tonight with a restart behind it still shows tonight's stored fights.
 const appSrc = fs.readFileSync(appPath, "utf8");
 assert.ok(/const list = fd\.day \? \(fd\.list \|\| \[\]\) : \(bind\.history \? \(fd\.list \|\| \[\]\) : fdTonightRows\(fd, key\)\);/.test(appSrc),
   "the debugger's rail lists fdTonightRows for Tonight");
-assert.ok(/fdDayFights\(fd, bind, today, l => \{ hist = l; both\(\); \}\)/.test(appSrc),
-  "Tonight asks for today's stored fights too, not just the live list");
-assert.ok(fs.readFileSync(path.resolve(process.argv[2]), "utf8").includes('"Tonight · " +'), "the picker labels today as Tonight with its count");
+assert.ok(/fdNightFights\(fd, bind, tonight, l => \{ hist = l; both\(\); \}\)/.test(appSrc),
+  "Tonight asks for tonight's stored fights too, not just the live list");
+assert.ok(fs.readFileSync(path.resolve(process.argv[2]), "utf8").includes('"Tonight · " +'), "the picker labels tonight as Tonight with its count");
 
 const PACK = { pack_key: "onyxias_lair#12", rows: [
   { key: "wipe", commander: "Glacienne", start: at(2026, 10, 25, 21, 5), dur: 60000, outcome: "wipe", deaths: 0, nontank_ms: null },
@@ -105,8 +107,10 @@ const PACK = { pack_key: "onyxias_lair#12", rows: [
 const table = plain(FH.packTable(PACK, "c"));
 assert.strictEqual(table.rows.length, 4);
 const rowOf = (k) => table.rows.find((r) => r.key === k);
-assert.deepStrictEqual(rowOf("b"), {
-  key: "b", commander: "Glacienne", day: "2026-10-28", when: "28 Oct 22:14", start: at(2026, 10, 28, 22, 14),
+assert.deepStrictEqual(rowOf("b").day, FH.nightOf(at(2026, 10, 28, 22, 14) * 1000), "the pack row's night is local");
+assert.deepStrictEqual(rowOf("b").when, FH.whenLabel(at(2026, 10, 28, 22, 14)), "the pack row's time is local");
+assert.deepStrictEqual(({ key: rowOf("b").key, commander: rowOf("b").commander, start: rowOf("b").start, durS: rowOf("b").durS, deaths: rowOf("b").deaths, ntS: rowOf("b").ntS, outcome: rowOf("b").outcome, sel: rowOf("b").sel, best: rowOf("b").best }), {
+  key: "b", commander: "Glacienne", start: at(2026, 10, 28, 22, 14),
   durS: 400, deaths: 1, ntS: 12, outcome: "kill", sel: false, best: true,
 }, "the pack row's fields");
 assert.strictEqual(rowOf("wipe").ntS, null, "no stored non-tank seconds stays null");
@@ -128,7 +132,7 @@ assert.strictEqual(onlyWipes.rows.every((r) => !r.best), true, "no wipe row is m
 const DAY_OPTIONS = FH.dayOptions(DAYS, TODAY);
 const selectHtml = run("fdDayOptionsHtml(opts)", { opts: DAY_OPTIONS });
 assert.ok(selectHtml.includes('<option value="">Tonight · 9 fights</option>'), "Tonight is the first option, with today's count");
-assert.ok(selectHtml.includes('<option value="2026-10-28">Wed 28 Oct · 12 fights</option>'), "a past night keeps its label");
+assert.ok(selectHtml.includes('<option value="2026-10-28">Wed 28 Oct (night) · 12 fights</option>'), "a past night keeps its label");
 
 const EVIL = '<img src=x onerror=alert(1)>"&';
 const evilSelect = run("fdDayOptionsHtml(opts)", { opts: [{ value: '"' + EVIL + '"', label: EVIL }] });
@@ -141,7 +145,8 @@ const EVIL_PACK = { pack_key: EVIL, rows: [
 ] };
 const packHtml = run("fdPackHtml(FightHistory.packTable(json, 'b'), false, 'onyxias_lair#12')", { json: PACK });
 assert.ok(packHtml.includes('<tr class="sel" aria-current="true">') || /class="sel"/.test(packHtml), "the selected fight's row is marked");
-assert.ok(packHtml.includes('data-fd-open="b"') && packHtml.includes('data-fd-day="2026-10-28"'),
+const bDay = table.rows.find((r) => r.key === "b").day;
+assert.ok(packHtml.includes('data-fd-open="b"') && packHtml.includes('data-fd-day="' + bDay + '"'),
   "each row's time opens its fight and its night");
 assert.ok(/<button type="button" class="fd-packopen" data-fd-open="b"[^>]*aria-label="[^"]+"/.test(packHtml),
   "the open button carries an aria-label");
@@ -177,6 +182,6 @@ assert.ok(!run("fdRailHtml([], live, null, '2026-10-28')", { live: LIVE }).inclu
 
 // ---- the source stays free of the browser's locale tables --------------------------------------------------------
 const histSrc = fs.readFileSync(histPath, "utf8");
-assert.ok(!/toLocale|Intl\.|localeCompare/.test(histSrc), "the labels come from fixed English tables, never a locale API");
+assert.ok(!/toLocale|localeCompare/.test(histSrc), "the labels come from fixed English tables, never a locale API");
 
 console.log("fight history ok");

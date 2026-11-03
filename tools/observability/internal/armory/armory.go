@@ -145,7 +145,31 @@ func (s *Service) ListBots(query string) ([]BotSummary, error) {
 		return nil, err
 	}
 	s.resolveBotSpecs(bots)
+	s.resolveBotGuilds(bots)
 	return bots, nil
+}
+
+// resolveBotGuilds names each character's guild from the database, so the
+// list can filter by guild for offline bots too (live rows carry it as well).
+// guild_member only holds guilded characters: one short read, no join to
+// characters.
+func (s *Service) resolveBotGuilds(bots []BotSummary) {
+	rows, err := s.db.Query("SELECT gm.guid, g.name FROM guild_member gm JOIN guild g ON g.guildid = gm.guildid")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	byGUID := map[uint32]string{}
+	for rows.Next() {
+		var guid uint32
+		var name string
+		if rows.Scan(&guid, &name) == nil {
+			byGUID[guid] = name
+		}
+	}
+	for i := range bots {
+		bots[i].Guild = byGUID[bots[i].GUID]
+	}
 }
 
 func (s *Service) GetBotProfile(guid uint32) (*BotProfile, error) {

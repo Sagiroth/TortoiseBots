@@ -186,8 +186,8 @@ static void TestHooksSkipWithoutMembers()
     svc.OnDamage(0, 4242, 10, "Magmadar", 11502, 777, "Magmadar");
     svc.OnHeal(4242, 10, 0);
     svc.OnEnterCombat(4242);
-    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
-    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0, 0);
+    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     CHECK(CombatMonitorService::TestHookLockCount() == locks);
 }
 
@@ -201,7 +201,7 @@ static void TestBossKillNeedsKillerGroup()
     svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 1000);
     svc.Refresh(62, other, true, false, Ctx(11502), {}, 1000);
     // A stranger's kill: no book notes it; both fights end without the kill.
-    svc.OnDeath(0, 999, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.OnDeath(0, 999, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 6000);
     svc.Refresh(62, other, false, false, Ctx(11502), {}, 6000);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 10000);
@@ -214,7 +214,7 @@ static void TestBossKillNeedsKillerGroup()
     // The killer's group only.
     svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 10000);
     svc.Refresh(62, other, true, false, Ctx(11502), {}, 10000);
-    svc.OnDeath(0, 7, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.OnDeath(0, 7, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 16000);
     svc.Refresh(62, other, false, false, Ctx(11502), {}, 16000);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 20000);
@@ -226,7 +226,7 @@ static void TestBossKillNeedsKillerGroup()
     CHECK(kill62.find("\"outcome\":\"end\"") != std::string::npos);
     // No killer known: nothing notes it.
     svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 21000);
-    svc.OnDeath(0, 0, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.OnDeath(0, 0, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 28000);
     svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 32000);
     std::string const nokiller = TakeOne(svc, 61, 1700032000);
@@ -251,8 +251,8 @@ static void TestBitsetFiltersNonMembers()
     svc.OnDamage(0, 4242, 10, "Magmadar", 11502, 777, "Magmadar");
     svc.OnHeal(4242, 10, 0);
     svc.OnEnterCombat(4242);
-    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
-    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0, 0);
+    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502, 0);
     CHECK(CombatMonitorService::TestHookLockCount() == locks);
     CHECK(CombatMonitorService::TestSnapshotLoadCount() == loads);
     svc.OnCast(7, "Sunder Armor", false);
@@ -393,7 +393,7 @@ static void TestSamplerBossDeathBeforePick()
     svc.SyncConfig(true);
     svc.Refresh(88, Members(), true, false, CommanderCtx(), {}, 1000);
     svc.OnDamage(7, 0, 500, "Tanky", 11502, 777, "Magmadar");   // engaged, no boss picked yet
-    svc.OnDeath(0, 7, "Tanky", 0.0f, 0.0f, 0.0f, 11502);       // dies between the samples
+    svc.OnDeath(0, 7, "Tanky", 0.0f, 0.0f, 0.0f, 11502, 0);       // dies between the samples
     svc.Refresh(88, Members(), false, false, CommanderCtx(), {}, 6000);
     svc.NoteBoss(88, 11502, "Magmadar");
     svc.Refresh(88, Members(), false, false, CommanderCtx(), {}, 9000);
@@ -483,7 +483,7 @@ static void TestEventsStartAndDeath()
     CHECK(events.size() == 1);
     CHECK(events[0].find("\"k\":\"start\"") != std::string::npos);
     CHECK(events[0].find("\"id\":\"74-1\"") != std::string::npos);
-    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0, 0);
     events = TakeEventsFor(svc, 74, 1400);
     CHECK(events.size() == 1);
     CHECK(events[0].find("\"k\":\"death\"") != std::string::npos);
@@ -498,7 +498,7 @@ static void TestEventGapLimits()
     svc.SyncConfig(true);
     svc.Refresh(75, Members(), true, false, Ctx(), {}, 1000);
     CHECK(TakeEventsFor(svc, 75, 1000).size() == 1);
-    svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+    svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0, 0);
     CHECK(TakeEventsFor(svc, 75, 1100).empty());
     std::vector<std::string> const later = TakeEventsFor(svc, 75, 1400);
     CHECK(later.size() == 1);
@@ -531,7 +531,7 @@ static void TestEventQueueBounded()
     for (uint32_t i = 1; i <= 100; ++i)
     {
         svc.Refresh(77, Members(), true, false, Ctx(), {}, 1000 + i);
-        svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+        svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0, 0);
     }
     std::vector<std::string> const first = TakeEventsFor(svc, 77, 2000);
     CHECK(first.size() == 1);
@@ -636,7 +636,7 @@ static void TestRunStopMidFightKeepsRecording()
     // The run ended mid-fight; the binding stands, so no Forget runs.
     svc.Refresh(83, Members(), true, false, CommanderCtx(), {}, 4000);
     CHECK(svc.InFight(83));
-    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0, 0);
     std::vector<std::string> const after = TakeEventsFor(svc, 83, 4400);
     CHECK(after.size() == 1);
     CHECK(after[0].find("\"k\":\"death\"") != std::string::npos);

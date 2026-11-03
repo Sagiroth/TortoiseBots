@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/TravelValues.h"
+#include "playerbot/strategy/actions/ChooseTravelTargetAction.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/policy/travel/TravelRouteDangerPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
@@ -188,6 +189,7 @@ struct ZoneAccum
     uint32_t spawns = 0;
     float chance = 0.0f;
     float nearest = 0.0f;
+    float nearestX = 0.0f, nearestY = 0.0f, nearestZ = 0.0f;
     bool hasNearest = false;
 };
 
@@ -591,7 +593,7 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     return false;
 }
 
-SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
+SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type, bool rankByTravelRoute)
 {
     SourcePlan plan;
     if (!bot || !itemId)
@@ -747,10 +749,21 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         ZoneAccum& accum = zones[zoneId];
         accum.spawns += 100;
         accum.chance = std::max(accum.chance, source.chance);
-        if (area->MapId == int32_t(botFishingMap))
+        // The zone's farm point is its FISH_LOCATION spot nearest the bot on
+        // the bot's map, ranked with the same distance as the spawn zones and
+        // routed at its own coordinates. A zone with no spot there keeps
+        // hasNearest false: it has no point to rank or probe, so it ranks
+        // after the zones that do, by score and zone id.
+        WorldPosition spot;
+        float spotDistSq = 0.0f;
+        if (sTravelMgr.FishZoneNearestSpot(zoneId, botPos, spot, spotDistSq) &&
+            (!accum.hasNearest || spotDistSq < accum.nearest))
         {
+            accum.nearest = spotDistSq;
+            accum.nearestX = spot.getX();
+            accum.nearestY = spot.getY();
+            accum.nearestZ = spot.getZ();
             accum.hasNearest = true;
-            accum.nearest = 0.0f;
         }
     }
     for (GuildOrderEntrySource const& source : found->second)
@@ -851,6 +864,9 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 if (!accum.hasNearest || dist < accum.nearest)
                 {
                     accum.nearest = dist;
+                    accum.nearestX = slice.x;
+                    accum.nearestY = slice.y;
+                    accum.nearestZ = slice.z;
                     accum.hasNearest = true;
                 }
             }
@@ -880,22 +896,40 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         zone.chance = uint8_t(std::min(float(100), std::floor(accum.chance)));
         zone.score = ZoneScore(accum.spawns, accum.chance);
         zone.onBotMap = accum.hasNearest;
+        zone.distanceSq = accum.hasNearest ? accum.nearest : -1.0f;
+        // The travel layer's own route verdict for the zone's sample spawn:
+        // one node route plus one leg scan, cached five minutes per bot and
+        // area cell. The nearest zone the bot cannot travel to must not
+        // outrank a farther one it can walk to. Only the travel pick asks
+        // (map thread): the gate touches the node graph and the terrain.
+        // Cross-map zones have no point on this map; they rank last through
+        // onBotMap anyway.
+        if (rankByTravelRoute && accum.hasNearest)
+        {
+            WorldPosition sample(botPos.getMapId(), accum.nearestX, accum.nearestY, accum.nearestZ);
+            std::string blocker;
+            zone.reachable = SharedRouteIsSurvivable(bot, &sample, blocker);
+        }
         plan.zones.push_back(zone);
     }
-    // Zones on the bot's own map first: pool bots never get travel targets on
-    // another map, so a better-scored zone across the sea is unreachable.
-    std::sort(plan.zones.begin(), plan.zones.end(), [&](FarmZone const& a, FarmZone const& b)
-    {
-        ZoneAccum const& accA = zones[a.zoneId];
-        ZoneAccum const& accB = zones[b.zoneId];
-        if (accA.hasNearest != accB.hasNearest)
-            return accA.hasNearest;
-        if (a.score != b.score)
-            return a.score > b.score;
-        if (accA.hasNearest && accB.hasNearest && accA.nearest != accB.nearest)
-            return accA.nearest < accB.nearest;
-        return a.zoneId < b.zoneId;
-    });
+    // A zone stays out for the window once two different target points in it
+    // could not be walked to: one mesh hole where a sample spawn sat says
+    // nothing about the zone's other farm spots, so the leg tries those
+    // instead of dropping the whole zone.
+    uint32_t const nowMs = WorldTimer::getMSTime();
+    std::vector<uint8_t> unreachable;
+    unreachable.reserve(plan.zones.size());
+    for (FarmZone const& zone : plan.zones)
+        unreachable.push_back(FarmZoneSkipped(FarmZoneFailures(bot->GetGUIDLow(), zone.zoneId),
+            nowMs) ? 1 : 0);
+    DropUnreachableFarmZones(plan.zones, unreachable);
+
+    // Nearest farm point first, among the zones the travel layer's route gate
+    // accepts: walking distance is the cost the order pays on every trip, so a
+    // zone with fewer spawns next door beats a richer one across the
+    // continent. Pool bots never get travel targets on another map, so
+    // same-map zones rank first regardless of distance.
+    std::sort(plan.zones.begin(), plan.zones.end(), FarmZoneBefore);
 
     plan.bestChance = zones.empty() ? 0.0f : zones[plan.zones.front().zoneId].chance;
 

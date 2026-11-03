@@ -1,52 +1,14 @@
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIPackets.h"
-#include "../../runtime/HireLifecycle.h"
-#include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "strategy/actions/MovementActions.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/TargetValue.h"
 #include "BotActionLog.h"
-#include "PlayerbotLLMInterface.h"
 #include "playerbot/WandPolicy.h"
-#include "playerbot/strategy/actions/SayAction.h"
-
-bool istarts_with(std::string_view text, std::string_view prefix); // Helpers.cpp
 
 using namespace ai;
-
-namespace
-{
-struct DelayedBotPacket
-{
-    ObjectGuid botGuid;
-    std::unique_ptr<WorldPacket> packet;
-};
-
-// Intentionally process-lifetime storage: an LLM worker may finish while
-// World is shutting down, and a short-lived static destructor would re-create
-// the same lifetime race this queue is meant to avoid.
-std::deque<DelayedBotPacket>& DelayedBotPackets()
-{
-    static auto* packets = new std::deque<DelayedBotPacket>();
-    return *packets;
-}
-
-std::mutex& DelayedBotPacketsMutex()
-{
-    static auto* mutex = new std::mutex();
-    return *mutex;
-}
-// Headless sessions drain via core ProcessPackets (#475), which runs
-// ChatHandler::ParseCommands. Bots are SEC_PLAYER but player commands can be
-// enabled server-side, so command-like chat ('.'/'!') must never reach core
-// with text[0] as '.'/'!'.
-static bool IsCommandLikeChat(std::string const& msg)
-{
-    return !msg.empty() && (msg[0] == '.' || msg[0] == '!');
-}
-} // namespace
 
 void PacketHandlingHelper::DropQueuedOpcode(uint16 opcode)
 {
@@ -243,7 +205,7 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             uint8 msgtype, chatTag;
             uint32 lang, textLen, unused;
             ObjectGuid guid1, guid2;
-            std::string name, chanName, message;
+            std::string chanName, message;
             p >> msgtype >> lang;
 
             // filter msg type
@@ -280,8 +242,6 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 return;
 
             p >> textLen >> message >> chatTag;
-
-            bool isAiChat = sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3);
 
             if (m_recordIncommingMessages)
             {
@@ -327,23 +287,8 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 m_recordedMessages.push_back(recievedMessage);
             }
 
-            if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
-                return;
-
-            if (guid1 != bot->getObjectGuid()) // do not reply to self
+            if (guid1 != bot->getObjectGuid())
             {
-                // Issue #469: a masterless pool bot ignores Trade-channel
-                // chatter unless the speaker addresses it directly. Only the
-                // Trade channel is gated (resolved via channel id, not the
-                // raw name): General/LFG/Defense/World keep prior behaviour.
-                // Owned/hired bots (live master, owner, hire record) pass.
-                if (msgtype == CHAT_MSG_CHANNEL && !HasRealPlayerMaster() &&
-                    sRandomBotFacade.IsFreeBot(bot) &&
-                    !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
-                    GetChatChannelSource(bot, msgtype, chanName) == ChatChannelSource::SRC_TRADE &&
-                    !TortoiseBots::PoolBotTradeChatAllowed(true, true, message.find(bot->GetName()) != std::string::npos))
-                    return;
-
                 // Dispatch party chat and whispers from authorized real players (group master / members) to HandleCommand
                 if ((msgtype == CHAT_MSG_PARTY || msgtype == CHAT_MSG_WHISPER) && lang != LANG_ADDON)
                 {
@@ -360,113 +305,6 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                         }
                     }
                 }
-
-                // try to always reply to real player
-                time_t lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
-                bool isPaused = time(0) < lastChat;
-                bool shouldReply = false;
-                bool isFromFreeBot = false;
-                sObjectMgr.GetPlayerNameByGUID(guid1, name);
-                uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid1);
-                isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
-                if (!isFromFreeBot)
-                {
-
-                    isFromFreeBot = sPlayerbotAIConfig.IsFreeAltBot(guid1);
-
-                    if (isFromFreeBot)
-                    {
-                        Player* player = sObjectMgr.GetPlayer(guid1);
-                        if (player && isRealPlayer_Helper(player))
-                            isFromFreeBot = false;
-                    }
-                }
-
-                bool isMentioned = message.find(bot->GetName()) != std::string::npos;
-
-
-                ChatChannelSource chatChannelSource = GetChatChannelSource(bot, msgtype, chanName);
-
-                if (!isAiChat || isFromFreeBot)
-                {
-                    // random bot speaks, chat CD
-                    if ((isFromFreeBot || isAiChat) && isPaused)
-                        return;
-
-                    // BG: react only if mentioned or if not channel and real player spoke
-                    if (bot->InBattleGround() && !(isMentioned || (msgtype != CHAT_MSG_CHANNEL && !isFromFreeBot)))
-                        return;
-
-                    if (HasRealPlayerMaster() && guid1 != GetMaster()->getObjectGuid())
-                        return;
-
-                    if (lang == LANG_ADDON)
-                        return;
-
-                    if (istarts_with(message, sPlayerbotAIConfig.toxicLinksPrefix)
-                        && (GetChatHelper()->ExtractAllItemIds(message).size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0)
-                        && sPlayerbotAIConfig.toxicLinksRepliesChance)
-                    {
-                        if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
-                        {
-                            return;
-                        }
-                    }
-                    else if ((GetChatHelper()->ExtractAllItemIds(message).count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance))
-                    {
-                        if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
-                        {
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        if (isFromFreeBot && urand(0, 20))
-                            return;
-
-                        if (msgtype == CHAT_MSG_GUILD && (!sPlayerbotAIConfig.guildRepliesRate || urand(1, 100) >= sPlayerbotAIConfig.guildRepliesRate))
-                            return;
-
-                        if (!isFromFreeBot)
-                        {
-                            if (!isMentioned && urand(0, 4))
-                                return;
-                        }
-                        else
-                        {
-                            if (urand(0, 20 + 10 * isMentioned))
-                                return;
-                        }
-                    }
-                }
-
-                MANGOS_ASSERT(!message.empty());
-                // A GM-tagged speaker arrives as `|c1049e6ff<text>|r`; strip it so the
-                // reply blocklists ("attack", "e [..]", ...) still recognise a command
-                // and the bot does not answer it with the REPLY_ADMIN_ABUSE insults.
-                std::string replyMessage = message;
-                StripGmBadgeColor(replyMessage);
-                if (!replyMessage.empty())
-                    QueueChatResponse(msgtype, guid1, ObjectGuid(), replyMessage, chanName, name, isAiChat);
-                GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
-
-                return;
-            }
-
-            if (isAiChat)
-            {
-                ChatChannelSource chatChannelSource = PlayerbotAIStorage::Instance().GetAI(bot)->GetChatChannelSource(bot, msgtype, chanName);
-
-                std::string llmChannel;
-
-                if (!sPlayerbotAIConfig.llmGlobalContext)
-                    llmChannel = ((chatChannelSource == ChatChannelSource::SRC_WHISPER) ? name : std::to_string(chatChannelSource));
-
-                AiObjectContext* context = aiObjectContext;
-                std::string llmContext = AI_VALUE(std::string, "manual string::llmcontext" + llmChannel);
-                llmContext = llmContext + " " + bot->GetName() + ":" + message;
-                PlayerbotLLMInterface::LimitContext(llmContext, llmContext.size());
-                SET_AI_VALUE(std::string, "manual string::llmcontext" + llmChannel, llmContext);
             }
         }
 
@@ -623,87 +461,6 @@ void PlayerbotAI::HandleMasterIncomingPacket(const WorldPacket& packet)
 void PlayerbotAI::HandleMasterOutgoingPacket(const WorldPacket& packet)
 {
     masterOutgoingPacketHandlers.AddPacket(packet);
-}
-
-
-void PlayerbotAI::SendDelayedPacket(WorldSession* session, futurePackets futPackets)
-{
-    ObjectGuid botGuid = session && session->GetPlayer()
-        ? session->GetPlayer()->GetObjectGuid()
-        : ObjectGuid();
-    if (botGuid.IsEmpty())
-        return;
-
-    std::thread([botGuid, futPacket = std::move(futPackets)]() mutable {
-        try
-        {
-            for (auto& delayedPacket : futPacket.get())
-            {
-                if (delayedPacket.second)
-                    std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
-
-                DelayedBotPacket queued{botGuid,
-                    std::make_unique<WorldPacket>(std::move(delayedPacket.first))};
-                std::lock_guard<std::mutex> lock(DelayedBotPacketsMutex());
-                DelayedBotPackets().push_back(std::move(queued));
-            }
-        }
-        catch (...)
-        {
-            sLog.outError("PlayerbotAI: asynchronous delayed packet generation failed for bot %s",
-                botGuid.GetString().c_str());
-        }
-    }).detach();
-}
-
-void PlayerbotAI::ProcessDelayedPackets()
-{
-    std::deque<DelayedBotPacket> ready;
-    {
-        std::lock_guard<std::mutex> lock(DelayedBotPacketsMutex());
-        ready.swap(DelayedBotPackets());
-    }
-
-    for (auto& queued : ready)
-    {
-        Player* bot = sObjectAccessor.FindPlayer(queued.botGuid);
-        if (!bot || !bot->IsInWorld() || !bot->GetSession() ||
-            !bot->GetSession()->IsHeadless() ||
-            !PlayerbotAIStorage::Instance().GetAI(bot))
-            continue;
-
-        // Delayed packets are generic opcodes; only chat needs command filtering.
-        // Peek CMSG_MESSAGECHAT layout (type, lang, [channel,] message) and drop
-        // command-like text rather than letting core ParseCommands run it.
-        if (queued.packet && queued.packet->GetOpcode() == CMSG_MESSAGECHAT)
-        {
-            WorldPacket& pkt = *queued.packet;
-            size_t savedRpos = pkt.rpos();
-            bool drop = false;
-            try
-            {
-                uint32 type = 0, lang = 0;
-                pkt >> type >> lang;
-                if (type == CHAT_MSG_CHANNEL || type == CHAT_MSG_WHISPER)
-                {
-                    std::string target;
-                    pkt >> target;
-                }
-                std::string message;
-                pkt >> message;
-                drop = IsCommandLikeChat(message);
-            }
-            catch (ByteBufferException&)
-            {
-                drop = false;
-            }
-            pkt.rpos(savedRpos);
-            if (drop)
-                continue;
-        }
-
-        bot->GetSession()->QueuePacket(queued.packet.release());
-    }
 }
 
 namespace ai

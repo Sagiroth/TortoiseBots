@@ -19,6 +19,10 @@ AiPlayerbot.Observability = 0
 AiPlayerbot.ObservabilityPort = 9195
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1)
 AiPlayerbot.ObservabilityDungeonMobs = 1
+# Raids tab: leader, offline members and the live fight window of every raid group, without a commander bind (only acts
+# with Observability = 1; the fight window needs AiPlayerbot.CombatMonitor = 1 in this file). On only when both this
+# file and the world config say 1; 0 in either turns it off (re-read on .reload config).
+AiPlayerbot.ObservabilityRaids = 0
 
 # Enable random bot system
 # On by default: a fresh install brings up a living world of random bots
@@ -891,6 +895,19 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # 1 - on for every bot on a map that has rows
 AiPlayerbot.DungeonTactics = 0
 
+# The "die together" boss tactic (ai_boss_tactic kind linked_death, docs/play/boss-tactics.md).
+# A linked_death row lists one partner of a group (its boss_entry is the group's anchor) and a hold percent
+# (param). While more than one member lives, the free DPS bots spread their damage to equalise the members'
+# health: the pick is the living member with the highest health, and never one at or below param % while
+# another stands above it. Once every living member is at or below param % the hold ends and the ordinary pick
+# burns the lowest, so the group dies together. On Zul'Gurub's Thekal (14599 with the Zealots Lor'Khan 11347
+# and Zath 11348) the row's 3 % is the point inside the 7 s in which a dead sibling is raised to full health.
+# This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because it changes every
+# free DPS bot's target pick. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: DPS bots pick as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunLinkedDeath = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills
@@ -915,6 +932,11 @@ AiPlayerbot.DungeonRunRaid = 0
 # 0 - off: a raid's boss fight keeps the dungeon rules (Default)
 # 1 - on
 AiPlayerbot.DungeonRunRaidBossRules = 0
+
+# A raid binding's healer guard (only read with AiPlayerbot.DungeonRunRaid = 1): in a boss fight with AiPlayerbot.DungeonRunRaidBossRules = 1 whose main tank holds the boss, and in a trash fight whose main tank holds its current target, an add that attacks a healer goes to the raid's nearest ranged dps within 35 yd of it (up to two per add, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free, and one holding the boss (or, in a trash fight, its own add) is never sent at another. An order refused by its bot counts for nothing (the next ranged dps is tried), and one the bot does not take up (its target is not the add) is over after 6 s: that bot is passed over for the add too. A further order waits 2 s, and the pick passes over a plan boss, an add the run holds (crowd control ordered or in place, or the fight's kill_first focus), a camp caster the tank would walk to, and an add that had two orders this fight until 20 s after its last one. A ranged dps busy with a commander task is not picked. Adds not on a healer are left to the dps. In a trash fight the main tank is never sent at a healer's add: with no ranged dps and no off-tank free for it, the add stays where it hits. The trash fight's guard needs no boss rules; without them the boss fight keeps the dungeon guard.
+# 0 - off: the off-tanks take the adds, as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRaidHealerGuard = 0
 
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
@@ -960,8 +982,7 @@ AiPlayerbot.BotLfgOnlyWithPlayersOnline = 1
 # faction across all groups, and only while a real player of that faction is
 # online. A real player who whispers the leader "inv" gets a party invite when his
 # faction, level and class fit the open role; other whispers get one short answer.
-# Not limited by AiPlayerbot.EnableBroadcasts. Only read while
-# AiPlayerbot.BotLfgGroups = 1. `.reload config` reads it again.
+# Only read while AiPlayerbot.BotLfgGroups = 1. `.reload config` reads it again.
 # 0 - off
 # 1 - on (Default)
 AiPlayerbot.BotLfgChat = 1
@@ -1030,6 +1051,23 @@ AiPlayerbot.DungeonRunAggroEstimate = 0
 # 6 - default; 1 and up. Only read while AiPlayerbot.DungeonRunAggroEstimate = 1.
 AiPlayerbot.DungeonRunAggroCeiling = 6
 
+# The ring estimate: instead of counting only from where the party stands, the estimate also
+# counts every creature the walk to the pull, the stand and the fight point would wake, and
+# every creature within the ring below of one already counted (a call for help carries: two
+# hops). The count is compared with a pull row's own ceiling (a plan's max_bodies, the target
+# included), else with DungeonRunAggroCeiling + 1. A pull over its ceiling rests once and notes
+# "pull estimate: N bodies over the ceiling M"; the last approach row also notes once how many
+# the coming pull would bring ("ahead: pull N brings ..."). Advice only: no order changes.
+# 0 - off, the estimate as before (Default)
+# 1 - on; only read while AiPlayerbot.DungeonRunAggroEstimate = 1
+AiPlayerbot.DungeonRunAggroWalkRing = 0
+
+# How far a call for help carries in the ring estimate, in yards (the measured wakes were
+# 11.0-19.5 yd; the server's own CreatureFamilyAssistanceRadius is 10). The larger of the two
+# is used.
+# 20 - default; 5 to 40
+AiPlayerbot.DungeonRunAggroRingYd = 20
+
 # The run leader's pack-cleared gate. A `pull` step is done only when nothing of its
 # entries is left: no living unit in its radius, no unit in the band around it
 # (radius + this many yards on the ground, 10 yd of height), no patroller, and no
@@ -1083,6 +1121,42 @@ AiPlayerbot.DungeonRunRezHold = 0
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunPullStand = 0
+
+# The pull stand keeps clear of other packs. It applies to every firing stand the run leader picks: an authored
+# stand-pull step's (always) and a generic stand pull's (with AiPlayerbot.DungeonRunPullStand = 1). Every firing
+# stand the tank's path to the target offers is checked, in the same order as before, and the first one that is far enough
+# from every other living pack is taken. Far enough is the pack's aggro reach (its detection range minus the
+# party's level advantage over it) plus 4 yd: the bots stand at the stand point, and only the unit's reach and the
+# line of sight the core needs decide whether it can wake on the stand. A pack that patrols is checked along its
+# whole loop, so a stand the loop will walk past is refused too. A creature the pulled pack's call for help reaches
+# (the core's 10 yd family assistance radius, one call out) is part of the pulled pack. The stand must also stay the
+# pulled pack's widest aggro reach away from every unit of it, so the party does not wake it on the way. On a boss
+# step the boss's own fight is no other pack: the units the plan lists for the step, the creatures the core links to
+# the boss and the ones already in the fight never refuse a stand. A unit more than 8 yd above or below the stand
+# with no line of sight to it stands on another storey and never refuses one either.
+# The clearance is advisory: with every stand refused, the tank uses the stand the key is off for (the path's first
+# in range) and the note reads
+# "stand_pull: no clear stand for <entry> (closest <entry> at <yd>); using the default stand". Only a patrolling
+# pack that blocks the stand alone is waited for, up to 20 s, to walk clear; then the run goes on.
+# 0 - off, the stand is picked as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandClearance = 0
+
+# The crowd control before the walk in. On a stand-pull step (the plan marks its pull row or boss row stand_pull, with
+# a move row right before it), the run leader walks the party to the plan's approach and pulls from there; that walk
+# can pass inside the pulled pack's own aggro range, and the pack then wakes before the step's Polymorph, Shackle or
+# Sap goes out. With this key the move row before the pull ends at the last point of its walk that stands outside the
+# pack's own wake reach (the widest aggro reach of the pack's living units plus the party's 10 yd spread plus 1 yd),
+# the step's crowd control goes out there, and only then the party walks to the plan's approach and pulls. When no
+# point of the walk is that clear (an approach inside the pack by design) the row walks the plan's point as before,
+# and the note reads "stand_pull: no pre-cc point for <entry>". The row waits up to 3 s for the point to be read,
+# then goes on without it: a read that does not come never holds the run. A stand-pull step whose approach is already
+# clear is unchanged, and so is every other step.
+# 0 - off, the walk in is exactly as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandPullPreCc = 0
 
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
@@ -1284,11 +1358,6 @@ AiPlayerbot.ImmuneSpellIds = 19428
 # Randombots will form guilds by buying a charter, getting signatures and handing it in.
 # AiPlayerbot.RandomBotFormGuild = 1
 
-# Bots announce group/raid invites in say or guild chat. Only a real player is
-# announced to; a bot inviting another bot stays silent (the pool invites
-# itself non-stop while it fills up).
-AiPlayerbot.InviteChat = 1
-
 # Enable per-bot action log files (logs/bots/<botname>_acc<id>_<timestamp>.log)
 # and "[BOT]" prefixed structured log lines in the server log. Useful for
 # diagnosing bot lifecycle issues; off in production. The crash handler also
@@ -1383,115 +1452,6 @@ AiPlayerbot.BotProfessionSpecializations = 2
 
 #max limit of members in a guild (bots will leave guild if there are more members than this number)
 # AiPlayerbot.GuildMaxBotLimit = 1000
-
-##################################################################################
-#
-# Broadcast rates
-#
-# 1 - to enable broadcasts globally, 0 - to disable (default 1)
-#
-# 0 silences what the bots say on their own: the quest/loot/kill/level-up/suggest
-# broadcasts, the /say and /yell chatter, guild and world channel messages, the
-# recruitment and invite lines, the flavour text of an emote and the scripted
-# battleground callouts.
-#
-# Whispers, party and raid chat, the answer to a player who ordered the bot
-# (speak, a reply to the bot's own master) and the TortoiseBotsManager addon
-# protocol are not broadcasts and stay.
-AiPlayerbot.EnableBroadcasts = 1
-#
-# all broadcast chances should be in range 0-30000
-#
-# value of 0 will disable this particular broadcast
-# setting value to 30000 does not guarantee the broadcast, as there are some internal randoms as well
-#
-# setting channel broadcast chance to 0, will re-route most broadcasts to other available channels
-# setting all channel broadcasts to 0 will disable most broadcasts
-# AiPlayerbot.BroadcastToGuildGlobalChance = 30000
-# World/general channels are what real players actually read, and every quest/loot/
-# kill/levelup/suggest-* broadcast below routes through them at chance=100 - so these
-# two global gates are the main throttle on how much of that ends up as visible chat spam.
-AiPlayerbot.BroadcastToWorldGlobalChance = 3000
-AiPlayerbot.BroadcastToGeneralGlobalChance = 3000
-# AiPlayerbot.BroadcastToTradeGlobalChance = 30000
-# AiPlayerbot.BroadcastToLFGGlobalChance = 30000
-# AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 30000
-# AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 30000
-# AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 30000
-# AiPlayerbot.BroadcastToSayGlobalChance = 30000
-# AiPlayerbot.BroadcastToYellGlobalChance = 30000
-#
-# individual settings
-# setting one of these to 0 will disable the particular broadcast
-# AiPlayerbot.BroadcastChanceLootingItemPoor = 30
-# AiPlayerbot.BroadcastChanceLootingItemNormal = 300
-# AiPlayerbot.BroadcastChanceLootingItemUncommon = 10000
-# AiPlayerbot.BroadcastChanceLootingItemRare = 20000
-# AiPlayerbot.BroadcastChanceLootingItemEpic = 30000
-# AiPlayerbot.BroadcastChanceLootingItemLegendary = 30000
-# AiPlayerbot.BroadcastChanceLootingItemArtifact = 30000
-#
-# AiPlayerbot.BroadcastChanceQuestAccepted = 6000
-# AiPlayerbot.BroadcastChanceQuestUpdateObjectiveCompleted = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateObjectiveProgress = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateFailedTimer = 300
-# AiPlayerbot.BroadcastChanceQuestUpdateComplete = 1000
-# AiPlayerbot.BroadcastChanceQuestTurnedIn = 10000
-#
-# AiPlayerbot.BroadcastChanceKillNormal = 30
-# AiPlayerbot.BroadcastChanceKillElite = 300
-# AiPlayerbot.BroadcastChanceKillRareelite = 3000
-# AiPlayerbot.BroadcastChanceKillWorldboss = 20000
-# AiPlayerbot.BroadcastChanceKillRare = 10000
-# AiPlayerbot.BroadcastChanceKillUnknown = 100
-# AiPlayerbot.BroadcastChanceKillPet = 10
-# AiPlayerbot.BroadcastChanceKillPlayer = 30
-#
-# AiPlayerbot.BroadcastChanceLevelupGeneric = 20000
-# AiPlayerbot.BroadcastChanceLevelupTenX = 30000
-# AiPlayerbot.BroadcastChanceLevelupMaxLevel = 30000
-#
-# AiPlayerbot.BroadcastChanceSuggestInstance = 5000
-# AiPlayerbot.BroadcastChanceSuggestQuest = 10000
-# AiPlayerbot.BroadcastChanceSuggestGrindMaterials = 5000
-# AiPlayerbot.BroadcastChanceSuggestGrindReputation = 5000
-# Trade spam ("WTS %category", "I am selling [item]") from masterless pool bots
-# is off by default: with hundreds of bots in one zone it reads as wall-to-wall
-# selling. Set >0 (e.g. 300) to let ungrouped random bots hawk their bags again.
-# AiPlayerbot.BroadcastChanceSuggestSell = 0
-# suggest_something is pure ambient chit-chat (no real event behind it, e.g. "anyone
-# know the lore behind Elwynn Forest") - it fired at 100% chance by default, making it
-# the single biggest source of world/general noise. Cut hard since it carries no info.
-AiPlayerbot.BroadcastChanceSuggestSomething = 2000
-#
-# Very rude speeches
-# AiPlayerbot.BroadcastChanceSuggestSomethingToxic = 0
-#
-# Specifically for "<word> [item link]"
-# AiPlayerbot.BroadcastChanceSuggestToxicLinks = 0
-#
-# prefix is used as a word in "<word> [item link]"
-# AiPlayerbot.ToxicLinksPrefix = gnomes
-#
-# chance to suggest thunderfury
-# AiPlayerbot.BroadcastChanceSuggestThunderfury = 1
-#
-# does not depend on global chance
-# AiPlayerbot.BroadcastChanceGuildManagement = 30000
-#
-##################################################################################
-
-# Chance to reply to toxic links with toxic links (0-100)
-AiPlayerbot.ToxicLinksRepliesChance = 30
-# Chance to reply to thunderfury with thunderfury (0-100)
-AiPlayerbot.ThunderfuryRepliesChance = 40
-# Bots will chat in guild about certain events (int) (0-100)
-AiPlayerbot.GuildRepliesRate = 100         # Reply someone saying something.
-
-# 1 = bots without a master say out loud (/say) everything they would
-# normally whisper to a master, incl. narration of where they go and why.
-# Greetings, broadcasts and normal bot chat do not depend on this. Default 0.
-AiPlayerbot.RandomBotSayWithoutMaster = 0
 
 # Minimum level at which bots will start accepting duels
 # AiPlayerbot.BotAcceptDuelMinimumLevel = 10
@@ -2589,75 +2549,6 @@ AiPlayerbot.LogRetentionDays = 3
 
 # Filters certain actions from showing up in 'nc +debug' and 'nc +debug action'
 # AiPlayerbot.DebugFilter = add gathering loot,check values,emote,check mount state,jump
-
-# LLM values. These values are for noncombat strategy 'ai chat' which allows bots to reply using a LLM api.
-# For a quickstart download koboldcpp, a 7b model from huggingface and start kobold.
-# (Default) KoboldCPP examples:
-
-# Enables/disables LLM globaly: 0 = disabled, 1 = enabled with ai chat strategy, 2 = ai chat strategy default for all bots, 3 = enabled without ai chat strategy.
-# AiPlayerbot.LLMEnabled = 0
-# The api endpoint that should be called for chat generation.
-# AiPlayerbot.LLMApiEndpoint = http://127.0.0.1:5001/api/v1/generate
-# The default json to send to the endpoint.
-# AiPlayerbot.LLMApiJson = {"max_length": 100, "prompt": "[<pre prompt>]<context> <prompt> <post prompt>"}
-
-# The max context length allowed for the model. 0 to disable. This will shrink the context (all previous conversations) to make the entire prompt <pre prompt><context><prompt><post prompt> fit.
-# AiPlayerbot.LLMContextLength = 4096
-# Time in seconds the server will wait for the generation to finish. This includes waiting in queue.
-# AiPlayerbot.LLMGenerationTimeout = 600
-# Maximum generation requests allowed at the same time. This includes waiting in queue.
-# AiPlayerbot.LLMMaxSimultaniousGenerations = 100
-
-# The default prompt to send at the beginning of each conversation.
-# AiPlayerbot.LLMPrePrompt = You are a roleplaying character in Vanilla/Tortoise WoW. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.
-# The prompt part containing the last message from the player the bot is responding to.
-# AiPlayerbot.LLMPrompt = <receiver name>:<initial message>
-# The default prompt to send at the end of each conversation.
-# AiPlayerbot.LLMPostPrompt = <sender name>:
-
-# The prompt used for rpg chat with npc's
-# AiPlayerbot.LLMRpgPrompt = In Vanilla/Tortoise WoW in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>. Standing nearby is <unit type> <unit name> <unit subname> a level <unit level> <unit gender> <unit race> <unit faction> <unit class>. Answer as a roleplaying character. Limit responses to 100 characters.
-
-# Response parse method. The (json) response that the llm will output needs to be cut and split to result in a number of plain lines the bot can give as feedback.
-# Step1: What pattern the server should look for to find the start of the repsonse the llm gave.
-# AiPlayerbot.LLMResponseStartPattern = ("text":\s*")
-# Step2: What pattern the server should look for that the response has ended.
-# AiPlayerbot.LLMResponseEndPattern = ("|\b(?!<sender name>\b)(\w+):)
-# Step3: What pattern the server should look for to remove from the response.
-# AiPlayerbot.LLMResponseDeletePattern = (\\n|<sender name>:|\\[^ ]+)
-# Step4: What pattern the server should look for to split the repsonse in multiple lines. Note only lines that follow this pattern will be extracted.
-# AiPlayerbot.LLMResponseSplitPattern = (\*.*?\*)|(\[.*?\])|(\'.*\')|([^\*\[\] ][^\*\[\]]+?[.?!])
-
-# The file llm_character_card.txt allows you to define how individual bots speak. You need to create this file in the root folder.
-# Each new line adds an additional prompt to the specified bot, which can be used to adjust specific bot's personality and speaking style.
-# The format must be as follows:
-# name1::text1
-# name2::text2
-# name3::text3
-
-# Examples:
-# Celguar::I am the Keeper of the Source.
-# Mostlikely::I like to travel a lot.
-# Flekz::I hold the power of ancient wizardry.
-
-AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
-
-# Should previous conversations from all channels be mixed?
-# AiPlayerbot.LLMGlobalContext = 0
-
-# The chance (0-100) bots will use ai chat to respond to other bots
-# AiPlayerbot.LLMBotToBotChatChance = 0
-
-# The chance (0-100) bots will use ai chat talk to npcs during rpg
-# AiPlayerbot.LLMRpgAIChatChance = 100
-
-# Channels that bots are not allowed to use ai-chat to reply on. Channels: guild,world,general,trade,lfg,ldefence,wdefence,grecruitement,say,whisper,emote,temote,yell,party,raid
-# AiPlayerbot.LLMBlockedReplyChannels =
-
-# OPEN-AI (chat completions) example:
-# AiPlayerbot.LLMApiEndpoint = http://IP/URL:PORT/v1/chat/completions
-# AiPlayerbot.LLMApiJson = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "<pre prompt> <context>"},{"role": "user", "content": "<prompt>"}],"max_tokens": 60}
-# AiPlayerbot.LLMResponseStartPattern = ("content":\s*")
 
 ##################################################################################
 #                                                                                #
