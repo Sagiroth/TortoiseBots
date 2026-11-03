@@ -558,6 +558,9 @@ public:
 
 	bool RandombotsWalkingRPG;
     bool boostFollow;
+    // Inside an instance, a group follows in a 150 degree wedge behind the leader
+    // (RaidFollowWedgePolicy.h), with far stragglers walking the leader's trail.
+    bool raidFollowWedge;
     // Dungeon follow holds short of unpulled packs when the leader is far ahead (audit fix 127).
     bool dungeonFollowHoldBeforePacks;
     // Warlock summons the demon that fits its spec in PvE instead of the Voidwalker (opt-in).

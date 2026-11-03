@@ -43,6 +43,12 @@ bool FollowAction::Execute(Event& event)
     if (RescueStalledDungeonFollow(followTarget, moved))
         return moved;
 
+    // A far follower in a raid or dungeon walks the leader's own path: the
+    // direct route to its formation slot cuts the inside of stairs and corners
+    // and crosses what the leader's route avoided.
+    if (WalkLeadTrail(followTarget, moved))
+        return moved;
+
     if (ai->IsSafe(followTarget))
     {
         if (formation)
@@ -62,6 +68,45 @@ bool FollowAction::Execute(Event& event)
     if (!moved && ArmFarDungeonFollowRescue(followTarget))
         RescueStalledDungeonFollow(followTarget, moved);
 
+    return moved;
+}
+
+// Records the leader's positions and, when the follower is far behind with
+// nobody fighting, walks the recorded trail (FollowTrailPolicy.h). Returns true
+// only when a trail walk launched, so the normal follow keeps the tick
+// otherwise. Off outside the raid/dungeon wedge, and the trail is dropped when
+// the pair leaves the instance or the leader stops being a valid follow target.
+bool FollowAction::WalkLeadTrail(Unit* followTarget, bool& moved)
+{
+    moved = false;
+    if (!UsesRaidFollowWedge(ai) || !followTarget || followTarget == bot || !followTarget->IsPlayer())
+    {
+        leadTrail.clear();
+        return false;
+    }
+    if (!bot->IsAlive() || !followTarget->IsAlive() || !ai->IsSafe(followTarget) ||
+        bot->GetMapId() != followTarget->GetMapId() || bot->GetTransport() ||
+        followTarget->GetTransport() || bot->IsTaxiFlying())
+    {
+        leadTrail.clear();
+        return false;
+    }
+
+    ai::FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ());
+
+    if (bot->IsInCombat() || followTarget->IsInCombat())
+        return false;
+    if (!sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, followTarget),
+            ai::kRaidFollowCatchUpDistanceYd))
+        return false;
+
+    int const index = ai::FollowTrailWaypoint(leadTrail, bot->GetPositionX(), bot->GetPositionY());
+    if (index < 0 || static_cast<std::size_t>(index) >= leadTrail.size())
+        return false;
+
+    ai::FollowTrailPoint const& point = leadTrail[static_cast<std::size_t>(index)];
+    moved = MoveTo2(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
     return moved;
 }
 
