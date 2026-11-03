@@ -48,7 +48,7 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         watch = fight.index("FightProgress const progress = FightProgressTick(r, f, dt);")
         # Before any return of the fight block's ceiling: the 1-hp watch's pause and the ceiling's own.
         self.assertLess(watch, fight.index("if (r.fightMs > stopCap && autoRegroup)"))
-        self.assertLess(watch, fight.index("if (pastCeiling && (!progressHolds || hardCapped))"))
+        self.assertLess(watch, fight.index("if (pastCeiling && (!progressHolds || hardCapped) && !breakingCc)"))
         self.assertIn(
             "bool const bossStep = s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f) || r.raidBossFight;", fight)
         # A raid's boss fight gets kRaidBossFightCapMs only with AiPlayerbot.DungeonRunRaidBossRules.
