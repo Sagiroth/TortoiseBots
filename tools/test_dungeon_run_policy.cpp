@@ -30686,6 +30686,81 @@ static void TestAutoCcSeductionOrderNamesItsFamily()
     CHECK(s.ccSent.empty());
 }
 
+// The glue answers every run order (CcOrderTaken). An automatic cc order that was refused assigned nothing: the
+// unit, its bot, its mark, the order budget and the spacing go back, so the next tick may pick it again. Accepted
+// orders keep their hold; a refused re-apply keeps the existing hold and only gives back the order's cost.
+static void TestAutoCcRefusedOrderIsNoHold()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        // Pre-pull: the refused mark is no hold, and the next tick sends it again.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 2 Magey polymorph");
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+        CcOrderTaken(r, order, true); // accepted: the hold stands
+        CHECK(r.ccAutoPending.order.empty() && r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+
+        Run q = Start(&plan);
+        Facts g = f;
+        std::string const refused = Tick(q, g);
+        CHECK(refused == order);
+        CcOrderTaken(q, refused, false);
+        CHECK(q.ccSent.empty() && q.ccHolds.empty() && q.ccWatch.empty() && q.ccIcons.empty());
+        CHECK(q.ccAutoOrders == 0);
+        CHECK(Tick(q, g) == refused); // the pick is free again
+    }
+    {
+        // A fight joiner: the refusal gives the budget and the spacing back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(900, 20));
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 900 Magey polymorph");
+        CHECK(r.ccAutoOrders == 1 && r.ccSent.count(900) == 1);
+        CcOrderTaken(r, order, false);
+        CHECK(r.ccAutoOrders == 0 && !r.ccSent.count(900) && !r.ccHolds.count(900) && r.ccWatch.empty());
+        CHECK(Tick(r, f) == order); // the joiner is picked again
+    }
+    {
+        // A refused re-apply: the hold and its mark stay, the budget and the re-apply count go back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const first = Tick(r, f);
+        CHECK(first == "cc moon 2 Magey polymorph");
+        CcOrderTaken(r, first, true);
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        f.members[0].inCombat = true;
+        f.units[1].polymorphed = true;
+        CHECK(Tick(r, f).empty()); // the aura lands
+        f.units[1].polymorphed = false;
+        CHECK(Tick(r, f).empty()); // 1 s
+        std::string const again = Tick(r, f); // the aura broke: re-apply
+        CHECK(again == "cc moon 2 Magey polymorph");
+        CHECK(r.ccReapplied[2] == 1 && r.ccAutoOrders == 2);
+        CcOrderTaken(r, again, false);
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1); // still the run's hold
+        CHECK(r.ccReapplied.find(2) == r.ccReapplied.end() && r.ccAutoOrders == 1);
+        CHECK(Tick(r, f) == again); // retried at once
+    }
+}
+
 static void TestAutoCcLevelGap()
 {
     DungeonPlan plan = CcPlan({});
@@ -30903,6 +30978,7 @@ int main()
     TestAutoCcHealersKept();
     TestAutoCcFearOnlyWithRoomAndKey();
     TestAutoCcSeductionOrderNamesItsFamily();
+    TestAutoCcRefusedOrderIsNoHold();
     TestAutoCcLevelGap();
     TestAutoCcJoinerInTheFight();
     TestAutoCcReappliesTwiceThenStops();

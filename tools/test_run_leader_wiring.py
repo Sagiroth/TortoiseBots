@@ -1213,6 +1213,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("CcOrderFamilyAllows(family, spell)",
                       (ROOT / "commands/BotCommandContext.cpp").read_text())
         self.assertIn('if (!family.empty() && family != "none")', COMMANDS)
+        self.assertIn("TortoiseBots::DungeonRun::CcOrderTaken(it->second.run, order, accepted);", COMMANDS)
         trig = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
         self.assertIn('IsInRunningDungeonRun(bot) &&\n'
                       '        !TortoiseBots::DungeonRun::CcOrderFamilyAllows(AI_VALUE(std::string, "run cc family"), getName())',

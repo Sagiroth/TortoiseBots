@@ -2272,6 +2272,20 @@ struct Run
     std::uint32_t ccAutoOrders = 0;
     std::uint32_t ccAutoGapMs = 0;
     bool ccAutoNoBotNoted = false;
+    // The automatic cc order just sent, until the glue answers it
+    // (CcOrderTaken): a refused order assigned nothing, so the unit, bot,
+    // mark, budget and spacing it took go back. resend: CheckCc's re-send of
+    // an existing hold, which a refusal only leaves to its own watch.
+    struct CcAutoOrder
+    {
+        std::string order;
+        std::uint64_t guid = 0;
+        bool budget = false;
+        bool reapplied = false;
+        bool resend = false;
+        std::uint32_t gapMs = 0;
+    };
+    CcAutoOrder ccAutoPending;
     std::unordered_set<std::uint64_t> healerGuardAssigned;
     // The raid icons the run's cc orders set, icon slot -> the unit (for the
     // whole run, not the step): the run reuses only these and clears them at
@@ -8173,6 +8187,54 @@ inline void SyncCcWatch(Run& r)
     r.ccWaitMs = r.ccWatch.empty() ? 0 : r.ccWatch.front().waitMs;
 }
 
+// The glue's answer to the automatic cc order it sent this tick
+// (Commander, right after IssueRunOrder). Accepted: the registered hold
+// stands. Refused: nothing was assigned, so the unit, its bot, its mark, the
+// order budget and the spacing go back, and the next tick may pick again. A
+// refused CheckCc re-send is not a new hold: its watch stays and ends as "did
+// not land" on its own.
+inline void CcOrderTaken(Run& r, std::string const& order, bool accepted)
+{
+    if (r.ccAutoPending.order.empty() || r.ccAutoPending.order != order)
+        return;
+    Run::CcAutoOrder const pending = r.ccAutoPending;
+    r.ccAutoPending = Run::CcAutoOrder();
+    if (accepted || pending.resend)
+        return;
+    // A re-apply is a re-send of a hold that existed before it: the hold, its
+    // bot and its mark stay, and only the order's cost goes back so the next
+    // re-apply tick tries again.
+    if (!pending.reapplied)
+    {
+        r.ccSent.erase(pending.guid);
+        r.ccHolds.erase(pending.guid);
+        for (auto it = r.ccWatch.begin(); it != r.ccWatch.end();)
+            it = it->guid == pending.guid ? r.ccWatch.erase(it) : it + 1;
+        SyncCcWatch(r);
+        for (auto it = r.ccIcons.begin(); it != r.ccIcons.end();)
+        {
+            if (it->second == pending.guid)
+                it = r.ccIcons.erase(it);
+            else
+                ++it;
+        }
+    }
+    if (pending.budget && r.ccAutoOrders)
+        --r.ccAutoOrders;
+    if (pending.reapplied)
+    {
+        auto const it = r.ccReapplied.find(pending.guid);
+        if (it != r.ccReapplied.end())
+        {
+            if (it->second > 1)
+                --it->second;
+            else
+                r.ccReapplied.erase(it);
+        }
+    }
+    r.ccAutoGapMs = pending.gapMs;
+}
+
 // The order that takes a bot off its cc mark (`cc clear <bot> <mark> <guid>`):
 // its "rti cc" goes to none, so no class row of it fires on the mark (a
 // warlock's "fear on cc"), and the raid icon is cleared when it is still on
@@ -8278,7 +8340,10 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
                 r.note = "fighting: the crowd control on " + std::to_string(held->entry) + " did not land: once more";
                 order = "cc " + hold->second.mark + " " + std::to_string(held->guid) + " " + bot;
                 if (hold->second.autoOrder)
+                {
                     order += " " + CcFamilyToken(hold->second.family);
+                    r.ccAutoPending = Run::CcAutoOrder{order, held->guid, false, false, true, r.ccAutoGapMs};
+                }
                 sent = true;
             }
             ++i;
@@ -8937,10 +9002,11 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     pick.family = kRunCc[bestSpell].family;
     pick.mark = mark;
     pick.autoOrder = true;
+    order = CcOrderText(pick, best->guid);
+    r.ccAutoPending = Run::CcAutoOrder{order, best->guid, true, false, false, r.ccAutoGapMs};
     RegisterCcOrder(r, pick, best->guid);
     ++r.ccAutoOrders;
     r.ccAutoGapMs = 0;
-    order = CcOrderText(pick, best->guid);
     r.note = "auto cc: joiner " + std::to_string(best->entry) + " (" + pick.bot + ": " + RunCcOf(pick.family)->spell +
         "), engaged " + std::to_string(engaged - held) + " over " + std::to_string(threshold);
     return true;
@@ -9006,12 +9072,14 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     pick.family = hold.family;
     pick.mark = hold.mark;
     pick.autoOrder = hold.autoOrder;
+    order = CcOrderText(pick, guid);
+    if (pick.autoOrder)
+        r.ccAutoPending = Run::CcAutoOrder{order, guid, true, true, false, r.ccAutoGapMs};
     RegisterCcOrder(r, pick, guid);
     std::uint32_t& count = r.ccReapplied[guid];
     count = done + 1;
     ++r.ccAutoOrders;
     r.ccAutoGapMs = 0;
-    order = CcOrderText(pick, guid);
     const RunCcSpell* const spell = RunCcOf(pick.family);
     r.note = "auto cc: " + std::to_string(unit->entry) + " broke free: " + (spell ? spell->spell : "") + " again (" +
         std::to_string(count) + "/" + std::to_string(kRunCcReapplies) + ")";
@@ -9669,6 +9737,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         // one), where the fight gate checks the aura (CheckCc). A Sap is cast
         // out of combat (the rogue's "sap cc mark"): the pull waits for it
         // (SapWait). One unit per bot, each with its own mark (PickCcOrder).
+        order = CcOrderText(ccPick, cc->guid);
+        if (ccPick.autoOrder)
+            r.ccAutoPending = Run::CcAutoOrder{order, cc->guid, true, false, false, r.ccAutoGapMs};
         RegisterCcOrder(r, ccPick, cc->guid);
         // Still getting the pull ready: the next tick's pull is not counted
         // as a second pull attempt (FightStep's fruitless count).
@@ -9676,7 +9747,6 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         r.note = f.autoCc ? RunAutoCcMarkNote(r, *cc, ccPick)
                           : "crowd control on " + std::to_string(cc->entry) + " (" + ccPick.bot + ": " +
                                 RunCcOf(ccPick.family)->spell + ") before the pull";
-        order = CcOrderText(ccPick, cc->guid);
         r.ccOrderMs = 0;
         r.standPullShotGuid = 0; // the pull never went out (the mark goes out first)
         return;

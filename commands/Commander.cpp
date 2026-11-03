@@ -12233,6 +12233,9 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             return;
         // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
         TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
+        // An automatic cc order that was refused assigned nothing: its unit,
+        // bot, mark, budget and spacing go back for the next pick.
+        TortoiseBots::DungeonRun::CcOrderTaken(it->second.run, order, accepted);
         if (accepted && captured.movePathRead)
             TortoiseBots::DungeonRun::NoteMovePathType(it->second.run, order, captured.movePathType);
         // A stalled walk's `direct` move refused: the walk goes on without it (DungeonRun::StallDirectRefused).
