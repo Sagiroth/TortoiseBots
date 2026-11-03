@@ -369,6 +369,16 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn('constexpr const char* kRunCcMarksAuto[] = {"moon", "square", "diamond", "triangle", "star", "circle", "cross"};', policy)
         self.assertIn("const char* const* list = f.autoCc ? kRunCcMarksAuto : kCcMarks;", policy)
 
+    def test_auto_cc_distance_tie_break_reads_the_lead_distance(self):
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        # Both pickers always passed a null pull target, so the stand-pull branch never ran: the tie-break is the
+        # unit's own distance from the lead bot, and the dead parameter is gone from both helpers.
+        self.assertNotIn("RunAutoCcFromPullYd", policy)
+        self.assertNotIn("pullTarget", policy)
+        better = body(policy, "inline bool RunAutoCcBetter(", "\n}\n")
+        self.assertIn("if (a.distLead != b.distLead)\n        return a.distLead > b.distLead;", better)
+        self.assertEqual(policy.count("RunAutoCcBetter(r, u, spellIdx, *"), 2)
+
     def test_crowd_control_keeps_to_the_runs_mark(self):
         cc = (ROOT / "ai/playerbot/strategy/values/CcTargetValue.cpp").read_text()
         # Never a totem or an NPC's summon (the healing ward), and in a run only the ordered mark.

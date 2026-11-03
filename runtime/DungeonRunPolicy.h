@@ -8794,16 +8794,6 @@ inline std::uint32_t CcMarkedLive(const Run& r, const Facts& f)
     return marked;
 }
 
-// How far a cc candidate stands from the pack's pull target: its own distance
-// from the lead bot (the tank pulls from the front) unless both it and the
-// target were read with a place (a stand-pull row's units).
-inline float RunAutoCcFromPullYd(const UnitFact& u, const UnitFact* pullTarget)
-{
-    if (pullTarget && (pullTarget->x != 0.0f || pullTarget->y != 0.0f) && (u.x != 0.0f || u.y != 0.0f))
-        return ai::PlanDistance(u.x, u.y, u.z, pullTarget->x, pullTarget->y, pullTarget->z);
-    return u.distLead;
-}
-
 inline int RunCcTierRank(RunCcSpell::Tier tier)
 {
     return tier == RunCcSpell::Tier::A ? 0 : tier == RunCcSpell::Tier::S ? 1 : 2;
@@ -8812,9 +8802,9 @@ inline int RunCcTierRank(RunCcSpell::Tier tier)
 // Whether cc candidate `a` (spell `aSpell` of kRunCc) goes before `b`: plan
 // rank (cc_always, then cc_priority) before an unlisted unit, then a caster,
 // then the family's tier, then the higher level, then the unit farther from
-// the pull target, then the guid.
+// the lead bot (the tank pulls from the front), then the guid.
 inline bool RunAutoCcBetter(const Run& r, const UnitFact& a, std::size_t aSpell, const UnitFact& b,
-    std::size_t bSpell, const UnitFact* pullTarget)
+    std::size_t bSpell)
 {
     int const aRank = r.plan ? r.plan->CcRank(a.entry) : -1;
     int const bRank = r.plan ? r.plan->CcRank(b.entry) : -1;
@@ -8830,10 +8820,8 @@ inline bool RunAutoCcBetter(const Run& r, const UnitFact& a, std::size_t aSpell,
         return aTier < bTier;
     if (a.level != b.level)
         return a.level > b.level;
-    float const aYd = RunAutoCcFromPullYd(a, pullTarget);
-    float const bYd = RunAutoCcFromPullYd(b, pullTarget);
-    if (aYd != bYd)
-        return aYd > bYd;
+    if (a.distLead != b.distLead)
+        return a.distLead > b.distLead;
     return a.guid < b.guid;
 }
 
@@ -9148,7 +9136,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
         const MemberFact* const bot = RunCcBotFor(r, f, u, busy, spellIdx);
         if (!bot)
             continue;
-        if (!pick.unit || RunAutoCcBetter(r, u, spellIdx, *pick.unit, bestSpell, nullptr))
+        if (!pick.unit || RunAutoCcBetter(r, u, spellIdx, *pick.unit, bestSpell))
         {
             pick.unit = &u;
             pick.bot = bot->name;
@@ -9250,7 +9238,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
             const MemberFact* const bot = RunCcBotFor(r, f, u, busy, spellIdx);
             if (!bot)
                 continue;
-            if (!best || RunAutoCcBetter(r, u, spellIdx, *best, bestSpell, nullptr))
+            if (!best || RunAutoCcBetter(r, u, spellIdx, *best, bestSpell))
             {
                 best = &u;
                 bestBot = bot;
