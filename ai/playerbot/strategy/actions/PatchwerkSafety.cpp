@@ -126,9 +126,12 @@ Player* ai::PatchwerkHealingTarget(PlayerbotAI* ai)
     if (tanks.empty()) return nullptr;
     if (Player* main = PatchwerkSafetyMain(ai, boss))
         std::stable_sort(tanks.begin(), tanks.end(), [main](Player* a, Player* b) { return a == main && b != main; });
+    // Seats go to bot healers only: a human healer does not follow the seat,
+    // and counting one would leave a tank without its bot healers.
     std::vector<Player*> healers;
     for (Player* member : LiveGroupMembers(bot->GetGroup()))
-        if (member->IsAlive() && member->IsInWorld() && member->IsInMap(bot) && ai->IsHeal(member)) healers.push_back(member);
+        if (member->IsAlive() && member->IsInWorld() && member->IsInMap(bot) && ai->IsHeal(member) &&
+            PlayerbotAIStorage::Instance().GetAI(member)) healers.push_back(member);
     std::sort(healers.begin(), healers.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
     auto pos = std::find(healers.begin(), healers.end(), bot);
     return pos == healers.end() ? nullptr : tanks[PatchwerkHealerSeat(pos - healers.begin(), tanks.size())];
@@ -243,6 +246,7 @@ bool ai::UpdatePatchwerkSafety(PlayerbotAI* ai)
         std::size_t ordinal = 0;
         for (Player* member : LiveGroupMembers(bot->GetGroup()))
             if (member->IsAlive() && member->IsInMap(bot) && ai->IsHeal(member) &&
+                PlayerbotAIStorage::Instance().GetAI(member) &&
                 member->GetObjectGuid() < bot->GetObjectGuid()) ++ordinal;
         bool const primary = ordinal < Tanks(ai, boss).size();
         if (patient->GetHealthPercent() >= 98 && !primary) return false;
