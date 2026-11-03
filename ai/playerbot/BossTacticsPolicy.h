@@ -597,6 +597,14 @@ namespace ai
         return !holdsCaster && radius > 0.0f && distance < radius;
     }
 
+    // Whether an action may run while a freeze_on_aura row holds the bot: nothing but the freeze action itself. A
+    // carrier's heal still builds threat on every enemy in combat with the healer (boss_mandokir.cpp's Gaze allows no
+    // threat and 2 yd of movement), so the heals are frozen too. Not frozen: every action runs.
+    inline bool FreezeHoldsAction(bool carriesAura, bool actionIsFreeze)
+    {
+        return !carriesAura || actionIsFreeze;
+    }
+
     // The escape points lie this far past the radius, so a caster shifting a little between
     // ticks does not put the bot back on the edge.
     constexpr float kAvoidCastStepOut = 2.0f;

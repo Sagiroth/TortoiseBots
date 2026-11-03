@@ -42,6 +42,16 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics dps hold",
         NextAction::array(0, new NextAction("boss tactics dps hold", ACTION_HIGH + 4), NULL)));
 
+    // A freeze_on_aura row holds this bot (Mandokir's Gaze): it stands still and does nothing, above the walk-outs.
+    triggers.push_back(new TriggerNode(
+        "boss tactics freeze",
+        NextAction::array(0, new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7), NULL)));
+
+    // A flee_on_aura row sends this carrier out of the group (or to the tank), level with the avoid_cast walk-out.
+    triggers.push_back(new TriggerNode(
+        "boss tactics flee",
+        NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(
@@ -65,6 +75,11 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void BossTacticsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A frozen carrier does nothing out of combat either: a heal, a buff or a walk could start there.
+    triggers.push_back(new TriggerNode(
+        "boss tactics freeze",
+        NextAction::array(0, new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7), NULL)));
+
     // A held bot out of combat itself, beside a group attacker's blast, runs the non-combat engine.
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
@@ -80,6 +95,18 @@ void BossTacticsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
 // is under way (BossTacticsAvoidCastAction).
 void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    // The freeze stops the bot's own walk and cast the tick the aura lands, before the reaction engine's own
+    // break-and-stop can restart anything.
+    triggers.push_back(new TriggerNode(
+        "boss tactics freeze",
+        NextAction::array(0, new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7), NULL)));
+
+    // The flee row's carrier leaves the group from the reaction engine too, like the hard-coded bomb runout it can
+    // replace (ReactionStrategy.cpp).
+    triggers.push_back(new TriggerNode(
+        "boss tactics flee",
+        NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
         NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
@@ -87,6 +114,7 @@ void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
 
 void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new BossTacticsFreezeMultiplier(ai));
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
@@ -98,5 +126,12 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
 // not need boss tactics to be on.)
 void BossTacticsStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new BossTacticsFreezeMultiplier(ai));
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
+}
+
+// The reaction engine runs every update, so a frozen bot's buff, heal or walk has to be held there as well.
+void BossTacticsStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new BossTacticsFreezeMultiplier(ai));
 }

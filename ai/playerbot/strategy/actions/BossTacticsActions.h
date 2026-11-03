@@ -139,6 +139,27 @@ namespace ai
     // The nearest listed cast this bot stands inside and has to leave (never a tank), or no caster.
     BossCastDanger FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // The freeze_on_aura row's aura this bot carries, or 0: the bot must stand still and do nothing while it lasts
+    // (BossTacticsPolicy's FreezeHoldsAction).
+    std::uint32_t FreezeAuraOnBot(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // One read of the bot's freeze episode: starts it on the rising edge, tracks the drift from the start point and,
+    // when the aura is gone, writes the `BossTacticsFreeze` row (aura, ms held, moved_yd) and forgets it. The trigger
+    // calls it every tick, so an aura that ends between two engine ticks still logs.
+    void FreezeEpisodeTick(PlayerbotAI* ai, Player* bot, std::uint32_t aura);
+
+    // Whether this is the freeze episode's first stop: the action then calls AttackStop, CastStop and StopMoving once,
+    // and never again for that aura.
+    bool FreezeStopDue(PlayerbotAI* ai, Player* bot, std::uint32_t aura);
+
+    // The flee_on_aura row this bot's carried aura activates, or null. Rows an inactive boss leaves out are not in the
+    // fight (ScanBossTactics), so a row of a boss that is not there never moves anyone.
+    const BossTacticRow* ActiveFleeRow(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // Whether the fight has an active flee_on_aura row for `spellId`: the hard-coded bomb runout stands down for that
+    // aura, so one carrier is never moved by two actions.
+    bool FleeRowListsAura(PlayerbotAI* ai, Player* bot, std::uint32_t spellId);
+
     class BossTacticsInterruptAction : public Action
     {
     public:
@@ -186,6 +207,35 @@ namespace ai
     public:
         BossTacticsLinkedDeathAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics linked death") {}
         bool Execute(Event& event) override;
+    };
+
+    // The carrier of a freeze_on_aura row stands where it is and starts nothing: its attack stops, its cast breaks and
+    // its walk ends once, on the aura's rising edge. The multiplier below then holds every other action while it
+    // lasts, so the bot neither moves nor heals (threat) until the aura is gone.
+    class BossTacticsFreezeAction : public Action
+    {
+    public:
+        BossTacticsFreezeAction(PlayerbotAI* ai) : Action(ai, "boss tactics freeze") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The carrier of a flee_on_aura row leaves the group (`away`) or walks to the main tank (`to_tank`). Both modes
+    // reuse the runout's move body; `away` keeps a living healer in reach (RunOutFromGroup).
+    class BossTacticsFleeAction : public MovementAction
+    {
+    public:
+        BossTacticsFleeAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics flee") {}
+        bool Execute(Event& event) override;
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
+    // Frozen: every action but the freeze action itself is held (FreezeHoldsAction). Registered on the combat,
+    // non-combat and reaction engines, because a bot's heal, its walk and its own cast all run outside combat.
+    class BossTacticsFreezeMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsFreezeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics freeze") {}
+        float GetValue(Action* action) override;
     };
 
     // Once on the kill-first creature, the generic assist/AoE re-pick would swing
