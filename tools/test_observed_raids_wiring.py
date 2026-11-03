@@ -178,6 +178,20 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("RaidsDetailEnabled()", detail)
         self.assertIn("kDetailCadenceMs", detail)
 
+    def test_bound_telemetry_passes_the_binding_set(self):
+        # The bound COMMANDERS path passes its binding-wide exclusion set to the debuff read: a negative aura another
+        # binding bot or the commander cast on the bot is friendly, not the boss's. The unbound raid detail passes no
+        # friendly set and builds the exclusion from the bot's own group only.
+        header = (ROOT / "commands" / "BotCommands.h").read_text()
+        self.assertIn("FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,", header)
+        self.assertIn("std::unordered_set<uint32_t> const& friendlyLow", header)
+        bound = definition(strip_comments(COMMANDER), "static void FillCommanderMapData(")
+        self.assertIn("memberLow = bindingLow;", bound)
+        self.assertIn("FillRaidBotDebuffs(bot, extra, memberLow)", bound)
+        unbound = definition(strip_comments(OBSERVED), "void FillRaidDetail(")
+        self.assertIn("FillRaidBotDebuffs(bot, extra)", unbound)
+        self.assertNotIn("friendlyLow", unbound)
+
     def test_both_config_files_gate_the_flag(self):
         # AiPlayerbot.ObservabilityRaids is set in aiplayerbot.conf and in the world config, and a feed is on only while
         # both allow it: a 0 in either file switches it off, so the emitter's gate is ObservabilityFlag::Feed.
