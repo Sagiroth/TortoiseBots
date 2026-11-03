@@ -452,7 +452,7 @@ bool PlayerbotAIConfig::Initialize()
     // Default-off bounded AH market population. Interval is seconds, batch is
     // max auctions per tick (hard capped at 5 in service). No AH scan or DB
     // query per tick; uses legitimate inventory + native HandleAuctionSellItem.
-    ahMarketEnabled = config.GetBoolDefault("AiPlayerbot.AhMarketEnabled", false);
+    ahMarketEnabled = config.GetBoolDefault("AiPlayerbot.AhMarketEnabled", true);
     ahMarketInterval = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketInterval", 120);
     if (ahMarketInterval < 5) ahMarketInterval = 5;
     if (ahMarketInterval > 3600) ahMarketInterval = 3600;
@@ -460,7 +460,7 @@ bool PlayerbotAIConfig::Initialize()
     if (ahMarketBatchSize > 5) ahMarketBatchSize = 5;
     // Synthetic AH Supply and Buyer Engine with Work Budgets (Issue #88)
     ahMarketSyntheticSupply = config.GetBoolDefault("AiPlayerbot.AhMarketSyntheticSupply", false);
-    ahMarketBuyer = config.GetBoolDefault("AiPlayerbot.AhMarketBuyer", false);
+    ahMarketBuyer = config.GetBoolDefault("AiPlayerbot.AhMarketBuyer", true);
     ahMarketBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBudgetUs", 2000);
     if (ahMarketBudgetUs < 100) ahMarketBudgetUs = 100;
     if (ahMarketBudgetUs > 20000) ahMarketBudgetUs = 20000;
@@ -511,7 +511,7 @@ bool PlayerbotAIConfig::Initialize()
     enableCustomRaidTactics = config.GetBoolDefault("AiPlayerbot.EnableCustomRaidTactics", true);
     summonAtInnkeepersEnabled = config.GetBoolDefault("AiPlayerbot.SummonAtInnkeepersEnabled", true);
     randomBotMaxLevel = config.GetIntDefault("AiPlayerbot.RandomBotMaxLevel", 60);
-    randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
+    randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", true);
     randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", true);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", true);
     randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
@@ -583,7 +583,7 @@ bool PlayerbotAIConfig::Initialize()
         static_cast<int64_t>(config.GetIntDefault("AiPlayerbot.HireFreeMinSecurity", 0)));
     hireAnywhere = config.GetBoolDefault("AiPlayerbot.HireAnywhere", false);
     hireAllowPvP = config.GetBoolDefault("AiPlayerbot.HireAllowPvP", false);
-    hireLoot = config.GetBoolDefault("AiPlayerbot.HireLoot", true);
+    hireLoot = config.GetBoolDefault("AiPlayerbot.HireLoot", false);
     shamanTankEnabled = config.GetBoolDefault("AiPlayerbot.ShamanTankEnabled", true);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));
     if (hireBaseCostCopper > 100000000)
@@ -971,7 +971,7 @@ bool PlayerbotAIConfig::Initialize()
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     observabilityDungeonMobs = config.GetBoolDefault("AiPlayerbot.ObservabilityDungeonMobs", true);
     LoadObservabilityRaids();
-    enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", false);
+    enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", true);
     {
         bool scopeKnown = true;
         actionLogScope = ai::botdiag::ParseActionLogScope(
@@ -1000,7 +1000,7 @@ bool PlayerbotAIConfig::Initialize()
 
     randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", true);
 
-    boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", false);
+    boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", true);
     dungeonFollowHoldBeforePacks = config.GetBoolDefault("AiPlayerbot.DungeonFollowHoldBeforePacks", false);
     warlockPetBySpec = config.GetBoolDefault("AiPlayerbot.WarlockPetBySpec", true);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
@@ -1025,7 +1025,7 @@ bool PlayerbotAIConfig::Initialize()
     syncQuestForPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestForPlayer", false);
     autoTrainSpells = config.GetStringDefault("AiPlayerbot.AutoTrainSpells", "yes");
     autoPickTalents = config.GetStringDefault("AiPlayerbot.AutoPickTalents", "full");
-    autoLearnTrainerSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnTrainerSpells", false);
+    autoLearnTrainerSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnTrainerSpells", true);
     autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", true);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);

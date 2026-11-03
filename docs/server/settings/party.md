@@ -18,7 +18,7 @@ These settings configure player-owned bots, alt-bots, formation positioning, and
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
 | [`AiPlayerbot.SyncAltLevelToMaster`](#aiplayerbotsyncaltleveltomaster) | `0` | Automatically levels grouped owned bot alts to match the leader level. |
-| [`AiPlayerbot.BoostFollow`](#aiplayerbotboostfollow) | `0` | Causes bots trailing far behind to mount up to catch up. |
+| [`AiPlayerbot.BoostFollow`](#aiplayerbotboostfollow) | `1` | Causes bots trailing far behind to mount up to catch up. |
 | [`AiPlayerbot.DungeonFollowHoldBeforePacks`](#aiplayerbotdungeonfollowholdbeforepacks) | `0` | Stops follower bots outside unpulled pack aggro radius (attack detection range). |
 | [`AiPlayerbot.DefaultFormation`](#aiplayerbotdefaultformation) | `chaos` | Sets default idle follow formation around the party leader. |
 | [`AiPlayerbot.NonGmFreeSummon`](#aiplayerbotnongmfreesummon) | `0` | Enables the free instant summon action for non-staff players. |
@@ -59,7 +59,7 @@ This applies only to owned (non-random) bots, never to random pool bots or hired
 
 ### `AiPlayerbot.BoostFollow`
 Causes bots that have fallen far behind the party leader to mount up and ride to catch up. Enable this to prevent followers from straggling on long journeys.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

@@ -21,7 +21,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.MinRandomBots` / `MaxRandomBots`](#aiplayerbotminrandombots--maxrandombots) | `500` / `500` | Sets minimum and maximum active random bot population in the world. |
 | [`AiPlayerbot.RandomBotAutologin`](#aiplayerbotrandombotautologin) | `1` | Automatically logs in random pool bots once the service starts. |
 | [`AiPlayerbot.RandomBotLoginWithPlayer`](#aiplayerbotrandombotloginwithplayer) | `0` | Delays pool bot logins until a real human player enters the world. |
-| [`AiPlayerbot.RandomBotLoginAtStartup`](#aiplayerbotrandombotloginatstartup) | `0` | Starts logging in random bots immediately at boot instead of waiting. |
+| [`AiPlayerbot.RandomBotLoginAtStartup`](#aiplayerbotrandombotloginatstartup) | `1` | Starts logging in random bots immediately at boot instead of waiting. |
 | [`AiPlayerbot.RandomBotAutoCreate`](#aiplayerbotrandombotautocreate) | `1` | Automatically generates new bot accounts and characters if below minimum. |
 | [`AiPlayerbot.RandomBotPoolReset`](#aiplayerbotrandombotpoolreset) | `off` | Controls full rebuilding and re-seeding of the managed bot pool. |
 | [`AiPlayerbot.RandomBotAccountPrefix`](#aiplayerbotrandombotaccountprefix) | `RNDBOT` | Prefix string used to name newly created managed bot pool accounts. |
@@ -79,7 +79,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.WanderMinDistance`](#aiplayerbotwandermindistance) | `5.0` (built in) | Minimum yard radius bots roam from anchor while running wander strategy. |
 | [`AiPlayerbot.WanderMaxDistance`](#aiplayerbotwandermaxdistance) | `50.0` (built in) | Maximum yard radius bots roam from anchor while running wander strategy. |
 | [`AiPlayerbot.AutoLearnQuestSpells`](#aiplayerbotautolearnquestspells) | `1` | Automatically teaches spells rewarded by completed class quests. |
-| [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `0` | Grants free trainer spell sweeps on level-up for random pool bots. |
+| [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `1` | Grants free trainer spell sweeps on level-up for random pool bots. |
 | [`AiPlayerbot.AutoLearnDroppedSpells`](#aiplayerbotautolearndroppedspells) | `0` | Grants free dungeon and raid book spells to random pool bots at level 60. |
 | [`AiPlayerbot.RandomGearUpgradeEnabled`](#aiplayerbotrandomgearupgradeenabled) | `1` (built in) | Seeds newly created pool bots with level-appropriate starter equipment. |
 | [`AiPlayerbot.RandomGearWhitelist`](#aiplayerbotrandomgearwhitelist) | `(empty)` (built in) | Comma-separated whitelist of item IDs pool bots are allowed to equip. |
@@ -147,7 +147,7 @@ When set to `0`, the pool logs in independently according to `RandomBotAutologin
 
 ### `AiPlayerbot.RandomBotLoginAtStartup`
 Starts logging in the configured random bot pool immediately on server startup instead of waiting for player activity.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -896,7 +896,7 @@ Automatically teaches abilities rewarded by completed class quests (such as pala
 
 ### `AiPlayerbot.AutoLearnTrainerSpells`
 Grants random pool bots free class trainer spells immediately upon leveling up.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
