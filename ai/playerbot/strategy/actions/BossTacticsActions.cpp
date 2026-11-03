@@ -453,6 +453,9 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
         groupScan.anchor = group.bossEntry;
         groupScan.param = group.param;
         groupScan.order = group.burnOrder;
+        // The time this scan is taken, before its reads and before the lock: every sighting it makes is stamped with it
+        // (LinkedDeathLatchTick), so the order in which bots reach the lock does not decide which observation is newer.
+        const std::uint32_t scanMs = WorldTimer::getMSTime();
         for (std::uint32_t entry : group.entries)
         {
             for (const SoleCandidate& candidate : SoleKillCandidates(ai, entry))
@@ -502,7 +505,7 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
             idle.push_back(member);
         }
         groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
-                                                 WorldTimer::getMSTime(), idle);
+                                                 WorldTimer::getMSTime(), scanMs, idle);
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }

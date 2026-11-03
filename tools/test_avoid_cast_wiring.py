@@ -895,7 +895,10 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         # and never a grid search (the one site is HoldKillBlockersValue.cpp).
         self.assertIn("member.inCombat = known->IsInCombat();", fn)
         self.assertIn("if (!known || !groupScan.members.empty())", fn)
-        self.assertIn("WorldTimer::getMSTime(), idle);", fn)
+        self.assertIn("WorldTimer::getMSTime(), scanMs, idle);", fn)
+        # Write order is not observation order: the scan's stamp is taken before its reads and before the lock.
+        self.assertLess(fn.index("const std::uint32_t scanMs = WorldTimer::getMSTime();"),
+                        fn.index("std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);"))
         self.assertIn("inline bool LinkedDeathEncounterEnded(", POLICY)
         self.assertIn("inline void LinkedDeathDropStale(", POLICY)
         self.assertIn("LinkedDeathLatch();\n                return false;", POLICY)

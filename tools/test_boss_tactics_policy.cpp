@@ -1058,6 +1058,27 @@ int main()
         CHECK(!failsafe.latched);
     }
 
+    // Write order is not observation order: each sighting carries the time its bot's scan was taken. Bot B scans at 2
+    // (guid 1 fighting) and writes at 2; bot A scans at 1 (guids 1 and 2 idle at full health) and writes at 3. A's older
+    // idle sighting of guid 1 must not overwrite B's newer fight, so the encounter does not end; guid 2's sighting is
+    // newer than anything stored and is applied. A later idle sighting (scanned at 4) does end it.
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> nobody;
+        LinkedDeathLatch order;
+        CHECK(!LinkedDeathLatchTick(order, p, { Linked(1, 2), Linked(2, 2) }, none, 0));
+        std::vector<LinkedMember> fighting = { Linked(1, 100, false) };
+        fighting[0].inCombat = true;
+        CHECK(!LinkedDeathLatchTick(order, p, fighting, none, 2, 2));                  // B: scanned 2, written 2
+        std::vector<LinkedMember> idleOld = { Linked(1, 100, false), Linked(2, 100, false) };
+        CHECK(!LinkedDeathLatchTick(order, p, nobody, none, 3, 1, idleOld));           // A: scanned 1, written 3
+        CHECK(order.known.size() == 2);                                                // no reset: guid 1 still fights
+        CHECK(!LinkedDeathEncounterEnded(order, 3));
+        CHECK(!LinkedDeathLatchTick(order, p, nobody, none, 4, 4, idleOld));           // A's newer idle: encounter over
+        CHECK(order.known.empty());
+    }
+
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
     // dps it is down ~2.2-3 s after the release, and the death order is the row's. The core's raiser rule (7 s, then
     // the 8 s fallback) then sees every corpse's chosen raiser die before its check: no restore. The raid's old

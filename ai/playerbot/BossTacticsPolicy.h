@@ -854,14 +854,17 @@ namespace ai
 
     // One read of the group updates the latch and answers whether it is on. `param`: the hold percent; `members`: the
     // living members this read saw, in combat; `deadNow`: the LinkedDeathUnseen guids the caller found dead; `nowMs`:
-    // the world clock; `idle`: the known guids this read did not see fighting but found alive (read only when `members`
-    // is empty; `inCombat` marks one still fighting; a known guid's sighting, never a new registration). Every sighting
-    // becomes its guid's latest observation, so a fighting member seen by one bot overrides another bot's older idle
-    // sighting (and a newer idle one overrides an older fight). The sightings are applied first, then the encounter end
+    // the world clock at the write; `scanMs`: when the bot's scan of this read was taken, before it reached the lock.
+    // `idle`: the known guids this read did not see fighting but found alive (read only when `members` is empty;
+    // `inCombat` marks one still fighting; a known guid's sighting, never a new registration).
+    // Each sighting is stamped `scanMs` and replaces its guid's latest observation only when it is newer than the stored
+    // one: the lock's order is not the observation order, so a bot that scanned earlier but wrote later cannot undo a
+    // newer sighting (a fighting member written at 2 stays fighting against an idle sighting scanned at 1 and written
+    // at 3). A tie keeps the stored observation. The sightings are applied first, then the encounter end
     // (over the whole table, see LinkedDeathEncounterEnded) and the stale guids, then the deaths; a death latches only
     // when armed both before this read and after it.
     inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
-                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs, std::uint32_t scanMs,
                                      const std::vector<LinkedMember>& idle = std::vector<LinkedMember>())
     {
         const auto findKnown = [&latch](std::uint64_t guid) {
@@ -879,27 +882,27 @@ namespace ai
                 added.guid = member.guid;
                 added.hpPct = member.hpPct;
                 added.inCombat = true;
-                added.seenMs = nowMs;
+                added.seenMs = scanMs;
                 latch.known.push_back(added);
             }
-            else
+            else if (scanMs > known->seenMs)
             {
                 known->hpPct = member.hpPct;
                 known->alive = true;
                 known->inCombat = true;
-                known->seenMs = nowMs;
+                known->seenMs = scanMs;
             }
         }
         // An idle unit is a sighting of a known guid only (its health, combat state and time).
         for (const LinkedMember& member : idle)
         {
             auto known = findKnown(member.guid);
-            if (known == latch.known.end())
+            if (known == latch.known.end() || scanMs <= known->seenMs)
                 continue;
             known->hpPct = member.hpPct;
             known->alive = true;
             known->inCombat = member.inCombat;
-            known->seenMs = nowMs;
+            known->seenMs = scanMs;
         }
         if (latch.latched && nowMs - latch.sinceMs >= kLinkedDeathLatchMs)
             latch.latched = false;
@@ -921,11 +924,11 @@ namespace ai
         for (std::uint64_t guid : deadNow)
         {
             auto known = findKnown(guid);
-            if (known == latch.known.end() || !known->alive)
+            if (known == latch.known.end() || !known->alive || scanMs <= known->seenMs)
                 continue;
             known->alive = false;
             known->inCombat = false;
-            known->seenMs = nowMs;
+            known->seenMs = scanMs;
             newDeaths.push_back(guid);
         }
         const bool armedNow = LinkedDeathArmed(latch, param, nowMs);
@@ -944,6 +947,14 @@ namespace ai
             return false;
         }
         return latch.latched;
+    }
+
+    // A read whose scan and write are the same moment (scanMs = nowMs).
+    inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
+                                     const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
+                                     const std::vector<LinkedMember>& idle = std::vector<LinkedMember>())
+    {
+        return LinkedDeathLatchTick(latch, param, members, deadNow, nowMs, nowMs, idle);
     }
 
     // Whether a member at `hpPct` % is held right now: at or below `param` while another living member stands above it.
