@@ -14335,13 +14335,13 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
 // the bot's holders it already has. The group-only read builds the exclusion set from the bot and its group; the
 // overload below unions the caller's friendly-caster set first, so a debuff the wider party cast on itself is not the
 // boss's work.
-void BotCommands::FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra)
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra)
 {
     std::unordered_set<uint32_t> const none;
     FillRaidBotDebuffs(bot, extra, none);
 }
 
-void BotCommands::FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,
     std::unordered_set<uint32_t> const& friendlyLow)
 {
     std::unordered_set<uint32_t> memberLow;
@@ -14769,7 +14769,7 @@ static void ReadReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uin
 
 // The G2 raid detail shares the bound path's ready read (same cache, same
 // cadence) without a binding.
-void BotCommands::ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
+void ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
 {
     ReadReadyFacts(bot, extra, nowMs);
 }
