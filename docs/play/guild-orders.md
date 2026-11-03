@@ -113,7 +113,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 
 ## States
 
-`.bot order list` shows every order in your guild with delivered/want counts and the farm zone, including sub-orders (indented under their parent by the addon); the giver also gets live updates while it runs. The count is what reached the guild bank (or the guild master by mail), not what the bot is still carrying. A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field.
+`.bot order list` shows every order in your guild with delivered/want counts and the farm zone, including sub-orders (indented under their parent by the addon); the giver also gets live updates while it runs. The count is what reached the guild bank (or the guild master by mail), not what the bot is still carrying: the addon can show the bags-and-mail part separately (live for an online bot while the row runs, and the stored figure once the row is over: `0` once the hand-off succeeded, `done` after the bank deposit or `mailed`, and a `cant` row keeps the last scanned figure because the stack is still in the bags). A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field.
 
 | State | Meaning |
 | :--- | :--- |

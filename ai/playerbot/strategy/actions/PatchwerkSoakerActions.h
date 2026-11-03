@@ -49,7 +49,7 @@ namespace ai
         ObjectGuid Calculate() override;
     };
     Player* GetPatchwerkSoakPuller(PlayerbotAI* ai);
-    bool PatchwerkSoakersReadyForPull(PlayerbotAI* main);
+    bool PatchwerkSoakersReadyForPull(PlayerbotAI* puller);
     class PatchwerkSoakStageAction : public MovementAction
     {
     public:
