@@ -581,6 +581,10 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
+    uint32 fankrissSwapStacks = 5;
+    // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).
+    uint32 patchwerkOpeningDelay = 4;
     // The linked_death boss tactic ("die together"): free DPS bots equalise a group's health, hold every member at or
     // below the row's param % and burn them together once all are there (BossTacticsPolicy.h; its own key on top of
     // the tactics gate, default off).
@@ -738,6 +742,7 @@ public:
     // minutes to logs/action_counts.csv. Default off so production servers
     // pay one branch per executed action and nothing else.
     bool actionCountsLog;
+    bool healerDiagnostics = false;
     // Filename (relative to LogsDir) for the bot subsystem log. When set,
     // all sLog calls from bot .cpp files are redirected there instead of
     // writing to the main server log. Default: "bots.log". Empty = disabled.

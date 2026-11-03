@@ -938,6 +938,15 @@ AiPlayerbot.DungeonRunRaidBossRules = 0
 # 1 - on
 AiPlayerbot.DungeonRunRaidHealerGuard = 0
 
+# Opt-in "fankriss tank" role (.bot strategy +fankriss tank): an assigned tank with no Mortal Wound
+# stacks taunts Fankriss off the current tank at this many stacks (1-9, clamped). Does not enable the role.
+AiPlayerbot.FankrissSwapStacks = 5
+
+# Opt-in Patchwerk roles (.bot strategy +patchwerk main TankName): once the assigned main engages
+# Patchwerk, DPS hold their damage for this many seconds (they also wait during the ordered approach).
+# 0 turns the hold off; any other value is clamped to 3-5. Does not enable the roles.
+AiPlayerbot.PatchwerkOpeningDelay = 4
+
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
 # group of four, tank, healer and damage, with one role left open for a player.
@@ -1396,6 +1405,10 @@ AiPlayerbot.ActionLogMaxFileMB = 100
 # production; turn on for a measurement window, then diff two snapshots with
 # tools/action_counts_report.py to see the top actions per class.
 AiPlayerbot.ActionCountsLog = 0
+# Low-volume grouped-healer snapshots and failed heal checks in bot_events.csv.
+# Requires bot_events.csv in AllowedLogFiles. At most one event of each kind
+# per healer per 10 seconds; does not change AI decisions or enable action logs.
+AiPlayerbot.HealerDiagnostics = 0
 
 # Redirect all bot subsystem log output to a dedicated file so the main
 # server.log stays clean. Path is relative to the server's LogsDir setting.

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "CurrentTargetValue.h"
+#include "../actions/FankrissFocusActions.h"
 
 #include "playerbot/ServerFacade.h"
 using namespace ai;
@@ -17,6 +18,10 @@ Unit* CurrentTargetValue::Get()
     float maxDistance = sPlayerbotAIConfig.sightDistance;
     if (unit && ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get() == unit->getObjectGuid())
         maxDistance = sPlayerbotAIConfig.reactDistance;
+    // The raid's accepted Fankriss Spawn stays the current target outside the
+    // ordinary sight distance, or every reaction would re-engage it.
+    if (unit && RetainFankrissFocusTarget(ai, unit))
+        return unit;
     if (unit && !bot->IsWithinDistInMap(unit, maxDistance))
         return NULL;
 
