@@ -16,11 +16,11 @@
 
 using namespace ai;
 
-static UseObjectCandidate Cand(std::uint64_t guid, float near, bool eligible = true)
+static UseObjectCandidate Cand(std::uint64_t guid, float distanceYd, bool eligible = true)
 {
     UseObjectCandidate c;
     c.guid = guid;
-    c.near = near;
+    c.distanceYd = distanceYd;
     c.eligible = eligible;
     return c;
 }

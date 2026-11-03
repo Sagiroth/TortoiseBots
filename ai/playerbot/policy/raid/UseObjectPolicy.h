@@ -59,14 +59,14 @@ inline std::uint32_t UseObjectMsToDue(bool rowHasAura, bool bossHasAura, float w
     return leftMs <= 0.0 ? 0 : static_cast<std::uint32_t>(leftMs);
 }
 
-// One bot that may take the click: the entry is the roster guid, `near` is
+// One bot that may take the click: the entry is the roster guid, `distanceYd` is
 // the 2D distance to the object, `eligible` folds the game-side gates (in
 // group, alive, same map, BossTacticsWanted, role matches `priority`, can
 // move, passes the `bot_aura` gate, not on explicit stay).
 struct UseObjectCandidate
 {
     std::uint64_t guid = 0;
-    float near = 0.0f;
+    float distanceYd = 0.0f;
     bool eligible = true;
 };
 
@@ -80,8 +80,8 @@ inline int PickUseObjectClicker(const std::vector<UseObjectCandidate>& candidate
     {
         if (!candidates[i].eligible)
             continue;
-        if (pick < 0 || candidates[i].near < candidates[pick].near ||
-            (candidates[i].near == candidates[pick].near && candidates[i].guid < candidates[pick].guid))
+        if (pick < 0 || candidates[i].distanceYd < candidates[pick].distanceYd ||
+            (candidates[i].distanceYd == candidates[pick].distanceYd && candidates[i].guid < candidates[pick].guid))
             pick = static_cast<int>(i);
     }
     return pick;
