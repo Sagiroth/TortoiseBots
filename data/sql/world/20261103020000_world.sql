@@ -5,12 +5,14 @@
 --   Hakkar 14834: Poisonous Blood 24321 (Son of Hakkar 11357 casts 24320; 24321 dispel 4) is what damages Hakkar
 --     under Blood Siphon 24324, so it must never be cured: the row is dispel_priority mode never. The siphon itself
 --     is instant with interruptFlags 0, so its old interrupt row is deleted again here. Aspect of Jeklik 24687
---     (silence, magic) and Aspect of Venoxis 24688 (poison) are cured in that order; Cause Insanity 24327 charms the
---     victim and restores its threat afterwards, so DPS waits for the tank (until_tank, 4 s).
+--     (silence, magic) and Aspect of Venoxis 24688 (poison) are cured in that order. Cause Insanity 24327 charms the
+--     victim and restores its threat afterwards: it deliberately has NO dps_hold_after row (a spell-less until_tank
+--     hold fires once and never recurs), and the DELETE below clears the row an earlier build of this file inserted.
 --   Mandokir 11382: Threatening Gaze 24314 demands standing still (no 2 yd move, no 500 threat), so it is
---     freeze_on_aura, not a run-out. Gaze picks a random non-top attacker, so the tank must own the boss before DPS
---     (until_tank, 4 s). Ohgan 14988 enrages Mandokir when it dies first, and is summoned onto Mandokir's victim:
---     hold_kill on Ohgan while Mandokir lives (Mandokir dies first).
+--     freeze_on_aura, not a run-out. Its dps_hold_after until_tank row is deliberately absent too: the freeze row is
+--     the whole answer, and the DELETE below clears the row an earlier build inserted. Ohgan 14988 enrages Mandokir
+--     when it dies first, and is summoned onto Mandokir's victim: hold_kill on Ohgan while Mandokir lives (Mandokir
+--     dies first).
 --   Jin'do 11380: Hex 17172 (magic, cast on the tank) is cured at once; Delusions 24306 (curse) is never removed
 --     because only cursed players can damage a Shade 14986; the Shade's kill_first row is gated on that aura, so
 --     only cursed DPS switch to it. Brain Wash Totem 15112 is killed first (its Avoidance aura makes it immune to

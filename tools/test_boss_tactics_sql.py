@@ -447,6 +447,24 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
         self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
 
+    def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
+        # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
+        # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees
+        # the corrected file: a later migration must delete exactly those two rows, and the corrected file must not
+        # describe them as present any more.
+        path = os.path.join(ROOT, "data/sql/world/20261103060000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the stale until_tank cleanup migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14834, 11382) "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0;", text)
+        self.assertNotIn("INSERT INTO `ai_boss_tactic`", text)
+        self.assertGreater(os.path.basename(path), "20261103020000_world.sql")
+        with open(os.path.join(ROOT, "data/sql/world/20261103020000_world.sql"), encoding="utf-8") as handle:
+            aura = handle.read()
+        self.assertNotIn("so DPS waits for the tank (until_tank, 4 s)", aura)
+        self.assertNotIn("the tank must own the boss before DPS", aura)
+
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
         # interrupts, and the module never read them. Fixed table, kept here
