@@ -1253,11 +1253,20 @@ bool BossTacticsFreezeAction::Execute(Event& event)
     FreezeEpisodeTick(ai, bot, aura);
     // Once on the rising edge: the multiplier keeps every other action down, so repeating these each tick would only
     // re-break a cast the bot cannot start anyway.
-    if (FreezeStopDue(ai, bot, aura))
+    bool const risingEdge = FreezeStopDue(ai, bot, aura);
+    if (risingEdge)
     {
         bot->AttackStop();
         bot->CastStop();
         bot->StopMoving();
+    }
+    // StopMoving only sends a stop spline and the multiplier holds the bot's own actions, not the core's movement
+    // generator: a chase into the boss or a follow left over walks the carrier past the gaze's 2 yd. Idle it on the
+    // aura's rising edge and again every tick one is up, so no generator can start in between.
+    if (risingEdge || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    {
+        bot->GetMotionMaster()->Clear(false, true);
+        bot->GetMotionMaster()->MoveIdle();
     }
     return true;
 }

@@ -550,6 +550,13 @@ class FreezeFleeWiring(unittest.TestCase):
         self.assertIn("FreezeStopDue(ai, bot, aura)", action)
         for call in ("bot->AttackStop();", "bot->CastStop();", "bot->StopMoving();"):
             self.assertIn(call, action)
+        # The core's movement generator is idled too: a chase into the boss or a follow left over walks the carrier
+        # past the gaze's 2 yd though every action of the bot is held. On the rising edge and again every tick.
+        self.assertIn("bool const risingEdge = FreezeStopDue(ai, bot, aura)", action)
+        self.assertIn("risingEdge || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE",
+                      action)
+        self.assertIn("bot->GetMotionMaster()->Clear(false, true);", action)
+        self.assertIn("bot->GetMotionMaster()->MoveIdle();", action)
         self.assertIn('"BossTacticsFreeze"', ACTIONS)
         self.assertIn('"ms=%u,moved_yd=%.2f"', ACTIONS)
 
