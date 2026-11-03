@@ -2157,10 +2157,21 @@ struct ScoutArgs
     MovePoint from;       // path: the start (default: the caller)
 };
 
+// The core's map bound: IsValidMapCoord takes |c| <= MAP_HALFSIZE - 0.5 =
+// 17066.17. The path finder and the mover crash past it, so the scout refuses
+// anything beyond 17066 (cmd move keeps its own 20000 parse limit).
+constexpr float kScoutMapBound = 17066.0f;
+
+inline bool ParseScoutCoordinate(std::string const& token, float& out)
+{
+    return ParseCoordinate(token, out) && std::fabs(out) <= kScoutMapBound;
+}
+
 // `<cfg|path|walk|where> #<id> ...`. cfg and where take nothing else; walk and
-// path take three finite coordinates; path optionally takes `from` and three
-// more. Nothing else is accepted (a fourth coordinate, `from` with two numbers,
-// a NaN, a missing id).
+// path take three finite coordinates inside the core's map bound; path
+// optionally takes `from` and three more. Nothing else is accepted (a fourth
+// coordinate, `from` with two numbers, a NaN, a coordinate past the bound, a
+// missing id).
 inline bool ParseScoutArgs(std::string const& text, ScoutArgs& out)
 {
     std::vector<std::string> parts = SplitOrderArgs(text);
@@ -2200,8 +2211,8 @@ inline bool ParseScoutArgs(std::string const& text, ScoutArgs& out)
     }
     if (rest != 3 && !(args.form == ScoutForm::Path && rest == 7))
         return false;
-    if (!ParseCoordinate(parts[2], args.point.x) || !ParseCoordinate(parts[3], args.point.y) ||
-        !ParseCoordinate(parts[4], args.point.z))
+    if (!ParseScoutCoordinate(parts[2], args.point.x) || !ParseScoutCoordinate(parts[3], args.point.y) ||
+        !ParseScoutCoordinate(parts[4], args.point.z))
         return false;
     if (rest == 7)
     {
@@ -2210,8 +2221,8 @@ inline bool ParseScoutArgs(std::string const& text, ScoutArgs& out)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (keyword != "from")
             return false;
-        if (!ParseCoordinate(parts[6], args.from.x) || !ParseCoordinate(parts[7], args.from.y) ||
-            !ParseCoordinate(parts[8], args.from.z))
+        if (!ParseScoutCoordinate(parts[6], args.from.x) || !ParseScoutCoordinate(parts[7], args.from.y) ||
+            !ParseScoutCoordinate(parts[8], args.from.z))
             return false;
         args.hasFrom = true;
     }

@@ -3509,6 +3509,15 @@ bool HandleScout(ChatHandler* handler, char const* args)
 
     // Walk: the option set the bots' own mover ends a path with
     // (MovementActions.cpp MoveTo2 -> DispatchMovement), on the headless GM.
+    // The GM's spot and the point are checked against the core's map bound
+    // before any pathfinding or movement (the same check `path` makes).
+    if (!MaNGOS::IsValidMapCoord(origin.x, origin.y, origin.z) ||
+        !MaNGOS::IsValidMapCoord(request.point.x, request.point.y, request.point.z))
+    {
+        SendActionError(handler, intent, "wrong-map",
+            "The point or your position is outside the map's coordinate bounds: the scout walks on the caller's map only.");
+        return true;
+    }
     uint32 pathType = 0;
     float const dx = request.point.x - origin.x;
     float const dy = request.point.y - origin.y;

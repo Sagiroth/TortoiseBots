@@ -78,6 +78,26 @@ class ScoutCommandWiringTest(unittest.TestCase):
         self.assertLess(fn.index("check.actualEnd[0] = point.x;"),
                         fn.index("if (!RemoteCommander::IsAtLead(check.facts.distanceFromLead))"))
 
+    def test_coordinate_forms_check_the_map_bound_before_pathfinding(self):
+        # path and walk both refuse a point (and the start or the caller's spot)
+        # outside the core's map bound before any PathFinder or MovePoint call:
+        # the path finder and the mover crash outside it.
+        fn = body(COMMANDER, "bool HandleScout(ChatHandler* handler, char const* args)\n{", "\n}\n")
+        self.assertEqual(fn.count('SendActionError(handler, intent, "wrong-map",'), 2)
+        self.assertLess(fn.index("IsValidMapCoord(start.x"), fn.index("CheckLeadMove(caller, start"))
+        walk_check = fn.index("IsValidMapCoord(origin.x")
+        self.assertLess(walk_check, fn.index("IsAtLead(std::sqrt(dx * dx + dy * dy + dz * dz))"))
+        self.assertLess(walk_check, fn.index("PathFinder path(caller)"))
+        self.assertLess(walk_check, fn.index("MovePoint(0, request.point.x"))
+        self.assertIn("IsValidMapCoord(request.point.x, request.point.y, request.point.z)", fn)
+
+    def test_parser_takes_the_core_bound(self):
+        policy = (ROOT / "runtime/RemoteCommanderPolicy.h").read_text()
+        self.assertIn("constexpr float kScoutMapBound = 17066.0f;", policy)
+        scout = body(policy, "inline bool ParseScoutArgs(", "\n}\n")
+        self.assertEqual(scout.count("ParseScoutCoordinate("), 6)
+        self.assertNotIn("ParseCoordinate(parts", scout)
+
     def test_documented(self):
         self.assertIn("## `.bot scout` (GM, test tooling)", DOC)
         for line in ("TBM:SCOUT_CFG", "TBM:SCOUT_PATH", "TBM:SCOUT_WALK", "TBM:SCOUT_POS", "gm-only"):

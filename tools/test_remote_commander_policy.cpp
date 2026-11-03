@@ -1393,6 +1393,17 @@ static void TestParseScoutArgs()
     CHECK(!ParseScoutArgs("where #1 1 2 3", a));
     CHECK(!ParseScoutArgs("cfg #1 extra", a));
     CHECK(!ParseScoutArgs("bogus #1", a));
+
+    // The core's map bound (IsValidMapCoord: |c| <= 17066.17): a coordinate past
+    // 17066 is refused for walk and path (the point and the from start).
+    // 17500 was accepted before the bound was tightened; 17000 still is.
+    CHECK(!ParseScoutArgs("walk #5 17500 2 3", a));
+    CHECK(!ParseScoutArgs("walk #5 1 -17500 3", a));
+    CHECK(!ParseScoutArgs("path #5 1 2 17500", a));
+    CHECK(!ParseScoutArgs("path #5 1 2 3 from 17500 5 6", a));
+    CHECK(!ParseScoutArgs("path #5 1 2 3 from 4 5 -17500", a));
+    CHECK(ParseScoutArgs("walk #5 17000 -17000 3", a));
+    CHECK(ParseScoutArgs("path #5 1 2 3 from -17000 17000 6", a));
 }
 
 static void TestScoutLines()
