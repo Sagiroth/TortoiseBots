@@ -432,3 +432,51 @@ func TestRaidsConcurrentViewAndUpdate(t *testing.T) {
 		t.Fatalf("stored offline members wrong: %+v", g.Members)
 	}
 }
+
+// The G2 detail rides the row into the members (rdy/db/mc), and the live
+// snapshot serves rows by fight key.
+func TestRaidsDetailJoin(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	ready := &model.CommanderReady{B: 3, C: 5, CR: 2, CN: 3}
+	debuff := []model.CommanderAura{{ID: 100, Name: "Burn"}}
+	row := raidsRow(7, "raid#7", "Celindra", 3, nil)
+	row.Detail = []model.RaidDetailEntry{
+		{GUID: 1, Ready: ready},
+		{GUID: 2, Debuffs: debuff, MC: 1},
+	}
+	if !s.ApplyRaids(raidsPayload(9, 1, c.now.Unix(), row)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	g := s.Raids().Runs[0].Groups[0]
+	byGUID := map[uint32]model.DungeonMember{}
+	for _, m := range g.Members {
+		byGUID[m.GUID] = m
+	}
+	if byGUID[1].Ready == nil || byGUID[1].Ready.B != 3 {
+		t.Fatalf("ready facts not joined: %+v", byGUID[1])
+	}
+	if len(byGUID[2].Debuffs) != 1 || byGUID[2].Debuffs[0].Name != "Burn" || byGUID[2].MC != 1 {
+		t.Fatalf("debuffs/mc not joined: %+v", byGUID[2])
+	}
+	if len(g.Detail) != 2 {
+		t.Fatalf("group detail not preserved: %+v", g.Detail)
+	}
+	got := s.RaidRows(map[string]bool{"raid#7": true})
+	if len(got) != 1 || got[0].Key != "raid#7" {
+		t.Fatalf("RaidRows must serve the asked fight key: %+v", got)
+	}
+	if got := s.RaidRows(map[string]bool{"raid#8": true}); len(got) != 0 {
+		t.Fatalf("RaidRows must not serve an unasked key: %+v", got)
+	}
+	if got := s.RaidKeysForCommander("Nobody"); len(got) != 0 {
+		t.Fatalf("no commander rows: %+v", got)
+	}
+}

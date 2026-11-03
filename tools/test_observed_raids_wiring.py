@@ -159,6 +159,25 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaids", false)', CONFIG_CPP)
         self.assertIn("AiPlayerbot.ObservabilityRaids", LOGGING)
 
+    def test_detail_key_is_shipped_off_and_gated(self):
+        # The G2 key ships off in both templates and gates the detail feed with the same two-file rule; the detail is
+        # appended at the END of the group object and sent at most every 5 s.
+        self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", CONF)
+        self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", AI_CONF)
+        self.assertIn("bool observabilityRaidsDetail = false;", CONFIG_H)
+        self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false)', CONFIG_CPP)
+        self.assertIn("ObservabilityFlag::Feed m_raidsDetail;", EMITTER_H)
+        self.assertIn("bool RaidsDetailEnabled()", EMITTER_H)
+        emit = strip_comments(EMITTER)
+        self.assertIn("m_raidsDetail.Read(", emit)
+        self.assertIn("m_raidDetailTimerMs", emit)
+        self.assertIn("5000", definition(emit, "void ObservabilityEmitter::EmitRaids("))
+        collect = definition(strip_comments(OBSERVED), "void CollectObservedRaids(")
+        self.assertIn("FillRaidDetail(", collect)
+        detail = strip_comments(OBSERVED)
+        self.assertIn("RaidsDetailEnabled()", detail)
+        self.assertIn("kDetailCadenceMs", detail)
+
     def test_both_config_files_gate_the_flag(self):
         # AiPlayerbot.ObservabilityRaids is set in aiplayerbot.conf and in the world config, and a feed is on only while
         # both allow it: a 0 in either file switches it off, so the emitter's gate is ObservabilityFlag::Feed.
@@ -186,8 +205,8 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("LoadObservabilityRaids();", init)
 
     def test_no_creature_entry_literals(self):
-        # The boss pick reads ranks and flags from the core, never a hard-coded entry.
-        numbers = re.findall(r"\b\d{4,5}\b", strip_comments(OBSERVED))
+        # The boss pick reads ranks and flags from the core, never a hard-coded entry (5000 is the 5 s detail cadence).
+        numbers = [n for n in re.findall(r"\b\d{4,5}\b", strip_comments(OBSERVED)) if n != "5000"]
         self.assertEqual(numbers, [], numbers)
 
 

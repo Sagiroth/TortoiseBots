@@ -56,14 +56,20 @@ assert.strictEqual(RaidView.stateWord({ members: [{ state: "idle" }] }), "idle")
 assert.deepStrictEqual(RaidView.windowTotals({ win_s: 10, bots: [{ g: 1, dps: 500, hps: 10 }, { g: 2, dps: 100, hps: 40 }] }), { dps: 600, hps: 50 });
 assert.deepStrictEqual(RaidView.windowTotals(null), { dps: 0, hps: 0 });
 
-// ---- listRows order: fighting first, then by name ----
-const fighting = Object.assign({}, view.groups[0], { key: "raid#7" });
-const idle = Object.assign({}, view.groups[0], { key: "raid#9", group: 9, combat: null, members: [{ state: "idle" }] });
-const ordered = RaidView.listRows({ groups: [idle, fighting] });
-assert.deepStrictEqual(ordered.map((g) => g.key), ["raid#7", "raid#9"], "fighting first: " + JSON.stringify(ordered.map((g) => g.key)));
-const mk = (key, combat) => ({ key, combat: combat ? { win_s: 1 } : null, members: [{ state: combat ? "combat" : "idle" }] });
-const mixed = RaidView.listRows({ groups: [mk("raid#9", false), mk("raid#8", true), mk("raid#10", false), mk("raid#7", true)] });
-assert.deepStrictEqual(mixed.map((g) => g.key), ["raid#7", "raid#8", "raid#10", "raid#9"],
-  "fighting first, then key: " + JSON.stringify(mixed.map((g) => g.key)));
+  // ---- stateWord: fighting with combat or a combat state, wiped when all dead, else idle ----
+  assert.strictEqual(RaidView.stateWord({ combat: { win_s: 10 }, members: [] }), "fighting");
+  assert.strictEqual(RaidView.stateWord({ members: [{ state: "combat" }] }), "fighting");
+  assert.strictEqual(RaidView.stateWord({ members: [{ state: "dead", dead: true }] }), "wiped");
+  assert.strictEqual(RaidView.stateWord({ members: [{ state: "idle" }] }), "idle");
 
-console.log("raids_check.js ok");
+  // ---- targetName: the mob's name wins, then the activity target name, then the raw guid ----
+  const tbind = { mobs: [{ id: "99", name: "Onyxia" }] };
+  assert.strictEqual(RaidView.targetName(tbind, { target: "99" }), "Onyxia", "mob name first");
+  assert.strictEqual(RaidView.targetName(tbind, { target: "100", tname: "Whelp" }), "Whelp", "activity name next");
+  assert.strictEqual(RaidView.targetName(tbind, { target: "100" }), "100", "raw guid last");
+  assert.strictEqual(RaidView.targetName(tbind, {}), "", "no target, no name");
+
+  // ---- newestFight: the fights cache list head, else null ----
+  assert.strictEqual(RaidView.newestFight({ commander: "raid#7" }, { "raid#7": { list: [{ id: "7-1" }] } }).id, "7-1");
+  assert.strictEqual(RaidView.newestFight({ commander: "raid#7" }, {}), null, "no cache, no fight");
+  assert.strictEqual(RaidView.newestFight({ commander: "raid#7" }, { "raid#7": { list: [] } }), null, "empty list, no fight");

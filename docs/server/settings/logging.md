@@ -39,6 +39,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.RunTrace.MaxFileMb`](#aiplayerbotruntracemaxfilemb) | `64` | Size cap of one run trace file in megabytes. |
 | [`AiPlayerbot.ObservabilityDungeonMobs`](#aiplayerbotobservabilitydungeonmobs) | `1` | Sends the mobs, threat and target lines of every dungeon run to the dashboard's Dungeons tab. |
 | [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) | `0` | Sends the raid groups of every raid map copy (leader, offline members, live fight window) to the dashboard's Raids tab without a commander bind. |
+| [`AiPlayerbot.ObservabilityRaidsDetail`](#aiplayerbotobservabilityraidsdetail) | `0` | Appends the ready check and the boss debuffs to the raid groups (sent at most every 5 s). |
 | [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) | `1` | Streams the bound groups' fight events (deaths, pulls, taunts, interrupts, casts, kill/wipe) to the dashboard as they happen. |
 | [`AiPlayerbot.ObservabilityRealtime.Events`](#aiplayerbotobservabilityrealtimeevents) | `1` | Turns the fight-event stream on or off without touching the rest of the realtime feed. |
 | [`AiPlayerbot.ObservabilityRealtime.EventGapMs`](#aiplayerbotobservabilityrealtimeeventgapms) | `250` | Minimum milliseconds between two event datagrams of one commander (100..2000). |
@@ -261,6 +262,16 @@ Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on. 
 The tab needs no flag for its instances, groups, member rows, map, mobs and the link to a bound commander: the roster and `DUNGEON_MOBS` carry those. This key adds the leader, the offline members, and the live fight window and finished fights of unbound groups (the window also needs `AiPlayerbot.CombatMonitor = 1`). Once per 2 s cycle the server sends a `RAIDS` datagram with one row per qualifying group, filed under the map copy one of its bots stands in (a human in a copy never names the group): guid and subgroup per member, a name and an offline flag for members not online, the window raw JSON while the group fights; a group whose row would pass the datagram cap first loses the window, then the offline names, then members, and says so in `trimmed`. The same flag turns on a 1 Hz combat sample of those groups, so a fight pulled without a bind is recorded under the key `raid#<group id>`. The sample reads only the members standing on that copy, and only while a bot still stands there: a member in another instance of the same raid, on another map or back outdoors never opens or extends that fight, never keeps it from closing and is never its boss. Turning the flag off with `.reload config` closes whatever fight the sample had open at that moment (it shows as unfinished) and sends the empty `"raids":[]` list once. The limits live in `runtime/RaidTelemetry.h`.
 
 </details>
+
+### `AiPlayerbot.ObservabilityRaidsDetail`
+Appends the ready check and the boss debuffs to the raid groups of the dashboard's Raids tab.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts while [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) is on (both config files). The ready check (buffs, consumables, key cooldowns) and the boss debuffs of every online member ride a `detail` array appended at the END of each `RAIDS` group object, keyed by member guid — after the window, so a dashboard that does not know the key ignores the tail. The collection reads the same per-bot data the bound path reads (ready cache, aura holders), at most every 5 s: cycles between two detail reads repeat the last read. With the key off the card says "detail off (AiPlayerbot.ObservabilityRaidsDetail)".
+
 
 ### `AiPlayerbot.ObservabilityRealtime`
 Streams a commander group's fight events to the dashboard as they happen.
