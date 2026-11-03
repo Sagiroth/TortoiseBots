@@ -364,11 +364,16 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             // The gate reads the health of the boss entry the row hangs on, the unit that activated it, never an add's.
             int const bossHpPct = static_cast<int>(unit->GetHealthPercent());
             bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
+            bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
             for (const BossTacticRow& row : *rows)
             {
                 // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
                 // an older kind is closed by RowGateOpen instead, so key-off behaviour is exactly the pre-gate one.
                 if (!keyOn && IsAuraTacticKind(row.kind))
+                    continue;
+                // The use_object kind is its own key's: with it off its rows are not read at all, so key-off is
+                // exactly today.
+                if (!useObjectOn && row.kind == BossTacticKind::UseObject)
                     continue;
                 if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
                     continue;
