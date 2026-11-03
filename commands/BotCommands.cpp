@@ -582,6 +582,7 @@ static BotCommandEntry const botCommands[] = {
     {"trade", HandleTrade, "trade", {}, AlwaysVisible},
     {"command", HandleMatureCommand, "command <botName> <Playerbot command>", {}, AlwaysVisible},
     {"inv", HandleInventory, "inv <online bot you control>", {"inventory"}, AlwaysVisible},
+    {"professions", HandleProfessions, "professions <online bot you control>", {}, AlwaysVisible},
     {"item", HandleItem, "item <bot> <trade|equip|unequip|give ...>", {}, AlwaysVisible},
     {"behavior", HandleBehavior, "behavior <bot|party|raid> <behavior> <on|off>", {"behaviour"}, AlwaysVisible},
     {"totem", HandleTotem, "totem <bot|party|raid> ...", {}, AlwaysVisible},

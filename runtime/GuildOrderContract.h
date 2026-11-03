@@ -40,6 +40,10 @@ enum class OrderReason : uint8_t
     NoBanker,
     NoAuctioneer,
     NoListing,
+    Enchant,
+    Bound,
+    NeedsProfession,
+    Cooldown,
 };
 
 struct NeedItem
@@ -151,13 +155,17 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::NoBanker: return "nobanker";
         case OrderReason::NoAuctioneer: return "noauctioneer";
         case OrderReason::NoListing: return "nolisting";
+        case OrderReason::Enchant:  return "enchant";
+        case OrderReason::Bound:    return "bound";
+        case OrderReason::NeedsProfession: return "needsprofession";
+        case OrderReason::Cooldown: return "cooldown";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoListing); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::Cooldown); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -182,7 +190,11 @@ inline OrderState StateForReason(OrderReason reason)
         case OrderReason::Elite:
         case OrderReason::Stuck:
         case OrderReason::Timeout:
-        case OrderReason::NoProgress: return OrderState::Cant;
+        case OrderReason::NoProgress:
+        case OrderReason::Enchant:
+        case OrderReason::Bound:
+        case OrderReason::NeedsProfession:
+        case OrderReason::Cooldown: return OrderState::Cant;
         case OrderReason::BagsFull: return OrderState::Delivering;
         case OrderReason::NoBank:   return OrderState::Mailed;
         case OrderReason::None:     break;
