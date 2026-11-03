@@ -30949,6 +30949,54 @@ static void TestAutoCcPicksTheFamilyThatFits()
     }
 }
 
+// Freezing Trap is no automatic family: a trap freezes only a mob that walks
+// over it, so a pre-pull or in-fight order on a joiner never lands (ZG walk 32:
+// 54 in-fight orders, none landed). The hunter is no CC bot for the automatic
+// pick; another family the party has still goes out.
+static void TestAutoCcNeverPicksFreezingTrap()
+{
+    // Before the pull: a hunter with only the trap gives no order at all.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+        CHECK(r.ccHolds.empty());
+    }
+    // In the fight: the same, over the threshold and over the ceiling alike.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 108; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        for (int i = 0; i < 3; ++i)
+            CHECK(Tick(r, f).find("cc ") != 0);
+        CHECK(r.ccSent.empty());
+        CHECK(r.ccHolds.empty());
+    }
+    // A second family the party has is picked instead: the trap never wins.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap), AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
 static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
 {
     DungeonPlan plan = CcPlan({});
@@ -31581,6 +31629,7 @@ int main()
     TestAutoCcStopsAtTheThreshold();
     TestAutoCcCastersFirstThenPlanRank();
     TestAutoCcPicksTheFamilyThatFits();
+    TestAutoCcNeverPicksFreezingTrap();
     TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
     TestAutoCcSevenMarks();
     TestAutoCcHealersKept();

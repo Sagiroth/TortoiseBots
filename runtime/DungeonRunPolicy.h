@@ -1101,22 +1101,31 @@ struct RunCcSpell
     bool prePull;        // only on a unit out of combat, by a bot out of combat, before the pull (Sap)
     Tier tier;
     bool autoOnly;       // only with Facts::autoCc: the four plan families stay byte-identical key off
+    // The automatic crowd control may pick it. Freezing Trap never: a trap
+    // freezes only a mob that walks over it, and a joiner chewing a healer does
+    // not (ZG walk 32: 54 in-fight trap orders, none landed, each one a spent
+    // mark and a spent 2 s gap). The class's own trap row still fires on a mark
+    // a player or the plan put on a unit.
+    bool autoPick;       // false: never an automatic pick
 };
 constexpr RunCcSpell kRunCc[] = {
     {CcFamily::Polymorph, "Polymorph", "polymorphed",
         CreatureBit(kCreatureHumanoid) | CreatureBit(kCreatureBeast) | CreatureBit(kCreatureCritter), false,
-        RunCcSpell::Tier::A, false},
-    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false, RunCcSpell::Tier::A, false},
+        RunCcSpell::Tier::A, false, true},
+    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false, RunCcSpell::Tier::A, false,
+        true},
     {CcFamily::Banish, "Banish", "banished", CreatureBit(kCreatureDemon) | CreatureBit(kCreatureElemental), false,
-        RunCcSpell::Tier::A, false},
+        RunCcSpell::Tier::A, false, true},
     {CcFamily::Hibernate, "Hibernate", "hibernating",
-        CreatureBit(kCreatureBeast) | CreatureBit(kCreatureDragonkin), false, RunCcSpell::Tier::A, true},
-    {CcFamily::Seduction, "Seduction", "seduced", CreatureBit(kCreatureHumanoid), false, RunCcSpell::Tier::A, true},
-    {CcFamily::FreezingTrap, "Freezing Trap", "frozen", 0xFFFFu, false, RunCcSpell::Tier::A, true},
-    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true, RunCcSpell::Tier::A, false},
-    {CcFamily::Repentance, "Repentance", "repenting", 0xFFFFu, false, RunCcSpell::Tier::S, true},
-    {CcFamily::ScareBeast, "Scare Beast", "feared", CreatureBit(kCreatureBeast), false, RunCcSpell::Tier::R, true},
-    {CcFamily::Fear, "Fear", "feared", 0xFFFFu, false, RunCcSpell::Tier::R, true},
+        CreatureBit(kCreatureBeast) | CreatureBit(kCreatureDragonkin), false, RunCcSpell::Tier::A, true, true},
+    {CcFamily::Seduction, "Seduction", "seduced", CreatureBit(kCreatureHumanoid), false, RunCcSpell::Tier::A, true,
+        true},
+    {CcFamily::FreezingTrap, "Freezing Trap", "frozen", 0xFFFFu, false, RunCcSpell::Tier::A, true, false},
+    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true, RunCcSpell::Tier::A, false, true},
+    {CcFamily::Repentance, "Repentance", "repenting", 0xFFFFu, false, RunCcSpell::Tier::S, true, true},
+    {CcFamily::ScareBeast, "Scare Beast", "feared", CreatureBit(kCreatureBeast), false, RunCcSpell::Tier::R, true,
+        true},
+    {CcFamily::Fear, "Fear", "feared", 0xFFFFu, false, RunCcSpell::Tier::R, true, true},
 };
 
 inline const RunCcSpell* RunCcOf(CcFamily family)
@@ -8878,6 +8887,8 @@ inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFac
     std::uint32_t const kept = f.raid.on ? kRunCcHealersKept : 1;
     auto const fits = [&](const MemberFact& m, const RunCcSpell& c)
     {
+        if (!c.autoPick)
+            return false;
         if (m.name.empty() || busy.count(m.name) || m.tank || m.name == f.carrier)
             return false;
         // Held still (a return or revive hold), frozen by a gaze row, or too far from the pack for the spell to
