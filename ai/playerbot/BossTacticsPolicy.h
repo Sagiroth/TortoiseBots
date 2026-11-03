@@ -53,6 +53,7 @@ namespace ai
         FreezeOnAura = 12,    // a member carrying the row's aura stands still and does nothing
         TauntAfterCast = 13,  // the row's tank index taunts the subject back after the row's trigger
         SwapOnAura = 14,      // the tanks rotate the boss at `param` stacks of the row's aura
+        UseObject = 15,       // one bot clicks the ready game object of `target_entry` nearest the boss
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -69,6 +70,7 @@ namespace ai
         Blink = 7,     // dps_hold_after, taunt_after_cast: the subject teleported
         UntilTank = 8, // dps_hold_after, taunt_after_cast: until the subject is on a tank
         Invalid = 9,
+        TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -107,6 +109,10 @@ namespace ai
                 if (text == "until_tank")
                     return TacticMode::UntilTank;
                 break;
+            case BossTacticKind::UseObject:
+                if (text == "tank_anchor")
+                    return TacticMode::TankAnchor;
+                break;
             default:
                 break;
         }
@@ -143,6 +149,8 @@ namespace ai
             return BossTacticKind::TauntAfterCast;
         if (text == "swap_on_aura")
             return BossTacticKind::SwapOnAura;
+        if (text == "use_object")
+            return BossTacticKind::UseObject;
         return BossTacticKind::None;
     }
 
@@ -223,9 +231,11 @@ namespace ai
         return pick;
     }
 
-    // The creature a row is about.
+    // The creature a row is about. A use_object row is about its boss: the target is a game object, not a creature.
     inline std::uint32_t TacticSubjectEntry(const BossTacticRow& row)
     {
+        if (row.kind == BossTacticKind::UseObject)
+            return row.bossEntry;
         return row.targetEntry ? row.targetEntry : row.bossEntry;
     }
 
@@ -301,6 +311,14 @@ namespace ai
             // swap_on_aura: the aura and a rotation of at least two tanks (priority is the rotation's size).
             if (row.kind == BossTacticKind::SwapOnAura && (row.spellId == 0 || row.priority < 2))
                 return false;
+            // use_object: the game object to click; a clicker role of free DPS, healer or non-tank; the boss must
+            // stand within `param` yd and still. The timer restarts every click (or runs from first sight before any),
+            // so a row with no trigger at all could never fire, and a short non-zero window would refire faster than
+            // the object can arm: only 0 or at least 10 s.
+            if (row.kind == BossTacticKind::UseObject &&
+                (row.targetEntry == 0 || row.priority > 2 || !(row.param > 0.0f) || row.param > 60.0f ||
+                    (row.windowSec != 0.0f && row.windowSec < 10.0f) || (row.spellId == 0 && row.windowSec == 0.0f)))
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -324,6 +342,8 @@ namespace ai
                 auraTacticMaps_[row.map] = true;
             if (row.kind == BossTacticKind::DispelPriority)
                 dispelMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::UseObject)
+                useObjectMaps_[row.map] = true;
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -385,6 +405,25 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && dispelMaps_.find(map) != dispelMaps_.end();
         }
 
+        // Whether the map has a use_object row (the clicker and the tank anchor run only there). False before the seal.
+        bool HasUseObjectMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && useObjectMaps_.find(map) != useObjectMaps_.end();
+        }
+
+        // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
+        // before the seal.
+        bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
+        {
+            const std::vector<BossTacticRow>* rows = Rows(map, bossEntry);
+            if (!rows)
+                return false;
+            for (const BossTacticRow& row : *rows)
+                if (row.kind == kind)
+                    return true;
+            return false;
+        }
+
         // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link
         // scan reads these instead of a fight's rows, which under "focus rti targets" are the raid mark's entry only.
         // Empty before the seal or for a map without rows of the kind.
@@ -441,13 +480,13 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
+        std::unordered_map<std::uint32_t, bool> useObjectMaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };
-
     // Activation gate. The tactics change how bots play, so they are not on for
     // everybody: either the server owner opted in (AiPlayerbot.DungeonTactics = 1)
     // or this bot sits in a group a remote commander has bound (the commander

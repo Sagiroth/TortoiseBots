@@ -63,6 +63,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAutoCcRisky`](#aiplayerbotdungeonrunautoccrisky) | `0` | `1`: the automatic crowd control may use Fear and Scare Beast, only with 35 yd of room and when no other family has a free bot. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
+| [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.RunTeleportReturnYd`](#aiplayerbotrunteleportreturnyd) | `0` (recommended `120`) | A party bot the run brings back from farther than this (yards) is teleported to the lead bot with its combat dropped, never summoned by portal or left to walk back; `0` off. |
 | [`AiPlayerbot.DungeonReviveHoldYd`](#aiplayerbotdungeonreviveholdyd) | `0` (recommended `100`) | A run's bot revived farther than this (yards) from the lead bot, and every bot the run is bringing back, stands still until it arrives (60 s at most); `0` off. |
@@ -535,6 +536,18 @@ Lets the automatic crowd control use the fear families (Fear, Scare Beast).
 <summary>How it works in detail</summary>
 
 **Risky families:** a feared mob runs. A fear family is only picked with this key on, with at least 35 yd between the unit and the nearest creature the read knows outside its pack, and only when no other family has a free bot for the unit. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
+
+
+</details>
+
+### `AiPlayerbot.DungeonRunUseObject`
+Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Use object:** a boss tactic row of the `use_object` kind names a game object to click (the row's target entry), the aura on the boss that calls for a click or a repeat window in seconds (or both), the clicker's role (free damage, healer or any non-tank), how far the boss may be from the object when the click goes out, and optionally the mode `tank_anchor`. The group picks one clicker by itself — the eligible bot nearest the object that is nearest the boss, the lowest guid on a tie — and the fight keeps the claim in one shared record: one clicker at a time, a claim nobody acted on for 30 s is released, at most two attempts per object and at least 8 s between them. The clicker walks in 15 s before the row is due and holds at the object until the boss stands still inside the row's range; only then does the click go out (the effect lands several seconds later, so a moving boss wastes it). With `tank_anchor`, the tank the boss is on walks the boss to a point short of the object during that same lead, so the click lands in range; the anchor never runs while the boss is on someone else, and it stays below every survival move. With this key off the rows are not read at all; with it on an Ossirian crystal row, the old crystal runner stands down. Logged to `bot_events.csv` as `BossTacticsUseObject` (claim, walk, click, skip) and `BossTacticsAnchor`.
 
 </details>
 

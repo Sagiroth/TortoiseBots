@@ -202,6 +202,8 @@ int main()
     CHECK(static_cast<int>(BossTacticKind::FreezeOnAura) == 12);
     CHECK(static_cast<int>(BossTacticKind::TauntAfterCast) == 13);
     CHECK(static_cast<int>(BossTacticKind::SwapOnAura) == 14);
+    CHECK(ParseBossTacticKind("use_object") == BossTacticKind::UseObject);
+    CHECK(static_cast<int>(BossTacticKind::UseObject) == 15);
 
     // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
@@ -214,6 +216,10 @@ int main()
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "blink") == TacticMode::Blink);
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "until_tank") == TacticMode::UntilTank);
     CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "tank_anchor") == TacticMode::TankAnchor);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "tank_anchor") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "never") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "to_tank") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "clear") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "never") == TacticMode::Invalid);
@@ -379,6 +385,51 @@ int main()
         CHECK(!table.Add(noWindow));
     }
 
+    // Loader: a use_object row names the clicked object, a clicker role of free DPS, healer or non-tank, a boss
+    // range of 0-60 yd, and a window of 0 or at least 10 s on top of an aura trigger. The column default of 7 s is
+    // refused, so a row must state its own window.
+    {
+        BossTacticTable table;
+        auto useObject = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, float param, float window)
+        {
+            BossTacticRow row = Row(509, 15339, BossTacticKind::UseObject, target, spell, priority, param);
+            row.windowSec = window;
+            return row;
+        };
+        CHECK(!table.Add(useObject(0, 25176, 0, 25.0f, 38.0f)));       // no object
+        CHECK(!table.Add(useObject(180619, 25176, 0, 25.0f, 7.0f)));   // the column default: too short
+        CHECK(!table.Add(useObject(180619, 0, 0, 25.0f, 0.0f)));       // neither aura nor timer
+        CHECK(!table.Add(useObject(180619, 25176, 3, 25.0f, 38.0f)));  // no such role
+        CHECK(!table.Add(useObject(180619, 25176, 0, 0.0f, 38.0f)));
+        CHECK(!table.Add(useObject(180619, 25176, 0, 61.0f, 38.0f)));
+        CHECK(table.Add(useObject(180619, 25176, 0, 25.0f, 38.0f)));
+        CHECK(!table.Add(useObject(180619, 25176, 0, 25.0f, 38.0f)));  // same key
+        CHECK(table.Size() == 1);
+        CHECK(!table.HasUseObjectMap(509));                            // not sealed yet
+        table.Seal();
+        CHECK(table.HasUseObjectMap(509));
+        CHECK(!table.HasUseObjectMap(309));
+        CHECK(table.HasKindFor(509, 15339, BossTacticKind::UseObject));
+        CHECK(!table.HasKindFor(509, 15339, BossTacticKind::Interrupt));
+        CHECK(!table.HasKindFor(509, 15341, BossTacticKind::UseObject));
+        CHECK(!table.HasKindFor(309, 14599, BossTacticKind::UseObject));
+    }
+
+    // Loader: tank_anchor is the use_object mode word, and a foreign word is Invalid.
+    {
+        BossTacticTable table;
+        BossTacticRow anchored = Row(509, 15339, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f);
+        anchored.windowSec = 0.0f;  // an aura-only row: no timer
+        anchored.mode = ParseTacticMode(anchored.kind, "tank_anchor");
+        CHECK(anchored.mode == TacticMode::TankAnchor);
+        CHECK(table.Add(anchored));
+        BossTacticRow never = Row(509, 15340, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f);
+        never.windowSec = 38.0f;
+        never.mode = ParseTacticMode(never.kind, "never");             // a foreign word
+        CHECK(never.mode == TacticMode::Invalid);
+        CHECK(!table.Add(never));
+    }
+
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
     CHECK(!BossTacticsWanted(false, false, true));   // default install, normal player's bots: unchanged
     CHECK(BossTacticsWanted(true, false, true));     // AiPlayerbot.DungeonTactics = 1
@@ -390,6 +441,7 @@ int main()
     // Subject: the row's target, or the boss itself.
     CHECK(TacticSubjectEntry(Row(70, 7023, BossTacticKind::KillFirst, 7209)) == 7209);
     CHECK(TacticSubjectEntry(Row(70, 6910, BossTacticKind::Interrupt, 0, 16006)) == 6910);
+    CHECK(TacticSubjectEntry(Row(509, 15339, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f)) == 15339);
 
     // Interrupt matching: spell and caster both have to match; only interrupt rows count.
     {

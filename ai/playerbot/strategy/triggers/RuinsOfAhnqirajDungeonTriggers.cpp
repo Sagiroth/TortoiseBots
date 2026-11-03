@@ -2,11 +2,18 @@
 #include "RuinsOfAhnqirajDungeonTriggers.h"
 #include "playerbot/policy/raid/OssirianCrystalPolicy.h"
 #include "../../policy/raid/OssirianCrystalHelper.h"
+#include "playerbot/BossTacticsMgr.h"
 
 using namespace ai;
 
 bool OssirianCrystalRunTrigger::IsActive()
 {
+    // A use_object row for Ossirian and its key own the crystal clicker: its one claimed bot clicks and its tank drags
+    // the boss over, so this runner stands down rather than race it (two movers would fight over one crystal).
+    if (sPlayerbotAIConfig.dungeonRunUseObject &&
+        GetBossTactics().HasKindFor(bot->GetMapId(), kOssirianEntry, BossTacticKind::UseObject))
+        return false;
+
     // Cheap role gate first: tanks/healers never run, before any scan.
     if (!IsOssirianCrystalRunner(ai, bot))
         return false;

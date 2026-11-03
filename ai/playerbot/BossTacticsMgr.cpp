@@ -78,7 +78,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
                     "or boss, a key column it cannot use, a health band outside 0-100, a gate on a kind read straight "
                     "from the table, a mode word its kind does not take, an avoid_cast without a spell or a radius, "
                     "another kind's missing or out-of-range spell or param, a linked_death window that is not positive, "
-                    "or a second row of the key)", row.map,
+                    "a use_object without a target, a clicker role above 2, a boss range outside 0-60, a window that is "
+                    "neither 0 nor at least 10 s, a row with neither aura nor timer, or a second row of the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
         } while (result->NextRow());

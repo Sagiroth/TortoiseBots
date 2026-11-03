@@ -597,6 +597,10 @@ public:
     // key on top of the tactics gate). Off, the six kinds are ignored and a gated row is closed, so the table behaves
     // exactly as before them (BossTacticsPolicy.h RowGateOpen; default off).
     bool dungeonRunAuraTactics = false;
+    // The use_object boss-tactic kind (one bot clicks the ready game object nearest the boss; mode tank_anchor also
+    // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
+    // rows are ignored, so the table behaves exactly as before the kind (default off).
+    bool dungeonRunUseObject = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
