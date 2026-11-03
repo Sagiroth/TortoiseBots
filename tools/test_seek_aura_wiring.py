@@ -191,6 +191,15 @@ class SeekRolesWiring(unittest.TestCase):
         # The gather's own radius comes from the spot's read.
         self.assertIn("kSeekSpotYd", body(ACTIONS, "bool ReadSeekFight("))
 
+    def test_the_seek_leaves_exactly_the_three_tanks_out(self):
+        # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the
+        # raid, so the exemption names slots 0-2 instead of every tank the roles list happens to hold.
+        fn = body(ACTIONS, "bool IsSeekExemptTank(")
+        self.assertIn("i < 3", fn)
+        self.assertIn("roles.tanks[i] == member", fn)
+        self.assertIn("IsSeekExemptTank(roles, bot)", ACTIONS)
+        self.assertIn("IsSeekExemptTank(roles, member)", ACTIONS)
+
     def test_the_kill_pick_is_at_high_plus_two_and_obeys_the_hold(self):
         self.assertIn('creators["boss tactics seek kill"]', ACTION_CONTEXT)
         self.assertIn('new NextAction("boss tactics seek kill", ACTION_HIGH + 2)',

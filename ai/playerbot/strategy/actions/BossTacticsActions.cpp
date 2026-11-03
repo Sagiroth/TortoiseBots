@@ -863,6 +863,18 @@ const BossTacticRow* LiveSeekRow(const BossTacticsFight& fight, Unit*& boss)
     return nullptr;
 }
 
+// The tanks the seek leaves out: the main tank (the boss's victim) and the two off-tanks, the second one because it is
+// at the spot anyway. A fourth tank has no such job and seeks like the rest of the raid.
+bool IsSeekExemptTank(const RaidTankRoles& roles, Player* member)
+{
+    for (std::size_t i = 0; i < roles.tanks.size() && i < 3; ++i)
+    {
+        if (roles.tanks[i] == member)
+            return true;
+    }
+    return false;
+}
+
 // The seekers of this fight: every living group member that SeekWanted would send (no poison, not the boss's victim,
 // not one of the three tanks, not charmed). With `source` only those outside `gatherYd` of it count (the gather's
 // `missing`, SeekGatherReady); without it all of them do (the second off-tank's pull, SeekTankPullDue).
@@ -878,7 +890,7 @@ int CountSeekWanted(PlayerbotAI* ai, Player* bot, Unit* boss, const BossTacticRo
         const bool alive = sServerFacade.IsAlive(member);
         const bool hasAura = member->HasAura(row.spellId);
         const bool victim = boss && boss->GetVictim() == member;
-        const bool exempt = std::find(roles.tanks.begin(), roles.tanks.end(), member) != roles.tanks.end();
+        const bool exempt = IsSeekExemptTank(roles, member);
         const bool charmed = !member->GetCharmerGuid().IsEmpty();
         if (!SeekWanted(true, windowOpen, hasAura, victim, exempt, charmed, alive))
             return;
@@ -1164,7 +1176,7 @@ SeekTask ai::FindBossSeek(PlayerbotAI* ai, Player* bot)
     // Who seeks: the poison's own rule, with the three tanks exempt (the main tank is the boss's victim and the two
     // off-tanks are kept off the poison; the second one is at the spot anyway).
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    const bool exemptTank = std::find(roles.tanks.begin(), roles.tanks.end(), bot) != roles.tanks.end();
+    const bool exemptTank = IsSeekExemptTank(roles, bot);
     const bool charmed = !bot->GetCharmerGuid().IsEmpty();
     if (!SeekWanted(true, state.windowOpen, task.hasAura, state.boss->GetVictim() == bot, exemptTank, charmed, true))
         return task;
