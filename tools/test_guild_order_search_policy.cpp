@@ -47,6 +47,29 @@ int main()
     CHECK(SearchNameRank("heavy leather", "leather heavy") == 3);
     // Extra spaces rank exact: the needle is the normalized words.
     CHECK(SearchNameRank("heavy leather", NormalizeQueryWords(SplitQueryWords("heavy   leather"))) == 0);
+    // Per-type filters: Rocket Boots (crafted gear) are Buy/Craft only,
+    // random-drop gear and recipes show nowhere.
+    OrderItemFacts const ore{ true, false, SourceOre };
+    OrderItemFacts const droppedMaterial{ true, false, SourceDrop };
+    OrderItemFacts const craftedGear{ false, true, SourceDrop };
+    OrderItemFacts const craftedMaterial{ true, true, 0 };
+    OrderItemFacts const randomDropGear{ false, false, SourceDrop };
+    OrderItemFacts const fish{ false, false, SourceFish };
+    CHECK(OrderSearchShows(OrderType::Farm, ore));
+    CHECK(OrderSearchShows(OrderType::Farm, droppedMaterial));
+    CHECK(OrderSearchShows(OrderType::Farm, fish));
+    CHECK(!OrderSearchShows(OrderType::Farm, craftedGear));
+    CHECK(!OrderSearchShows(OrderType::Farm, craftedMaterial));
+    CHECK(!OrderSearchShows(OrderType::Farm, randomDropGear));
+    CHECK(OrderSearchShows(OrderType::Craft, craftedGear));
+    CHECK(OrderSearchShows(OrderType::Craft, craftedMaterial));
+    CHECK(!OrderSearchShows(OrderType::Craft, ore));
+    CHECK(OrderSearchShows(OrderType::Buy, craftedGear));
+    CHECK(OrderSearchShows(OrderType::Buy, ore));
+    CHECK(OrderSearchShows(OrderType::Buy, droppedMaterial));
+    CHECK(OrderSearchShows(OrderType::Buy, fish));
+    CHECK(!OrderSearchShows(OrderType::Buy, randomDropGear));
+    CHECK(!OrderSearchShows(OrderType::Buy, OrderItemFacts{}));
     if (failures == 0)
         std::printf("test_guild_order_search_policy ok\n");
     return failures ? 1 : 0;
