@@ -1165,6 +1165,10 @@ constexpr int kFocusIcon = 7;
 // lead bot (the party is gathered on it): beyond it the warlock's "fear on
 // cc" row (20 yd) is the one that can fire on the mark.
 constexpr float kBanishYd = 30.0f;
+// The farthest a free crowd control bot stands from the lead bot: every ranged family (Polymorph, Shackle Undead,
+// Hibernate, Banish, Fear) reaches 30 yd, plus this much slack for the walk its cast allows. A Sap or a Repentance is
+// shorter and its own range decides.
+constexpr float kRunCcMaxYd = 40.0f;
 // Automatic crowd control (Facts::autoCc): a feared unit is only picked with
 // this much room to the nearest creature outside its pack, a unit more than
 // kRunCcMaxLevelOver levels over the bot is left to another bot (the core's
@@ -1198,6 +1202,11 @@ struct MemberFact
     bool polymorph = false; // a mage that knows Polymorph (kPolymorphSpells): the run's crowd control
     bool inCombat = false;  // the bot or its living pet is in combat (the glue's MemberInCombat)
     float dz = 0.0f;        // signed height difference to the lead bot (below is negative; another floor)
+    // The run's return hold or the glue's revive hold (PlayerbotAI::ReturnHeld): the bot stands still for a summon or
+    // a teleport return, so it takes no crowd control mark (RunCcBotFor).
+    bool held = false;
+    // Carries a freeze_on_aura row's aura (BossTacticsFreezeAction): every action is held, so no crowd control either.
+    bool frozen = false;
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
     // How long ago the glue last saw actual combat progress from the bot: a spell cast started or finished, a melee
@@ -1516,6 +1525,9 @@ struct Facts
     // In a fight, when the plan has kill_first: its living, not friendly units
     // from the bots' own attacker lists (a summoned healing ward included).
     std::vector<UnitFact> killFirst;
+    // The entries of the map's boss-tactics kill_first and linked_death rows (BossTacticTable::NoCcEntries): an
+    // automatic crowd control never picks one (the kill list wins, a linked_death group dies together).
+    std::unordered_set<std::uint32_t> bossTacticNoCc;
     std::uint32_t minHealthPct = 100;   // living bots
     std::uint32_t minHealerManaPct = 100;
     std::uint32_t minManaPct = 100;     // mana users that are not healers
@@ -8864,6 +8876,10 @@ inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFac
     {
         if (m.name.empty() || busy.count(m.name) || m.tank || m.name == f.carrier)
             return false;
+        // Held still (a return or revive hold), frozen by a gaze row, or too far from the pack for the spell to
+        // reach: the order could not land, and a mark that cannot land only spends the step's orders.
+        if (m.held || m.frozen || r.returnHold.count(m.name) || m.yd > kRunCcMaxYd)
+            return false;
         if (!RunCcKnows(m, c.family))
             return false;
         if (c.family == CcFamily::Sap && !m.canSap)
@@ -9123,7 +9139,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
         auto const reapplied = r.ccReapplied.find(u.guid);
         if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
-            u.polymorphed || u.partyHits ||
+            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
             r.healerGuardAssigned.count(u.guid) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
@@ -9227,7 +9243,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
                 u.partyHits || u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
-                r.healerGuardAssigned.count(u.guid) ||
+                f.bossTacticNoCc.count(u.entry) || r.healerGuardAssigned.count(u.guid) ||
                 (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
                 continue;
             std::size_t spellIdx = 0;

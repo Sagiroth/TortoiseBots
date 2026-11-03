@@ -1966,6 +1966,34 @@ int main()
         CHECK(PruneDpsHoldLog(log, holds, instanceAlive) == 0);
     }
 
+    // The auto-cc exclusions the fight scan does not build: a kill_first unit (its target_entry, or the boss itself
+    // when 0) and a linked_death group's partner are never held; a freeze_on_aura row's aura is the one a bot can
+    // carry that freezes it. Both indexes are keyed by map and empty before the seal.
+    {
+        BossTacticTable table;
+        BossTacticRow spawn = Row(309, 14510, BossTacticKind::KillFirst, 15041, 0, 1);
+        CHECK(table.Add(spawn));
+        BossTacticRow illusion = Row(309, 15083, BossTacticKind::KillFirst, 15163, 0, 1);
+        CHECK(table.Add(illusion));
+        BossTacticRow partner = Row(309, 11492, BossTacticKind::LinkedDeath, 11348, 0, 1, 50);
+        CHECK(table.Add(partner));
+        BossTacticRow bossItself = Row(309, 14834, BossTacticKind::KillFirst, 0, 0, 0);
+        CHECK(table.Add(bossItself));
+        BossTacticRow gaze = Row(309, 11382, BossTacticKind::FreezeOnAura, 0, 24314);
+        CHECK(table.Add(gaze));
+        // Before the seal a reader sees nothing.
+        CHECK(table.NoCcEntries(309).empty() && table.FreezeAuras(309).empty());
+        table.Seal();
+        CHECK(table.NoCcEntries(309).count(15041) == 1);  // Mar'li's Spawn
+        CHECK(table.NoCcEntries(309).count(15163) == 1);  // Nightmare Illusion
+        CHECK(table.NoCcEntries(309).count(11348) == 1);  // the linked_death partner
+        CHECK(table.NoCcEntries(309).count(14834) == 1);  // a targetless kill_first is its boss entry
+        CHECK(table.NoCcEntries(309).size() == 4);
+        CHECK(table.NoCcEntries(531).empty());            // another map's rows are not smeared in
+        CHECK(table.FreezeAuras(309).size() == 1 && table.FreezeAuras(309)[0] == 24314);
+        CHECK(table.FreezeAuras(531).empty());
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

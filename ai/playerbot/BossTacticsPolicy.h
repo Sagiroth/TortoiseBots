@@ -26,6 +26,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -309,6 +310,12 @@ namespace ai
             }
             rows.push_back(row);
             maps_[row.map] = true;
+            // The automatic crowd control's exclusions (Commander's run facts): a kill_first unit is killed, a
+            // linked_death group's partner must die with it, so neither is ever held.
+            if (row.kind == BossTacticKind::KillFirst || row.kind == BossTacticKind::LinkedDeath)
+                noCcEntries_[row.map].insert(row.targetEntry != 0 ? row.targetEntry : row.bossEntry);
+            if (row.kind == BossTacticKind::FreezeOnAura)
+                freezeAuras_[row.map].push_back(row.spellId);
             if (row.kind == BossTacticKind::AvoidCast)
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
@@ -390,6 +397,28 @@ namespace ai
             return it == linkedDeathGroups_.end() ? none : it->second;
         }
 
+        // The map's freeze_on_aura auras: the one thing a bot can carry that holds every action it has, which the
+        // run's automatic crowd control reads to skip a frozen bot. Empty before the seal.
+        const std::vector<std::uint32_t>& FreezeAuras(std::uint32_t map) const
+        {
+            static const std::vector<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = freezeAuras_.find(map);
+            return it == freezeAuras_.end() ? none : it->second;
+        }
+
+        // The map's kill_first and linked_death units (a row's target_entry of 0 is its boss): the automatic crowd
+        // control never picks one. Empty before the seal.
+        const std::unordered_set<std::uint32_t>& NoCcEntries(std::uint32_t map) const
+        {
+            static const std::unordered_set<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = noCcEntries_.find(map);
+            return it == noCcEntries_.end() ? none : it->second;
+        }
+
         // The rows of one boss entry, or null. Null before the seal.
         const std::vector<BossTacticRow>* Rows(std::uint32_t map, std::uint32_t bossEntry) const
         {
@@ -413,6 +442,8 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
+        std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
     };

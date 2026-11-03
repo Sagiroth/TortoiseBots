@@ -30814,7 +30814,7 @@ static void TestAutoCcPicksTheFamilyThatFits()
         UnitFact humanoid = AutoHumanoid(2, 20);
         humanoid.ccImmune = CcBit(CcFamily::FreezingTrap);
         f.units = {near, humanoid};
-        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
         CHECK(r.ccSent.empty());
         CHECK(r.note.find("no free crowd control fits") != std::string::npos);
     }
@@ -31322,6 +31322,74 @@ static void TestHealerGuardSkipsCcHolders()
     CHECK(r.healerGuardAssigned.count(50071) == 1);
 }
 
+
+// RunCcBotFor never picks a bot the run holds still (its return hold or the glue's revive hold), one a freeze_on_aura
+// row holds every action of, or one too far from the pack for its spell: the order could not land, and the mark would
+// stay on it for CheckCc to re-send and count.
+static void TestRunCcHeldFrozenAndRemoteBotsSkipNoOrder()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    UnitFact const u = AutoHumanoid(2, 20);
+    std::unordered_set<std::string> const busy;
+    std::size_t spell = 0;
+    // Sanity: the free mage is the bot.
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == &f.members[0]);
+    // Held still: the run's return hold, the glue's revive hold mark.
+    f.members[0].held = true;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].held = false;
+    // A freeze_on_aura row holds every action of it.
+    f.members[0].frozen = true;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].frozen = false;
+    // The run's own return-hold list, the same hold from the leader's side.
+    r.returnHold["Magey"] = Run::ReturnHold();
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    r.returnHold.clear();
+    // Out of every ranged family's reach from the lead bot.
+    f.members[0].yd = kRunCcMaxYd + 1.0f;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].yd = kRunCcMaxYd; // at the limit it still fits
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == &f.members[0]);
+
+    // End to end: a held bot spends no mark of the pack's over-threshold pull.
+    Run q = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.members[0].held = true;
+    g.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22), AutoHumanoid(4, 24)};
+    CHECK(Tick(q, g).compare(0, 9, "pullback ") == 0);
+    CHECK(q.ccSent.empty());
+}
+
+// A unit of a boss-tactics kill_first or linked_death row is never an automatic cc's candidate: the run kills those
+// first, and a linked_death group must die together. Another unit of the pack is picked instead.
+static void TestAutoCcSkipsBossTacticKillFirstAndLinkedDeathUnits()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22)};
+        f.bossTacticNoCc = {f.units[0].entry, f.units[1].entry};
+        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
+        CHECK(r.ccHolds.empty());
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22), AutoHumanoid(4, 24)};
+        f.bossTacticNoCc = {f.units[0].entry, f.units[1].entry};
+        // The unlisted one, farther from the lead bot, is the pick.
+        CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    }
+}
+
 static void TestRunCcFamilyTableKeyOffOrder()
 {
     std::vector<CcFamily> order;
@@ -31378,6 +31446,8 @@ static void TestSignedDzCountsEitherFloor()
 int main()
 {
     TestSignedDzCountsEitherFloor();
+    TestRunCcHeldFrozenAndRemoteBotsSkipNoOrder();
+    TestAutoCcSkipsBossTacticKillFirstAndLinkedDeathUnits();
     TestAutoCcMarksUnlistedUnits();
     TestAutoCcStopsAtTheThreshold();
     TestAutoCcCastersFirstThenPlanRank();

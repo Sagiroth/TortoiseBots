@@ -348,6 +348,15 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("unit.level = creature->GetLevel();", facts)
         self.assertIn("member.healer = f.raid.on ? isHeal : PlayerbotAI::IsHeal(bot);", facts)
         self.assertIn("member.tank = f.raid.on ? isTank : PlayerbotAI::IsTank(bot);", facts)
+        # A bot held by the run's or the revive hold, or frozen by a gaze row, or too far for its spell, takes no
+        # automatic mark; a boss-tactics kill_first or linked_death unit is never a candidate.
+        self.assertIn("member.held = f.reviveHoldYd > 0.0f && memberAi && memberAi->ReturnHeld();", facts)
+        self.assertIn("ai::GetBossTactics().FreezeAuras(bot->GetMapId())", facts)
+        self.assertIn("member.frozen = true;", facts)
+        self.assertIn("f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());", facts)
+        self.assertIn("m.held || m.frozen || r.returnHold.count(m.name) || m.yd > kRunCcMaxYd", policy)
+        self.assertEqual(policy.count("f.bossTacticNoCc.count(u.entry)"), 2)  # pre-pull and fight picks
+        self.assertIn("constexpr float kRunCcMaxYd = 40.0f;", policy)
         # Both fight ticks run right after CheckCc in the fight branch.
         check = policy.index("if (CheckCc(r, f, dt, order))\n            return order;")
         self.assertLess(check, policy.index("if (RunCcReapplyTick(r, f, dt, order))"))

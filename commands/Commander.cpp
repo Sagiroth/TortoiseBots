@@ -10428,6 +10428,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // The automatic crowd control (DungeonRun::RunAutoCcPickOrder): off, no candidate or bot rule is read, and the
     // four plan families and marks stay byte-identical.
     f.autoCc = sPlayerbotAIConfig.dungeonRunAutoCc;
+    // The map's boss-tactics kill_first and linked_death units: the automatic crowd control never picks them (the
+    // run kills those first, and a linked group must die together).
+    if (f.autoCc && lead->GetMap())
+        f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());
     f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;
     f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
@@ -10650,6 +10654,19 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             ReadMemberReach(lead, bot, member);
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
+        // A bot the run's return hold (or the glue's revive hold) keeps still: its mark is ReturnHeld, and no
+        // automatic crowd control picks it (DungeonRun::RunCcBotFor). The mark is only written while the revive hold
+        // key is on (SyncReturnHolds), so the read waits for that key.
+        member.held = f.reviveHoldYd > 0.0f && memberAi && memberAi->ReturnHeld();
+        // A bot carrying a freeze_on_aura row's aura is held still by the tactics themselves (every action is
+        // multiplied to 0): no crowd control order either.
+        if (f.autoCc && sPlayerbotAIConfig.dungeonRunAuraTactics)
+            for (std::uint32_t spell : ai::GetBossTactics().FreezeAuras(bot->GetMapId()))
+                if (bot->HasAura(spell))
+                {
+                    member.frozen = true;
+                    break;
+                }
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
         // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
         // (DungeonRun::RaidHealerGuard). Never one busy with a commander task, as the off-tank lists are not.
