@@ -8765,7 +8765,10 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
     if (params.lowestPartyLevel == 255)
         params.lowestPartyLevel = lead->GetLevel();
     params.aggroRate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
-    params.familyAssistYd = sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS);
+    // The estimate never uses less than the observed cross-pack ring (the ZG terrace's spawn pairs 11.0-19.5 yd
+    // apart): the server's 10 yd setting is read, and the policy's floor applies to it.
+    params.familyAssistYd = std::max(ai::kAggroFamilyAssistMinYd,
+        sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS));
     // creature_linking: a master's aggro wakes its slave (FLAG_AGGRO_ON_AGGRO), and with FLAG_TO_AGGRO_ON_AGGRO a
     // slave's aggro wakes its master. The master is the row's guid when it has one, else any creature of its entry in range.
     for (std::size_t i = 0; i < creatures.size(); ++i)
@@ -9667,6 +9670,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
     f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;
+    // The stand discipline (DungeonRun::HoldForShot, StandDisciplineOutOfPlace): the plan's stand is the only one a
+    // pull row uses, and the tanks and melee are waited for there.
+    f.standDiscipline = sPlayerbotAIConfig.dungeonRunStandDiscipline;
     // The CC before the walk in (DungeonRun::NextStandPull): the approach row holds outside the pack's wake reach.
     f.standPullPreCc = sPlayerbotAIConfig.dungeonRunStandPullPreCc;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config

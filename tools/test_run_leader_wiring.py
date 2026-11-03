@@ -1158,6 +1158,26 @@ class RunLeaderWiringTest(unittest.TestCase):
         for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
             self.assertIn("AiPlayerbot.DungeonRunWalkBackAfterWonFight", (ROOT / doc).read_text())
 
+    def test_stand_discipline_key_is_read_with_the_config(self):
+        # AiPlayerbot.DungeonRunStandDiscipline (default 0): read by LoadDungeonRunKeys and handed to the policy on
+        # every tick by ReadRunFacts, so no copy of it lives in a run.
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        header = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        keys = body(config, "void PlayerbotAIConfig::LoadDungeonRunKeys()\n{", "\n}\n")
+        self.assertIn('dungeonRunStandDiscipline = config.GetBoolDefault("AiPlayerbot.DungeonRunStandDiscipline", false);', keys)
+        self.assertIn("bool dungeonRunStandDiscipline;", header)
+        self.assertIn("AiPlayerbot.DungeonRunStandDiscipline = 0", template)
+        facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
+        self.assertIn("f.standDiscipline = sPlayerbotAIConfig.dungeonRunStandDiscipline;", facts)
+        self.assertIn("bool standDiscipline = false;", policy)
+        self.assertIn("constexpr float kStandDisciplineYd = 5.0f;", policy)
+        self.assertIn("constexpr std::uint32_t kStandDisciplineWaitMs = 10000;", policy)
+        self.assertIn("no LOS from the authored stand; holding", policy)
+        for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
+            self.assertIn("AiPlayerbot.DungeonRunStandDiscipline", (ROOT / doc).read_text())
+
     def test_run_leader_keys_follow_a_config_reload(self):
         # `.reload config` (ChatHandler::HandleReloadConfigCommand -> World::LoadConfigSettings(true) ->
         # WORLDHOOK_ON_AFTER_CONFIG_LOAD) reaches BotHostAdapter::OnAfterConfigLoad; it only marks the run leader's
