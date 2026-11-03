@@ -6,6 +6,7 @@
 #include <limits>
 #include <atomic>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <tuple>
@@ -75,6 +76,123 @@ bool IsFreeDps(PlayerbotAI* ai, Player* bot)
     return AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty();
 }
 
+// dps_hold_after's fight-wide state, one entry per map instance, subject and row (BossTacticsPolicy.h DpsHoldState).
+// The row's own key columns identify it: two rows of one boss differ in their spell or in their health band, so each
+// keeps its own hold. Any bot's read feeds the state, as the linked_death latch does, so a hold one bot sees applies
+// to every bot that reads it.
+using DpsHoldKey = std::tuple<std::uint32_t, std::uint32_t, std::uint64_t, std::uint32_t, std::uint32_t,
+                              std::uint8_t, std::uint8_t>;
+std::mutex g_dpsHoldMutex;
+std::map<DpsHoldKey, DpsHoldState> g_dpsHolds;
+// The trigger start each bot has logged for each key: one row per trigger and bot, not one per read.
+std::mutex g_dpsHoldLogMutex;
+std::map<std::pair<std::uint64_t, DpsHoldKey>, std::uint32_t> g_dpsHoldLog;
+std::uint32_t g_dpsHoldPruneMs = 0;
+
+DpsHoldKey DpsHoldKeyOf(Player* bot, const BossTacticRow& row, Unit* subject)
+{
+    return std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), subject->GetObjectGuid().GetRawValue(),
+                           row.bossEntry, row.spellId, row.hpMin, row.hpMax);
+}
+
+// The row's log row: the subject, the trigger and the hold it started.
+void LogDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow& row, DpsHoldTrigger trigger,
+                std::uint32_t triggerMs, const DpsHoldKey& key)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || trigger == DpsHoldTrigger::None)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_dpsHoldLogMutex);
+        std::uint32_t& logged = g_dpsHoldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), key)];
+        if (logged == triggerMs)
+            return;
+        logged = triggerMs;
+    }
+    char info1[48];
+    snprintf(info1, sizeof(info1), "subject=%u", subject->GetEntry());
+    char info2[96];
+    snprintf(info2, sizeof(info2), "trigger=%s,held_ms=%u", DpsHoldTriggerName(trigger),
+             static_cast<std::uint32_t>(row.param * 1000.0f + 0.5f));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsDpsHold", info1, info2);
+}
+
+// Drops the state of a subject that died and of a row nobody has read for kDpsHoldStaleMs; runs at most once a
+// second, whatever asks. The dead subject's state is erased at once rather than after the stale timeout, so a
+// respawned subject never inherits its previous pull's hold.
+void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
+    if (g_dpsHoldPruneMs != 0 && nowMs - g_dpsHoldPruneMs < 1000)
+        return;
+    g_dpsHoldPruneMs = nowMs;
+    for (auto it = g_dpsHolds.begin(); it != g_dpsHolds.end();)
+    {
+        bool drop = nowMs - it->second.lastReadMs > kDpsHoldStaleMs;
+        if (!drop)
+        {
+            Unit* subject = ai->GetUnit(ObjectGuid(std::get<2>(it->first)));
+            drop = subject && !subject->IsAlive();
+        }
+        it = drop ? g_dpsHolds.erase(it) : std::next(it);
+    }
+}
+
+// One read of a dps_hold_after row against its subject: the gate, the cast slot or aura, the victim's role and the
+// position, then DpsHoldTick. The state is the fight's, so a trigger one bot sees holds every bot that reads it.
+// Returns whether the subject is held after this read. `bossUnit` is the row's boss entry unit, whose health the
+// gate reads (never an add's).
+bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow& row, Unit* bossUnit,
+                 DpsHoldTrigger* fired = nullptr)
+{
+    if (fired)
+        *fired = DpsHoldTrigger::None;
+    if (!ai || !bot || !subject || !subject->IsAlive() || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    int const bossHpPct = static_cast<int>((bossUnit ? bossUnit : subject)->GetHealthPercent());
+    bool const botHasAura = row.botAura != 0 && bot->HasAura(row.botAura);
+    bool const gateOpen = RowGateOpen(row, true, bossHpPct, botHasAura);
+    uint32 genericId = 0;
+    uint32 channeledId = 0;
+    CurrentCastIds(subject, genericId, channeledId);
+    bool const casting = row.spellId != 0 && (genericId == row.spellId || channeledId == row.spellId);
+    bool const carrying = row.spellId != 0 && subject->HasAura(row.spellId);
+    Unit* const victim = subject->GetVictim();
+    bool const victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
+        PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    DpsHoldInputs in;
+    in.engaged = true;
+    // A spell-less row holds from the first sighting (mode engage, until_tank or the default); a blink row holds only
+    // on the jump, and a row with a spell on the cast or aura edge.
+    in.engageEnabled = row.spellId == 0 && row.mode != TacticMode::Blink;
+    in.gateOpen = gateOpen;
+    in.botEligible = row.botAura == 0 || botHasAura;
+    in.observer = bot->GetObjectGuid().GetRawValue();
+    in.gateEnabled = row.hpMin != 0 || row.hpMax != 100;
+    in.castOrAuraSeen = casting || carrying;
+    in.castEnabled = row.spellId != 0;
+    in.blinkEnabled = row.mode == TacticMode::Blink;
+    in.untilTank = row.mode == TacticMode::UntilTank;
+    in.victimIsTank = victimIsTank;
+    in.holdSec = row.param;
+    in.x = subject->GetPositionX();
+    in.y = subject->GetPositionY();
+    const DpsHoldKey key = DpsHoldKeyOf(bot, row, subject);
+    DpsHoldTrigger lastTrigger = DpsHoldTrigger::None;
+    std::uint32_t lastTriggerMs = 0;
+    bool held = false;
+    {
+        std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
+        DpsHoldState& state = g_dpsHolds[key];
+        held = DpsHoldTick(state, in, WorldTimer::getMSTime(), fired);
+        lastTrigger = state.lastTrigger;
+        lastTriggerMs = state.lastTriggerMs;
+    }
+    if (held && IsFreeDps(ai, bot))
+        LogDpsHold(ai, bot, subject, row, lastTrigger, lastTriggerMs, key);
+    return held;
+}
+
+
 // Whether the action damages enemies in an area: the threat mark, the shared action-name set (the thrown consumables,
 // the class blasts the mark misses) or the spell's own shape (IsEnemyAreaSpell: every effect enumerating enemy units in
 // an area, chains included). The mark alone carries almost no real area spell in this tree, which is why the other two
@@ -131,7 +249,49 @@ enum class HoldReason
     None,
     Budget,
     Sole,
+    DpsHold,
 };
+
+// The subject of an active dps_hold_after row within `maxDistance` of `around`, or null: an area cast that lands
+// beside it (or a DoT on it) would damage the creature the hold exists to keep quiet.
+bool DpsHoldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFight& fight, float maxDistance,
+                          Unit** subject)
+{
+    if (subject)
+        *subject = nullptr;
+    if (!ai || !around)
+        return false;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::DpsHoldAfter)
+            continue;
+        // Every live unit of the row's subject entry is read, so each one's trigger edge advances on this tick; the veto
+        // is any of them held within range. The boss unit feeds the health gate (the subject's own health without one).
+        std::vector<Unit*> subjects;
+        Unit* bossUnit = nullptr;
+        for (Unit* unit : fight.units)
+        {
+            if (unit->GetEntry() == TacticSubjectEntry(*row))
+                subjects.push_back(unit);
+            if (unit->GetEntry() == row->bossEntry)
+                bossUnit = unit;
+        }
+        std::vector<bool> held;
+        std::vector<float> distance;
+        for (Unit* unit : subjects)
+        {
+            held.push_back(ReadDpsHold(ai, ai->GetBot(), unit, *row, bossUnit));
+            distance.push_back(around->GetDistance(unit));
+        }
+        int const hit = DpsHoldVetoIndex(held, distance, maxDistance);
+        if (hit < 0)
+            continue;
+        if (subject)
+            *subject = subjects[hit];
+        return true;
+    }
+    return false;
+}
 
 // The held subject within `maxDistance` of `around` (the action's target, or the bot itself), the unit itself and why
 // it is held: an area cast that lands there would take it as well, and one area cast that kills several held Mad
@@ -172,6 +332,18 @@ HoldReason HeldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFig
         if (subject)
             *subject = units[index];
         return budget ? HoldReason::Budget : HoldReason::Sole;
+    }
+    // dps_hold_after: the subject of an active hold is left alone too, so an area cast that lands beside it (or a
+    // DoT on it) does not damage the boss/creature the hold exists to keep quiet.
+    if (sPlayerbotAIConfig.dungeonRunAuraTactics)
+    {
+        Unit* held = nullptr;
+        if (DpsHoldSubjectWithin(ai, around, fight, maxDistance, &held))
+        {
+            if (subject)
+                *subject = held;
+            return HoldReason::DpsHold;
+        }
     }
     return HoldReason::None;
 }
@@ -440,6 +612,56 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
         return nullptr;
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
+}
+
+bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger)
+{
+    if (trigger)
+        *trigger = DpsHoldTrigger::None;
+    if (!ai || !bot || !unit || !unit->IsAlive())
+        return false;
+    // The kind is the new key's own, and the map flag keeps every other map at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !IsFreeDps(ai, bot))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    PruneDpsHolds(ai, WorldTimer::getMSTime());
+    // The rows are read from the table, not from fight.rows: the scan drops a band-closed row, and a band opening
+    // is one of the triggers (the edge has to be seen from the closed side too). The row's boss entry has to be in
+    // the fight; the subject is the row's target or that boss.
+    for (Unit* boss : fight.units)
+    {
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), boss->GetEntry());
+        if (!rows)
+            continue;
+        for (const BossTacticRow& row : *rows)
+        {
+            if (row.kind != BossTacticKind::DpsHoldAfter || TacticSubjectEntry(row) != unit->GetEntry())
+                continue;
+            Unit* bossUnit = boss;
+            if (TacticSubjectEntry(row) != boss->GetEntry())
+            {
+                bossUnit = nullptr;
+                for (Unit* other : fight.units)
+                    if (other->GetEntry() == row.bossEntry)
+                    {
+                        bossUnit = other;
+                        break;
+                    }
+                if (!bossUnit)
+                    continue;
+            }
+            DpsHoldTrigger fired = DpsHoldTrigger::None;
+            if (ReadDpsHold(ai, bot, unit, row, bossUnit, &fired))
+            {
+                if (trigger && fired != DpsHoldTrigger::None)
+                    *trigger = fired;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // The linked_death group of the fight: every living, fighting unit of the group's entries within kHoldKillRangeYd of
@@ -724,6 +946,26 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     return true;
 }
 
+bool BossTacticsDpsHoldAction::Execute(Event& event)
+{
+    (void)event;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (!current || !IsDpsHeld(ai, bot, current))
+        return false;
+    // The kill_first add is still fair game (an add that has to die is not the subject whose damage is held); with
+    // none, drop the pick and stop, so every picker (all of which skip a held subject) re-picks once the hold is over.
+    if (Unit* pick = FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot)))
+    {
+        if (pick != current)
+            return Attack(bot, pick);
+    }
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    bot->AttackStop();
+    return true;
+}
+
 bool BossTacticsLinkedDeathAction::Execute(Event& event)
 {
     (void)event;
@@ -748,10 +990,15 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     // The linked_death clause is opt-in like its pick: without the key or the strategy the rows are inert.
     const bool linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath &&
         ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
-    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time or
-    // linked_death row: a map with only kill_first or interrupt rows (every other raid) pays for no scan here.
+    // dps_hold_after is the aura-tactics key's own: with it off (or the strategy off) its rows are inert here too.
+    const bool auraHolds = sPlayerbotAIConfig.dungeonRunAuraTactics &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
+        GetBossTactics().HasAuraTacticMap(bot->GetMapId());
+    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time,
+    // linked_death or dps_hold_after row: a map with only kill_first or interrupt rows (every other raid) pays for no
+    // scan here.
     if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&
-        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())))
+        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
@@ -760,15 +1007,15 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     // map, not from the fight's rows: "focus rti targets" gives the fight the raid mark's entry only, so a mark on a
     // partner would hide the group from the veto.
     bool holdsRows = linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId());
+    bool dpsHoldRows = false;
     for (const BossTacticRow* row : fight.rows)
     {
         if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
-        {
             holdsRows = true;
-            break;
-        }
+        if (auraHolds && row->kind == BossTacticKind::DpsHoldAfter)
+            dpsHoldRows = true;
     }
-    const bool area = holdsRows && IsAreaDamageAction(ai, action);
+    const bool area = (holdsRows || dpsHoldRows) && IsAreaDamageAction(ai, action);
     // The linked_death clauses also answer a tank's area action (Thunder Clap, Consecration, Swipe), a passive cleave
     // toggle (Sweeping Strikes, Blade Flurry) and a single-target attack on the current target: none of those is a
     // hold_kill clause, and the area test alone misses the cleave buffs.

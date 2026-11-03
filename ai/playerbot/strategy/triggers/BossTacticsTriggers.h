@@ -45,6 +45,14 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This free DPS bot's current target is the subject of an active dps_hold_after hold: stop and wait it out.
+    class BossTacticsDpsHoldTrigger : public Trigger
+    {
+    public:
+        BossTacticsDpsHoldTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dps hold", 1) {}
+        bool IsActive() override;
+    };
+
     // A linked_death group is held and this free DPS bot is not on the equalise pick (the highest member, no member at
     // or below param while another is above it).
     class BossTacticsLinkedDeathTrigger : public Trigger

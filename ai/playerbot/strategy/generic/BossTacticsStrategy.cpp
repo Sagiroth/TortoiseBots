@@ -29,6 +29,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics linked death",
         NextAction::array(0, new NextAction("boss tactics linked death", ACTION_HIGH + 3), NULL)));
 
+    // A dps_hold_after row holds its subject (the pull, a band opening, a boss cast or gain, a blink): a free DPS bot
+    // on it stops and waits the hold out. Above the kill-first pick, so the stop wins while the hold runs; the
+    // kill-first add itself stays allowed (the action re-picks it).
+    triggers.push_back(new TriggerNode(
+        "boss tactics dps hold",
+        NextAction::array(0, new NextAction("boss tactics dps hold", ACTION_HIGH + 4), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

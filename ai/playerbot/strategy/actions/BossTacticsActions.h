@@ -87,6 +87,12 @@ namespace ai
     // under an explicit attack order never see their target as held.
     Unit* FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // Whether a free DPS bot leaves `unit` alone right now under a dps_hold_after row of its entry: the fight-wide
+    // hold state was started by the row's engage, band, spell or blink trigger and has not run out (DpsHoldTick).
+    // Gated by AiPlayerbot.DungeonRunAuraTactics, HasAuraTacticMap and the "boss tactics" strategy; null/false for
+    // tanks, healers and bots under an explicit attack order. `trigger` (optional) names the trigger of the hold.
+    bool IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger = nullptr);
+
     // The boss whose front this bot should leave, or null.
     Unit* FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
@@ -128,6 +134,15 @@ namespace ai
     {
     public:
         BossTacticsHoldKillAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics hold kill") {}
+        bool Execute(Event& event) override;
+    };
+
+    // A free DPS bot on a subject a dps_hold_after row holds stops attacking it: the kill_first pick if there is one
+    // (the adds stay allowed), else the target is dropped and the attack stopped until the hold runs out.
+    class BossTacticsDpsHoldAction : public AttackAction
+    {
+    public:
+        BossTacticsDpsHoldAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics dps hold") {}
         bool Execute(Event& event) override;
     };
 

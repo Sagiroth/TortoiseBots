@@ -1292,6 +1292,222 @@ int main()
         CHECK(last - first <= 7);
     }
 
+    // dps_hold_after: one fight-wide state per subject and row, whose triggers (engage, band opening, a spell or aura
+    // rising edge, a blink) restart a hold of `param` seconds. The hold is what the free DPS bots of the instance obey;
+    // any bot's read feeds the same state, as the linked_death latch does.
+    {
+        // Engage: the first sighting of the subject among the attackers starts the hold, which runs its seconds and no
+        // longer (released at 0 ms, still held after param would both be wrong).
+        DpsHoldState engage;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 4.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(DpsHoldTick(engage, in, 1000, &fired));
+        CHECK(fired == DpsHoldTrigger::Engage);
+        CHECK(engage.startMs == 1000);
+        CHECK(DpsHoldTick(engage, in, 1000 + 3999, nullptr));
+        CHECK(!DpsHoldTick(engage, in, 1000 + 4000, nullptr));  // param seconds: released at the boundary
+        CHECK(!DpsHoldTick(engage, in, 1000 + 9000, nullptr));  // the engage edge fires once, never again
+        CHECK(fired == DpsHoldTrigger::Engage);
+    }
+
+    // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
+    {
+        DpsHoldState band;
+        DpsHoldInputs in;
+        in.gateEnabled = true;
+        in.gateOpen = false;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(band, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 2000, nullptr));               // still inside the first band's hold
+        in.gateOpen = false;                                       // the band closed: 100 + 3000 = 3100
+        CHECK(!DpsHoldTick(band, in, 2100, nullptr));              // the row is not open now
+        CHECK(!DpsHoldTick(band, in, 3100, nullptr));              // and its hold does not come back
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 4000, &fired));                // reopening restarts it
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 6999, nullptr));
+        CHECK(!DpsHoldTick(band, in, 7000, nullptr));
+    }
+
+    // A spell or aura is a rising edge only: a value that stays true (an aura that lasts the whole hold) must not
+    // restart the hold on every read, or the hold would never end.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, in, 0, nullptr));                 // nothing seen yet
+        in.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(DpsHoldTick(spell, in, 3099, nullptr));               // still held, the signal is still true
+        CHECK(!DpsHoldTick(spell, in, 3100, nullptr));              // level, not edge: released at param
+    }
+
+    // A read by a bot outside the row (its bot_aura closed) touches no shared edge: the spell an ineligible bot reads
+    // first must not hide the rising edge from an eligible bot, and a band it sees closed must not reset the band edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.gateOpen = false;
+        in.botEligible = false;
+        in.castOrAuraSeen = true;                                   // the ineligible bot reads the active spell
+        CHECK(!DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        in.botEligible = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));                 // the eligible bot sees the rising edge
+        CHECK(fired == DpsHoldTrigger::Spell);
+
+        DpsHoldState band;
+        DpsHoldInputs band_in;
+        band_in.gateEnabled = true;
+        band_in.holdSec = 3.0f;
+        band_in.gateOpen = true;
+        CHECK(DpsHoldTick(band, band_in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        band_in.gateOpen = false;
+        band_in.botEligible = false;                                // an ineligible bot reads the band closed
+        CHECK(!DpsHoldTick(band, band_in, 500, &fired));
+        band_in.gateOpen = true;
+        band_in.botEligible = true;                                 // still open for the eligible bot: no new edge
+        CHECK(DpsHoldTick(band, band_in, 1000, &fired));            // the first hold still runs to 3000
+        CHECK(fired == DpsHoldTrigger::None);
+    }
+
+    // Eligibility is lost through the end of cast 1 and regained during cast 2: the hold starts on cast 2. The
+    // ineligible read resets the bot's own edge, so the stale "seen" of cast 1 cannot hide cast 2's rising edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        in.observer = 7;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.castOrAuraSeen = true;                                   // cast 1, the bot carries the aura
+        CHECK(DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        in.botEligible = false;                                     // the aura is lost; cast 1 ends meanwhile
+        in.castOrAuraSeen = false;
+        CHECK(!DpsHoldTick(spell, in, 4000, &fired));
+        in.castOrAuraSeen = true;                                   // cast 2 starts, still no aura
+        CHECK(!DpsHoldTick(spell, in, 8000, &fired));
+        in.botEligible = true;                                      // the aura returns during cast 2
+        CHECK(DpsHoldTick(spell, in, 9000, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 9000);
+    }
+
+    // The cast/aura edge is per observer: one bot seeing a cast does not hide its rising edge from another bot that
+    // starts watching before the cast (a bot already seen true is not a restart for a bot joining mid-cast).
+    {
+        DpsHoldState spell;
+        DpsHoldInputs a;
+        a.castEnabled = true;
+        a.holdSec = 3.0f;
+        a.observer = 1;
+        DpsHoldInputs b = a;
+        b.observer = 2;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, a, 0, &fired));                   // A watches, no cast
+        CHECK(!DpsHoldTick(spell, b, 0, &fired));                   // B watches, no cast
+        a.castOrAuraSeen = true;
+        b.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, a, 100, &fired));                  // A's rising edge starts the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 100);
+        CHECK(DpsHoldTick(spell, b, 200, &fired));                  // B's own rising edge promotes into the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 200);
+        DpsHoldInputs c = a;                                        // C joins mid-cast: A and B see it, no restart
+        c.observer = 3;
+        CHECK(DpsHoldTick(spell, c, 300, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        CHECK(spell.startMs == 200);
+        CHECK(spell.observers.size() == 3);
+    }
+
+    // The observer list is bounded.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        for (std::uint64_t g = 1; g <= 200; ++g)
+        {
+            in.observer = g;
+            DpsHoldTick(spell, in, static_cast<std::uint32_t>(g), nullptr);
+        }
+        CHECK(spell.observers.size() <= kDpsHoldMaxObservers);
+    }
+
+    // The held-subject veto: any held unit within range vetoes, not only the last unit read.
+    {
+        CHECK(DpsHoldVetoIndex({true, false}, {5.0f, 5.0f}, 10.0f) == 0);    // first held and in range
+        CHECK(DpsHoldVetoIndex({true, false}, {20.0f, 5.0f}, 10.0f) == -1);  // held but out of range; other not held
+        CHECK(DpsHoldVetoIndex({false, true}, {5.0f, 5.0f}, 10.0f) == 1);
+        CHECK(DpsHoldVetoIndex({}, {}, 10.0f) == -1);
+    }
+
+    // A blink is a jump of more than 10 yd between two reads at most 1500 ms apart.
+    {
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 9.9f, 0.0f, 500));        // under 10 yd: no blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 10.1f, 0.0f, 500));
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 12.0f, 0.0f, 2000));      // 12 yd over 2 s: too slow to be a blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1500));       // the 1500 ms read gap is inclusive
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1501));
+        CHECK(!DpsHoldBlinked(5.0f, 5.0f, 5.0f, 5.0f, 10));         // standing still
+    }
+
+    // A blink mode restarts the hold on a jump, and the position is updated on every read.
+    {
+        DpsHoldState blink;
+        DpsHoldInputs in;
+        in.blinkEnabled = true;
+        in.holdSec = 3.0f;
+        in.x = 0.0f;
+        in.y = 0.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(blink, in, 0, nullptr));                 // no previous position: no blink
+        in.x = 12.0f;
+        CHECK(DpsHoldTick(blink, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Blink);
+        in.x = 12.0f;                                               // the same place on the next read
+        CHECK(!DpsHoldTick(blink, in, 3100, nullptr));              // and no second blink from standing there
+    }
+
+    // until_tank keeps the hold after param while the subject is on nobody but a tank's counterpart, and the cap at
+    // 3 * param ends it, so it can never deadlock. A tank victim releases it at param like any other hold.
+    {
+        DpsHoldState tank;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.untilTank = true;
+        in.victimIsTank = false;
+        in.holdSec = 4.0f;
+        CHECK(DpsHoldTick(tank, in, 0, nullptr));
+        CHECK(DpsHoldTick(tank, in, 11999, nullptr));               // the cap is 3 * 4 s = 12 s
+        CHECK(!DpsHoldTick(tank, in, 12000, nullptr));
+
+        DpsHoldState done;
+        in.victimIsTank = true;
+        CHECK(DpsHoldTick(done, in, 0, nullptr));
+        CHECK(!DpsHoldTick(done, in, 4000, nullptr));               // on the tank: released at param
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

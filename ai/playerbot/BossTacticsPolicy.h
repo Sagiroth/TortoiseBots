@@ -1163,6 +1163,225 @@ namespace ai
         return PickLinkedDeath(group.param, members);
     }
 
+    // What (re)started a dps_hold_after hold, for the log row.
+    enum class DpsHoldTrigger : std::uint8_t
+    {
+        None = 0,
+        Engage,  // the first sighting of the subject among a bot's attackers
+        Band,    // the row's health band went from closed to open
+        Spell,   // the subject started casting (or gained) the row's spell
+        Blink,   // the subject jumped more than 10 yd within 1.5 s
+    };
+
+    inline const char* DpsHoldTriggerName(DpsHoldTrigger trigger)
+    {
+        switch (trigger)
+        {
+            case DpsHoldTrigger::Engage:
+                return "engage";
+            case DpsHoldTrigger::Band:
+                return "band";
+            case DpsHoldTrigger::Spell:
+                return "spell";
+            case DpsHoldTrigger::Blink:
+                return "blink";
+            case DpsHoldTrigger::None:
+                break;
+        }
+        return "none";
+    }
+
+    // A blink: the subject moved more than 10 yd between two reads at most 1500 ms apart. A slower read is not
+    // comparable (a walk can cover 12 yd in 2 s), and the hold's other triggers answer a real cast or aura.
+    constexpr float kDpsHoldBlinkYd = 10.0f;
+    constexpr std::uint32_t kDpsHoldBlinkMs = 1500;
+    // A hold state nobody read for 10 minutes is stale (the subject left the fight); the caller drops it.
+    constexpr std::uint32_t kDpsHoldStaleMs = 600000;
+    // The cast/aura edge is kept per observing bot. An observer nobody heard from for 10 s is gone (it no longer
+    // vouches that a signal was already seen), and one record holds at most 64 observers.
+    constexpr std::uint32_t kDpsHoldObserverStaleMs = 10000;
+    constexpr std::size_t kDpsHoldMaxObservers = 64;
+
+    inline bool DpsHoldBlinked(float lastX, float lastY, float x, float y, std::uint32_t dtMs)
+    {
+        if (dtMs > kDpsHoldBlinkMs)
+            return false;
+        float const dx = x - lastX;
+        float const dy = y - lastY;
+        return std::sqrt(dx * dx + dy * dy) > kDpsHoldBlinkYd;
+    }
+
+    // One eligible bot's view of the cast/aura signal: whether it has already seen the signal true (its edge bit).
+    struct DpsHoldObserver
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t lastReadMs = 0;
+        bool castSeen = false;
+    };
+
+    // The hold of one subject and row, shared by every bot of the instance (the caller owns the map and its mutex).
+    // `startMs` is the latest trigger, `untilMs` its `param` seconds, `capMs` the until_tank cap (3 * param): the hold
+    // can never outlive it. The band, engage and blink edges are shared; the cast/aura edge is kept per observing bot
+    // (`observers`), so one bot's view of a cast never hides the rising edge from another, and a signal that stays true
+    // does not restart the hold. The last position and read time are the blink trigger's other half.
+    struct DpsHoldState
+    {
+        std::uint32_t startMs = 0;
+        std::uint32_t untilMs = 0;
+        std::uint32_t capMs = 0;
+        std::uint32_t lastReadMs = 0;
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool gateWasOpen = false;
+        bool engageSeen = false;
+        bool hasPos = false;
+        // The trigger that last restarted the hold, and when: one log row per trigger and bot reads them.
+        DpsHoldTrigger lastTrigger = DpsHoldTrigger::None;
+        std::uint32_t lastTriggerMs = 0;
+        std::vector<DpsHoldObserver> observers;
+    };
+
+    // One read's facts. `engageEnabled`/`gateEnabled`/`castEnabled`/`blinkEnabled` say which triggers the row uses
+    // (the SQL shape decides, so the rule stays data): engage for a spell-less row that is not a blink, the band for
+    // a row with one, the spell for a row that has one, and blink for mode `blink`.
+    struct DpsHoldInputs
+    {
+        bool engaged = false;
+        bool engageEnabled = false;
+        // The row's whole gate (RowGateOpen): a closed band, the key off or a bot without `bot_aura` means the row
+        // does not apply, and a hold it started does not outlive it.
+        bool gateOpen = true;
+        bool gateEnabled = false;
+        // Whether this bot is part of the row at all (no `bot_aura`, or it carries it). A read by a bot outside the row
+        // returns without touching the shared hold or any other bot's edge, and drops this bot's own cast/aura edge:
+        // when it is eligible again it starts from "not seen", so the next cast's rising edge is its to promote.
+        bool botEligible = true;
+        // Who reads (the bot's guid): the key of the per-observer cast/aura edge.
+        std::uint64_t observer = 0;
+        bool castOrAuraSeen = false;
+        bool castEnabled = false;
+        bool blinkEnabled = false;
+        bool untilTank = false;
+        bool victimIsTank = false;
+        float holdSec = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+
+    // Applies one read to the hold and answers whether it is on. A trigger restarts it; a hold lasts `param` seconds
+    // from the latest trigger. With `untilTank`, a subject whose victim is not a tank keeps it on past that, up to
+    // 3 * param. `fired` (optional) names the trigger this read started.
+    inline bool DpsHoldTick(DpsHoldState& state, const DpsHoldInputs& in, std::uint32_t nowMs,
+                            DpsHoldTrigger* fired = nullptr)
+    {
+        if (fired)
+            *fired = DpsHoldTrigger::None;
+        if (!in.botEligible)
+        {
+            for (std::size_t i = 0; i < state.observers.size(); ++i)
+            {
+                if (state.observers[i].guid == in.observer)
+                {
+                    state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(i));
+                    break;
+                }
+            }
+            return false;
+        }
+        // This observer's cast/aura edge. Observers not heard from for a while are dropped; a new one starts as the
+        // others see the signal (a bot joining mid-cast does not restart a hold the cast already started), or as
+        // "not seen" when nobody else is watching it.
+        for (std::size_t i = state.observers.size(); i-- > 0;)
+        {
+            if (state.observers[i].guid != in.observer &&
+                nowMs - state.observers[i].lastReadMs > kDpsHoldObserverStaleMs)
+                state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+        DpsHoldObserver* me = nullptr;
+        for (DpsHoldObserver& o : state.observers)
+        {
+            if (o.guid == in.observer)
+            {
+                me = &o;
+                break;
+            }
+        }
+        if (!me)
+        {
+            bool othersSee = false;
+            for (const DpsHoldObserver& o : state.observers)
+                othersSee = othersSee || o.castSeen;
+            if (state.observers.size() >= kDpsHoldMaxObservers)
+            {
+                std::size_t oldest = 0;
+                for (std::size_t i = 1; i < state.observers.size(); ++i)
+                {
+                    if (nowMs - state.observers[i].lastReadMs > nowMs - state.observers[oldest].lastReadMs)
+                        oldest = i;
+                }
+                state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(oldest));
+            }
+            DpsHoldObserver fresh;
+            fresh.guid = in.observer;
+            fresh.castSeen = othersSee;
+            state.observers.push_back(fresh);
+            me = &state.observers.back();
+        }
+        me->lastReadMs = nowMs;
+        std::uint32_t const holdMs = in.holdSec > 0.0f
+            ? static_cast<std::uint32_t>(in.holdSec * 1000.0f + 0.5f)
+            : 0;
+        DpsHoldTrigger trigger = DpsHoldTrigger::None;
+        if (in.gateOpen && in.engageEnabled && in.engaged && !state.engageSeen)
+        {
+            state.engageSeen = true;
+            trigger = DpsHoldTrigger::Engage;
+        }
+        if (in.gateOpen && in.gateEnabled && !state.gateWasOpen && trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Band;
+        if (in.gateOpen && in.castEnabled && in.castOrAuraSeen && !me->castSeen &&
+            trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Spell;
+        if (in.gateOpen && in.blinkEnabled && state.hasPos &&
+            DpsHoldBlinked(state.lastX, state.lastY, in.x, in.y, nowMs - state.lastReadMs) &&
+            trigger == DpsHoldTrigger::None)
+            trigger = DpsHoldTrigger::Blink;
+        state.gateWasOpen = in.gateOpen;
+        me->castSeen = in.castOrAuraSeen;
+        state.lastX = in.x;
+        state.lastY = in.y;
+        state.lastReadMs = nowMs;
+        state.hasPos = true;
+        if (trigger != DpsHoldTrigger::None)
+        {
+            state.startMs = nowMs;
+            state.untilMs = nowMs + holdMs;
+            state.capMs = nowMs + 3 * holdMs;
+            state.lastTrigger = trigger;
+            state.lastTriggerMs = nowMs;
+            if (fired)
+                *fired = trigger;
+        }
+        if (!in.gateOpen || holdMs == 0)
+            return false;
+        if (nowMs < state.untilMs)
+            return true;
+        return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
+    }
+
+    // The held-subject veto over every live unit of one subject entry: `held[i]` is whether unit i is held after its
+    // read, `distance[i]` its distance from the area's centre. Returns the first held unit within `maxDistance`, or -1.
+    // The caller reads every unit, so any held unit in range vetoes, not only the last one read.
+    inline int DpsHoldVetoIndex(const std::vector<bool>& held, const std::vector<float>& distance, float maxDistance)
+    {
+        for (std::size_t i = 0; i < held.size() && i < distance.size(); ++i)
+        {
+            if (held[i] && distance[i] <= maxDistance)
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
