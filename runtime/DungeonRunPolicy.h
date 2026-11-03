@@ -3845,7 +3845,7 @@ inline const MemberFact* NotWithLead(const Facts& f)
         return nullptr;
     const MemberFact* pick = nullptr;
     for (const MemberFact& m : f.members)
-        if (!m.name.empty() && !m.withLead && (!pick || m.yd > pick->yd))
+        if (!m.name.empty() && !m.frozen && !m.withLead && (!pick || m.yd > pick->yd))
             pick = &m;
     return pick;
 }
