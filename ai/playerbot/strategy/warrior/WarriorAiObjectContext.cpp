@@ -221,6 +221,8 @@ namespace ai
                 creators["retaliation"] = [](PlayerbotAI* ai) { return new CastRetaliationAction(ai); };
                 creators["mortal strike"] = [](PlayerbotAI* ai) { return new CastMortalStrikeAction(ai); };
                 creators["sweeping strikes"] = [](PlayerbotAI* ai) { return new CastSweepingStrikesAction(ai); };
+                creators["sweeping strikes near cc"] = [](PlayerbotAI* ai) { return new SweepingStrikesNearCcTrigger(ai); };
+                creators["remove sweeping strikes"] = [](PlayerbotAI* ai) { return new RemoveBuffAction(ai, "sweeping strikes"); };
                 creators["intercept"] = [](PlayerbotAI* ai) { return new CastInterceptAction(ai); };
                 creators["whirlwind"] = [](PlayerbotAI* ai) { return new CastWhirlwindAction(ai); };
                 creators["pummel"] = [](PlayerbotAI* ai) { return new CastPummelAction(ai); };

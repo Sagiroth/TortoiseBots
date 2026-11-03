@@ -93,6 +93,16 @@ namespace ai
         return !heldMark;
     }
 
+    // A running self buff that copies the bot's swings onto nearby enemies
+    // (Blade Flurry, Sweeping Strikes) is cancelled, and not started, beside a
+    // protected enemy or a CC mark its CC bot will (re)hold. The splash is no
+    // target choice: the party still fights a free mark, only without the
+    // cleave that keeps breaking or pre-empting the sheep.
+    inline bool CcCancelSwingSplashBuff(bool buffUp, bool protectedEnemyInReach, bool readyCcMarkInReach)
+    {
+        return buffUp && (protectedEnemyInReach || readyCcMarkInReach);
+    }
+
     // Blade Flurry copies each swing onto a random enemy within 5 yd of the
     // rogue (core spell_rogue_blade_flurry), sheeped or not. On Turtle it is
     // a toggle (spell 13877: infinite duration, 4 s cooldown), so it stays
@@ -100,16 +110,14 @@ namespace ai
     // enemy almost never applies. A running Blade Flurry is cancelled while
     // a protected enemy (breakable CC or a held mark) is in reach, and also
     // next to a CC mark whose CC bot is ready to (re)sheep it, even after
-    // the hold window: the splash is not a target choice, the party still
-    // fights a free mark, only without the cleave that keeps breaking or
-    // pre-empting the sheep (build 13 gate: sheep broke 3 s after it
-    // landed; build 14 gate: three Blade Flurry hits on the Moon mob at
-    // 14-17 s, before the first sheep). Once only CC marks are left the
-    // caller passes neither, and Blade Flurry is allowed again.
+    // the hold window (build 13 gate: sheep broke 3 s after it landed; build
+    // 14 gate: three Blade Flurry hits on the Moon mob at 14-17 s, before the
+    // first sheep). Once only CC marks are left the caller passes neither, and
+    // Blade Flurry is allowed again.
     inline bool CcCancelBladeFlurry(bool bladeFlurryUp, bool protectedEnemyInReach,
         bool readyCcMarkInReach)
     {
-        return bladeFlurryUp && (protectedEnemyInReach || readyCcMarkInReach);
+        return CcCancelSwingSplashBuff(bladeFlurryUp, protectedEnemyInReach, readyCcMarkInReach);
     }
 
     // A DoT (Corruption, Curse of Agony, Immolate, Serpent Sting, Shadow Word:
@@ -137,6 +145,8 @@ namespace ai
     // cancel/recast every 4 s cooldown (25 energy and a GCD each time).
     constexpr float CcBladeFlurryCancelRadius = 8.0f;
     constexpr float CcBladeFlurryStartRadius = 11.0f;
+    // Sweeping Strikes' own reach: it copies a swing onto an enemy in melee reach of the warrior.
+    constexpr float CcSweepingStrikesRadius = 8.0f;
 
     // The guards skip one unit the caller names. Blade Flurry names the
     // rogue's own victim: the core proc picks its extra target from the
