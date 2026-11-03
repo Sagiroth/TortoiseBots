@@ -1,7 +1,9 @@
 // Standalone check for ai/playerbot/BossTacticsPolicy.h:
 //   g++ -std=c++17 -Wall -Wextra tools/test_boss_tactics_policy.cpp -o /tmp/test_boss_tactics_policy && /tmp/test_boss_tactics_policy
 #include "../ai/playerbot/BossTacticsPolicy.h"
+#include "../ai/playerbot/BombRunoutPolicy.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <iostream>
@@ -14,6 +16,8 @@
 } while (0)
 
 using namespace ai;
+
+static bool Near(float a, float b) { return std::fabs(a - b) < 0.01f; }
 
 static BossTacticRow Row(std::uint32_t map, std::uint32_t boss, BossTacticKind kind, std::uint32_t target = 0,
                          std::uint32_t spell = 0, std::uint8_t priority = 0, float param = 0.0f)
@@ -29,12 +33,41 @@ static BossTacticRow Row(std::uint32_t map, std::uint32_t boss, BossTacticKind k
     return row;
 }
 
+static BossTacticRow Gated(BossTacticRow row, std::uint8_t hpMin, std::uint8_t hpMax, std::uint32_t botAura = 0)
+{
+    row.hpMin = hpMin;
+    row.hpMax = hpMax;
+    row.botAura = botAura;
+    return row;
+}
+
 static ActiveBossRows Active(const std::vector<BossTacticRow>& rows)
 {
     ActiveBossRows out;
     for (const BossTacticRow& row : rows)
         out.push_back(&row);
     return out;
+}
+
+static BossTacticRow DispelRow(std::uint32_t spell, std::uint8_t priority, TacticMode mode, float param = 0.0f)
+{
+    BossTacticRow row = Row(309, 11380, BossTacticKind::DispelPriority, 0, spell, priority, param);
+    row.mode = mode;
+    return row;
+}
+
+// The 1.12 dispel types (SpellEntry::Dispel): magic 1, curse 2, disease 3, poison 4. The policy header takes the raw
+// number so it stays free of core includes, exactly like the loader passes the row's columns.
+static const std::uint32_t kMagic = 1;
+static const std::uint32_t kCurse = 2;
+static const std::uint32_t kPoison = 4;
+
+static AuraOnMember Aura(std::uint32_t spellId, std::uint32_t dispelType)
+{
+    AuraOnMember aura;
+    aura.spellId = spellId;
+    aura.dispelType = dispelType;
+    return aura;
 }
 
 static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable = true)
@@ -153,6 +186,38 @@ int main()
     CHECK(ParseBossTacticKind("one-at-a-time") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("") == BossTacticKind::None);
     CHECK(ParseBossTacticKind("dispel") == BossTacticKind::None);
+    CHECK(ParseBossTacticKind("dps_hold_after") == BossTacticKind::DpsHoldAfter);
+    CHECK(ParseBossTacticKind("dispel_priority") == BossTacticKind::DispelPriority);
+    CHECK(ParseBossTacticKind("flee_on_aura") == BossTacticKind::FleeOnAura);
+    CHECK(ParseBossTacticKind("freeze_on_aura") == BossTacticKind::FreezeOnAura);
+    CHECK(ParseBossTacticKind("taunt_after_cast") == BossTacticKind::TauntAfterCast);
+    CHECK(ParseBossTacticKind("swap_on_aura") == BossTacticKind::SwapOnAura);
+    // The values continue at 9, so a stored row never changes meaning; taunt_after_cast is the longest kind name and
+    // still fits varchar(16).
+    CHECK(static_cast<int>(BossTacticKind::DpsHoldAfter) == 9);
+    CHECK(static_cast<int>(BossTacticKind::DispelPriority) == 10);
+    CHECK(static_cast<int>(BossTacticKind::FleeOnAura) == 11);
+    CHECK(static_cast<int>(BossTacticKind::FreezeOnAura) == 12);
+    CHECK(static_cast<int>(BossTacticKind::TauntAfterCast) == 13);
+    CHECK(static_cast<int>(BossTacticKind::SwapOnAura) == 14);
+
+    // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "now") == TacticMode::Now);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "clear") == TacticMode::Clear);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "never") == TacticMode::Never);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "away") == TacticMode::Away);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "to_tank") == TacticMode::ToTank);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "engage") == TacticMode::Engage);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "blink") == TacticMode::Blink);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "to_tank") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "clear") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "never") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "now") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Interrupt, "now") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Interrupt, "") == TacticMode::Default);
 
     // Loader: nothing is visible before the seal, and the first row of a key wins.
     {
@@ -191,6 +256,72 @@ int main()
         CHECK(table.Size() == 0);
         table.Seal();
         CHECK(!table.HasMap(70));  // an empty sealed table has no map: the tactics stay off
+    }
+
+    // Row gates: a boss health band and a bot aura. The band is inclusive, and with the master key off a gated row is
+    // closed (today's behaviour, before the columns existed); an ungated row stays open either way.
+    {
+        BossTacticRow band = Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 75);
+        CHECK(RowGateOpen(band, true, 75, false));    // the band's edge is inside
+        CHECK(!RowGateOpen(band, true, 76, false));   // 76 % is out of a [0, 75] band
+        CHECK(RowGateOpen(band, true, 0, false));
+        CHECK(!RowGateOpen(band, false, 75, false));  // key off: a gated row is closed
+        BossTacticRow lowBand = Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 76, 100);
+        CHECK(!RowGateOpen(lowBand, true, 75, false));
+        CHECK(RowGateOpen(lowBand, true, 76, false));
+        CHECK(RowGateOpen(lowBand, true, 100, false));
+        BossTacticRow plain = Row(70, 6910, BossTacticKind::Interrupt, 0, 16006);
+        CHECK(RowGateOpen(plain, false, 50, false));  // no gate: the key changes nothing
+        BossTacticRow aura = Gated(Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 0), 0, 100, 24306);
+        CHECK(!RowGateOpen(aura, true, 100, false));  // the bot does not carry Delusions
+        CHECK(RowGateOpen(aura, true, 100, true));
+        CHECK(!RowGateOpen(aura, false, 100, true));  // key off
+        CHECK(RowGateSet(band));
+        CHECK(!RowGateSet(plain));
+    }
+
+    // Loader: the band is a percentage range, the duplicate key includes it, and only a scan-read kind may gate.
+    {
+        BossTacticTable table;
+        CHECK(table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 75)));
+        CHECK(table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 50)));  // another band
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 50)));  // same key
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 101, 100)));  // > 100
+        CHECK(!table.Add(Gated(Row(531, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 80, 70)));    // inverted
+        CHECK(!table.Add(Gated(Row(309, 15111, BossTacticKind::HoldKill, 15146), 0, 90)));       // read from the table
+        CHECK(!table.Add(Gated(Row(309, 15146, BossTacticKind::TankHold), 0, 100, 24306)));
+        CHECK(!table.Add(Gated(Row(309, 15111, BossTacticKind::OneAtATime), 50, 100)));
+        CHECK(!table.Add(Gated(Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f), 90, 100)));
+        CHECK(table.Size() == 2);
+    }
+
+    // Loader: the new kinds' own shape checks.
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 0.0f)));   // no seconds
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 31.0f)));  // longer than 30 s
+        CHECK(table.Add(Row(309, 11380, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f)));
+        CHECK(!table.Add(Row(309, 11380, BossTacticKind::DispelPriority)));                 // no aura
+        BossTacticRow hex = Row(309, 11380, BossTacticKind::DispelPriority, 0, 17172);
+        hex.mode = TacticMode::Now;
+        CHECK(table.Add(hex));
+        BossTacticRow wrongMode = Row(309, 11380, BossTacticKind::DispelPriority, 0, 24306);
+        wrongMode.mode = ParseTacticMode(wrongMode.kind, "away");                            // flee's word
+        CHECK(wrongMode.mode == TacticMode::Invalid);
+        CHECK(!table.Add(wrongMode));
+        CHECK(!table.Add(Row(309, 11382, BossTacticKind::FleeOnAura)));                     // no aura
+        CHECK(!table.Add(Row(309, 14515, BossTacticKind::FleeOnAura, 0, 24210, 0, -1.0f)));
+        CHECK(!table.Add(Row(309, 11382, BossTacticKind::FreezeOnAura)));                   // no aura
+        CHECK(!table.Add(Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 0, 0.0f)));  // no deadline
+        CHECK(!table.Add(Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 1, 2.0f)));  // no trigger
+        BossTacticRow blink = Row(309, 15082, BossTacticKind::TauntAfterCast, 16290, 0, 1, 2.0f);
+        blink.mode = TacticMode::Blink;
+        CHECK(table.Add(blink));
+        CHECK(!table.Add(Row(309, 15932, BossTacticKind::SwapOnAura, 0, 25646, 1, 5.0f)));  // one tank
+        CHECK(table.Add(Row(309, 15932, BossTacticKind::SwapOnAura, 0, 25646, 2, 5.0f)));
+        BossTacticRow noWindow = Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f);
+        noWindow.windowSec = 0.0f;
+        CHECK(!table.Add(noWindow));
     }
 
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
@@ -784,6 +915,26 @@ int main()
         CHECK(!FindLinkedDeathGroup(ActiveBossRows(), 14599, group));
     }
 
+    // The group's own window (`window_s`) is the max over its rows: a partner with 15 s gives the group 15 s, so the
+    // Thekal trio keeps its 15 s script retry while a new group defaults to 7.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 14599, BossTacticKind::LinkedDeath, 11347, 0, 1, 2.0f),
+            Row(309, 14599, BossTacticKind::LinkedDeath, 11348, 0, 1, 2.0f),
+        };
+        std::vector<BossTacticRow> timed = rows;
+        timed[0].windowSec = 7.0f;
+        timed[1].windowSec = 15.0f;
+        const ActiveBossRows active = Active(timed);
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(active, 11347, group));
+        CHECK(group.windowSec == 15.0f);
+        CHECK(LinkedDeathWindowMs(group.windowSec) == 15000);
+        const ActiveBossRows plain = Active(rows);
+        CHECK(FindLinkedDeathGroup(plain, 11347, group));
+        CHECK(group.windowSec == 7.0f);
+    }
+
     // Equalise: the pick is the living member with the highest health fraction, never one at or below param while
     // another stands above it, and never one this bot cannot attack.
     {
@@ -1079,6 +1230,33 @@ int main()
         CHECK(order.known.empty());
     }
 
+    // The latch's window comes from the group's rows (`window_s`): 7 s by default, Thekal's trio 15 s. The constant is
+    // only the fallback for a group without a window, which the loader refuses.
+    {
+        CHECK(LinkedDeathWindowMs(7.0f) == 7000);
+        CHECK(LinkedDeathWindowMs(15.0f) == 15000);
+        CHECK(LinkedDeathWindowMs(0.0f) == kLinkedDeathLatchMs);
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+        const std::vector<std::uint64_t> dead3 = { 3 };
+
+        LinkedDeathLatch seven;
+        CHECK(!LinkedDeathLatchTick(seven, p, three, none, 1000, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(LinkedDeathLatchTick(seven, p, two, dead3, 3000, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(LinkedDeathLatchTick(seven, p, two, none, 3000 + 6999, {}, LinkedDeathWindowMs(7.0f)));
+        CHECK(!LinkedDeathLatchTick(seven, p, two, none, 3000 + 7000, {}, LinkedDeathWindowMs(7.0f)));  // 7 s: the hold
+
+        LinkedDeathLatch fifteen;
+        CHECK(!LinkedDeathLatchTick(fifteen, p, three, none, 1000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, dead3, 3000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(fifteen.latched);
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 7000, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 14999, {}, LinkedDeathWindowMs(15.0f)));
+        CHECK(!LinkedDeathLatchTick(fifteen, p, two, none, 3000 + 15000, {}, LinkedDeathWindowMs(15.0f)));
+    }
+
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
     // dps it is down ~2.2-3 s after the release, and the death order is the row's. The core's raiser rule (7 s, then
     // the 8 s fallback) then sees every corpse's chosen raiser die before its check: no restore. The raid's old
@@ -1193,6 +1371,489 @@ int main()
         const int first = std::min(deathTick[0], std::min(deathTick[1], deathTick[2]));
         const int last = std::max(deathTick[0], std::max(deathTick[1], deathTick[2]));
         CHECK(last - first <= 7);
+    }
+
+
+    // dps_hold_after: one fight-wide state per subject and row, whose triggers (engage, band opening, a spell or aura
+    // rising edge, a blink) restart a hold of `param` seconds. The hold is what the free DPS bots of the instance obey;
+    // any bot's read feeds the same state, as the linked_death latch does.
+    {
+        // Engage: the first sighting of the subject among the attackers starts the hold, which runs its seconds and no
+        // longer (released at 0 ms, still held after param would both be wrong).
+        DpsHoldState engage;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 4.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(DpsHoldTick(engage, in, 1000, &fired));
+        CHECK(fired == DpsHoldTrigger::Engage);
+        CHECK(engage.startMs == 1000);
+        CHECK(DpsHoldTick(engage, in, 1000 + 3999, nullptr));
+        CHECK(!DpsHoldTick(engage, in, 1000 + 4000, nullptr));  // param seconds: released at the boundary
+        CHECK(!DpsHoldTick(engage, in, 1000 + 9000, nullptr));  // the engage edge fires once, never again
+        CHECK(fired == DpsHoldTrigger::Engage);
+    }
+
+    // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
+    {
+        DpsHoldState band;
+        DpsHoldInputs in;
+        in.gateEnabled = true;
+        in.gateOpen = false;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(band, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 2000, nullptr));               // still inside the first band's hold
+        in.gateOpen = false;                                       // the band closed: 100 + 3000 = 3100
+        CHECK(!DpsHoldTick(band, in, 2100, nullptr));              // the row is not open now
+        CHECK(!DpsHoldTick(band, in, 3100, nullptr));              // and its hold does not come back
+        in.gateOpen = true;
+        CHECK(DpsHoldTick(band, in, 4000, &fired));                // reopening restarts it
+        CHECK(fired == DpsHoldTrigger::Band);
+        CHECK(DpsHoldTick(band, in, 6999, nullptr));
+        CHECK(!DpsHoldTick(band, in, 7000, nullptr));
+    }
+
+    // A spell or aura is a rising edge only: a value that stays true (an aura that lasts the whole hold) must not
+    // restart the hold on every read, or the hold would never end.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, in, 0, nullptr));                 // nothing seen yet
+        in.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(DpsHoldTick(spell, in, 3099, nullptr));               // still held, the signal is still true
+        CHECK(!DpsHoldTick(spell, in, 3100, nullptr));              // level, not edge: released at param
+    }
+
+    // A read by a bot outside the row (its bot_aura closed) touches no shared edge: the spell an ineligible bot reads
+    // first must not hide the rising edge from an eligible bot, and a band it sees closed must not reset the band edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.gateOpen = false;
+        in.botEligible = false;
+        in.castOrAuraSeen = true;                                   // the ineligible bot reads the active spell
+        CHECK(!DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        in.gateOpen = true;
+        in.botEligible = true;
+        CHECK(DpsHoldTick(spell, in, 100, &fired));                 // the eligible bot sees the rising edge
+        CHECK(fired == DpsHoldTrigger::Spell);
+
+        DpsHoldState band;
+        DpsHoldInputs band_in;
+        band_in.gateEnabled = true;
+        band_in.holdSec = 3.0f;
+        band_in.gateOpen = true;
+        CHECK(DpsHoldTick(band, band_in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Band);
+        band_in.gateOpen = false;
+        band_in.botEligible = false;                                // an ineligible bot reads the band closed
+        CHECK(!DpsHoldTick(band, band_in, 500, &fired));
+        band_in.gateOpen = true;
+        band_in.botEligible = true;                                 // still open for the eligible bot: no new edge
+        CHECK(DpsHoldTick(band, band_in, 1000, &fired));            // the first hold still runs to 3000
+        CHECK(fired == DpsHoldTrigger::None);
+    }
+
+    // Eligibility is lost through the end of cast 1 and regained during cast 2: the hold starts on cast 2. The
+    // ineligible read resets the bot's own edge, so the stale "seen" of cast 1 cannot hide cast 2's rising edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        in.observer = 7;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.castOrAuraSeen = true;                                   // cast 1, the bot carries the aura
+        CHECK(DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        in.botEligible = false;                                     // the aura is lost; cast 1 ends meanwhile
+        in.castOrAuraSeen = false;
+        CHECK(!DpsHoldTick(spell, in, 4000, &fired));
+        in.castOrAuraSeen = true;                                   // cast 2 starts, still no aura
+        CHECK(!DpsHoldTick(spell, in, 8000, &fired));
+        in.botEligible = true;                                      // the aura returns during cast 2
+        CHECK(DpsHoldTick(spell, in, 9000, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 9000);
+    }
+
+    // The cast/aura edge is per observer: one bot seeing a cast does not hide its rising edge from another bot that
+    // starts watching before the cast (a bot already seen true is not a restart for a bot joining mid-cast).
+    {
+        DpsHoldState spell;
+        DpsHoldInputs a;
+        a.castEnabled = true;
+        a.holdSec = 3.0f;
+        a.observer = 1;
+        DpsHoldInputs b = a;
+        b.observer = 2;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, a, 0, &fired));                   // A watches, no cast
+        CHECK(!DpsHoldTick(spell, b, 0, &fired));                   // B watches, no cast
+        a.castOrAuraSeen = true;
+        b.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, a, 100, &fired));                  // A's rising edge starts the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 100);
+        CHECK(DpsHoldTick(spell, b, 200, &fired));                  // B's own rising edge promotes into the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 200);
+        DpsHoldInputs c = a;                                        // C joins mid-cast: A and B see it, no restart
+        c.observer = 3;
+        CHECK(DpsHoldTick(spell, c, 300, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        CHECK(spell.startMs == 200);
+        CHECK(spell.observers.size() == 3);
+    }
+
+    // The observer list is bounded.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        for (std::uint64_t g = 1; g <= 200; ++g)
+        {
+            in.observer = g;
+            DpsHoldTick(spell, in, static_cast<std::uint32_t>(g), nullptr);
+        }
+        CHECK(spell.observers.size() <= kDpsHoldMaxObservers);
+    }
+
+    // The held-subject veto: any held unit within range vetoes, not only the last unit read.
+    {
+        CHECK(DpsHoldVetoIndex({true, false}, {5.0f, 5.0f}, 10.0f) == 0);    // first held and in range
+        CHECK(DpsHoldVetoIndex({true, false}, {20.0f, 5.0f}, 10.0f) == -1);  // held but out of range; other not held
+        CHECK(DpsHoldVetoIndex({false, true}, {5.0f, 5.0f}, 10.0f) == 1);
+        CHECK(DpsHoldVetoIndex({}, {}, 10.0f) == -1);
+    }
+
+    // A blink is a jump of more than 10 yd between two reads at most 1500 ms apart.
+    {
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 9.9f, 0.0f, 500));        // under 10 yd: no blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 10.1f, 0.0f, 500));
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 12.0f, 0.0f, 2000));      // 12 yd over 2 s: too slow to be a blink
+        CHECK(DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1500));       // the 1500 ms read gap is inclusive
+        CHECK(!DpsHoldBlinked(0.0f, 0.0f, 0.0f, 11.0f, 1501));
+        CHECK(!DpsHoldBlinked(5.0f, 5.0f, 5.0f, 5.0f, 10));         // standing still
+    }
+
+    // A blink mode restarts the hold on a jump, and the position is updated on every read.
+    {
+        DpsHoldState blink;
+        DpsHoldInputs in;
+        in.blinkEnabled = true;
+        in.holdSec = 3.0f;
+        in.x = 0.0f;
+        in.y = 0.0f;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(blink, in, 0, nullptr));                 // no previous position: no blink
+        in.x = 12.0f;
+        CHECK(DpsHoldTick(blink, in, 100, &fired));
+        CHECK(fired == DpsHoldTrigger::Blink);
+        in.x = 12.0f;                                               // the same place on the next read
+        CHECK(!DpsHoldTick(blink, in, 3100, nullptr));              // and no second blink from standing there
+    }
+
+    // until_tank keeps the hold after param while the subject is on nobody but a tank's counterpart, and the cap at
+    // 3 * param ends it, so it can never deadlock. A tank victim releases it at param like any other hold.
+    {
+        DpsHoldState tank;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.untilTank = true;
+        in.victimIsTank = false;
+        in.holdSec = 4.0f;
+        CHECK(DpsHoldTick(tank, in, 0, nullptr));
+        CHECK(DpsHoldTick(tank, in, 11999, nullptr));               // the cap is 3 * 4 s = 12 s
+        CHECK(!DpsHoldTick(tank, in, 12000, nullptr));
+
+        DpsHoldState done;
+        in.victimIsTank = true;
+        CHECK(DpsHoldTick(done, in, 0, nullptr));
+        CHECK(!DpsHoldTick(done, in, 4000, nullptr));               // on the tank: released at param
+    }
+
+    // dispel_priority: a `never` aura excludes the whole dispel type, not only its own id. Delusions 24306 (curse) must
+    // stay on the Shade killer, so a decurser may not touch any other curse on that member either: the core picks a random
+    // aura of the type.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24306, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(24306, kCurse), Aura(9001, kCurse) };
+        DispelVerdict const never = DispelMemberVerdict(active, auras, kCurse, 50.0f, 30.0f);
+        CHECK(never.excluded);
+        CHECK(!never.wait);
+        CHECK(never.auraId == 24306);
+        CHECK(never.mode == TacticMode::Never);
+    }
+
+    // A never aura of one type never blocks another type on the same member: a magic dispel still lands beside it.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9001, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(9001, kCurse), Aura(9002, kCurse), Aura(9003, kMagic) };
+        DispelVerdict const magic = DispelMemberVerdict(active, auras, kMagic, 50.0f, 30.0f);
+        CHECK(!magic.excluded);
+        CHECK(magic.rank == kUnlistedDispelRank);
+    }
+
+    // A `clear` row waits until the carrier is clear of every other living group member: the donated Grobbulus release.
+    // The hard never-dispel list (28169) is exactly the opt-in case: no row or an un-clear carrier keeps it excluded, a
+    // `clear` row with the carrier clear releases it.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(28169, 0, TacticMode::Clear, 30.0f) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(28169, kPoison) };
+        DispelVerdict const close = DispelMemberVerdict(active, auras, kPoison, 12.0f, 30.0f);
+        CHECK(close.excluded);
+        CHECK(close.wait);
+        CHECK(close.mode == TacticMode::Clear);
+        DispelVerdict const clear = DispelMemberVerdict(active, auras, kPoison, 30.0f, 30.0f);
+        CHECK(!clear.excluded);
+        CHECK(!clear.wait);
+        CHECK(clear.rank == 0);
+        // param 0 falls back to the config distance, not to "always clear".
+        std::vector<BossTacticRow> fallback = { DispelRow(28169, 0, TacticMode::Clear) };
+        ActiveBossRows fallbackRows = Active(fallback);
+        CHECK(DispelMemberVerdict(fallbackRows, auras, kPoison, 29.9f, 30.0f).excluded);
+        CHECK(!DispelMemberVerdict(fallbackRows, auras, kPoison, 30.0f, 30.0f).excluded);
+    }
+
+    // Without any active row a hard never-dispel aura stays excluded: 28169 is never cured, exactly as before the rows.
+    {
+        ActiveBossRows const empty;
+        std::vector<AuraOnMember> auras = { Aura(28169, kPoison) };
+        DispelVerdict const verdict = DispelMemberVerdict(empty, auras, kPoison, 100.0f, 30.0f);
+        CHECK(verdict.excluded);
+        CHECK(verdict.auraId == 28169);
+        // An ordinary aura without a row is not excluded, it just ranks last.
+        std::vector<AuraOnMember> plain = { Aura(9005, kPoison) };
+        DispelVerdict const unlisted = DispelMemberVerdict(empty, plain, kPoison, 100.0f, 30.0f);
+        CHECK(!unlisted.excluded);
+        CHECK(unlisted.rank == kUnlistedDispelRank);
+        CHECK(DispelNeedsAllyDistance(empty, plain) == false);
+    }
+
+    // Rank first, tier second: a rank-0 carrier that needs a short walk is cured before a rank-2 carrier in cast range
+    // that has already been claimed by another dispeller.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9005, 2, TacticMode::Now), DispelRow(9006, 0, TacticMode::Now) };
+        ActiveBossRows active = Active(rows);
+        DispelVerdict const low = DispelMemberVerdict(active, { Aura(9006, kMagic) }, kMagic, 50.0f, 30.0f);
+        DispelVerdict const high = DispelMemberVerdict(active, { Aura(9005, kMagic) }, kMagic, 5.0f, 30.0f);
+        CHECK(low.rank == 0 && high.rank == 2);
+        CHECK(DispelCandidateBetter(low.rank, 2, high.rank, 0));
+        CHECK(!DispelCandidateBetter(high.rank, 0, low.rank, 2));
+    }
+
+    // On equal rank the tier decides, so two auras of the same priority still prefer the member already in reach.
+    {
+        CHECK(DispelCandidateBetter(0, 0, 0, 1));
+        CHECK(!DispelCandidateBetter(0, 1, 0, 0));
+        CHECK(DispelCandidateBetter(0, 2, 0, 3));
+        CHECK(!DispelCandidateBetter(1, 0, 0, 3));
+    }
+
+    // A cure is judged by every type its spell removes, not only the one that triggered it: a poison-triggered Cleanse
+    // (poison, disease, magic) on a member carrying a protected magic aura is held, while the same member under a
+    // poison-only cure is not.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9007, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(9007, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kPoison, 3, kMagic };
+        std::vector<std::uint32_t> const poisonOnly = { kPoison };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 50.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 9007);
+        CHECK(held.mode == TacticMode::Never);
+        CHECK(!DispelCureVerdict(active, auras, poisonOnly, 50.0f, 30.0f).excluded);
+        // No type excluded: the default verdict, so the cure runs.
+        CHECK(!DispelCureVerdict(active, { Aura(9008, kPoison) }, cleanse, 50.0f, 30.0f).excluded);
+    }
+
+    // The cast-time case: Cleanse chosen for a magic Hex on a member that also carries Poisonous Blood 24321, whose
+    // dispel_priority row is never. The core resolves one of Cleanse's dispel types at random, so the poison can be
+    // picked and the aura stripped: the cure is held even though the triggering type (magic) is not protected.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24321, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(24321, kPoison), Aura(24053, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kMagic, kPoison, 3 };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 20.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 24321);
+        CHECK(held.mode == TacticMode::Never);
+        // Without the poison aura the same Cleanse runs on the Hex.
+        CHECK(!DispelCureVerdict(active, { Aura(24053, kMagic) }, cleanse, 20.0f, 30.0f).excluded);
+    }
+
+    // freeze_on_aura: nothing but the freeze itself runs, the heals included (healing threat reaches every enemy in
+    // combat with the healer, and Mandokir's Gaze allows no threat at all).
+    {
+        // Failing case: a heal action runs while the aura is on.
+        CHECK(!FreezeHoldsAction(true, false));
+        CHECK(FreezeHoldsAction(true, true));
+        CHECK(FreezeHoldsAction(false, false));
+        CHECK(FreezeHoldsAction(false, true));
+    }
+
+    // flee_on_aura, healer reach: an end point more than kFleeHealerReachYd from the only healer is not accepted.
+    {
+        DebuffAnchor healer;
+        healer.x = 0.0f;
+        healer.y = 0.0f;
+        CHECK(FleePointHealable(0.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(FleePointHealable(35.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(FleePointHealable(0.0f, 36.0f, &healer, 1, kFleeHealerReachYd));
+        // The failing case: 40 yd away is accepted (mutation: a 60 yd reach must fail here).
+        CHECK(!FleePointHealable(40.0f, 0.0f, &healer, 1, kFleeHealerReachYd));
+        CHECK(!FleePointHealable(0.0f, -40.0f, &healer, 1, kFleeHealerReachYd));
+        // No living healer: nothing can pass the reach test, and the action falls back to today's escape.
+        CHECK(!FleePointHealable(0.0f, 0.0f, nullptr, 0, kFleeHealerReachYd));
+    }
+
+    // flee_on_aura, the step: the old overload is the no-healer case, so its answer never changes; a healer within
+    // reach of a later clear step moves the carrier one step further out to keep it reachable.
+    {
+        DebuffAnchor raid[4];
+        raid[0].x = 5.0f;  raid[0].y = 0.0f;
+        raid[1].x = -5.0f; raid[1].y = 0.0f;
+        raid[2].x = 0.0f;  raid[2].y = 5.0f;
+        raid[3].x = 0.0f;  raid[3].y = -5.0f;
+        float cx, cy, nearest;
+        std::size_t nearestIdx;
+        CHECK(BombRunoutCentre(8.0f, 0.0f, raid, 4, cx, cy, nearest, nearestIdx));
+        const float oldStep = BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4);
+        CHECK(Near(oldStep, 29.0f));
+        CHECK(Near(BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, nullptr, 0), oldStep));
+
+        // A healer behind the raid is out of reach of every step: the old answer stands (an escape still escapes).
+        DebuffAnchor behind;
+        behind.x = -40.0f;
+        behind.y = 0.0f;
+        CHECK(Near(BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &behind, 1), oldStep));
+
+        // A healer at (75, 0): the old first clear step lands 38 yd away and fails the reach test, the next step
+        // lands 36 yd away. The healer-aware search takes that one.
+        DebuffAnchor far;
+        far.x = 75.0f;
+        far.y = 0.0f;
+        const float healStep = BombRunoutStep(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &far, 1);
+        CHECK(healStep > oldStep);
+        CHECK(Near(healStep, 31.0f));
+        CHECK(FleePointHealable(8.0f + healStep, 0.0f, &far, 1, kFleeHealerReachYd));
+        CHECK(!FleePointHealable(8.0f + oldStep, 0.0f, &far, 1, kFleeHealerReachYd));
+        CHECK(DebuffEscapeClearance(8.0f + healStep, 0.0f, raid, 4) >= 30.0f + kBombRunoutMarginYd);
+    }
+
+    // flee_on_aura, the angle order: angle 0 (east) is clear from 29 yd but never within reach of the healer at (30, 40);
+    // angle 0.5 is clear and healable. Pass 1 must pick the later healable angle (index 1), not the earlier clear one.
+    {
+        DebuffAnchor raid[4];
+        raid[0].x = 5.0f;  raid[0].y = 0.0f;
+        raid[1].x = -5.0f; raid[1].y = 0.0f;
+        raid[2].x = 0.0f;  raid[2].y = 5.0f;
+        raid[3].x = 0.0f;  raid[3].y = -5.0f;
+        DebuffAnchor healer;
+        healer.x = 30.0f;
+        healer.y = 40.0f;
+        float cx, cy, nearest;
+        std::size_t nearestIdx;
+        CHECK(BombRunoutCentre(8.0f, 0.0f, raid, 4, cx, cy, nearest, nearestIdx));
+        const float offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
+        const std::size_t nOffsets = sizeof(offsets) / sizeof(offsets[0]);
+
+        const BombRunoutSweep east = SweepBombRunout(8.0f, 0.0f, 0.0f, nearest, 30.0f, raid, 4, &healer, 1);
+        CHECK(east.clear >= 0.0f);
+        CHECK(east.healable < 0.0f);
+        const BombRunoutSweep northEast = SweepBombRunout(8.0f, 0.0f, 0.5f, nearest, 30.0f, raid, 4, &healer, 1);
+        CHECK(northEast.healable >= 0.0f);
+        CHECK(FleePointHealable(8.0f + std::cos(0.5f) * northEast.healable, std::sin(0.5f) * northEast.healable,
+            &healer, 1, kFleeHealerReachYd));
+
+        // Everything accepted: the healable angle wins at once; the clear angle 0 is never offered.
+        std::size_t offered = 0;
+        std::size_t lastIdx = 99;
+        float lastStep = -1.0f;
+        int picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, &healer, 1,
+            [&](std::size_t i, float step) { ++offered; lastIdx = i; lastStep = step; return true; });
+        CHECK(picked == 1);
+        CHECK(offered == 1);
+        CHECK(lastIdx == 1);
+        CHECK(Near(lastStep, northEast.healable));
+
+        // The healable end point is refused (not pathable): pass 2 takes angle 0's clear, unhealable step, the old answer.
+        std::size_t idx0Step = 0;
+        float angle0Step = -1.0f;
+        picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, &healer, 1,
+            [&](std::size_t i, float step) {
+                if (i == 1) return false;
+                if (i == 0) { ++idx0Step; angle0Step = step; return true; }
+                return false;
+            });
+        CHECK(picked == 0);
+        CHECK(idx0Step == 1);
+        CHECK(Near(angle0Step, east.clear));
+
+        // No healer: the old first-accepted order, so angle 0 is taken as before.
+        picked = PickRunoutAngle(8.0f, 0.0f, offsets, nOffsets, 0.0f, nearest, 30.0f, raid, 4, nullptr, 0,
+            [&](std::size_t, float) { return true; });
+        CHECK(picked == 0);
+    }
+
+    // The group's final death writes one window diagnostic: first_ms 0 (the episode start), last_ms the span from
+    // the first death to the last, window_ms the group's window, inside whether the group died within it.
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+
+        LinkedDeathLatch inside;
+        LinkedDeathWindowEvent event;
+        CHECK(!LinkedDeathLatchTick(inside, p, three, none, 500, {}, 7000, &event));
+        CHECK(!event.fired);
+        CHECK(LinkedDeathLatchTick(inside, p, two, { 3 }, 1000, {}, 7000, &event));  // first death
+        CHECK(!event.fired);
+        LinkedDeathLatchTick(inside, p, { Linked(1, 2) }, { 2 }, 4000, {}, 7000, &event);
+        CHECK(!event.fired);                                  // the group is not all dead yet
+        CHECK(!LinkedDeathLatchTick(inside, p, {}, { 1 }, 5000, {}, 7000, &event));
+        CHECK(event.fired);                                   // the final death
+        CHECK(event.firstMs == 0);
+        CHECK(event.lastMs == 4000);                          // 1000 -> 5000
+        CHECK(event.windowMs == 7000);
+        CHECK(event.inside);
+
+        // A final death past the window reports outside; a later empty read does not repeat the event.
+        LinkedDeathLatch outside;
+        CHECK(!LinkedDeathLatchTick(outside, p, three, none, 500, {}, 7000, &event));
+        CHECK(LinkedDeathLatchTick(outside, p, two, { 3 }, 1000, {}, 7000, &event));
+        LinkedDeathLatchTick(outside, p, { Linked(1, 2) }, { 2 }, 4000, {}, 7000, &event);
+        CHECK(!event.fired);                                  // one member still lives
+        CHECK(!LinkedDeathLatchTick(outside, p, {}, { 1 }, 10000, {}, 7000, &event));
+        CHECK(event.fired);
+        CHECK(event.lastMs == 9000);                          // 1000 -> 10000, past the 7 s window
+        CHECK(!event.inside);
+        CHECK(!LinkedDeathLatchTick(outside, p, {}, none, 11000, {}, 7000, &event));
+        CHECK(!event.fired);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";
