@@ -30858,8 +30858,17 @@ static void TestAutoCcStopsAtTheThreshold()
         f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
     CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
     CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
-    CHECK(Tick(r, f) == "pullback 1"); // 8 - 2 = 6, not over 6
-    CHECK(r.ccHolds.size() == 2);
+    // A mark whose aura is not read holds no body (CcMarkedLive): the pull is
+    // still 8 over 6, so the next free mage marks, up to the last free bot.
+    CHECK(Tick(r, f) == "cc diamond 6 Magethree polymorph");
+    CHECK(Tick(r, f) == "cc triangle 5 Magefour polymorph");
+    CHECK(Tick(r, f) == "pullback 1"); // no free crowd control left: 8 bodies over 6
+    CHECK(r.ccHolds.size() == 4);
+    // Two auras read on their units make the pull 8 - 2 = 6, not over 6: the
+    // marks now count as held.
+    f.units[7].polymorphed = true;
+    f.units[6].polymorphed = true;
+    CHECK(CcMarkedLive(r, f) == 2);
 }
 
 static void TestAutoCcCastersFirstThenPlanRank()
@@ -31413,6 +31422,50 @@ static void TestAutoCcCountsTheLeadBotsAttackers()
     }
 }
 
+// The pull's opening: every unit a pre-pull order marked and whose aura is not
+// read gets its order again on the fight's first ticks, at once: no engaged
+// threshold, no 2 s gap. ZG walk 32: no pre-pull mark ever landed, every flow
+// ended in "the crowd control did not land".
+static void TestPrePullMarksCastWhenThePackOpens()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    // Three marks before the pull: an unlanded mark is no held body, so the
+    // estimate keeps marking (CcMarkedLive reads the auras).
+    CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    // The pack opens with nobody engaged: the marks are cast at once, each
+    // unit once, the lowest guid first.
+    f.anyInCombat = true;
+    CHECK(Tick(r, f) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(r, f) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(r, f).empty()); // each pre-marked unit once
+    CHECK(r.note.find("the pack is in combat") != std::string::npos || r.note == "fighting");
+    // A mark whose aura landed before the fight is not re-sent.
+    Run q = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = f.members;
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        g.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(q, g) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(q, g) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(q, g) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(q, g) == "pullback 1");
+    g.units[3].polymorphed = true; // the moon mark's aura is there
+    g.anyInCombat = true;
+    CHECK(Tick(q, g) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(q, g) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(q, g).empty());
+}
+
 static void TestAutoCcReappliesTwiceThenStops()
 {
     DungeonPlan plan = CcPlan({});
@@ -31549,7 +31602,9 @@ static void TestHealerGuardSkipsCcHolders()
     near.rangedDps = true;
     f.members = {tank, sheepy, near};
     r.ccHolds[999] = Run::CcHold{"Sheepy", "moon", CcFamily::Polymorph};
-    f.units.push_back(Unit(999, 11368, 22));
+    UnitFact sheep = Unit(999, 11368, 22);
+    sheep.polymorphed = true; // the sheep is on it: no opening order for it
+    f.units.push_back(sheep);
     UnitFact add = Hitter(50071, 11368, 20, true);
     add.x = 22.0f; // Sheepy 1 yd, NearDps 2 yd
     f.partyAttackers = {add};
@@ -31697,6 +31752,7 @@ int main()
     TestAutoCcRefusedOrderIsNoHold();
     TestAutoCcLevelGap();
     TestAutoCcJoinerInTheFight();
+    TestPrePullMarksCastWhenThePackOpens();
     TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcReappliesTwiceThenStops();
     TestAutoCcBudget();

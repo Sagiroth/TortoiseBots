@@ -1193,6 +1193,9 @@ constexpr float kRunCcFleeRoomYd = 35.0f;
 constexpr std::uint32_t kRunCcMaxLevelOver = 3;
 constexpr std::uint32_t kRunCcHealersKept = 4;
 constexpr std::uint32_t kRunCcFightGapMs = 2000;
+// The fight's opening: this long after it began, every pre-pull mark whose aura
+// is not read gets its order again (RunAutoCcPrePullOpenTick).
+constexpr std::uint32_t kRunCcOpenWindowMs = 5000;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
@@ -2400,6 +2403,13 @@ struct Run
     std::uint32_t ccAutoOrders = 0;
     std::uint32_t ccAutoGapMs = 0;
     bool ccAutoNoBotNoted = false;
+    // The fight's opening (set when it begins, kRunCcOpenWindowMs): the pre-pull
+    // marks are cast at once (ccOpenSent: those already re-sent).
+    bool ccOpenDue = false;
+    std::unordered_set<std::uint64_t> ccOpenSent;
+    // The units marked before this fight began (the pull's pre-pull marks): the
+    // opening re-sends their orders, and only theirs.
+    std::unordered_set<std::uint64_t> ccOpenPrepull;
     // The automatic cc order just sent, until the glue answers it
     // (CcOrderTaken): a refused order assigned nothing, so the unit, bot,
     // mark, budget and spacing it took go back. resend: CheckCc's re-send of
@@ -8813,13 +8823,19 @@ inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFac
     return bodies;
 }
 
-// The step's units this step's cc orders marked and that are still alive.
+// The step's units this step's cc orders marked and whose crowd control is read
+// on them now: a mark whose aura is not there is a body that still comes (spec
+// 2.D3's "certain" is the aura, not the order: ZG walk 32 counted pre-pull marks
+// that never landed as sure and pulled on them).
 inline std::uint32_t CcMarkedLive(const Run& r, const Facts& f)
 {
     std::uint32_t marked = 0;
     for (std::uint64_t guid : r.ccSent)
-        if (StepUnit(f, guid))
+    {
+        const UnitFact* const u = StepUnit(f, guid);
+        if (u && u->polymorphed)
             ++marked;
+    }
     return marked;
 }
 
@@ -9197,6 +9213,66 @@ inline CcPick PickCcOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
 inline const UnitFact* PickCc(const Run& r, const Facts& f, std::uint64_t pullGuid)
 {
     return PickCcOrder(r, f, pullGuid).unit;
+}
+
+// Facts::autoCc, the pull's opening: every unit whose cc order went out before
+// the pull and whose aura is not read on it yet gets that order again, at once:
+// no engaged-count threshold, no kRunCcFightGapMs. The pre-pull order only armed
+// the mark (the class's `cc` row is a combat one) and the walk in gave it
+// kCcPrePullWaitMs, so no pre-pull mark was on its unit when the fight began
+// (ZG walk 32: every pre-pull flow ended in "the crowd control did not land").
+// One order a tick (the glue runs one), each pre-marked unit once
+// (Run::ccOpenSent). Returns true when it sent one.
+inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    static_cast<void>(dt);
+    if (!f.autoCc || !r.ccOpenDue || r.fightMs > kRunCcOpenWindowMs)
+        return false;
+    std::uint64_t guid = 0;
+    Run::CcHold hold;
+    for (std::uint64_t prepull : r.ccOpenPrepull)
+    {
+        auto const entry = r.ccHolds.find(prepull);
+        if (entry == r.ccHolds.end())
+            continue;
+        if (r.ccOpenSent.count(entry->first) || r.ccLandedSeen.count(entry->first))
+            continue; // sent once already, or its aura was seen: a break is RunCcReapplyTick's
+        const UnitFact* const u = FightUnit(f, entry->first);
+        if (!u || u->polymorphed || u->partyDots || !u->hostile || !u->attackable || u->evading)
+            continue;
+        bool botAlive = false;
+        for (const MemberFact& m : f.members)
+            if (m.name == entry->second.bot)
+            {
+                botAlive = true;
+                break;
+            }
+        if (!botAlive)
+            continue;
+        if (!guid || entry->first < guid)
+        {
+            guid = entry->first;
+            hold = entry->second;
+        }
+    }
+    const UnitFact* const unit = guid ? FightUnit(f, guid) : nullptr;
+    if (!unit)
+        return false;
+    CcPick pick;
+    pick.unit = unit;
+    pick.bot = hold.bot;
+    pick.family = hold.family;
+    pick.mark = hold.mark;
+    pick.autoOrder = hold.autoOrder;
+    order = CcOrderText(pick, guid);
+    if (pick.autoOrder)
+        r.ccAutoPending = Run::CcAutoOrder{order, guid, false, false, true, r.ccAutoGapMs};
+    RegisterCcOrder(r, pick, guid);
+    r.ccOpenSent.insert(guid);
+    const RunCcSpell* const spell = RunCcOf(pick.family);
+    r.note = "auto cc: the pack is in combat: " + std::to_string(unit->entry) + " (" + pick.bot + ": " +
+        (spell ? spell->spell : "") + ") at once";
+    return true;
 }
 
 // Facts::autoCc, in a fight: the living hostiles engaged with the party, the
@@ -19567,6 +19643,11 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (!r.fighting)
         {
             r.fighting = true;
+            r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
+            r.ccOpenSent.clear();
+            r.ccOpenPrepull.clear();
+            for (auto const& hold : r.ccHolds)
+                r.ccOpenPrepull.insert(hold.first);
             r.restWalkDue = false; // a fight is on: the walk after the rest is over
             r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
@@ -19737,6 +19818,8 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (CheckCc(r, f, dt, order))
             return order;
         // Automatic crowd control in the fight: a broken hold first, then a joiner (Facts::autoCc).
+        if (RunAutoCcPrePullOpenTick(r, f, dt, order))
+            return order;
         if (RunCcReapplyTick(r, f, dt, order))
             return order;
         if (RunAutoCcFightTick(r, f, *s, dt, order))
