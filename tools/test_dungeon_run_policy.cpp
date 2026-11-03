@@ -31350,17 +31350,18 @@ static void TestAutoCcStopsAtTheThreshold()
         f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
     CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
     CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
-    // A mark whose aura is not read holds no body (CcMarkedLive): the pull is
-    // still 8 over 6, so the next free mage marks, up to the last free bot.
-    CHECK(Tick(r, f) == "cc diamond 6 Magethree polymorph");
-    CHECK(Tick(r, f) == "cc triangle 5 Magefour polymorph");
-    CHECK(Tick(r, f) == "pullback 1"); // no free crowd control left: 8 bodies over 6
-    CHECK(r.ccHolds.size() == 4);
-    // Two auras read on their units make the pull 8 - 2 = 6, not over 6: the
-    // marks now count as held.
+    // The two marks are in flight (a pre-pull mark shows no aura before the pull) and count for the next mark's
+    // threshold: 8 - 2 = 6, not over 6, so the pull goes and the two free mages stand down. Counting the auras alone
+    // marked four for eight bodies over six.
+    CHECK(CcMarkedLive(r, f) == 0);
+    CHECK(CcMarksInFlight(r, f) == 2);
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccHolds.size() == 2);
+    // The auras read on their units: the "certain" count is the aura alone (spec 2.D3).
     f.units[7].polymorphed = true;
     f.units[6].polymorphed = true;
     CHECK(CcMarkedLive(r, f) == 2);
+    CHECK(CcMarksInFlight(r, f) == 0);
 }
 
 static void TestAutoCcCastersFirstThenPlanRank()

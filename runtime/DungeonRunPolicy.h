@@ -2399,6 +2399,9 @@ struct Run
     std::size_t otherPartRescueStep = static_cast<std::size_t>(-1);
     // Crowd control and kill-first (the plan's cc_priority / cc_always / kill_first).
     std::unordered_set<std::uint64_t> ccSent; // units this step put a `cc <mark>` on (once each)
+    // ... and the marks given up on (the aura did not show after the order and its one re-send): no body will be
+    // held by them, so they count in no threshold.
+    std::unordered_set<std::uint64_t> ccGaveUp;
     // Who holds which unit (issue #1159): one unit per bot and per mark while
     // that unit lives among the step's units; a unit is never given a second bot.
     struct CcHold
@@ -3475,6 +3478,7 @@ inline void ResetStep(Run& r)
     r.directWaitMs = 0;
     r.memberYd.clear();
     r.ccSent.clear();
+    r.ccGaveUp.clear();
     r.joinerHeld.clear();
     r.joinerRest = false;
     r.restForJoiners = false;
@@ -8780,6 +8784,7 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
             sent = true;
             r.ccHolds.erase(hold);
         }
+        r.ccGaveUp.insert(held->guid);
         r.note = "fighting: cc did not land on " + std::to_string(held->entry);
         r.ccWatch.erase(r.ccWatch.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -8978,6 +8983,30 @@ inline std::uint32_t CcMarkedLive(const Run& r, const Facts& f)
             ++marked;
     }
     return marked;
+}
+
+// The step's marks whose order went out and whose aura is not read yet, none of them given up: a pre-pull mark shows
+// no aura before the pull, so the next mark's threshold counts the orders in flight too (ZG walk 32: four marks for
+// eight bodies over a threshold of six, until no crowd control bot was left).
+inline std::uint32_t CcMarksInFlight(const Run& r, const Facts& f)
+{
+    std::uint32_t inFlight = 0;
+    for (std::uint64_t guid : r.ccSent)
+    {
+        const UnitFact* const u = StepUnit(f, guid);
+        if (u && !u->polymorphed && !r.ccGaveUp.count(guid))
+            ++inFlight;
+    }
+    return inFlight;
+}
+
+// The pull's bodies still to handle: its bodies less the marks that will hold one, the auras read (2.D3's "certain",
+// CcMarkedLive) and the orders in flight (CcMarksInFlight). A pull at or under the threshold needs no more marks.
+inline std::uint32_t CcBodiesOpen(const Run& r, const Facts& f, std::uint32_t bodies)
+{
+    std::uint32_t const sure = CcMarkedLive(r, f);
+    std::uint32_t const inFlight = CcMarksInFlight(r, f);
+    return bodies > sure + inFlight ? bodies - sure - inFlight : 0;
 }
 
 inline int RunCcTierRank(RunCcSpell::Tier tier)
@@ -13759,11 +13788,10 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         {
             // Automatic crowd control: a mark only while the pull is over the
             // threshold (or the unit is one the plan lists, offered as today).
-            std::uint32_t const marked = CcMarkedLive(r, f);
             std::uint32_t const bodies = RunAutoCcBodies(r, f, *pick);
             std::uint32_t const threshold = RunAutoCcThreshold(s, f);
             bool const listed = ccPick.unit && r.plan && r.plan->CcRank(ccPick.unit->entry) >= 0;
-            bool const over = bodies > marked && bodies - marked > threshold;
+            bool const over = CcBodiesOpen(r, f, bodies) > threshold;
             if (r.ccAutoOrders >= kRunCcAutoOrdersPerStep)
             {
                 ccPick = CcPick();
