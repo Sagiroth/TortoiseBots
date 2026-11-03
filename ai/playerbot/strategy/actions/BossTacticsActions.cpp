@@ -1645,7 +1645,7 @@ std::vector<UseObjectCandidate> UseObjectCandidates(PlayerbotAI* ai, Player* bot
 }
 
 std::mutex g_useObjectLogMutex;
-std::unordered_map<std::uint64, std::uint32_t> g_useObjectSkipLog;
+std::unordered_map<std::uint64_t, std::uint32_t> g_useObjectSkipLog;
 
 // The clicker's decisions, one bot_events.csv row each: claim, walk, click, and the skip (throttled to one per 5 s per
 // bot). A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hold-kill and avoid-cast rows; the
