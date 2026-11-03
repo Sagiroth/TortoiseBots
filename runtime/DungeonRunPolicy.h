@@ -2127,6 +2127,11 @@ struct Run
     // The last joiner count the glue read per unit this step: a unit held for
     // its rest is not judged again (joinersRead false), the count stands.
     std::unordered_map<std::uint64_t, std::uint32_t> joinerSeen;
+    // The last ring estimate (bodies) the glue read per unit this step: a
+    // re-pull's target is in combat, or a residue pull's unit never went through
+    // the estimate read, and the pull must still be judged by the pack the ring
+    // once read (ZG walk 32 e-r1 846: "5 bodies expected", 15 came).
+    std::unordered_map<std::uint64_t, std::uint32_t> ringSeen;
     // The joiners the pull's own pack did not explain: when a pull goes out its
     // pack is recorded by guid (the target and its own group, PullPackOf: the
     // read's other packs are not pack), and for kJoinerWindowMs after the first tick the party is in combat every
@@ -3405,6 +3410,7 @@ inline void ResetStep(Run& r)
     r.patrolSeen.clear();
     EndBigWalk(r);
     r.joinerSeen.clear();
+    r.ringSeen.clear();
     r.joinerPack.clear();
     r.joinerAdds.clear();
     r.joinerBefore.clear();
@@ -8818,8 +8824,16 @@ inline std::uint32_t RunAutoCcThreshold(const PlanStep& s, const Facts& f)
 // pullable pack.
 inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFact& pick)
 {
-    if (f.aggroWalkRing && pick.joinersRead)
-        return pick.estBodies;
+    if (f.aggroWalkRing)
+    {
+        if (pick.joinersRead)
+            return pick.estBodies;
+        // No reading this tick (the target is in combat, or it was pulled as
+        // residue): the step's last one stands.
+        auto const seen = r.ringSeen.find(pick.guid);
+        if (seen != r.ringSeen.end() && seen->second)
+            return seen->second;
+    }
     if (pick.joinersRead)
         return pick.joiners + 1;
     std::uint32_t bodies = 0;
@@ -10380,8 +10394,17 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // judged; a unit held or out of the index keeps its earlier read, and its
     // count is not claimed). The joiners the pull really drew are read from the
     // fight and reported by JoinerReport, estimated or not.
-    if (f.aggroWalkRing && u.joinersRead)
-        r.note += "; " + std::to_string(u.estBodies) + " bodies expected";
+    if (f.aggroWalkRing)
+    {
+        // A re-pull whose unit was not read this tick keeps the step's last ring
+        // reading: the "5 bodies expected" of a 15-body pull was the cheap
+        // joiners + 1 fallback, not the ring's answer.
+        auto const seen = r.ringSeen.find(u.guid);
+        std::uint32_t const bodies = u.joinersRead ? u.estBodies
+            : seen == r.ringSeen.end() ? 0 : seen->second;
+        if (bodies)
+            r.note += "; " + std::to_string(bodies) + " bodies expected";
+    }
     else if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
     if (!outOfPlace.empty())
@@ -13238,7 +13261,11 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         return;
     for (const UnitFact& u : f.units)
         if (u.joinersRead)
+        {
             r.joinerSeen[u.guid] = u.joiners;
+            if (f.aggroWalkRing)
+                r.ringSeen[u.guid] = u.estBodies;
+        }
     if (BigPackWalkGate(r, f, dt, order))
         return;
     if (s.kind == PlanStepKind::Boss)

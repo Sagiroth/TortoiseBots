@@ -15452,6 +15452,38 @@ static void TestPullEstimateCacheRereadsOnNewStepPass()
 }
 
 // The pull order's note says the bodies the ring estimate expects.
+// A re-pull keeps the step's last ring reading: on the re-pull the target is in
+// combat, so this tick's read carries no estimate (ReadPullJoiners skips it) and
+// the pull fell back to the cheap joiners + 1. ZG walk 32 e-r1 846: "5 bodies
+// expected" on a pack the ring read at 16, and 15 came.
+static void TestRePullKeepsTheRingEstimate()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 20)}; // a plan ceiling over the estimate: no rest
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.units = {Estimated(31, 4852, 54.7f, 16, {31})};
+    f.units[0].joinersRead = true;
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.note.find("16 bodies expected") != std::string::npos);
+    CHECK(r.ringSeen[31] == 16);
+    // The re-pull: the unit fights now, so the estimate is not read this tick.
+    f.units[0].joinersRead = false;
+    f.units[0].estBodies = 0;
+    f.units[0].joiners = 4;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 16); // not the cheap 4 + 1
+    // A tick that does read the ring again wins over the memory.
+    f.units[0].joinersRead = true;
+    f.units[0].estBodies = 15;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 15);
+    // The key off: the ring memory is never consulted, the row's own pack is counted.
+    f.aggroWalkRing = false;
+    f.units[0].joinersRead = false;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 1);
+}
+
 static void TestRingPullNoteSaysBodiesExpected()
 {
     DungeonPlan plan;
@@ -32166,6 +32198,7 @@ int main()
     TestPullEstimateCacheKeepsOneReadPerRow();
     TestPullEstimateCacheRereadsOnNewStepPass();
     TestRingPullNoteSaysBodiesExpected();
+    TestRePullKeepsTheRingEstimate();
     TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
