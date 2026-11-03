@@ -31331,8 +31331,53 @@ static void TestRunCcFamilyTableKeyOffOrder()
     CHECK(order == std::vector<CcFamily>({CcFamily::Polymorph, CcFamily::Shackle, CcFamily::Banish, CcFamily::Sap}));
 }
 
+// MemberFact::dz is signed (bot z - lead z), so every "height apart" test reads the absolute value: a bot on the floor
+// below the lead bot is out of the gather, is not back for WaitForFallen, and has not arrived for a return hold. The
+// signed value is for the wedged note's direction only.
+static void TestSignedDzCountsEitherFloor()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(100, {1})};
+    MemberFact below = Mem("Magey", 12.0f);
+    below.dz = -(kStragglerDzYd + 7.0f); // 15 yd below the lead bot, on the lower floor
+    MemberFact above = below;
+    above.dz = kStragglerDzYd + 7.0f;
+    MemberFact same = Mem("Magey", 12.0f, kStragglerDzYd - 1.0f);
+    CHECK(OutOfGather(below));
+    CHECK(OutOfGather(above));
+    CHECK(!OutOfGather(same));
+
+    // WaitForFallen: a fallen bot below the lead bot has not come back.
+    {
+        Run r = Start(&plan);
+        r.waitFor.insert("Magey");
+        Facts f = Party(0);
+        f.members = {Mem("Tanky", 0.0f), below};
+        CHECK(WaitForFallen(r, f));
+        CHECK(r.waitFor.count("Magey") == 1);
+        f.members[1] = same;
+        CHECK(!WaitForFallen(r, f));
+        CHECK(r.waitFor.empty());
+    }
+    // A return hold releases only a bot on the lead bot's floor (or one at its own known point).
+    {
+        Run r = Start(&plan);
+        r.returnHold["Magey"] = Run::ReturnHold();
+        Facts f = Party(0);
+        f.members = {Mem("Tanky", 0.0f), below};
+        f.members[1].yd = 8.0f;
+        std::string order;
+        FarReturnTick(r, f, kTickMs, order);
+        CHECK(r.returnHold.count("Magey") == 1);
+        f.members[1] = Mem("Magey", 8.0f, kStragglerDzYd - 1.0f);
+        FarReturnTick(r, f, kTickMs, order);
+        CHECK(r.returnHold.empty());
+    }
+}
+
 int main()
 {
+    TestSignedDzCountsEitherFloor();
     TestAutoCcMarksUnlistedUnits();
     TestAutoCcStopsAtTheThreshold();
     TestAutoCcCastersFirstThenPlanRank();

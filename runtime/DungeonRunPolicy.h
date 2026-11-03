@@ -1197,7 +1197,7 @@ struct MemberFact
     float yd = 0.0f;        // from the lead bot (1000 on another map)
     bool polymorph = false; // a mage that knows Polymorph (kPolymorphSpells): the run's crowd control
     bool inCombat = false;  // the bot or its living pet is in combat (the glue's MemberInCombat)
-    float dz = 0.0f;        // height difference to the lead bot (another floor)
+    float dz = 0.0f;        // signed height difference to the lead bot (below is negative; another floor)
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
     // How long ago the glue last saw actual combat progress from the bot: a spell cast started or finished, a melee
@@ -3985,7 +3985,7 @@ inline bool SummonStraggler(Run& r, const Facts& f, std::string& order, bool sti
         // bot that sticks 20-40 yd out is never summoned and the run pauses
         // (events-5 00:55:59, grimlok pull 93: Stoutster stood 34.9 yd away,
         // still, "the party did not gather within 30 s", twice).
-        bool const tooFar = m.yd > kSummonYd || m.dz > kStragglerDzYd;
+        bool const tooFar = m.yd > kSummonYd || std::fabs(m.dz) > kStragglerDzYd;
         bool const still = IsStill(r, m.name);
         // A bot past the gather radius that stands still is stuck (a busy one
         // never gets here, see above), exactly as in a regroup
@@ -4049,7 +4049,7 @@ inline bool HeldStragglerWait(Run& r, const Facts& f)
 // down from the lead bot.
 inline bool OutOfGather(const MemberFact& m)
 {
-    return m.yd > kGatherYd || m.dz > kStragglerDzYd;
+    return m.yd > kGatherYd || std::fabs(m.dz) > kStragglerDzYd;
 }
 
 // The run waits for the party to gather: a pull's or a direct step's gather, or a regroup's once it went out.
@@ -4558,7 +4558,7 @@ inline bool SummonStuckInRegroup(Run& r, const Facts& f, std::string& order)
     {
         if (m.name.empty() || m.name == f.carrier || r.summoned.count(m.name) || m.inCombat || m.attackers)
             continue;
-        if (m.yd <= kSummonYd && m.dz <= kStragglerDzYd)
+        if (m.yd <= kSummonYd && std::fabs(m.dz) <= kStragglerDzYd)
             continue;
         auto it = r.still.find(m.name);
         if (it == r.still.end() || it->second.ms < kStuckSummonMs)
@@ -4588,7 +4588,7 @@ inline std::string WaitNote(const Run& r, const Facts& f)
     for (const std::string& name : f.deadNames)
         add(name, "dead");
     for (const MemberFact& m : f.members)
-        if (!m.name.empty() && (m.yd > kGatherYd || m.dz > kStragglerDzYd) &&
+        if (!m.name.empty() && (m.yd > kGatherYd || std::fabs(m.dz) > kStragglerDzYd) &&
             (r.waitFor.count(m.name) || r.regroup))
             add(m.name, m.offPlanMap ? "outside the instance" : m.otherCopy ? "in another copy of the instance" : "running back");
     if (out.empty() && f.dead)
@@ -4682,7 +4682,7 @@ inline bool SummonRevived(Run& r, const Facts& f, std::string& order)
         // A bot past the teleport return's reach is FarReturnTick's, in a fight or not.
         if (m.name.empty() || m.name == f.carrier || !r.waitFor.count(m.name) || r.summoned.count(m.name) ||
             r.fetch.count(m.name) || (FetchFar(r, f, m) && !r.fetchGaveUp.count(m.name)) ||
-            m.inCombat || m.attackers || (m.yd <= kSummonYd && m.dz <= kStragglerDzYd))
+            m.inCombat || m.attackers || (m.yd <= kSummonYd && std::fabs(m.dz) <= kStragglerDzYd))
             continue;
         if (!pick || m.yd > pick->yd)
             pick = &m;
@@ -17097,7 +17097,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             continue;
         }
         Run::ReturnHold& hold = it->second;
-        bool const arrived = (m->yd <= ai::kReturnArriveYd && m->dz <= kStragglerDzYd) ||
+        bool const arrived = (m->yd <= ai::kReturnArriveYd && std::fabs(m->dz) <= kStragglerDzYd) ||
             (hold.pointKnown && ai::PlanDistance(m->x, m->y, m->z, hold.x, hold.y, hold.z) <= ai::kReturnArriveYd);
         if (arrived)
         {
@@ -17137,7 +17137,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 bool const revivedFar = r.waitFor.count(m.name) && FetchFar(r, f, m) &&
                     std::find(r.hold.begin(), r.hold.end(), m.name) == r.hold.end();
                 bool const dropped = r.summonCancelled.count(m.name) && !m.offPlanMap && !m.otherCopy &&
-                    (m.yd > kGatherYd || m.dz > kStragglerDzYd);
+                    (m.yd > kGatherYd || std::fabs(m.dz) > kStragglerDzYd);
                 if (revivedFar || dropped)
                     QueueFetch(r, m.name);
             }
@@ -17151,7 +17151,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 continue;
             }
             Run::FetchState& st = it->second;
-            bool const arrived = (m->yd <= ai::kReturnArriveYd && m->dz <= kStragglerDzYd) ||
+            bool const arrived = (m->yd <= ai::kReturnArriveYd && std::fabs(m->dz) <= kStragglerDzYd) ||
                 (st.tries > 0 && ai::PlanDistance(m->x, m->y, m->z, st.x, st.y, st.z) <= ai::kReturnArriveYd);
             if (arrived)
             {
@@ -17357,7 +17357,7 @@ inline bool WaitForFallen(Run& r, const Facts& f)
         for (const MemberFact& m : f.members)
             if (m.name == *it)
             {
-                back = m.yd <= kGatherYd && m.dz <= kStragglerDzYd;
+                back = m.yd <= kGatherYd && std::fabs(m.dz) <= kStragglerDzYd;
                 break;
             }
         it = back ? r.waitFor.erase(it) : std::next(it);
