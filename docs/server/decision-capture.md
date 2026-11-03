@@ -117,6 +117,8 @@ One JSON object per line, `tb-decision-capture` version 1. `seq` counts ticks of
 
 A schema change (a field added, removed, retyped or reordered, an enumerator moved) changes the schema hash in every header; an old capture or fixture then fails with a field diff instead of replaying wrongly.
 
+Replays do not see liquid queries (`Facts::pointLiquid`, a `std::function` the generator leaves out); captures made before `d774d05ea` need `replay_decisions upgrade`.
+
 ## Privacy
 
 A captured struct holds names, guids, entries, positions and the run's own text only. The header holds the capture id, the commander name, the plan, the module version, the schema and the seven `DecisionCapture.*` settings. No configuration value, account, address or credential is written, and the module's codec test pins the captured field names.
