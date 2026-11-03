@@ -35,28 +35,80 @@ Go Observability Daemon (tools/observability)
 
 ## Quick Setup
 
-Prebuilt dashboard binaries ship with every daily release. No Go toolchain is required for operation.
+The dashboard is a separate small program that runs next to your server. You do not need to build it: every daily release has a ready file for Windows (`tortoise-observability-windows-amd64.exe`) and Linux (`tortoise-observability-linux-amd64`).
 
-### Running with Setup Scripts
+What you need before you start:
 
-From the root of your TortoiseBots checkout:
+- Your server running (database and `mangosd`).
+- A game account with GM rank 2 or higher. You sign in to the dashboard with the same name and password you use in the game.
+- Your `mangosd.conf` file. The dashboard reads the game's database, so it needs the same database login as your server.
 
-- **Linux:**
-  ```bash
-  ./tools/observability/run-dashboard.sh --mangosd-conf /path/to/mangosd.conf
-  ```
-- **Windows (PowerShell):**
-  ```powershell
-  .\tools\observability\run-dashboard.ps1 -MangosdConf C:\path\to\mangosd.conf
-  ```
+### The easy way: the start script (recommended)
 
-The runner script reads your database connection settings from `mangosd.conf`, enables [`AiPlayerbot.Observability`](settings/logging.md) in `aiplayerbot.conf`, and starts the service (if already running, it continues without interrupting). Note that changing `AiPlayerbot.Observability` in `aiplayerbot.conf` requires restarting `mangosd`. Open `http://localhost:8095` in your browser and sign in using any game account with GM rank 2 or higher.
+The script finds the newest release, downloads the program, reads the database login from your `mangosd.conf`, turns on telemetry in `aiplayerbot.conf` and starts the dashboard. The scripts are in the `tools/observability` folder of the TortoiseBots module (if you built the module into the core, that is `modules/TortoiseBots/tools/observability`).
 
-### Manual Configuration
+**Windows** — open PowerShell in the TortoiseBots folder and run:
 
-To configure telemetry manually, adjust `AiPlayerbot.Observability`, `AiPlayerbot.ObservabilityHost`, and `AiPlayerbot.ObservabilityPort` in `aiplayerbot.conf` (see [Logging settings](settings/logging.md#aiplayerbotobservability)).
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\observability\run-dashboard.ps1 -MangosdConf C:\path\to\mangosd.conf
+```
 
-To run the daemon directly from source:
+`-ExecutionPolicy Bypass` only lets this one script run; without it Windows may say "running scripts is disabled on this system".
+
+**Linux** — in the TortoiseBots folder:
+
+```bash
+./tools/observability/run-dashboard.sh --mangosd-conf /path/to/mangosd.conf
+```
+
+Then:
+
+1. **Restart `mangosd` once**, so it picks up the telemetry setting the script turned on. Without that you can sign in, but the dashboard stays empty.
+2. Open `http://localhost:8095` in your browser and sign in with your GM account.
+
+The program keeps running in the background. Its log is `dashboard.log` next to the script (on Windows also `dashboard.err.log`). Running the script again while the dashboard is up does nothing; stop the dashboard first if you want to update it.
+
+### The manual way: run the program yourself
+
+Only use this if the script does not work for you.
+
+1. Download the file for your system from the [latest release](https://github.com/Sagiroth/TortoiseBots/releases/latest).
+2. In `aiplayerbot.conf` set `AiPlayerbot.Observability = 1` and restart `mangosd` (more options in [Logging settings](settings/logging.md#aiplayerbotobservability)).
+3. Find the `LoginDatabase.Info` line in `mangosd.conf`. It looks like `"127.0.0.1;3306;mangos;mangos;tw_logon"`: host, port, user, password, database name.
+4. Start the program with those values. If you start it without them (for example by double-clicking it), it tries user `mangos` with password `mangos` and database `tw_logon`. When your server uses something else, sign-in fails.
+
+**Windows** (Command Prompt or PowerShell, in the folder with the file):
+
+```powershell
+.\tortoise-observability-windows-amd64.exe -db-host 127.0.0.1 -db-port 3306 -db-user YOUR_DB_USER -db-pass YOUR_DB_PASSWORD -db-name tw_logon -db-char tw_char -db-world tw_world
+```
+
+**Linux:**
+
+```bash
+chmod +x tortoise-observability-linux-amd64
+./tortoise-observability-linux-amd64 -db-host 127.0.0.1 -db-port 3306 -db-user YOUR_DB_USER -db-pass YOUR_DB_PASSWORD -db-name tw_logon -db-char tw_char -db-world tw_world
+```
+
+`-db-char` and `-db-world` are the database names from the `CharacterDatabase.Info` and `WorldDatabase.Info` lines. Keep the window open while you use the dashboard, then open `http://localhost:8095`.
+
+### Sign-in problems
+
+**"invalid username or password"** usually means the dashboard cannot read your database, not that your password is wrong. The dashboard shows the same message for every sign-in problem. Check, in this order:
+
+1. **Database login.** Did you start the program yourself? Then pass the values from `LoginDatabase.Info` as shown above, or use the start script.
+2. **Too many tries.** After 5 failed sign-ins the dashboard blocks you for 5 minutes. Restart the program (or wait) before you try again.
+3. **GM rank.** The account needs rank 2 or higher. In the server console: `account set gmlevel <name> 3`, then sign in again.
+4. **Same realm.** The account must exist on the server whose `mangosd.conf` you used.
+
+**The page opens but stays empty.** Telemetry is off, or `mangosd` was not restarted after turning it on. Check that `AiPlayerbot.Observability = 1` in `aiplayerbot.conf` and restart `mangosd`.
+
+**The page does not open.** The program is not running. Look at `dashboard.log` (start script) or the program's window (manual start) for the error.
+
+### Running from source
+
+Developers with Go installed can run it straight from the checkout:
+
 ```bash
 cd tools/observability
 go run cmd/server/main.go --http-port 8095 --udp-port 9195
