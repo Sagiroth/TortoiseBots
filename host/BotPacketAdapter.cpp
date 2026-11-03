@@ -6,6 +6,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/WorldThreadQueue.h"
+#include "../runtime/policy/infra/DeferredDeliveryPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 
 #include "ObjectMgr.h"
@@ -33,6 +34,25 @@ BotPacketAdapter::BotPacketAdapter()
 
 namespace
 {
+// Issue #844: every drained item is handed to the bot's AI or held while the
+// bot is between maps. The route picks the handler, and the queue a held item
+// goes back to (DeferredDeliveryPolicy.h).
+enum class PacketRoute : uint8_t
+{
+    BotChat,
+    BotOutgoing,
+    MasterOutgoing,
+    MasterIncoming,
+};
+
+struct DeferredPacket
+{
+    PacketRoute route;
+    std::shared_ptr<WorldPacket const> packet;
+    // Drains that already held this packet while the bot was between maps.
+    uint8_t heldDrains = 0;
+};
+
 // Issue #839: SMSG_MESSAGECHAT delivered to a bot's headless session arrives on
 // the sender's thread - AsyncPackets for party / raid / guild / whisper,
 // ChannelBroadcaster for channels, a map thread for say / yell. Its handler
@@ -43,9 +63,9 @@ namespace
 // logic ignores most channel lines anyway.
 constexpr size_t kMaxDeferredChatPerBot = 64;
 
-WorldThreadQueue<std::unique_ptr<WorldPacket>>& DeferredBotChat()
+WorldThreadQueue<DeferredPacket>& DeferredBotChat()
 {
-    static WorldThreadQueue<std::unique_ptr<WorldPacket>> queue(kMaxDeferredChatPerBot);
+    static WorldThreadQueue<DeferredPacket> queue(kMaxDeferredChatPerBot);
     return queue;
 }
 
@@ -80,24 +100,22 @@ bool IsBotHandledChatType(WorldPacket const& packet)
 // A master packet is copied once and shared by the bots it is queued for.
 constexpr size_t kMaxDeferredPacketsPerBot = 256;
 
-enum class PacketRoute : uint8_t
-{
-    BotOutgoing,
-    MasterOutgoing,
-    MasterIncoming,
-};
-
-struct DeferredPacket
-{
-    PacketRoute route;
-    std::shared_ptr<WorldPacket const> packet;
-};
-
 WorldThreadQueue<DeferredPacket>& DeferredBotPackets()
 {
     static WorldThreadQueue<DeferredPacket> queue(kMaxDeferredPacketsPerBot);
     return queue;
 }
+
+// The delivery policy names the wire values of the AI handlers that read the
+// bot's map; the build fails if they drift from the core's opcodes.
+static_assert(TortoiseBots::DeferredDelivery::kSmsgMoveKnockBack == SMSG_MOVE_KNOCK_BACK,
+    "DeferredDelivery::kSmsgMoveKnockBack no longer matches SMSG_MOVE_KNOCK_BACK");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgCastResult == SMSG_CAST_RESULT,
+    "DeferredDelivery::kSmsgCastResult no longer matches SMSG_CAST_RESULT");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellFailure == SMSG_SPELL_FAILURE,
+    "DeferredDelivery::kSmsgSpellFailure no longer matches SMSG_SPELL_FAILURE");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellDelayed == SMSG_SPELL_DELAYED,
+    "DeferredDelivery::kSmsgSpellDelayed no longer matches SMSG_SPELL_DELAYED");
 
 // The world thread deletes AIs, so a hook running on it can hand a packet to
 // the AI at once, as before: the AI's own casts, hire provisioning (which drops
@@ -155,6 +173,47 @@ PlayerbotAI* FindBotAI(uint64_t botGuid)
 {
     return PlayerbotAIStorage::Instance().GetAI(ObjectGuid(botGuid));
 }
+
+// World thread: hand one drained item to its AI. A bot between maps (a far
+// teleport the bot update has not acked yet) must not run a handler that reads
+// its map, so the item is held for the next drain, or dropped once it is stale
+// (DeferredDeliveryPolicy.h). A bot whose AI left the storage (logout,
+// removal) since the copy took its queue with it.
+void DeliverOrHold(WorldThreadQueue<DeferredPacket>::Entry& entry)
+{
+    PlayerbotAI* ai = FindBotAI(entry.key);
+    if (!ai || !ai->GetBot())
+        return;
+    Player* bot = ai->GetBot();
+    switch (DeferredDelivery::Decide(bot->IsInWorld(), bot->IsBeingTeleportedFar(),
+                entry.item.packet->getOpcode(), entry.item.heldDrains))
+    {
+        case DeferredDelivery::Verdict::Deliver:
+            switch (entry.item.route)
+            {
+                case PacketRoute::BotChat:
+                case PacketRoute::BotOutgoing:
+                    ai->HandleBotOutgoingPacket(*entry.item.packet);
+                    break;
+                case PacketRoute::MasterOutgoing:
+                    ai->HandleMasterOutgoingPacket(*entry.item.packet);
+                    break;
+                case PacketRoute::MasterIncoming:
+                    ai->HandleMasterIncomingPacket(*entry.item.packet);
+                    break;
+            }
+            break;
+        case DeferredDelivery::Verdict::Hold:
+            ++entry.item.heldDrains;
+            if (entry.item.route == PacketRoute::BotChat)
+                DeferredBotChat().Enqueue(entry.key, std::move(entry.item));
+            else
+                DeferredBotPackets().Enqueue(entry.key, std::move(entry.item));
+            break;
+        case DeferredDelivery::Verdict::Drop:
+            break;
+    }
+}
 } // namespace
 
 bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& packet)
@@ -196,7 +255,8 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
         if (opcode == SMSG_MESSAGECHAT)
         {
             if (IsBotHandledChatType(packet) && BotWantsChat(gate, packet))
-                DeferredBotChat().Enqueue(botGuid.GetRawValue(), std::make_unique<WorldPacket>(packet));
+                DeferredBotChat().Enqueue(botGuid.GetRawValue(),
+                    DeferredPacket{ PacketRoute::BotChat, std::make_shared<WorldPacket const>(packet) });
             return true;
         }
 
@@ -242,36 +302,17 @@ void BotPacketAdapter::MarkWorldThread()
 void BotPacketAdapter::DrainDeferredPackets(uint64_t before, bool endOfTick)
 {
     // Issue #844: resolved again on the world thread, so a bot whose AI left
-    // the storage (logout, removal) since the copy is skipped. Issue #846: the
-    // two queues run merged in the order their items were queued, so each
-    // bot's chat and packets reach its AI in arrival order, and only items
-    // queued before `before` run (the command drain passes each command's
-    // number, so chat typed before a `.bot` command runs before it).
+    // the storage (logout, removal) since the copy is skipped, and a bot
+    // between maps holds its packets instead of running a map-reading handler
+    // (DeliverOrHold). Issue #846: the two queues run merged in the order their
+    // items were queued, so each bot's chat and packets reach its AI in
+    // arrival order, and only items queued before `before` run (the command
+    // drain passes each command's number, so chat typed before a `.bot`
+    // command runs before it). A held item is queued again with a new number,
+    // so it waits for the next drain.
     std::vector<WorldThreadQueue<DeferredPacket>::Entry> packets = DeferredBotPackets().TakeBefore(before);
-    std::vector<WorldThreadQueue<std::unique_ptr<WorldPacket>>::Entry> chat = DeferredBotChat().TakeBefore(before);
-    RunInSequence(packets, [](WorldThreadQueue<DeferredPacket>::Entry& entry)
-    {
-        PlayerbotAI* ai = FindBotAI(entry.key);
-        if (!ai || !ai->GetBot())
-            return;
-        switch (entry.item.route)
-        {
-            case PacketRoute::BotOutgoing:
-                ai->HandleBotOutgoingPacket(*entry.item.packet);
-                break;
-            case PacketRoute::MasterOutgoing:
-                ai->HandleMasterOutgoingPacket(*entry.item.packet);
-                break;
-            case PacketRoute::MasterIncoming:
-                ai->HandleMasterIncomingPacket(*entry.item.packet);
-                break;
-        }
-    }, chat, [](WorldThreadQueue<std::unique_ptr<WorldPacket>>::Entry& entry)
-    {
-        if (PlayerbotAI* ai = FindBotAI(entry.key))
-            if (ai->GetBot())
-                ai->HandleBotOutgoingPacket(*entry.item);
-    });
+    std::vector<WorldThreadQueue<DeferredPacket>::Entry> chat = DeferredBotChat().TakeBefore(before);
+    RunInSequence(packets, DeliverOrHold, chat, DeliverOrHold);
 
     // Issue #846: the tick's last drain reports what the caps dropped.
     if (endOfTick)
