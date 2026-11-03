@@ -146,8 +146,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);
     dungeonRunRetreatAt2Dead = config.GetBoolDefault("AiPlayerbot.DungeonRunRetreatAt2Dead", false);
     dungeonRunWalkBackRescue = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackRescue", true);
-    runTeleportReturnYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.RunTeleportReturnYd", 120.0f));
-    dungeonReviveHoldYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.DungeonReviveHoldYd", 100.0f));
+    runTeleportReturnYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.RunTeleportReturnYd", 0.0f));
+    dungeonReviveHoldYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.DungeonReviveHoldYd", 0.0f));
     dungeonRunFightForward = config.GetBoolDefault("AiPlayerbot.DungeonRunFightForward", true);
     dungeonRunLightRest = config.GetBoolDefault("AiPlayerbot.DungeonRunLightRest", true);
     dungeonRunLootFfa = config.GetBoolDefault("AiPlayerbot.DungeonRunLootFfa", false);

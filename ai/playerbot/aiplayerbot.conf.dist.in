@@ -1010,9 +1010,10 @@ AiPlayerbot.DungeonRunWalkBackRescue = 1
 # a walk back through the packs. If the lead bot stands in the reach of a pack
 # not pulled yet, the bot lands beside it outside that reach. Three tries 5 s
 # apart, then the run's note names the bot. Parties with no real player only.
-# 0 - off: the summon portal, and a walk back when it fails, as before
+# 0 - off (the shipped default): the summon portal, and a walk back when it fails, as before
+# Recommended 120.
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
-AiPlayerbot.RunTeleportReturnYd = 120
+AiPlayerbot.RunTeleportReturnYd = 0
 
 # The run leader's hold for bots waiting to be brought back. A run's bot revived
 # in a dungeon farther than this many yards from the lead bot (any revive: the
@@ -1020,9 +1021,10 @@ AiPlayerbot.RunTeleportReturnYd = 120
 # to 60 s for a summon or teleport, and so does every bot the run is summoning
 # or teleporting back, until it is within 10 yd of where it is brought: no
 # follow, no walking, no chasing; it fights back only from where it stands.
-# 0 - off
+# 0 - off (the shipped default)
+# Recommended 100.
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
-AiPlayerbot.DungeonReviveHoldYd = 100
+AiPlayerbot.DungeonReviveHoldYd = 0
 
 # The run leader's fight forward. After a won fight, the next pack within 30 yd
 # of the tank is pulled from where the tank stands instead of walking the plan's

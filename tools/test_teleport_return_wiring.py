@@ -100,10 +100,10 @@ class TeleportReturnWiringTest(unittest.TestCase):
                         tick.index("if (r.regroup && !runBackWait && !f.anyInCombat)"))
 
     def test_keys_and_template_agree(self):
-        self.assertIn('config.GetFloatDefault("AiPlayerbot.RunTeleportReturnYd", 120.0f)', CONFIG)
-        self.assertIn('config.GetFloatDefault("AiPlayerbot.DungeonReviveHoldYd", 100.0f)', CONFIG)
-        self.assertRegex(TEMPLATE, re.compile(r"^AiPlayerbot\.RunTeleportReturnYd = 120$", re.M))
-        self.assertRegex(TEMPLATE, re.compile(r"^AiPlayerbot\.DungeonReviveHoldYd = 100$", re.M))
+        self.assertIn('config.GetFloatDefault("AiPlayerbot.RunTeleportReturnYd", 0.0f)', CONFIG)
+        self.assertIn('config.GetFloatDefault("AiPlayerbot.DungeonReviveHoldYd", 0.0f)', CONFIG)
+        self.assertRegex(TEMPLATE, re.compile(r"^AiPlayerbot\.RunTeleportReturnYd = 0$", re.M))
+        self.assertRegex(TEMPLATE, re.compile(r"^AiPlayerbot\.DungeonReviveHoldYd = 0$", re.M))
         self.assertRegex(TEMPLATE, re.compile(r"^AiPlayerbot\.DungeonFollowHoldBeforePacks = 0$", re.M))
 
 

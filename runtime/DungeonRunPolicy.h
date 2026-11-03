@@ -1361,11 +1361,11 @@ struct Facts
     // AiPlayerbot.DungeonRunWalkBackRescue (default 1): a stuck walk back, and a placed run's lead bot revived behind
     // its start step, are teleported to a safe point (WalkBackStuckRescue, PlacedRunRescue). Off: the old pause.
     bool walkBackRescue = true;
-    // AiPlayerbot.RunTeleportReturnYd (default 120, 0: off): a member the run brings back from farther than this is
+    // AiPlayerbot.RunTeleportReturnYd (default 0: off; recommended 120): a member the run brings back from farther than this is
     // teleported to the lead bot with its combat dropped (FarReturnTick, the glue's RunFetchReturn), never summoned
     // with the portal and never left to walk. Bot-only parties only.
     float teleportReturnYd = 0.0f;
-    // AiPlayerbot.DungeonReviveHoldYd (default 100, 0: off): a member the run brings back stands still until it
+    // AiPlayerbot.DungeonReviveHoldYd (default 0: off; recommended 100): a member the run brings back stands still until it
     // arrives (Run::returnHold, ai::ReturnHoldPolicy); the glue also holds a bot revived farther than this.
     float reviveHoldYd = 0.0f;
     // The teleport return's read of the lead bot's ground (Run::fetchReadWanted): the unpulled hostiles around it
