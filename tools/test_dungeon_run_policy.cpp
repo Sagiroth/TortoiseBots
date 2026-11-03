@@ -30473,12 +30473,12 @@ static void TestAutoCcCastersFirstThenPlanRank()
     CHECK(Tick(r, f) == "cc square 11 Magetwo");
     CHECK(Tick(r, f) == "cc diamond 12 Magethree");
 
-    // No plan list: the casters go first (the farther one first).
+    // No plan list: the casters go first (the farther one first), though a non-caster stands farther still.
     DungeonPlan plain = CcPlan({});
     Run p = Start(&plain);
     Facts g = AutoParty(0);
     g.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph)};
-    g.units = {AutoHumanoid(20, 12), AutoHumanoid(21, 20, true), AutoHumanoid(22, 14), AutoHumanoid(23, 18, true)};
+    g.units = {AutoHumanoid(20, 22), AutoHumanoid(21, 20, true), AutoHumanoid(22, 12), AutoHumanoid(23, 18, true)};
     CHECK(Tick(p, g) == "cc moon 21 Magey");
     CHECK(Tick(p, g) == "cc square 23 Magetwo");
 }
@@ -30553,8 +30553,9 @@ static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
     killFirst.entry = 104;
     UnitFact focused = AutoHumanoid(105, 18);
     UnitFact free = AutoHumanoid(106, 20);
-    f.units = {tankTarget, offTankHeld, killFirst, focused, free};
-    f.leadTargetGuid = 101;
+    UnitFact leadPick = AutoHumanoid(107, 22); // the tank's own selection, farther than the free one
+    f.units = {tankTarget, offTankHeld, killFirst, focused, free, leadPick};
+    f.leadTargetGuid = 107;
     r.focusGuid = 105;
     CHECK(Tick(r, f) == "cc moon 106 Magey");
     CHECK(Tick(r, f) == "pullback 103"); // the kill_first unit is the pull's target
