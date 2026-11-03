@@ -1123,6 +1123,25 @@ AiPlayerbot.DungeonRunPackClearMarginYd = 10
 # 3 - default; 1 to 10. Only read while AiPlayerbot.DungeonRunPackClearMarginYd is above 0.
 AiPlayerbot.DungeonRunPackClearRepulls = 3
 
+# The run leader pulls a straggler itself instead of pausing. A unit the step waits
+# for that did not come -- a unit of the pack that spawned in the step's radius and
+# walked its loop away, or a patrol a stand-pull row waits for at its stand -- is
+# walked to and pulled by the tank: the lead bot while it lives and is a tank, else
+# the off-tank holding the main tank role. The tank walks to the unit (a patrol: to
+# the nearest point of its loop on the party's side) and attacks it, the rest of the
+# party staying where it stands. Each try has 45 s; a failed try by the lead bot
+# goes to the off-tank once; only then does the run pause as before. The pull is
+# skipped, and the run pauses as before with the reason in the line, when another
+# pack not pulled yet would be woken on the way there (the way passes within its
+# aggro reach plus 5 yd of it) or when no path reaches the point. A patrol a
+# stand-pull row waits for is waited for one full loop of its own path at most (90 s
+# when that cannot be read) instead of the row's 600 s before the tank goes.
+# A boss, a kill_first unit and a linked_death unit keep the old behaviour.
+# 0 - off, the run pauses as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStragglerPull = 0
+
 # The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the
 # revive after either) within the window below pause the run once the fight is over,
 # instead of regrouping and walking into the same cost again. A resume starts a
