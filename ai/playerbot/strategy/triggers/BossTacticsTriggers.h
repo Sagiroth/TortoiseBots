@@ -78,4 +78,20 @@ namespace ai
         BossTacticsFrontTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics front", 2) {}
         bool IsActive() override;
     };
+
+    // A use_object row is due or nearly due and this bot holds the record's one clicker claim.
+    class BossTacticsUseObjectTrigger : public Trigger
+    {
+    public:
+        BossTacticsUseObjectTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics use object", 1) {}
+        bool IsActive() override;
+    };
+
+    // This tank is the one the boss is on and the boss stands too far from the row's object: the walk over starts.
+    class BossTacticsObjectAnchorTrigger : public Trigger
+    {
+    public:
+        BossTacticsObjectAnchorTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics object anchor", 2) {}
+        bool IsActive() override;
+    };
 }

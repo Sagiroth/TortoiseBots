@@ -29,6 +29,19 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics linked death",
         NextAction::array(0, new NextAction("boss tactics linked death", ACTION_HIGH + 3), NULL)));
 
+    // A use_object row designates one bot to click its game object: a click is as time-critical as an interrupt (the
+    // weakness lands 5 s after it), so it sits above the target picks and below freeze, flee and avoid_cast. The same
+    // action walks the clicker in from the row's lead.
+    triggers.push_back(new TriggerNode(
+        "boss tactics use object",
+        NextAction::array(0, new NextAction("boss tactics use object", ACTION_INTERRUPT + 2), NULL)));
+
+    // Mode tank_anchor: the tank the boss is on walks it to the object. Above the tank's reach and face rows, below
+    // every EMERGENCY row, so a survival move still wins.
+    triggers.push_back(new TriggerNode(
+        "boss tactics object anchor",
+        NextAction::array(0, new NextAction("boss tactics object anchor", ACTION_HIGH + 5), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

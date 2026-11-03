@@ -110,3 +110,17 @@ bool BossTacticsStandTrigger::IsActive()
     const BossStandTarget stand = FindBossStand(ai, bot);
     return stand.valid && !StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y);
 }
+
+bool BossTacticsUseObjectTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossUseObject(ai, bot).valid;
+}
+
+bool BossTacticsObjectAnchorTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossUseObjectAnchor(ai, bot).valid;
+}
