@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "HazardsValue.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "Maps/PathFinder.h"
 
@@ -162,6 +163,9 @@ std::list<HazardPosition> HazardsValue::Calculate()
     {
         SET_AI_VALUE(std::list<Hazard>, "stored hazards", storedHazards);
     }
+
+    auto toxin = GetViscidusToxinHazards(ai);
+    hazards.splice(hazards.end(), toxin);
 
     return hazards;
 }

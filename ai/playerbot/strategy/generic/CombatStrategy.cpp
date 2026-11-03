@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
@@ -134,6 +135,11 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
     // The run leader's healer is held on its stand for a pull but never kept
     // from healing: the join window gates damage, and it deals none.
     if (ai->RunHealOnly() && PlayerbotAI::IsHeal(ai->GetBot()))
+        return false;
+    // Patchwerk: DPS wait through the opening hold, assigned soakers join at once.
+    if (PatchwerkDpsOpeningHold(ai))
+        return true;
+    if (GetPatchwerkSoakBoss(ai))
         return false;
 
     // Only check if the bot has the strategy enabled

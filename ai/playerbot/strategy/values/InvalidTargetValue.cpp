@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/FankrissGauntletPolicy.h"
 #include "InvalidTargetValue.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -15,6 +17,10 @@ bool InvalidTargetValue::Calculate()
     {
         return true;
     }
+
+    // Reject before explicit orders or the cached attacker fallback can retain it.
+    if (IgnoreFankrissGauntlet(bot, target))
+        return true;
 
     Unit* duelTarget = AI_VALUE(Unit*, "duel target");
     if (duelTarget && duelTarget == target)
@@ -49,6 +55,11 @@ bool InvalidTargetValue::Calculate()
             return true;
         }
     }
+
+    // Viscidus globs are deliberately passive and fail the ordinary attacker-validity
+    // test until damaged. The encounter handoff may precede this bot's combat flag, so
+    // keep a glob the opt-in encounter selected instead of losing it to the attackers cache.
+    if (target->GetEntry() == 15667 && GetViscidusCombatTarget(ai) == target) return false;
 
     // A player command deliberately selects a hostile target before either side
     // has threat.  The ordinary validity path requires active combat, which made

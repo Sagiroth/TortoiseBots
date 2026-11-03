@@ -1,6 +1,10 @@
 #pragma once
 
 #include "HealthTriggers.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
 #include "GenericTriggers.h"
@@ -13,6 +17,7 @@
 #include "BotStateTriggers.h"
 #include "PullTriggers.h"
 #include "DungeonTriggers.h"
+#include "playerbot/strategy/generic/TempleOfAhnQirajStrategies.h"
 #include "OnyxiasLairDungeonTriggers.h"
 #include "BossTacticsTriggers.h"
 #include "MoltenCoreDungeonTriggers.h"
@@ -40,6 +45,14 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
+            creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
+            creators["fankriss spawn engage needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnEngageTrigger(ai); };
+            creators["fankriss spawn pickup needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnPickupTrigger(ai); };
+            creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
+            creators["fankriss control needed"] = [](PlayerbotAI* ai) { return new FankrissControlTrigger(ai); };
+            creators["fankriss focus needed"] = [](PlayerbotAI* ai) { return new FankrissFocusTrigger(ai); };
+            creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
             creators["return to stay position"] = [](PlayerbotAI* ai) { return new ReturnToStayPositionTrigger(ai); };
@@ -423,6 +436,9 @@ namespace ai
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["start ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianStartFightTrigger(ai); };
             creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
+            creators["viscidus combat needed"] = [](PlayerbotAI* ai) { return new ViscidusCombatTrigger(ai); };
+            creators["viscidus melee danger"] = [](PlayerbotAI* ai) { return new ViscidusDistanceTrigger(ai); };
+            creators["viscidus toxin nearby"] = [](PlayerbotAI* ai) { return new ViscidusToxinTrigger(ai); };
             creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
             creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };
