@@ -28334,6 +28334,67 @@ static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry 
     return r;
 }
 
+// ZG walk 32: the lead bot dies mid-pull and the fight goes on without a main tank. The first living off-tank takes
+// the role for the rest of the fight (its engage on arrival and the healer guard's), and the lead bot takes it back
+// when it is up again.
+static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
+{
+    {
+        // The role holder: the lead bot while it lives, else the first living off-tank.
+        Facts f = RaidTrashFacts();
+        CHECK(MainTankRole(f) == "Tanky");
+        f.leadAlive = false;
+        CHECK(MainTankRole(f) == "Brun");
+        f.raid.offTanksAlive = {"Irelanthe"};
+        CHECK(MainTankRole(f) == "Irelanthe");
+        f.raid.offTanksAlive.clear();
+        CHECK(MainTankRole(f).empty());
+        // Not a tank lead bot: no role while it lives, no off-tank fallback for a living lead.
+        f.leadAlive = true;
+        f.leadIsTank = false;
+        f.raid.offTanksAlive = {"Brun"};
+        CHECK(MainTankRole(f).empty());
+    }
+    {
+        // The lead bot is up again: the role is its own, and its engage on arrival works as before.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0), Mem("Healy", 10)};
+        UnitFact add = Hitter(50071, 12129, 12, true); // on the healer
+        add.x = 10.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50071 Tanky");
+        CHECK(MainTankRole(f) == "Tanky");
+    }
+    {
+        // The ranged dps healer guard stays on with the lead dead while an off-tank lives: the add on the healer is the
+        // ranged dps' first, not the off-tank's.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        f.raid.healerGuard = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.leadAlive = false; // the lead bot died mid-pull
+        f.leadHasAttacker = false;
+        MemberFact tank = Mem("Brun", 0);
+        tank.ranged = false;
+        MemberFact healer = Mem("Healy", 10);
+        healer.healer = true;
+        MemberFact dps = Mem("Ranged", 12);
+        dps.ranged = true;
+        dps.rangedDps = true;
+        f.members = {tank, healer, dps};
+        UnitFact add = Hitter(50071, 12129, 20, true); // on the healer
+        add.x = 10.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50071 Ranged");
+        CHECK(r.trashHealerGuard);
+        // Now no tank at all: the guard is off, the off-tank pick-up path is left.
+        f.raid.offTanksAlive.clear();
+        CHECK(!RaidHealerGuardOn(r, f, true));
+    }
+}
+
 static void TestRaidMainTankHelpsOnAMobAnOffTankHolds()
 {
     DungeonPlan plan;
@@ -32582,6 +32643,7 @@ int main()
     TestRaidCcRegatherDone();
     TestRaidRunBackBelowWipeLevel();
     TestRaidHoldRegroupGathers();
+    TestDeadLeadLeavesTheMainTankRoleToTheOffTank();
     TestRaidMainTankHelpsOnAMobAnOffTankHolds();
     TestRaidGuardRoundRobinsTheOffTanks();
     TestRaidTrashHealerGuardSendsTheNearestRangedDps();
