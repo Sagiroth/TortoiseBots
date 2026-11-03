@@ -1,4 +1,5 @@
 #pragma once
+#include "generic/TempleOfAhnQirajStrategies.h"
 
 #include "CustomStrategy.h"
 #include "generic/FankrissStrategy.h"
@@ -217,6 +218,7 @@ namespace ai
             creators["gluth"] = [](PlayerbotAI* ai) { return new GluthFightStrategy(ai); };
             creators["thaddius"] = [](PlayerbotAI* ai) { return new ThaddiusFightStrategy(ai); };
             creators["kel'thuzad"] = [](PlayerbotAI* ai) { return new KelthuzadFightStrategy(ai); };
+            creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["grobbulus"] = [](PlayerbotAI* ai) { return new GrobbulusFightStrategy(ai); };
             creators["loatheb"] = [](PlayerbotAI* ai) { return new LoathebFightStrategy(ai); };
             creators["razuvious"] = [](PlayerbotAI* ai) { return new RazuviousFightStrategy(ai); };

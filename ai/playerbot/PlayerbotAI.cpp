@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include <vector>
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
@@ -838,6 +839,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         MANGOS_ASSERT(botPos.fDist(bot) < 500.0f);
         bot->StopMoving();
     }
+
+    // Viscidus (opt-in "viscidus glob focus", map 531 only): sample the encounter.
+    UpdateViscidus(this);
 
     // Update facing
     SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");

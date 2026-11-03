@@ -17,6 +17,7 @@
 #include "BotStateTriggers.h"
 #include "PullTriggers.h"
 #include "DungeonTriggers.h"
+#include "playerbot/strategy/generic/TempleOfAhnQirajStrategies.h"
 #include "OnyxiasLairDungeonTriggers.h"
 #include "BossTacticsTriggers.h"
 #include "MoltenCoreDungeonTriggers.h"
@@ -431,6 +432,9 @@ namespace ai
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["start ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianStartFightTrigger(ai); };
             creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
+            creators["viscidus combat needed"] = [](PlayerbotAI* ai) { return new ViscidusCombatTrigger(ai); };
+            creators["viscidus melee danger"] = [](PlayerbotAI* ai) { return new ViscidusDistanceTrigger(ai); };
+            creators["viscidus toxin nearby"] = [](PlayerbotAI* ai) { return new ViscidusToxinTrigger(ai); };
             creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
             creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };

@@ -209,6 +209,7 @@ an avoidance action succeeds.
   - *Heigan:* The group dances floor sections 0-1-2-3-2-1 during Plague Cloud.
   - *Kel'Thuzad:* Bots flee Shadow Fissures immediately; Frost Blast handling is not scripted beyond the shared bomb runout for Detonate Mana carriers.
 - **Ahn'Qiraj (AQ20/AQ40):** Designated runners activate crystals while *Strength of Ossirian* is active. Kiting Ossirian remains the player's responsibility.
+- **Viscidus (AQ40, opt-in):** `.bot strategy +viscidus glob focus @all` (off by default; only active on map 531 in an already engaged Viscidus fight). Mages use rank-one Frostbolt to freeze him and stop frost casts once frozen; melee and ranged physical damage keep hitting the frozen boss. After the shatter all DPS switch to the nearest-to-merging glob while tanks keep the boss and healers keep healing; tanks retake him after the globs re-form (a spare taunts if no tank holds him), and ranged/healers back out of his melee reach. Every role steps out of the poison cloud. Remove with `.bot strategy -viscidus glob focus @all`.
 - **Paladin Aura Auto-Swap:** Paladins in raids automatically swap to *Fire Resistance Aura* or *Shadow Resistance Aura* on applicable bosses.
 
 ### Fankriss (opt-in roles)

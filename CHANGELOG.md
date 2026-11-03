@@ -74,6 +74,7 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- New opt-in strategy `viscidus glob focus` (`.bot strategy +viscidus glob focus @all`, off by default, AQ40 only): mages freeze Viscidus with rank-one Frostbolt and stop frost casts once he is frozen, melee and ranged physical damage keep hitting the frozen boss, all damage dealers switch to the glob nearest to merging after the shatter, tanks retake Viscidus when the globs re-form (a spare taunts if none holds him), ranged and healers back out of his melee reach, and every role steps out of the poison cloud.
 - The run leader follows a boss by his guid's entry: a boss a script changes mid-fight (Zul'Gurub's Thekal turning from 14599 into 14509) is still his step's boss - his own corpse is *boss down* at once with the note *boss down: he died as 14509*, his changed form is pulled and counted as seen alive, the instance search names the form he was found in (*is alive (as 14509) at ...*), and a boss fought on an earlier step whose corpse lies near the lead bot counts as down at his own step. Before, the step waited 60 s at his spot and paused *boss 14599 not found* with the kill already done.
 - New boss tactic kind `avoid_cast`: bots other than the tank the caster is on walk out of a listed self-centred blast while it is cast (first row: Zul'Gurub's Gurubashi Bat Rider, Unstable Concoction), and each walk-out writes a `BossTacticsAvoidCast` row to `bot_events.csv`.
 - Zul'Gurub leg 0 uses patrol-timed stand pulls and kills the Gurubashi Bat Rider first (walks 1-13).

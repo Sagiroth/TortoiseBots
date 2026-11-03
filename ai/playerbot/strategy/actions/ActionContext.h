@@ -95,6 +95,7 @@
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
 #include "RuinsOfAhnqirajDungeonActions.h"
+#include "ViscidusActions.h"
 
 namespace ai
 {
@@ -420,6 +421,9 @@ namespace ai
             creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
+            creators["viscidus combat"] = [](PlayerbotAI* ai) { return new ViscidusCombatAction(ai); };
+            creators["viscidus keep distance"] = [](PlayerbotAI* ai) { return new ViscidusDistanceAction(ai); };
+            creators["viscidus toxin escape"] = [](PlayerbotAI* ai) { return new ViscidusToxinEscapeAction(ai); };
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
             creators["four horsemen rotate"] = [](PlayerbotAI* ai) { return new FourHorsemenRotateAction(ai); };

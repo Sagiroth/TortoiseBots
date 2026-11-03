@@ -3,6 +3,7 @@
 #include "DpsTargetValue.h"
 #include "FankrissSpawnTarget.h"
 #include "../actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -484,6 +485,10 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* spawn = GetFankrissSpawnTarget(ai))
         if (spawn->GetEntry() == 15630)
             return spawn;
+
+    // Opt-in "viscidus glob focus" encounter selection (map 531): ahead of stale
+    // explicit orders and raid marks, inactive everywhere else.
+    if (Unit* viscidus = GetViscidusCombatTarget(ai)) return viscidus;
 
     // Explicit orders and raid marks remain ahead of tank assistance. A one_at_a_time non-pick is the one exception:
     // the ordered bot falls through to the normal pick, which converges on the sole pick with everyone else.

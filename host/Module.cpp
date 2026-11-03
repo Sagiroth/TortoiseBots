@@ -14,6 +14,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotPacketAdapter.h"
 #include "RaidBossDiagnostics.h"
+#include "ViscidusDiagnostics.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotPlayerAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -45,6 +46,7 @@ void RegisterScripts()
     new BotPacketAdapter();
     new BotGearAdapter();
     new RaidBossDiagnostics();
+    new ViscidusDiagnostics();
     new BotPlayerAdapter();
     new BotUnitAdapter();
     new BotChatAdapter();
