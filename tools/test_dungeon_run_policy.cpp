@@ -19519,6 +19519,39 @@ static void TestStragglerPullBothTanksFailPauses()
     CHECK(r.spawnPatrolGaveUp.count(0xd001) == 1);
 }
 
+// A pack that comes into the tank's remaining way after the first read aborts that try at the 2 s recheck and sends
+// the off-tank, with the run's note naming it.
+static void TestStragglerPullRecheckAbortsOnANewBlocker()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {off};
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    StragglerWayClear(f, 0xd001, "Tanky");
+    CHECK(Tick(r, f) == "attack 53249 Tanky");
+    CHECK(Tick(r, f).empty()); // 1 s of the attack's wait
+    CHECK(Tick(r, f).empty()); // 2 s: the way is read again
+    CHECK(r.stragglerPathWanted == 0xd001);
+    // The glue's fresh read finds a not-yet-pulled pack on the remaining way.
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = 0xd001;
+    f.stragglerPathTank = "Tanky";
+    f.stragglerPathOk = true;
+    f.stragglerPathBlockEntry = 11368;
+    f.stragglerPathBlockYd = 9.0f;
+    f.stragglerPathBlockReachYd = 20.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    CHECK(r.note == "pack not cleared: Offy (the off-tank) walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and "
+        "pulls it (try 2)");
+}
+
 static void TestSpawnOwnedPatrollerGateOffUsesTheOldRule()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -23489,6 +23522,7 @@ static void TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint()
     f.leadX = -12240.0f;
     f.leadY = -1490.0f;
     f.leadZ = kPatrolPullFloorZ;
+    CHECK(Tick(r, f).empty()); // at the loop point: the way is read once more before the attack
     CHECK(Tick(r, f) == "attack 9 Tanky");
     CHECK(r.state == State::Running && r.step == 1);
     // It comes into the fight: the gate is done for the step, the fight handles it.
@@ -32721,6 +32755,7 @@ int main()
     TestStragglerPullRefusedLeadOrderFallsBackToTheOffTank();
     TestStragglerPullLeadPathFailureFallsBackToTheOffTank();
     TestStragglerPullBothTanksFailPauses();
+    TestStragglerPullRecheckAbortsOnANewBlocker();
     TestStragglerPullNeverTakesABossKillFirstOrLinkedDeathUnit();
     TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint();
     TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
