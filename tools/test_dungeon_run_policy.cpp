@@ -76,6 +76,20 @@ static MemberFact Mem(const std::string& name, float yd, float dz = 0.0f)
     return m;
 }
 
+// The glue's clear answer for the run's rescue point (StrandedTeleportTick reads that point before it sends): no
+// live hostile within its aggro reach of it.
+static void RescueReadClear(Facts& f, const Run& r)
+{
+    if (!r.plan || r.strandIdx >= r.plan->steps.size())
+        return;
+    const PlanStep& p = r.plan->steps[r.strandIdx];
+    f.rescueRead = true;
+    f.rescueReadX = p.x;
+    f.rescueReadY = p.y;
+    f.rescueReadZ = p.z;
+    f.rescueReach.clear();
+}
+
 static UnitFact Unit(std::uint64_t guid, std::uint32_t entry, float dist)
 {
     UnitFact u;
@@ -12003,6 +12017,7 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     // Out of combat: the teleport, through the walk back's own tick, from where the lead bot stands NOW
     // (it moved 3 yd on the island since the reading).
     Facts moved = StrandFacts(-445.0f, 101.0f, -190.0f);
+    RescueReadClear(moved, r); // the glue's answer for the point: clear
     order = Tick(r, moved);
     CHECK(order == "rescue from -445.0 101.0 -190.0 to -422.4 82.4 -172.9");
     CHECK(r.note == "the lead bot is stranded at -445.0 101.0 -190.0 with no way back: teleporting it to the last reached "
@@ -12107,6 +12122,7 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     // never marked used.
     Run w = stranded();
     OrderRefused(w, back, kBareUnreachable);
+    RescueReadClear(f, w); // the glue's answer for the point: clear
     for (std::uint32_t t = 1; t <= kStrandTries; ++t)
     {
         order = Tick(w, f);
@@ -12279,12 +12295,78 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
         CHECK(r.note.find("put the party together") != std::string::npos);
     }
     {
-        // No live read (the glue did not answer): the plan point stands, as before.
+        // No live read for the point (the glue did not answer): the rescue asks for it and waits, and never sends
+        // the lead bot onto a point nobody read (the retry that killed Cyra in c-r1 fight 8-8 failed open).
         Facts g = f;
         Run r = stranded();
-        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
-        CHECK(!r.strandParty);
+        CHECK(Tick(r, g).empty());
+        CHECK(r.strandDue && !r.strandOn);
+        CHECK(r.rescueScanWanted && r.rescueScanX == -422.4f && r.rescueScanY == 82.4f);
+        CHECK(r.note == "the lead bot is stranded: reading the point of step 2 for live hostiles");
+        // The next tick's read holds the point: the party, as for any held point.
+        g.rescueRead = true;
+        g.rescueReadX = -422.4f;
+        g.rescueReadY = 82.4f;
+        g.rescueReadZ = -172.9f;
+        g.rescueReach = live;
+        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+        CHECK(r.strandOn && r.strandParty);
     }
+}
+
+// ZG walk 32 c-r1 fight 8-8: the retry after a refused teleport (StrandFailed) cleared the rescue's read request, and
+// the plan's own word sent the lead bot onto the 573 pack in the same tick. The retry asks for the read again and
+// sends nothing until it answers; a read that holds the point sends the lead bot to the party, never to the point.
+static void TestTheRescueRetryAsksForItsRead()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f),
+        Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f), Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f),
+        Step(PlanStepKind::Rest)};
+    Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
+    MemberFact a = Mem("Aaa", 0);
+    a.x = -900.0f;
+    a.y = 600.0f;
+    a.z = -172.9f;
+    a.yd = 100.0f;
+    f.members = {f.members[0], a}; // the lead bot, then one member out of combat
+    Run r = Start(&plan, 2);
+    NoteCheckpoint(r, 0);
+    r.walkBack = true;
+    r.walkBackIdx = r.walkBackStart = 1;
+    r.strandDue = true;
+    r.strandIdx = 1;
+    r.rescueScanWanted = true;
+    r.rescueScanX = -422.4f;
+    r.rescueScanY = 82.4f;
+    r.rescueScanZ = -172.9f;
+    RescueReadClear(f, r);
+    CHECK(Tick(r, f) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+    // Refused: the retry re-arms the teleport and asks for its read again.
+    OrderRefused(r, "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9", "failed: the near teleport was refused");
+    CHECK(r.strandDue && r.rescueScanWanted);
+    Facts blind = f; // the next tick's facts: the glue did not answer
+    blind.rescueRead = false;
+    CHECK(Tick(r, blind).empty()); // never the plan point on no read
+    CHECK(r.strandDue && r.rescueScanWanted && !r.strandOn);
+    CHECK(r.note == "the lead bot is stranded: reading the point of step 2 for live hostiles");
+    // The read that holds the point: the party, never the point itself.
+    std::vector<StandPackReach> live;
+    StandPackReach mob;
+    mob.x = -422.4f;
+    mob.y = 82.4f;
+    mob.z = -172.9f;
+    mob.reachYd = 20.0f;
+    live.push_back(mob);
+    Facts heldRead = blind;
+    heldRead.rescueRead = true;
+    heldRead.rescueReadX = -422.4f;
+    heldRead.rescueReadY = 82.4f;
+    heldRead.rescueReadZ = -172.9f;
+    heldRead.rescueReach = live;
+    CHECK(Tick(r, heldRead) == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+    CHECK(r.strandOn && r.strandParty);
+    CHECK(r.strandTries == 1);
 }
 
 // A fetch with no member out of combat to bring the bot to is bounded: each such tick spends one of the kFetchTries
@@ -12393,6 +12475,7 @@ static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
     CHECK(move == back);
     OrderRefused(r, move, kBareUnreachable);
     CHECK(r.strandDue); // the rescue again, not 'on to the next'
+    RescueReadClear(away, r); // the glue's answer for the point: clear
     std::string const order = Tick(r, away);
     CHECK(order == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
     CHECK(r.note.find("teleporting it to the last reached point (step 2)") != std::string::npos);
@@ -12442,6 +12525,7 @@ static void TestTheStrandRearmIsCappedPerStep()
     for (std::uint32_t i = 0; i < kStrandRearmsPerStep; ++i)
     {
         movedAway();
+        RescueReadClear(away, r); // the glue's answer for the point: clear
         std::string const move = Tick(r, away); // the walk back resumes: the latch re-arms, then the point's own move
         CHECK(move == back);
         OrderRefused(r, move, kBareUnreachable);
@@ -13375,6 +13459,7 @@ static void TestIslandWalkBackIsRescued()
     CHECK(r.state == State::Running && r.strandDue && r.strandIdx == 4 && r.walkBackIdx == 4);
     CHECK(r.note == "walk back: no walkable path toward the point of step 2 from a navmesh island the hop could not "
         "leave: the lead bot is teleported to a safe point on the way it came (step 5) out of combat");
+    RescueReadClear(g, r); // the glue's answer for the point: clear
     std::string const rescue = Tick(r, g);
     CHECK(rescue == "rescue from 1589.6 1046.9 8.9 to 1633.6 1130.7 9.9");
     // In a fight: no rescue is due (RescueAllowed), nothing is passed.
@@ -13500,6 +13585,7 @@ static void TestJoinedPlayerCancelsTheIslandRescue()
     std::string const bhop = Tick(b, f);
     OrderRefused(b, bhop, "no-spot: no spot within 10 yd");
     CHECK(Tick(b, f).empty());
+    RescueReadClear(f, b); // the glue's answer for the point: clear
     CHECK(Tick(b, f) == "rescue from 1589.6 1046.9 8.9 to 1633.6 1130.7 9.9"); // control: still teleports
     CHECK(b.strandOn && !b.strandDue && b.strandTries == 0);
 }
@@ -19837,6 +19923,7 @@ static void TestLeadInOtherPartAfterAWipeIsRescued()
     CHECK(r.strandDue && r.strandBotOnly && r.walkBack && r.strandIdx == 0 && r.walkBackIdx == 0);
     CHECK(r.note == "the lead bot revived in another part of the instance (2000.0 0.0 0.0), 1780.0 yd from the run: it "
         "is teleported to a safe point on the way it came (step 1) out of combat");
+    RescueReadClear(f, r); // the glue's answer for the point: clear
     CHECK(Tick(r, f) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0");
     // Landed: the four left at the door are summoned to it, one a tick, then the walk back goes on.
     f.leadX = 10;
@@ -19884,6 +19971,7 @@ static void TestJoinedPlayerCancelsTheOtherPartRescue()
     Facts g;
     Run b = WipedAtTheOtherDoor(control, g);
     CHECK(Tick(b, g).empty());
+    RescueReadClear(g, b); // the glue's answer for the point: clear
     CHECK(Tick(b, g) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0"); // control: still teleports
     CHECK(b.strandOn && !b.strandDue && b.strandTries == 0);
 }
@@ -19981,6 +20069,7 @@ static void TestLeadRevivedAwayInOtherPartIsRescued()
             CHECK(r.note.find("the lead bot revived in another part of the instance (2000.0 0.0 0.0), ") == 0 &&
                 r.note.find("it is teleported to a safe point on the way it came (step 1) out of combat") !=
                     std::string::npos);
+            RescueReadClear(f, r); // the glue's answer for the point: clear
             CHECK(Tick(r, f) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0");
         }
         else
@@ -20005,6 +20094,7 @@ static void TestDireMaulWestR40SecondRevivalWaitsForTheDead()
     Run r = WipedAtTheOtherDoor(plan, f);
     // Wipe 1: all five up together at the door: the rescue (as TestLeadInOtherPartAfterAWipeIsRescued).
     CHECK(Tick(r, f).empty() && r.strandDue && r.otherPartRescues == 1 && r.otherPartRescueStep == r.step);
+    RescueReadClear(f, r); // the glue's answer for the point: clear
     CHECK(Tick(r, f) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0");
     f.leadX = 10;
     for (MemberFact& m : f.members)
@@ -21155,6 +21245,7 @@ static void TestDireMaulWestR36FarCombatThenRescue()
     }
     Tick(r, f);
     CHECK(r.state == State::Running && r.strandDue && !r.regroup);
+    RescueReadClear(f, r); // the glue's answer for the point: clear
     CHECK(Tick(r, f) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0");
 }
 
@@ -21420,6 +21511,7 @@ static void TestRegroupRescueClearsTheHold()
     CHECK(Tick(r, f).empty());
     CHECK(r.state == State::Running && !r.regroup && !r.holdDue && r.strandDue);
     CHECK(r.hold.empty());
+    RescueReadClear(f, r); // the glue's answer for the point: clear
     CHECK(Tick(r, f) == "rescue from 2000.0 0.0 0.0 to 10.0 0.0 0.0");
 }
 
@@ -32518,6 +32610,7 @@ int main()
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestAFetchWithoutAnAnchorGivesUp();
     TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
+    TestTheRescueRetryAsksForItsRead();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();

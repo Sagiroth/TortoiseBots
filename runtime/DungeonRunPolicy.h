@@ -2304,6 +2304,8 @@ struct Run
     // Facts::rescueRead, and StrandedTeleportTick refuses the point then. Cleared when the rescue is sent or reset.
     bool rescueScanWanted = false;
     float rescueScanX = 0.0f, rescueScanY = 0.0f, rescueScanZ = 0.0f;
+    // The ticks waited for that read (kRescueScanWaitMs, then the point counts as held).
+    std::uint32_t rescueScanMs = 0;
     // The rescue's destination when it is no plan point (the party's spot, the point being held by live hostiles), and
     // the hold's clock while there is neither a safe point nor a group to join.
     bool strandParty = false;
@@ -3519,6 +3521,7 @@ inline void ResetStep(Run& r)
     r.strandParty = false;
     r.rescueHoldMs = 0;
     r.rescueScanWanted = false;
+    r.rescueScanMs = 0;
     r.strandSummoned.clear();
     r.strandArrived.clear();
     r.strandSummonTries.clear();
@@ -4247,6 +4250,9 @@ constexpr float kRescueScanYd = 80.0f;
 // A rescue with no safe point (live hostiles) and no out-of-combat member group to join holds this long, then pauses
 // for the party to be brought together.
 constexpr std::uint32_t kRescueHoldMs = 30000;
+// How long a rescue waits for the glue's live read of its point before it treats the point as held: a point nobody
+// read is never sent onto (StrandFailed's retry used to clear the request and send anyway).
+constexpr std::uint32_t kRescueScanWaitMs = 3 * kTickMs;
 constexpr std::uint32_t kStrandSummonTries = 3;  // the stranded lead bot's summons per bot left behind
 
 // Bot-only parties only: a real player would see his party mates teleport.
@@ -7151,6 +7157,7 @@ inline bool RefusedFromIsland(Run& r, const std::string& order, const std::strin
 
 inline std::size_t LastReachedBefore(const Run& r, std::size_t idx);
 inline bool ReplayWalkBack(Run& r, const Facts& f); // defined below (StrandFailed's fallback); body pins ReplayStartPoint
+inline bool RequestRescueScan(Run& r, std::size_t idx); // defined below (RescueDue): the rescue point's live read
 
 // The last resort for a stranded lead bot (owner decision 2026-10-23; Sunken
 // Temple r26 slot 6b step 233: the lead bot went 13 yd down a ledge onto an
@@ -7243,6 +7250,10 @@ inline void StrandFailed(Run& r, const std::string& why)
     if (r.strandTries < kStrandTries)
     {
         r.strandDue = true;
+        // The retry reads its point again: StrandedTeleportTick never sends the lead bot onto a point with no read
+        // (the retry of ZG walk 32's teleport went onto the 573 pack: fail closed).
+        r.rescueScanMs = 0;
+        RequestRescueScan(r, r.strandIdx);
         r.note = "the teleport of the stranded lead bot failed (" + why + "): trying again (" +
             std::to_string(r.strandTries + 1) + " of " + std::to_string(kStrandTries) + ")";
         return;
@@ -7328,6 +7339,8 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
                 return;
             }
             r.strandDue = true;
+            r.rescueScanMs = 0;
+            RequestRescueScan(r, r.strandIdx); // the next try judges its point on a fresh read
             r.note = "the teleport of the stranded lead bot waits (" + answer + ") (" + std::to_string(r.strandWaits) +
                 " of " + std::to_string(kStrandWaits) + ")";
             return;
@@ -7618,6 +7631,8 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
                 r.strandX = r.leadLastX;
                 r.strandY = r.leadLastY;
                 r.strandZ = r.leadLastZ;
+                r.rescueScanMs = 0;
+                RequestRescueScan(r, r.walkBackIdx); // the rescue only goes onto a point the glue read
                 r.note = point + " refused (" + answer + ") where the hop off the island found no spot: the lead bot " +
                     "is stranded; it is teleported to the last reached point out of combat";
                 EnterPhase(r, Phase::Begin);
@@ -7977,6 +7992,19 @@ inline bool RescueAllowed(const Run& r, const Facts& f)
         r.strandStep != r.step && !(r.strandCountStep == r.step && r.strandTries >= kStrandTries);
 }
 
+// Asks the glue for the live read of plan point `idx` (Facts::rescueRead on the tick after): a rescue never sends
+// the lead bot onto a point nobody read. False: no such point, and the caller holds the rescue instead.
+inline bool RequestRescueScan(Run& r, std::size_t idx)
+{
+    if (!r.plan || idx >= r.plan->steps.size())
+        return false;
+    r.rescueScanWanted = true;
+    r.rescueScanX = r.plan->steps[idx].x;
+    r.rescueScanY = r.plan->steps[idx].y;
+    r.rescueScanZ = r.plan->steps[idx].z;
+    return true;
+}
+
 inline void RescueDue(Run& r, const Facts& f, std::size_t target)
 {
     StrandCountsForStep(r);
@@ -7984,13 +8012,8 @@ inline void RescueDue(Run& r, const Facts& f, std::size_t target)
     r.strandIdx = target;
     // The glue reads the live hostiles around the point next tick: StrandedTeleportTick never sends the lead bot
     // alone onto a point they hold.
-    if (r.plan && target < r.plan->steps.size())
-    {
-        r.rescueScanWanted = true;
-        r.rescueScanX = r.plan->steps[target].x;
-        r.rescueScanY = r.plan->steps[target].y;
-        r.rescueScanZ = r.plan->steps[target].z;
-    }
+    RequestRescueScan(r, target);
+    r.rescueScanMs = 0;
     r.strandParty = false;
     r.rescueHoldMs = 0;
     r.strandX = f.leadX;
@@ -12268,10 +12291,23 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     // kLiveHostileMarginYd): never send the lead bot there alone (ZG walk 32: step 573 lay "clear" of the 574 pack and
     // the lead bot was engaged 0.6 yd after the teleport, with the party 360-475 yd away). It joins the biggest group
     // of members out of combat instead; with none it holds and the party regroups.
+    // A point nobody read is no answer either: the rescue asks for the read and waits kRescueScanWaitMs, then treats
+    // the point as held (StrandFailed's retry cleared the request and the plan's own word sent the lead bot onto the
+    // 573 pack).
     float tx = p.x, ty = p.y, tz = p.z;
     std::string chosen = target;
     const std::vector<StandPackReach>* const liveRead = RescueLiveReach(f, p.x, p.y, p.z);
-    if (liveRead && LiveHostileNearPoint(*liveRead, p.x, p.y, p.z))
+    bool held = liveRead && LiveHostileNearPoint(*liveRead, p.x, p.y, p.z);
+    if (!liveRead && r.rescueScanMs < kRescueScanWaitMs && RequestRescueScan(r, r.strandIdx))
+    {
+        r.rescueScanMs += dt;
+        r.note = "the lead bot is stranded: reading the point of step " + std::to_string(r.strandIdx + 1) +
+            " for live hostiles";
+        return true;
+    }
+    if (!liveRead)
+        held = true; // no read answered: never a teleport onto a point nobody read
+    if (held)
     {
         MemberGroup group;
         if (!MemberGroupPoint(f, p.x, p.y, p.z, group))
@@ -12322,6 +12358,7 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     order = "rescue from " + now + " to " + Num(tx) + " " + Num(ty) + " " + Num(tz);
     r.note = "the lead bot is stranded at " + now + " with no way back: teleporting it to " + chosen;
     r.rescueScanWanted = false; // the read was used (a later rescue asks again)
+    r.rescueScanMs = 0;
     return true;
 }
 
