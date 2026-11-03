@@ -1166,7 +1166,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn('note(noPreCcNote.empty() ? "walking" : noPreCcNote);', move)
         pull = body(policy, "inline void PullUnit(", "\n}\n")
         # The marks first: the approach walk sits after the CC branch's own return, and the marks are waited for.
-        self.assertLess(pull.index('order = "cc " + ccPick.mark'),
+        self.assertLess(pull.index("order = CcOrderText(ccPick, cc->guid);"),
                         pull.index("if (f.standPullPreCc && !hop && AuthoredStandStep(r) && !r.standApproachReached)"))
         self.assertIn("if (!r.ccSent.empty() && r.ccOrderMs < kCcPrePullWaitMs && !CcAllHeld(r, f))", pull)
         self.assertIn('r.note = "stand_pull: waiting for the crowd control to land before the walk in";', pull)
@@ -1199,6 +1199,24 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("AiPlayerbot.DungeonRunStandPullPreCc = 0", template)
         for doc in ("docs/server/settings/dungeons-raids.md", "docs/play/dungeon-run-leader.md"):
             self.assertIn("AiPlayerbot.DungeonRunStandPullPreCc", (ROOT / doc).read_text())
+
+    def test_auto_cc_order_names_its_family(self):
+        # A selected Seduction must not run the mob into the warlock's higher-priority Fear: the automatic pick's
+        # order names its family, the parser stores it on the bot, and the cc trigger fires only that class row.
+        # The plan's own and a player's orders carry no token, so their rows stay as they were.
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        order = body(policy, "inline std::string CcOrderText(", "\n}\n")
+        self.assertIn('if (pick.autoOrder)\n        order += " " + CcFamilyToken(pick.family);', order)
+        self.assertIn("pick.autoOrder = true;", policy)
+        action = (ROOT / "commands/Action.cpp").read_text()
+        self.assertIn('familyValue->Set(runFamily ? ccFamily : "none");', action)
+        self.assertIn("CcOrderFamilyAllows(family, spell)",
+                      (ROOT / "commands/BotCommandContext.cpp").read_text())
+        self.assertIn('if (!family.empty() && family != "none")', COMMANDS)
+        trig = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+        self.assertIn('IsInRunningDungeonRun(bot) &&\n'
+                      '        !TortoiseBots::DungeonRun::CcOrderFamilyAllows(AI_VALUE(std::string, "run cc family"), getName())',
+                      trig)
 
     def test_hold_follows_the_tank_and_dead_gossip_npc_is_named(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()

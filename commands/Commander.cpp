@@ -6120,7 +6120,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] [family] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
         return true;
     }
 
@@ -6453,6 +6453,8 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             }
         }
         namedAi->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set("none");
+        if (ai::Value<std::string>* familyValue = namedAi->GetAiObjectContext()->GetValue<std::string>("run cc family"))
+            familyValue->Set("none");
         sPlayerbotDbStore.Save(namedAi);
         if (iconIndex >= 0 && order.group &&
             order.group->GetTargetIcon(static_cast<uint8>(iconIndex)).GetRawValue() == iconGuid)
@@ -6461,10 +6463,10 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
 
-    // cc <mark> <guid> [bot]
-    if (parts.size() < 2 || parts.size() > 3)
+    // cc <mark> <guid> [bot] [family]
+    if (parts.size() < 2 || parts.size() > 4)
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot] [family]");
         return true;
     }
     std::string mark = parts[0];
@@ -6476,7 +6478,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
     std::string ccIntent = "cc " + mark;
-    if (parts.size() == 3)
+    if (parts.size() >= 3)
     {
         Player* named = FindCommandedBot(order, parts[2]);
         if (!named)
@@ -6491,6 +6493,14 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             return true;
         }
         ccIntent += " " + std::string(named->GetName());
+    }
+    if (parts.size() == 4)
+    {
+        // The run leader's automatic pick names the family it chose: the bot
+        // then fires only that class row on the mark.
+        std::string const family = TortoiseBots::DungeonRun::CcFamilyTokenNorm(parts[3]);
+        if (!family.empty() && family != "none")
+            ccIntent += " " + family;
     }
     Unit* target = ResolveOrderTarget(handler, intent, order, parts[1]);
     if (!target)

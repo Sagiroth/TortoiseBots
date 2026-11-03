@@ -58,6 +58,7 @@
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
+#include "CcOrderFamily.h"
 #include "GossipOrderPolicy.h"
 #include "InstanceLimitText.h"
 #include "RemoteCommanderTasks.h"
@@ -1114,6 +1115,14 @@ inline const RunCcSpell* RunCcOf(CcFamily family)
         if (c.family == family)
             return &c;
     return nullptr;
+}
+
+// The family token an automatic cc order carries (CcOrderFamily.h). None (a
+// plan pick, a hand-written order) is no token at all.
+inline std::string CcFamilyToken(CcFamily family)
+{
+    const RunCcSpell* const c = RunCcOf(family);
+    return c ? CcFamilyTokenNorm(c->spell) : std::string();
 }
 
 // Whether `family` works on a unit of `creatureType`. An unread type (0) is
@@ -2234,6 +2243,9 @@ struct Run
         std::string bot;
         std::string mark;
         CcFamily family = CcFamily::None;
+        // An automatic cc pick: its re-sends carry the family token, so only
+        // that spell fires on the mark (a plan order stays the class's own).
+        bool autoOrder = false;
     };
     std::unordered_map<std::uint64_t, CcHold> ccHolds;
     // The cc orders whose aura is not seen yet (CheckCc, and SapWait before
@@ -8265,6 +8277,8 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
                 w.waitMs = 0;
                 r.note = "fighting: the crowd control on " + std::to_string(held->entry) + " did not land: once more";
                 order = "cc " + hold->second.mark + " " + std::to_string(held->guid) + " " + bot;
+                if (hold->second.autoOrder)
+                    order += " " + CcFamilyToken(hold->second.family);
                 sent = true;
             }
             ++i;
@@ -8428,6 +8442,9 @@ struct CcPick
     CcFamily family = CcFamily::None;
     std::string mark;
     std::uint32_t noMarkEntry = 0;
+    // Facts::autoCc picked it: the order names the family (CcOrderText), so the
+    // bot's only cc row that fires is that one. A plan pick leaves it false.
+    bool autoOrder = false;
 };
 
 // Automatic crowd control (Facts::autoCc). The bodies of the pull against the
@@ -8611,12 +8628,23 @@ inline const char* RunCcMarkFree(const Run& r, const Facts& f, const std::unorde
     return nullptr;
 }
 
+// The order text of a cc pick: the automatic ones name their family last, so
+// the bot turns off every other class row on the mark. The plan's own and the
+// player's keep the three tokens they always had.
+inline std::string CcOrderText(const CcPick& pick, std::uint64_t guid)
+{
+    std::string order = "cc " + pick.mark + " " + std::to_string(guid) + " " + pick.bot;
+    if (pick.autoOrder)
+        order += " " + CcFamilyToken(pick.family);
+    return order;
+}
+
 // A cc order's record: the unit marked, its bot and spell, the icon onto it and
 // the watch that waits for its aura (CheckCc).
 inline void RegisterCcOrder(Run& r, const CcPick& pick, std::uint64_t guid)
 {
     r.ccSent.insert(guid);
-    r.ccHolds[guid] = Run::CcHold{pick.bot, pick.mark, pick.family};
+    r.ccHolds[guid] = Run::CcHold{pick.bot, pick.mark, pick.family, pick.autoOrder};
     r.ccIcons[CcMarkIcon(pick.mark)] = guid;
     // One watch a unit: a re-send while the first watch is still pending starts that watch over, so CheckCc cannot
     // re-send the same hold twice by itself.
@@ -8808,6 +8836,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
             pick.unit = &u;
             pick.bot = bot->name;
             pick.family = kRunCc[spellIdx].family;
+            pick.autoOrder = true;
             bestSpell = spellIdx;
         }
     }
@@ -8907,10 +8936,11 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     pick.bot = bestBot->name;
     pick.family = kRunCc[bestSpell].family;
     pick.mark = mark;
+    pick.autoOrder = true;
     RegisterCcOrder(r, pick, best->guid);
     ++r.ccAutoOrders;
     r.ccAutoGapMs = 0;
-    order = "cc " + pick.mark + " " + std::to_string(best->guid) + " " + pick.bot;
+    order = CcOrderText(pick, best->guid);
     r.note = "auto cc: joiner " + std::to_string(best->entry) + " (" + pick.bot + ": " + RunCcOf(pick.family)->spell +
         "), engaged " + std::to_string(engaged - held) + " over " + std::to_string(threshold);
     return true;
@@ -8975,12 +9005,13 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     pick.bot = hold.bot;
     pick.family = hold.family;
     pick.mark = hold.mark;
+    pick.autoOrder = hold.autoOrder;
     RegisterCcOrder(r, pick, guid);
     std::uint32_t& count = r.ccReapplied[guid];
     count = done + 1;
     ++r.ccAutoOrders;
     r.ccAutoGapMs = 0;
-    order = "cc " + pick.mark + " " + std::to_string(guid) + " " + pick.bot;
+    order = CcOrderText(pick, guid);
     const RunCcSpell* const spell = RunCcOf(pick.family);
     r.note = "auto cc: " + std::to_string(unit->entry) + " broke free: " + (spell ? spell->spell : "") + " again (" +
         std::to_string(count) + "/" + std::to_string(kRunCcReapplies) + ")";
@@ -9645,7 +9676,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         r.note = f.autoCc ? RunAutoCcMarkNote(r, *cc, ccPick)
                           : "crowd control on " + std::to_string(cc->entry) + " (" + ccPick.bot + ": " +
                                 RunCcOf(ccPick.family)->spell + ") before the pull";
-        order = "cc " + ccPick.mark + " " + std::to_string(cc->guid) + " " + ccPick.bot;
+        order = CcOrderText(ccPick, cc->guid);
         r.ccOrderMs = 0;
         r.standPullShotGuid = 0; // the pull never went out (the mark goes out first)
         return;

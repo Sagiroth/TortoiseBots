@@ -17,6 +17,7 @@
 #include "../runtime/HireTierRequestPolicy.h"
 #include "BotCommandContext.h"
 #include "../behavior/PlayerConvenience.h"
+#include "../runtime/CcOrderFamily.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/AhMarketService.h"
 #include "../host/ModuleVersion.h"
@@ -524,15 +525,24 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
 {
     // Optional explicit bot name ("cc <mark> <BotName>") assigns that
     // owned bot without juggling the player's target. The mark token
-    // itself is lowercase; the name keeps its case for resolution.
+    // itself is lowercase; the name keeps its case for resolution. The
+    // run leader's automatic pick adds its family ("cc <mark> <BotName>
+    // seduction"): only that class row may fire on the mark.
     std::string ccBotToken;
-    std::string ccMark = intent.substr(3);
+    std::string ccFamilyToken;
+    std::string ccMark = Trim(intent.substr(3));
     size_t ccSpace = ccMark.find_first_of(" \t");
     if (ccSpace != std::string::npos)
     {
-        ccBotToken = Trim(ccMark.substr(ccSpace + 1));
+        std::string const rest = Trim(ccMark.substr(ccSpace + 1));
         ccMark = ccMark.substr(0, ccSpace);
+        size_t const ccMore = rest.find_first_of(" \t");
+        ccBotToken = Trim(rest.substr(0, ccMore));
+        if (ccMore != std::string::npos)
+            ccFamilyToken = Trim(rest.substr(ccMore + 1));
     }
+    std::string const ccFamily = TortoiseBots::DungeonRun::CcFamilyTokenNorm(ccFamilyToken);
+    bool const runFamily = !ccFamily.empty() && ccFamily != "none";
     int markIndex = RtiTargetValue::GetRtiIndex(ccMark);
     Unit* ccTarget = context.enemyTarget;
 
@@ -616,7 +626,7 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
             // so the immediate cast uses an action this bot owns.
             BotCommandContext namedContext = context;
             namedContext.selectedBot = namedBot;
-            ResolveCcExecutor(namedContext, ccTarget, ccMark, &ccAction);
+            ResolveCcExecutor(namedContext, ccTarget, ccMark, &ccAction, ccFamily);
         }
     }
     else if (context.selectedBot && IsLiveHeadlessBot(context.selectedBot))
@@ -629,7 +639,7 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
         executor = context.selectedBot;
         if (ccTarget)
         {
-            ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
+            ResolveCcExecutor(context, ccTarget, ccMark, &ccAction, ccFamily);
         }
     }
     else
@@ -641,7 +651,7 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
             return true;
         }
 
-        executor = ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
+        executor = ResolveCcExecutor(context, ccTarget, ccMark, &ccAction, ccFamily);
         if (!executor)
         {
             if (markMoved)
@@ -671,6 +681,13 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
         SendActionError(handler, reportIntent, "failed", "The mature CC assignment was rejected.");
         return true;
     }
+    // The run's automatic pick names its family: only that class row fires on
+    // the mark now. A hand-written order clears it, so the bot's rows decide
+    // as they always did.
+    ai::Value<std::string>* const familyValue = ai->GetAiObjectContext()->GetValue<std::string>("run cc family");
+    std::string const previousOrderFamily = familyValue ? familyValue->Get() : "none";
+    if (familyValue)
+        familyValue->Set(runFamily ? ccFamily : "none");
     sPlayerbotDbStore.Save(ai);
     // Exclusive ownership: the new owner keeps the mark; every other owned
     // live party bot holding it is reset to "none" and persisted.
@@ -701,6 +718,8 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
                 if (markMoved)
                     RestoreRaidMarks(context.group, marksBefore);
                 ai->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set(previousCcMark);
+                if (familyValue)
+                    familyValue->Set(previousOrderFamily);
                 sPlayerbotDbStore.Save(ai);
                 for (PlayerbotAI* revokedAi : revokedOwners)
                 {
@@ -1068,6 +1087,8 @@ bool HandleAction(ChatHandler* handler, char const* args)
             if (!botAi || !botAi->GetAiObjectContext())
                 continue;
             botAi->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set("none");
+            if (ai::Value<std::string>* familyValue = botAi->GetAiObjectContext()->GetValue<std::string>("run cc family"))
+                familyValue->Set("none");
             sPlayerbotDbStore.Save(botAi);
             clearedName = bot->GetName();
             ++cleared;
