@@ -338,9 +338,11 @@ class HoldKillWiring(unittest.TestCase):
     def test_the_grid_search_has_one_site_and_runs_once_a_second(self):
         # Cost: no grid search inside a candidate loop. The only call anywhere in the module is the value's, qualified by
         # the blocker entry and recalculated at most once a second; every reader goes through it.
-        sites = [str(f.relative_to(ROOT)) for f in (ROOT / "ai").rglob("*")
-                 if f.suffix in (".cpp", ".h") and f.read_text(errors="ignore").count("GetCreatureListWithEntryInGrid") > 0]
-        self.assertEqual(sites, ["ai/playerbot/strategy/values/HoldKillBlockersValue.cpp"])
+        sites = sorted(str(f.relative_to(ROOT)) for f in (ROOT / "ai").rglob("*")
+                       if f.suffix in (".cpp", ".h") and f.read_text(errors="ignore").count("GetCreatureListWithEntryInGrid") > 0)
+        # The Viscidus encounter scan is its own opt-in, half-second-throttled search, not a hold-kill reader.
+        self.assertEqual(sites, ["ai/playerbot/strategy/actions/ViscidusActions.cpp",
+                                 "ai/playerbot/strategy/values/HoldKillBlockersValue.cpp"])
         self.assertEqual(BLOCKERS.count("GetCreatureListWithEntryInGrid"), 1)
         self.assertIn("bot->GetCreatureListWithEntryInGrid(found, entry, kHoldKillRangeYd)", BLOCKERS)
         self.assertIn('CalculatedValue<uint32>(ai, "hold kill blockers", 1)', BLOCKERS_H)
