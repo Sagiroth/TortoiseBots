@@ -28,6 +28,17 @@ namespace ai
         ActiveBossRows rows;
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
+    // The fight scan's one-slot cache belongs to one AI update: an explicit command runs between updates on the same
+    // world thread with the same update tick, so ScanBossTactics only caches while a scope is open, and UpdateAI
+    // clears the slot when it returns. One scope per UpdateAI, the whole body.
+    class BossTacticsScanScope
+    {
+    public:
+        BossTacticsScanScope();
+        ~BossTacticsScanScope();
+        BossTacticsScanScope(const BossTacticsScanScope&) = delete;
+        BossTacticsScanScope& operator=(const BossTacticsScanScope&) = delete;
+    };
 
     // The auras of one dispel type a unit carries (id + SpellEntry::Dispel), the input of the dispel verdict. Aura
     // iteration only: no grid search, no database.

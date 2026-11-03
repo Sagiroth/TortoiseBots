@@ -67,6 +67,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/FishAction.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
@@ -328,6 +329,9 @@ static bool HasSeatedAura(Player* bot)
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
+    // thread and the same tick, after the maps may have despawned an add of the cached scan.
+    ai::BossTacticsScanScope bossTacticsScan;
     ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;

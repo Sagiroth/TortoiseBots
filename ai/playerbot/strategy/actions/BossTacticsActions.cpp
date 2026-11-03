@@ -587,10 +587,13 @@ namespace
 {
 // One bot updates at a time on a thread, and every caller of a scan in that update (the target pick once per
 // candidate, the freeze multiplier once per action, the triggers) asks the same question. Keep the last scan of the
-// current AI tick, keyed by the bot, its tick and the tactic table: a reload replaces the table, so the table's
-// identity makes a cached answer from the old one unusable rather than stale.
+// current AI update, keyed by the bot, its tick and the tactic table: a reload replaces the table, so the table's
+// identity makes a cached answer from the old one unusable rather than stale. `live` is set only while an update
+// runs (BossTacticsScanScope): an explicit command runs between updates where the tick does not move and the maps
+// may have changed, so it re-scans and stores nothing.
 struct FightScanCache
 {
+    bool live = false;
     PlayerbotAI* ai = nullptr;
     Player* bot = nullptr;
     std::uint32_t tick = 0;
@@ -600,12 +603,26 @@ struct FightScanCache
 thread_local FightScanCache t_fightScan;
 }
 
+ai::BossTacticsScanScope::BossTacticsScanScope()
+{
+    t_fightScan.live = true;
+}
+
+ai::BossTacticsScanScope::~BossTacticsScanScope()
+{
+    t_fightScan.live = false;
+    t_fightScan.ai = nullptr;
+    t_fightScan.bot = nullptr;
+    t_fightScan.table = nullptr;
+    t_fightScan.fight = BossTacticsFight();
+}
+
 BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 {
     const BossTacticTable& table = GetBossTactics();
     std::uint32_t const tick = ai ? ai->UpdateTick() : 0;
-    if (ai && t_fightScan.ai == ai && t_fightScan.bot == bot && t_fightScan.tick == tick &&
-        t_fightScan.table == &table)
+    if (ai && FightScanCacheHit(t_fightScan.live, t_fightScan.ai == ai, t_fightScan.bot == bot, t_fightScan.tick,
+            tick, t_fightScan.table == &table))
         return t_fightScan.fight;
     BossTacticsFight fight;
     const uint32 mapId = bot->GetMapId();
@@ -666,7 +683,7 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             }
         }
     }
-    if (ai)
+    if (ai && t_fightScan.live)
     {
         t_fightScan.ai = ai;
         t_fightScan.bot = bot;

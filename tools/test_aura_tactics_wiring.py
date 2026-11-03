@@ -568,7 +568,8 @@ class FreezeFleeWiring(unittest.TestCase):
         self.assertIn("thread_local FightScanCache t_fightScan;", ACTIONS)
         scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
         self.assertIn("std::uint32_t const tick = ai ? ai->UpdateTick() : 0;", scan)
-        self.assertIn("t_fightScan.ai == ai && t_fightScan.bot == bot && t_fightScan.tick == tick", scan)
+        self.assertIn("FightScanCacheHit(t_fightScan.live, t_fightScan.ai == ai, t_fightScan.bot == bot, "
+                      "t_fightScan.tick,", scan)
         self.assertIn("t_fightScan.tick = tick;", scan)
         self.assertIn("t_fightScan.table = &table;", scan)
         self.assertLess(scan.index("return t_fightScan.fight;"), scan.index("const uint32 mapId"))
@@ -663,6 +664,23 @@ class FreezeFleeWiring(unittest.TestCase):
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)
             self.assertIn(definition, source)
+
+
+class FightScanCacheLifetime(unittest.TestCase):
+    """The per-update fight scan cache: opened and cleared by UpdateAI, never served outside one."""
+
+    def test_updateai_opens_the_scope_and_its_end_clears_the_slot(self):
+        update = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)\n{", "\n}\n")
+        self.assertIn("ai::BossTacticsScanScope bossTacticsScan;", update)
+        self.assertLess(update.index("ai::BossTacticsScanScope bossTacticsScan;"), update.index("++aiUpdateTick;"))
+        scope = body(ACTIONS, "ai::BossTacticsScanScope::~BossTacticsScanScope()", "\n}\n")
+        self.assertIn("t_fightScan.live = false;", scope)
+        self.assertIn("t_fightScan.ai = nullptr;", scope)
+        self.assertIn("t_fightScan.fight = BossTacticsFight();", scope)
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(", "\n}\n")
+        self.assertIn("FightScanCacheHit(t_fightScan.live,", scan)
+        # Outside an update a scan is answered fresh and stores nothing.
+        self.assertIn("if (ai && t_fightScan.live)\n    {", scan)
 
 
 if __name__ == "__main__":

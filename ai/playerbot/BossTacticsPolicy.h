@@ -700,6 +700,16 @@ namespace ai
         return !carriesAura || actionIsFreeze;
     }
 
+    // Whether the one-slot fight-scan cache may answer this call (BossTacticsActions.cpp): only inside an AI update,
+    // whose end closes and clears the slot (BossTacticsScanScope), for the same bot, at the same update tick, on the
+    // same tactics table. An explicit command runs between updates on the same world thread where the tick does not
+    // move, and the maps may have despawned an add since: it always re-scans.
+    inline bool FightScanCacheHit(bool insideUpdate, bool sameAi, bool sameBot, std::uint32_t cachedTick,
+                                  std::uint32_t tick, bool sameTable)
+    {
+        return insideUpdate && sameAi && sameBot && cachedTick == tick && sameTable;
+    }
+
     // The escape points lie this far past the radius, so a caster shifting a little between
     // ticks does not put the bot back on the edge.
     constexpr float kAvoidCastStepOut = 2.0f;

@@ -1788,6 +1788,19 @@ int main()
         CHECK(FreezeHoldsAction(false, true));
     }
 
+    // The fight scan's cache answers only inside an AI update: an explicit command runs between updates where the
+    // tick does not move, so its second scan re-scans instead of reusing the update's (possibly dead) units.
+    {
+        std::uint32_t const tick = 7;
+        CHECK(FightScanCacheHit(true, true, true, tick, tick, true)); // the update's own second scan
+        // No update running (the run order's scan after the update returned): never a hit.
+        CHECK(!FightScanCacheHit(false, true, true, tick, tick, true));
+        // Another bot, another update, another table: never a hit either.
+        CHECK(!FightScanCacheHit(true, false, true, tick, tick, true));
+        CHECK(!FightScanCacheHit(true, true, true, tick, tick + 1, true));
+        CHECK(!FightScanCacheHit(true, true, true, tick, tick, false));
+    }
+
     // flee_on_aura, healer reach: an end point more than kFleeHealerReachYd from the only healer is not accepted.
     {
         DebuffAnchor healer;
