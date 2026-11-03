@@ -387,6 +387,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
 
+    // Raid/dungeon wedge: sample the leader's path on every AI tick, because the
+    // follow action is not called while the core follow runs and a straggler
+    // needs the points from before it fell behind. One branch while off.
+    if (sPlayerbotAIConfig.raidFollowWedge)
+        UpdateLeadTrail();
+
     if(aiInternalUpdateDelay > elapsed)
     {
         aiInternalUpdateDelay -= elapsed;
@@ -912,6 +918,31 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     }
 
     return reactionInProgress;
+}
+
+// The leader's recent positions for the raid/dungeon trail catch-up
+// (FollowTrailPolicy.h). The trail is per follower and dropped as soon as the
+// pair leaves an instance group, so it never carries a stale route.
+void PlayerbotAI::UpdateLeadTrail()
+{
+    Map* map = bot ? bot->GetMap() : nullptr;
+    if (!bot || !map || !bot->GetGroup() || !(map->IsDungeon() || map->IsRaid()) || !aiObjectContext)
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    Unit* followTarget = aiObjectContext->GetValue<Unit*>("follow target")->Get();
+    if (!followTarget || followTarget == bot || !followTarget->IsPlayer() || !bot->IsAlive() ||
+        !followTarget->IsAlive() || !IsSafe(followTarget) || bot->GetMapId() != followTarget->GetMapId() ||
+        bot->GetTransport() || followTarget->GetTransport())
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ());
 }
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)

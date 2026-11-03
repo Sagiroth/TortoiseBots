@@ -5,6 +5,8 @@
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
+#include "playerbot/FollowSpotSafetyPolicy.h"
+#include "playerbot/RaidFollowWedgePolicy.h"
 #include "Arrow.h"
 #include "../../../../runtime/BotManager.h"
 
@@ -16,9 +18,63 @@ unsigned int Formation::lastSerial = 0;
 // Follow-spot ground safety (issue #217): a missed floor lookup must not drag
 // the bot into the subterranean terrain below a crypt. A steep stair or slope
 // moves the follow spot a couple of yards above the target; a missed crypt
-// floor gives a lot more.
-static constexpr float kMaxGroundDrop = 4.0f;
-static constexpr float kStairSearchHeadroom = 4.0f;
+// floor gives a lot more. The numbers and the drop decision are shared by every
+// formation (FollowSpotSafetyPolicy.h).
+static constexpr float kMaxGroundDrop = ai::kFollowSpotMaxGroundDropYd;
+static constexpr float kStairSearchHeadroom = ai::kFollowSpotStairHeadroomYd;
+
+// The raid/dungeon wedge (AiPlayerbot.RaidFollowWedge) is on for a group inside
+// an instance. Outside it the configured formation and the open-world follow
+// stay exactly as before.
+bool ai::UsesRaidFollowWedge(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || !sPlayerbotAIConfig.raidFollowWedge)
+        return false;
+    if (!bot->GetGroup())
+        return false;
+    Map* map = bot->GetMap();
+    return map && (map->IsDungeon() || map->IsRaid());
+}
+
+// One ground/LOS guard for every formation. The spot's floor is searched from
+// above the center's elevation (crypt stairs), a floor far below the center is
+// a ledge and refuses the spot, and the result is kept within the same window
+// and clear of terrain. NearFormation carried these; chaos, circle, line,
+// shield, arrow, custom and the plain follow formations now share them.
+bool ai::FinalizeFollowSpot(Player* bot, Map* map, float fromX, float fromY, float fromZ,
+    float x, float y, float& z)
+{
+    if (!map || !bot)
+        return false;
+
+    float const ground = map->GetHeight(x, y, fromZ + kStairSearchHeadroom);
+    if (ai::FollowSpotGroundRejected(fromZ, ground))
+        return false;
+    if (ground > INVALID_HEIGHT && fabs(ground - fromZ) <= kMaxGroundDrop)
+        z = ground;
+
+    // Prevent going into terrain.
+    map->GetLosHitPosition(fromX, fromY, fromZ + bot->GetCollisionHeight(), x, y, z, -0.5f);
+
+    if (!bot->IsFlying() && !bot->IsSwimming())
+    {
+        z += CONTACT_DISTANCE;
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+        // UpdateAllowedPositionZ clamps with the same downward raycast and can
+        // drag the spot into the subterranean fallback. The window must be
+        // symmetric around the center: walking DOWN stairs the follow spot sits
+        // a couple of yards ABOVE the leader, walking UP stairs a couple of
+        // yards BELOW it (issue #217).
+        float const maxZ = fromZ + kMaxGroundDrop;
+        float const minZ = fromZ - kMaxGroundDrop;
+        if (z > maxZ || z < minZ)
+            z = std::clamp(z, minZ, maxZ);
+    }
+
+    return true;
+}
 
 bool IsSameLocation(WorldLocation const &a, WorldLocation const &b)
 {
@@ -74,6 +130,10 @@ WorldLocation FollowFormation::GetLocation()
     float x = followTarget->getPositionX() + cos(angle) * range;
     float y = followTarget->getPositionY() + sin(angle) * range;
     float z = followTarget->getPositionZ();
+
+    if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+            followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+        return Formation::NullLocation;
 
     return WorldLocation(bot->GetMapId(), x, y, z);
 }
@@ -151,47 +211,39 @@ namespace ai
                 return WorldLocation();
 
             float range = ai->GetRange("follow") + followTarget->GetObjectBoundingRadius();
+            if (UsesRaidFollowWedge(ai))
+            {
+                int index = 1, total = 1;
+                GetFollowSlot(index, total);
+                int const followers = total > 0 ? total - 1 : 0;
+                range = sPlayerbotAIConfig.raidFollowDistance +
+                    RaidFollowWedgeRingOffset(followers, ai->IsTank(bot), ai->IsHeal(bot)) +
+                    followTarget->GetObjectBoundingRadius();
+            }
             float angle = GetFollowAngle();
             float x = followTarget->getPositionX() + cos(angle) * range;
             float y = followTarget->getPositionY() + sin(angle) * range;
             float z = followTarget->getPositionZ();
 
-            // Crypt stairs (issue #217): the follow spot behind a target walking
-            // downhill sits ABOVE the target's elevation. Map::GetHeight casts its
-            // ray downward from z + 2, so seeding with the target's own height
-            // starts the search underneath the steps, misses the floor structure
-            // and falls back to the subterranean terrain below the crypt. Start
-            // the search with extra upward headroom and refuse ground results
-            // that sit unreasonably far from the target.
-            float ground = followTarget->GetMap()->GetHeight(x, y, z + kStairSearchHeadroom);
-            if (ground > INVALID_HEIGHT && fabs(ground - followTarget->getPositionZ()) <= kMaxGroundDrop)
-                z = ground;
-
-            // prevent going into terrain
-            float ox, oy, oz;
-            followTarget->GetPosition(ox, oy, oz);
-            followTarget->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
-
-            if (!bot->IsFlying() && !bot->IsSwimming())
-            {
-                z += CONTACT_DISTANCE;
-                bot->UpdateAllowedPositionZ(x, y, z);
-
-                // UpdateAllowedPositionZ clamps with the same downward raycast and
-                // can drag the spot into the subterranean fallback. The window
-                // must be SYMMETRIC around the target: walking DOWN stairs the
-                // follow spot sits a couple of yards ABOVE the leader, walking UP
-                // stairs a couple of yards BELOW it (issue #217).
-                float const maxZ = followTarget->getPositionZ() + kMaxGroundDrop;
-                float const minZ = followTarget->getPositionZ() - kMaxGroundDrop;
-                if (z > maxZ || z < minZ)
-                    z = std::clamp(z, minZ, maxZ);
-            }
+            if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+                    followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+                return WorldLocation();
 
             return WorldLocation(followTarget->GetMapId(), x, y, z);
         }
 
-        virtual float GetMaxDistance() override { return ai->GetRange("follow"); }
+        virtual float GetMaxDistance() override
+        {
+            if (UsesRaidFollowWedge(ai))
+            {
+                int index = 1, total = 1;
+                GetFollowSlot(index, total);
+                int const followers = total > 0 ? total - 1 : 0;
+                return sPlayerbotAIConfig.raidFollowDistance +
+                    RaidFollowWedgeRingOffset(followers, ai->IsTank(bot), ai->IsHeal(bot));
+            }
+            return ai->GetRange("follow");
+        }
     };
 
 
@@ -220,15 +272,10 @@ namespace ai
             float x = followTarget->getPositionX() + cos(angle) * range + dx;
             float y = followTarget->getPositionY() + sin(angle) * range + dy;
             float z = followTarget->getPositionZ();
-            float ground = followTarget->GetMap()->GetHeight(x, y, z);
-            //if (ground <= INVALID_HEIGHT)
-            //    return Formation::NullLocation;
 
-            if (!bot->IsFlying())
-            {
-                z += CONTACT_DISTANCE;
-                bot->UpdateAllowedPositionZ(x, y, z);
-            }
+            if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+                    followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+                return WorldLocation();
 
             return WorldLocation(followTarget->GetMapId(), x, y, z);
         }
@@ -260,15 +307,11 @@ namespace ai
             float x = target->getPositionX() + cos(angle) * range;
             float y = target->getPositionY() + sin(angle) * range;
             float z = target->getPositionZ();
-            float ground = target->GetMap()->GetHeight(x, y, z);
-            if (ground <= INVALID_HEIGHT)
+
+            if (!FinalizeFollowSpot(bot, target->GetMap(), target->getPositionX(),
+                    target->getPositionY(), target->getPositionZ(), x, y, z))
                 return Formation::NullLocation;
 
-            if (!bot->IsFlying())
-            {
-                z += CONTACT_DISTANCE;
-                bot->UpdateAllowedPositionZ(x, y, z);
-            }
             return WorldLocation(bot->GetMapId(), x, y, z);
         }
     };
@@ -453,18 +496,26 @@ namespace ai
 
             relPos.rotateXY(followTarget->getOrientation());
 
-            return WorldPosition(followTarget) + relPos;
+            WorldPosition spot = WorldPosition(followTarget) + relPos;
+            float z = spot.getZ();
+            if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+                    followTarget->getPositionY(), followTarget->getPositionZ(),
+                    spot.getX(), spot.getY(), z))
+                return Formation::NullLocation;
+
+            return WorldPosition(spot.GetMapId(), spot.getX(), spot.getY(), z);
         }
     };
 };
 
-float Formation::GetFollowAngle()
+void Formation::GetFollowSlot(int& index, int& total)
 {
     Player* followTarget = (Player*)AI_VALUE(Unit*, "follow target");
 
     Group* group = bot->GetGroup();
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-    int index = 1, total = 1;
+    index = 1;
+    total = 1;
 
     if (!group && followTarget && !PlayerbotAIStorage::Instance().GetAI(followTarget))
     {
@@ -512,7 +563,19 @@ float Formation::GetFollowAngle()
         total = roster.size() + 1;
     }
 
+}
+
+float Formation::GetFollowAngle()
+{
+    Player* followTarget = (Player*)AI_VALUE(Unit*, "follow target");
+
+    int index = 1, total = 1;
+    GetFollowSlot(index, total);
+
     float start = (followTarget ? followTarget->getOrientation() : 0.0f);
+    if (UsesRaidFollowWedge(ai) && GetName() == "near" && followTarget && total > 1)
+        return RaidFollowWedgeAngle(start, index - 1, total - 1);
+
     return start + (0.125f + 1.75f * index / total + (total == 2 ? 0.125f : 0.0f)) * M_PI;
 }
 
@@ -524,14 +587,39 @@ FormationValue::FormationValue(PlayerbotAI* ai) : ManualSetValue<Formation*>(ai,
     }
 }
 
+// In a dungeon or raid group with the wedge on, the configured formation gives
+// way to the near formation behind the leader. An explicit player choice
+// (LoadUserChoice) is kept, and the open world keeps the configured formation.
+Formation* FormationValue::Get()
+{
+    if (!userChosen && UsesRaidFollowWedge(ai))
+    {
+        if (!raidValue)
+            raidValue = new NearFormation(ai);
+        return raidValue;
+    }
+    return value;
+}
+
 void FormationValue::Reset()
 {
     if (value) delete value;
     value = nullptr;
+    if (raidValue) delete raidValue;
+    raidValue = nullptr;
+    userChosen = false;
     if (!Load(sPlayerbotAIConfig.defaultFormation))
     {
         Load("near");
     }
+}
+
+bool FormationValue::LoadUserChoice(std::string formation)
+{
+    bool const loaded = Load(formation);
+    if (loaded)
+        userChosen = true;
+    return loaded;
 }
 
 std::string FormationValue::Save()
@@ -626,7 +714,7 @@ bool SetFormationAction::Execute(Event& event)
         return true;
     }
 
-    if (!value->Load(formation))
+    if (!value->LoadUserChoice(formation))
     {
         std::ostringstream str; str << "Invalid formation: |cffff0000" << formation;
         ai->TellPlayer(requester, str);
@@ -693,15 +781,10 @@ WorldLocation MoveFormation::MoveSingleLine(std::vector<Player*> line, float dif
             float lx = x + cos(angle) * radius;
             float ly = y + sin(angle) * radius;
             float lz = cz;
-            float ground = bot->GetMap()->GetHeight(lx, ly, lz);
-            if (ground <= INVALID_HEIGHT)
+
+            if (!FinalizeFollowSpot(bot, bot->GetMap(), cx, cy, cz, lx, ly, lz))
                 return Formation::NullLocation;
 
-            if (!bot->IsFlying())
-            {
-                lz += CONTACT_DISTANCE;
-                bot->UpdateAllowedPositionZ(lx, ly, lz);
-            }
             return WorldLocation(bot->GetMapId(), lx, ly, lz);
         }
 

@@ -23,7 +23,7 @@ static int checks = 0;
     } \
 } while (0)
 
-static constexpr float kRange = 5.0f; // AiPlayerbot.RaidFollowDistance
+static constexpr float kRange = 5.0f; // a sample dungeon follow range (AiPlayerbot.RaidFollowDistance)
 
 // A ground distance split over x and y (as a real offset is), dz up or down.
 static bool Reached(float ground, float dz, float range = kRange)

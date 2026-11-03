@@ -18,6 +18,7 @@
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
+#include "playerbot/FollowTrailPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
@@ -352,6 +353,12 @@ public:
 	virtual ~PlayerbotAI();
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
+
+    // The leader's recent positions as this bot saw them (AiPlayerbot.
+    // RaidFollowWedge). Sampled every AI tick: the follow action runs only when
+    // the core follow has to be replaced, which is too late to know the path
+    // the leader took.
+    std::vector<FollowTrailPoint> const& GetLeadTrail() const { return leadTrail; }
 
     void HandleCommands();
     // Chat commands waiting for the next reaction pass (HandleCommands drains them).
@@ -1063,6 +1070,8 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
+    void UpdateLeadTrail();
+    std::vector<FollowTrailPoint> leadTrail;
 
 protected:
 	Player* bot;

@@ -2297,7 +2297,7 @@ AiPlayerbot.ShootDistance = 26.0
 #AiPlayerbot.TooCloseDistance = 5.0
 #AiPlayerbot.MeleeDistance = 1.5
 #AiPlayerbot.FollowDistance = 1.5
-#AiPlayerbot.RaidFollowDistance = 5.0
+#AiPlayerbot.RaidFollowDistance = 4.0
 #AiPlayerbot.WhisperDistance = 6000.0
 #AiPlayerbot.ContactDistance = 0.5
 #AiPlayerbot.AoeRadius = 5.0
@@ -2517,6 +2517,13 @@ AiPlayerbot.UseKnockback = 1
 
 # Default bot formation
 #AiPlayerbot.DefaultFormation = chaos
+
+# Raid/dungeon follow wedge: inside an instance a group follows in a 150 degree
+# arc behind the leader (near formation, raid follow distance, two rings above
+# ten followers), and a follower more than 20 yd behind, out of combat, walks
+# the leader's own path. An explicit .bot formation order still wins.
+# 0 keeps the configured formation everywhere.
+#AiPlayerbot.RaidFollowWedge = 0
 
 # Debug switches
 #AiPlayerbot.SpellDump = 0
