@@ -480,3 +480,66 @@ func TestRaidsDetailJoin(t *testing.T) {
 		t.Fatalf("no commander rows: %+v", got)
 	}
 }
+
+// A detail-free cycle keeps the last detail until a refresh replaces it: the
+// module ships the G2 detail at most every 5 s on a ~2 s cycle, so most rows
+// omit it. A refreshed detail then replaces the retained one.
+func TestRaidsDetailRetainedBetweenRefreshes(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.BotSnapshot{
+		raidBot(1, "Tank", false, 409, 7, 7),
+		raidBot(2, "Heal", false, 409, 7, 7),
+	}
+	if ok := s.ApplyBatch(batch(1, 0, 1, bots...)); !ok {
+		t.Fatal("batch not published")
+	}
+	ready := &model.CommanderReady{B: 3, C: 5, CR: 2, CN: 3}
+	detailed := raidsRow(7, "raid#7", "Celindra", 3, nil)
+	detailed.Detail = []model.RaidDetailEntry{
+		{GUID: 1, Ready: ready},
+		{GUID: 2, Debuffs: []model.CommanderAura{{ID: 100, Name: "Burn"}}, MC: 1},
+	}
+	if !s.ApplyRaids(raidsPayload(9, 1, c.now.Unix(), detailed)) {
+		t.Fatal("RAIDS payload refused")
+	}
+	// The cycles between two 5 s refreshes omit the detail; the members and
+	// the group row keep the last read.
+	plain := raidsRow(7, "raid#7", "Celindra", 3, nil)
+	if !s.ApplyRaids(raidsPayload(9, 2, c.now.Unix(), plain)) {
+		t.Fatal("detail-free RAIDS payload refused")
+	}
+	g := s.Raids().Runs[0].Groups[0]
+	byGUID := map[uint32]model.DungeonMember{}
+	for _, m := range g.Members {
+		byGUID[m.GUID] = m
+	}
+	if byGUID[1].Ready == nil || byGUID[1].Ready.B != 3 {
+		t.Fatalf("ready facts lost on a detail-free cycle: %+v", byGUID[1])
+	}
+	if len(byGUID[2].Debuffs) != 1 || byGUID[2].MC != 1 {
+		t.Fatalf("debuffs/mc lost on a detail-free cycle: %+v", byGUID[2])
+	}
+	if len(g.Detail) != 2 {
+		t.Fatalf("group detail lost on a detail-free cycle: %+v", g.Detail)
+	}
+	// A refresh carrying new detail replaces the retained one.
+	refreshed := raidsRow(7, "raid#7", "Celindra", 3, nil)
+	refreshed.Detail = []model.RaidDetailEntry{
+		{GUID: 2, Debuffs: []model.CommanderAura{{ID: 200, Name: "Shadow"}}},
+	}
+	if !s.ApplyRaids(raidsPayload(9, 3, c.now.Unix(), refreshed)) {
+		t.Fatal("refreshed RAIDS payload refused")
+	}
+	g = s.Raids().Runs[0].Groups[0]
+	byGUID = map[uint32]model.DungeonMember{}
+	for _, m := range g.Members {
+		byGUID[m.GUID] = m
+	}
+	if byGUID[1].Ready != nil {
+		t.Fatalf("stale ready facts survive a refresh: %+v", byGUID[1])
+	}
+	if len(byGUID[2].Debuffs) != 1 || byGUID[2].Debuffs[0].Name != "Shadow" {
+		t.Fatalf("refreshed debuffs not applied: %+v", byGUID[2])
+	}
+}

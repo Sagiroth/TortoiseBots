@@ -261,7 +261,6 @@ private:
     // Raids tab detail (ready check, boss debuffs): both config files' AiPlayerbot.ObservabilityRaidsDetail, sent at
     // most every 5 s. 0 in either keeps it off while the RAIDS line above still flows.
     ObservabilityFlag::Feed m_raidsDetail;
-    uint32 m_raidDetailTimerMs = 0; // time since the detail was last collected (5 s cadence)
     // COMMANDERS datagram: one per snapshot cycle while a binding stands, and
     // one empty list when the last binding ends. Nothing otherwise.
     void EmitCommanders();

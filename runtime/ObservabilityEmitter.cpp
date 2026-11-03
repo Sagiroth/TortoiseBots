@@ -582,7 +582,6 @@ void ObservabilityEmitter::Initialize()
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
     m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
-    m_raidDetailTimerMs = 0;
     m_raidsSent = false;
     // The live fight stream and the cast poller; a `.reload config` re-reads them.
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
@@ -686,7 +685,6 @@ void ObservabilityEmitter::Shutdown()
     m_enabled = false;
     m_raids = ObservabilityFlag::Feed();
     m_raidsDetail = ObservabilityFlag::Feed();
-    m_raidDetailTimerMs = 0;
     m_raidsSent = false;
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
@@ -1059,7 +1057,6 @@ void ObservabilityEmitter::Update(uint32 diff)
     if (!IsEnabled())
         return;
     m_tickWindow.Add(diff);
-    m_raidDetailTimerMs += diff;
 
     if (!m_hostResolved)
         RetryHostResolution(diff);
@@ -1821,13 +1818,9 @@ void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vect
     if (!m_raidProvider)
         return;
     m_raidProvider(bots, players, m_raidGroups);
-    // G2 detail at most every 5 s: the collection fills it only on due
-    // cycles, and every other cycle drops it again so the line stays lean.
-    if (m_raidDetailTimerMs < 5000 || !RaidsDetailEnabled())
-        for (RaidTelemetry::GroupInfo& group : m_raidGroups)
-            group.detail.clear();
-    else
-        m_raidDetailTimerMs = 0;
+    // The collection fills the G2 detail itself at most every 5 s and repeats the cached read between refreshes, so
+    // every cycle ships it: clearing it here would drop readiness, cooldown, debuff and mind-control data on every
+    // cycle the collection did not refresh.
     if (m_raidGroups.empty())
     {
         if (m_raidsSent)

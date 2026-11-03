@@ -161,7 +161,8 @@ class ObservedRaidsWiringTest(unittest.TestCase):
 
     def test_detail_key_is_shipped_off_and_gated(self):
         # The G2 key ships off in both templates and gates the detail feed with the same two-file rule; the detail is
-        # appended at the END of the group object and sent at most every 5 s.
+        # appended at the END of the group object. The collection throttles the expensive read to every 5 s and repeats
+        # the cached detail between refreshes, so the emitter ships it on every cycle.
         self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", CONF)
         self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", AI_CONF)
         self.assertIn("bool observabilityRaidsDetail = false;", CONFIG_H)
@@ -170,13 +171,12 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("bool RaidsDetailEnabled()", EMITTER_H)
         emit = strip_comments(EMITTER)
         self.assertIn("m_raidsDetail.Read(", emit)
-        self.assertIn("m_raidDetailTimerMs", emit)
-        self.assertIn("5000", definition(emit, "void ObservabilityEmitter::EmitRaids("))
         collect = definition(strip_comments(OBSERVED), "void CollectObservedRaids(")
         self.assertIn("FillRaidDetail(", collect)
         detail = strip_comments(OBSERVED)
         self.assertIn("RaidsDetailEnabled()", detail)
         self.assertIn("kDetailCadenceMs", detail)
+        self.assertIn("info.detail = cache.entries;", detail)
 
     def test_bound_telemetry_passes_the_binding_set(self):
         # The bound COMMANDERS path passes its binding-wide exclusion set to the debuff read: a negative aura another
@@ -191,6 +191,17 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         unbound = definition(strip_comments(OBSERVED), "void FillRaidDetail(")
         self.assertIn("FillRaidBotDebuffs(bot, extra)", unbound)
         self.assertNotIn("friendlyLow", unbound)
+
+    def test_emitter_keeps_the_cached_detail_between_refreshes(self):
+        # The collection fills the G2 detail itself at most every 5 s and repeats the cached read between refreshes, so
+        # the emitter ships it on every cycle: readiness, cooldown, debuff and mind-control data must survive the
+        # cycles the collection did not refresh. The emitter must not clear the detail after collecting.
+        emit = definition(strip_comments(EMITTER), "void ObservabilityEmitter::EmitRaids(")
+        self.assertIn("m_raidProvider(bots, players, m_raidGroups);", emit)
+        self.assertNotIn("group.detail.clear()", emit)
+        self.assertNotIn("m_raidDetailTimerMs", emit)
+        self.assertNotIn("m_raidDetailTimerMs", EMITTER_H)
+        self.assertIn("kDetailCadenceMs", strip_comments(OBSERVED))
 
     def test_both_config_files_gate_the_flag(self):
         # AiPlayerbot.ObservabilityRaids is set in aiplayerbot.conf and in the world config, and a feed is on only while

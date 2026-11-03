@@ -19,7 +19,7 @@ const RaidsStaleAfter = 12 * time.Second
 // trimmed, not rejected. Groups rotate past 40 on the module side.
 const (
 	maxRaidsGroups = 40
-	maxRaidsParts = 20
+	maxRaidsParts  = 20
 )
 
 // raidsState is the latest RAIDS payload. It has its own lock so a 2 s
@@ -48,8 +48,13 @@ type raidsPending struct {
 	seq     uint64
 	ts      int64
 	tsMs    int64
-	parts   int
 	got     map[int][]model.RaidGroupRow
+}
+
+// raidGroupKey names one raid group's copy: one group id can stand on several
+// copies, and detail retained for one copy must not leak onto another.
+type raidGroupKey struct {
+	group, mapID, instance uint32
 }
 
 // maxPriorRaidsSessions bounds the superseded sessions ApplyRaids remembers:
@@ -169,13 +174,27 @@ func (s *Store) ApplyRaids(p *model.RaidsPayload) bool {
 }
 
 // applyListLocked replaces the standing rows, capped and normalised. Called
-// with the lock held.
+// with the lock held. A row whose payload omits the detail keeps the last
+// detail the daemon saw for that group (map + instance + group id): the
+// module ships it at most every 5 s on a ~2 s cycle, and the dashboard would
+// otherwise lose readiness, cooldown, debuff and mind-control data between
+// refreshes. A row that carries detail replaces it; an emptied group (clearing
+// the rows) drops it with the row.
 func (st *raidsState) applyListLocked(list []model.RaidGroupRow, p *model.RaidsPayload, now time.Time) {
 	if len(list) > maxRaidsGroups {
 		list = list[:maxRaidsGroups]
 	}
+	prior := make(map[raidGroupKey]model.RaidGroupRow, len(st.list))
+	for _, r := range st.list {
+		prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}] = r
+	}
 	out := make([]model.RaidGroupRow, 0, len(list))
 	for _, r := range list {
+		if len(r.Detail) == 0 {
+			if prev, ok := prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}]; ok && len(prev.Detail) > 0 {
+				r.Detail = append([]model.RaidDetailEntry(nil), prev.Detail...)
+			}
+		}
 		out = append(out, r)
 	}
 	// Own each row's members and keep them ordered: published rows are
