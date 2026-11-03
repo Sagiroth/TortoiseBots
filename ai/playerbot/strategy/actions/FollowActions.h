@@ -18,9 +18,9 @@ namespace ai
 
     private:
         // Lead-trail catch-up (AiPlayerbot.RaidFollowWedge): a far follower
-        // walks the leader's recorded positions instead of cutting at its slot.
+        // walks the leader's recorded positions (PlayerbotAI::GetLeadTrail)
+        // instead of cutting at its slot.
         bool WalkLeadTrail(Unit* followTarget, bool& moved);
-        std::vector<ai::FollowTrailPoint> leadTrail;
 
         // Dungeon "hold before a pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks).
         bool UseHoldBeforePacks(Unit* followTarget);

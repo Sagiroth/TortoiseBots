@@ -80,32 +80,23 @@ bool FollowAction::WalkLeadTrail(Unit* followTarget, bool& moved)
 {
     moved = false;
     if (!UsesRaidFollowWedge(ai) || !followTarget || followTarget == bot || !followTarget->IsPlayer())
-    {
-        leadTrail.clear();
         return false;
-    }
     if (!bot->IsAlive() || !followTarget->IsAlive() || !ai->IsSafe(followTarget) ||
         bot->GetMapId() != followTarget->GetMapId() || bot->GetTransport() ||
         followTarget->GetTransport() || bot->IsTaxiFlying())
-    {
-        leadTrail.clear();
         return false;
-    }
-
-    ai::FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
-        followTarget->GetPositionZ());
-
     if (bot->IsInCombat() || followTarget->IsInCombat())
         return false;
     if (!sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, followTarget),
             ai::kRaidFollowCatchUpDistanceYd))
         return false;
 
-    int const index = ai::FollowTrailWaypoint(leadTrail, bot->GetPositionX(), bot->GetPositionY());
-    if (index < 0 || static_cast<std::size_t>(index) >= leadTrail.size())
+    std::vector<ai::FollowTrailPoint> const& trail = ai->GetLeadTrail();
+    int const index = ai::FollowTrailWaypoint(trail, bot->GetPositionX(), bot->GetPositionY());
+    if (index < 0 || static_cast<std::size_t>(index) >= trail.size())
         return false;
 
-    ai::FollowTrailPoint const& point = leadTrail[static_cast<std::size_t>(index)];
+    ai::FollowTrailPoint const& point = trail[static_cast<std::size_t>(index)];
     moved = MoveTo2(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
     return moved;
 }
