@@ -122,8 +122,17 @@ namespace ai
         // cancelled (the spell's cast-start guard only saw the area before the
         // sheep landed). The area's centre and radius come from the spell data.
         bool CcInRunningArea(Spell const* spell);
+        // The same scan for the spell data alone: the cast-start guard reads it
+        // before a channel starts, so start and cancel never disagree (a
+        // crowd-controlled unit attacks nobody and is missing from "attackers").
+        // The area is centred on `spellTarget` (a ground area or a chain) or on
+        // this bot (a caster-centred area).
+        bool BreakableCcInArea(SpellEntry const* info, Unit* spellTarget);
 
     private:
+        // "possible targets no los" around one point: the list a
+        // crowd-controlled unit stays in while it attacks nobody.
+        bool BreakableCcNear(float x, float y, float z, uint32 mapId, float radius);
         bool OnlyMarksLeftCached();
         int onlyMarksLeft;
     };

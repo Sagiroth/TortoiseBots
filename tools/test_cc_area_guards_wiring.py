@@ -61,11 +61,23 @@ class ChannelCancelWiring(unittest.TestCase):
         area = body(TARGET_VALUE, "bool CcGuard::CcInRunningArea(")
         self.assertIn("EnemyAreaOf(spell->m_spellInfo, atTarget, radius)", area)
         self.assertIn("spell->m_targets.getDestination(x, y, z)", area)
+        self.assertIn("BreakableCcNear(x, y, z, mapId, radius)", area)
         # A crowd-controlled unit attacks nobody: the attackers list the other
-        # guards read cannot see it, so this one reads the sight list.
-        self.assertIn('GetValue<std::list<ObjectGuid>>("possible targets no los")', area)
-        self.assertIn("PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot)", area)
-        self.assertIn("CcInRunningArea(Spell const* spell)", TARGET_VALUE_H)
+        # guards read cannot see it, so this one reads the sight list. The
+        # scan is the shared policy, unit-tested in
+        # tools/test_cc_area_guard_policy.cpp.
+        near = body(TARGET_VALUE, "bool CcGuard::BreakableCcNear(")
+        self.assertIn('GetValue<std::list<ObjectGuid>>("possible targets no los")', near)
+        self.assertIn("ai::AnyBreakableCcInArea(", near)
+        self.assertIn("PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot)", near)
+        self.assertIn("bool CcInRunningArea(Spell const* spell)", TARGET_VALUE_H)
+        self.assertIn("bool BreakableCcInArea(SpellEntry const* info, Unit* spellTarget)", TARGET_VALUE_H)
+        # The start guard reads the same scan and the same shape helper: a
+        # sheep with no threat blocks the cast exactly as it cancels the run.
+        start = body(GENERIC_SPELL_ACTIONS, "bool BreaksCcInArea(")
+        self.assertIn("EnemyAreaOf(info, atTarget, radius)", start)
+        self.assertIn("ccGuard.BreakableCcInArea(info, spellTarget)", start)
+        self.assertNotIn("EffectImplicitTargetA[i]", start)
         # The shape helper is shared with the cast-start guard's own derivation.
         self.assertIn("inline bool EnemyAreaOf(SpellEntry const* spellInfo, bool& atTarget, float& radius)", AREA_SPELL_H)
         self.assertIn("EffectRadiusIndex[i]", AREA_SPELL_H)
