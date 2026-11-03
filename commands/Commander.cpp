@@ -8714,7 +8714,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
-            fact.partyDots = PartyDotOn(attacker, lead);
+            fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
@@ -11114,7 +11114,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
-                    unit.partyDots = PartyDotOn(creature, lead);
+                    unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11374,7 +11374,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
-                    unit.partyDots = PartyDotOn(creature, lead);
+                    unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11942,7 +11942,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
-            fact.partyDots = PartyDotOn(attacker, lead);
+            fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;

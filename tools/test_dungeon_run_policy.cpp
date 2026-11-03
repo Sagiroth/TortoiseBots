@@ -12287,6 +12287,36 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
     }
 }
 
+// A fetch with no member out of combat to bring the bot to is bounded: each such tick spends one of the kFetchTries
+// attempts, so the run gives up by name instead of holding for ever (a dead lead with every living member in the queue
+// is exactly that state).
+static void TestAFetchWithoutAnAnchorGivesUp()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.teleportReturnYd = 250.0f; // far enough that the revived member is a fetch, not a summon
+    f.fetchRead = true;
+    f.leadInCombat = true; // the lead bot fights: no spot of its own to bring the member to
+    MemberFact tanky = Mem("Tanky", 0.0f);
+    tanky.inCombat = true;
+    MemberFact runner = Mem("Runner", 300.0f);
+    f.members = {tanky, runner}; // and Runner is the only other living member
+    r.waitFor.insert("Runner"); // a fallen member, alive again
+    r.fetchOn = true;           // AiPlayerbot.RunTeleportReturnYd is on (the glue's tick reads it)
+    std::string order;
+    std::uint32_t ticks = 0;
+    for (; ticks < kFetchTries + 2 && r.note.find("bring it to the lead bot") == std::string::npos; ++ticks)
+    {
+        r.runMs += kFetchRetryMs;
+        FarReturnTick(r, f, kTickMs, order);
+    }
+    CHECK(r.note.find("after 3 teleport returns") != std::string::npos);
+    CHECK(ticks <= kFetchTries + 1);
+    CHECK(!r.fetch.count("Runner"));
+}
+
 // A fetched member (a revived bot, a dropped summon) is never teleported alone into a fight: the lead bot's spot while
 // it lives out of combat, else the nearest member out of combat, else nowhere (it holds where it is).
 static void TestAFetchedMemberIsNotTeleportedIntoAFight()
@@ -28502,20 +28532,18 @@ static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry 
 static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
 {
     {
-        // The role holder: the lead bot while it lives, else the first living off-tank.
+        // The role is held by the lead bot while it lives, else by a living off-tank.
         Facts f = RaidTrashFacts();
-        CHECK(MainTankRole(f) == "Tanky");
+        CHECK(MainTankRoleHeld(f));
         f.leadAlive = false;
-        CHECK(MainTankRole(f) == "Brun");
-        f.raid.offTanksAlive = {"Irelanthe"};
-        CHECK(MainTankRole(f) == "Irelanthe");
+        CHECK(MainTankRoleHeld(f));
         f.raid.offTanksAlive.clear();
-        CHECK(MainTankRole(f).empty());
+        CHECK(!MainTankRoleHeld(f)); // the lead bot dead, no off-tank: the role is nobody's
         // Not a tank lead bot: no role while it lives, no off-tank fallback for a living lead.
         f.leadAlive = true;
         f.leadIsTank = false;
         f.raid.offTanksAlive = {"Brun"};
-        CHECK(MainTankRole(f).empty());
+        CHECK(!MainTankRoleHeld(f));
     }
     {
         // The lead bot is up again: the role is its own, and its engage on arrival works as before.
@@ -28527,7 +28555,6 @@ static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
         add.x = 10.0f;
         f.partyAttackers = {add};
         CHECK(GuardTick(r, f) == "attack 50071 Tanky");
-        CHECK(MainTankRole(f) == "Tanky");
     }
     {
         // The ranged dps healer guard stays on with the lead dead while an off-tank lives: the add on the healer is the
@@ -28548,9 +28575,24 @@ static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
         f.members = {tank, healer, dps};
         UnitFact add = Hitter(50071, 12129, 20, true); // on the healer
         add.x = 10.0f;
-        f.partyAttackers = {add};
+        UnitFact held = TankHeld(50070, 12129, 25); // Brun holds one of its own: the latch's evidence
+        held.victimName = "Brun";
+        held.x = 20.0f;
+        f.partyAttackers = {add, held};
         CHECK(GuardTick(r, f) == "attack 50071 Ranged");
         CHECK(r.trashHealerGuard);
+        // No off-tank holding a mob: the latch does not arm on a living off-tank alone.
+        Facts g = RaidTrashFacts();
+        g.raid.healerGuard = true;
+        Run q = StartRaidTrashFight(plan, g);
+        g.leadAlive = false;
+        g.members = {tank, healer, dps};
+        UnitFact lone = Hitter(50071, 12129, 20, true);
+        lone.x = 10.0f;
+        g.partyAttackers = {lone};
+        CHECK(!RaidHealerGuardOn(q, g, true));
+        LatchTrashHealerGuard(q, g);
+        CHECK(!q.trashHealerGuard);
         // Now no tank at all: the guard is off, the off-tank pick-up path is left.
         f.raid.offTanksAlive.clear();
         CHECK(!RaidHealerGuardOn(r, f, true));
@@ -32474,6 +32516,7 @@ int main()
     TestStandClearanceIgnoresAnotherStoreyOutOfSight();
     TestStandClearanceJudgesAPatrolByItsLoopStorey();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
+    TestAFetchWithoutAnAnchorGivesUp();
     TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();

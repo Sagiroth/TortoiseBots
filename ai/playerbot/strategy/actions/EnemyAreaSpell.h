@@ -64,21 +64,30 @@ namespace ai
             if (enemyArea)
             {
                 area = true;
-                if ((enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC ||
-                     enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC) &&
-                    targetA != TARGET_LOCATION_CASTER_SRC && targetA != TARGET_LOCATION_CASTER_DEST)
-                    atTarget = true;
+                // The pair goes together: the widest effect decides both the radius and where it is centred, so a
+                // spell with a destination area and a caster-centred one is judged at the right place.
+                bool const atDest = (enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC ||
+                    enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC) && targetA != TARGET_LOCATION_CASTER_SRC &&
+                    targetA != TARGET_LOCATION_CASTER_DEST;
                 if (effectRadius <= 0.0f)
                     if (SpellRangeEntry const* rangeEntry = sSpellRangeStore.LookupEntry(spellInfo->rangeIndex))
                         effectRadius = rangeEntry->maxRange;
-                radius = std::max(radius, effectRadius);
+                if (effectRadius > radius)
+                {
+                    radius = effectRadius;
+                    atTarget = atDest;
+                }
             }
             else if (targetA == TARGET_UNIT_ENEMY && spellInfo->EffectChainTarget[i] > 1)
             {
                 area = true;
-                atTarget = true;
-                radius = std::max(radius, spellInfo->DmgClass == SPELL_DAMAGE_CLASS_MELEE ?
-                    float(ATTACK_DISTANCE) : float(CHAIN_SPELL_JUMP_RADIUS));
+                float const chainRadius = spellInfo->DmgClass == SPELL_DAMAGE_CLASS_MELEE ?
+                    float(ATTACK_DISTANCE) : float(CHAIN_SPELL_JUMP_RADIUS);
+                if (chainRadius > radius)
+                {
+                    radius = chainRadius;
+                    atTarget = true; // a chain jumps from the target
+                }
             }
         }
         return area;

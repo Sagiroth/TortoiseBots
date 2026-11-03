@@ -4359,8 +4359,11 @@ inline bool FarReturnPoint(const Facts& f, const std::vector<std::string>& due, 
     const MemberFact* best = nullptr;
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || m.inCombat || m.attackers > 0 || m.yd >= 1000.0f)
-            continue; // fighting, or on another map
+        // The lead bot itself is no anchor here (its own spot is the first choice, and it is in a fight if this
+        // branch runs at all); a member fighting or on another map is none either.
+        if (m.name.empty() || m.name == f.carrier || m.yd <= kArriveYd || m.inCombat || m.attackers > 0 ||
+            m.yd >= 1000.0f)
+            continue;
         if (std::find(due.begin(), due.end(), m.name) != due.end())
             continue; // one of the members being brought back
         if (!best || m.yd < best->yd)
@@ -9327,7 +9330,7 @@ inline const UnitFact* PickCc(const Run& r, const Facts& f, std::uint64_t pullGu
 inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     static_cast<void>(dt);
-    if (!f.autoCc || !r.ccOpenDue || r.fightMs > kRunCcOpenWindowMs)
+    if (!f.autoCc || !r.ccOpenDue)
         return false;
     std::uint64_t guid = 0;
     Run::CcHold hold;
@@ -9358,7 +9361,12 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
     }
     const UnitFact* const unit = guid ? FightUnit(f, guid) : nullptr;
     if (!unit)
+    {
+        // Every pre-pull mark was sent once, held, or its unit/bot is gone: the burst is over (the fight tick's own
+        // opening grace, kRunCcOpenOrders without the gap, still runs on ccOpenDue and kRunCcOpenWindowMs).
+        r.ccOpenPrepull.clear();
         return false;
+    }
     CcPick pick;
     pick.unit = unit;
     pick.bot = hold.bot;
@@ -16129,21 +16137,10 @@ inline bool RaidTrashOffTankHolds(const Facts& f, const std::string& name)
     return false;
 }
 
-// The main tank's role holder: the lead bot while it lives (a tank), else the first living off-tank of the layout
+// The main tank's role is held: the lead bot while it lives (a tank), else a living off-tank of the layout
 // (RaidFacts::offTanksAlive, the layout's order). The lead bot dying mid-pull does not leave the fight without a main
-// tank: the first living off-tank takes the role for the rest of the fight (its pick-ups, the healer guard, the engage
-// on arrival), and the lead bot takes it back when it is up again. Empty: no tank at all.
-inline std::string MainTankRole(const Facts& f)
-{
-    if (f.leadAlive)
-        return f.leadIsTank ? f.carrier : std::string();
-    for (std::string const& name : f.raid.offTanksAlive)
-        if (!name.empty())
-            return name;
-    return std::string();
-}
-
-// The role is held at all (a gate on it does not depend on the lead bot's name being read).
+// tank: the first living off-tank takes the role for the rest of the fight (its pick-ups and the healer guard), and
+// the lead bot takes it back when it is up again. A gate on the role does not depend on the lead bot's name.
 inline bool MainTankRoleHeld(const Facts& f)
 {
     if (f.leadAlive)
@@ -16157,9 +16154,10 @@ inline bool MainTankRoleHeld(const Facts& f)
 // The healer guard's gate: a raid boss fight whose main tank holds a plan boss (LeadHoldsPlanBoss), or a raid trash
 // fight whose main tank held its current target when the guard turned on (Run::trashHealerGuard, its latch: the
 // target comes and goes as mobs die and reposition, and the guard does not flicker off with it). With it off the
-// off-tanks take the adds as before. The main tank is the role holder (MainTankRole): the guard stays on with the lead
-// bot dead while an off-tank lives, which is the moment the healers need the ranged dps most (ZG walk 32: with the
-// lead dead the guard switched off and the adds on the healers had no answer).
+// off-tanks take the adds as before. The role's holder decides the gate (MainTankRoleHeld): a trash fight keeps the
+// guard with the lead bot dead while an off-tank lives, which is the moment the healers need the ranged dps most (ZG
+// walk 32: with the lead dead the guard switched off and the adds on the healers had no answer). A boss fight's guard
+// is the one holding the plan boss, so with the lead bot dead it stays off there (RaidGuardTick owns that fight).
 inline bool RaidHealerGuardOn(const Run& r, const Facts& f, bool trash)
 {
     if (!f.raid.healerGuard || !MainTankRoleHeld(f))
@@ -16174,11 +16172,25 @@ inline void LatchTrashHealerGuard(Run& r, const Facts& f)
 {
     if (r.trashHealerGuard || !f.raid.healerGuard || !MainTankRoleHeld(f) || !RaidTrashFight(r, f))
         return;
-    // The main tank holds its current target, or (the lead bot dead) an off-tank holds one of its own.
-    if (f.leadAlive && !f.leadHasAttacker)
-        return;
-    if (!f.leadAlive && f.raid.offTanksAlive.empty())
-        return;
+    // The main tank holds its current target, or (the lead bot dead) an off-tank holds one of its own: the guard turns
+    // on with a tank on a mob, never on the mere presence of a living off-tank.
+    if (f.leadAlive)
+    {
+        if (!f.leadHasAttacker)
+            return;
+    }
+    else
+    {
+        bool holds = false;
+        for (std::string const& name : f.raid.offTanksAlive)
+            if (RaidTrashOffTankHolds(f, name))
+            {
+                holds = true;
+                break;
+            }
+        if (!holds)
+            return;
+    }
     r.trashHealerGuard = true;
 }
 
@@ -17581,9 +17593,16 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             std::string why;
             if (!FarReturnPoint(f, due, point, why))
             {
+                // No member out of combat to bring them to: the try is spent, so the queue is bounded (kFetchTries
+                // then gives up by name) and a dead lead with everyone else in the queue is no endless wait.
                 std::string names;
                 for (const std::string& name : due)
+                {
+                    Run::FetchState& st = r.fetch[name];
+                    ++st.tries;
+                    st.lastMs = r.runMs;
                     names += (names.empty() ? "" : ", ") + name;
+                }
                 r.note = "the teleport return waits: no member stands out of combat to bring " + names +
                     " to (the party is regrouping)";
                 return true;

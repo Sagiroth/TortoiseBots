@@ -3,6 +3,8 @@
 #include "playerbot/AoeFearPolicy.h"
 #include "playerbot/RetaliationPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/values/CcMarkHoldPolicy.h"
 #include "playerbot/WarriorWwStancePolicy.h"
 #include "playerbot/policy/combat/RaidSnarePolicy.h"
 
