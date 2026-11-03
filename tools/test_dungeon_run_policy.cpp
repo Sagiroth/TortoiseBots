@@ -12286,10 +12286,12 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
         g.members[3].attackers = 3;
         Run r = stranded();
         CHECK(Tick(r, g).empty());
-        CHECK(r.note.find("held by live hostiles and no member stands out of combat") != std::string::npos);
-        CHECK(!r.strandOn);
-        // And after kRescueHoldMs the run pauses for the party to be put together.
-        for (std::uint32_t ms = kTickMs; ms < kRescueHoldMs; ms += kTickMs)
+        // No group to join: the earlier point of the way it came is read first (step 1, -460 50).
+        CHECK(r.note == "the lead bot is stranded: reading the earlier point of step 1 for live hostiles (the point of "
+            "step 2 is held)");
+        CHECK(r.rescueScanX == -460.0f && r.rescueScanY == 50.0f);
+        // Its read does not come either: the hold, and after kRescueHoldMs the pause for the party to be put together.
+        for (std::uint32_t i = 0; i < 60 && r.state == State::Running; ++i)
             Tick(r, g);
         CHECK(r.state == State::Paused);
         CHECK(r.note.find("put the party together") != std::string::npos);
@@ -12367,6 +12369,58 @@ static void TestTheRescueRetryAsksForItsRead()
     CHECK(Tick(r, heldRead) == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
     CHECK(r.strandOn && r.strandParty);
     CHECK(r.strandTries == 1);
+}
+
+// After a full wipe the party all revives together at the entrance: every member stands on the lead bot's spot, so
+// MemberGroupPoint finds no group to join, and the held point used to hold and pause the run after kRescueHoldMs. The
+// rescue reads the earlier clear point of the way it came and teleports the lead bot there instead.
+static void TestAFullWipeRescueStepsBackToAnEarlierClearPoint()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f),
+        Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f), Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f),
+        Step(PlanStepKind::Rest)};
+    Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
+    for (const char* name : {"Healy", "Magey", "Fyran", "Stabby"})
+    {
+        MemberFact m = Mem(name, 2.0f); // revived together: all standing on the lead bot
+        m.x = -960.0f;
+        m.y = 622.0f;
+        m.z = -172.9f;
+        f.members.push_back(m);
+    }
+    MemberGroup group;
+    CHECK(!MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group)); // no member to join
+    Run r = Start(&plan, 2);
+    NoteCheckpoint(r, 0);
+    r.walkBack = true;
+    r.walkBackIdx = r.walkBackStart = 1;
+    r.strandDue = true;
+    r.strandIdx = 1;
+    RescueReadClear(f, r);
+    std::vector<StandPackReach> live;
+    StandPackReach mob;
+    mob.x = -422.4f;
+    mob.y = 82.4f;
+    mob.z = -172.9f;
+    mob.reachYd = 20.0f;
+    live.push_back(mob);
+    f.rescueReach = live; // the point of step 2 is held
+    // The rescue reads the earlier point of the way it came instead of holding.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "the lead bot is stranded: reading the earlier point of step 1 for live hostiles (the point of "
+        "step 2 is held)");
+    CHECK(r.rescueScanWanted && r.rescueScanX == -460.0f && r.rescueScanY == 50.0f && r.rescueScanZ == -172.9f);
+    // Its read: clear: the teleport goes there, and the walk back goes on from it.
+    f.rescueReadX = -460.0f;
+    f.rescueReadY = 50.0f;
+    f.rescueReach.clear();
+    CHECK(Tick(r, f) == "rescue from -960.0 620.0 -172.9 to -460.0 50.0 -172.9");
+    CHECK(r.strandOn && r.strandIdx == 0 && r.walkBackIdx == 0);
+    CHECK(r.note.find("teleporting it to the earlier point of step 1 (out of every live hostile's reach)") !=
+        std::string::npos);
+    CHECK(r.state == State::Running); // never the pause after kRescueHoldMs
+    CHECK(r.rescueHoldMs == 0);
 }
 
 // A fetch with no member out of combat to bring the bot to is bounded: each such tick spends one of the kFetchTries
@@ -32611,6 +32665,7 @@ int main()
     TestAFetchWithoutAnAnchorGivesUp();
     TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
     TestTheRescueRetryAsksForItsRead();
+    TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();
