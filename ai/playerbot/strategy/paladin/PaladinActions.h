@@ -47,6 +47,20 @@ namespace ai
 	RANGED_DEBUFF_ACTION(CastRepentanceAction, "repentance");
 	ENEMY_HEALER_ACTION(CastRepentanceOnHealerAction, "repentance");
 
+	// The run leader's mark: the "cc target" value, as the other classes' on-cc rows
+	// (Seduction, Hibernate, Fear). A run's picker assigns a mark; outside a run the
+	// value never hands out a free unit.
+	class CastRepentanceOnCcAction : public CastSpellAction
+	{
+	public:
+		CastRepentanceOnCcAction(PlayerbotAI* ai) : CastSpellAction(ai, "repentance") {}
+		std::string getName() override { return "repentance on cc"; }
+		std::string GetTargetName() override { return "cc target"; }
+		std::string GetTargetQualifier() override { return GetSpellName(); }
+		bool IsCrowdControlAction() const override { return true; }
+		std::string GetCrowdControlSpellName() const override { return GetSpellName(); }
+	};
+
 	//hammer of wrath
 	SPELL_ACTION(CastHammerOfWrathAction, "hammer of wrath");
 
