@@ -302,6 +302,11 @@ class SummaryFieldsGlueTest(unittest.TestCase):
     def test_boss_kills_are_found_by_guid_not_by_a_scan(self):
         body = function_body(self.src, "void RunTraceService::CheckBossKills(")
         self.assertIn("map->GetUnit(ObjectGuid(it->first))", body)
+        # the boss is looked up on the map of a bot in ITS instance, not on the first bot's map;
+        # a bot in another instance is skipped, and a bot with no map is passed over (FindMap, never an assert)
+        self.assertIn("bot->GetMapId() != it->second.map", body)
+        self.assertIn("bot->GetInstanceId() != it->second.instance", body)
+        self.assertIn("if ((map = bot->FindMap()))", body)
         self.assertNotIn("bots.front()->GetMap()", body)
         self.assertIn("digest_.NoteBossKill(", body)
         for scan in ("VisitAll", "CellImpl", "Searcher", "GetCreatureListWithEntryInGrid"):

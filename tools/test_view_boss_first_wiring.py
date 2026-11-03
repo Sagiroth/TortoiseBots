@@ -22,6 +22,11 @@ def body(text, start, end="\n}\n"):
     return text[i:text.index(end, i + len(start))]
 
 
+def canon(text):
+    text = re.sub(r"//[^\n]*", "", text)
+    return re.sub(r"\s+", "", text)
+
+
 class BossRowWiring(unittest.TestCase):
     def test_boss_pass_runs_before_the_victim_pass(self):
         fn = body(CMD, "void CollectViewSnapshot(")
@@ -45,6 +50,26 @@ class BossRowWiring(unittest.TestCase):
             boss_guard)
         self.assertIn("ViewRankOf(", boss_guard)
         self.assertIn("nonBosses.push_back(guid);", boss_guard)
+
+    def test_reject_set_caches_only_a_resolved_non_boss(self):
+        fn = body(CMD, "void AddViewHostile(")
+        boss_guard = fn[fn.index("if (bossOnly)"):
+                        fn.index("Unit* unit = SeenHostile(bot, guid);")]
+        flat = canon(boss_guard)
+        # The lookup reads the bot's map with FindMap (a mapless bot yields null, never an assert).
+        lookup = re.search(
+            r"Map\*(\w+)=bot->FindMap\(\);Unit\*(\w+)=\1\?(\1->GetUnit\(guid\)):nullptr;",
+            flat)
+        self.assertIsNotNone(lookup, boss_guard)
+        unit_var = lookup.group(2)
+        after = flat[lookup.end():]
+        # A null lookup must not reach the cache: only this occurrence is skipped.
+        null_guard = f"if(!{unit_var})return;"
+        self.assertTrue(after.startswith(null_guard), after)
+        self.assertEqual(
+            after[len(null_guard):],
+            f"if(ViewRankOf({unit_var})!='b'){{nonBosses.push_back(guid);return;}}}}",
+            boss_guard)
 
     def test_non_boss_reject_set_is_frame_local(self):
         fn = body(CMD, "void CollectViewSnapshot(")
