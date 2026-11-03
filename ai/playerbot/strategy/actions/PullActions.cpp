@@ -4,6 +4,7 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/AttackersValue.h"
 #include "PullActions.h"
+#include "PatchwerkSoakerActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "../../runtime/BotManager.h"
 #include "../../runtime/PlayerbotAIStorage.h"
@@ -448,6 +449,11 @@ bool PullAction::Execute(Event& event)
                 strategy->RequestPull(target, false);
                 return false;
             }
+
+            // An assigned Patchwerk main waits at its firing point until every
+            // soaker stands beside it in stance; the pull window still ends it.
+            if (!PatchwerkSoakersReadyForPull(ai))
+                return true;
 
             std::string actionName = strategy->GetPullActionName();
 

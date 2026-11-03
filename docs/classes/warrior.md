@@ -32,6 +32,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
   - Casts *Shield Slam* on cooldown (or procced by Improved Shield Slam).
   - Uses *Thunder Clap* (usable in Defensive Stance on Turtle) against 2 or more melee attackers.
   - Opens with *Shield Slam* when it is ready and treats *Sunder Armor* as the filler while the stack builds (rotation reference: stevemcqueenz/turtle-knowledge-base-, Turtle WoW class guides).
+  - On an opt-in Patchwerk tank role (`patchwerk main` or `patchwerk soak`, see [Patchwerk roles](../play/dungeons-and-raids.md#patchwerk-opt-in-roles)) it casts *Shield Slam* whenever it can and keeps using *Sunder Armor* past five stacks while Shield Slam and Revenge are unavailable, to hold a threat lead.
 - **Mitigation & Taunts:**
   - Activates *Shield Wall* early at low health (20-50%) and holds *Last Stand* for critical health emergencies (<20%).
   - Taunts with *Taunt* immediately if any attacker peels onto non-tank party members.

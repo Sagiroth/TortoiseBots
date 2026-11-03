@@ -1,5 +1,9 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 #include "GenericActions.h"
 #include "EmoteAction.h"
@@ -91,6 +95,7 @@
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
 #include "RuinsOfAhnqirajDungeonActions.h"
+#include "ViscidusActions.h"
 
 namespace ai
 {
@@ -99,6 +104,14 @@ namespace ai
     public:
         ActionContext()
         {
+            creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
+            creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
+            creators["fankriss spawn engage"] = [](PlayerbotAI* ai) { return new FankrissSpawnEngageAction(ai); };
+            creators["fankriss spawn pickup"] = [](PlayerbotAI* ai) { return new FankrissSpawnPickupAction(ai); };
+            creators["fankriss rear stack"] = [](PlayerbotAI* ai) { return new FankrissStackAction(ai); };
+            creators["fankriss control spawn"] = [](PlayerbotAI* ai) { return new FankrissControlAction(ai); };
+            creators["fankriss focus spawn"] = [](PlayerbotAI* ai) { return new FankrissFocusAction(ai); };
+            creators["patchwerk melee retreat"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeRetreatAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgAction(ai); };
@@ -412,6 +425,9 @@ namespace ai
             creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
+            creators["viscidus combat"] = [](PlayerbotAI* ai) { return new ViscidusCombatAction(ai); };
+            creators["viscidus keep distance"] = [](PlayerbotAI* ai) { return new ViscidusDistanceAction(ai); };
+            creators["viscidus toxin escape"] = [](PlayerbotAI* ai) { return new ViscidusToxinEscapeAction(ai); };
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
             creators["four horsemen rotate"] = [](PlayerbotAI* ai) { return new FourHorsemenRotateAction(ai); };

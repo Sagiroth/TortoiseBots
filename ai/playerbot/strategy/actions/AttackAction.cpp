@@ -1,6 +1,9 @@
 
 #include "playerbot/playerbot.h"
 #include "AttackAction.h"
+#include "FankrissFocusActions.h"
+#include "PatchwerkSoakerActions.h"
+#include "playerbot/FankrissGauntletPolicy.h"
 #include "Movement/MovementGenerator.h"
 #include "AI/CreatureAI.h"
 #include "playerbot/LootObjectStack.h"
@@ -239,6 +242,13 @@ bool AttackAction::ArmsMeleeSwing()
 
 bool AttackAction::Attack(Player* requester, Unit* target, float maxDistance, bool acceptCurrentVictim)
 {
+    // An opted-in Fankriss DPS attacks only its encounter pick (a healer's bug,
+    // the shared Spawn, or the boss) while the fight runs.
+    if (!FankrissDpsMayAttack(ai, target))
+        return false;
+    // Patchwerk: DPS hold their attack through the opening and the damage budget.
+    if (target && target->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai))
+        return false;
     if (!bot->IsAlive())
     {
         // A dead bot refuses every order silently otherwise: nothing below names
@@ -411,6 +421,12 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target, float maxDista
             ai->TellPlayerNoFacing(requester, msg.str());
         }
 
+        return false;
+    }
+    else if (IgnoreFankrissGauntlet(bot, target))
+    {
+        if (verbose)
+            ai->TellPlayerNoFacing(requester, "Ignore gauntlet bugs while Fankriss is engaged");
         return false;
     }
     else if (sServerFacade.UnitIsDead(target))

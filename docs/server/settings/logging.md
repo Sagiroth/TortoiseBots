@@ -23,13 +23,14 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.AllowedLogFiles`](#aiplayerbotallowedlogfiles) | `bot_events.csv,deaths.csv` | Comma-separated list of structured diagnostic CSV files enabled for writing. |
 | [`AiPlayerbot.RaidBossDiagnostics`](#aiplayerbotraidbossdiagnostics) | `0` | Opt-in raid boss threat snapshots and spell-hit observations in `bot_events.csv`. |
 | [`AiPlayerbot.LogRetentionDays`](#aiplayerbotlogretentiondays) | `3` | Days to keep compressed historical CSV logs before automatic deletion. |
-| [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `0` | Writes dedicated per-bot execution logs under `logs/bots/`. |
+| [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `1` | Writes dedicated per-bot execution logs under `logs/bots/`. |
 | [`AiPlayerbot.ActionLogScope`](#aiplayerbotactionlogscope) | `commanded` | Filters which bots generate action log files (`commanded`, `all`, `none`). |
 | [`AiPlayerbot.ActionLogMaxAgeDays`](#aiplayerbotactionlogmaxagedays) | `3` | Maximum age in days for per-bot action log files before cleanup. |
 | [`AiPlayerbot.ActionLogMaxTotalMB`](#aiplayerbotactionlogmaxtotalmb) | `2048` | Maximum cumulative disk space in megabytes for the `logs/bots/` folder. |
 | [`AiPlayerbot.ActionLogMaxFileMB`](#aiplayerbotactionlogmaxfilemb) | `100` | Maximum size in megabytes of a single bot log file before rotating. |
 | [`AiPlayerbot.ActionCountsLog`](#aiplayerbotactioncountslog) | `0` | Records cumulative action execution counts and failure rates to CSV. |
-| [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `0` | Enables non-blocking UDP telemetry stream to the observability daemon. |
+| [`AiPlayerbot.HealerDiagnostics`](#aiplayerbothealerdiagnostics) | `0` | Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`. |
+| [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `1` | Enables non-blocking UDP telemetry stream to the observability daemon. |
 | [`AiPlayerbot.ObservabilityHost`](#aiplayerbotobservabilityhost) | `127.0.0.1` | Destination host IP address or service name for UDP observability telemetry. |
 | [`AiPlayerbot.ObservabilityPort`](#aiplayerbotobservabilityport) | `9195` | Destination UDP port for the observability telemetry daemon. |
 | [`AiPlayerbot.RunTrace.Enabled`](#aiplayerbotruntraceenabled) | `0` | Opt-in run recorder (`.bot trace`): a party's run as a `bt-trace` v1 JSONL file plus a summary. |
@@ -102,7 +103,7 @@ Setting this to `0` disables automated deletion, preserving all archives permane
 
 ### `AiPlayerbot.EnableActionLog`
 Enables verbose per-bot execution logs written to the `logs/bots/` directory.
-**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -197,9 +198,20 @@ python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.c
 
 </details>
 
+### `AiPlayerbot.HealerDiagnostics`
+Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`.
+**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts when `bot_events.csv` is in `AiPlayerbot.AllowedLogFiles`, and only for a grouped healer. At most once every 10 seconds per healer it writes a `HealState` row (injured members, those in heal range, mana, movement, casting, the lowest member's health, distance and line of sight, the motion type and destination, and the last action), and at most once every 10 seconds a `HealSkip` row naming why a heal could not be cast (out of range, line of sight, no mana, moving, bad target, and so on). It reads the group roster only, never the world, and does not change any decision.
+
+</details>
+
 ### `AiPlayerbot.Observability`
 Enables the non-blocking UDP telemetry emitter streaming bot lifecycle events to the observability daemon.
-**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

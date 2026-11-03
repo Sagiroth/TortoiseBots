@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/FankrissGauntletPolicy.h"
 #include "TargetValue.h"
 #include "CcMarkHoldPolicy.h"
 #include "PeriodicDamageAura.h"
@@ -20,7 +21,8 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (!unit)
+        // The cached candidate list may predate the Fankriss pull.
+        if (!unit || IgnoreFankrissGauntlet(bot, unit))
             continue;
 
         ThreatManager &threatManager = sServerFacade.GetThreatManager(unit);

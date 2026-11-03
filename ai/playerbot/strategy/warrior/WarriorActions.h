@@ -10,6 +10,8 @@
 
 namespace ai
 {
+    bool PatchwerkThreatTank(PlayerbotAI* ai, Unit* target);
+
     // stances
     BUFF_ACTION_U(CastBattleStanceAction, "battle stance", !ai->IsTank(bot) && CastBuffSpellAction::isUseful());
     // Battle Stance only for the Mocking Blow second taunt: the plain battle
@@ -347,6 +349,9 @@ namespace ai
             Unit* target = GetTarget();
             if (!target)
                 return false;
+
+            if (PatchwerkThreatTank(ai, target))
+                return !ai->CanCastSpell("shield slam", target) && !ai->CanCastSpell("revenge", target);
 
             const bool isTank = ai->IsTank(bot);
 

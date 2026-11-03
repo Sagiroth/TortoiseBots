@@ -89,6 +89,11 @@ PriestStrategy::PriestStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
 
 void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Below a critical heal: a tank recovery heal always comes first.
+    triggers.push_back(new TriggerNode(
+        "patchwerk soaker needs shield",
+        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL - 1), NULL)));
+
     ClassStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -150,6 +155,11 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Below a critical heal: a tank recovery heal always comes first.
+    triggers.push_back(new TriggerNode(
+        "patchwerk soaker needs shield",
+        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL - 1), NULL)));
+
     ClassStrategy::InitNonCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(

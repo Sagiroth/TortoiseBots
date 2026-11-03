@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
@@ -235,6 +237,10 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 
 bool CastSpellAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool executed = false;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
     if (spellName == "conjure food" || spellName == "conjure water")
@@ -296,6 +302,7 @@ bool CastSpellAction::Execute(Event& event)
         }
         else
             executed = ai->CastSpell(spellName, target, nullptr, false, &spellDuration);
+        ai->GetHealerDiagnostics().CastAttempt(ai, target, spellIdOverride ? spellIdOverride : spellId, executed);
     }
 
     if (executed)
@@ -326,7 +333,10 @@ bool CastSpellAction::isPossible()
 
     Unit* spellTarget = GetTarget();
     if (!spellTarget)
+    {
+        ai->GetHealerDiagnostics().CheckFailed(ai, nullptr, spellId, SPELL_FAILED_BAD_TARGETS);
         return false;
+    }
 
     bool canReach = false;
     if (spellTarget == bot)
@@ -364,6 +374,7 @@ bool CastSpellAction::isPossible()
     if(!canReach)
     {
         botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s reason=out-of-reach", spellName.c_str());
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, SPELL_FAILED_OUT_OF_RANGE);
         return false;
     }
 
@@ -374,6 +385,7 @@ bool CastSpellAction::isPossible()
     {
         // NOT_READY (GCD / cast in flight) is every tick's normal answer
         // between casts; logging it would bury the real refusals.
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, result);
         if (result != SPELL_FAILED_NOT_READY)
             botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s result=%u", spellName.c_str(), (uint32)result);
         return false;
@@ -383,6 +395,13 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    if (FankrissBlocksAoe(ai, spellId))
+        return false;
+    // A Patchwerk healer spends no cast on damage filler while a Patchwerk tank is hurt.
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
+        return false;
+
     // A mounted travelling bot must not start an out-of-combat cast the core
     // would strip its mount for: without this every trigger family that does
     // not route through BuffTrigger (class armor rows, cure/dispel rows,
@@ -1084,6 +1103,9 @@ bool CastShootAction::isUseful()
 
 bool CastShootAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool succeeded = false;
 
     UpdateWeaponInfo();

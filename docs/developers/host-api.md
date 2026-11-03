@@ -738,7 +738,7 @@ or inside a battleground/instance (`InBattleGround`/`InBattleGroundQueue`/
 per-bot AH action stays independent and never pulls owned/party bots from players.
 
 No per-tick AH/DB scan or new AH-specific core seam is required.
-`AiPlayerbot.AhMarketEnabled=0` remains the default; the feature also requires
+`AiPlayerbot.AhMarketEnabled=1` is the default; the feature also requires
 `RandomBotAutologin=1`.
 
 ## 18. Random-bot auto-create (optional, default-off)

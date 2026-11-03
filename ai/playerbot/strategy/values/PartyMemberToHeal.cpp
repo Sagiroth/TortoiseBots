@@ -2,6 +2,9 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "PartyMemberToHeal.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/policy/raid/FankrissRaidPolicy.h"
+#include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
@@ -11,6 +14,7 @@
 #include "playerbot/RaidTankRolePolicy.h"
 #include "ObjectAccessor.h"
 #include <algorithm>
+#include "playerbot/HealingTriagePolicy.h"
 #include <map>
 
 using namespace ai;
@@ -86,30 +90,6 @@ uint32 ai::GetIncomingHeal(PlayerbotAI* ai, Unit* target)
     return it == incoming.end() ? 0 : it->second;
 }
 
-// Effective health percent (incoming melee damage taken off first when
-// pre-healing). Ranking by percent, as the donor does, keeps a cloth member at
-// 60 % ahead of a tank at 76 %: by missing hit points the tank's larger pool
-// always won and the member who was actually dying got nothing.
-// Incoming heals inflate only above lowHealth (HealthWithIncoming): a tank
-// in danger keeps its real urgency so the sort never parks it below
-// scratch DPS while a slow cast is still in flight.
-static float effectiveHealthPercent(const Unit* u, bool incomingDamage, std::map<ObjectGuid, uint32> const& incomingHeals)
-{
-    uint32 hp = u->GetHealth();
-    if (incomingDamage)
-    {
-        uint32 damage = getIncomingdamage(u);
-        hp = damage >= hp ? 0 : hp - damage;
-    }
-    uint32 incoming = 0;
-    auto const heal = incomingHeals.find(u->GetObjectGuid());
-    if (heal != incomingHeals.end())
-        incoming = heal->second;
-    uint32 hpmax = u->GetMaxHealth();
-    hp = HealthWithIncoming(hp, hpmax, incoming, (std::uint8_t)sPlayerbotAIConfig.lowHealth);
-    return hpmax ? hp * 100.0f / hpmax : 100.0f;
-}
-
 float ai::HealReachLimit(PlayerbotAI* ai)
 {
     return HealReachLimitFor(ai->GetBot()->InBattleGround(), ai->GetRange("heal"), sPlayerbotAIConfig.healDistanceBg,
@@ -152,212 +132,111 @@ bool ai::AnotherHealerCoversAlly(PlayerbotAI* ai, Unit* ally, float maxDistance)
 
 Unit* PartyMemberToHeal::Calculate()
 {
-    std::vector<Unit*> needHeals;
-    std::vector<Unit*> tankTargets;
-    if (bot->GetSelectionGuid())
-    {
-        Unit* target = ai->GetUnit(bot->GetSelectionGuid());
-        if (target &&
-            target->getObjectGuid() != bot->getObjectGuid() &&
-            sServerFacade.IsFriendlyTo(bot, target) &&
-            HealableTarget(sServerFacade.IsAlive(target)) &&
-            target->GetHealthPercent() < 100 &&
-            Check(target))
-        {
-            needHeals.push_back(target);
-        }
-    }
+    // A Patchwerk healer keeps its fixed tank seat while assigned tanks fight him.
+    if (bot->GetMapId() == 533)
+        if (Player* assigned = PatchwerkHealingTarget(ai))
+            if (Check(assigned))
+                return assigned;
 
-    if (GuidPosition rpgTarget = AI_VALUE(GuidPosition, "rpg target"))
-    {
-        Unit* target = rpgTarget.GetCreature(bot->GetInstanceId());
-        if (target && sServerFacade.IsFriendlyTo(bot, target) &&
-            HealableTarget(sServerFacade.IsAlive(target)) && target->GetHealthPercent() < 100)
-        {
-            needHeals.push_back(target);
-        }
-    }
-
-    const std::vector<Player*> partyMembers = GetPartyMembers();
-    if (partyMembers.empty() && needHeals.empty())
-    {
-        return nullptr;
-    }
-
-    if (!partyMembers.empty() || !needHeals.empty())
-    {
-        IsTargetOfHealingSpell predicate;
-        for (Player* player : partyMembers)
-        {
-            if (!Check(player) || !sServerFacade.IsAlive(player))
-            {
-                continue;
-            }
-
-            bool isTank = ai->IsTank(player);
-
-            // do not heal dueling members
-            if (player->m_duel && player->m_duel->opponent)
-            {
-                continue;
-            }
-
-            uint32 incomingDamage = 0;
-            if (ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT))
-                incomingDamage = getIncomingdamage(player);
-
-            const uint32 currentHealth = player->GetHealth();
-            const uint32 effectiveHealth = incomingDamage >= currentHealth
-                ? 0
-                : currentHealth - incomingDamage;
-            uint8 health = ((effectiveHealth * 100.0f) / player->GetMaxHealth());
-            // Above the critical line a member another healer is already casting
-            // at is left to that healer; at or below it the member stays a
-            // candidate for everybody (MemberNeedsHeal).
-            if (isTank || MemberNeedsHeal(float(health), float(sPlayerbotAIConfig.almostFullHealth),
-                    float(sPlayerbotAIConfig.criticalHealth),
-                    [&]() { return IsTargetOfSpellCast(player, predicate); }))
-            {
-                needHeals.push_back(player);
-            }
-
-            Pet* pet = player->GetPet();
-            if (pet && CanHealPet(pet))
-            {
-                health = pet->GetHealthPercent();
-                // Hurt AND not already being healed. The heal cast is looked up on the
-                // pet itself: the old test asked about the owner, so a healed owner
-                // hid a hurt pet.
-                if (PetNeedsHeal(float(health), float(sPlayerbotAIConfig.almostFullHealth),
-                        [&]() { return IsTargetOfSpellCast(pet, predicate); }))
-                {
-                    needHeals.push_back(pet);
-                }
-            }
-
-            if (isTank && IsInGroup_Helper(bot, player))
-            {
-                tankTargets.push_back(player);
-            }
-        }
-    }
-
-    if (needHeals.empty() && tankTargets.empty())
-    {
-        return nullptr;
-    }
-
-    // Issue #904: in combat an ally this healer cannot reach from where it
-    // stands and another healer covers is that healer's to heal. Dropping it
-    // here (not just refusing the walk) lets this healer fall back to somebody
-    // it can reach, instead of picking the far ally and then standing idle.
-    // The covering healer is in reach of the ally, so it keeps the ally in its
-    // own list: nobody drops an ally nobody else can heal. Out-of-reach is
-    // tested distance first, line of sight only inside the range.
-    if (ai->IsStateActive(BotState::BOT_STATE_COMBAT))
-    {
-        float const reachLimit = HealReachLimit(ai);
-        auto const dropCovered = [this, reachLimit](std::vector<Unit*>& list)
-        {
-            list.erase(std::remove_if(list.begin(), list.end(), [this, reachLimit](Unit* candidate)
-            {
-                return DropCoveredCandidate(candidate->GetHealthPercent(), float(sPlayerbotAIConfig.criticalHealth),
-                    [&]()
-                    {
-                        return bot->GetDistance(candidate, SizeFactor::CombatReach) > reachLimit ||
-                            !bot->IsWithinLOSInMap(candidate, true);
-                    },
-                    [&]() { return AnotherHealerCoversAlly(ai, candidate, reachLimit); });
-            }), list.end());
-        };
-        dropCovered(needHeals);
-        dropCovered(tankTargets);
-        if (needHeals.empty() && tankTargets.empty())
-            return nullptr;
-    }
-
-    if (needHeals.empty() && !tankTargets.empty())
-    {
-        needHeals = tankTargets;
-    }
-
-    bool preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
+    HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
+    bool const preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
+    bool const focused = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
     std::map<ObjectGuid, uint32> const incomingHeals =
         ai->GetAiObjectContext()->GetValue<std::map<ObjectGuid, uint32>>("incoming heals")->Get();
-    sort(needHeals.begin(), needHeals.end(), [preHealing, &incomingHeals](const Unit* u1, const Unit* u2) { return effectiveHealthPercent(u1, preHealing, incomingHeals) < effectiveHealthPercent(u2, preHealing, incomingHeals); });
+    std::size_t healerOrdinal = 0;
 
-    // Prefer an in-LOS member over an out-of-LOS one at similar urgency: an
-    // out-of-LOS pick still casts (its reach action walks the healer into
-    // LOS), so without this the healer chases a pillar-blocked member while
-    // a reachable one waits. LOS is only a tie-break inside a small missing-
-    // health window, never a filter: a dying member behind a pillar still
-    // outranks a scratched one in the open. Pets share the candidate set and
-    // take the same tie-break (no separate path).
-    Unit* mostUrgent = needHeals.front();
-    // Never while the top pick is in real danger: below lowHealth the
-    // healer goes to it, pillar or not.
-    if (mostUrgent->GetHealthPercent() >= sPlayerbotAIConfig.lowHealth &&
-        !sServerFacade.IsWithinLOSInMap(bot, mostUrgent))
+    // One bounded raid-roster pass, including human healers. No nearby-world scan
+    // per candidate. Focused healers own their assignment rather than a raid slot.
+    for (Player* player : LiveGroupMembers(bot->GetGroup()))
     {
-        // Window: a candidate less urgent by more than this still loses.
-        // mediumHealth 70 -> 30 health-percent points above the top target.
-        float const topPercent = mostUrgent->GetHealthPercent();
-        float const smallGap = float(100 - sPlayerbotAIConfig.mediumHealth);
-        for (Unit* candidate : needHeals)
+        if (!Check(player))
+            continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(player);
+        if (!focused && peer && ai->IsHeal(player) &&
+            !peer->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT) &&
+            !player->HasUnitState(UNIT_STAT_CAN_NOT_REACT) && !player->IsNonMeleeSpellCasted(true) &&
+            player->GetMaxPower(POWER_MANA) &&
+            100.0f * player->GetPower(POWER_MANA) / player->GetMaxPower(POWER_MANA) > sPlayerbotAIConfig.lowMana &&
+            player->GetObjectGuid() < bot->GetObjectGuid())
+            ++healerOrdinal;
+    }
+
+    std::vector<HealingCandidate> candidates;
+    std::map<uint64, Unit*> targets;
+    auto addTarget = [&](Unit* target, bool tank, bool pet)
+    {
+        if (!Check(target))
+            return;
+        // Issue #904: in combat an ally this healer cannot reach from where it
+        // stands and another healer covers is that healer's to heal. Dropping it
+        // here (not just refusing the walk) lets this healer fall back to somebody
+        // it can reach, instead of picking the far ally and then standing idle.
+        // The covering healer is in reach of the ally, so it keeps the ally in its
+        // own list: nobody drops an ally nobody else can heal. Out-of-reach is
+        // tested distance first, line of sight only inside the range.
+        if (ai->IsStateActive(BotState::BOT_STATE_COMBAT))
         {
-            if (candidate == mostUrgent)
-                continue;
-            if (candidate->GetHealthPercent() > topPercent + smallGap)
-                break;
-            if (sServerFacade.IsWithinLOSInMap(bot, candidate))
-            {
-                std::swap(*std::find(needHeals.begin(), needHeals.end(), candidate), needHeals.front());
-                break;
-            }
+            float const reachLimit = HealReachLimit(ai);
+            if (DropCoveredCandidate(target->GetHealthPercent(), float(sPlayerbotAIConfig.criticalHealth),
+                [&]() { return bot->GetDistance(target, SizeFactor::CombatReach) > reachLimit ||
+                    !bot->IsWithinLOSInMap(target, true); },
+                [&]() { return AnotherHealerCoversAlly(ai, target, reachLimit); }))
+                return;
         }
-    }
+        auto const incoming = incomingHeals.find(target->GetObjectGuid());
+        uint32 const creditedHealth = HealthWithIncoming(target->GetHealth(), target->GetMaxHealth(),
+            incoming == incomingHeals.end() ? 0 : incoming->second, sPlayerbotAIConfig.lowHealth);
+        HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), creditedHealth,
+            target->GetMaxHealth(), preHealing ? getIncomingdamage(target) : 0,
+            tank, pet, false,
+            sServerFacade.IsWithinLOSInMap(bot, target)};
+        if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
+            candidates.push_back(candidate);
+    };
 
-    int healerIndex = 0;
-    if (!partyMembers.empty())
+    // A focus-heal list must not leak into opportunistic NPC, pet or selection healing.
+    if (!focused)
     {
-        for (Player* player : partyMembers)
-        {
-            if (!ai->IsSafe(player))
-            {
-                continue;
-            }
-            else if (player == bot)
-            {
-                break;
-            }
-            else if (ai->IsHeal(player) && PlayerbotAIStorage::Instance().GetAI(player))
-            {
-                float percent = (float)player->GetPower(POWER_MANA) / (float)player->GetMaxPower(POWER_MANA) * 100.0;
-                if (percent > sPlayerbotAIConfig.lowMana)
-                {
-                    healerIndex++;
-                }
-            }
-        }
+        Unit* selected = ai->GetUnit(bot->GetSelectionGuid());
+        addTarget(selected, selected && selected->IsPlayer() && ai->IsTank(static_cast<Player*>(selected)),
+            selected && selected->IsPet());
+        if (GuidPosition rpgTarget = AI_VALUE(GuidPosition, "rpg target"))
+            addTarget(rpgTarget.GetCreature(bot->GetInstanceId()), false, false);
     }
-    else
+
+    for (Player* player : GetPartyMembers())
     {
-        healerIndex = 1;
+        addTarget(player, ai->IsTank(player), false);
+        Pet* pet = player->GetPet();
+        if (!focused && sServerFacade.IsAlive(player) && pet && CanHealPet(pet))
+            addTarget(pet, false, true);
     }
 
-    healerIndex = healerIndex % needHeals.size();
+    // An out-of-LOS candidate is only a fallback: a visible one at the same
+    // urgency wins, and with nobody visible the healer may walk into LOS only
+    // when it can move. HealingAssignment spreads the healers across the most
+    // urgent band, never onto somebody at full health.
+    // Entangle can relocate a "fankriss healing" healer. Keep the triage, but
+    // use a reachable injured ally before walking back across the room.
+    if (FankrissHealingActive(ai))
+    {
+        auto reachable = [&](HealingCandidate const& candidate)
+            { return FankrissHealReachable(ai, targets.at(candidate.guid)); };
+        if (std::any_of(candidates.begin(), candidates.end(), reachable))
+            candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                [&](HealingCandidate const& candidate) { return !reachable(candidate); }), candidates.end());
+    }
 
-    // Spreading the targets over several healers is only worth doing while there
-    // is more than one worth spreading. needHeals holds every tank regardless of
-    // health, so with a single injured member the second healer's index lands on
-    // somebody at full health - the health triggers then find nothing to do, never
-    // fire, and nobody gets healed at all while the healer stands there doing
-    // damage. Fall back to whoever is worst off.
-    Unit* chosen = needHeals[healerIndex];
-    if (chosen && effectiveHealthPercent(chosen, false, incomingHeals) >= sPlayerbotAIConfig.almostFullHealth)
-        chosen = needHeals[0];
+    bool const canReach = ai->CanMove() && !ai->HasStrategy("stay", ai->GetState()) &&
+        !bot->IsNonMeleeSpellCasted(true, false, true);
+    FilterHealingLineOfSight(candidates, focused, canReach);
 
-    return chosen;
+    if (candidates.empty())
+        return nullptr;
+    std::sort(candidates.begin(), candidates.end(), [&](HealingCandidate const& left, HealingCandidate const& right)
+        { return HealingPriority(left, right, bands); });
+    return targets.at(candidates[HealingAssignment(candidates, bands, healerOrdinal)].guid);
 }
 
 bool PartyMemberToHeal::CanHealPet(Pet* pet)
@@ -376,21 +255,21 @@ bool PartyMemberToHeal::Check(Unit* player)
     // heal envelope for this value.
     float maxDist = isBg ? sPlayerbotAIConfig.healDistanceBg : ai->GetRange("heal");
     maxDist *= 2.0f;
+    maxDist = FankrissHealingSearchRange(maxDist, FankrissHealingActive(ai));
 
-    if (!player)
+    if (!player || player == bot || !player->IsInWorld() || !sServerFacade.IsAlive(player) ||
+        player->GetMap() != bot->GetMap() || !sServerFacade.IsFriendlyTo(bot, player))
         return false;
 
-    if (player->getObjectGuid() == bot->getObjectGuid())
-        return false;
-
-    if (player->GetMapId() != bot->GetMapId())
-        return false;
+    if (player->IsPlayer())
+    {
+        Player* member = static_cast<Player*>(player);
+        if (member->IsBeingTeleported() || (member->m_duel && member->m_duel->opponent))
+            return false;
+    }
 
     // A hidden GM is never a spell target (see PartyMemberValue::Check).
     if (player->IsPlayer() && player->GetVisibility() == VISIBILITY_OFF)
-        return false;
-
-    if (!player->IsInWorld())
         return false;
 
     if (sServerFacade.getDistance2d(bot, player) > maxDist)

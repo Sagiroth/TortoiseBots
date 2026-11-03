@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
@@ -17,6 +18,12 @@ float ThreatMultiplier::GetValue(Action* action)
         return 1.0f;
 
     if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+        return 1.0f;
+
+    // Burn the raid's timed Fankriss Spawn before its enrage. Single-target
+    // only; boss damage and unrelated AoE keep their threat gates.
+    if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_SINGLE &&
+        FankrissBurnSpawn(ai, action->GetTarget()))
         return 1.0f;
 
     // Heals never back off. CastHealingSpellAction carries the AoE threat

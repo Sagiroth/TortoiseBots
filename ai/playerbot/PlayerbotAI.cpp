@@ -1,4 +1,10 @@
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include <vector>
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+#include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
@@ -846,9 +852,119 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->StopMoving();
     }
 
+    // Viscidus (opt-in "viscidus glob focus", map 531 only): sample the encounter.
+    UpdateViscidus(this);
+
     // Update facing
     SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");
     UpdateFaceTarget(elapsed, minimal);
+
+    // Opt-in Fankriss roles: a healer able to heal from where it stands stops
+    // walking, and the raid's shared Spawn hand-off and the no-AoE rule run
+    // before a long cast or action delay could postpone them.
+    UpdateFankrissHealing(this);
+    UpdateFankrissFocus(this);
+
+    // Opt-in Patchwerk roles (Naxxramas only, so no other map pays for them).
+    if (bot->GetMapId() == 533)
+    {
+        AiObjectContext* context = aiObjectContext;
+        if (UpdatePatchwerkSafety(this))
+            return;
+        // Interrupt only offensive filler, before a long cast or action delay
+        // can postpone reacting to a Patchwerk tank's falling health.
+        if (StopUnsafeRaidHealerFiller(this))
+            SetAIInternalUpdateDelay(0);
+
+        // Keep one shared opening clock on the assigned main, including while
+        // the raid is waiting outside combat. Never restart it for late DPS joins.
+        if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+            aiObjectContext->GetValue<PatchwerkOpeningWindow>("patchwerk opening window")->Get();
+        if (PatchwerkDpsOpeningHold(this))
+        {
+            if (bot->GetVictim() && bot->GetVictim()->GetEntry() == 16028)
+                bot->AttackStop();
+            for (uint32 slot : {uint32(CURRENT_GENERIC_SPELL), uint32(CURRENT_CHANNELED_SPELL), uint32(CURRENT_AUTOREPEAT_SPELL), uint32(CURRENT_MELEE_SPELL)})
+                if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(slot)))
+                    if (PatchwerkOpeningBlocksSpell(this, spell->m_spellInfo->Id,
+                        aiObjectContext->GetValue<Unit*>("current target")->Get()))
+                        bot->InterruptSpell(CurrentSpellTypes(slot));
+            if (Pet* pet = bot->GetPet())
+                if (pet->GetVictim() && pet->GetVictim()->GetEntry() == 16028)
+                    pet->AttackStop();
+        }
+
+        // Do not leave the main on the ordinary pull-end action delay while its
+        // rendezvoused soakers start swinging. The action consumes only a landed,
+        // explicit Patchwerk main pull and never cancels an unlanded shot.
+        if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+        {
+            PatchwerkMainEngageAction opening(this);
+            Event event("patchwerk main opening");
+            opening.Execute(event);
+        }
+
+        // A player-ordered Patchwerk pull stages the soakers beside its main
+        // tank before combat. Never erase stay/follow or let staging arm an attack.
+        bool const soakStaging = GetPatchwerkSoakPuller(this) != nullptr;
+        bool const soakWasStaging = AI_VALUE2(bool, "manual bool", "patchwerk soak staging");
+        SET_AI_VALUE2(bool, "manual bool", "patchwerk soak staging", soakStaging);
+        if (soakWasStaging && !soakStaging)
+        {
+            StopMoving();
+            ResetAIInternalUpdateDelay();
+        }
+        if (soakStaging)
+        {
+            if (!soakWasStaging)
+            {
+                bot->InterruptNonMeleeSpells(false);
+                ResetAIInternalUpdateDelay();
+                if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                    sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakStage", ObjectGuid(), "joining main before pull");
+            }
+            if (CanUpdateAIInternal())
+            {
+                PatchwerkSoakStageAction staging(this);
+                Event event("patchwerk soak staging");
+                staging.Execute(event);
+                if (GetAIInternalUpdateDelay() < 250)
+                    SetAIInternalUpdateDelay(250);
+            }
+            return;
+        }
+
+        // Assigned soakers must not wait for their own combat flag or a
+        // non-combat buff/rest delay. Orders and anchors stay intact: the
+        // exception lasts only while the encounter is active.
+        bool const soakActive = GetPatchwerkSoakBoss(this) != nullptr;
+        bool const soakWasActive = AI_VALUE2(bool, "manual bool", "patchwerk soak active");
+        SET_AI_VALUE2(bool, "manual bool", "patchwerk soak active", soakActive);
+        if (soakActive)
+        {
+            if (!soakWasActive)
+            {
+                WakePatchwerkPullMain(this);
+                bot->InterruptNonMeleeSpells(false);
+                ResetAIInternalUpdateDelay();
+                if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                    sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakEngage", ObjectGuid(), "group engaged; preparing stance and melee");
+            }
+            PatchwerkSoakEngageAction opening(this);
+            if (opening.isUseful())
+            {
+                if (CanUpdateAIInternal() && opening.isPossible())
+                {
+                    Event event("patchwerk soak opening");
+                    opening.Execute(event);
+                    // Respect a stance GCD or movement delay; bound failed retries.
+                    if (GetAIInternalUpdateDelay() < 250)
+                        SetAIInternalUpdateDelay(250);
+                }
+                return;
+            }
+        }
+    }
 
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
 
@@ -1288,7 +1404,10 @@ void PlayerbotAI::OnCombatStarted()
         aiObjectContext->GetValue<time_t>("combat start time")->Set(time(0));
 
         // Update stay position on location when combat starts
-        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
+        // An assigned Patchwerk soaker keeps its saved stay position: it leaves
+        // it only for this encounter and returns to it afterwards.
+        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+            !GetPatchwerkSoakBoss(this))
         {
             aiObjectContext->GetValue<PositionEntry>("pos", "stay")->Set(PositionEntry(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId()));
         }
@@ -3028,6 +3147,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         explicitActivityOverride = previousActivityOverride;
         return;
     }
+
+    healerDiagnostics.Sample(this);
 
     if (minimal)
     {

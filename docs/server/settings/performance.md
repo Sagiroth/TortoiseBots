@@ -22,7 +22,7 @@ The total bot population is the primary factor influencing server CPU and memory
 | [`AiPlayerbot.DisableActivityPriorities`](#aiplayerbotdisableactivitypriorities) | `1` | Disables bot activity throttling so all bots remain fully reactive. |
 | [`AiPlayerbot.botActiveAlone`](#aiplayerbotbotactivealone) | `10` | Percentage of isolated bots kept active when throttling is enabled. |
 | [`AiPlayerbot.ForceActiveWhenNearPlayer`](#aiplayerbotforceactivewhennearplayer) | `0` | Forces bots within human visibility range to remain fully active. |
-| [`AiPlayerbot.PoolTickBudgetUs`](#aiplayerbotpooltickbudgetus) | `10000` | Microsecond time budget per world tick for processing pool bots. |
+| [`AiPlayerbot.PoolTickBudgetUs`](#aiplayerbotpooltickbudgetus) | `22000` | Microsecond time budget per world tick for processing pool bots. |
 | [`AiPlayerbot.CombatTickBudgetUs`](#aiplayerbotcombattickbudgetus) | `15000` | Microsecond time budget per world tick for processing combat turns. |
 | [`AiPlayerbot.PoolBudgetWhenTickOverMs`](#aiplayerbotpoolbudgetwhentickoverms) | `0` | World tick latency threshold in milliseconds where budgets engage. |
 | [`AiPlayerbot.TargetWorldTickMs`](#aiplayerbottargetworldtickms) | `100` | Target world tick duration used by the self-tuning budget controller. |
@@ -31,7 +31,7 @@ The total bot population is the primary factor influencing server CPU and memory
 | [`AiPlayerbot.AsyncTravelPartitions`](#aiplayerbotasynctravelpartitions) | `0` | Enables asynchronous partitioning of world travel destination lookups. |
 | [`AiPlayerbot.GenerateItemCaches`](#aiplayerbotgenerateitemcaches) | `1` | Builds equipment and item candidate database tables on first boot. |
 | [`AiPlayerbot.LogInGroupOnly`](#aiplayerbotlogingrouponly) | `1` | Restricts detailed per-action logging output to bots currently in groups. |
-| [`AiPlayerbot.Enabled`](#aiplayerbotenabled) | `0` | Master kill-switch enabling or disabling bot artificial intelligence updates. |
+| [`AiPlayerbot.Enabled`](#aiplayerbotenabled) | `1` | Master kill-switch enabling or disabling bot artificial intelligence updates. |
 | [`AiPlayerbot.PoolMeleeHoldGround`](#aiplayerbotpoolmeleeholdground) | `0` | Disables generic fleeing behaviors on pool melee classes during combat. |
 | [`AiPlayerbot.FailedActionRetryBase`](#aiplayerbotfailedactionretrybase) | `250` | Base exponential backoff delay in milliseconds for repeated failed actions. |
 | [`AiPlayerbot.FailedActionRetryMax`](#aiplayerbotfailedactionretrymax) | `2000` | Maximum exponential backoff cap in milliseconds for repeated failed actions. |
@@ -95,16 +95,16 @@ When throttling is enabled, setting this to `1` ensures any bot within human vis
 
 ### `AiPlayerbot.PoolTickBudgetUs`
 Microsecond execution budget ceiling per world tick for processing pool bots.
-**Default:** `10000` · **Values:** microseconds (1000..100000, or 0) · **Restart:** needed
+**Default:** `22000` · **Values:** microseconds (1000..100000, or 0) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Defines the time budget allocated for updating random pool bots during each server world tick (10,000 microseconds = 10 milliseconds).
+Defines the time budget allocated for updating random pool bots during each server world tick (22,000 microseconds = 22 milliseconds).
 
 Player-owned bots and companions hired by online players always update first, on every tick, and are completely exempt from this budget. The random pool runs afterward as one turn queue, most-overdue-first; bots it does not reach run first on the next tick. The budget is checked between bots so a single pass can overshoot by one bot. Setting this to `0` removes the budget ceiling entirely.
 
-If pool bots feel sluggish or unresponsive, raise `PoolTickBudgetUs` to `25000`–`50000` (25–50 ms).
+If pool bots feel sluggish or unresponsive, raise `PoolTickBudgetUs` to `30000`–`50000` (30–50 ms). On a weak machine, run fewer bots rather than lowering it.
 
 </details>
 
@@ -219,8 +219,8 @@ When detailed engine logging is enabled, setting this to `1` filters out logging
 </details>
 
 ### `AiPlayerbot.Enabled`
-Master switch enabling or disabling all bot artificial intelligence processing.
-**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+Master switch enabling or disabling all bot artificial intelligence processing. Set `0` to keep the module built in but inert (no pool bots, no bot AI).
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

@@ -18,7 +18,7 @@ These settings configure player-owned bots, alt-bots, formation positioning, and
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
 | [`AiPlayerbot.SyncAltLevelToMaster`](#aiplayerbotsyncaltleveltomaster) | `0` | Automatically levels grouped owned bot alts to match the leader level. |
-| [`AiPlayerbot.BoostFollow`](#aiplayerbotboostfollow) | `0` | Causes bots trailing far behind to mount up to catch up. |
+| [`AiPlayerbot.BoostFollow`](#aiplayerbotboostfollow) | `1` | Causes bots trailing far behind to mount up to catch up. |
 | [`AiPlayerbot.DungeonFollowHoldBeforePacks`](#aiplayerbotdungeonfollowholdbeforepacks) | `0` | Stops follower bots outside unpulled pack aggro radius (attack detection range). |
 | [`AiPlayerbot.DefaultFormation`](#aiplayerbotdefaultformation) | `chaos` | Sets default idle follow formation around the party leader. |
 | [`AiPlayerbot.RaidFollowWedge`](#aiplayerbotraidfollowwedge) | `0` | Spreads raid and dungeon followers behind the leader and has far stragglers walk the leader's path. |
@@ -36,7 +36,7 @@ These settings configure player-owned bots, alt-bots, formation positioning, and
 | [`AiPlayerbot.OwnedBotSummonRepair`](#aiplayerbotownedbotsummonrepair) | `0` | Automatically repairs bot durability upon group accept summon arrival. |
 | [`AiPlayerbot.OwnedBotSummonCooldown`](#aiplayerbotownedbotsummoncooldown) | `300` | Minimum seconds required between group accept summons per bot. |
 | [`AiPlayerbot.RollBadItemsWithPlayer`](#aiplayerbotrollbaditemswithplayer) | `0` | Forces bots to roll Need on dungeon drops for empty gear slots. |
-| [`AiPlayerbot.AltBots`](#aiplayerbotaltbots) | `0` | Allows dismissed owned alts to continue roaming and playing independently. |
+| [`AiPlayerbot.AltBots`](#aiplayerbotaltbots) | `1` | Allows dismissed owned alts to continue roaming and playing independently. |
 | [`AiPlayerbot.AltBotsLogoutWithOwner`](#aiplayerbotaltbotslogoutwithowner) | `0` | Forces active alt-bots to log out when their account owner logs out. |
 | [`AiPlayerbot.SummonAtInnkeepersEnabled`](#aiplayerbotsummonatinnkeepersenabled) | `1` (built in) | Enables summoning owned bots while near an innkeeper NPC. |
 | [`AiPlayerbot.SyncQuestForPlayer`](#aiplayerbotsyncquestforplayer) | `0` (built in) | Completes quests for player master when a companion bot turns them in. |
@@ -60,7 +60,7 @@ This applies only to owned (non-random) bots, never to random pool bots or hired
 
 ### `AiPlayerbot.BoostFollow`
 Causes bots that have fallen far behind the party leader to mount up and ride to catch up. Enable this to prevent followers from straggling on long journeys.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -312,7 +312,7 @@ Genuine upgrades are Needed regardless of this flag; in all cases, bots wait for
 
 ### `AiPlayerbot.AltBots`
 Allows owned alts brought into the world to continue playing autonomously when removed from the player party. Enable for a personalized world.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

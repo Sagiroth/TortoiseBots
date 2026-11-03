@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "WarriorTriggers.h"
 #include "WarriorActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 using namespace ai;
 
@@ -63,6 +64,11 @@ bool SunderArmorDebuffTrigger::IsActive()
     if (!target)
         return false;
 
+    // Sunder still builds threat at five stacks: an assigned Patchwerk tank
+    // needs it as filler while its stronger threat builders are unavailable.
+    if (PatchwerkThreatTank(ai, target))
+        return true;
+
     // Stop at a full 5-stack, but re-arm to refresh an expiring stack
     // (donor refreshes at <=6s remaining): without this the 5-stack falls
     // off completely before the trigger fires again.
@@ -77,4 +83,10 @@ bool SunderArmorDebuffTrigger::IsActive()
         return true;
 
     return !ai->HasAura("sunder armor", target, true) && !HasMaxDebuffs();
+}
+
+bool PatchwerkShieldSlamTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return PatchwerkThreatTank(ai, target) && ai->CanCastSpell("shield slam", target);
 }
