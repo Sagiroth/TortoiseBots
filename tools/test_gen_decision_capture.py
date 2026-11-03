@@ -66,8 +66,17 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual([field.name for field in struct.fields], ["a", "b"])
         self.assertEqual([field.type_text for field in struct.fields], ["float", "float"])
 
-    def test_function_member_type_names_the_field(self):
-        result = run_scan("struct S { std::function<void()> cb; };\n")
+    def test_std_function_member_is_skipped_and_named(self):
+        # A callback is not data: left out of the captured fields, named in Struct.skipped (and the header comment).
+        model = gen.scan_source("struct S { int a = 0; std::function<void()> cb; std::function<bool(float)> p, q; };",
+                                "<test>")
+        struct = model.structs["S"]
+        self.assertEqual([field.name for field in struct.fields], ["a"])
+        self.assertEqual(struct.skipped, ["cb", "p", "q"])
+
+    def test_std_function_array_still_stops_the_generator(self):
+        # Only a bare callback is skipped; an array of them is an unsupported type and names its field.
+        result = run_scan("struct S { std::function<void()> cb[2]; };\n")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("cb", result.stderr)
 

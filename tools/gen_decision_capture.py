@@ -15,7 +15,8 @@ field, a member function, a nested struct/enum, or one of the skipped forms
 (using/typedef/static/friend/access specifier). Anything else stops with
 `file:line: unrecognised statement`, and a field type outside the allowed list
 stops naming the field and the type, so a new kind of member is a decision, not
-a silent omission.
+a silent omission. One exception is decided: a bare `std::function` member is a
+callback, not data, and is left out of the capture (named in the header comment).
 
 Schema naming: namespaces are stripped and enclosing structs kept (`Facts`,
 `Run::Straggle`, `Phase`). The text is sorted by the full C++ qualified name,
@@ -99,6 +100,7 @@ class Struct:
         self.qualified = qualified
         self.scope = scope  # tuple of parts
         self.fields = []
+        self.skipped = []  # std::function members: named, not captured (see build_field_type)
 
 
 class Enum:
@@ -614,12 +616,21 @@ class Parser:
             if base_type is None or not base_type:
                 self.error(start, "field %s without a type" % name)
             node = self.build_field_type(base_type, postfix, struct, name)
+            if node[0] == "function":
+                struct.skipped.append(name)
+                continue
             struct.fields.append(Field(name, node, compact_type(node)))
 
     def build_field_type(self, type_text, postfix, struct, name):
         """Classify one field's type. Unsupported shapes become ("raw", ...) and
-        only fail when a captured struct reaches them (resolve_type)."""
+        only fail when a captured struct reaches them (resolve_type).
+
+        A bare std::function member is a callback, not data: it returns ("function", ...) and
+        parse_field_statement leaves it out of the captured fields (the replay sees the default,
+        an empty std::function). Function pointers and arrays of callbacks still stop the generator."""
         compact = re.sub(r"\s+", "", type_text)
+        if compact.startswith("std::function<") and compact.endswith(">") and not postfix.strip():
+            return ("function", compact)
         if compact.endswith("*") or "(" in compact or "&" in compact:
             if postfix.strip():
                 return ("raw", compact + postfix.strip())
@@ -1092,6 +1103,10 @@ def generate_header(model, roots=ROOTS):
     out.append("//")
     out.append("// X-macro field lists (declaration order), the schema text and hash of the")
     out.append("// captured structs, and one sample value per field for the codec test.")
+    for struct, _fields in structs:
+        for name in struct.skipped:
+            out.append("// Not captured (a std::function callback; a replay sees it empty): %s.%s"
+                       % (struct.qualified, name))
     out.append("#pragma once")
     out.append("")
     out.append("namespace TortoiseBots {")
