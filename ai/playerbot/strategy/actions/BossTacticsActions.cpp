@@ -1923,7 +1923,7 @@ bool BossTacticsUseObjectAction::Execute(Event& event)
             LogUseObject(ai, bot, "skip", task, nowMs, 0, "no_object");
         return false;
     }
-    if (bot->GetDistance3dToCenter(task.object) > INTERACTION_DISTANCE - 1.0f)
+    if (bot->GetDistance(task.object) > INTERACTION_DISTANCE - 1.0f)
     {
         const float x = task.object->GetPositionX();
         const float y = task.object->GetPositionY();
