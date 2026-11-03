@@ -81,8 +81,7 @@ namespace ai
     public:
         RaidBombRunoutAction(PlayerbotAI* ai, std::string name = "raid bomb runout") : MovementAction(ai, name) {}
         bool Execute(Event& event) override;
-        // A held bot still runs a bomb out (CanMove(true)).
-        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(true); }
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     };
 
     // Four Horsemen mark rotation (Naxxramas): at 3+ stacks of one mark

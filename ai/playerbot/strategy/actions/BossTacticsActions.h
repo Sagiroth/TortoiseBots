@@ -238,8 +238,7 @@ namespace ai
     public:
         BossTacticsFleeAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics flee") {}
         bool Execute(Event& event) override;
-        // A return-held bot still leaves a hazard (CanMove(true)): the hold keeps it from following, not escaping.
-        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(true); }
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     };
 
     // Frozen: every action but the freeze action itself is held (FreezeHoldsAction). Registered on the combat,

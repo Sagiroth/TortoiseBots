@@ -92,19 +92,26 @@ class TeleportReturnWiringTest(unittest.TestCase):
         # The force-stop of a bot that may not move covers a follow already under way.
         self.assertIn("if (!bot->IsStopped() && !IsJumping() && !CanMove()", AI)
 
-    def test_a_held_bot_still_leaves_a_hazard(self):
-        # The hold keeps a bot from following or walking, never from escaping: the escape movers pass CanMove(true).
+    def test_a_held_bot_waits_instead_of_escaping_a_hazard(self):
+        """The hold stops the bot's own moves, the hazard escapes included: a documented limit, not a fix.
+
+        MovementAction::isPossible() is itself `ai->CanMove()`, and DispatchMovement refuses a walk on the same test,
+        so an escape bit would have to be threaded through both (and the force-stop above). Until then the escape
+        movers take the plain test like every other move, and the docs say a held bot does not leave a hazard.
+        """
         actions_h = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
         actions = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
         movement_h = (ROOT / "ai/playerbot/strategy/actions/MovementActions.h").read_text()
         dungeon_h = (ROOT / "ai/playerbot/strategy/actions/DungeonActions.h").read_text()
-        self.assertIn("ai->CanMove(true)",
-                      body(actions_h, "class BossTacticsFleeAction", "\n    };"))
-        self.assertIn("ai->CanMove(true)", body(actions, "bool BossTacticsAvoidCastAction::isPossible()", "\n}\n"))
-        self.assertIn("ai->CanMove(true)", body(movement_h, "class AvoidAoeAction", "\n    };"))
-        self.assertIn("ai->CanMove(true)", body(dungeon_h, "class RaidBombRunoutAction", "\n    };"))
-        # The follow and chase movers keep the plain test.
-        self.assertIn("if (!ai->CanMove())", (ROOT / "ai/playerbot/strategy/actions/FollowActions.cpp").read_text())
+        sections = (body(actions_h, "class BossTacticsFleeAction", "\n    };"),
+                    body(actions, "bool BossTacticsAvoidCastAction::isPossible()", "\n}\n"),
+                    body(movement_h, "class AvoidAoeAction", "\n    };"),
+                    body(dungeon_h, "class RaidBombRunoutAction", "\n    };"))
+        for section in sections:
+            self.assertIn("ai->CanMove()", section)
+            self.assertNotIn("CanMove(true)", section)
+        docs = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+        self.assertIn("**Known limit:** a held bot takes no hazard escapes either", docs)
 
     def test_policy_tick_order(self):
         tick = body(POLICY, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{", "\n}\n")

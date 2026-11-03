@@ -565,7 +565,11 @@ How far (yards) from the lead bot a run's bot may be revived before it stands st
 <details>
 <summary>How it works in detail</summary>
 
+**Known limit:** a held bot takes no hazard escapes either: while the hold is up it does not step out of a listed boss cast (`avoid_cast`), an area effect or a bomb runout. It waits where it stands and the run is what gets it out; a hold only lasts 60 s at most.
+
 **Waiting to be brought back:** only read while `AiPlayerbot.DungeonSelfClear = 1`, for the bots of a run (`.bot run`); outside a run nothing changes. Added 2026-11-03 (Zul'Gurub walk 29: bots revived by hand far from the raid, with the run paused, walked the navmesh back and pulled every pack on the way). A bot of a run revived inside a dungeon farther than this from the lead bot (any revive: the run's, a player's or a GameMaster's, with the run running or paused) stands where it is for up to 60 s, waiting for a summon or a teleport. So does every bot the run has decided to bring back (a teleport return, a summon of a revived or wedged bot, a bot left behind after the lead bot's rescue teleport, a summon the portal dropped and that waits for its retry) and any bot with a summon pending from its commander, until it is within 10 yd of where it is brought. While it waits it does not follow, walk or chase; it fights back only from where it stands. After 60 s without arriving it is released and the run's note says so (*Name waited 60 s N yd from the lead bot for its summon or teleport: released*). A paused run leaves its own returns to the bots' own AI; the revive hold above still applies. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+**Known limit:** a held bot takes no hazard escapes either: while the hold is up it does not step out of a listed boss cast (`avoid_cast`), an area effect or a bomb runout. It waits where it stands and the run is what gets it out; a hold lasts 60 s at most.
 
 </details>
 
