@@ -126,9 +126,13 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRaid = config.GetBoolDefault("AiPlayerbot.DungeonRunRaid", false);
     dungeonRunRaidBossRules = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidBossRules", false);
     dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
+    dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
+    dungeonRunAggroWalkRing = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroWalkRing", false);
+    dungeonRunAggroRingYd = std::min(40.0f, std::max(5.0f,
+        config.GetFloatDefault("AiPlayerbot.DungeonRunAggroRingYd", 20.0f)));
     // The margin's ceiling is kPackClearMarginMaxYd (30, kPatrolSeeYd in DungeonRunPolicy.h); the policy reads 0 as off.
     dungeonRunPackClearMarginYd = std::min(30.0f, std::max(0.0f,
         config.GetFloatDefault("AiPlayerbot.DungeonRunPackClearMarginYd", 10.0f)));

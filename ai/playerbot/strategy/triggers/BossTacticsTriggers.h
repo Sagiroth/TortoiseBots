@@ -45,6 +45,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A linked_death group is held and this free DPS bot is not on the equalise pick (the highest member, no member at
+    // or below param while another is above it).
+    class BossTacticsLinkedDeathTrigger : public Trigger
+    {
+    public:
+        BossTacticsLinkedDeathTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics linked death", 1) {}
+        bool IsActive() override;
+    };
+
     // A creature in the fight casts a spell an avoid_cast row lists and this bot (not a tank) stands inside its radius.
     class BossTacticsAvoidCastTrigger : public Trigger
     {

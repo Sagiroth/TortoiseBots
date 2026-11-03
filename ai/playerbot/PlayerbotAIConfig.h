@@ -581,12 +581,20 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // The linked_death boss tactic ("die together"): free DPS bots equalise a group's health, hold every member at or
+    // below the row's param % and burn them together once all are there (BossTacticsPolicy.h; its own key on top of
+    // the tactics gate, default off).
+    bool dungeonRunLinkedDeath = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
     // once before a pull that brings more than the ceiling (opt-in; ceiling default 6 joiners).
     bool dungeonRunAggroEstimate;
     uint32 dungeonRunAggroCeiling;
+    // ... the ring estimate (EstimateAggroRing): the walk to the pull, the stand and the fight point wake a pack, and
+    // every member calls for help within dungeonRunAggroRingYd (only read with dungeonRunAggroEstimate).
+    bool dungeonRunAggroWalkRing;
+    float dungeonRunAggroRingYd;
     // The run leader's pack-cleared gate: a pull step is done only when no unit of its entries is left within its
     // radius + this many yards (2D, 10 yd of height), a unit that spawned inside the radius belongs to the step
     // wherever it walks, and a formation follower of a waypoint leader counts as a patroller. 0 turns it off.

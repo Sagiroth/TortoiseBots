@@ -23,7 +23,7 @@ It is **off by default** (`AiPlayerbot.RunTrace.Enabled = 0`) and costs nothing 
 
 ```text
 .bot trace start <run_id> [party|bot <Name>] [driver=<model>:<effort>:<run>]
-.bot trace stop
+.bot trace stop [<run_id>]
 .bot trace status
 ```
 
@@ -32,6 +32,8 @@ See [`.bot trace`](../play/commands/bot-panel.md#bot-trace) for who may run them
 The scope is re-read every frame and permission is re-checked each time: a bot is recorded only while the player who started the run is online and is a GameMaster, controls that bot, or is the bound remote commander of its group, so a stranger's bots that join the party later are left out. If the starter logs out, the run ends by itself (`scope_lost`).
 
 Who may start a run: with `AiPlayerbot.RunTrace.GmOnly = 1` (the default) only a GameMaster, since every run takes disk space; with `0` also the player who controls the bots. `.bot trace status` names the run id and scope to a GameMaster and to the player who started the run; anyone else is told only that a run is going. Stopping a run returns at once; its `end` record and summary are written a moment later, and a new `start` in that moment is refused (`finishing`).
+
+`.bot trace stop <run_id>` stops the run only when it is that run's own trace: another run's id answers `other-run` and nothing is stopped. A plain `.bot trace stop` with no id stops whatever trace runs, as before.
 
 `driver=<model>:<effort>:<run>` names what drove the run (the turtle-agent passes its model, effort and run id; a player leaves it out). It is written to the summary as `driver` and shown by the dashboard as self-reported: the server cannot verify it. It may stand anywhere after the run id, once, and takes 1-96 letters, digits and `. _ - : +`.
 
