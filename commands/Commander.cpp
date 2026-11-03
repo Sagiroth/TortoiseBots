@@ -6416,6 +6416,17 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                         ai::Event("revive", "release", order.commander));
                     bool const running = ExecuteQuietAction(memberAi, "corpse run",
                         ai::Event("revive", "corpse run", order.commander));
+                    // A headless bot's release only schedules the graveyard
+                    // repop, and the core fires it when its movement acks
+                    // settle, seconds later. A resurrect in between leaves the
+                    // flag set, and the repop then far-teleports a living bot
+                    // out of the instance. Run it now, while the bot is still
+                    // a corpse: in a dungeon a managed bot comes back at the
+                    // entrance, so nothing was lost by not waiting.
+                    if ((released || running) && !member->IsAlive() &&
+                        IsLiveHeadlessBot(member, memberRecord) &&
+                        member->IsInWorld() && member->FindMap())
+                        member->RepopAtGraveyard();
                     if (released || running)
                         ++revived;
                 }
