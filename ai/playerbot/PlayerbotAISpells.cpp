@@ -14,6 +14,7 @@
 #include "Spells/SpellMgr.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/MountDismountPolicy.h"
+#include "strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
 
@@ -1100,6 +1101,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         }
     }
 
+    // A cure picked a moment ago can strip a protected aura the target gained since the action was chosen, and the
+    // core resolves the type of a Cure cast at random, so the hold is judged again here, at the last gate.
+    if (DispelCastBlocked(this, target, spellId))
+    {
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=dispel-hold", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+        return false;
+    }
+
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellId))
     {
@@ -1837,7 +1846,7 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell, u
     return ai::ShouldInterruptTargetCasting(genericSlot, channeledSlot, interrupt);
 }
 
-bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
+bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType, const DispelOverride* override)
 {
     bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
 	for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
@@ -1863,7 +1872,7 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
 			    continue;
 
-			if (canDispel(entry, dispelType))
+			if (canDispel(entry, dispelType, override))
 				return true;
 		}
 	}
@@ -1878,29 +1887,26 @@ inline int strcmpi(const char* s1, const char* s2)
 }
 #endif
 
-// Debuffs a healer must not cleanse (Turtle 1.18.1 spell ids). Mutating Injection (Grobbulus, Naxx, 28169) drops a
-// poison cloud where its carrier stands when it is removed, by dispel or by expiry (core boss_grobbulus.cpp,
-// spell_mutating_injection). A cleanse while the carrier is still in the raid puts the cloud in the raid; bomb runout
-// moves the carrier clear first (BombRunoutPolicy.h). Ported from mod-playerbots dispel_whitelist.
-// StoneformTrigger is held back by the same list: Stoneform removes every disease on the bot when it is cast.
-static constexpr uint32 kNeverDispelSpellIds[] = { 28169 };
-
 bool PlayerbotAI::IsNeverDispelSpell(uint32 spellId)
 {
-    for (uint32 neverDispelId : kNeverDispelSpellIds)
-    {
-        if (spellId == neverDispelId)
-            return true;
-    }
-    return false;
+    return IsNeverDispelSpellId(spellId);
 }
 
-bool PlayerbotAI::canDispel(const SpellEntry* entry, uint32 dispelType)
+bool PlayerbotAI::canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override)
 {
     if (entry->Dispel != dispelType)
         return false;
 
-    if (IsNeverDispelSpell(entry->Id))
+    // A dispel_priority verdict may release a hard never-dispel aura (a `clear` row with the carrier clear) or veto one
+    // the hard list allows. Without an override the hard list alone decides, exactly as before the rows.
+    if (override)
+    {
+        if (DispelOverrideContains(override->deny, entry->Id))
+            return false;
+        if (IsNeverDispelSpell(entry->Id) && !DispelOverrideContains(override->allow, entry->Id))
+            return false;
+    }
+    else if (IsNeverDispelSpell(entry->Id))
         return false;
 
     return entry->SpellName[0].empty() ||

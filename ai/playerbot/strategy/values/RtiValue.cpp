@@ -13,3 +13,8 @@ RtiCcValue::RtiCcValue(PlayerbotAI* ai)
     : ManualSetValue<std::string>(ai, "moon", "rti cc")
 {
 }
+
+RunCcFamilyValue::RunCcFamilyValue(PlayerbotAI* ai)
+    : ManualSetValue<std::string>(ai, "none", "run cc family")
+{
+}

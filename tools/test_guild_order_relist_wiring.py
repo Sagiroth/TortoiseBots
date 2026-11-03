@@ -103,7 +103,14 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
 
     def test_stale_rows_drop_with_a_log_line(self):
         expire = body(STORE, "void ExpireStaleRelists(", "\n    void NoteBagsFull(")
-        self.assertIn("RelistEntryStale(*row, nowSec)", expire)
+        self.assertIn("RelistEntryExpiry(*row, seen->second, nowSec)", expire)
+        self.assertIn("RelistAgedBots(nowSec)", expire)
+        self.assertIn("ReadRelistPresence(aged)", expire)
+        self.assertIn("RelistExpiry::MailExpired", expire)
+        presence = body(STORE, "static std::unordered_map<uint32_t, RelistBotPresence> ReadRelistPresence(", "\n    void NoteBagsFull(")
+        self.assertNotIn("logout_time", presence)
+        self.assertIn("p.loginSec = static_cast<uint64_t>(bot->GetLoginTime());", presence)
+        self.assertNotIn("RelistEntryStale", STORE)
         self.assertIn("TB_LOG_BASIC(", expire)
         self.assertIn("DELETE FROM `tortoise_bots_guild_relist`", expire)
         self.assertIn("RelistExpireDue(nowSec)", body(STORE, "void Update(uint32_t diff)", "PlaceSubOrders(now)"))
@@ -176,6 +183,7 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         self.assertIn("relist ledger", DOC.lower())
         self.assertIn("tortoise_bots_guild_relist", DOC)
         self.assertIn("three days", DOC)
+        self.assertIn("30-day", DOC)
         self.assertIn("at most once", DOC.lower())
         self.assertIn("has since left", DOC.lower())
 

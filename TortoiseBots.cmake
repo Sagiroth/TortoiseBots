@@ -163,6 +163,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/WorldBuffRaidAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/HireUnlockKillAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/CombatMonitorAdapter.cpp"
+    "${TORTOISEBOTS_ROOT}/host/RangedShotAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/CombatMonitorService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTrace.cpp"

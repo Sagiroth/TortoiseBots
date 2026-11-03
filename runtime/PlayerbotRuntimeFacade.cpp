@@ -237,7 +237,9 @@ void RandomBotFacade::UpdateGearSpells(Player* bot)
         return;
 
     PlayerbotFactory factory(bot, bot->GetLevel());
-    factory.MakeComplete();
+    // The only MakeComplete caller: the one-time seed of a fresh pool bot (login
+    // and the timer backstop both sit behind NeedsInitialGearSeeding).
+    factory.MakeComplete(true);
 }
 
 bool RandomBotFacade::ProcessBot(Player* player)

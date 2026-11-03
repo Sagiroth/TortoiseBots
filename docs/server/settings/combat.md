@@ -24,7 +24,7 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.LowMana`](#aiplayerbotlowmana) | `15` | Mana floor percentage where casters recover mana or hold back expensive casts. |
 | [`AiPlayerbot.MediumMana`](#aiplayerbotmediummana) | `40` | Mana percentage where bots transition toward conservative ability rotations. |
 | [`AiPlayerbot.FollowDistance`](#aiplayerbotfollowdistance) | `1.5` | Standard following distance in yards between a follower bot and leader on foot. |
-| [`AiPlayerbot.RaidFollowDistance`](#aiplayerbotraidfollowdistance) | `5.0` | Expanded following distance in yards used inside dungeons and raids. |
+| [`AiPlayerbot.RaidFollowDistance`](#aiplayerbotraidfollowdistance) | `4.0` | Expanded following distance in yards used inside dungeons and raids. |
 | [`AiPlayerbot.SightDistance`](#aiplayerbotsightdistance) | `60.0` | Perception distance in yards used to detect monsters and define guard leashes. |
 | [`AiPlayerbot.SpellDistance`](#aiplayerbotspelldistance) | `26.0` | Maximum range in yards used for initiating ranged spell attacks. |
 | [`AiPlayerbot.ReactDistance`](#aiplayerbotreactdistance) | `150.0` | Maximum distance in yards bots remain responsive to combat and leader calls. |
@@ -141,7 +141,7 @@ When mounted out of combat and outside dungeons, bots add 3 yards to this radius
 
 ### `AiPlayerbot.RaidFollowDistance`
 Expanded following distance in yards used inside dungeons and raids.
-**Default:** `5.0` · **Values:** positive float · **Restart:** needed
+**Default:** `4.0` · **Values:** positive float · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

@@ -15,10 +15,12 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/GatherSpotPolicy.h"
+#include "playerbot/policy/heal/DispelTargetPolicy.h"
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
+#include "playerbot/FollowTrailPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
@@ -354,6 +356,12 @@ public:
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
+    // The leader's recent positions as this bot saw them (AiPlayerbot.
+    // RaidFollowWedge). Sampled every AI tick: the follow action runs only when
+    // the core follow has to be replaced, which is too late to know the path
+    // the leader took.
+    std::vector<FollowTrailPoint> const& GetLeadTrail() const { return leadTrail; }
+
     void HandleCommands();
     // Chat commands waiting for the next reaction pass (HandleCommands drains them).
     size_t QueuedChatCommandCount() const { return chatCommands.size(); }
@@ -537,8 +545,8 @@ public:
     uint8 GetManaPercent() const;
 
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string spell, uint8 effectMask);
-    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);
-    bool canDispel(const SpellEntry* entry, uint32 dispelType);
+    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType, const DispelOverride* override = nullptr);
+    bool canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override = nullptr);
     static bool IsNeverDispelSpell(uint32 spellId);
     static bool IsHealSpell(const SpellEntry* entry);
 
@@ -799,7 +807,13 @@ public:
     bool IsJumping() { return jumpTime; }
     void SetFallAfterJump() { fallAfterJump = true; }
     void SetJumpTime(uint32 time) { jumpTime = time; }
-    bool CanMove();
+    // ignoreReturnHold: the body's own state only (facing an attacker is no move).
+    bool CanMove(bool ignoreReturnHold = false);
+    // The UpdateAI call this is (a scan cache's key): one bot updates at a time on a thread.
+    uint32 UpdateTick() const { return aiUpdateTick; }
+    // A dungeon run is bringing this bot back (or it was revived far from the run): it stands still
+    // (ai::ReturnHoldPolicy, the run leader's mark "return hold until ms").
+    bool ReturnHeld();
     void StopMoving();
     // Before a cast on a game object (Opening, Mining, Herb Gathering): a bot
     // still moving - by its movement flags or by a server spline its flags do
@@ -1061,6 +1075,8 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
+    void UpdateLeadTrail();
+    std::vector<FollowTrailPoint> leadTrail;
 
 protected:
 	Player* bot;
@@ -1101,6 +1117,9 @@ protected:
     // Scripted area triggers the bot stands in (issue #984, BotAreaTriggers.h).
     ai::BotAreaTriggerState areaTriggerState;
     uint32 areaTriggerCheckDelay = 0;
+    // Counts UpdateAI calls: the per-tick caches (the boss tactics fight scan in BossTacticsActions.cpp) keep a value
+    // for one update only.
+    uint32 aiUpdateTick = 0;
     // Issue #84 (P2): bumped by HandleTeleportAck, consumed by engines.
     uint64_t transitionGeneration = 0;
     uint32 faceTargetUpdateDelay = 0;

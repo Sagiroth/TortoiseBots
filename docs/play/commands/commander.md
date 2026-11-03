@@ -151,10 +151,10 @@ Defaults to a 5-second pull delay (accepted in either order with `ranged`). Non-
 Assigns a crowd control mark and target to a capable party bot.
 
 ```text
-.bot cmd cc <mark> <guid> [bot]
+.bot cmd cc <mark> <guid> [bot] [family]
 ```
 
-Places the specified raid target icon on the target GUID and assigns the crowd control duty to a bot.
+Places the specified raid target icon on the target GUID and assigns the crowd control duty to a bot. The optional family (`polymorph`, `seduction`, `fear`, ...) is what the run leader's automatic crowd control adds to its own orders: the bot then fires only that crowd control row on the mark. A hand-written order without it leaves the bot's usual choice.
 
 ```text
 .bot cmd cc clear <bot> [<mark> <guid>]
@@ -377,7 +377,7 @@ TBM:RUN|uldaman|paused|12/41|baelog|boss|begin|3 dead: regroup (cmd revive party
 
 With the ring estimate (`AiPlayerbot.DungeonRunAggroWalkRing = 1`) a pull over its ceiling notes `pull estimate: N bodies over the ceiling M (plan|config): 0x..., ... (+K more)`, at most eight guids, and the last move row before it notes once `ahead: pull N brings N (ceiling M): ...`, or `ahead: pull N estimate unavailable` when the row lists no creature on the map (advice only, no order changes).
 
-A pull's line (a `pull` or `boss` step's, and a hop pull's) names the joiners it drew in the note: `joiners N (entry <entry> x<count>, ...)`, or `joiners 0` when none came — the pulled pack recorded at the pullback (the pulled creature with its own creature group and its linked creatures, and the unit crowd-controlled for the pull — not every pack the step happens to list), then every hostile engaged with the party outside it in the first 10 s. It is note text (no `|`), so a reader of the seven fields reads it as part of the note.
+A pull's line (a `pull` or `boss` step's, and a hop pull's) names the joiners it drew in the note: `joiners N (entry <entry> x<count>, ...)`, or `joiners 0` when none came — the pulled pack recorded at the pullback (the pulled creature with its own creature group, its linked creatures on either side of the `creature_linking` row, and the unit crowd-controlled for the pull — not every pack the step happens to list), then every hostile engaged with the party outside it in the 10 s that start with the first tick of the fight after the pullback (a unit already engaged at the pullback is no joiner). The report goes on the pull's line once, when that window closes; later status and pause notes do not carry it. It is note text (no `|`), so a reader of the seven fields reads it as part of the note.
 
 Since 2026-10-23 a run that deferred packs it could not reach from the party's floor and left them alive adds an eighth field after the note, only then: `...|<note>|left <K>` (`TBM:RUN|windhorn_canyon|done|1890/1890|...|plan done (1 pack left alive (...): step 68 at ...)|left 1`); a reader of the seven fields reads it as part of the note. A GameMaster's bot-only test run above speed 1.0 (`.bot run start ... speed=<x>`) adds a last field after `left <K>` (after the note when there is no `left`), only then: `...|<note>[|left <K>]|speed 2.0 (test)`; it reads `speed 2.0 (test; 1.0 since a real player joined)` once a real player joined the party and the run went back to normal speed. A run started with `until` carries the clause in that same label field, after the speed label and joined with `; `: `...|speed 3.0 (test); until boss (step 38)` (or `|until boss (step 38)` at normal speed); the label drops once the run stopped there, and the note says `stopped before step 38 (until boss): ...`. `<state>` is `running`, `paused` or `done`; `<phase>` is `begin`, `gather`, `walk`, `pull`, `task`, `rest`, `wait` or `hold`; `<note>` says what it does, or why it paused. During a scripted event (a `hold` step: Uldaman's Stone Keepers, Archaedas) `<phase>` shows how far the event is instead: `hold <dead>/<seen> down` between fights and `fight <dead>/<seen> down` in one, counting the event's units (`hold 1/4 down`: one of the four Stone Keepers is dead), and `<note>` says the same in words (`event: fighting (1 of 4 down, 1 awake)`). A failed event (the encounter reset) pauses with `event failed (...)` and sets the run back to the step that starts it (the ritual), so `.bot run resume` regroups and starts it again:
 

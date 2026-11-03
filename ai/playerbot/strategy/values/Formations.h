@@ -5,8 +5,23 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
+class Map;
+
 namespace ai
 {
+    // Raid/dungeon follow wedge (AiPlayerbot.RaidFollowWedge, RaidFollowWedgePolicy.h):
+    // a group inside an instance follows in the near formation behind the leader.
+    bool UsesRaidFollowWedge(PlayerbotAI* ai);
+
+    // Shared ground/LOS guard for every formation's follow spot
+    // (FollowSpotSafetyPolicy.h): false when the floor below the spot is a
+    // drop the leader is not standing on. `from*` is the formation center the
+    // line of sight is tested from. `refuseVoid`: a formation that always
+    // refused a spot with no floor under it (the circle, the line rows, the
+    // arrow) keeps refusing it.
+    bool FinalizeFollowSpot(Player* bot, Map* map, float fromX, float fromY, float fromZ,
+        float x, float y, float& z, bool refuseVoid = false);
+
     class Formation : public AiNamedObject
     {
     public:
@@ -27,6 +42,9 @@ namespace ai
 
     protected:
         float GetFollowAngle();
+        // The bot's place in the follower roster built by GetFollowAngle:
+        // index 1..total-1, total = roster size + 1 (the leader fills 1).
+        void GetFollowSlot(int& index, int& total);
 
     private:
         static unsigned int lastSerial;
@@ -62,11 +80,20 @@ namespace ai
 	{
 	public:
         FormationValue(PlayerbotAI* ai);
-        ~FormationValue() override { if (value) { delete value; value = NULL; } }
+        ~FormationValue() override { if (value) { delete value; value = NULL; } if (raidValue) delete raidValue; }
+        virtual Formation* Get() override;
         virtual void Reset() override;
         virtual std::string Save() override;
         virtual bool Load(std::string value) override;
-    };
+        // An explicit player choice (`.bot formation`): it overrides the raid
+        // wedge for this bot until the formation is reset.
+        bool LoadUserChoice(std::string value);
+
+    private:
+        // The near formation the raid/dungeon wedge uses, built on first use.
+        Formation* raidValue = NULL;
+        bool userChosen = false;
+	};
 
     class FormationPositionValue : public CalculatedValue<WorldPosition>
     {

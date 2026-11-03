@@ -24,8 +24,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
     uint32 skipped = 0;
     // The core's Query hands over a raw QueryResult* the caller frees (src/shared/Database/Database.h).
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `burn_order` "
-        "FROM `ai_boss_tactic`"));
+        "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `burn_order`, "
+        "`hp_min`, `hp_max`, `bot_aura`, `tactic_mode`, `window_s` FROM `ai_boss_tactic`"));
     if (result)
     {
         do
@@ -41,6 +41,11 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
             row.spellId = fields[4].GetUInt32();
             row.priority = fields[5].GetUInt8();
             row.param = fields[6].GetFloat();
+            row.hpMin = fields[8].GetUInt8();
+            row.hpMax = fields[9].GetUInt8();
+            row.botAura = fields[10].GetUInt32();
+            row.mode = ParseTacticMode(row.kind, fields[11].GetCppString());
+            row.windowSec = fields[12].GetFloat();
             // A linked_death group's burn order: comma-separated creature entries, in the order the group dies.
             // Every other kind leaves the column empty (the shipped default).
             if (row.kind == BossTacticKind::LinkedDeath)
@@ -70,9 +75,10 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
             {
                 ++skipped;
                 sLog.outError("ai_boss_tactic: map %u boss %u kind '%s' target %u spell %u skipped (unknown kind, a zero map "
-                    "or boss, an interrupt without a spell, a behind without a radius, "
-                    "an avoid_cast without a spell or a radius, a linked_death without a partner or a hold percent, or a "
-                    "second row of the key)", row.map,
+                    "or boss, a key column it cannot use, a health band outside 0-100, a gate on a kind read straight "
+                    "from the table, a mode word its kind does not take, an avoid_cast without a spell or a radius, "
+                    "another kind's missing or out-of-range spell or param, a linked_death window that is not positive, "
+                    "or a second row of the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
         } while (result->NextRow());

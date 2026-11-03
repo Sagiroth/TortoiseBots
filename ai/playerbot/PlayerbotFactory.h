@@ -119,7 +119,11 @@ public:
     // Talents first, then knob-gated free spells, then skills, then gear —
     // same result whether first run at 1, 10, 40 or 60. Owned bots keep
     // current behavior (caller gates on IsRandomBot).
-    void MakeComplete();
+    // The one-time pool-bot seed. `freshPoolSeed` is true only for a first seed
+    // of a fresh pool bot (RandomBotFacade::UpdateGearSpells, behind
+    // NeedsInitialGearSeeding): it switches InitEquipment to the white quality
+    // floor (#1485). No default: every caller decides.
+    void MakeComplete(bool freshPoolSeed);
     // Issue #192: public so the hire provisioner can provision a companion
     // without reimplementing gear/spell init. Incremental-only callers must
     // use UpgradeGearBest (never the wiping non-incremental path).
@@ -243,6 +247,11 @@ private:
     // Set by AutogearPlayer when the ilvl argument raised the ceiling at max
     // level: the quality band may then reach epic (no random epic roll).
     bool playerRaisedCeiling = false;
+    // Set only by MakeComplete(true), the one-time fresh pool-bot seed: the
+    // quality band and the empty-slot backstop then start at white below
+    // level 20 (TortoiseBots::GearQualityFloor). Player autogear, hired
+    // companion provisioning and re-gearing leave it false and keep the old floors.
+    bool freshPoolSeed = false;
     // Bags first, mailbox when the bags are full; false when mailed.
     bool StoreReplacedItem(Item* oldItem);
     // Generated-gear item-level cap: how far above its own level a bot's

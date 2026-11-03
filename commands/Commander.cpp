@@ -67,6 +67,8 @@
 #include "../runtime/BossWindowSignal.h"
 #include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
+#include "../runtime/MemberParticipationPolicy.h"
+#include "../runtime/RangedShotLedger.h"
 #include "../host/CreatureForm.h" // ScriptChangedFrom: the entry a script changed a creature away from
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
@@ -155,6 +157,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -282,6 +285,10 @@ struct DungeonRunSlot
     };
     std::unordered_map<uint64, std::vector<GivenItem>> given;
     std::unordered_set<uint64> bagsFullLogged; // bots whose full bags were logged + noted once this run (not every tick)
+    // The revive hold (AiPlayerbot.DungeonReviveHoldYd, SyncReturnHolds): the bots seen dead, and the bots revived
+    // far from the lead bot with the time they have stood waiting.
+    std::unordered_set<uint64> reviveSeenDead;
+    std::unordered_map<uint64, uint32> reviveHoldMs;
 };
 std::unordered_map<uint64, DungeonRunSlot>& DungeonRuns()
 {
@@ -1420,6 +1427,19 @@ uint32 CurrentSpellId(Unit* unit)
         if (spell->m_spellInfo)
             return spell->m_spellInfo->Id;
     return 0;
+}
+
+// The cast a progress clock reads: the generic or channelled cast now, but not a spell the bot casts on itself (a
+// buff or a heal on itself while it stands wedged is no progress in the fight where it stands).
+uint32 ProgressSpellId(Unit* unit)
+{
+    Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!spell)
+        spell = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+    if (!spell || !spell->m_spellInfo)
+        return 0;
+    bool const targetSelf = spell->m_targets.getUnitTargetGuid() == unit->GetObjectGuid();
+    return TortoiseBots::DungeonRun::ProgressSpell(spell->m_spellInfo->Id, targetSelf);
 }
 
 char ViewStateLetter(PlayerbotAI* ai, Player* bot)
@@ -4884,6 +4904,8 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, uint32 triggerId, Area
     facts.inRaidGroup = group && group->isRaidGroup();
     auto* bound = bot->GetBoundInstanceSaveForSelfOrGroup(targetMap->id);
     facts.instanceCountOk = bot->CheckInstanceCount(bound ? bound->GetInstanceId() : 0);
+    facts.botName = bot->GetName();
+    facts.instanceLimit = MAX_INSTANCE_PER_ACCOUNT_PER_HOUR;
     return facts;
 }
 
@@ -6102,7 +6124,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] [family] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
         return true;
     }
 
@@ -6435,6 +6457,8 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             }
         }
         namedAi->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set("none");
+        if (ai::Value<std::string>* familyValue = namedAi->GetAiObjectContext()->GetValue<std::string>("run cc family"))
+            familyValue->Set("none");
         sPlayerbotDbStore.Save(namedAi);
         if (iconIndex >= 0 && order.group &&
             order.group->GetTargetIcon(static_cast<uint8>(iconIndex)).GetRawValue() == iconGuid)
@@ -6443,10 +6467,10 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
 
-    // cc <mark> <guid> [bot]
-    if (parts.size() < 2 || parts.size() > 3)
+    // cc <mark> <guid> [bot] [family]
+    if (parts.size() < 2 || parts.size() > 4)
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot] [family]");
         return true;
     }
     std::string mark = parts[0];
@@ -6458,7 +6482,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
     std::string ccIntent = "cc " + mark;
-    if (parts.size() == 3)
+    if (parts.size() >= 3)
     {
         Player* named = FindCommandedBot(order, parts[2]);
         if (!named)
@@ -6473,6 +6497,20 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             return true;
         }
         ccIntent += " " + std::string(named->GetName());
+    }
+    if (parts.size() == 4)
+    {
+        // The run leader's automatic pick names the family it chose: the bot
+        // then fires only that class row on the mark. A token outside the
+        // supported families is refused here, before any target or mark moves.
+        if (!TortoiseBots::DungeonRun::CcOrderFamilyKnown(parts[3]))
+        {
+            SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot] [family]");
+            return true;
+        }
+        std::string const family = TortoiseBots::DungeonRun::CcFamilyTokenNorm(parts[3]);
+        if (!family.empty() && family != "none")
+            ccIntent += " " + family;
     }
     Unit* target = ResolveOrderTarget(handler, intent, order, parts[1]);
     if (!target)
@@ -6547,6 +6585,7 @@ bool RunIslandEscape(Player* commander, std::string const& order, std::string& a
 bool RunBotWalk(Player* commander, std::string const& order, std::string& answer);
 bool RunStrandedTeleport(Player* commander, std::string const& order, std::string& answer);
 bool RunOffMapReturn(Player* commander, std::string const& order, std::string& answer);
+bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer);
 bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer);
 
 // ta252: the named bot stands on the lead bot's map id in another copy of it (another instance id): a run summon of it
@@ -6584,6 +6623,8 @@ bool IssueRunOrder(Player* commander, std::string const& text, std::string& answ
         return RunStrandedTeleport(commander, text, answer);
     if (text.compare(0, 7, "return ") == 0)
         return RunOffMapReturn(commander, text, answer);
+    if (text.compare(0, 6, "fetch ") == 0)
+        return RunFetchReturn(commander, text, answer);
     if (text.compare(0, 7, "rejoin ") == 0)
         return RunInstanceRejoin(commander, text, answer);
     // ta252: the run's summon of a bot in another copy of the instance would land in that copy (a same-map
@@ -7365,6 +7406,112 @@ bool RunOffMapReturn(Player* commander, std::string const& order, std::string& a
     return true;
 }
 
+// The teleport return of party bots on the lead bot's map (DungeonRun::FarReturnTick, lead decision 2026-11-03, ZG
+// walk 29: 57 bots revived 300-650 yd from the raid died walking back, the summons skipped for their fights or
+// dropped by the portal): "fetch x y z <name> [<name> ...]". The same gates as RunOffMapReturn (bot-only parties,
+// rechecked here; a living lead bot), for bots alive in the lead bot's copy of its map: each one is teleported to
+// x y z at once (no summon portal), then its combat and its pet's are dropped. A bot gone, dead, elsewhere or busy with a
+// summon is left out and named. True when at least one went; the run checks each one's arrival itself.
+bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer)
+{
+    RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    int consumed = 0;
+    if (std::sscanf(order.c_str(), "fetch %f %f %f%n", &x, &y, &z, &consumed) != 3 || consumed <= 0)
+    {
+        answer = "invalid: " + order;
+        return false;
+    }
+    std::vector<std::string> names;
+    {
+        std::istringstream rest(order.substr(static_cast<std::size_t>(consumed)));
+        std::string name;
+        while (rest >> name)
+            names.push_back(name);
+    }
+    if (names.empty())
+    {
+        answer = "invalid: no bot named";
+        return false;
+    }
+    if (!lead || !lead->IsInWorld() || !lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported() ||
+        !lead->GetMap() || !MaNGOS::IsValidMapCoord(x, y, z))
+    {
+        answer = "lead-unavailable: the lead bot is dead, on a taxi or teleporting, or the point is off the map";
+        return false;
+    }
+    Group* const group = lead->GetGroup();
+    if (!group)
+    {
+        answer = "lead-unavailable: the lead bot has no group";
+        return false;
+    }
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        if (!BotManager::Instance().IsBot(slot.guid))
+        {
+            answer = "player: a real player is in the party";
+            return false;
+        }
+    std::vector<Player*> const members = CommandedBots(group, lead);
+    std::string fetched, refused;
+    for (std::string const& name : names)
+    {
+        Player* bot = nullptr;
+        for (Player* member : members)
+            if (member && member != lead && std::string(member->GetName()) == name)
+                bot = member;
+        std::string why;
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
+            why = "gone, dead, on a taxi or teleporting";
+        else if (bot->GetMap() != lead->GetMap() || bot->GetTransport())
+            why = "not in the lead bot's copy of the map";
+        else if (PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid()))
+            why = "a summon of it is pending";
+        if (!why.empty())
+        {
+            refused += (refused.empty() ? "" : ", ") + name + " (" + why + ")";
+            continue;
+        }
+        // The teleport first (a near one, on the lead bot's map): a refused one leaves the bot's walk, fight and pet
+        // exactly as they were. Only then its walk is stopped and its combat and its pet's are dropped (off every
+        // threat list), so nothing follows it in.
+        if (!bot->TeleportTo(lead->GetMapId(), x, y, z, lead->GetOrientation(), 0))
+        {
+            refused += (refused.empty() ? "" : ", ") + name + " (the teleport was refused)";
+            continue;
+        }
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
+        if (bot->GetSession() && bot->GetSession()->IsHeadless())
+        {
+            if (bot->IsBeingTeleportedNear())
+                bot->ExecuteTeleportNear();
+            else if (bot->IsBeingTeleportedFar())
+                bot->GetSession()->HandleMoveWorldportAckOpcode();
+        }
+        Pet* const pet = bot->GetPet();
+        if (pet && pet->IsAlive() && pet->IsInWorld())
+        {
+            sServerFacade.GetHostileRefManager(pet).deleteReferences();
+            pet->CombatStop();
+        }
+        sServerFacade.GetHostileRefManager(bot).deleteReferences();
+        bot->CombatStop();
+        fetched += (fetched.empty() ? "" : ", ") + name;
+    }
+    if (fetched.empty())
+    {
+        answer = "unavailable: " + refused;
+        return false;
+    }
+    TB_LOG_DETAIL("TortoiseBots: run leader: %s teleported back to %s", fetched.c_str(), lead->GetName());
+    answer = "fetched " + fetched + " to " + TortoiseBots::DungeonRun::Num(x) + " " + TortoiseBots::DungeonRun::Num(y) +
+        " " + TortoiseBots::DungeonRun::Num(z) +
+        (refused.empty() ? std::string() : "; left out " + refused);
+    return true;
+}
+
 // ta252 round 2 (Codex HIGH, 2026-10-29): the solo bind a rejoin wrote (DungeonRun::RejoinBindPlan::BindSolo) and
 // what it replaced, per bot (raw guid), until the bot is in the lead bot's copy or the bind is undone
 // (SettleRejoin). The run leader's state lives on the world thread, as DungeonRuns().
@@ -7577,7 +7724,11 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     if (!sMapMgr.CanPlayerEnter(mapId, bot))
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::CanPlayerEnter;
     else if (!bot->CheckInstanceCount(lead->GetInstanceId()))
+    {
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::InstanceCount;
+        facts.botName = bot->GetName();
+        facts.instanceLimit = MAX_INSTANCE_PER_ACCOUNT_PER_HOUR;
+    }
     else if (!leadMap->CanEnter(bot))
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::MapCanEnter;
     // The binds Player::GetBoundInstanceSaveForSelfOrGroup (Player.cpp:17984) picks for the entry.
@@ -7694,19 +7845,49 @@ bool KnowsPolymorph(Player* bot)
     return KnowsAny(bot, TortoiseBots::DungeonRun::kPolymorphSpells);
 }
 
-// The run cc a bot knows besides Polymorph (DungeonRun::MemberFact::cc,
-// issue #1159), by its class: a priest's Shackle Undead, a warlock's Banish,
-// a rogue's Sap.
+// The run cc a bot knows besides Polymorph (DungeonRun::MemberFact::cc), by
+// its class: a priest's Shackle Undead, a warlock's Banish and Fear, a rogue's
+// Sap, a druid's Hibernate, a hunter's Freezing Trap (the trap spell, not its
+// aura) and Scare Beast, a paladin's Repentance (a talent). Read at most once
+// per 5 s a bot: HasSpell walks the spell book.
+struct KnownRunCcRead
+{
+    uint32 atMs = 0;
+    uint32 cc = 0;
+};
+std::map<uint64, KnownRunCcRead>& KnownRunCcReads()
+{
+    static std::map<uint64, KnownRunCcRead> reads;
+    return reads;
+}
+
 uint32 KnownRunCc(Player* bot)
 {
     using namespace TortoiseBots::DungeonRun;
+    KnownRunCcRead& read = KnownRunCcReads()[bot->GetObjectGuid().GetRawValue()];
+    uint32 const now = WorldTimer::getMSTime();
+    if (read.atMs != 0 && WorldTimer::getMSTimeDiff(read.atMs, now) < 5000)
+        return read.cc;
+    read.atMs = now;
+    uint32 cc = 0;
     switch (bot->GetClass())
     {
-        case CLASS_PRIEST: return KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0;
-        case CLASS_WARLOCK: return KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0;
-        case CLASS_ROGUE: return KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0;
-        default: return 0;
+        case CLASS_PRIEST: cc = KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0; break;
+        case CLASS_WARLOCK:
+            cc = (KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0) |
+                (KnowsAny(bot, kFearSpells) ? CcBit(CcFamily::Fear) : 0);
+            break;
+        case CLASS_ROGUE: cc = KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0; break;
+        case CLASS_DRUID: cc = KnowsAny(bot, kHibernateSpells) ? CcBit(CcFamily::Hibernate) : 0; break;
+        case CLASS_HUNTER:
+            cc = (KnowsAny(bot, kFreezingTrapSpells) ? CcBit(CcFamily::FreezingTrap) : 0) |
+                (KnowsAny(bot, kScareBeastSpells) ? CcBit(CcFamily::ScareBeast) : 0);
+            break;
+        case CLASS_PALADIN: cc = KnowsAny(bot, kRepentanceSpells) ? CcBit(CcFamily::Repentance) : 0; break;
+        default: break;
     }
+    read.cc = cc;
+    return cc;
 }
 
 template <std::size_t N>
@@ -7728,7 +7909,10 @@ uint32 RunCcImmune(Creature* creature)
     struct FamilySpell { CcFamily family; uint32 spell; };
     static FamilySpell const families[] = {
         { CcFamily::Polymorph, kPolymorphSpells[0] }, { CcFamily::Shackle, kShackleUndeadSpells[0] },
-        { CcFamily::Banish, kBanishSpells[0] }, { CcFamily::Sap, kSapSpells[0] } };
+        { CcFamily::Banish, kBanishSpells[0] }, { CcFamily::Sap, kSapSpells[0] },
+        { CcFamily::Hibernate, kHibernateSpells[0] }, { CcFamily::FreezingTrap, kFreezingTrapAuras[0] },
+        { CcFamily::Seduction, kSeductionSpells[0] }, { CcFamily::Repentance, kRepentanceSpells[0] },
+        { CcFamily::Fear, kFearSpells[0] }, { CcFamily::ScareBeast, kScareBeastSpells[0] } };
     uint32 const templateMask = creature->GetCreatureInfo() ? creature->GetCreatureInfo()->mechanic_immune_mask : 0;
     uint32 immune = 0;
     for (FamilySpell const& entry : families)
@@ -7743,13 +7927,15 @@ uint32 RunCcImmune(Creature* creature)
     return immune;
 }
 
-// A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed):
-// Polymorph, Shackle Undead, Banish or Sap.
+// A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
+// any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
 {
     using namespace TortoiseBots::DungeonRun;
     return HasAnyAura(unit, kPolymorphSpells) || HasAnyAura(unit, kShackleUndeadSpells) ||
-        HasAnyAura(unit, kBanishSpells) || HasAnyAura(unit, kSapSpells);
+        HasAnyAura(unit, kBanishSpells) || HasAnyAura(unit, kSapSpells) || HasAnyAura(unit, kHibernateSpells) ||
+        HasAnyAura(unit, kFreezingTrapAuras) || HasAnyAura(unit, kSeductionSpells) ||
+        HasAnyAura(unit, kRepentanceSpells) || HasAnyAura(unit, kFearSpells) || HasAnyAura(unit, kScareBeastSpells);
 }
 
 // In this fight: a party bot is its victim or attacks it.
@@ -7933,18 +8119,18 @@ void ReadMemberEngaged(Player* lead, Player* judge, Player* bot, TortoiseBots::D
 }
 
 // The glue's progress clock for DungeonRun::MemberParticipates: per bot guid, when the run last saw the bot make
-// actual combat progress, and the cast and swing state that told it so. A guid unseen for kParticipationForgetMs
-// is dropped once the map grows past its bound.
+// actual combat progress, when it last read the bot, and the cast and swing state that told it so. The map is
+// pruned by last-seen time (never by last progress: a bot that has not progressed yet still has its clock) once it
+// reaches kParticipationClocksMax, so it never outgrows its bound.
 struct MemberParticipation
 {
     std::uint32_t actMs = 0;
+    std::uint32_t seenMs = 0;
     std::uint32_t spellId = 0;
     std::uint32_t baseTimer = 0;
-    std::uint32_t rangedTimer = 0;
+    std::uint32_t shots = 0;
     bool observed = false;
 };
-constexpr std::uint32_t kParticipationForgetMs = 60000;
-constexpr std::size_t kParticipationClocksMax = 64;
 
 std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
 {
@@ -7952,25 +8138,53 @@ std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
     return clocks;
 }
 
+// Whether the bot has an auto-repeat spell (Auto Shot, a wand's Shoot) on. That alone is never progress; it is only
+// read to hold the bot out of the wedged rescue when no shot evidence exists (MemberProgressed).
+bool AutoRepeatSpellOn(Unit* unit)
+{
+    return unit->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL) != nullptr;
+}
+
 // Whether the bot made actual combat progress since the last read: a spell being cast or channelled now (a cast
-// started, or is still running), a cast that started or finished (the current spell differs), or a melee or ranged
-// swing (the attack timer runs down to the swing and the swing resets it, so an increase means one landed). A swing
-// reset is never under 100 ms: Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a
-// victim out of reach, so that shove alone is no swing. Its selected target and its place on a threat list are
-// never read: holding a target it cannot reach is no progress.
+// started, or is still running) that is not cast on the bot itself, a cast that started or finished (the current
+// spell differs), a melee swing (the attack timer runs down to the swing and the swing resets it, so an increase
+// means one landed), or a ranged shot that fired. A shot is read from the module's authoritative shot count
+// (DungeonRun::RangedShotLedger, recorded by the core's spell cast hook when Auto Shot or a wand's Shoot executes),
+// never from the ranged attack timer: the run reads a bot about once a second and a shot every 1.4 to 3 s can fall
+// between two reads whatever the timer shows, so a bot that keeps firing looked idle. The auto-repeat spell being
+// on is no progress: it stays on while the bot cannot shoot. When the ledger was never armed (no shot can be
+// counted), a bot with an auto-repeat spell on counts as progressing, so the destructive rescue (combat drop +
+// summon) never hits it on missing evidence; the run notes that once. A melee swing reset is never under 100 ms:
+// Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a victim out of reach, so that
+// shove alone is no swing. Its selected target and its place on a threat list are never read: holding a target it
+// cannot reach is no progress.
 bool MemberProgressed(Player* bot, MemberParticipation& clock)
 {
     bool const inFight = bot->IsInCombat();
-    std::uint32_t const spell = inFight ? CurrentSpellId(bot) : 0;
+    std::uint32_t const spell = inFight ? ProgressSpellId(bot) : 0;
     std::uint32_t const baseTimer = bot->GetAttackTimer(BASE_ATTACK);
-    std::uint32_t const rangedTimer = bot->GetAttackTimer(RANGED_ATTACK);
+    TortoiseBots::DungeonRun::RangedShotLedger& ledger = TortoiseBots::DungeonRun::RangedShotLedger::Instance();
+    std::uint32_t const shots = ledger.Count(bot->GetObjectGuid().GetRawValue());
     bool const baseSwing = baseTimer > 100 && baseTimer > clock.baseTimer;
-    bool const rangedSwing = rangedTimer > 100 && rangedTimer > clock.rangedTimer;
-    bool const progress = inFight && (spell || (clock.observed &&
-        (spell != clock.spellId || baseSwing || rangedSwing)));
+    bool const rangedSwing = TortoiseBots::DungeonRun::RangedShotFiredSince(clock.observed, clock.shots, shots);
+    bool progress = TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,
+        clock.spellId, baseSwing, rangedSwing);
+    if (inFight && !progress &&
+        TortoiseBots::DungeonRun::RangedShotEvidenceMissing(ledger.Armed(),
+            AutoRepeatSpellOn(bot)))
+    {
+        static bool noted = false;
+        if (!noted)
+        {
+            noted = true;
+            sLog.outBasic("[RUN] the ranged shot ledger is not armed: a bot with auto-repeat on is held out of the "
+                          "wedged rescue (no shot evidence)");
+        }
+        progress = true;
+    }
     clock.spellId = spell;
     clock.baseTimer = baseTimer;
-    clock.rangedTimer = rangedTimer;
+    clock.shots = shots;
     clock.observed = true;
     return progress;
 }
@@ -7980,16 +8194,79 @@ bool MemberProgressed(Player* bot, MemberParticipation& clock)
 void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)
 {
     std::uint32_t const now = WorldTimer::getMSTime();
-    if (ParticipationClocks().size() >= kParticipationClocksMax)
-        for (auto it = ParticipationClocks().begin(); it != ParticipationClocks().end();)
-            if (WorldTimer::getMSTimeDiff(it->second.actMs, now) > kParticipationForgetMs)
-                it = ParticipationClocks().erase(it);
-            else
-                ++it;
     MemberParticipation& clock = ParticipationClocks()[bot->GetObjectGuid().GetRawValue()];
+    clock.seenMs = now;
+    if (ParticipationClocks().size() > TortoiseBots::DungeonRun::kParticipationClocksMax)
+        TortoiseBots::DungeonRun::PruneParticipationClocks(ParticipationClocks(), now);
     if (MemberProgressed(bot, clock))
         clock.actMs = now;
     member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;
+}
+
+// The glue's reach read for a wedged candidate (DungeonRun::WedgedOutOfReach), per bot and lead bot at most once
+// every kWedgeReachReadMs: its line of sight to the lead bot (the main tank) and a complete navmesh path to it, with
+// that path's length. A member that can see and walk to the lead bot is idle where it stands, not wedged. The lead
+// bot is part of the key: the carrier can change mid-run, and a read against the old one says nothing about the new.
+constexpr uint32 kWedgeReachReadMs = 5000;
+
+struct WedgeReachRead
+{
+    uint32 atMs = 0;
+    bool los = false;
+    bool path = false;
+    float lenYd = 0.0f;
+};
+
+std::map<std::pair<uint64, uint64>, WedgeReachRead>& WedgeReachReads()
+{
+    static std::map<std::pair<uint64, uint64>, WedgeReachRead> reads;
+    return reads;
+}
+
+// The one sight line and one path a reach read costs, into `read`. Touches no cache.
+void ComputeMemberReach(Player* lead, Player* bot, WedgeReachRead& read)
+{
+    bool const sameMap = bot->GetMap() == lead->GetMap();
+    read.los = sameMap && bot->IsInWorld() && lead->IsInWorld() && bot->IsWithinLOSInMap(lead);
+    read.path = false;
+    read.lenYd = 0.0f;
+    if (!sameMap || !bot->IsInWorld() || !lead->IsInWorld())
+        return;
+    PathFinder path(bot);
+    path.calculate(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), false);
+    Vector3 const end = path.getActualEndPosition();
+    uint32 const type = static_cast<uint32>(path.getPathType());
+    read.path = (type & PATHFIND_NORMAL) &&
+        !(type & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT)) &&
+        (end - Vector3(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ())).length() <= 2.0f &&
+        path.getPath().size() >= 2;
+    read.lenYd = path.Length();
+}
+
+// `cached` false is the destructive drop's read: the drop never decides on a reading up to kWedgeReachReadMs old
+// (the bot may have walked into sight or out of it since), so it pays for a fresh sight line and path.
+void ReadMemberReach(Player* lead, Player* bot, TortoiseBots::DungeonRun::MemberFact& member, bool cached = true)
+{
+    if (!cached)
+    {
+        WedgeReachRead fresh;
+        ComputeMemberReach(lead, bot, fresh);
+        member.losLead = fresh.los;
+        member.pathToLead = fresh.path;
+        member.pathLenYd = fresh.lenYd;
+        return;
+    }
+    WedgeReachRead& read =
+        WedgeReachReads()[std::make_pair(bot->GetObjectGuid().GetRawValue(), lead->GetObjectGuid().GetRawValue())];
+    uint32 const now = WorldTimer::getMSTime();
+    if (read.atMs == 0 || WorldTimer::getMSTimeDiff(read.atMs, now) >= kWedgeReachReadMs)
+    {
+        read.atMs = now;
+        ComputeMemberReach(lead, bot, read);
+    }
+    member.losLead = read.los;
+    member.pathToLead = read.path;
+    member.pathLenYd = read.lenYd;
 }
 
 // Carries out the run's combat drops (DungeonRun::Run::combatDrops) after Tick: a living bound bot of the party
@@ -7999,7 +8276,8 @@ void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& 
 // Alarm-a-bomb 2600 held the priest in combat 35 yd from the lead bot for 8 min. The same for a bot near the lead
 // bot held by far units only (DungeonRun::HeldByFarUnitsOnly; Dire Maul West r36 slot D: six Residual Monstrosities
 // 305 yd away held the party in combat at the door it came back at after a wipe).
-void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std::vector<std::string> const& names)
+void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std::vector<std::string> const& names,
+    std::unordered_set<std::string> const& wedgedNames)
 {
     if (names.empty())
         return;
@@ -8013,26 +8291,36 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
         ReadMemberEngaged(lead, judge, bot, now);
         // ... or by far units only, with the bot near the lead bot (DungeonRun::HeldByFarUnitsOnly: r36 slot D).
         now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;
-        // ... or wedged on another floor (DungeonRun::WedgedDropRecheck: ZG walks 23-25, Nack/Maevrayah/Elmind wedged
-        // below the Jeklik path): more than kGatherYd out, more than kStragglerDzYd up or down, nothing on it (its
-        // attackers read the same way ReadRunFacts fills MemberFact::attackers: the core's attacker sets, no scan).
-        float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
-        std::uint32_t wedgedAttackers = 0;
-        for (Unit* attacker : bot->GetAttackers())
-            if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
-                ++wedgedAttackers;
-        if (Pet* const nowPet = bot->GetPet())
-            if (nowPet->IsAlive() && nowPet->IsInWorld())
-                for (Unit* attacker : nowPet->GetAttackers())
-                    if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
-                        ++wedgedAttackers;
-        // ... and in no fight there: a member casting, swinging or healing from another floor keeps its combat
-        // (DungeonRun::MemberParticipates, the same progress the run's own wedged test reads).
-        ReadMemberParticipation(bot, now);
-        bool const wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,
-            TortoiseBots::DungeonRun::MemberParticipates(now));
-        if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now) &&
-            !wedged)
+        // The wedged shape is re-checked only for the bots the run named wedged (Run::combatDropWedged): a bot
+        // dropped for unattackable or far units is never dropped for looking wedged on the re-read.
+        bool const namedWedged = wedgedNames.count(bot->GetName()) != 0;
+        bool wedged = false;
+        if (namedWedged)
+        {
+            // ... more than kGatherYd out, more than kStragglerDzYd up or down, nothing on it (its attackers read
+            // the same way ReadRunFacts fills MemberFact::attackers: the core's attacker sets, no scan) ...
+            float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
+            std::uint32_t wedgedAttackers = 0;
+            for (Unit* attacker : bot->GetAttackers())
+                if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                    ++wedgedAttackers;
+            if (Pet* const nowPet = bot->GetPet())
+                if (nowPet->IsAlive() && nowPet->IsInWorld())
+                    for (Unit* attacker : nowPet->GetAttackers())
+                        if (attacker && attacker->IsAlive() && !sServerFacade.IsFriendlyTo(attacker, lead))
+                            ++wedgedAttackers;
+            // ... in no fight there (DungeonRun::MemberParticipates, the same progress the run's own wedged test
+            // reads) and out of reach of the lead bot (LOS, a complete path and its length, read afresh now: a
+            // destructive drop never decides on the run tick's cached reach) ...
+            ReadMemberParticipation(bot, now);
+            ReadMemberReach(lead, bot, now, false);
+            wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,
+                TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);
+            if (!wedged)
+                continue;
+        }
+        else if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) &&
+            !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))
             continue;
         Pet* const pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
@@ -8213,6 +8501,48 @@ Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, Tortoise
     return nullptr;
 }
 
+// The fear families' room (DungeonRun::UnitFact::fleeRoomYd): how far the unit stands from the nearest living
+// creature the read already lists that is not one of the row's own pack. Only the lists that carry a place (a
+// patroller's, residue, an attacker's) can tell; -1 when none of them does (no room read, so no fear family is
+// picked on it). No grid visit of its own.
+float FleeRoomYd(Unit* unit, TortoiseBots::DungeonRun::Facts const& f)
+{
+    using TortoiseBots::DungeonRun::UnitFact;
+    float best = -1.0f;
+    auto const eachList = [&](std::vector<UnitFact> const& list)
+    {
+        for (UnitFact const& u : list)
+        {
+            if (!u.guid || (u.x == 0.0f && u.y == 0.0f))
+                continue;
+            float const dx = u.x - unit->GetPositionX();
+            float const dy = u.y - unit->GetPositionY();
+            float const dz = u.z - unit->GetPositionZ();
+            float const yd = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (best < 0.0f || yd < best)
+                best = yd;
+        }
+    };
+    eachList(f.patrollers);
+    eachList(f.standPatrols);
+    eachList(f.packResidue);
+    eachList(f.partyAttackers);
+    eachList(f.raid.walkAttackers);
+    eachList(f.engagedUnits);
+    return best;
+}
+
+// The unit's room to run, only while the automatic crowd control's risky key is on and a fear family fits it.
+float FearRoomFor(Unit* unit, uint32 creatureType, uint32 ccImmune, TortoiseBots::DungeonRun::Facts const& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!sPlayerbotAIConfig.dungeonRunAutoCc || !sPlayerbotAIConfig.dungeonRunAutoCcRisky)
+        return -1.0f;
+    bool const fear = CcFits(CcFamily::Fear, creatureType) && !(ccImmune & CcBit(CcFamily::Fear));
+    bool const scare = CcFits(CcFamily::ScareBeast, creatureType) && !(ccImmune & CcBit(CcFamily::ScareBeast));
+    return fear || scare ? FleeRoomYd(unit, f) : -1.0f;
+}
+
 // In a fight: what the run's guard of the party needs (DungeonRun::GuardTarget).
 // Whether the lead bot is a tank on "stay" and holds a mob in melee reach, and
 // the mobs that have a party bot within kGuardYd of it as their victim, each
@@ -8301,6 +8631,15 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
             f.leadHasAttacker = true;
         }
+        // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
+        // in melee reach above is only EngageTarget's pick).
+        std::unordered_set<uint64> seenLead;
+        for (Unit* attacker : lead->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
+                !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
+                f.leadAttackers.push_back(
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -8311,6 +8650,20 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     // One entry per mob in each list: a mob has one victim, the sets keep a repeat of it out.
     std::unordered_set<uint64> seen;
     std::unordered_set<uint64> seenWalk;
+    // The units a living party bot or pet has as its victim: the party hits those (DungeonRun::UnitFact::partyHits;
+    // the automatic crowd control never marks a unit someone is on).
+    std::unordered_set<uint64> partyVictims;
+    for (Player* bot : bots)
+    {
+        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap())
+            continue;
+        if (Unit* victim = bot->GetVictim())
+            partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+        if (Pet* pet = bot->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                if (Unit* victim = pet->GetVictim())
+                    partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+    }
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
     // `tankVictim`: the victim is a tank (an off-tank holding the mob). `toParty`: the victim is within kGuardYd of the
     // lead bot (the mobs go in f.partyAttackers, as on dev); `toWalk`: the walk read is on (the mobs in the band go in
@@ -8340,6 +8693,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
+            fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
+            fact.level = attacker->GetLevel();
+            fact.partyHits = partyVictims.count(fact.guid) != 0;
+            fact.fleeRoomYd = FearRoomFor(attacker, fact.creatureType, fact.ccImmune, f);
             fact.engaged = true;
             bool const melee = attacker->CanReachWithMeleeAutoAttack(victim);
             fact.hitting = melee || (!attacker->IsMoving() && attacker->IsNonMeleeSpellCasted(false));
@@ -8800,7 +9159,10 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
     if (params.lowestPartyLevel == 255)
         params.lowestPartyLevel = lead->GetLevel();
     params.aggroRate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
-    params.familyAssistYd = sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS);
+    // The estimate never uses less than the observed cross-pack ring (the ZG terrace's spawn pairs 11.0-19.5 yd
+    // apart): the server's 10 yd setting is read, and the policy's floor applies to it.
+    params.familyAssistYd = std::max(ai::kAggroFamilyAssistMinYd,
+        sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS));
     // creature_linking: a master's aggro wakes its slave (FLAG_AGGRO_ON_AGGRO), and with FLAG_TO_AGGRO_ON_AGGRO a
     // slave's aggro wakes its master. The master is the row's guid when it has one, else any creature of its entry in range.
     for (std::size_t i = 0; i < creatures.size(); ++i)
@@ -9080,7 +9442,8 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
 {
     using namespace TortoiseBots::DungeonRun;
     bool const standStep = StandThisStep(slot);
-    if ((!f.pullStand && !standStep) || !lead->IsAlive() || !lead->IsInWorld())
+    // The stand discipline alone reads the same range and firing stand (DungeonRun::PullStandRuleOn runs for it).
+    if ((!f.pullStand && !standStep && !f.standDiscipline) || !lead->IsAlive() || !lead->IsInWorld())
         return;
     PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
     PullStrategy* const pull = leadAi ? PullStrategy::Get(leadAi) : nullptr;
@@ -9865,8 +10228,9 @@ constexpr float kPullPackMasterYd = 40.0f;
 // The creatures a pull of one of these units brings with it by the core's own grouping
 // (DungeonRun::UnitFact::packGuids): its creature group's members when the group is "aggro together" (a plain
 // formation walks with its leader but fights apart, so its members are not in the pack), its creature_linking master where the row makes the slave's aggro wake the master, with that
-// master's own group, and the linked slaves of it among the picks where the row makes the master's aggro wake them.
-// A pull's read lists the units of several packs, so the pack a pull draws is this, never the read.
+// master's own group, and the linked slaves of it where the row makes the master's aggro wake them, read off the
+// map too when the pull's read does not list them. A pull's read lists the units of several packs, so the pack a
+// pull draws is this, never the read.
 void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& units,
     std::vector<TortoiseBots::DungeonRun::UnitFact>& patrollers, std::vector<TortoiseBots::DungeonRun::UnitFact>& residue,
     std::vector<TortoiseBots::DungeonRun::UnitFact>& hop)
@@ -9893,14 +10257,25 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
                 u.packGuids.push_back(member.first.GetRawValue());
     };
     // The master a creature_linking row names: its own spawn, else the nearest creature of the master's entry
-    // within the row's search range (0: any).
+    // within the row's search range (0: any). A spawn may carry any of its creature table's entries (a Turtle
+    // spawn variation), so every one of them is tried for the spawn's own creature.
     auto masterOf = [map](Creature* c, CreatureLinkingInfo const* row) -> Creature*
     {
         if (row->masterDBGuid)
         {
             CreatureData const* const data = sObjectMgr.GetCreatureData(row->masterDBGuid);
-            CreatureInfo const* const info = data ? sObjectMgr.GetCreatureTemplate(data->creature_id[0]) : nullptr;
-            return info ? map->GetCreature(ObjectGuid(info->GetHighGuid(), info->entry, row->masterDBGuid)) : nullptr;
+            if (!data)
+                return nullptr;
+            for (std::uint32_t i = 0; i < data->GetCreatureIdCount(); ++i)
+            {
+                CreatureInfo const* const info = sObjectMgr.GetCreatureTemplate(data->creature_id[i]);
+                if (!info)
+                    continue;
+                if (Creature* master = map->GetCreature(
+                        ObjectGuid(info->GetHighGuid(), info->entry, row->masterDBGuid)))
+                    return master;
+            }
+            return nullptr;
         }
         if (!row->masterId)
             return nullptr;
@@ -9913,6 +10288,38 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
                 best = master;
         return best;
     };
+    // A slave's row wakes when this master aggros: the row names the master's spawn, or its entry with the slave
+    // in the row's search range (the core's holder resolves it the same way).
+    auto slaveOf = [](Creature* slave, CreatureLinkingInfo const* row, Creature* master)
+    {
+        if (row->masterDBGuid)
+            return row->masterDBGuid == master->GetGUIDLow();
+        return row->masterId && row->masterId == master->GetEntry() &&
+            (!row->searchRange || slave->GetDistance(master) <= row->searchRange);
+    };
+    // The linked slaves a pulled master wakes (FLAG_AGGRO_ON_AGGRO) that the pull's read does not list: the core
+    // wakes every one of them within the row's range, so they come with the pull and are pack, not joiners. Their
+    // own "aggro together" groups come with them.
+    auto addLinkedSlaves = [&addGroup, &slaveOf](UnitFact& u, Creature* master)
+    {
+        std::list<Creature*> nearby;
+        MaNGOS::AllCreaturesInRange check(master, kPullPackMasterYd);
+        MaNGOS::CreatureListSearcher<MaNGOS::AllCreaturesInRange> searcher(nearby, check);
+        Cell::VisitGridObjects(master, searcher, kPullPackMasterYd);
+        for (Creature* slave : nearby)
+        {
+            if (slave == master || !slave->IsAlive())
+                continue;
+            CreatureLinkingInfo const* const row = sCreatureLinkingMgr.GetLinkedTriggerInformation(slave);
+            if (!row || !(row->linkingFlag & FLAG_AGGRO_ON_AGGRO) || !slaveOf(slave, row, master))
+                continue;
+            std::uint64_t const guid = slave->GetObjectGuid().GetRawValue();
+            if (std::find(u.packGuids.begin(), u.packGuids.end(), guid) != u.packGuids.end())
+                continue;
+            u.packGuids.push_back(guid);
+            addGroup(u, slave);
+        }
+    };
     for (auto const& pick : picks)
     {
         UnitFact& u = *pick.second;
@@ -9920,6 +10327,8 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
         if (creature == creatures.end())
             continue;
         addGroup(u, creature->second);
+        // The master's aggro wakes its linked slaves, listed by this read or not.
+        addLinkedSlaves(u, creature->second);
         CreatureLinkingInfo const* const row = sCreatureLinkingMgr.GetLinkedTriggerInformation(creature->second);
         if (!row || !(row->linkingFlag & (FLAG_AGGRO_ON_AGGRO | FLAG_TO_AGGRO_ON_AGGRO)))
             continue;
@@ -9939,6 +10348,63 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     }
 }
 
+// The teleport return's read of the lead bot's ground (DungeonRun::FetchPoint), only while the run asks for it
+// (Run::fetchReadWanted): the living hostile creatures within kFetchScanYd that are in no fight, with their aggro
+// reach at the party's lowest level, and points on rings around the lead bot (kFetchRingsYd x kFetchRingSteps), on
+// its floor (kFetchFloorDzYd) and in its sight, nearest ring first.
+constexpr float kFetchScanYd = 80.0f;
+constexpr float kFetchRingsYd[] = {10.0f, 20.0f, 30.0f, 40.0f};
+constexpr int kFetchRingSteps = 12;
+constexpr float kFetchFloorDzYd = 6.0f;
+static void ReadFetchFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMap() == map && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    std::list<Unit*> found;
+    HostileCreaturesAround(lead, kFetchScanYd, found);
+    for (Unit* unit : found)
+    {
+        Creature* const c = unit->ToCreature();
+        if (!c || !c->IsAlive() || c->IsInCombat() || c->GetVictim() || c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO))
+            continue;
+        ai::AggroMob mob;
+        mob.level = c->GetLevel();
+        mob.detectionYd = c->GetDetectionRange();
+        StandPackReach reach;
+        reach.entry = c->GetEntry();
+        reach.x = c->GetPositionX();
+        reach.y = c->GetPositionY();
+        reach.z = c->GetPositionZ();
+        reach.reachYd = ai::AggroRadius(mob, lowest, rate);
+        f.fetchReach.push_back(reach);
+    }
+    float const lx = lead->GetPositionX(), ly = lead->GetPositionY(), lz = lead->GetPositionZ();
+    for (float ring : kFetchRingsYd)
+        for (int i = 0; i < kFetchRingSteps; ++i)
+        {
+            float const angle = 6.2831853f * static_cast<float>(i) / kFetchRingSteps;
+            float const px = lx + std::cos(angle) * ring;
+            float const py = ly + std::sin(angle) * ring;
+            float const ground = map->GetHeight(px, py, lz + kFetchFloorDzYd, true, 2.0f * kFetchFloorDzYd);
+            if (ground <= INVALID_HEIGHT || std::fabs(ground - lz) > kFetchFloorDzYd ||
+                !lead->IsWithinLOS(px, py, ground + 2.0f))
+                continue;
+            ai::ApproachPoint point;
+            point.x = px;
+            point.y = py;
+            point.z = ground + 0.5f;
+            f.fetchSpots.push_back(point);
+        }
+    f.fetchRead = true;
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -9955,13 +10421,30 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
     f.standClearance = sPlayerbotAIConfig.dungeonRunStandClearance;
+    // The stand discipline (DungeonRun::HoldForShot, StandDisciplineOutOfPlace): the plan's stand is the only one a
+    // pull row uses, and the tanks and melee are waited for there.
+    f.standDiscipline = sPlayerbotAIConfig.dungeonRunStandDiscipline;
     // The CC before the walk in (DungeonRun::NextStandPull): the approach row holds outside the pack's wake reach.
     f.standPullPreCc = sPlayerbotAIConfig.dungeonRunStandPullPreCc;
+    // The automatic crowd control (DungeonRun::RunAutoCcPickOrder): off, no candidate or bot rule is read, and the
+    // four plan families and marks stay byte-identical.
+    f.autoCc = sPlayerbotAIConfig.dungeonRunAutoCc;
+    // The map's boss-tactics kill_first and linked_death units: the automatic crowd control never picks them (the
+    // run kills those first, and a linked group must die together).
+    if (f.autoCc && lead->GetMap())
+        f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());
+    f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;
+    f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
     f.retreatAt2Dead = sPlayerbotAIConfig.dungeonRunRetreatAt2Dead;
     f.walkBackRescue = sPlayerbotAIConfig.dungeonRunWalkBackRescue;
+    // The teleport return and the stand-still hold (DungeonRun::FarReturnTick, ai::ReturnHoldPolicy).
+    f.teleportReturnYd = sPlayerbotAIConfig.runTeleportReturnYd;
+    f.reviveHoldYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    if (slot.run.fetchReadWanted && lead->IsAlive() && lead->IsInWorld())
+        ReadFetchFacts(lead, bots, f);
     f.fightForward = sPlayerbotAIConfig.dungeonRunFightForward;
     f.lightRest = sPlayerbotAIConfig.dungeonRunLightRest;
     // A loot step's free-for-all detour (DungeonRun::LootFfaStep, AiPlayerbot.DungeonRunLootFfa): off, and no detour
@@ -9975,6 +10458,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.leadLeadsGroup = leadGroup->IsLeader(lead->GetObjectGuid());
         }
     f.leadAlive = lead->IsAlive();
+    // The tank's own selection: never crowd-controlled (DungeonRun::RunAutoCcPickOrder, RunAutoCcFightTick).
+    f.leadTargetGuid = f.autoCc ? lead->GetSelectionGuid().GetRawValue() : 0;
     // Whose attack rules say whether the group can attack a unit (UnitFact::attackable), as `cmd attack` judges it.
     Player* const judge = RunJudge(lead, bots);
     // The instance's doors: a living lead bot raised at another wing's door (DungeonRun::LeadInOtherPart).
@@ -10137,9 +10622,23 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.offMapReturnable = !bot->InBattleGround() && bot->GetMap() && !bot->GetMap()->Instanceable() &&
             !bot->GetTransport() && !offMapBusy && bot->IsInWorld();
         member.offMapBlock = offMapBusy ? MemberFact::OffMapBlock::Busy : MemberFact::OffMapBlock::OpenWorld;
-        member.dz = bot->GetMap() == lead->GetMap() ? std::fabs(bot->GetPositionZ() - lead->GetPositionZ()) : 0.0f;
+        // Summons the portal dropped for it (DungeonRun::UpdateSummonOutcomes).
+        member.summonCancels = PlayerConvenience::Instance().SummonCancels(bot->GetObjectGuid());
+        // Signed (bot z - lead z): "below" is a real direction, and the wedged note names it (MemberFact::dz).
+        member.dz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
         member.polymorph = bot->GetClass() == CLASS_MAGE && KnowsPolymorph(bot);
         member.cc = KnownRunCc(bot);
+        // The automatic crowd control's bot rules (DungeonRun::RunCcBotFor): a tank is never one, a healer only
+        // while kRunCcHealersKept stay free, and a warlock with a live succubus may Seduce.
+        member.healer = f.raid.on ? isHeal : PlayerbotAI::IsHeal(bot);
+        member.tank = f.raid.on ? isTank : PlayerbotAI::IsTank(bot);
+        member.level = bot->GetLevel();
+        if (bot->GetClass() == CLASS_WARLOCK)
+        {
+            Pet* const pet = bot->GetPet();
+            member.succubus = pet && pet->IsAlive() && pet->IsInWorld() && pet->GetCreatureInfo() &&
+                pet->GetCreatureInfo()->beast_family == CREATURE_FAMILY_SUCCUBUS;
+        }
         member.x = bot->GetPositionX(); // the stand-still watch (DungeonRun::UpdateStill)
         member.y = bot->GetPositionY();
         member.z = bot->GetPositionZ();
@@ -10149,8 +10648,27 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // ... and what it fights now: a member making progress where it stands is never wedged, whatever the floor
         // under it (DungeonRun::MemberParticipates).
         ReadMemberParticipation(bot, member);
+        // ... and whether it can get back to the lead bot (DungeonRun::WedgedOutOfReach): read only for a raid's
+        // wedged candidate, at most once every 5 s a bot (one navmesh path and one sight line).
+        if (f.raid.on && !member.offPlanMap && !member.otherCopy && yd < 1000.0f && yd > kGatherYd &&
+            std::fabs(member.dz) > kStragglerDzYd)
+            ReadMemberReach(lead, bot, member);
         // A healer or a ranged bot stands behind the tank in a hold (DungeonRun::HoldStands).
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(bot);
+        // A bot the run's return hold (or the glue's revive hold) keeps still: its mark is ReturnHeld, and no
+        // automatic crowd control picks it (DungeonRun::RunCcBotFor). The mark is only written while the revive hold
+        // key is on (SyncReturnHolds), so the read waits for that key.
+        member.held = f.reviveHoldYd > 0.0f && memberAi && memberAi->ReturnHeld();
+        // A bot carrying a freeze_on_aura row's aura is held still by the tactics themselves (every action is
+        // multiplied to 0), and every run order that would move it skips it (DungeonRun::FrozenMember), an automatic
+        // crowd control included: the order would be applied by ExecuteAction, which no multiplier holds.
+        if (sPlayerbotAIConfig.dungeonRunAuraTactics)
+            for (std::uint32_t spell : ai::GetBossTactics().FreezeAuras(bot->GetMapId()))
+                if (bot->HasAura(spell))
+                {
+                    member.frozen = true;
+                    break;
+                }
         member.ranged = PlayerbotAI::IsHeal(bot) || (memberAi && !PlayerbotAI::IsTank(bot) && memberAi->IsRanged(bot));
         // A ranged damage bot: the raid boss fight's healer guard sends it at an add on a healer
         // (DungeonRun::RaidHealerGuard). Never one busy with a commander task, as the off-tank lists are not.
@@ -10513,10 +11031,13 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.polymorphed = RunCcHeld(creature);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
+                    unit.level = creature->GetLevel();
+                    unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
                     unit.attackable = GroupCanAttack(judge, creature); // never pulled when it cannot be attacked
                     // The pull stand: can the tank shoot it from where it stands (one ray, key on only, or any
-                    // stand-pull boss or pull step whatever the key says).
-                    if (f.pullStand || StandThisStep(slot))
+                    // stand-pull boss or pull step whatever the key says, or the stand discipline's key).
+                    if (f.pullStand || StandThisStep(slot) || f.standDiscipline)
                         unit.losLead = lead->IsWithinLOSInMap(creature);
                     if (standPull)
                     {
@@ -10769,6 +11290,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.polymorphed = RunCcHeld(creature);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
+                    unit.level = creature->GetLevel();
+                    unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
                     unit.attackable = GroupCanAttack(judge, creature); // never engaged when it cannot be attacked
                     // Awake and fighting: the unit the tank takes (DungeonRun::HoldEngageTarget).
                     Unit* const victim = creature->GetVictim();
@@ -10906,9 +11430,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         (TortoiseBots::DungeonRun::StandPullPackInShot(f) || !slot.run.standPullStatic.empty()))
         ReadStandPatrols(lead, f);
     // The pack a pull of one of the step's units brings, by guid (the joiner count reads the fight against it): the
-    // target's own creature group and its creature_linking mates, never the whole read.
+    // target's own creature group and its creature_linking mates, never the whole read. Read only on a tick a pull
+    // of the step can go out (the party gathered, or the gather left out, with no fight on) and while the pull's
+    // joiner window is open, not on every tick of the run (a walk, a restore, a fight, a hold or a loot reads no
+    // linking rows or groups).
     if (Map* const map = lead->GetMap())
-        ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);
+        if (slot.run.joinerWindow ||
+            (!f.anyInCombat && (TortoiseBots::DungeonRun::PartyGathered(f) || slot.run.gatherWaived)))
+            ReadPullPacks(map, f.units, f.patrollers, f.packResidue, f.hopUnits);
     ReadRunNeedFacts(slot, lead, f);
 }
 // Item-leg skip (spec C2/C2b/C2c, review round 2 Opus 1/2/3): the current leg's need facts, read every tick: the
@@ -11292,6 +11821,23 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
         seen.insert(known.guid);
     if (f.leadHasAttacker)
         seen.insert(f.leadAttacker.guid);
+    // The units a living party bot, pet or player has as its victim: the party hits those (UnitFact::partyHits).
+    std::unordered_set<uint64> partyVictims;
+    for (Player* member : bots)
+    {
+        if (!member->IsAlive() || !member->IsInWorld() || member->GetMap() != lead->GetMap())
+            continue;
+        if (Unit* victim = member->GetVictim())
+            partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+        if (Pet* pet = member->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                if (Unit* victim = pet->GetVictim())
+                    partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+    }
+    for (Player* member : players)
+        if (member->IsAlive() && member->IsInWorld())
+            if (Unit* victim = member->GetVictim())
+                partyVictims.insert(victim->GetObjectGuid().GetRawValue());
     for (Player* player : players)
     {
         if (!player->IsAlive() || !player->IsInWorld() || player->GetMap() != lead->GetMap() ||
@@ -11309,6 +11855,12 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.creatureType = attacker->GetCreatureType();
+            fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
+            fact.level = attacker->GetLevel();
+            fact.partyHits = partyVictims.count(fact.guid) != 0;
+            fact.fleeRoomYd = FearRoomFor(attacker, fact.creatureType, fact.ccImmune, f);
             fact.engaged = true;
             bool const melee = attacker->CanReachWithMeleeAutoAttack(player);
             fact.hitting = melee || (!attacker->IsMoving() && attacker->IsNonMeleeSpellCasted(false));
@@ -11480,6 +12032,78 @@ std::vector<TortoiseBots::PlayerLed::Engaged> ReadPlayerLedEngaged(Player* comma
     return out;
 }
 
+// The stand-still hold of a run's bots (AiPlayerbot.DungeonReviveHoldYd, ai::ReturnHoldPolicy), every tick whatever
+// the run's state: a bot is held while the run is bringing it back (DungeonRun::Run::returnHold), while a summon of
+// it is pending, or for up to ai::kReturnHoldMs after it was revived inside a dungeon farther than the key from the
+// lead bot (any revive, the run paused too) until it stands with the lead bot or the run takes it over. Each held
+// bot gets the mark its CanMove reads (ai::RETURN_HOLD_MARK_MS ahead, so a run that stops ticking frees it); the
+// others get 0. Key 0: nobody is held.
+static void SyncReturnHolds(Player* commander, RemoteCommander::Binding const& binding, DungeonRunSlot& slot, uint32 dt)
+{
+    float const holdYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    Player* const lead = FindCharacter(binding.leadGuid);
+    Group* const group = lead && lead->IsInWorld() ? lead->GetGroup() : nullptr;
+    if (!group)
+        return; // between maps: the marks run out by themselves
+    uint32 const now = WorldTimer::getMSTime();
+    for (Player* bot : CommandedBots(group, lead))
+    {
+        if (!bot || bot == lead || !bot->IsInWorld())
+            continue;
+        uint64 const raw = bot->GetObjectGuid().GetRawValue();
+        std::string const name = bot->GetName();
+        bool held = false;
+        if (holdYd <= 0.0f)
+        {
+            slot.reviveSeenDead.clear();
+            slot.reviveHoldMs.clear();
+        }
+        else if (!bot->IsAlive())
+        {
+            slot.reviveSeenDead.insert(raw);
+            slot.reviveHoldMs.erase(raw);
+        }
+        else
+        {
+            bool const sameCopy = bot->GetMap() == lead->GetMap();
+            float const yd = sameCopy ? bot->GetDistance(lead) : 1000.0f;
+            bool const runOwns = slot.run.returnHold.count(name) > 0;
+            if (slot.reviveSeenDead.erase(raw) && bot->GetMap() &&
+                ai::ShouldArmReviveHold(holdYd, bot->GetMap()->IsDungeon(), yd))
+            {
+                slot.reviveHoldMs[raw] = 0;
+                bot->GetMotionMaster()->Clear(false);
+                bot->StopMoving();
+                TB_LOG_DETAIL("TortoiseBots: run leader: %s revived %.0f yd from the lead bot: holds still for a summon",
+                    bot->GetName(), yd);
+            }
+            auto const revived = slot.reviveHoldMs.find(raw);
+            if (revived != slot.reviveHoldMs.end())
+            {
+                revived->second += dt;
+                if (ai::ReviveHoldReleased(yd, runOwns))
+                    slot.reviveHoldMs.erase(revived);
+                else if (revived->second >= ai::kReturnHoldMs)
+                {
+                    slot.reviveHoldMs.erase(revived);
+                    slot.run.note = name + " was revived " + TortoiseBots::DungeonRun::Num(yd) +
+                        " yd from the lead bot and waited " + std::to_string(ai::kReturnHoldMs / 1000) +
+                        " s for a summon or teleport: released";
+                    TB_LOG_DETAIL("TortoiseBots: run leader: %s", slot.run.note.c_str());
+                    if (commander)
+                        SendRunLine(commander, slot, false);
+                }
+                else
+                    held = true;
+            }
+            held = held || runOwns || PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid());
+        }
+        if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot))
+            botAi->GetAiObjectContext()->GetValue<int32>("manual int", "return hold until ms")->Set(
+                held ? int32((now + ai::RETURN_HOLD_MARK_MS - 1) | 1) : 0); // `| 1`: never 0, still within the mark
+    }
+}
+
 void TickDungeonRun(uint64 commanderRaw, uint32 dt)
 {
     auto it = DungeonRuns().find(commanderRaw);
@@ -11492,6 +12116,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         return;
     DungeonRunSlot& slot = it->second;
     Player* commander = FindCharacter(commanderRaw);
+    SyncReturnHolds(commander, *binding, slot, dt);
     // The run's own time limit: it ends the run with its own note, not as a plain stop.
     slot.elapsedMs += dt;
     if (slot.run.state != TortoiseBots::DungeonRun::State::Done &&
@@ -11798,6 +12423,15 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     std::string const order = slot.playerLed.on
         ? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)
         : TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+    // The linked_death state changes of this tick (hold, release armed, released, reset): one bot_events.csv row each,
+    // from the lead bot, the same gate as the boss tactics rows. The queue is taken every tick, logged or not.
+    if (std::vector<TortoiseBots::DungeonRun::Run::LinkedEvent> const linkedEvents =
+            TortoiseBots::DungeonRun::TakeLinkedEvents(slot.run);
+        !linkedEvents.empty() && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        if (Player* linkedLead = FindCharacter(binding->leadGuid))
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(linkedLead))
+                for (TortoiseBots::DungeonRun::Run::LinkedEvent const& event : linkedEvents)
+                    sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedDeath", event.kind, event.detail);
     // The lead bot says what the run needs on /s (a door's key, a skipped leg's item), once per event.
     if (std::string const say = TortoiseBots::DungeonRun::TakeSay(slot.run); !say.empty())
         if (Player* sayLead = FindCharacter(binding->leadGuid))
@@ -11820,7 +12454,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             speedRate > 1.0f ? (TortoiseBots::DungeonRun::Num(speedRate) + " (walking)").c_str() : "1.0 (a fight, a pull, a rest or an event)");
     ApplyRunSpeed(commanderRaw, lead, bots, speedRate);
     // A bot held in combat by units the group cannot attack only past the grace leaves it (CombatDropTick).
-    DropUnattackableCombat(lead, bots, slot.run.combatDrops);
+    DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);
     if (slot.run.leadWalkReset)
     {
         slot.run.leadWalkReset = false;
@@ -11898,6 +12532,9 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             return;
         // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
         TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
+        // An automatic cc order that was refused assigned nothing: its unit,
+        // bot, mark, budget and spacing go back for the next pick.
+        TortoiseBots::DungeonRun::CcOrderTaken(it->second.run, order, accepted);
         if (accepted && captured.movePathRead)
             TortoiseBots::DungeonRun::NoteMovePathType(it->second.run, order, captured.movePathType);
         // A stalled walk's `direct` move refused: the walk goes on without it (DungeonRun::StallDirectRefused).

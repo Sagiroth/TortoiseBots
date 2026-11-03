@@ -17,10 +17,49 @@
 // decides, as before.
 // No core includes: callers translate game state into plain inputs.
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ai
 {
+    // Debuffs a cure must not remove on its own (Turtle 1.18.1 spell ids). Mutating Injection (Grobbulus, Naxx, 28169)
+    // drops a poison cloud where its carrier stands when it is removed, by dispel or by expiry (core boss_grobbulus.cpp,
+    // spell_mutating_injection). A cleanse while the carrier is still in the raid puts the cloud in the raid; bomb runout
+    // moves the carrier clear first (BombRunoutPolicy.h). A dispel_priority row in mode `clear` is the opt-in release: it
+    // may remove such an aura once the carrier is clear of the group. Ported from mod-playerbots dispel_whitelist.
+    // StoneformTrigger is held back by the same list: Stoneform removes every disease on the bot when it is cast.
+    constexpr std::uint32_t kNeverDispelSpellIds[] = { 28169 };
+
+    inline bool IsNeverDispelSpellId(std::uint32_t spellId)
+    {
+        for (std::uint32_t neverDispelId : kNeverDispelSpellIds)
+        {
+            if (spellId == neverDispelId)
+                return true;
+        }
+        return false;
+    }
+
+    inline bool DispelOverrideContains(const std::vector<std::uint32_t>& set, std::uint32_t spellId)
+    {
+        for (std::uint32_t listed : set)
+        {
+            if (listed == spellId)
+                return true;
+        }
+        return false;
+    }
+
+    // Per-member correction to the hard never-dispel list, built from the fight's dispel_priority rows: `allow` lists a
+    // never-dispel aura a `clear` row releases (the carrier is clear of the group), `deny` lists an aura a cure must not
+    // remove even though it is not on the hard list. Null everywhere else, which keeps the plain rules.
+    struct DispelOverride
+    {
+        std::vector<std::uint32_t> allow;
+        std::vector<std::uint32_t> deny;
+    };
+
     constexpr int kDispelTargetRejected = -1;
     constexpr float kDispelReachFactor = 1.5f;
 

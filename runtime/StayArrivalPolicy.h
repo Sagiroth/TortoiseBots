@@ -25,7 +25,7 @@ namespace TortoiseBots
 {
 
 // dx, dy, dz: the bot's position minus the stay point. range: the follow range
-// (PlayerbotAI::GetRange("follow"); AiPlayerbot.RaidFollowDistance, 5.0 yd, inside
+// (PlayerbotAI::GetRange("follow"); AiPlayerbot.RaidFollowDistance, 4.0 yd, inside
 // a dungeon). True when the bot is within range of the point in 3D.
 inline float StayPointDistance(float dx, float dy, float dz)
 {

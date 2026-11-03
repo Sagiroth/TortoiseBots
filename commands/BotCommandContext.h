@@ -109,9 +109,10 @@ enum class CcDenyReason
 };
 std::string CcDenyText(CcDenyReason reason, std::string const& spell, std::string const& targetName);
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
-    std::string* outAction = nullptr);
+    std::string* outAction = nullptr, std::string const& family = std::string());
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
-    std::string* outAction, CcDenyReason* outDeny, std::string* outDenySpell);
+    std::string* outAction, CcDenyReason* outDeny, std::string* outDenySpell,
+    std::string const& family = std::string());
 
 // Execute a mature action while suppressing only its transient chat output.
 // The pre-existing non-combat `silent` strategy is restored exactly on scope

@@ -404,6 +404,9 @@ namespace ai
     public:
         CurePartyMemberAction(PlayerbotAI* ai, std::string spell, uint32 dispelType) : CastSpellAction(ai, spell), PartyMemberActionNameSupport(spell), dispelType(dispelType) {}
 
+        // The dispel type this cure removes (a dispel_priority row ranks auras of the same type).
+        uint32 GetDispelType() const { return dispelType; }
+
     protected:
         virtual std::string GetReachActionName() override { return "reach party member to heal"; }
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
