@@ -57,12 +57,9 @@ DISPLAY_FILES = ("runtime/ObservabilityEmitter.cpp",)
 # Members read into PlayerbotAIConfig that no engine code consumes yet.
 # One line of player words why reading it is still the better choice.
 ALLOWLIST = {
-    # The four Zul'Gurub Hakkar keys: the boss tactic kinds and the charm yield that read them land as the next step
-    # of the same work, and the keys are read now so the shipped settings and `.reload config` stay complete. Drop a
-    # line when its kind's consumer lands (the seek_aura and spread row scans, the charm yield, the run leader's gate).
-    "dungeonRunSeekAura": "read for the seek_aura boss tactic kind, whose row scan lands with the rows",
+    # The last two Zul'Gurub Hakkar keys. The seek_aura and spread rows are consumed (BossTacticsActions.cpp); the
+    # pull gate lands with the run leader and the charm yield with the charmed-ally area veto.
     "dungeonRunPullGate": "read for the pull_gate boss tactic kind, whose run-leader gate lands with the rows",
-    "dungeonRunBossSpread": "read for the spread boss tactic kind, whose ranged-spacing scan lands with the rows",
     "dungeonRunCharmYield": "read for the creature-charm yield, which lands with the charmed-ally area veto",
 }
 
