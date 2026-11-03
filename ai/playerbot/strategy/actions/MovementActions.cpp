@@ -35,6 +35,7 @@
 #include "vmap/VMapFactory.h"
 #include "playerbot/BotActionLog.h"
 #include "Database/DBCStores.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 
 using namespace ai;
 
@@ -3498,8 +3499,12 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
                 // weapon-damage spins (Herod's Whirlwind 8989 -> 15578) list
                 // anyone. The radius gate and the range test below are
                 // unchanged.
+                // A periodic tick that lays a ground cloud (effect 27) at an
+                // invisible emitter's feet marks the cloud's circle too.
                 if (!TriggerSpellMarksSpinHazard((int)triggerProto->Effect[i],
-                    (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable))
+                    (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable) &&
+                    !TriggerSpellMarksGroundHazard((int)triggerProto->Effect[i],
+                    triggerProto->IsPositiveEffect(SpellEffectIndex(i)), selectable))
                     continue;
                 SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(triggerProto->EffectRadiusIndex[i]);
                 float radius = radiusEntry ? radiusEntry->Radius : 0.0f;
@@ -5229,4 +5234,25 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
 
     sLog.outDetail("%s: GetPossibleJumpStartFor Failed to find jump point!", jumper->GetName());
     return WorldPosition();
+}
+
+bool AvoidEliteAction::Execute(Event& event)
+{
+    Unit* elite = AI_VALUE(Unit*, "dangerous elite");
+    if (!elite)
+        return false;
+
+    // Straight away from the elite first, then fanning out to the sides.
+    WorldPosition const from(elite);
+    float const away = from.getAngleTo(WorldPosition(bot));
+    float const stepYd = ai::ROAMING_ELITE_AVOID_YD + 15.0f;
+    for (float turn : { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f })
+    {
+        float const x = from.getX() + stepYd * cos(away + turn);
+        float const y = from.getY() + stepYd * sin(away + turn);
+        float const z = bot->GetMap()->GetHeight(x, y, bot->GetPositionZ() + 5.0f);
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            return true;
+    }
+    return false;
 }

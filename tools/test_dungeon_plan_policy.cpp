@@ -698,6 +698,94 @@ static void TestStandPullFlagOnBossAndPull()
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
 }
 
+static void TestResetToGossipFlagOnlyOnUnitsHold()
+{
+    CHECK(kPlanFlagResetToGossip == 16384);
+    PlanStep hold = Step(0, 33, PlanStepKind::Hold);
+    hold.entries = {62498, 62496, 62497, 62499};
+    hold.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && (hold.flags & kPlanFlagResetToGossip));
+    // A hold done by data or by an object has its own reset rule: refused.
+    PlanStep data = hold;
+    data.entry = 1;
+    data.param = 3;
+    data.flags = kPlanFlagResetToGossip | kPlanFlagDoneData;
+    CHECK(NormalizePlanStep(data) == PlanStepRefusal::BadParam);
+    PlanStep object = hold;
+    object.entry = 124369;
+    object.param = 1;
+    object.flags = kPlanFlagResetToGossip | kPlanFlagDoneObject;
+    CHECK(NormalizePlanStep(object) == PlanStepRefusal::BadParam);
+    // Any other kind is refused, not ignored.
+    PlanStep gossip = Step(0, 34, PlanStepKind::Gossip);
+    gossip.entry = 62498;
+    gossip.param = 1;
+    gossip.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(gossip) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 35, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.flags = kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
+}
+
+// A hold row may run to kPlanMaxHoldTimeoutS (AQ20 Rajaxx's seven waves, about 1500 s); every other kind stops at 600.
+static void TestHoldTimeoutCeiling()
+{
+    CHECK(kPlanMaxHoldTimeoutS == 1800 && kPlanMaxTimeoutS == 600);
+    PlanStep hold = Step(0, 40, PlanStepKind::Hold);
+    hold.entries = {15341};
+    hold.timeoutS = 1500;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && hold.timeoutS == 1500);
+    hold.timeoutS = 1800;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None);
+    hold.timeoutS = 1801;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::BadTimeout);
+    PlanStep wait = Step(0, 41, PlanStepKind::WaitObject);
+    wait.entry = 124372;
+    wait.param = 1;
+    wait.timeoutS = 601;
+    CHECK(NormalizePlanStep(wait) == PlanStepRefusal::BadTimeout);
+    PlanStep boss = Step(0, 42, PlanStepKind::Boss);
+    boss.entry = 7228;
+    boss.timeoutS = 601;
+    CHECK(NormalizePlanStep(boss) == PlanStepRefusal::BadTimeout);
+}
+
+static void TestDeadGossipFlagOnlyOnUnitsHold()
+{
+    // #243 round 1: a units hold whose starting NPC may already be dead (Zul'Farrak's Bly). The run leader only knows the NPC
+    // was dead from the gossip row it counted done, so the flag is read on a units hold alone.
+    CHECK(kPlanFlagDeadGossipOk == 32768);
+    CHECK((kPlanFlagDeadGossipOk & kPlanFlagResetToGossip) == 0);
+    PlanStep hold = Step(0, 33, PlanStepKind::Hold);
+    hold.entries = {7604, 7608, 7606, 7605};
+    hold.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && (hold.flags & kPlanFlagDeadGossipOk));
+    // A hold done by data or by an object ends by that data: refused.
+    PlanStep data = hold;
+    data.entry = 1;
+    data.param = 3;
+    data.flags = kPlanFlagDeadGossipOk | kPlanFlagDoneData;
+    CHECK(NormalizePlanStep(data) == PlanStepRefusal::BadParam);
+    PlanStep object = hold;
+    object.entry = 124369;
+    object.param = 1;
+    object.flags = kPlanFlagDeadGossipOk | kPlanFlagDoneObject;
+    CHECK(NormalizePlanStep(object) == PlanStepRefusal::BadParam);
+    // Never together with reset_to_gossip: a starting NPC already dead starts no event to reset.
+    PlanStep both = hold;
+    both.flags = kPlanFlagDeadGossipOk | kPlanFlagResetToGossip;
+    CHECK(NormalizePlanStep(both) == PlanStepRefusal::BadParam);
+    // Any other kind is refused, not ignored.
+    PlanStep gossip = Step(0, 34, PlanStepKind::Gossip);
+    gossip.entry = 7604;
+    gossip.param = 1;
+    gossip.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(gossip) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 35, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.flags = kPlanFlagDeadGossipOk;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
+}
+
 static void TestPlainOpenUnchanged()
 {
     // A plain open with a radius, extra entries and no param still loads: none
@@ -790,8 +878,29 @@ static void TestNeedsOfLegSorted()
     CHECK(ofLeg[0]->item == 11000 && ofLeg[1]->item == 12000);
 }
 
+// A pull row's `item` is the bodies ceiling of the aggro estimate (max_bodies); over
+// kPlanMaxPullBodies the row is refused. A move row's item is not read by this rule.
+static void TestPullRowItemIsTheBodiesCeiling()
+{
+    CHECK(kPlanMaxPullBodies == 80);
+    PlanStep pull = Step(0, 1, PlanStepKind::Pull);
+    pull.entries = {51590};
+    pull.item = 27;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None);
+    pull.item = 80;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None);
+    pull.item = 81;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::BadParam);
+    PlanStep move = Step(0, 2, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
+    move.item = 81;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::None);
+    move.item = 14000;
+    CHECK(NormalizePlanStep(move) == PlanStepRefusal::None);
+}
+
 int main()
 {
+    TestPullRowItemIsTheBodiesCeiling();
     TestLegNeedRowsRefused();
     TestNeedsOfLegSorted();
     TestOpenProofRowParses();
@@ -800,6 +909,9 @@ int main()
     TestProofCreatureFlagOnlyOnOpenProof();
     TestPlainOpenUnchanged();
     TestStandPullFlagOnBossAndPull();
+    TestResetToGossipFlagOnlyOnUnitsHold();
+    TestDeadGossipFlagOnlyOnUnitsHold();
+    TestHoldTimeoutCeiling();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
     TestKinds();

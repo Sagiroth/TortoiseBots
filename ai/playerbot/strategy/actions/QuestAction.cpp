@@ -298,8 +298,6 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
 
         if (bot->GetQuestStatus(questId) != QUEST_STATUS_NONE && bot->GetQuestStatus(questId) != QUEST_STATUS_AVAILABLE)
         {
-            BroadcastHelper::BroadcastQuestAccepted(ai, bot, quest);
-
             sPlayerbotAIConfig.logEvent(ai, "AcceptQuestAction", quest->GetTitle(), std::to_string(quest->GetQuestId()));
             // Issue #872: remember quests the autonomous alt took itself so
             // only those may be abandoned later.
@@ -338,8 +336,6 @@ bool QuestUpdateAddKillAction::Execute(Event& event)
         if (info)
         {
             ai->TellPlayer(requester, chat->formatQuestObjective(info->name, available, required), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-
-            BroadcastHelper::BroadcastQuestUpdateAddKill(ai, bot, qInfo, available, required, info->name);
         }
     }
     else if (qInfo)
@@ -348,8 +344,6 @@ bool QuestUpdateAddKillAction::Execute(Event& event)
         if (info)
         {
             ai->TellPlayer(requester, chat->formatQuestObjective(info->name, available, required), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-
-            BroadcastHelper::BroadcastQuestUpdateAddKill(ai, bot, qInfo, available, required, info->name);
         }
     }
     else
@@ -402,8 +396,6 @@ bool QuestUpdateAddItemAction::Execute(Event& event)
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,
                 false
             );
-
-            BroadcastHelper::BroadcastQuestUpdateAddItem(ai, bot, pair.first, availableItemsCount, requiredItemsCount, itemPrototype);
         }
     }
     else {
@@ -447,8 +439,6 @@ bool QuestUpdateFailedTimerAction::Execute(Event& event)
         placeholders["%quest_link"] = ai->GetChatHelper()->formatQuest(qInfo);
 
         ai->TellPlayer(requester, BOT_TEXT2("Failed timer for %quest_link, abandoning", placeholders), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-
-        BroadcastHelper::BroadcastQuestUpdateFailedTimer(ai, bot, qInfo);
     }
     else
     {
@@ -483,8 +473,6 @@ bool QuestUpdateCompleteAction::Execute(Event& event)
         placeholders["%quest_link"] = ai->GetChatHelper()->formatQuest(qInfo);
 
         ai->TellPlayer(requester, BOT_TEXT2("Completed %quest_link", placeholders), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-
-        BroadcastHelper::BroadcastQuestUpdateComplete(ai, bot, qInfo);
     }
     else {
         std::map<std::string, std::string> placeholders;

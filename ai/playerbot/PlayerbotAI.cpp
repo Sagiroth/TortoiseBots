@@ -1,6 +1,7 @@
 #include <vector>
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
+#include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/CommandedGroupQuery.h"
@@ -38,7 +39,6 @@
 #include "Maps/CellImpl.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/actions/LogLevelAction.h"
-#include "strategy/actions/SayAction.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/TargetValue.h"
@@ -67,6 +67,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/FishAction.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
@@ -91,7 +92,6 @@
 #include "Transports/Transport.h"
 #include "Guild/GuildMgr.h"
 #include "Chat/ChannelMgr.h"
-#include "PlayerbotLLMInterface.h"
 
 #include <string_view>
 
@@ -329,6 +329,10 @@ static bool HasSeatedAura(Player* bot)
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
+    // thread and the same tick, after the maps may have despawned an add of the cached scan.
+    ai::BossTacticsScanScope bossTacticsScan;
+    ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)
@@ -387,6 +391,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
+
+    // Raid/dungeon wedge: sample the leader's path on every AI tick, because the
+    // follow action is not called while the core follow runs and a straggler
+    // needs the points from before it fell behind. One branch while off.
+    if (sPlayerbotAIConfig.raidFollowWedge)
+        UpdateLeadTrail();
 
     if(aiInternalUpdateDelay > elapsed)
     {
@@ -913,6 +923,31 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     }
 
     return reactionInProgress;
+}
+
+// The leader's recent positions for the raid/dungeon trail catch-up
+// (FollowTrailPolicy.h). The trail is per follower and dropped as soon as the
+// pair leaves an instance group, so it never carries a stale route.
+void PlayerbotAI::UpdateLeadTrail()
+{
+    Map* map = bot ? bot->GetMap() : nullptr;
+    if (!bot || !map || !bot->GetGroup() || !(map->IsDungeon() || map->IsRaid()) || !aiObjectContext)
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    Unit* followTarget = aiObjectContext->GetValue<Unit*>("follow target")->Get();
+    if (!followTarget || followTarget == bot || !followTarget->IsPlayer() || !bot->IsAlive() ||
+        !followTarget->IsAlive() || !IsSafe(followTarget) || bot->GetMapId() != followTarget->GetMapId() ||
+        bot->GetTransport() || followTarget->GetTransport())
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ());
 }
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
@@ -2099,8 +2134,6 @@ void PlayerbotAI::OnDeath()
         SET_AI_VALUE(ObjectGuid, "explicit attack target", ObjectGuid());
         SET_AI_VALUE(LootObject, "loot target", LootObject());
         SET_AI_VALUE(time_t, "combat start time", 0);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", false);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near graveyard", false);
         // A corpse cannot hold an anchor, and the dead engine is no place to
         // keep one: the tank would come back from the spirit healer still
         // parked on the stay that pull placed it on, instead of following.
@@ -2216,29 +2249,6 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     ExternalEventHelper helper(aiObjectContext);
 
-    // chat replies
-    std::list<ChatQueuedReply> delayedResponses;
-    {
-        std::scoped_lock lock(chatRepliesMutex);
-        while (!chatReplies.empty())
-        {
-            ChatQueuedReply holder = chatReplies.front();
-            time_t checkTime = holder.m_time;
-            if (checkTime && time(0) < checkTime)
-            {
-                delayedResponses.push_back(holder);
-                chatReplies.pop();
-                continue;
-            }
-            ChatReplyAction::ChatReplyDo(bot, holder.m_type, holder.m_guid1, holder.m_guid2, holder.m_msg, holder.m_chanName, holder.m_name);
-            chatReplies.pop();
-        }
-
-        for (std::list<ChatQueuedReply>::iterator i = delayedResponses.begin(); i != delayedResponses.end(); ++i)
-        {
-            chatReplies.push(*i);
-        }
-    }
     // logout if logout timer is ready or if instant logout is possible
     if (bot->GetSession()->isLogingOut())
     {
@@ -2831,29 +2841,24 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
 void PlayerbotAI::PublishChatGate()
 {
-    // Issue #846: the two early exits of the SMSG_MESSAGECHAT case below that
-    // the packet hook can apply before copying a line (runtime/BotChatGate.h).
-    // Same conditions, in the same terms: AllowActivity(), and the #469 Trade
-    // gate for a masterless, unhired pool bot (recording sees Trade lines
-    // before that gate, so a recording bot keeps them). Republished on change,
-    // and every 30 s so a re-registered AI cannot keep the storage default.
+    // What the SMSG_MESSAGECHAT case of HandleBotOutgoingPacket reads, for the
+    // packet hook to apply before copying a line (runtime/BotChatGate.h).
+    // Republished on change, and every 30 s so a re-registered AI cannot keep
+    // the storage default.
     bool const ignoreAll = !AllowActivity();
-    bool const ignoreTrade = !m_recordIncommingMessages && !HasRealPlayerMaster() &&
-        sRandomBotFacade.IsFreeBot(bot) &&
-        !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+    bool const onlyOrders = !m_recordIncommingMessages;
     time_t const now = time(nullptr);
-    if (m_chatGatePublished && ignoreAll == m_chatGateIgnoreAll && ignoreTrade == m_chatGateIgnoreTrade &&
+    if (m_chatGatePublished && ignoreAll == m_chatGateIgnoreAll && onlyOrders == m_chatGateOnlyOrders &&
         now < m_chatGatePublishedAt + 30)
         return;
 
     TortoiseBots::BotChatGate gate;
     gate.ignoreAllChat = ignoreAll;
-    gate.ignoreUnaddressedTrade = ignoreTrade;
-    gate.name = bot->GetName();
+    gate.onlyOrders = onlyOrders;
     PlayerbotAIStorage::Instance().SetBotChatGate(bot, gate);
     m_chatGatePublished = true;
     m_chatGateIgnoreAll = ignoreAll;
-    m_chatGateIgnoreTrade = ignoreTrade;
+    m_chatGateOnlyOrders = onlyOrders;
     m_chatGatePublishedAt = now;
 }
 
@@ -3190,17 +3195,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
                 }
 
-                if (GetMaster() == GetGroupMaster())
-                {
-                    // Issue #1108: the announcement in chat is ambient, the
-                    // whisper below answers the new master and stays.
-                    if (!HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && master && sPlayerbotAIConfig.enableBroadcasts)
-                        bot->TextEmote("is following " + std::string(master->GetName()) + ".");
-                }
-                else
-                {
+                if (GetMaster() != GetGroupMaster())
                     TellPlayer(master, BOT_TEXT("hello"));
-                }
             }
         }
     }
@@ -5015,8 +5011,20 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
     return hostileUnitsNonPlayers;
 }
 
-bool PlayerbotAI::CanMove()
+bool PlayerbotAI::ReturnHeld()
 {
+    return ai::ReturnHoldOn((uint32)aiObjectContext->GetValue<int32>("manual int", "return hold until ms")->Get(),
+        WorldTimer::getMSTime());
+}
+
+bool PlayerbotAI::CanMove(bool ignoreReturnHold)
+{
+    // No follow, walk, chase or pull while the run brings the bot back: it fights from where it stands. The mark is
+    // only written with the revive hold key on (Commander's SyncReturnHolds), so the lookup itself waits for it.
+    if (!ignoreReturnHold && sPlayerbotAIConfig.dungeonReviveHoldYd > 0.0f && ReturnHeld())
+    {
+        return false;
+    }
     if (sServerFacade.IsFrozen(bot))
     {
         return false;

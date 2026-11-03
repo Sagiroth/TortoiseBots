@@ -395,11 +395,75 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `kind` = 'interrupt' AND `target_entry` = 0 AND `spell_id` = 24324;", text)
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
 
-        # Every old row takes the column defaults, so adding the columns changes no existing row's behaviour.
+        # Every row written before the new columns takes their defaults, so adding the columns changes no existing
+        # row's behaviour. Rows from 20261103010000 onward carry their own mode and gate by design.
         for key, row in live.items():
-            if key[2] != "linked_death":
+            if key[2] != "linked_death" and row[0] < "20261103010000_world.sql":
                 self.assertEqual((0, 100, 0, "", 7.0), (row[9], row[10], row[11], row[12], row[13]),
                                  "%s carries a gate, mode or window unexpectedly" % (key,))
+
+    def test_zg_aura_rows(self):
+        # Zul'Gurub's aura rows (20261103020000_world.sql). The core ids are pinned in BossTacticsCoreData below; here
+        # the live table shape is, so a delete that is too wide or a priority that drifted fails.
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        expected = {
+            (309, 14834, "dispel_priority", 0, 24321): (0, 0.0, 0, "never"),
+            (309, 14834, "dispel_priority", 0, 24687): (1, 0.0, 0, "now"),
+            (309, 14834, "dispel_priority", 0, 24688): (2, 0.0, 0, "now"),
+            (309, 11382, "freeze_on_aura", 0, 24314): (0, 0.0, 0, ""),
+            (309, 14988, "hold_kill", 11382, 0): (0, 0.0, 0, ""),
+            (309, 11380, "dispel_priority", 0, 17172): (0, 0.0, 0, "now"),
+            (309, 11380, "dispel_priority", 0, 24306): (0, 0.0, 0, "never"),
+            (309, 11380, "kill_first", 14986, 0): (0, 0.0, 24306, ""),
+            (309, 11380, "kill_first", 15112, 0): (1, 0.0, 0, ""),
+            (309, 11380, "kill_first", 14987, 0): (2, 0.0, 0, ""),
+            (309, 14510, "kill_first", 15041, 0): (1, 0.0, 0, ""),
+            (309, 14510, "dispel_priority", 0, 24111): (1, 0.0, 0, "now"),
+            (309, 14510, "dispel_priority", 0, 24099): (2, 0.0, 0, "now"),
+            (309, 14515, "flee_on_aura", 0, 24210): (0, 5.0, 0, "to_tank"),
+            (309, 14515, "dispel_priority", 0, 24212): (3, 0.0, 0, "now"),
+            (309, 15114, "behind", 0, 16099): (0, 20.0, 0, ""),
+            (309, 15114, "interrupt", 0, 22421): (0, 0.0, 0, ""),
+            (309, 15114, "dps_hold_after", 0, 22421): (0, 3.0, 0, ""),
+            (309, 15082, "dps_hold_after", 0, 24646): (0, 3.0, 0, ""),
+            (309, 15083, "kill_first", 15163, 0): (1, 0.0, 0, ""),
+            (309, 15084, "dps_hold_after", 0, 0): (0, 3.0, 0, "blink"),
+            (309, 15085, "interrupt", 0, 24680): (0, 0.0, 0, ""),
+        }
+        for key, want in expected.items():
+            self.assertIn(key, live, "missing ZG aura row %s" % (key,))
+            row = live[key]
+            self.assertEqual(want, (row["priority"], row["param"], row["bot_aura"], row["tactic_mode"]),
+                             "ZG row %s drifted" % (key,))
+        # The rows this file must not disturb: Mar'li's channel interrupt and Arlokk's Cleave row stay; Hakkar's dead
+        # Bloodsiphon interrupt stays deleted.
+        self.assertIn((309, 14510, "interrupt", 0, 24300), live)
+        self.assertIn((309, 14515, "behind", 0, 26350), live)
+        self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
+        # The two spell-less dps_hold_after rows (Hakkar 14834, Mandokir 11382) are gone: a spell-less hold fires only
+        # its engage edge, once per fight, so "until_tank" never recurred. Their triggers are auras on players (or an
+        # instant cast, Cause Insanity 24327, castingTimeIndex 1), which the hold's cast/aura edge cannot see on the
+        # boss. Re-add only with a trigger that recurs (follow-up in docs/play/boss-tactics.md, Known limits).
+        self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
+        self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
+
+    def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
+        # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
+        # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees
+        # the corrected file: a later migration must delete exactly those two rows, and the corrected file must not
+        # describe them as present any more.
+        path = os.path.join(ROOT, "data/sql/world/20261103060000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the stale until_tank cleanup migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (14834, 11382) "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0;", text)
+        self.assertNotIn("INSERT INTO `ai_boss_tactic`", text)
+        self.assertGreater(os.path.basename(path), "20261103020000_world.sql")
+        with open(os.path.join(ROOT, "data/sql/world/20261103020000_world.sql"), encoding="utf-8") as handle:
+            aura = handle.read()
+        self.assertNotIn("so DPS waits for the tank (until_tank, 4 s)", aura)
+        self.assertNotIn("the tank must own the boss before DPS", aura)
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
@@ -761,11 +825,15 @@ CORE_SPELLS = os.path.join(CORE or "", "sql", "base", "tw_world_spell_template.s
 @unittest.skipUnless(CORE and os.path.isfile(CORE_SPELLS), "set TORTOISE_CORE=<tortoise-wow checkout>")
 class BossTacticsCoreData(unittest.TestCase):
     SPELL_COLUMNS = ("entry", "attributesEx", "castingTimeIndex", "interruptFlags",
-                     "channelInterruptFlags", "preventionType")
+                     "channelInterruptFlags", "preventionType", "dispel",
+                     "effect1", "effect2", "effect3", "effectImplicitTargetA1", "effectImplicitTargetA2",
+                     "effectImplicitTargetA3", "effectApplyAuraName1", "effectApplyAuraName2",
+                     "effectApplyAuraName3")
     # Creatures the core puts on a map without a creature row: the summon that makes them.
     SUMMONED = {
         3654: "src/scripts/dungeons/wailing_caverns/wailing_caverns.cpp:504 "
               "(SummonAttacker in the Disciple of Naralex event)",
+        7275: "src/scripts/dungeons/zulfarrak/instance_zulfarrak.cpp:81 (the stairs event summons Shadowpriest Sezz'ziz)",
         7273: "sql/base/tw_world_event_scripts.sql:58, event 2488 (the eventId of the "
               "Gong of Zul'Farrak 141832, tw_world_gameobject_template.sql:72) summons him",
         15146: "sql/base/tw_world_creature_ai_events.sql:52, event 1514101 (creature 15141, the Portal of Madness "
@@ -774,6 +842,15 @@ class BossTacticsCoreData(unittest.TestCase):
         14515: "sql/base/tw_world_event_scripts.sql:58, event 9066 (the eventId of the Gong of Bethekk 180526, tw_world_gameobject_template.sql:72) summons her",
         12018: "src/scripts/dungeons/molten_core/instance_molten_core.cpp:652 (SummonCreature(NPC_DOMO) once the seven runes are doused)",
         15517: "src/scripts/dungeons/temple_of_ahnqiraj/boss_ouro.cpp:462 (the Ouro spawner casts SPELL_SUMMON_OURO 26061)",
+        14988: "src/scripts/dungeons/zulgurub/boss_mandokir.cpp:333 (Mandokir summons Ohgan onto his victim)",
+        14986: "src/scripts/dungeons/zulgurub/boss_jindo.cpp:284 (SPELL_SHADE_OF_JINDO 24308 summons the Shade)",
+        15112: "src/scripts/dungeons/zulgurub/boss_jindo.cpp:191 (SPELL_BRAIN_WASH_TOTEM 24262 summons the totem)",
+        15041: "src/scripts/dungeons/zulgurub/boss_marli.cpp:146 (Mar'li summons a Spawn of Mar'li from an egg)",
+        15163: "src/scripts/dungeons/zulgurub/boss_hazzarah.cpp:86 (Hazza'rah summons a Nightmare Illusion)",
+        15082: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 28704 command 10 summons Gri'lek",
+        15083: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21608 command 10 summons Hazza'rah",
+        15084: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21609 command 10 summons Renataki",
+        15085: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21610 command 10 summons Wushoolay",
     }
 
     @classmethod
@@ -817,6 +894,57 @@ class BossTacticsCoreData(unittest.TestCase):
                 problems.append("%s: interruptFlags 0x%x lacks SPELL_INTERRUPT_FLAG_DAMAGE 0x2"
                                 % (where, info["interruptFlags"]))
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
+
+    def test_aura_tactic_spells_exist(self):
+        # Every spell a new-kind row names exists in spell_template: a dispel_priority aura, a freeze/flee aura, a
+        # dps_hold_after trigger or a kill_first target's spell id (0 for the target rows).
+        aura_kinds = ("dispel_priority", "freeze_on_aura", "flee_on_aura", "dps_hold_after")
+        problems = []
+        for row in effective_rows():
+            if row[3] not in aura_kinds or not int(row[5]):
+                continue
+            if int(row[5]) not in self.spells:
+                problems.append("map %s boss %s kind %s spell %s has no spell_template row"
+                                % (row[1], row[2], row[3], row[5]))
+        self.assertEqual([], problems, "aura tactic spells the core does not know:\n" + "\n".join(problems))
+
+    def test_dispel_priority_auras_are_curable(self):
+        # Only the four friendly dispel types exist in 1.12 (magic, curse, disease, poison); a row on an aura with
+        # dispel 0 is a no-op (Corrupted Blood 24328, Brain Wash 24261 are the classic traps).
+        problems = []
+        for row in effective_rows():
+            if row[3] != "dispel_priority":
+                continue
+            info = self.spells.get(int(row[5]))
+            if info is None:
+                problems.append("map %s boss %s aura %s: no spell_template row" % (row[1], row[2], row[5]))
+            elif info["dispel"] not in (1, 2, 3, 4):
+                problems.append("map %s boss %s aura %s: dispel %s is not curable"
+                                % (row[1], row[2], row[5], info["dispel"]))
+        self.assertEqual([], problems, "dispel_priority rows a cure cannot take:\n" + "\n".join(problems))
+
+    def test_dps_hold_triggers_are_observable(self):
+        # The hold's spell trigger is a cast slot or an aura on the subject, so a keyed spell must be a cast (cast
+        # index > 1) or an aura applied to the caster; an instant, aura-less spell is invisible to polling and the row
+        # must use `blink` or `until_tank` instead.
+        problems = []
+        for row in effective_rows():
+            if row[3] not in ("dps_hold_after", "taunt_after_cast") or not int(row[5]):
+                continue
+            if row[12] in ("blink", "until_tank"):
+                continue
+            info = self.spells.get(int(row[5]))
+            where = "map %s boss %s kind %s spell %s" % (row[1], row[2], row[3], row[5])
+            if info is None:
+                problems.append("%s: no spell_template row" % where)
+                continue
+            self_aura = any(
+                info.get("effectApplyAuraName%d" % index) and info.get("effectImplicitTargetA%d" % index) == 1
+                for index in (1, 2, 3))
+            if info["castingTimeIndex"] <= 1 and not self_aura:
+                problems.append("%s: castingTimeIndex %s and no self aura; use blink or until_tank"
+                                % (where, info["castingTimeIndex"]))
+        self.assertEqual([], problems, "dps_hold_after rows the trigger cannot see:\n" + "\n".join(problems))
 
     def test_avoid_cast_spells_are_casts(self):
         # The avoid_cast scan reads the caster's current generic spell and its channel, so a row is good when the

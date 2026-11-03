@@ -516,6 +516,13 @@ namespace ai
         NoTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "no target") {}
         virtual bool IsActive() override;
     };
+    // A roaming elite the bot must not fight is coming close (out of combat).
+    class DangerousEliteNearTrigger : public Trigger
+    {
+    public:
+        DangerousEliteNearTrigger(PlayerbotAI* ai) : Trigger(ai, "dangerous elite near") {}
+        virtual bool IsActive() override;
+    };
     class MasterTargetActiveTrigger : public Trigger
     {
     public:

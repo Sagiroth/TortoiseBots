@@ -12,7 +12,6 @@
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "Transports/Transport.h"
 #include "Maps/PathFinder.h"
-#include "playerbot/PlayerbotLLMInterface.h"
 
 #include "vmap/VMapFactory.h"
 
@@ -22,7 +21,6 @@
 
 #include <iomanip>
 #include <typeindex>
-#include "SayAction.h"
 #include "Maps/MoveMap.h"
 
 using namespace ai;

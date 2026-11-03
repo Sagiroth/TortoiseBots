@@ -11,7 +11,6 @@
 #include "FollowActions.h"
 #include "ChangeStrategyAction.h"
 #include "ChooseTargetActions.h"
-#include "SuggestWhatToDoAction.h"
 #include "PositionAction.h"
 #include "AttackAction.h"
 #include "CheckMailAction.h"
@@ -28,7 +27,6 @@
 #include "MoveToTravelTargetAction.h"
 #include "OutfitAction.h"
 #include "RevealGatheringItemAction.h"
-#include "SayAction.h"
 #include "ServiceNearbyNpcAction.h"
 #include "OutfitAction.h"
 #include "RandomBotUpdateAction.h"
@@ -135,6 +133,7 @@ namespace ai
             creators["flee from area"] = [](PlayerbotAI* ai) { return new FleeFromAreaAction(ai); };
             creators["flee with pet"] = [](PlayerbotAI* ai) { return new FleeWithPetAction(ai); };
             creators["avoid aoe"] = [](PlayerbotAI* ai) { return new AvoidAoeAction(ai); };
+            creators["avoid elite"] = [](PlayerbotAI* ai) { return new AvoidEliteAction(ai); };
             creators["wait for attack keep safe distance"] = [](PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); };
             creators["shoot"] = [](PlayerbotAI* ai) { return new CastShootAction(ai); };
             creators["whipper root tuber"] = [](PlayerbotAI* ai) { return new UseWhipperRootTuberAction(ai); };
@@ -179,8 +178,6 @@ namespace ai
             creators["emote"] = [](PlayerbotAI* ai) { return new EmoteAction(ai); };
             creators["talk"] = [](PlayerbotAI* ai) { return new TalkAction(ai); };
             creators["mount anim"] = [](PlayerbotAI* ai) { return new MountAnimAction(ai); };
-            creators["suggest what to do"] = [](PlayerbotAI* ai) { return new SuggestWhatToDoAction(ai); };
-            creators["suggest trade"] = [](PlayerbotAI* ai) { return new SuggestTradeAction(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnAction(ai); };
             creators["move to loot"] = [](PlayerbotAI* ai) { return new MoveToLootAction(ai); };
             creators["open loot"] = [](PlayerbotAI* ai) { return new OpenLootAction(ai); };
@@ -194,7 +191,6 @@ namespace ai
             creators["attack duel opponent"] = [](PlayerbotAI* ai) { return new AttackDuelOpponentAction(ai); };
             creators["select new target"] = [](PlayerbotAI* ai) { return new SelectNewTargetAction(ai); };
             creators["check mail"] = [](PlayerbotAI* ai) { return new CheckMailAction(ai); };
-            creators["say"] = [](PlayerbotAI* ai) { return new SayAction(ai); };
             creators["reveal gathering item"] = [](PlayerbotAI* ai) { return new RevealGatheringItemAction(ai); };
             creators["outfit"] = [](PlayerbotAI* ai) { return new OutfitAction(ai); };
             creators["random bot update"] = [](PlayerbotAI* ai) { return new RandomBotUpdateAction(ai); };
@@ -265,6 +261,7 @@ namespace ai
             creators["goblin sapper"] = [](PlayerbotAI* ai) { return new UseGoblinSapperChargeAction(ai); };
             creators["oil of immolation"] = [](PlayerbotAI* ai) { return new UseOilOfImmolationAction(ai); };
             creators["stoneshield potion"] = [](PlayerbotAI* ai) { return new UseStoneshieldPotionAction(ai); };
+            creators["thistle tea"] = [](PlayerbotAI* ai) { return new UseThistleTeaAction(ai); };
             creators["dark rune"] = [](PlayerbotAI* ai) { return new UseDarkRuneAction(ai); };
             creators["throw grenade"] = [](PlayerbotAI* ai) { return new ThrowGrenadeAction(ai); };
             creators["bg banner"] = [](PlayerbotAI* ai) { return new UseBgBannerAction(ai); };
@@ -315,7 +312,6 @@ namespace ai
             creators["rpg queue bg"] = [](PlayerbotAI* ai) { return new RpgQueueBgAction(ai); };
             creators["rpg buy petition"] = [](PlayerbotAI* ai) { return new RpgBuyPetitionAction(ai); };
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseAction(ai); };
-            creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatAction(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellAction(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftAction(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulAction(ai); };
@@ -356,11 +352,15 @@ namespace ai
             creators["enable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsEnableStrategyAction(ai); };
             creators["disable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsDisableStrategyAction(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
+            creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepAction(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathAction(ai); };
+            creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldAction(ai); };
             creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastAction(ai); };
+            creators["boss tactics freeze"] = [](PlayerbotAI* ai) { return new BossTacticsFreezeAction(ai); };
+            creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeAction(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectAction(ai); };
             creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorAction(ai); };

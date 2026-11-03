@@ -102,16 +102,16 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertLess(tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"),
                         tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"))
         self.assertLess(tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"),
-                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops);"))
-        self.assertLess(tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops);"),
+                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"))
+        self.assertLess(tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"),
                         tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("if (!bot->IsAlive() || !bot->IsInWorld() ||", drop)
         self.assertIn("ReadMemberEngaged(lead, judge, bot, now);", drop)
         self.assertIn("now.yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;",
                       drop)
-        self.assertIn("if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) && "
-                      "!TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
+        self.assertIn("else if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) &&\n"
+                      "            !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
         self.assertLess(drop.index("ReadMemberEngaged(lead, judge, bot, now);"), drop.index("now.yd = "))
         self.assertIn("sServerFacade.GetHostileRefManager(pet).deleteReferences();\n            pet->CombatStop();", drop)
         self.assertIn("sServerFacade.GetHostileRefManager(bot).deleteReferences();\n        bot->CombatStop();", drop)
@@ -130,6 +130,96 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertNotIn("member.inCombat = bot->IsInCombat();", facts)
         member = body(CODE, "void ReadMemberEngaged(Player* lead, Player* judge, Player* bot,")
         self.assertIn("if (!MemberInCombat(bot))\n        return;", member)
+
+    def test_combat_drop_rechecks_a_wedged_bot_and_tick_summons_it(self):
+        # ZG walks 23-25: Nack/Maevrayah/Elmind wedged below the Jeklik path while the raid fought on. The glue's
+        # drop re-checks the bot still stands wedged (DungeonRun::WedgedDropRecheck, dz = bot z - lead z, attackers
+        # read the same core attacker sets ReadRunFacts fills MemberFact::attackers with, no scan); the tick
+        # summons a wedged raid member before the guard looks and before the runaway.
+        policy = (ROOT / "runtime" / "DungeonRunPolicy.h").read_text()
+        drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
+        self.assertIn("ReadMemberParticipation(bot, now);", drop)
+        self.assertIn("wedged = TortoiseBots::DungeonRun::WedgedDropRecheck(now.yd, wedgedDz, wedgedAttackers,\n"
+                      "                TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);", drop)
+        # The wedged re-check runs only for the bots the run named wedged (Run::combatDropWedged), and it needs the
+        # same reach facts the run's own test read (LOS, a complete path and its length) -- read afresh, not from the
+        # run tick's 5 s cache, since the drop is destructive.
+        self.assertIn("bool const namedWedged = wedgedNames.count(bot->GetName()) != 0;", drop)
+        self.assertIn("ReadMemberReach(lead, bot, now, false);", drop)
+        self.assertNotIn("ReadMemberReach(lead, bot, now);", drop)
+        reach = body(CODE, "void ReadMemberReach(Player* lead, Player* bot, TortoiseBots::DungeonRun::MemberFact& member, bool cached = true)")
+        self.assertIn("if (!cached)\n    {\n        WedgeReachRead fresh;\n        ComputeMemberReach(lead, bot, fresh);", reach)
+        compute = body(CODE, "void ComputeMemberReach(Player* lead, Player* bot, WedgeReachRead& read)")
+        self.assertIn("read.los = sameMap && bot->IsInWorld() && lead->IsInWorld() && bot->IsWithinLOSInMap(lead);", compute)
+        self.assertIn("PathFinder path(bot);", compute)
+        # The cache is keyed by the bot AND the lead bot (the carrier can change mid-run), and the run tick's own
+        # read still takes it.
+        self.assertIn("std::map<std::pair<uint64, uint64>, WedgeReachRead>& WedgeReachReads()", CODE)
+        self.assertIn("WedgeReachReads()[std::make_pair(bot->GetObjectGuid().GetRawValue(), lead->GetObjectGuid().GetRawValue())];", reach)
+        facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
+        self.assertIn("ReadMemberReach(lead, bot, member);", facts)
+        self.assertIn("TortoiseBots::DungeonRun::MemberParticipates(now), now.losLead, now.pathToLead, now.pathLenYd);",
+                      drop)
+        self.assertIn("if (!wedged)\n                continue;", drop)
+        # A bot named for an unattackable or far unit is judged by those only: its drop is not decided by looking
+        # wedged on the re-read.
+        self.assertIn("else if (!TortoiseBots::DungeonRun::HeldByUnattackable(now) &&\n"
+                      "            !TortoiseBots::DungeonRun::HeldByFarUnitsOnly(now))\n            continue;", drop)
+        # The participation clock is actual progress only: the bot's own cast, auto-repeat and swing state, never
+        # its selected target or its place on a threat list (a wedged bot keeps a target it cannot reach). It is
+        # pruned by last-seen time, never by last progress (a bot that has not progressed yet keeps its clock).
+        part = body(CODE, "void ReadMemberParticipation(Player* bot, TortoiseBots::DungeonRun::MemberFact& member)")
+        self.assertIn("clock.seenMs = now;", part)
+        self.assertIn("if (ParticipationClocks().size() > TortoiseBots::DungeonRun::kParticipationClocksMax)\n"
+                      "        TortoiseBots::DungeonRun::PruneParticipationClocks(ParticipationClocks(), now);", part)
+        self.assertIn("if (MemberProgressed(bot, clock))\n        clock.actMs = now;", part)
+        self.assertIn("member.actedMs = clock.actMs ? WorldTimer::getMSTimeDiff(clock.actMs, now) : 0xFFFFFFFF;", part)
+        self.assertNotIn("member.engaged", part)
+        progress = body(CODE, "bool MemberProgressed(Player* bot, MemberParticipation& clock)")
+        self.assertIn("bool const inFight = bot->IsInCombat();", progress)
+        self.assertIn("inFight ? ProgressSpellId(bot) : 0", progress)
+        self.assertIn("TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,\n"
+                      "        clock.spellId, baseSwing, rangedSwing);", progress)
+        self.assertIn("bot->GetAttackTimer(BASE_ATTACK)", progress)
+        # A shot that fired is the module's own shot count (the ledger the core's spell cast hook feeds), never a
+        # snapshot of the ranged attack timer: a 1 Hz read misses shots of a 1.4 to 3 s weapon. The auto-repeat spell
+        # being on is never progress, but with the ledger unarmed a bot with it on is held out of the rescue.
+        self.assertIn("ledger.Count(bot->GetObjectGuid().GetRawValue())", progress)
+        self.assertIn("RangedShotFiredSince(clock.observed, clock.shots, shots)", progress)
+        self.assertIn("RangedShotEvidenceMissing(ledger.Armed(),", progress)
+        self.assertNotIn("RANGED_ATTACK", progress)
+        self.assertNotIn("rangedTimer", progress)
+        self.assertNotIn("kRangedShotTimerMs", CODE)
+        # The ledger is fed by the core's spell cast hook for the auto-repeat spell, registered at module start.
+        adapter = (ROOT / "host" / "RangedShotAdapter.cpp").read_text()
+        self.assertIn("PLAYERHOOK_ON_SPELL_CAST", adapter)
+        self.assertIn("info->IsAutoRepeatRangedSpell()", adapter)
+        self.assertIn("RangedShotLedger::Instance().Record(player->GetObjectGuid().GetRawValue());", adapter)
+        self.assertIn("RangedShotLedger::Instance().Arm();", adapter)
+        self.assertIn("new RangedShotAdapter();", (ROOT / "host" / "Module.cpp").read_text())
+        self.assertIn("host/RangedShotAdapter.cpp", (ROOT / "TortoiseBots.cmake").read_text())
+        self.assertNotIn("AutoRepeatSpellId", progress)
+        self.assertNotIn("CURRENT_AUTOREPEAT_SPELL", progress)
+        self.assertNotIn("GetTargetGuid", progress)
+        self.assertNotIn("member.engaged", progress)
+        # The cast the clock reads is not a self-cast.
+        spell = body(CODE, "uint32 ProgressSpellId(Unit* unit)")
+        self.assertIn("spell->m_targets.getUnitTargetGuid() == unit->GetObjectGuid()", spell)
+        self.assertIn("TortoiseBots::DungeonRun::ProgressSpell(spell->m_spellInfo->Id, targetSelf);", spell)
+        participates = body(policy, "inline bool MemberParticipates(const MemberFact& m)\n{")
+        self.assertIn("return m.actedMs < kParticipateMs;", participates)
+        self.assertNotIn("targetGuid", participates)
+        self.assertNotIn("healMs", participates)
+        self.assertIn("float const wedgedDz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;", drop)
+        self.assertIn("for (Unit* attacker : bot->GetAttackers())", drop)
+        self.assertIn("for (Unit* attacker : nowPet->GetAttackers())", drop)
+        self.assertIn("(wedged on another floor)", drop)
+        tick_body = body(policy, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{",
+                         "\n}\n")
+        guard = tick_body.index("if (CheckGuard(r, f, dt, order))")
+        self.assertLess(tick_body.index("if (order.empty() && WedgedSummon(r, f, dt, order))"), guard)
+        runaway = tick_body.index("if (RunawaySummon(r, f, dt, order))")
+        self.assertLess(tick_body.index("if (order.empty() && WedgedSummon(r, f, dt, order))"), runaway)
 
 
 if __name__ == "__main__":

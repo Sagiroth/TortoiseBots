@@ -28,6 +28,43 @@ namespace ai
         ActiveBossRows rows;
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
+    // The fight scan's one-slot cache belongs to one AI update: an explicit command runs between updates on the same
+    // world thread with the same update tick, so ScanBossTactics only caches while a scope is open, and UpdateAI
+    // clears the slot when it returns. One scope per UpdateAI, the whole body.
+    class BossTacticsScanScope
+    {
+    public:
+        BossTacticsScanScope();
+        ~BossTacticsScanScope();
+        BossTacticsScanScope(const BossTacticsScanScope&) = delete;
+        BossTacticsScanScope& operator=(const BossTacticsScanScope&) = delete;
+    };
+
+    // The auras of one dispel type a unit carries (id + SpellEntry::Dispel), the input of the dispel verdict. Aura
+    // iteration only: no grid search, no database.
+    void CollectDispelAuras(Unit* member, uint32 dispelType, std::vector<AuraOnMember>& out);
+    // Every dispellable aura the unit carries, whatever its type: the input of a cure that removes several types.
+    void CollectAllDispelAuras(Unit* member, std::vector<AuraOnMember>& out);
+    // The distance to the nearest other living group member (the `clear` test of a dispel_priority row), or a large
+    // value when the unit has none: a carrier alone is clear by definition.
+    float NearestGroupMemberYd(Unit* member);
+    // The dispel_priority verdict for one member, with the aura collection and the group distance taken care of.
+    DispelVerdict DispelMemberState(Unit* member, uint32 dispelType, const ActiveBossRows& rows, float defaultClearYd,
+                                    float* allyYdOut = nullptr);
+    // One bot_events.csv BossTacticsDispel row (throttled per bot and kind): the member a cure was picked for, or the
+    // one it was withheld from (a never aura, or a clear row whose carrier is not clear yet).
+    void LogDispelPick(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd);
+    void LogDispelExcluded(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd);
+    // A protected aura applied after an area cure started would be removed by its next tick or pulse: the bot-cast
+    // Abolish aura of that type is removed from the member and the bot's own cleansing totem of the type destroyed.
+    // With `apply` false the scan only reports whether there is anything to do. Gated by
+    // AiPlayerbot.DungeonRunAuraTactics, the map's dispel rows and the "boss tactics" strategy.
+    bool SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply);
+    // The same hold judged again at cast time (PlayerbotAI::CastSpell): the target may have gained a protected aura
+    // after the action was chosen. True when the cast must not be issued because the spell removes, by any of the
+    // dispel types read from its effects, a protected aura the target carries, or because the target is a unit the
+    // gate cannot place (not the bot, a group member or a group member's pet). Gated like SweepBossDispelCures.
+    bool DispelCastBlocked(PlayerbotAI* ai, Unit* target, std::uint32_t spellId);
 
     // How many living units of `entry`, a hold_kill row's blocker, stand within kHoldKillRangeYd of the bot and count
     // (CountsAsBlocker, BossTacticsPolicy.h): the "hold kill blockers" value, a grid search at most once a second per
@@ -87,6 +124,12 @@ namespace ai
     // under an explicit attack order never see their target as held.
     Unit* FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // Whether a free DPS bot leaves `unit` alone right now under a dps_hold_after row of its entry: the fight-wide
+    // hold state was started by the row's engage, band, spell or blink trigger and has not run out (DpsHoldTick).
+    // Gated by AiPlayerbot.DungeonRunAuraTactics, HasAuraTacticMap and the "boss tactics" strategy; null/false for
+    // tanks, healers and bots under an explicit attack order. `trigger` (optional) names the trigger of the hold.
+    bool IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger = nullptr);
+
     // The boss whose front this bot should leave, or null.
     Unit* FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
@@ -108,10 +151,39 @@ namespace ai
     // The nearest listed cast this bot stands inside and has to leave (never a tank), or no caster.
     BossCastDanger FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // The freeze_on_aura row's aura this bot carries, or 0: the bot must stand still and do nothing while it lasts
+    // (BossTacticsPolicy's FreezeHoldsAction).
+    std::uint32_t FreezeAuraOnBot(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // One read of the bot's freeze episode: starts it on the rising edge, tracks the drift from the start point and,
+    // when the aura is gone, writes the `BossTacticsFreeze` row (aura, ms held, moved_yd) and forgets it. The trigger
+    // calls it every tick, so an aura that ends between two engine ticks still logs.
+    void FreezeEpisodeTick(PlayerbotAI* ai, Player* bot, std::uint32_t aura);
+
+    // Whether this is the freeze episode's first stop: the action then calls AttackStop, CastStop and StopMoving once,
+    // and never again for that aura.
+    bool FreezeStopDue(PlayerbotAI* ai, Player* bot, std::uint32_t aura);
+
+    // The flee_on_aura row this bot's carried aura activates, or null. Rows an inactive boss leaves out are not in the
+    // fight (ScanBossTactics), so a row of a boss that is not there never moves anyone.
+    const BossTacticRow* ActiveFleeRow(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // Whether the fight has an active flee_on_aura row for `spellId`: the hard-coded bomb runout stands down for that
+    // aura, so one carrier is never moved by two actions.
+    bool FleeRowListsAura(PlayerbotAI* ai, Player* bot, std::uint32_t spellId);
+
     class BossTacticsInterruptAction : public Action
     {
     public:
         BossTacticsInterruptAction(PlayerbotAI* ai) : Action(ai, "boss tactics interrupt") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Removes what an already-running area cure would do to a protected aura (SweepBossDispelCures).
+    class BossTacticsDispelSweepAction : public Action
+    {
+    public:
+        BossTacticsDispelSweepAction(PlayerbotAI* ai) : Action(ai, "boss tactics dispel sweep") {}
         bool Execute(Event& event) override;
     };
 
@@ -131,6 +203,15 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // A free DPS bot on a subject a dps_hold_after row holds stops attacking it: the kill_first pick if there is one
+    // (the adds stay allowed), else the target is dropped and the attack stopped until the hold runs out.
+    class BossTacticsDpsHoldAction : public AttackAction
+    {
+    public:
+        BossTacticsDpsHoldAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics dps hold") {}
+        bool Execute(Event& event) override;
+    };
+
     // On a linked_death group member that is not the equalise pick (another member stands higher): switch to the pick,
     // so the damage is spread instead of being left on one member until it dies.
     class BossTacticsLinkedDeathAction : public AttackAction
@@ -138,6 +219,35 @@ namespace ai
     public:
         BossTacticsLinkedDeathAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics linked death") {}
         bool Execute(Event& event) override;
+    };
+
+    // The carrier of a freeze_on_aura row stands where it is and starts nothing: its attack stops, its cast breaks and
+    // its walk ends once, on the aura's rising edge. The multiplier below then holds every other action while it
+    // lasts, so the bot neither moves nor heals (threat) until the aura is gone.
+    class BossTacticsFreezeAction : public Action
+    {
+    public:
+        BossTacticsFreezeAction(PlayerbotAI* ai) : Action(ai, "boss tactics freeze") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The carrier of a flee_on_aura row leaves the group (`away`) or walks to the main tank (`to_tank`). Both modes
+    // reuse the runout's move body; `away` keeps a living healer in reach (RunOutFromGroup).
+    class BossTacticsFleeAction : public MovementAction
+    {
+    public:
+        BossTacticsFleeAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics flee") {}
+        bool Execute(Event& event) override;
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
+    // Frozen: every action but the freeze action itself is held (FreezeHoldsAction). Registered on the combat,
+    // non-combat and reaction engines, because a bot's heal, its walk and its own cast all run outside combat.
+    class BossTacticsFreezeMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsFreezeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics freeze") {}
+        float GetValue(Action* action) override;
     };
 
     // Once on the kill-first creature, the generic assist/AoE re-pick would swing
@@ -156,6 +266,16 @@ namespace ai
     {
     public:
         BossTacticsCastHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics cast hold") {}
+        float GetValue(Action* action) override;
+    };
+
+    // A cure that would remove a `never` aura, or an un-clear `clear` one, is stood down: the single-target cure on an
+    // excluded member, and the area/periodic cures (Abolish Disease, the cleansing totems, Stoneform) while any living
+    // group member within kDispelSafetyYd carries such an aura of the type. Combat only.
+    class BossTacticsDispelHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsDispelHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics dispel hold") {}
         float GetValue(Action* action) override;
     };
 

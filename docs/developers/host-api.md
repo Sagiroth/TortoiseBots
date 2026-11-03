@@ -225,6 +225,17 @@ minute; `tools/test_commander_telemetry.cpp` pins the cap and the order). Parts 
 `part` and `parts` after `seq` only when there is more than one, so a cycle of eight bindings or fewer is byte-identical to what an
 older module sent. A raid binding whose group went through the module's raid layout also carries `layout` (main tank, off-tanks, tank healer pairs and raid healers), and a run's current step its `label` (the plan row's comment, clipped to 80 bytes), with each `run.plan_steps[]` entry carrying its own `c`. An older module simply omits the fields.
 
+The dashboard's `RAIDS` datagram (spec dash-raids-tab, `runtime/RaidTelemetry.h`, built by the observability emitter once
+per 2 s snapshot cycle right after `COMMANDERS`, and only while `AiPlayerbot.ObservabilityRaids = 1`) lists every raid map
+copy that holds a bot, bound or not: per group its id, fight key (`raid#<group id>` unbound, the commander's display name
+when bound), map and instance, whether it is a raid group, the leader, the member rows (guid and subgroup; a name and an
+offline flag for members not online) and the live combat window raw JSON while the group's book fights. Groups are packed
+whole into parts that each stay under 16 000 bytes (a group alone over it drops the window, then the offline names, then
+members, and names the cut section in `trimmed`); one part carries no part fields, and one `"raids":[]` follows the cycle in
+which the last group ended. The same key enables the 1 Hz observed-raid combat sampler, which feeds the books under
+`raid#<group id>` and skips a group whose binding owns its book. The roster's `BOT_BATCH` rows also carry `"raid":true` on a
+raid map (additive, not behind the flag), so the dashboard's Dungeons/Raids split needs no second feed.
+
 The core listener is generic; it does not call a PlayerBots singleton.
 
 Players' `.bot` commands do not arrive on that thread: the core dispatches
@@ -358,7 +369,7 @@ the same table the AI registers its handlers from).
 
 | Entry | Threads | What it does now |
 | --- | --- | --- |
-| `CanPacketSend`, headless session, `SMSG_MESSAGECHAT` | any (AsyncPackets, ChannelBroadcaster, map, world) | copies the packet (chat types the AI reacts to only) into the per-bot chat FIFO, also on the world thread; the drain runs `HandleBotOutgoingPacket`, so party / whisper commands and chat state change on the world thread, in arrival order per bot, at most one tick later; over 64 per bot per tick are dropped. Not copied [#846](https://github.com/Sagiroth/TortoiseBots/issues/846), `runtime/BotChatGate.h`: any line for a bot whose `AllowActivity()` is false (activity throttling only), and Trade-channel lines that do not name a masterless, unhired, non-recording pool bot ([#469](https://github.com/tortoise-wow/tortoise-wow/pull/469)) — the gates the AI applies first, published by each AI's update on change |
+| `CanPacketSend`, headless session, `SMSG_MESSAGECHAT` | any (AsyncPackets, ChannelBroadcaster, map, world) | copies the packet (chat types the AI reacts to only) into the per-bot chat FIFO, also on the world thread; the drain runs `HandleBotOutgoingPacket`, so party / whisper commands and chat state change on the world thread, in arrival order per bot, at most one tick later; over 64 per bot per tick are dropped. Not copied [#846](https://github.com/Sagiroth/TortoiseBots/issues/846), `runtime/BotChatGate.h`: any line for a bot whose `AllowActivity()` is false (activity throttling only), and any line other than party chat or a whisper for a bot that is not recording chat (the AI reads only its orders there) — published by each AI's update on change |
 | `CanPacketSend`, headless session, other handled opcodes (invites, loot, quest updates, cast results, spell failure / delay, knockback, ...) | any; the spell / knockback cases come from the bot's map thread or the world thread | world thread: `HandleBotOutgoingPacket` at once. Otherwise: the bot guid from `PlayerbotAIStorage::GetBotGuid` (pointer comparison, no `Player` dereference), a copy into the per-bot packet FIFO, `HandleBotOutgoingPacket` in the drain; over 256 per bot per tick are dropped. A map-thread packet is handled before any further map update, so the AI sees the same game state |
 | `CanPacketSend`, network master session | any | bot guids from `BotManager::GetBotGuidsForMasterAnyThread` (a master -> bot view published under a lock at the end of every `OnWorldUpdate`, at most one tick stale); world thread: `HandleMasterOutgoingPacket` at once; otherwise one shared copy queued for every bot, handed over in the drain |
 | `CanPacketReceive` / `DispatchMasterIncoming` | world, map or AsyncPackets | same view and the same world-thread-inline / queue-elsewhere split, `HandleMasterIncomingPacket` |
@@ -495,7 +506,7 @@ action cc clear [bot]  # dismiss ownership: named bot, targeted bot, or whole ow
 action auto cc [on|off]  # opt-in smart auto CC (OFF default); per-bot persisted strategy toggle; ACK on|off|mixed
 action aoe [on|off]
 commander bind <LeadBot> [<Bot>...] [inparty] | unbind | status | view on|off  # remote commander [#884](https://github.com/Sagiroth/TortoiseBots/issues/884), AiPlayerbot.RemoteCommander, default off
-cmd attack|pull|pullback <guid> [seconds] | cc <mark> <guid> [bot] | focus <guid> | move <x> <y> <z> | stay | follow | rest | revive <bot> | summon <bot>  # orders to the bound group; ACK/ERR intent "cmd <verb>"
+cmd attack|pull|pullback <guid> [seconds] | cc <mark> <guid> [bot] [family] | focus <guid> | move <x> <y> <z> | stay | follow | rest | revive <bot> | summon <bot>  # orders to the bound group; ACK/ERR intent "cmd <verb>"
 inv <bot>  # TBM:INV_BEGIN/INV_EQ/INV_ITEM/INV_END inventory snapshot
 item <bot> trade | equip|unequip|give <bag> <slot>  # item order by server bag/slot; ACK/ERR intent "item <op>"
 behavior <bot> <loot|aoe|autocc|savemana|boost|threat|potions> <on|off>  # allowlisted per-bot strategy toggle; ACK + TBM:BOTSTATE line

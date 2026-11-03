@@ -256,6 +256,48 @@ assert.deepStrictEqual(laid.tanks.map((r) => r.name), ["TankB", "TankA"]);
 assert.deepStrictEqual(laid.healers.map((r) => r.name), ["HealA", "HealB"]);
 assert.deepStrictEqual(F.roleTables({ dur_ms: 0, bots: [] }, null), { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 });
 
+// ---- run totals: the same tables from a run-totals payload ----------------------------------------------------------
+// DPS and HPS divide by the bot's own fight time (fight_ms), not the run's: Pew sat one fight out and keeps his own rate.
+// Over % is over / (heal + over) over the run; deaths are the summed count; the Tank table reads the spells map.
+const TOTALS = {
+  since: 1000, fights: 2, dur_ms: 90000,
+  bots: [
+    { name: "Tanky", guid: 1, class: "warrior", role: "tank", dmg: 2000, taken: 8000, casts: 10, deaths: 1,
+      spells: { "Sunder Armor": 8, Taunt: 1, "Heroic Strike": 6 }, fight_ms: 90000, fights: 2 },
+    { name: "Pew", guid: 3, class: "mage", role: "dps", dmg: 15000, taken: 400, casts: 30, deaths: 0,
+      spells: { Fireball: 30 }, fight_ms: 30000, fights: 1 },
+    { name: "Healz", guid: 2, class: "priest", role: "healer", heal: 12000, over: 4000, casts: 30, deaths: 0,
+      spells: {}, fight_ms: 90000, fights: 2 },
+  ],
+};
+const rr = F.runRoleTables(TOTALS, null);
+assert.deepStrictEqual(rr.tanks.map((r) => r.name), ["Tanky"]);
+assert.strictEqual(rr.tanks[0].main, true);
+assert.strictEqual(rr.tanks[0].sunder, 8);
+assert.strictEqual(rr.tanks[0].taunts, 1);
+assert.strictEqual(rr.tanks[0].taken, 8000);
+assert.strictEqual(rr.tanks[0].died, 1);
+assert.strictEqual(rr.tanks[0].guid, 1);
+assert.strictEqual(rr.dps[0].dps, 15000 / 30);
+assert.strictEqual(rr.maxDps, rr.dps[0].dps);
+assert.strictEqual(rr.healers[0].hps, 12000 / 90);
+assert.strictEqual(rr.healers[0].overPct, 25);
+assert.strictEqual(rr.maxHps, rr.healers[0].hps);
+assert.strictEqual(rr.healers[0].casts, 30);
+assert.deepStrictEqual(F.runRoleTables({ bots: [] }, null), { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 });
+// A layout MT still leads the Tank table.
+const rrLaid = F.runRoleTables({ bots: [
+  { name: "TA", role: "tank", taken: 100, spells: {}, fight_ms: 10000 },
+  { name: "TB", role: "tank", taken: 900, spells: {}, fight_ms: 10000 },
+] }, { mt: "TA", ot: [] });
+assert.deepStrictEqual(rrLaid.tanks.map((r) => r.name), ["TA", "TB"]);
+assert.strictEqual(rrLaid.tanks[0].main, true);
+// Without a layout the tank the mobs hit most leads, like roleTables.
+assert.strictEqual(F.runRoleTables({ bots: [
+  { name: "TA", role: "tank", taken: 100, spells: {}, fight_ms: 10000 },
+  { name: "TB", role: "tank", taken: 900, spells: {}, fight_ms: 10000 },
+] }, null).tanks[0].name, "TB");
+
 // ---- one bot --------------------------------------------------------------------------------------------------------
 const bp = F.botPanel(byId("5-4"), "Ragemeister");
 assert.strictEqual(bp.name, "Ragemeister");

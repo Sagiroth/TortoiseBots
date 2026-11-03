@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DruidMultipliers.h"
 #include "BalanceDruidStrategy.h"
+#include "BalanceDruidMana.h"
 
 using namespace ai;
 
@@ -36,6 +37,32 @@ BalanceDruidStrategy::BalanceDruidStrategy(PlayerbotAI* ai) : DruidStrategy(ai)
 NextAction** BalanceDruidStrategy::GetDefaultCombatActions()
 {
     return NextAction::array(0, new NextAction("wrath", ACTION_IDLE), NULL);
+}
+
+void OomMeleeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new BalanceManaMultiplier(ai));
+}
+
+void OomMeleeStrategy::OnStrategyRemoved(BotState state)
+{
+    // Removing the fallback must not strand a balance bot in its melee kit.
+    if (state == BotState::BOT_STATE_COMBAT && BalanceManaForm(ai) &&
+        ai->HasStrategy("close", state))
+    {
+        ai->GetBot()->AttackStop(true);
+        ai->ChangeStrategy("-close,+ranged", state);
+    }
+}
+
+void OomMeleeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("balance mana depleted",
+        NextAction::array(0, new NextAction("switch to melee", ACTION_HIGH + 4), NULL)));
+    triggers.push_back(new TriggerNode("balance mana recovered",
+        NextAction::array(0, new NextAction("switch to ranged", ACTION_HIGH + 4), NULL)));
+    triggers.push_back(new TriggerNode("balance mana melee",
+        NextAction::array(0, new NextAction("melee", ACTION_NORMAL), NULL)));
 }
 
 void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -79,6 +106,12 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "nature eclipse",
         NextAction::array(0, new NextAction("wrath", ACTION_HIGH + 3), NULL)));
+
+    // A unit under the party's crowd control inside the hurricane breaks the
+    // hold on its next tick: stop the channel above the pack cast.
+    triggers.push_back(new TriggerNode(
+        "hurricane channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 4), NULL)));
 
     // Hurricane is the balance pack cast: 3+ attackers in spell range.
     triggers.push_back(new TriggerNode(

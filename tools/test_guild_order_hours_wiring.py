@@ -1,8 +1,9 @@
 """Guild order row carries the chosen farm time, keep flag, parent and supply status.
 
-runtime/GuildOrderStore.cpp appends <hours>, <keep>, <parent>, gold cap, step and
-need to TBM:ORDER while keeping every older field in place; the addon docs
-document the same shape. A give with no hours token stores no time limit.
+runtime/GuildOrderStore.cpp appends <hours>, <keep>, <parent>, gold cap, step,
+need and carry to TBM:ORDER while keeping every older field in place; the
+addon docs document the same shape. A give with no hours token stores no time
+limit.
 """
 import pathlib
 import unittest
@@ -22,8 +23,8 @@ class GuildOrderHoursWiringTest(unittest.TestCase):
     def test_order_line_keeps_older_fields(self):
         self.assertIn('ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty', STORE)
 
-    def test_addon_documents_hours_last(self):
-        self.assertIn("`TBM:ORDER\\|<bot>\\|<type>\\|<itemId>\\|<item>\\|<have>\\|<want>\\|<state>\\|<reason>\\|<zone>\\|<difficulty>\\|<hours>\\|<keep>\\|<parent>\\|<goldCap>\\|<step>\\|<need>`", ADDON)
+    def test_addon_documents_row_shape(self):
+        self.assertIn("`TBM:ORDER\\|<bot>\\|<type>\\|<itemId>\\|<item>\\|<have>\\|<want>\\|<state>\\|<reason>\\|<zone>\\|<difficulty>\\|<hours>\\|<keep>\\|<parent>\\|<goldCap>\\|<step>\\|<need>\\|<carry>`", ADDON)
 
     def test_addon_documents_inf_hours(self):
         self.assertIn("`inf`", ADDON)

@@ -502,6 +502,11 @@ bool RainOfFireChannelCheckTrigger::IsActive()
             uint32 id = spell->m_spellInfo->Id;
             if (id == 5740 || id == 6219 || id == 11677 || id == 11678 || id == 27212)
             {
+                // A unit under our crowd control inside the rain breaks the
+                // hold on its next tick: stop the channel at once.
+                CcGuard ccGuard(ai);
+                if (ccGuard.CcInRunningArea(spell))
+                    return true;
                 uint8 aoeCount = AI_VALUE(uint8, "aoe count");
                 return aoeCount < 2;
             }

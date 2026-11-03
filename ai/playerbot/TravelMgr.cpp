@@ -1641,8 +1641,14 @@ void TravelTarget::CheckStatus()
     // no DB hit, world scan or graph rebuild here. Fishing never releases:
     // its WORK is a cast wait (no prey, no attackers by design), so the
     // two signals always read empty at a fish spot. Pool upkeep bots only;
-    // owned/hired bots keep the full WORK clock.
-    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+    // owned/hired bots keep the full WORK clock. A guild order trip never
+    // releases here either: its leg has its own deadlines, and parking the
+    // AH purpose would end the order's auction leg on the next empty search.
+    bool orderTrip = false;
+    for (std::string const& condition : travelConditions)
+        if (condition == "has guild travel order" || condition == "has guild order delivery")
+            orderTrip = true;
+    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK && !orderTrip &&
         !IsForced() && !IsGroupCopy() &&
         sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
         (!tDestination || tDestination->GetPurpose() != TravelDestinationPurpose::GatherFishing))
@@ -2773,7 +2779,7 @@ void TravelMgr::LoadFishLocations()
 
     fishPoints.clear();
     fishMap.clear();
-    fishSpotZones.clear();
+    fishSpotsByZone.clear();
     destinationMap[TravelDestinationPurpose::GatherFishing].clear();
 
     auto result = WorldDatabase.Query("SELECT `name`, `map_id`, `position_x`, `position_y`, `position_z`, `orientation`, `description` FROM `ai_playerbot_named_location` WHERE `name` LIKE 'FISH_LOCATION%'");
@@ -2821,7 +2827,7 @@ void TravelMgr::LoadFishLocations()
 
         dest->AddPoint(point);
         fishMap.AddPoint(point);
-        fishSpotZones.insert(zone);
+        fishSpotsByZone[zone].emplace_back(mapId, positionX, positionY, positionZ, orientation);
 
     } while (result->NextRow());
 
@@ -2886,7 +2892,32 @@ WorldPosition* TravelMgr::GetFishSpot(WorldPosition start, bool onlyNearestGrid)
 
 bool TravelMgr::FishZoneHasSpots(uint32 zoneId) const
 {
-    return zoneId != 0 && fishSpotZones.find(zoneId) != fishSpotZones.end();
+    return zoneId != 0 && fishSpotsByZone.find(zoneId) != fishSpotsByZone.end();
+}
+
+bool TravelMgr::FishZoneNearestSpot(uint32 zoneId, WorldPosition const& from, WorldPosition& spot, float& distanceSq) const
+{
+    auto zone = fishSpotsByZone.find(zoneId);
+    if (zoneId == 0 || zone == fishSpotsByZone.end())
+        return false;
+
+    bool found = false;
+    for (WorldPosition const& candidate : zone->second)
+    {
+        if (candidate.getMapId() != from.getMapId())
+            continue;
+        float const dx = candidate.getX() - from.getX();
+        float const dy = candidate.getY() - from.getY();
+        float const dz = candidate.getZ() - from.getZ();
+        float const dist = dx * dx + dy * dy + dz * dz;
+        if (!found || dist < distanceSq)
+        {
+            spot = candidate;
+            distanceSq = dist;
+            found = true;
+        }
+    }
+    return found;
 }
 
 DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const

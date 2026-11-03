@@ -24,7 +24,7 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.LowMana`](#aiplayerbotlowmana) | `15` | Mana floor percentage where casters recover mana or hold back expensive casts. |
 | [`AiPlayerbot.MediumMana`](#aiplayerbotmediummana) | `40` | Mana percentage where bots transition toward conservative ability rotations. |
 | [`AiPlayerbot.FollowDistance`](#aiplayerbotfollowdistance) | `1.5` | Standard following distance in yards between a follower bot and leader on foot. |
-| [`AiPlayerbot.RaidFollowDistance`](#aiplayerbotraidfollowdistance) | `5.0` | Expanded following distance in yards used inside dungeons and raids. |
+| [`AiPlayerbot.RaidFollowDistance`](#aiplayerbotraidfollowdistance) | `4.0` | Expanded following distance in yards used inside dungeons and raids. |
 | [`AiPlayerbot.SightDistance`](#aiplayerbotsightdistance) | `60.0` | Perception distance in yards used to detect monsters and define guard leashes. |
 | [`AiPlayerbot.SpellDistance`](#aiplayerbotspelldistance) | `26.0` | Maximum range in yards used for initiating ranged spell attacks. |
 | [`AiPlayerbot.ReactDistance`](#aiplayerbotreactdistance) | `150.0` | Maximum distance in yards bots remain responsive to combat and leader calls. |
@@ -141,7 +141,7 @@ When mounted out of combat and outside dungeons, bots add 3 yards to this radius
 
 ### `AiPlayerbot.RaidFollowDistance`
 Expanded following distance in yards used inside dungeons and raids.
-**Default:** `5.0` · **Values:** positive float · **Restart:** needed
+**Default:** `4.0` · **Values:** positive float · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -352,7 +352,7 @@ A share of free pool bots actively look for PvP-flagged enemy players nearby and
 <details>
 <summary>How it works in detail</summary>
 
-A seeking bot attacks an enemy player only when all of these are true: the bot is not in a battleground, the target is an enemy-faction player who is PvP flagged, the target is not in a zone from `AiPlayerbot.PvpProhibitedZoneIds`, the target is within 20 yards (or within sight range when the bot has more health), the height difference is under 30 yards, and the level-gap odds allow it (never 5+ levels above; closer targets always).
+A seeking bot attacks an enemy player only when all of these are true: the bot is not in a battleground, the target is an enemy-faction player who is PvP flagged, the target is not in a zone from `AiPlayerbot.PvpProhibitedZoneIds`, the target is within 20 yards (or within sight range when the bot has more health), the height difference is under 30 yards, neither of them stands within 40 yards of the graveyard they revive at, and the level-gap odds allow it (never 5+ levels above; closer targets always).
 
 Unflagged players, challenge-mode characters (except War Mode) and GMs with visibility off are never attacked. Owned and hired bots and bots grouped with a real player never seek. Battlegrounds keep their own logic.
 

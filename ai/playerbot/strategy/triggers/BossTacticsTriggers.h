@@ -29,6 +29,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A protected aura was applied after an area cure started: the bot-cast Abolish aura or the bot's own cleansing
+    // totem of that type would remove it on the next tick or pulse.
+    class BossTacticsDispelSweepTrigger : public Trigger
+    {
+    public:
+        BossTacticsDispelSweepTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dispel sweep", 1) {}
+        bool IsActive() override;
+    };
+
     // A kill_first creature is alive and this DPS bot is not on it.
     class BossTacticsKillFirstTrigger : public Trigger
     {
@@ -45,12 +54,37 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This free DPS bot's current target is the subject of an active dps_hold_after hold: stop and wait it out.
+    class BossTacticsDpsHoldTrigger : public Trigger
+    {
+    public:
+        BossTacticsDpsHoldTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dps hold", 1) {}
+        bool IsActive() override;
+    };
+
     // A linked_death group is held and this free DPS bot is not on the equalise pick (the highest member, no member at
     // or below param while another is above it).
     class BossTacticsLinkedDeathTrigger : public Trigger
     {
     public:
         BossTacticsLinkedDeathTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics linked death", 1) {}
+        bool IsActive() override;
+    };
+
+    // This bot carries a freeze_on_aura row's aura: it stands still and starts nothing until the aura ends.
+    class BossTacticsFreezeTrigger : public Trigger
+    {
+    public:
+        BossTacticsFreezeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics freeze", 1) {}
+        bool IsActive() override;
+    };
+
+    // This bot carries a flee_on_aura row's aura: `away` needs it clear of every living group member by the row's
+    // radius, `to_tank` needs it near the main tank (a tank carrier has nothing to do).
+    class BossTacticsFleeTrigger : public Trigger
+    {
+    public:
+        BossTacticsFleeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics flee", 1) {}
         bool IsActive() override;
     };
 

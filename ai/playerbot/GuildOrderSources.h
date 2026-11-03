@@ -13,9 +13,15 @@ namespace ai
 
 // The one source finder for guild orders: which sources this bot can use for
 // the item, its verdict and the farm zones ranked best first. Search, give and
-// travel all ask it, so they never disagree. World thread only.
+// travel all ask it, so they never disagree.
+//
+// `rankByTravelRoute` also asks the travel layer's route gate for each
+// same-map zone's sample point and ranks the zones it rejects after the ones
+// it accepts. The gate touches the travel node graph and the terrain, so only
+// the travel pick (the bot's map thread) sets it; every other caller leaves it
+// off and ranks by distance alone.
 TortoiseBots::GuildOrders::SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId,
-                                                           TortoiseBots::GuildOrders::OrderType type);
+    TortoiseBots::GuildOrders::OrderType type, bool rankByTravelRoute = false);
 
 // Difficulty estimate for the plan: farm uses the amount over the best chance
 // (one item for search rows, the full amount for order rows), craft the

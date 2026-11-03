@@ -230,6 +230,12 @@ class CommandGlueTest(unittest.TestCase):
         self.assertIn("service.Status(detail)", body)
         self.assertLess(body.index("RunTrace::MayStartTrace("), body.index("service.Start(params, message)"))
 
+    def test_stop_checks_the_run_id_before_stopping(self):
+        body = function_body(self.src, "bool HandleTrace(")
+        stop = body[body.index('if (verb == "stop")'):]
+        self.assertIn("RunTrace::StopRunIdRefusal(", stop)
+        self.assertLess(stop.index("RunTrace::StopRunIdRefusal("), stop.index("service.Stop("))
+
 
 class EngineOutcomeSitesTest(unittest.TestCase):
     def setUp(self):

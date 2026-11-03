@@ -42,9 +42,14 @@ const blockOf = (head) => {
   const next = css.indexOf("/* ---------- ", at + head.length);
   return css.slice(at, next < 0 ? css.length : next);
 };
+// The underperformers section has its own stylesheet (underperf.css) so this block stays unchanged while another
+// session rewrites it; its rules count for the classes the card template emits.
+let underperfCss = "";
+try { underperfCss = fs.readFileSync(path.join(path.dirname(cssPath), "underperf.css"), "utf8"); } catch (e) { /* not installed */ }
 const later = blockOf("/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */")
   + blockOf("/* ---------- Ready check ---------- */")
-  + blockOf("/* ---------- Fight history ---------- */");
+  + blockOf("/* ---------- Fight history ---------- */")
+  + underperfCss;
 const missing = [...emitted].filter((c) => !new RegExp("\\." + c + "(?![\\w-])").test(block)
   && !new RegExp("\\." + c + "(?![\\w-])").test(later));
 assert.deepStrictEqual(missing, [], "classes without a rule: " + missing.join(", "));

@@ -3,6 +3,17 @@
 
 namespace ai
 {
+    class OomMeleeStrategy : public Strategy
+    {
+    public:
+        OomMeleeStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "oom melee"; }
+        void OnStrategyRemoved(BotState state) override;
+    protected:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class BalanceDruidPlaceholderStrategy : public SpecPlaceholderStrategy
     {
     public:

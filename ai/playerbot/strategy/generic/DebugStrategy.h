@@ -181,36 +181,6 @@ namespace ai
 #endif
     };
 
-    class AIChatStrategy : public Strategy
-    {
-    public:
-        AIChatStrategy(PlayerbotAI* ai) : Strategy(ai) {}
-        virtual int GetType() override { return STRATEGY_TYPE_NONCOMBAT; }
-        virtual std::string getName() override { return "ai chat"; }
-#ifdef GenerateBotHelp
-        virtual std::string GetHelpName() { return "ai chat"; } //Must equal iternal name
-        virtual std::string GetHelpDescription() {
-            return "Uses the LLM system to respond to player chats.";
-        }
-        virtual std::vector<std::string> GetRelatedStrategies() { return { "" }; }
-#endif
-    };
-
-    class DebugLLMStrategy : public Strategy
-    {
-    public:
-        DebugLLMStrategy(PlayerbotAI* ai) : Strategy(ai) {}
-        virtual int GetType() override { return STRATEGY_TYPE_NONCOMBAT; }
-        virtual std::string getName() override { return "debug llm"; }
-#ifdef GenerateBotHelp
-        virtual std::string GetHelpName() { return "debug llm"; } //Must equal iternal name
-        virtual std::string GetHelpDescription() {
-            return "This strategy will give debug output while using the ai chat sytem";
-        }
-        virtual std::vector<std::string> GetRelatedStrategies() { return { "debug" }; }
-#endif
-    };
-
     class DebugStuckStrategy : public Strategy
     {
     public:

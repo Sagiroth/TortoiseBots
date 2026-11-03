@@ -14,10 +14,12 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/GatherSpotPolicy.h"
+#include "playerbot/policy/heal/DispelTargetPolicy.h"
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
+#include "playerbot/FollowTrailPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
@@ -353,6 +355,12 @@ public:
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
+    // The leader's recent positions as this bot saw them (AiPlayerbot.
+    // RaidFollowWedge). Sampled every AI tick: the follow action runs only when
+    // the core follow has to be replaced, which is too late to know the path
+    // the leader took.
+    std::vector<FollowTrailPoint> const& GetLeadTrail() const { return leadTrail; }
+
     void HandleCommands();
     // Chat commands waiting for the next reaction pass (HandleCommands drains them).
     size_t QueuedChatCommandCount() const { return chatCommands.size(); }
@@ -422,7 +430,6 @@ public:
     size_t DropQueuedMovementOrders();
 	std::string HandleRemoteCommand(std::string command);
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);
-    void QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay = false);
 	void HandleBotOutgoingPacket(const WorldPacket& packet);
     // Issue #382: drop a queued outgoing packet (e.g. the provisioning level-up echo).
     void DropQueuedOutgoingOpcode(uint16 opcode) { botOutgoingPacketHandlers.DropQueuedOpcode(opcode); }
@@ -491,33 +498,6 @@ public:
     bool Yell(std::string msg, bool likePlayer = false);
     bool Say(std::string msg, bool likePlayer = false);
     bool Whisper(std::string msg, std::string receiverName, bool likePlayer = false);
-    // Issue #1108: chat that answers a player who commanded the bot (".bot
-    // speak", a reply to the bot's own master) is functional, not a
-    // broadcast, so it must survive AiPlayerbot.EnableBroadcasts = 0. The
-    // scope marks every chat line produced inside it as commanded; an
-    // unarmed scope changes nothing.
-    class CommandedChatScope
-    {
-    public:
-        CommandedChatScope(PlayerbotAI* ai, bool armed) : ai_(ai), armed_(armed)
-        {
-            if (armed_ && ai_)
-                ai_->commandedChatDepth++;
-        }
-        ~CommandedChatScope()
-        {
-            if (armed_ && ai_)
-                ai_->commandedChatDepth--;
-        }
-    private:
-        PlayerbotAI* ai_;
-        bool armed_;
-    };
-    // True while a commanded chat scope is active.
-    bool IsCommandedChat() const { return commandedChatDepth > 0; }
-    // True when a chat line may be sent: broadcasts are configurable, but a
-    // commanded answer always goes out.
-    bool IsChatAllowed() const;
     bool TellPlayer(Player* player, std::ostringstream &stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false) { return TellPlayer(player, stream.str(), securityLevel, isPrivate, ignoreSilent); }
     bool TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false);
     bool TellPlayerNoFacing(Player* player, std::ostringstream& stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false) { return TellPlayerNoFacing(player, stream.str(), securityLevel, isPrivate, noRepeat, ignoreSilent); }
@@ -563,8 +543,8 @@ public:
     uint8 GetManaPercent() const;
 
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string spell, uint8 effectMask);
-    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);
-    bool canDispel(const SpellEntry* entry, uint32 dispelType);
+    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType, const DispelOverride* override = nullptr);
+    bool canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override = nullptr);
     static bool IsNeverDispelSpell(uint32 spellId);
     static bool IsHealSpell(const SpellEntry* entry);
 
@@ -632,12 +612,6 @@ public:
 
     std::list<Unit*> GetAllHostileUnitsAroundWO(WorldObject* wo, float distanceAround);
     std::list<Unit*> GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* wo, float distanceAround);
-
-    static void SendDelayedPacket(WorldSession* session, std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
-    // Drain packets produced by optional asynchronous work on the world
-    // thread. The queue is keyed by durable bot GUID, never by a raw session
-    // captured by a worker thread.
-    static void ProcessDelayedPackets();
  public:
     std::vector<Bag*> GetEquippedAnyBags();
     std::vector<Bag*> GetEquippedQuivers();
@@ -831,7 +805,13 @@ public:
     bool IsJumping() { return jumpTime; }
     void SetFallAfterJump() { fallAfterJump = true; }
     void SetJumpTime(uint32 time) { jumpTime = time; }
-    bool CanMove();
+    // ignoreReturnHold: the body's own state only (facing an attacker is no move).
+    bool CanMove(bool ignoreReturnHold = false);
+    // The UpdateAI call this is (a scan cache's key): one bot updates at a time on a thread.
+    uint32 UpdateTick() const { return aiUpdateTick; }
+    // A dungeon run is bringing this bot back (or it was revived far from the run): it stands still
+    // (ai::ReturnHoldPolicy, the run leader's mark "return hold until ms").
+    bool ReturnHeld();
     void StopMoving();
     // Before a cast on a game object (Opening, Mining, Herb Gathering): a bot
     // still moving - by its movement flags or by a server spline its flags do
@@ -1093,6 +1073,8 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
+    void UpdateLeadTrail();
+    std::vector<FollowTrailPoint> leadTrail;
 
 protected:
 	Player* bot;
@@ -1112,18 +1094,12 @@ protected:
     BotState currentState;
     ChatHelper chatHelper;
     std::queue<ChatCommandHolder> chatCommands;
-    std::queue<ChatQueuedReply> chatReplies;
-    std::mutex chatRepliesMutex;
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;
     CompositeChatFilter chatFilter;
     PlayerbotSecurity security;
     std::map<std::string, time_t> whispers;
-    // Issue #1108: depth of the active CommandedChatScope. While it is above
-    // zero the chat is an answer to a player who commanded the bot and is
-    // sent even with AiPlayerbot.EnableBroadcasts = 0.
-    uint32 commandedChatDepth = 0;
     std::pair<ChatMsg, time_t> currentChat;
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
@@ -1139,6 +1115,9 @@ protected:
     // Scripted area triggers the bot stands in (issue #984, BotAreaTriggers.h).
     ai::BotAreaTriggerState areaTriggerState;
     uint32 areaTriggerCheckDelay = 0;
+    // Counts UpdateAI calls: the per-tick caches (the boss tactics fight scan in BossTacticsActions.cpp) keep a value
+    // for one update only.
+    uint32 aiUpdateTick = 0;
     // Issue #84 (P2): bumped by HandleTeleportAck, consumed by engines.
     uint64_t transitionGeneration = 0;
     uint32 faceTargetUpdateDelay = 0;
@@ -1173,7 +1152,7 @@ protected:
     // Issue #846: the chat gate last published to PlayerbotAIStorage.
     bool m_chatGatePublished = false;
     bool m_chatGateIgnoreAll = false;
-    bool m_chatGateIgnoreTrade = false;
+    bool m_chatGateOnlyOrders = false;
     time_t m_chatGatePublishedAt = 0;
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;

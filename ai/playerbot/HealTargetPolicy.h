@@ -19,4 +19,27 @@ namespace ai
     {
         return isAlive;
     }
+
+    // The "already being healed" filter of the target pick. A member below the
+    // almost-full line is a candidate unless a heal is already on its way, but
+    // only above the critical line: a member at or below it stays a candidate
+    // for every healer, so a second heal can follow the first (one heal cannot
+    // be trusted to save a dying member). "beingHealed" is a callable that
+    // only runs when it can change the answer.
+    template <typename BeingHealed>
+    inline bool MemberNeedsHeal(float healthPct, float almostFullHealthPct, float criticalHealthPct,
+        BeingHealed beingHealed)
+    {
+        if (healthPct >= almostFullHealthPct)
+            return false;
+        return healthPct <= criticalHealthPct || !beingHealed();
+    }
+
+    // A pet joins the candidates only when it is hurt AND nobody is already
+    // healing it ("&&": the old "||" added pets almost always).
+    template <typename BeingHealed>
+    inline bool PetNeedsHeal(float healthPct, float almostFullHealthPct, BeingHealed beingHealed)
+    {
+        return healthPct < almostFullHealthPct && !beingHealed();
+    }
 }

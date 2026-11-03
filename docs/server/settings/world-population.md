@@ -26,7 +26,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotPoolReset`](#aiplayerbotrandombotpoolreset) | `off` | Controls full rebuilding and re-seeding of the managed bot pool. |
 | [`AiPlayerbot.RandomBotAccountPrefix`](#aiplayerbotrandombotaccountprefix) | `RNDBOT` | Prefix string used to name newly created managed bot pool accounts. |
 | [`AiPlayerbot.PinnedBots`](#aiplayerbotpinnedbots) | `(empty)` | Comma-separated bot character names pinned to stay online permanently. |
-| [`AiPlayerbot.RandomBotStartLevelMin` / `RandomBotStartLevelMax`](#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) | `1` / `60` | Sets level range randomly assigned to a newly seeded bot on creation. |
+| [`AiPlayerbot.RandomBotStartLevelMin` / `RandomBotStartLevelMax`](#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) | `5` / `60` | Sets level range randomly assigned to a newly seeded bot on creation. |
 | [`AiPlayerbot.LevelLadder`](#aiplayerbotlevelladder) | `1` | Rotates online pool bots across level bands instead of flat round-robin. |
 | [`AiPlayerbot.LevelLadderBandSize`](#aiplayerbotlevelladderbandsize) | `5` | Number of character levels grouped into each ladder band. |
 | [`AiPlayerbot.LevelLadderMaxLevelShare`](#aiplayerbotlevelladdermaxlevelshare) | `10` | Maximum percentage share of total online bot population at level 60. |
@@ -41,7 +41,6 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotGroupNearby`](#aiplayerbotrandombotgroupnearby) | `0` | Allows masterless pool bots to form spontaneous questing groups together. |
 | [`AiPlayerbot.RandomBotRaidNearby`](#aiplayerbotrandombotraidnearby) | `1` | Allows masterless pool bots to form and invite nearby bots into raid groups. |
 | [`AiPlayerbot.RandomBotGuildNearby`](#aiplayerbotrandombotguildnearby) | `1` | Allows masterless pool bots to invite nearby unguilded bots into their guild. |
-| [`AiPlayerbot.InviteChat`](#aiplayerbotinvitechat) | `1` | Broadcasts group and raid invitation announcements in say or guild chat. |
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
 | [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
@@ -217,14 +216,14 @@ Pinned bots log in when pool logins run (gated by `RandomBotLoginWithPlayer` whe
 
 ### `AiPlayerbot.RandomBotStartLevelMin` / `RandomBotStartLevelMax`
 Defines the level range randomly assigned to a newly created pool bot on its very first login.
-**Default:** `1` / `60` · **Values:** integers 1..60 · **Restart:** needed
+**Default:** `5` / `60` · **Values:** integers 1..60 · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
 Newly generated random bots receive a random level between `RandomBotStartLevelMin` and `RandomBotStartLevelMax` on their initial login, before starter skills, professions, and starter equipment kits are initialized. This ensures a fresh pool populates every level bracket immediately across the game world.
 
-To test specific level brackets, you can narrow this range (for example `10` / `15`). To start all bots at level 1 and have them level naturally, set both keys to `1`.
+To test specific level brackets, you can narrow this range (for example `10` / `15`). The minimum defaults to `5` because gear seeding starts at level 5: a bot that rolled level 1-4 would keep its level-1 outfit for good. To start all bots at level 1 and have them level naturally, set both keys to `1`.
 
 </details>
 
@@ -407,19 +406,6 @@ Allows masterless pool bots to invite nearby unguilded bots into their guild.
 <summary>How it works in detail</summary>
 
 When enabled, bot guild members will periodically invite nearby guildless bots into their guild.
-
-</details>
-
-### `AiPlayerbot.InviteChat`
-Announces group and raid invitations in say or guild chat.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-When enabled, bots announce their group and raid invitations with chat lines. Guild invites use this channel directly; the spoken join line additionally requires EnableBroadcasts = 1.
-
-Announcements only trigger when inviting a real human player. Bot-to-bot invitations suppress chat announcements to prevent starting zones from being flooded with chatter during pool population.
 
 </details>
 
@@ -941,7 +927,7 @@ Seeds newly created pool characters with a full set of level-appropriate starter
 
 On a newly created bot's first login (played time 0), this feature equips the character with a complete set of level-appropriate armor, weapons, and accessories suited to its specialization.
 
-This routine only fills initial equipment slots and never overwrites gear earned by active veteran bots.
+This routine only fills initial equipment slots and never overwrites gear earned by active veteran bots. It is a one-time seed, not an upgrade pass: it does not upgrade gear as bots level up. After the seed a bot gears from loot, quest rewards and vendor buys.
 
 </details>
 

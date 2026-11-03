@@ -362,7 +362,10 @@ namespace ai
 
                     for (int i = 0 ; i < 3; i++)
                     {
-                        if (spellInfo->Effect[i] == effectId)
+                        // Only self mana counts as energize (see BuildPotionCache).
+                        if (spellInfo->Effect[i] == effectId &&
+                            (effectId != SPELL_EFFECT_ENERGIZE ||
+                             (spellInfo->EffectMiscValue[i] == POWER_MANA && spellInfo->EffectImplicitTargetA[i] == TARGET_UNIT_CASTER)))
                             return !GuildOrderConsumesItem(bot, proto->ItemId);
                     }
                 }

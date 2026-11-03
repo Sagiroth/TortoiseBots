@@ -106,6 +106,25 @@ namespace ai
         // (IsCcBotReadyFor), at any combat time, while other enemies are
         // left. Only Blade Flurry's cancel uses it (CcCancelBladeFlurry).
         bool ReadyCcMarkNear(WorldObject* center, float radius);
+        // A periodic damage aura from the group is on `unit`: a member's, a
+        // player's or the pet of one. Its ticks break a crowd control the
+        // moment it lands, so the run's automatic crowd control never marks
+        // such a unit and its CC bot never casts on it (an enemy's aura is no
+        // reason to skip it).
+        bool PartyDotOn(Unit* unit);
+        // A unit no DoT goes on: a CC mark (the group's Moon, a member's "rti
+        // cc", a bot's "rti cc target") or one already under damage-breakable
+        // CC. The DoT ticks would break the hold the moment it lands.
+        bool NoDotTarget(Unit* unit);
+        // The two halves of NoDotTarget, for the DoT rows' own policy call
+        // (CcDotTargetAllowed): a CC mark, and crowd control right now.
+        bool IsCcMarkedUnit(Unit* unit);
+        bool IsCrowdControlledUnit(Unit* unit);
+        // A unit under the group's damage-breakable crowd control stands inside
+        // the area of the running channel or ground effect `spell`: it is
+        // cancelled (the spell's cast-start guard only saw the area before the
+        // sheep landed). The area's centre and radius come from the spell data.
+        bool CcInRunningArea(Spell const* spell);
 
     private:
         bool OnlyMarksLeftCached();

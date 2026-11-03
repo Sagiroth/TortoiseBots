@@ -2,8 +2,9 @@
 
 The world thread ticks worked clocks every pass, but the bag and mailbox
 walks run at most every 5 s per order. Off-cadence passes carry no counts,
-so the rise trackers, the delivery gate and the reported-have line must all
-read through the scanned flag instead of the raw counts.
+so the rise trackers, the delivery gate and the reported carry must read
+through the scanned flag instead of the raw counts. The reported have comes
+off the row's delivered count (no scan needed).
 """
 import pathlib
 import unittest
@@ -27,10 +28,11 @@ class GuildOrderScanThrottleTest(unittest.TestCase):
         idx = body.index("record.delivered + in.bagCount >= record.amount")
         self.assertIn("in.scanned", body[max(0, idx - 200):idx])
 
-    def test_reported_have_holds_off_scan(self):
+    def test_reported_have_reads_delivered_off_scan(self):
         body = tick_body()
-        idx = body.index("out.reportedHave = in.scanned ?")
-        self.assertGreater(idx, 0)
+        idx = body.index("out.reportedHave = ReportedHaveThisPass(")
+        window = body[idx:body.index("out.reportedCarry", idx)]
+        self.assertNotIn("in.scanned", window)
 
     def test_update_throttles_scans(self):
         update = STORE[STORE.index("void Update(uint32_t diff)"):]

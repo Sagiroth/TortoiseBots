@@ -626,7 +626,7 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # linked_death row (per-map flags, like HasAvoidCastMap): the gate precedes ScanBossTactics, and it is not the
         # any-row HasMap.
         self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
-        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())))", fn)
+        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds)", fn)
         self.assertNotIn("HasMap(bot->GetMapId())",
                          fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))
@@ -891,6 +891,20 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("groupScan.order = group.burnOrder;", fn)
         self.assertIn("groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);", fn)
         self.assertIn("LinkedDeathLatchTick(latch, groupScan.param, groupScan.members,", fn)
+        # Encounter end (Codex round 3): the idle sightings are the known guids' lookups, read only while no member fights,
+        # and never a grid search (the one site is HoldKillBlockersValue.cpp).
+        self.assertIn("member.inCombat = known->IsInCombat();", fn)
+        self.assertIn("if (!known || !groupScan.members.empty())", fn)
+        self.assertIn("WorldTimer::getMSTime(), scanMs, idle,", fn)
+        self.assertIn("LinkedDeathWindowMs(group.windowSec), &windowEvent);", fn)
+        self.assertIn('"BossTacticsLinkedWindow"', fn)
+        self.assertIn("first_ms=%u,last_ms=%u,window_ms=%u,inside=%d", fn)
+        # Write order is not observation order: the scan's stamp is taken before its reads and before the lock.
+        self.assertLess(fn.index("const std::uint32_t scanMs = WorldTimer::getMSTime();"),
+                        fn.index("std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);"))
+        self.assertIn("inline bool LinkedDeathEncounterEnded(", POLICY)
+        self.assertIn("inline void LinkedDeathDropStale(", POLICY)
+        self.assertIn("LinkedDeathLatch();\n                return false;", POLICY)
         # Deaths are explicit: a known guid this bot did not see living is looked up by guid, and only a unit found dead
         # (or a corpse) counts. A member count drop is never a death, so the count is not passed to the latch.
         self.assertIn("LinkedDeathUnseen(latch, groupScan.members)", fn)
@@ -898,7 +912,12 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("if (known && !known->IsAlive())", fn)
         self.assertNotIn("static_cast<std::uint32_t>(groupScan.members.size())", fn)
         self.assertIn("inline std::vector<std::uint64_t> LinkedDeathUnseen(", POLICY)
-        self.assertIn("latch.dead.push_back(guid);", POLICY)
+        self.assertIn("known->alive = false;", POLICY)
+        # The encounter reset reads the latest observation of every known guid, so the eviction is not tied to one
+        # bot's scan: a fighting or not-full sighting anywhere blocks it, and an idle one seen by any bot counts.
+        self.assertIn("inline bool LinkedDeathEncounterEnded(const LinkedDeathLatch& latch, std::uint32_t nowMs)",
+                      POLICY)
+        self.assertIn("known.inCombat || known.hpPct < 100 || age > kLinkedDeathSeenMs", POLICY)
         # The arming reads every observer's union (LinkedDeathArmed over the known guids), never this bot's scan alone.
         self.assertIn("const bool armedNow = LinkedDeathArmed(latch, param, nowMs);", POLICY)
         pick = body(ACTIONS, "Unit* ai::FindBossLinkedDeath(")
@@ -917,12 +936,50 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)",
                       RUN_POLICY)
         guard = body(RUN_POLICY, "inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, "
-                                 "std::string& order)")
+                                 "std::string& order, bool trash = false)")
         self.assertIn("LinkedDeathMemberEntry(r, f, u.entry)", guard)
         self.assertIn("f.linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath;", COMMANDER)
         note = body(RUN_POLICY, "inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)")
         self.assertIn("if (!f.linkedDeath ||", note)
         self.assertIn("r.note += \"; \" + r.linkedNoteText;", RUN_POLICY)
+
+
+class LinkedDeathStateIsLogged(unittest.TestCase):
+    """Walk 29 (two Thekal kills): the burn-order note printed, but no TBM:RUN note and no bot_events row for the hold or
+    the release latch. The run line now carries one sticky note per state change (hold, release armed, released, reset),
+    and the glue logs each change as a BossTacticsLinkedDeath row, gated by bot_events.csv like the other boss rows."""
+
+    def test_each_state_note_is_emitted_by_the_state_step(self):
+        step = body(RUN_POLICY, "inline void LinkedStateStep(")
+        self.assertIn('"linked_death hold: " + list', step)
+        self.assertIn('"linked_death release armed"', step)
+        self.assertIn('"linked_death released: "', step)
+        self.assertIn('"linked_death reset (evade)"', step)
+        # One change per state: the four notes, each through LinkedStateChange (the only place the queue grows).
+        self.assertEqual(step.count("LinkedStateChange("), 4)
+        self.assertIn("if (next == prev)\n        return;", step)
+
+    def test_the_death_note_runs_the_step_once_per_read(self):
+        note = body(RUN_POLICY, "inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)")
+        self.assertEqual(note.count("LinkedStateStep("), 1)
+        self.assertIn("LinkedStateStep(r, group.param, members, newDeaths, hadLiving,", note)
+        # The queue is cleared on every read, and each early exit (no group, not a boss step) drops the state.
+        self.assertIn("r.linkedEvents.clear();", note)
+        self.assertGreaterEqual(note.count("LinkedStateLeave(r);"), 4)
+        # An empty read records no deaths: the whole group leaving the fight is not a death.
+        self.assertIn("if (!members.empty())\n        for (const std::pair<std::uint32_t, std::uint64_t>& was : r.linkedAlive)", note)
+
+    def test_the_run_line_carries_the_sticky_state_note(self):
+        self.assertIn("if (!r.linkedStateNote.empty())\n            r.note += \"; \" + r.linkedStateNote;", RUN_POLICY)
+        self.assertIn("inline std::vector<Run::LinkedEvent> TakeLinkedEvents(Run& r)", RUN_POLICY)
+
+    def test_the_glue_drains_each_tick_and_logs_when_the_log_is_on(self):
+        tick = COMMANDER.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);")
+        drain = COMMANDER.index("TortoiseBots::DungeonRun::TakeLinkedEvents(slot.run)")
+        self.assertLess(tick, drain)
+        self.assertLess(drain, COMMANDER.index("The lead bot says what the run needs on /s", tick))
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', COMMANDER[drain:drain + 400])
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedDeath", event.kind, event.detail);', COMMANDER)
 
 
 if __name__ == "__main__":

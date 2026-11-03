@@ -94,6 +94,17 @@ public:
 
         if (assignedTarget)
         {
+            // The run's automatic crowd control never holds a unit the party
+            // has dotted: the ticks break the hold the moment it lands (ZG
+            // walk 32: joiners dotted by the warlocks' and hunters' DoTs before
+            // their mark went out). The order stays on the mark; the cast does
+            // not go out.
+            if (sPlayerbotAIConfig.dungeonRunAutoCc)
+            {
+                CcGuard ccGuard(ai);
+                if (ccGuard.PartyDotOn(creature))
+                    return;
+            }
             // Never CC once only CC marks are left: the party then kills
             // the marks last (DPS/tank kill-last fallback, same test), so
             // re-CCing would only stall the fight or ping-pong sheep and

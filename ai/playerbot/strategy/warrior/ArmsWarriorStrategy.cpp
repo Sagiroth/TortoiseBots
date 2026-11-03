@@ -54,6 +54,13 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarriorStrategy::InitCombatTriggers(triggers);
 
+    // A running Sweeping Strikes copies swings onto a sheep that landed beside
+    // the warrior after the buff started: drop the buff (instant, no GCD)
+    // before the next swing.
+    triggers.push_back(new TriggerNode(
+        "sweeping strikes near cc",
+        NextAction::array(0, new NextAction("remove sweeping strikes", ACTION_INTERRUPT + 5), NULL)));
+
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("intimidating shout", ACTION_EMERGENCY), NULL)));

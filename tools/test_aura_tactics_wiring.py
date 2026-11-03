@@ -28,9 +28,26 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
+ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
+MOVEMENT = (ROOT / "ai/playerbot/strategy/actions/MovementActions.h").read_text()
+DUNGEON_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/DungeonActions.cpp").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
-TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
+STRATEGY_H = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.h").read_text()
+TACTICS_STRATEGY = STRATEGY
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
+TRIGGERS_H = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.h").read_text()
+DUNGEON_TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/DungeonTriggers.cpp").read_text()
+DPS_TARGET = (ROOT / "ai/playerbot/strategy/values/DpsTargetValue.cpp").read_text()
+
+# Step 3 (dispel_priority): the dispel predicate, the cure multiplier, the AI-side hard never-dispel list and the
+# fight strategy that owns the multiplier.
+DISPEL_VALUE = (ROOT / "ai/playerbot/strategy/values/PartyMemberToDispel.cpp").read_text()
+DISPEL_POLICY = (ROOT / "ai/playerbot/policy/heal/DispelTargetPolicy.h").read_text()
+PLAYERBOT_AI_H = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
+PLAYERBOT_AI_CPP = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
+PLAYERBOT_AI_SPELLS = (ROOT / "ai/playerbot/PlayerbotAISpells.cpp").read_text()
 ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
+TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
 OSSIRIAN = (ROOT / "ai/playerbot/strategy/triggers/RuinsOfAhnqirajDungeonTriggers.cpp").read_text()
 DOCS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 
@@ -42,10 +59,17 @@ def body(text, start, end="\n}\n"):
 
 class RowGateWiring(unittest.TestCase):
     def test_the_scan_gates_each_row_on_the_boss_health_and_the_bot_aura(self):
-        # The band reads the unit that activated the row (the first living of the boss entry the scan sees), never
-        # an add's health: NX-46's "gate on the add's own health" is deliberately not supported.
+        # The band reads one unit of the boss entry, never an add's health (NX-46's "gate on the add's own health" is
+        # deliberately not supported) and never whichever attacker the scan met first: PickBossGateUnit picks the
+        # same-entry unit with the highest max health, so a low-health clone cannot open a phase row.
         scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
-        self.assertIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
+        self.assertIn("std::vector<std::vector<Unit*>> entryUnits;", scan)
+        self.assertIn("gateUnit.maxHealth = unit->GetMaxHealth();", scan)
+        self.assertIn("gateUnit.hpPct = static_cast<int>(unit->GetHealthPercent());", scan)
+        self.assertIn("const int gatePick = PickBossGateUnit(gateUnits);", scan)
+        self.assertIn("int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;", scan)
+        # No row is gated on the loop's own unit any more (the old first-attacker pick).
+        self.assertNotIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
         self.assertIn("bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;", scan)
         self.assertIn("RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura))", scan)
         self.assertIn("fight.rows.push_back(&row);", scan)
@@ -66,6 +90,17 @@ class RowGateWiring(unittest.TestCase):
         self.assertIn("std::uint8_t hpMin = 0;", POLICY)
         self.assertIn("std::uint8_t hpMax = 100;", POLICY)
         self.assertIn("std::uint32_t botAura = 0;", POLICY)
+        # The band's unit is picked from the entry's units, not from their order: max health, then current %,
+        # then guid.
+        self.assertIn("inline int PickBossGateUnit(const std::vector<BossGateUnit>& units)", POLICY)
+        pick = body(POLICY, "inline bool BossGateUnitBefore(", "\n    }\n")
+        self.assertIn("a.maxHealth > b.maxHealth", pick)
+        self.assertIn("a.hpPct > b.hpPct", pick)
+        self.assertIn("a.guid < b.guid", pick)
+        # Both orders of the same two units must agree; a first-seen pick trips this.
+        self.assertIn("CHECK(bossPick == 0);", POLICY_TEST)
+        self.assertIn("CHECK(clonePick == 1);", POLICY_TEST)
+        self.assertIn("CHECK(RowGateOpen(band, true, cloneFirst[0].hpPct, false));", POLICY_TEST)
 
     def test_only_a_scan_read_kind_may_gate(self):
         add = body(POLICY, "bool Add(const BossTacticRow& row)", "\n        }\n")
@@ -237,6 +272,485 @@ class UseObjectWiring(unittest.TestCase):
         self.assertIn('dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);', load)
         self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunUseObject = 0$")
         self.assertIn("AiPlayerbot.DungeonRunUseObject", DOCS)
+
+class DpsHoldWiring(unittest.TestCase):
+    def test_the_policy_holds_on_edges_and_caps_until_tank(self):
+        self.assertIn("inline bool DpsHoldBlinked(float lastX, float lastY, float x, float y, "
+                      "std::uint32_t dtMs)", POLICY)
+        self.assertIn("constexpr float kDpsHoldBlinkYd = 10.0f;", POLICY)
+        self.assertIn("constexpr std::uint32_t kDpsHoldBlinkMs = 1500;", POLICY)
+        self.assertIn("constexpr std::uint32_t kDpsHoldStaleMs = 600000;", POLICY)
+        tick = body(POLICY, "inline bool DpsHoldTick(", "\n    }\n")
+        # Every trigger is an edge, never a level: a cast that stays visible and an open band that stays open do not
+        # restart the hold on every read.
+        self.assertIn("in.engageEnabled && in.engaged && !state.engageSeen", tick)
+        self.assertIn("in.gateOpen && in.gateEnabled && !state.gateWasOpen", tick)
+        self.assertIn("in.castEnabled && in.castOrAuraSeen && !me->castSeen", tick)
+        self.assertIn("DpsHoldBlinked(state.lastX, state.lastY, in.x, in.y, nowMs - state.lastReadMs)", tick)
+        # until_tank cannot deadlock: the cap is 3 * param from the latest trigger.
+        self.assertIn("state.capMs = nowMs + 3 * holdMs;", tick)
+        self.assertIn("in.untilTank && !in.victimIsTank && nowMs < state.capMs", tick)
+        self.assertIn("CHECK(!DpsHoldTick(tank, in, 12000, nullptr));", POLICY_TEST)
+        self.assertIn("CHECK(!DpsHoldTick(spell, in, 3100, nullptr));", POLICY_TEST)
+
+    def test_the_action_and_trigger_are_registered_above_the_kill_first_pick(self):
+        self.assertIn('creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldAction(ai); };',
+                      ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics dps hold"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsDpsHoldTrigger(ai); };', TRIGGER_CONTEXT)
+        self.assertIn('"boss tactics dps hold",', TACTICS_STRATEGY)
+        self.assertIn('NextAction("boss tactics dps hold", ACTION_HIGH + 4)', TACTICS_STRATEGY)
+        self.assertLess(TACTICS_STRATEGY.index("ACTION_HIGH + 3"),
+                        TACTICS_STRATEGY.index('NextAction("boss tactics dps hold", ACTION_HIGH + 4)'))
+        action = body(ACTIONS, "bool BossTacticsDpsHoldAction::Execute(")
+        self.assertIn('AI_VALUE(Unit*, "current target")', action)
+        self.assertIn("!IsDpsHeld(ai, bot, current)", action)
+        # The stop is the hold-kill action's: the kill-first add stays allowed, else the pick is dropped and the
+        # attack stopped.
+        self.assertIn("FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot))", action)
+        self.assertIn('context->GetValue<Unit*>("current target")->Set(nullptr);', action)
+        self.assertIn('context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());', action)
+        self.assertIn("bot->AttackStop();", action)
+        trig = body(TRIGGERS, "bool BossTacticsDpsHoldTrigger::IsActive(")
+        self.assertIn("current && IsDpsHeld(ai, bot, current)", trig)
+        self.assertIn('BossTacticsDpsHoldTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics dps hold", 1)',
+                      TRIGGERS_H)
+
+    def test_the_hold_is_gated_by_the_key_and_the_map_flag(self):
+        held = body(ACTIONS, "bool ai::IsDpsHeld(")
+        self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics || "
+                      "!GetBossTactics().HasAuraTacticMap(bot->GetMapId())", held)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !IsFreeDps(ai, bot)', held)
+        self.assertIn("BossTacticKind::DpsHoldAfter", held)
+        self.assertIn("ReadDpsHold(ai, bot, unit, row, bossUnit, &fired)", held)
+        # The target picker consults the hold beside the hold_kill rows, so every dps picker skips the subject.
+        target = body(DPS_TARGET, "bool HeldDpsTarget(", "\n    }\n")
+        self.assertIn("if (IsDpsHeld(ai, bot, unit))", target)
+        self.assertLess(target.index("IsDpsHeld"), target.index("BossTacticKind::HoldKill"))
+
+    def test_the_multiplier_vetoes_area_and_dot_on_a_held_subject(self):
+        self.assertIn("DpsHold,", ACTIONS)
+        helper = body(ACTIONS, "bool DpsHoldSubjectWithin(")
+        self.assertIn("BossTacticKind::DpsHoldAfter", helper)
+        # Every same-entry unit is read (the veto is any held one in range), not only the last unit of the entry.
+        self.assertIn("for (Unit* unit : subjects)", helper)
+        self.assertIn("held.push_back(ReadDpsHold(ai, ai->GetBot(), unit, *row, bossUnit));", helper)
+        self.assertIn("distance.push_back(around->GetDistance(unit));", helper)
+        self.assertIn("DpsHoldVetoIndex(held, distance, maxDistance)", helper)
+        read = body(ACTIONS, "bool ReadDpsHold(")
+        self.assertIn("in.botEligible = row.botAura == 0 || botHasAura;", read)
+        held = body(ACTIONS, "HoldReason HeldSubjectWithin(")
+        self.assertIn("DpsHoldSubjectWithin(ai, around, fight, maxDistance, &held)", held)
+        self.assertIn("return HoldReason::DpsHold;", held)
+        multiplier = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(", "\n}\n")
+        self.assertIn("const bool auraHolds = sPlayerbotAIConfig.dungeonRunAuraTactics", multiplier)
+        self.assertIn("BossTacticKind::DpsHoldAfter", multiplier)
+        self.assertIn("const bool area = (holdsRows || dpsHoldRows) && IsAreaDamageAction(ai, action);", multiplier)
+
+    def test_the_hold_logs_one_row_per_trigger_and_bot(self):
+        log = body(ACTIONS, "void LogDpsHold(")
+        self.assertIn("g_dpsHoldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), key)]", log)
+        self.assertIn('snprintf(info1, sizeof(info1), "subject=%u", subject->GetEntry());', log)
+        self.assertIn('"trigger=%s,held_ms=%u"', log)
+        self.assertIn("DpsHoldTriggerName(trigger)", log)
+        read = body(ACTIONS, "bool ReadDpsHold(")
+        self.assertIn("if (held && IsFreeDps(ai, bot))", read)
+        self.assertIn("LogDpsHold(ai, bot, subject, row, lastTrigger, lastTriggerMs, key);", read)
+
+    def test_the_state_is_pruned_on_death_and_staleness(self):
+        prune = body(ACTIONS, "void PruneDpsHolds(")
+        self.assertIn("nowMs - it->second.lastReadMs > kDpsHoldStaleMs", prune)
+        self.assertIn("!subject->IsAlive()", prune)
+        self.assertIn("g_dpsHolds.erase(it)", prune)
+        read = body(ACTIONS, "bool ReadDpsHold(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_dpsHoldMutex);", read)
+        # The key is the map instance, the subject and the row's own key columns: one hold per band.
+        self.assertIn("std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), "
+                      "subject->GetObjectGuid().GetRawValue(),", ACTIONS)
+        self.assertIn("row.bossEntry, row.spellId, row.hpMin, row.hpMax)", ACTIONS)
+
+
+class DispelPriorityIsRanked(unittest.TestCase):
+    """The predicate asks the pure verdict for the member and orders by the
+    row's rank first, the target tier second. Without this the row's
+    priorities never reach the cure pick."""
+
+    def test_predicate_calls_the_verdict_and_the_rank_order(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertIn("DispelMemberVerdict(rows, auras, dispelType", fn)
+        self.assertIn("DispelCandidateBetter(rank, tier, bestRank, bestTier)", fn)
+        # The tier-0 early return may only fire for a rank-0 member, or a rank-2 carrier in reach would end the search.
+        self.assertIn("if (ranked && rank == 0 && tier == 0)", fn)
+
+    def test_excluded_member_is_skipped_before_its_aura_is_offered(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertLess(fn.index("LogDispelExcluded"), fn.index("HasAuraToDispel"))
+        self.assertIn("verdict.excluded", fn)
+
+    def test_plain_predicate_when_no_row_is_active(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertIn("tier >= bestTier", fn)  # the old order is still there, unranked
+        self.assertIn("ranked ? &overrideSet : nullptr", fn)
+
+
+class DispelPriorityIsGated(unittest.TestCase):
+    """Off, the rows are inert: the predicate reads no row and the
+    hard never-dispel list keeps deciding exactly as before."""
+
+    def test_predicate_needs_the_key_the_map_and_the_strategy(self):
+        fn = body(DISPEL_VALUE, "Unit* PartyMemberToDispel::Calculate()")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+    def test_multiplier_needs_the_key_the_map_and_the_strategy(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+
+class DispelHoldIsRegistered(unittest.TestCase):
+    """The safety net only exists when the combat engine owns it."""
+
+    def test_multiplier_is_on_the_combat_engine(self):
+        fn = body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitCombatMultipliers")
+        self.assertIn("new BossTacticsDispelHoldMultiplier(ai)", fn)
+
+    def test_multiplier_is_not_on_the_non_combat_or_reaction_engine(self):
+        self.assertNotIn("BossTacticsDispelHoldMultiplier",
+                         body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitNonCombatMultipliers"))
+        self.assertNotIn("BossTacticsDispelHoldMultiplier",
+                         body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitCombatTriggers"))
+
+
+class DispelHoldCoversTheAreaCures(unittest.TestCase):
+    """Abolish Poison's later ticks, the cleansing totems and Stoneform remove
+    auras the row never chose, so the multiplier checks every nearby member."""
+
+    def test_multiplier_checks_the_party_cure_target(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("dynamic_cast<CurePartyMemberAction*>(action)", fn)
+        self.assertIn("verdict.excluded", fn)
+        self.assertIn("return 0.0f;", fn)
+
+    def test_the_hold_judges_every_type_the_cast_spell_removes(self):
+        # A poison-triggered Cleanse also strips magic and disease, so the hold must not read only GetDispelType().
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("ActionDispelTypes(ai, spell)", fn)
+        self.assertIn("DispelCureVerdict(rows, auras, types, allyYd, defaultClearYd)", fn)
+        self.assertNotIn("GetDispelType()", fn)
+        # The type set comes from the spell's effects, not a name table.
+        types = body(ACTIONS, "void CollectSpellDispelTypes(")
+        self.assertIn("SPELL_EFFECT_DISPEL", types)
+        self.assertIn("EffectMiscValue[i]", types)
+        self.assertIn("SPELL_AURA_DISPEL_IMMUNITY", types)
+        self.assertIn("SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY", types)
+        self.assertIn("SPELL_AURA_PERIODIC_TRIGGER_SPELL", types)
+        self.assertNotIn("CureDispelTypes", ACTIONS)
+
+    def test_area_cures_scan_the_nearby_group(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        for name in ('"abolish disease"', '"disease cleansing totem"', '"poison cleansing totem"', '"stoneform"'):
+            self.assertIn(name, ACTIONS)
+        self.assertIn("kDispelSafetyYd", fn)
+        self.assertIn("LiveGroupMembers(group)", fn)
+
+    def test_self_cures_judge_the_bot(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertLess(fn.index("if (!areaCure)"), fn.index("veto(bot)"))
+
+
+class TheRunningCuresAreSwept(unittest.TestCase):
+    """A protected aura applied after an area cure started would be removed by its next tick or pulse: the bot-cast
+    Abolish aura is removed and the bot's own cleansing totem destroyed, and only those."""
+
+    def test_sweep_removes_only_bot_cast_auras(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("GET_PLAYERBOT_AI(caster)", fn)
+        self.assertIn("RemoveAurasByCasterSpell(entry.first, entry.second)", fn)
+        # The aura that decided the verdict is the protected one itself: never remove that.
+        self.assertIn("verdict.auraId == aura->GetId()", fn)
+
+    def test_sweep_destroys_the_bots_own_totem_in_range(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("bot->GetTotem(TotemSlot(slot))", fn)
+        self.assertIn("TotemDispelRadius(totemSpell)", fn)
+        self.assertIn("totem->UnSummon()", fn)
+        self.assertIn("sServerFacade.GetDistance2d(totem, member) > radius", fn)
+
+    def test_probe_mode_reports_work_but_mutates_nothing(self):
+        # apply=false is the read-only probe the trigger evaluates: it must still report work, but the aura removal
+        # and the totem destroy both sit behind `if (apply)`.
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertRegex(
+            fn,
+            r"if \(apply\)\s*member->RemoveAurasByCasterSpell\(entry\.first, entry\.second\);\s*swept = true;",
+        )
+        self.assertRegex(fn, r"if \(apply\)\s*totem->UnSummon\(\);\s*swept = true;")
+        self.assertEqual(fn.count("RemoveAurasByCasterSpell("), 1)
+        self.assertEqual(fn.count("UnSummon("), 1)
+
+    def test_sweep_is_gated_and_registered(self):
+        fn = body(ACTIONS, "bool ai::SweepBossDispelCures(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn("DispelRows(ScanBossTactics(ai, bot))", fn)
+        self.assertIn("SweepBossDispelCures(ai, bot, false)", TRIGGERS)
+        self.assertIn("SweepBossDispelCures(ai, bot, true)", ACTIONS)
+        self.assertIn('"boss tactics dispel sweep"', TACTICS_STRATEGY)
+        self.assertIn('creators["boss tactics dispel sweep"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics dispel sweep"]', TRIGGER_CONTEXT)
+
+
+class TheHardNeverListIsShared(unittest.TestCase):
+    """28169 must stay excluded with no row (today's behaviour), and a clear
+    row must be able to release it: both readers need the same list."""
+
+    def test_list_lives_in_the_dispel_policy(self):
+        self.assertIn("constexpr std::uint32_t kNeverDispelSpellIds[] = { 28169 };", DISPEL_POLICY)
+        self.assertIn("inline bool IsNeverDispelSpellId(", DISPEL_POLICY)
+        self.assertIn("struct DispelOverride", DISPEL_POLICY)
+
+    def test_ai_side_has_no_copy_of_the_list(self):
+        self.assertNotIn("static constexpr uint32 kNeverDispelSpellIds[]", PLAYERBOT_AI_SPELLS)
+        self.assertIn("return IsNeverDispelSpellId(spellId);", PLAYERBOT_AI_SPELLS)
+
+    def test_candispel_consults_the_override(self):
+        fn = body(PLAYERBOT_AI_SPELLS, "bool PlayerbotAI::canDispel(")
+        self.assertIn("override->deny", fn)
+        self.assertIn("override->allow", fn)
+        self.assertIn("DispelOverrideContains(", fn)
+
+    def test_has_aura_to_dispel_has_the_override_overload(self):
+        self.assertIn(
+            "virtual bool HasAuraToDispel(Unit* player, uint32 dispelType, const DispelOverride* override = nullptr);",
+            PLAYERBOT_AI_H)
+        self.assertIn(
+            "bool canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override = nullptr);",
+            PLAYERBOT_AI_H)
+
+    def test_verdict_is_the_single_reader_of_the_list(self):
+        fn = body(POLICY, "inline DispelVerdict DispelMemberVerdict(", "\n    }\n")
+        self.assertIn("IsNeverDispelSpellId(aura.spellId)", fn)
+        self.assertIn("TacticMode::Never", fn)
+        self.assertIn("TacticMode::Clear", fn)
+
+
+class TheDispelDecisionIsLogged(unittest.TestCase):
+    def test_log_row_carries_the_reported_fields(self):
+        self.assertIn('"BossTacticsDispel"', ACTIONS)
+        for field in ("aura=", "carrier=", "mode=", "rank=", "ally_yd=", "verdict="):
+            self.assertIn(field, ACTIONS)
+        self.assertIn('"pick"', ACTIONS)
+        self.assertIn('verdict.wait ? "wait" : "excluded"', ACTIONS)
+
+
+class DispelHoldAtCastTime(unittest.TestCase):
+    """The member can gain the protected aura after the action was chosen, and a paladin Cure resolves one of its
+    dispel types at random, so the same hold is judged again at the last gate: the cast itself."""
+
+    def test_the_cast_path_refuses_the_spell_before_the_core_cast(self):
+        fn = body(PLAYERBOT_AI_SPELLS, "bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target")
+        self.assertIn("DispelCastBlocked(this, target, spellId)", fn)
+        self.assertLess(fn.index("DispelCastBlocked"), fn.index("new Spell("))
+        self.assertIn("reason=dispel-hold", fn)
+
+    def test_the_cast_gate_judges_every_type_the_spell_removes(self):
+        fn = body(ACTIONS, "bool ai::DispelCastBlocked")
+        self.assertIn("CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types)", fn)
+        self.assertIn("DispelCastVerdict(targetKind, rows, auras, types", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+    def test_a_group_pet_is_judged_by_its_owners_group(self):
+        fn = body(ACTIONS, "bool ai::DispelCastBlocked")
+        self.assertIn("dynamic_cast<Pet*>(target)", fn)
+        self.assertIn("dynamic_cast<Player*>(pet->GetOwner())", fn)
+        self.assertIn("owner->GetGroup() == bot->GetGroup()", fn)
+        self.assertIn("DispelTargetKind::GroupPet", fn)
+        # A target the gate cannot place stays blocked (fail closed).
+        self.assertIn("DispelTargetKind::Unknown", fn)
+
+
+class FreezeFleeWiring(unittest.TestCase):
+    def test_freeze_and_flee_are_ordered_on_both_walk_engines(self):
+        combat = body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers(")
+        self.assertIn('new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7)', combat)
+        self.assertIn('new NextAction("boss tactics flee", ACTION_EMERGENCY + 6)', combat)
+        # Freeze above flee above the listed-cast walk-out (BossTacticsPolicy.h's ordering).
+        self.assertLess(combat.index('"boss tactics freeze"'), combat.index('"boss tactics flee"'))
+        self.assertLess(combat.index('"boss tactics flee"'), combat.index('"boss tactics avoid cast"'))
+
+        # The reaction engine stops a walk and a cast the tick the aura lands, so both rows live there too.
+        reaction = body(STRATEGY, "void BossTacticsStrategy::InitReactionTriggers(")
+        self.assertIn('new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7)', reaction)
+        self.assertIn('new NextAction("boss tactics flee", ACTION_EMERGENCY + 6)', reaction)
+        self.assertLess(reaction.index('"boss tactics freeze"'), reaction.index('"boss tactics flee"'))
+
+        # Out of combat a frozen carrier can still heal or walk: the non-combat engine carries the freeze.
+        noncombat = body(STRATEGY, "void BossTacticsStrategy::InitNonCombatTriggers(")
+        self.assertIn('new NextAction("boss tactics freeze", ACTION_EMERGENCY + 7)', noncombat)
+        self.assertNotIn('"boss tactics flee"', noncombat)
+
+    def test_the_freeze_multiplier_runs_on_all_three_engines(self):
+        for function in ("InitCombatMultipliers", "InitNonCombatMultipliers", "InitReactionMultipliers"):
+            section = body(STRATEGY, "void BossTacticsStrategy::" + function)
+            self.assertIn("new BossTacticsFreezeMultiplier(ai)", section, function)
+        self.assertIn("void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;", STRATEGY_H)
+        self.assertIn("class BossTacticsFreezeMultiplier : public Multiplier", ACTIONS_H)
+        multiplier = body(ACTIONS, "float BossTacticsFreezeMultiplier::GetValue")
+        self.assertIn("FreezeHoldsAction(aura != 0, isFreeze)", multiplier)
+        self.assertIn("dynamic_cast<BossTacticsFreezeAction*>(action)", multiplier)
+        self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics", multiplier)
+        self.assertIn("HasAuraTacticMap(bot->GetMapId())", multiplier)
+
+    def test_the_freeze_action_stops_once_and_logs_the_drift(self):
+        action = body(ACTIONS, "bool BossTacticsFreezeAction::Execute(")
+        self.assertIn("FreezeEpisodeTick(ai, bot, aura)", action)
+        self.assertIn("FreezeStopDue(ai, bot, aura)", action)
+        for call in ("bot->AttackStop();", "bot->CastStop();"):
+            self.assertIn(call, action)
+        # Fear, confuse and knockback keep their own generator and end on their own.
+        self.assertIn("bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", action)
+        self.assertIn("FreezeStillTick(risingEdge, lostControl,", action)
+        # The core's movement generator is idled too: a chase into the boss or a follow left over walks the carrier
+        # past the gaze's 2 yd though every action of the bot is held. The plain clear, never the one that pops a
+        # fearing or knocked-back bot's own generator.
+        self.assertIn("bot->GetMotionMaster()->Clear();", action)
+        self.assertNotIn("Clear(false, true)", action)
+        self.assertIn("bot->GetMotionMaster()->MoveIdle();", action)
+        # A chase's or a follow's Finalize leaves its spline walking: stopped every tick it is not finished.
+        self.assertIn("bool const splineFinalized = bot->movespline->Finalized();", action)
+        self.assertLess(action.index("bot->movespline->Finalized()"), action.index("bot->GetMotionMaster()->Clear();"))
+        self.assertIn("if (still.stopSpline)\n        ai->StopMoving();", action)
+        self.assertIn('"BossTacticsFreeze"', ACTIONS)
+        self.assertIn('"ms=%u,moved_yd=%.2f"', ACTIONS)
+
+    def test_the_fight_scan_is_cached_once_per_bot_and_update(self):
+        # The target pick asks the scan once per candidate and the freeze multiplier once per action: one table read
+        # and one world walk per bot per AI tick, keyed by the bot, its tick and the table (a reload replaces it).
+        self.assertIn("struct FightScanCache", ACTIONS)
+        self.assertIn("thread_local FightScanCache t_fightScan;", ACTIONS)
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
+        self.assertIn("std::uint32_t const tick = ai ? ai->UpdateTick() : 0;", scan)
+        self.assertIn("FightScanCacheHit(t_fightScan.live, t_fightScan.ai == ai, t_fightScan.bot == bot, "
+                      "t_fightScan.tick,", scan)
+        self.assertIn("t_fightScan.tick = tick;", scan)
+        self.assertIn("t_fightScan.table = &table;", scan)
+        self.assertLess(scan.index("return t_fightScan.fight;"), scan.index("const uint32 mapId"))
+        self.assertIn("uint32 UpdateTick() const { return aiUpdateTick; }", PLAYERBOT_AI_H)
+        self.assertIn("++aiUpdateTick;", PLAYERBOT_AI_CPP)
+
+    def test_the_dps_hold_prune_throttle_is_read_before_the_lock(self):
+        # Every candidate read asks for the prune; the once-a-second test must not take the global lock.
+        self.assertIn("std::atomic<std::uint32_t> g_dpsHoldPruneMs{0};", ACTIONS)
+        prune = body(ACTIONS, "void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)", "\n}\n")
+        throttle = prune.index("g_dpsHoldPruneMs.load(std::memory_order_relaxed)")
+        self.assertLess(throttle, prune.index("std::lock_guard<std::mutex> lock(g_dpsHoldMutex)"))
+        # Two threads that pass the unlocked test re-check under the lock.
+        self.assertGreaterEqual(prune.count("g_dpsHoldPruneMs.load(std::memory_order_relaxed)"), 2)
+        self.assertIn("g_dpsHoldPruneMs.store(nowMs, std::memory_order_relaxed);", prune)
+
+    def test_the_freeze_and_flee_triggers_skip_the_scan_with_the_key_off(self):
+        # Both triggers sit in the reaction engine, which runs every update: without the key (or on a map with none of
+        # the six aura kinds) the scan can only answer 0, so the trigger must not pay for it.
+        for name in ("bool BossTacticsFreezeTrigger::IsActive()", "bool BossTacticsFleeTrigger::IsActive()"):
+            trigger = body(TRIGGERS, name)
+            self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap("
+                          "bot->GetMapId())", trigger, name)
+            self.assertLess(trigger.index("HasAuraTacticMap(bot->GetMapId())"), trigger.index("ScanBossTactics(ai, bot)"),
+                            name)
+        # The freeze trigger still closes the episode it may have open before it returns.
+        freeze = body(TRIGGERS, "bool BossTacticsFreezeTrigger::IsActive()")
+        guard = freeze[freeze.index("HasAuraTacticMap(bot->GetMapId())"):freeze.index("ScanBossTactics(ai, bot)")]
+        self.assertIn("FreezeEpisodeTick(ai, bot, 0)", guard)
+
+    def test_the_raid_bomb_trigger_defers_to_an_active_flee_row(self):
+        bomb = body(DUNGEON_TRIGGERS, "bool RaidBombDebuffTrigger::IsActive()")
+        self.assertIn("FleeRowListsAura(ai, bot, spellId)", bomb)
+        after = bomb[bomb.index("FleeRowListsAura(ai, bot, spellId)"):]
+        self.assertIn("continue;", after[:after.index("return true;")])
+        helper = body(ACTIONS, "bool ai::FleeRowListsAura(")
+        self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics", helper)
+        self.assertIn("HasAuraTacticMap(bot->GetMapId())", helper)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', helper)
+        self.assertIn("BossTacticKind::FleeOnAura", helper)
+
+    def test_the_new_kinds_are_read_from_the_key_gated_scan(self):
+        # The rows come from the fight scan, which drops the six aura kinds with the key off (step 1), so neither
+        # helper reads the table directly.
+        freeze = body(ACTIONS, "std::uint32_t ai::FreezeAuraOnBot(")
+        self.assertIn("for (const BossTacticRow* row : fight.rows)", freeze)
+        self.assertIn("BossTacticKind::FreezeOnAura", freeze)
+        self.assertIn("bot->HasAura(row->spellId)", freeze)
+        flee = body(ACTIONS, "const BossTacticRow* ai::ActiveFleeRow(")
+        self.assertIn("for (const BossTacticRow* row : fight.rows)", flee)
+        self.assertIn("BossTacticKind::FleeOnAura", flee)
+        self.assertIn("bot->HasAura(row->spellId)", flee)
+        self.assertIn('"BossTacticsFlee"', ACTIONS)
+        self.assertIn('walk=%s', ACTIONS)
+
+    def test_the_runout_body_is_shared_and_the_hard_coded_path_is_unchanged(self):
+        self.assertIn("bool RunOutFromGroup(MovementAction& mover, PlayerbotAI* ai, Player* bot, float radius, "
+                      "bool requireHealer);", MOVEMENT)
+        self.assertIn("friend bool RunOutFromGroup(", MOVEMENT)
+        self.assertIn("bool ai::RunOutFromGroup(", DUNGEON_ACTIONS)
+        hard = body(DUNGEON_ACTIONS, "bool RaidBombRunoutAction::Execute(")
+        self.assertIn("RunOutFromGroup(*this, ai, bot, sPlayerbotAIConfig.bombRunoutDistance, false)", hard)
+        flee = body(ACTIONS, "bool BossTacticsFleeAction::Execute(")
+        self.assertIn("RunOutFromGroup(*this, ai, bot, radius, true)", flee)
+        self.assertIn("GetRaidTankRoles(ai).MainTank()", flee)
+        self.assertIn("MoveTo(tank, radius)", flee)
+        self.assertIn("PlayerbotAI::IsTank(bot)", flee)
+        # The healer list is the row path's own: the hard-coded runout passes false and keeps its old step.
+        self.assertIn("if (requireHealer && PlayerbotAI::IsHeal(member))", DUNGEON_ACTIONS)
+        self.assertIn("healers.data(), healers.size()", DUNGEON_ACTIONS)
+
+    def test_the_contexts_register_the_new_action_and_trigger(self):
+        for name, cls in (("boss tactics freeze", "BossTacticsFreezeAction"),
+                          ("boss tactics flee", "BossTacticsFleeAction")):
+            self.assertIn('creators["%s"]' % name, ACTION_CONTEXT)
+            self.assertIn("%s(ai)" % cls, ACTION_CONTEXT)
+            self.assertIn('creators["%s"]' % name, TRIGGER_CONTEXT)
+        self.assertIn("BossTacticsFreezeTrigger(ai)", TRIGGER_CONTEXT)
+        self.assertIn("BossTacticsFleeTrigger(ai)", TRIGGER_CONTEXT)
+
+    def test_declarations_match_definitions(self):
+        pairs = ((ACTIONS_H, "class BossTacticsScanScope", ACTIONS,
+                  "ai::BossTacticsScanScope::~BossTacticsScanScope()"),
+                 (ACTIONS_H, "class BossTacticsFreezeAction", ACTIONS,
+                  "bool BossTacticsFreezeAction::Execute(Event& event)"),
+                 (ACTIONS_H, "class BossTacticsFleeAction", ACTIONS,
+                  "bool BossTacticsFleeAction::Execute(Event& event)"),
+                 (ACTIONS_H, "class BossTacticsFreezeMultiplier", ACTIONS,
+                  "float BossTacticsFreezeMultiplier::GetValue(Action* action)"),
+                 (TRIGGERS_H, "class BossTacticsFreezeTrigger", TRIGGERS,
+                  "bool BossTacticsFreezeTrigger::IsActive()"),
+                 (TRIGGERS_H, "class BossTacticsFleeTrigger", TRIGGERS,
+                  "bool BossTacticsFleeTrigger::IsActive()"))
+        for header, declaration, source, definition in pairs:
+            self.assertIn(declaration, header)
+            self.assertIn(definition, source)
+
+
+class FightScanCacheLifetime(unittest.TestCase):
+    """The per-update fight scan cache: opened and cleared by UpdateAI, never served outside one."""
+
+    def test_updateai_opens_the_scope_and_its_end_clears_the_slot(self):
+        update = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)\n{", "\n}\n")
+        self.assertIn("ai::BossTacticsScanScope bossTacticsScan;", update)
+        self.assertLess(update.index("ai::BossTacticsScanScope bossTacticsScan;"), update.index("++aiUpdateTick;"))
+        scope = body(ACTIONS, "ai::BossTacticsScanScope::~BossTacticsScanScope()", "\n}\n")
+        self.assertIn("t_fightScan.live = false;", scope)
+        self.assertIn("t_fightScan.ai = nullptr;", scope)
+        self.assertIn("t_fightScan.fight = BossTacticsFight();", scope)
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(", "\n}\n")
+        self.assertIn("FightScanCacheHit(t_fightScan.live,", scan)
+        # Outside an update a scan is answered fresh and stores nothing.
+        self.assertIn("if (ai && t_fightScan.live)\n    {", scan)
+
 
 
 if __name__ == "__main__":

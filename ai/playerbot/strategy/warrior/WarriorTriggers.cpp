@@ -5,6 +5,14 @@
 
 using namespace ai;
 
+bool SweepingStrikesNearCcTrigger::IsActive()
+{
+    // Aura first: only a warrior with Sweeping Strikes up pays for the scan.
+    if (!ai->HasAura("sweeping strikes", bot))
+        return false;
+    return SweepingStrikesNearCc(ai, bot, CcSweepingStrikesRadius);
+}
+
 bool BattleStanceTrigger::IsActive()
 {
     return !ai->IsTank(bot) && BuffTrigger::IsActive();

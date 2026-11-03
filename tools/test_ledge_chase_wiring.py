@@ -118,7 +118,9 @@ class StrandedLeadTeleportWiringTest(unittest.TestCase):
     def test_order_text_matches_the_policy(self):
         at(self.glue, '"rescue from %f %f %f to %f %f %f"')
         p = body(POLICY, "inline bool StrandedTeleportTick(")
-        send = at(p, 'order = "rescue from " + now + " to " + Num(p.x) + " " + Num(p.y) + " " + Num(p.z);')
+        # The destination is the point chosen this tick (the plan point, or the party's spot when live hostiles hold
+        # the point), never the plan point blindly.
+        send = at(p, 'order = "rescue from " + now + " to " + Num(tx) + " " + Num(ty) + " " + Num(tz);')
         # The spot is this tick's facts, read right before the send (a lead bot that moved on the island).
         fresh = at(p, "r.strandX = f.leadX;\n    r.strandY = f.leadY;\n    r.strandZ = f.leadZ;")
         self.assertLess(fresh, at(p, 'std::string const now = Num(r.strandX) + " " + Num(r.strandY) + " " + Num(r.strandZ);'))
@@ -170,7 +172,7 @@ class StrandedLeadTeleportWiringTest(unittest.TestCase):
     def test_the_firing_stand_keeps_the_bots_ledge_height(self):
         f = body(COMMANDS, "void ReadPullStand(")
         guard = at(f, "static_assert(kStandLedgeDropYd == ai::kRunnerLedgeDropYd,")
-        self.assertLess(guard, at(f, "ShotStandOnPath(points, goal, f.leadShotYd - kShotMarginYd, sees);"))
+        self.assertLess(guard, at(f, "ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,"))
 
 
 if __name__ == "__main__":

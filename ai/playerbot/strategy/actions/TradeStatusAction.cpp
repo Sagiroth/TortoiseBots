@@ -290,17 +290,7 @@ bool TradeStatusAction::CheckTrade()
         {
             std::string name = trader->GetName();
             if (bot->GetGroup() && bot->GetGroup()->IsMember(bot->GetTrader()->getObjectGuid()) && ai->HasRealPlayerMaster())
-            {
                 ai->TellPlayerNoFacing(trader, "Thank you " + name + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-            }
-            else
-            {
-                // Issue #1108: the whisper to the trader stays, the line in
-                // /say for everybody around follows
-                // AiPlayerbot.EnableBroadcasts.
-                if (sPlayerbotAIConfig.enableBroadcasts)
-                    bot->Say("Thank you " + name + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
-            }
         }
         return isGettingItem;
     }

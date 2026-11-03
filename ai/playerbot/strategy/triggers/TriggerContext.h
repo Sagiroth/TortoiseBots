@@ -91,6 +91,7 @@ namespace ai
             creators["loot available"] = [](PlayerbotAI* ai) { return new LootAvailableTrigger(ai); };
             creators["no attackers"] = [](PlayerbotAI* ai) { return new NoAttackersTrigger(ai); };
             creators["no target"] = [](PlayerbotAI* ai) { return new NoTargetTrigger(ai); };
+            creators["dangerous elite near"] = [](PlayerbotAI* ai) { return new DangerousEliteNearTrigger(ai); };
             creators["target in sight"] = [](PlayerbotAI* ai) { return new TargetInSightTrigger(ai); };
             creators["not dps target active"] = [](PlayerbotAI* ai) { return new NotDpsTargetActiveTrigger(ai); };
             creators["not dps aoe target active"] = [](PlayerbotAI* ai) { return new NotDpsAoeTargetActiveTrigger(ai); };
@@ -292,7 +293,6 @@ namespace ai
             creators["rpg buy petition"] = [](PlayerbotAI* ai) { return new RpgBuyPetitionTrigger(ai); };
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseTrigger(ai); };
             creators["rpg quest use"] = [](PlayerbotAI* ai) { return new RpgQuestUseTrigger(ai); };
-            creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatTrigger(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellTrigger(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftTrigger(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulTrigger(ai); };
@@ -322,11 +322,15 @@ namespace ai
             creators["enter boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsEnterTrigger(ai); };
             creators["leave boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsLeaveTrigger(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptTrigger(ai); };
+            creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepTrigger(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstTrigger(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathTrigger(ai); };
+            creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldTrigger(ai); };
             creators["boss tactics front"] = [](PlayerbotAI* ai) { return new BossTacticsFrontTrigger(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastTrigger(ai); };
+            creators["boss tactics freeze"] = [](PlayerbotAI* ai) { return new BossTacticsFreezeTrigger(ai); };
+            creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeTrigger(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandTrigger(ai); };
             creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectTrigger(ai); };
             creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorTrigger(ai); };

@@ -7,6 +7,7 @@
 #include "playerbot/TankAddPickupPolicy.h"
 #include "playerbot/policy/combat/AoeTauntPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
@@ -25,6 +26,8 @@
 #include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/actions/PositionAction.h"
 #include "playerbot/AvoidAoePolicy.h"
+#include "../../../../runtime/CcOrderFamily.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 
 #include <regex>
 
@@ -1343,6 +1346,16 @@ bool HasCcTargetTrigger::IsActive()
 
 bool HasCcTargetTrigger::CcTargetPending()
 {
+    // The run's automatic cc order names the family it picked. Only that
+    // class row fires on its mark: a Seduction order must not turn into the
+    // warlock's higher-priority Fear, which runs the mob into other packs.
+    // A hand-written order carries no family and leaves every row as it was;
+    // outside a running run the stored family is not consulted, so a finished
+    // run leaves the bot's own choices behind.
+    if (TortoiseBots::BotCommands::IsInRunningDungeonRun(bot) &&
+        !TortoiseBots::DungeonRun::CcOrderFamilyAllows(AI_VALUE(std::string, "run cc family"), getName()))
+        return false;
+
     // mod-playerbots d9ee5198/#2648: inside a non-raid dungeon the generic
     // CC never fires on a free pick — only on this bot's assigned raid
     // mark ("rti cc target"). Open world keeps today's free CC; raids
@@ -2043,4 +2056,13 @@ bool PetAttackTrigger::IsActive()
         return false;
 
     return true;
+}
+
+bool DangerousEliteNearTrigger::IsActive()
+{
+    // Standing elites are already kept out of grind and travel picks by their
+    // spawn point; only one that walks around comes to the bot.
+    Creature* elite = dynamic_cast<Creature*>(AI_VALUE(Unit*, "dangerous elite"));
+    return elite && elite->GetDefaultMovementType() != IDLE_MOTION_TYPE &&
+        bot->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD);
 }

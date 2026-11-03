@@ -97,10 +97,6 @@ void RpgStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "rpg use",
         NextAction::array(0, new NextAction("rpg use", 1.001f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "rpg ai chat",
-        NextAction::array(0, new NextAction("rpg ai chat", 1.003f), NULL)));
 }
 
 void RpgStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)

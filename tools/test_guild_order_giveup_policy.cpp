@@ -118,12 +118,28 @@ int main()
     CHECK(IsOrderNoProgress(3 * 3600));
     CHECK(IsOrderNoProgress(0xFFFFFFFFu));
 
-    // Reported progress never drops.
-    CHECK(ReportedHave(0, 5, true, 0) == 5);
-    CHECK(ReportedHave(0, 3, true, 5) == 5);
-    CHECK(ReportedHave(4, 0, false, 7) == 7);
-    CHECK(ReportedHave(4, 0, false, 2) == 4);
-    CHECK(ReportedHave(4, 9, true, 7) == 13);
+    // The row's have count is delivered only and never drops; the bags and
+    // mailbox travel in a separate carry count that may fall on deposit.
+    CHECK(ReportedHave(0, 0) == 0);
+    CHECK(ReportedHave(0, 5) == 5);
+    CHECK(ReportedHave(4, 0) == 4);
+    CHECK(ReportedHave(4, 7) == 7);
+    CHECK(ReportedHave(9, 7) == 9);
+    CHECK(ReportedCarry(true, true, 4, 2, 0) == 6);
+    CHECK(ReportedCarry(true, true, 0, 0, 9) == 0);
+    CHECK(ReportedCarry(true, false, 4, 2, 6) == 6);
+    CHECK(ReportedCarry(false, true, 4, 2, 6) == 6);
+    CHECK(ReportedCarry(false, false, 0, 0, 6) == 6);
+
+    // A list reply reads a live row's bags; a terminal row reports the carry
+    // Tick last stored on it, online or offline, and so does an offline bot
+    // instead of zero.
+    CHECK(ListedCarry(false, true, 7, 3) == 7);
+    CHECK(ListedCarry(false, true, 0, 5) == 0);
+    CHECK(ListedCarry(false, false, 7, 3) == 3);
+    CHECK(ListedCarry(false, false, 0, 6) == 6);
+    CHECK(ListedCarry(true, true, 7, 3) == 3);
+    CHECK(ListedCarry(true, false, 0, 6) == 6);
 
     // Only a real online rise resets the zone-move clock.
     CHECK(IsNewItemRise(true, true, 6, 5));
@@ -131,6 +147,14 @@ int main()
     CHECK(!IsNewItemRise(true, true, 4, 5));
     CHECK(!IsNewItemRise(true, false, 6, 0));
     CHECK(!IsNewItemRise(false, true, 6, 5));
+    // A delivering order with nothing in bags or mail goes back to work.
+    CHECK(DeliveryLostItsStock(OrderState::Delivering, OrderReason::BagsFull, 0, 1, 0));
+    CHECK(DeliveryLostItsStock(OrderState::Delivering, OrderReason::None, 1, 3, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::BagsFull, 0, 1, 1));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::Timeout, 0, 5, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Delivering, OrderReason::None, 3, 3, 0));
+    CHECK(!DeliveryLostItsStock(OrderState::Working, OrderReason::None, 0, 1, 0));
+
     if (failures == 0)
         std::printf("test_guild_order_giveup_policy ok\n");
     return failures ? 1 : 0;

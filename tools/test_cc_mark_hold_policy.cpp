@@ -144,6 +144,25 @@ int main()
     // A ready CC mark still counts when it is the rogue's own target.
     CHECK(CcCancelBladeFlurry(true, CcGuardCountsUnit(true), true));
 
+    // Sweeping Strikes is the warrior's Blade Flurry: a swing copy onto a mob
+    // in melee reach, so the same rule at the warrior's own reach.
+    CHECK(CcCancelSwingSplashBuff(true, true, false));
+    CHECK(CcCancelSwingSplashBuff(true, false, true));
+    CHECK(!CcCancelSwingSplashBuff(true, false, false));
+    CHECK(!CcCancelSwingSplashBuff(false, true, true));
+    CHECK(CcSweepingStrikesRadius >= 5.0f);
+    CHECK(CcSweepingStrikesRadius <= CcBladeFlurryCancelRadius);
+
+    // A DoT must not go on a CC mark or a crowd-controlled unit with the run's
+    // automatic crowd control on (the tick breaks the hold); without the key a
+    // class bot keeps its held-mark-only behaviour.
+    CHECK(!CcDotTargetAllowed(true, false, true));   // a CC mark, auto cc on
+    CHECK(!CcDotTargetAllowed(true, true, false));   // a held mark, either way
+    CHECK(!CcDotTargetAllowed(false, true, true));   // ... held is always out
+    CHECK(CcDotTargetAllowed(false, false, false));  // key off, nothing held
+    CHECK(CcDotTargetAllowed(false, false, true));   // key off: a mark is no veto
+    CHECK(CcDotTargetAllowed(true, false, false));   // auto cc on, no CC there
+
     // CC chooser: the assigned mark, once picked, is never replaced by a
     // later free pick; any other interim pick may still be replaced.
     CHECK(CcChooserKeepsResult(true));
