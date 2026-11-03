@@ -112,6 +112,10 @@ bool HasAreaDebuffValue::Calculate()
         if (!go)
             continue;
 
+        // A seek_aura row's cloud is no debuff to step out of: the raid stands in it for the poison.
+        if (IsSoughtCloudFor(ai, bot, go))
+            continue;
+
         SpellEntry const* spellProto = sSpellTemplate.LookupEntry<SpellEntry>(go->GetSpellId());
         if (!spellProto)
             continue;
