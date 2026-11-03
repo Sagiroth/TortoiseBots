@@ -33,14 +33,19 @@ class TeleportReturnWiringTest(unittest.TestCase):
         fetch = body(COMMANDS, "bool RunFetchReturn(Player* commander, std::string const& order, std::string& answer)\n{", "\n}\n")
         self.assertIn("BotManager::Instance().IsBot(slot.guid)", fetch)  # bot-only parties
         self.assertIn("PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid())", fetch)
-        # Combat drops only after the teleport went: a refused one leaves the fight untouched.
+        # Nothing is undone before the teleport went: a refused one leaves the bot's walk, its fight, its threat and
+        # its pet exactly as they were, so the motion clear, the stop and the combat drops all follow the answer.
         drop = fetch.index("sServerFacade.GetHostileRefManager(bot).deleteReferences();")
         stop = fetch.index("bot->CombatStop();")
+        pet = fetch.index("sServerFacade.GetHostileRefManager(pet).deleteReferences();")
+        clear = fetch.index("bot->GetMotionMaster()->Clear(false);")
+        motionStop = fetch.index("bot->StopMoving();")
         tele = fetch.index("bot->TeleportTo(lead->GetMapId(), x, y, z")
         refused = fetch.index("(the teleport was refused)")
         self.assertLess(tele, refused)
-        self.assertLess(refused, drop)
-        self.assertLess(refused, stop)
+        for after in (drop, stop, pet, clear, motionStop):
+            self.assertLess(refused, after)
+        self.assertLess(tele, clear)
         self.assertIn("bot->ExecuteTeleportNear();", fetch)
         self.assertIn('"fetch %f %f %f%n"', fetch)
         # The policy's refusal rule matches the same prefix.

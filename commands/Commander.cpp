@@ -7473,15 +7473,16 @@ bool RunFetchReturn(Player* commander, std::string const& order, std::string& an
             refused += (refused.empty() ? "" : ", ") + name + " (" + why + ")";
             continue;
         }
-        // The teleport first (a near one, on the lead bot's map): a refused one leaves the bot's fight as it was.
-        // Only then its combat and its pet's are dropped (off every threat list), so nothing follows it in.
-        bot->GetMotionMaster()->Clear(false);
-        bot->StopMoving();
+        // The teleport first (a near one, on the lead bot's map): a refused one leaves the bot's walk, fight and pet
+        // exactly as they were. Only then its walk is stopped and its combat and its pet's are dropped (off every
+        // threat list), so nothing follows it in.
         if (!bot->TeleportTo(lead->GetMapId(), x, y, z, lead->GetOrientation(), 0))
         {
             refused += (refused.empty() ? "" : ", ") + name + " (the teleport was refused)";
             continue;
         }
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
         if (bot->GetSession() && bot->GetSession()->IsHeadless())
         {
             if (bot->IsBeingTeleportedNear())
