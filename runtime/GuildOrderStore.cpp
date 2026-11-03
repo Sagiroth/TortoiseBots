@@ -1719,42 +1719,23 @@ public:
         }
     }
 
-    // Online bots read from the world, the rest from one `characters` query
-    // for their last logout. A bot missing from both is left out, so its rows
-    // wait.
+    // Online bots carry their session start. Every other bot is offline with
+    // the default presence, so its rows can only expire by the mail lifetime.
     static std::unordered_map<uint32_t, RelistBotPresence> ReadRelistPresence(
         std::vector<uint32_t> const& bots)
     {
         std::unordered_map<uint32_t, RelistBotPresence> out;
-        std::string offline;
         for (uint32_t guidLow : bots)
         {
+            RelistBotPresence p;
             Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, guidLow));
             if (bot && bot->IsInWorld())
             {
-                RelistBotPresence p;
                 p.online = true;
                 p.loginSec = static_cast<uint64_t>(bot->GetLoginTime());
-                out[guidLow] = p;
-                continue;
             }
-            if (!offline.empty())
-                offline += ",";
-            offline += std::to_string(guidLow);
+            out[guidLow] = p;
         }
-        if (offline.empty())
-            return out;
-        std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
-            "SELECT `guid`, `logout_time` FROM `characters` WHERE `guid` IN (%s)", offline.c_str()));
-        if (!result)
-            return out;
-        do
-        {
-            Field* fields = result->Fetch();
-            RelistBotPresence p;
-            p.logoutSec = fields[1].GetUInt64();
-            out[fields[0].GetUInt32()] = p;
-        } while (result->NextRow());
         return out;
     }
 

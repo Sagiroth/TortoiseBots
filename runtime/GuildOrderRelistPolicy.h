@@ -229,23 +229,22 @@ inline bool RelistClaimMailHoldsValue(RelistLedgerEntry const& entry, RelistMail
 // money and are sent without an explicit delay, AuctionHouseMgr.cpp:313, 363).
 inline constexpr uint64_t kRelistMailLifetimeSec = 30 * 24 * 60 * 60;
 
-// Nothing returned after three days AND the bot has been online after the
-// auction ended: the posting can no longer report on the auction house, so
-// the entry stops being a payable debt.
+// Nothing returned after three days AND the bot's current session began after
+// the auction ended and has lasted the settle time: the posting can no longer
+// report on the auction house, so the entry stops being a payable debt.
 inline constexpr uint64_t kRelistStaleSec = 3 * 24 * 60 * 60;
 
-// How long a bot has to stay online after the auction ended before a mail
-// that has not shown up is trusted not to exist.
+// How long the bot's current session has to last, having begun after the
+// auction ended, before a mail that has not shown up is trusted not to exist.
 inline constexpr uint64_t kRelistMailSettleSec = 60 * 60;
 
-// What the module knows about the bot's presence: online now (and since when),
-// or offline with the time of its last logout (the characters table's
-// `logout_time`, 0 when unknown).
+// What the module knows about the bot's presence: online now and since when
+// (the session start). Any other bot is offline, with the default presence:
+// no login is known for it, so only the mail lifetime can expire its rows.
 struct RelistBotPresence
 {
     bool online = false;
-    uint64_t loginSec = 0;  // session start, when online
-    uint64_t logoutSec = 0; // last logout, when offline
+    uint64_t loginSec = 0; // session start, when online
 };
 
 // When the listing's mail could first have been waiting: the auction's end.
@@ -255,19 +254,15 @@ inline uint64_t RelistEndSec(RelistLedgerEntry const& entry)
 }
 
 // Whether the bot has been online long enough after the auction's end to have
-// read the mail the auction left. An online bot counts from the later of its
-// login and the auction's end; an offline bot needs a logout that follows the
-// end by the settle time (it was online up to then).
+// read the mail the auction left: the current session must have begun after
+// the end and lasted the settle time. An offline bot never counts. Its last
+// logout says nothing about a login, so its rows wait for the mail lifetime.
 inline bool RelistBotSawMail(RelistLedgerEntry const& entry, RelistBotPresence const& presence,
     uint64_t nowSec)
 {
-    uint64_t const end = RelistEndSec(entry);
-    if (presence.online)
-    {
-        uint64_t const since = presence.loginSec > end ? presence.loginSec : end;
-        return nowSec >= since + kRelistMailSettleSec;
-    }
-    return presence.logoutSec >= end + kRelistMailSettleSec;
+    if (!presence.online || presence.loginSec <= RelistEndSec(entry))
+        return false;
+    return nowSec >= presence.loginSec + kRelistMailSettleSec;
 }
 
 enum class RelistExpiry : uint8_t
@@ -279,7 +274,8 @@ enum class RelistExpiry : uint8_t
 
 // Whether the store may drop a row. A received row never expires: its value is
 // in the bot's hands. A posted row waits for its mail until the bot has been
-// online after the auction's end (then three days with nothing back drops it),
+// online in a session that began after the auction's end and lasted an hour
+// (then three days with nothing back drops it),
 // and whatever happens is dropped once the core would have deleted the mail.
 // A claimed row is dropped past the mail lifetime only while its bot is
 // offline: an online bot settles it by the next mail read.
