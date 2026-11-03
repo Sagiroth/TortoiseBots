@@ -968,6 +968,18 @@ AiPlayerbot.DungeonRunAuraTactics = 0
 # 1 - on
 AiPlayerbot.DungeonRunUseObject = 0
 
+# A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
+AiPlayerbot.DungeonRunSeekAura = 0
+
+# A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
+AiPlayerbot.DungeonRunPullGate = 0
+
+# A bot charmed by a creature yields its AI to the charmer, and no area action lands on a charmed group member.
+AiPlayerbot.DungeonRunCharmYield = 0
+
+# A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
+AiPlayerbot.DungeonRunBossSpread = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills
