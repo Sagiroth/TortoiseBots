@@ -44,6 +44,32 @@ namespace ai
     // lowest health among the eligible candidates, the lowest guid on a tie (BossTacticsPolicy's PickSoleKill).
     std::uint64_t SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry);
 
+    // The linked_death group ("die together") the fight holds, its members as the pick sees them. `active` is false
+    // when the map has no row of the kind. The group and its members come from the table's map rows and a grid search
+    // of the group's entries, never from the fight's units: under "focus rti targets" those collapse to the raid mark.
+    // Any bot may ask (the AoE density filter leaves a held member out); the pick below is the free DPS bots' only.
+    struct BossLinkedDeathScan
+    {
+        bool active = false;
+        std::uint8_t groupId = 0;           // the group (the rows' priority), so one anchor's groups are told apart
+        float param = 0.0f;                 // the group's hold percent
+        std::uint32_t anchor = 0;           // the group's anchor (the rows' boss_entry)
+        std::vector<LinkedMember> members;  // the group's living, fighting units within kHoldKillRangeYd of the bot
+        std::vector<Unit*> units;           // the same order: the unit of each member
+        std::vector<std::uint32_t> order;   // the release burn's order (empty: the ordinary released pick)
+        bool released = false;              // every living member at or below param % (LinkedDeathReleased)
+        // ... and the release latch (kLinkedDeathLatchMs): a member died while released, so the burn runs on even
+        // if a heal or a raise puts a member back above param %.
+        bool latched = false;
+    };
+    BossLinkedDeathScan ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot);
+
+    // The group member this free DPS bot attacks under the linked_death tactic, or null. Gated by
+    // AiPlayerbot.DungeonRunLinkedDeath and the "boss tactics" strategy; null while the group is released (every living
+    // member at or below param %, when the ordinary pick burns them together), and for tanks, healers and bots under an
+    // explicit attack order.
+    Unit* FindBossLinkedDeath(PlayerbotAI* ai, Player* bot);
+
     // A listed spell being cast right now, by a creature in the fight.
     struct BossInterruptScan
     {
@@ -102,6 +128,15 @@ namespace ai
     {
     public:
         BossTacticsHoldKillAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics hold kill") {}
+        bool Execute(Event& event) override;
+    };
+
+    // On a linked_death group member that is not the equalise pick (another member stands higher): switch to the pick,
+    // so the damage is spread instead of being left on one member until it dies.
+    class BossTacticsLinkedDeathAction : public AttackAction
+    {
+    public:
+        BossTacticsLinkedDeathAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics linked death") {}
         bool Execute(Event& event) override;
     };
 

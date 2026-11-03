@@ -31,10 +31,13 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BotLfgOnlyWithPlayersOnline`](#aiplayerbotbotlfgonlywithplayersonline) | `1` | Groups form only while at least one real player is online. |
 | [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) | `6` | Joiners above which the run leader rests the party before a pull (needs the estimate on). |
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
+| [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
+| [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
 | [`AiPlayerbot.DungeonRunBotKeysForPlayers`](#aiplayerbotdungeonrunbotkeysforplayers) | `0` | `1`: the bots carry the dungeon keys and open the doors for a party with real players too; `0`: players bring their own key, and the bots stop at the door and ask. |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
 | [`AiPlayerbot.DungeonRunLightRest`](#aiplayerbotdungeonrunlightrest) | `1` | Before a small pull the party rests to light lines (60/35/25 to 75/60/45); before a boss, an event or a big pull the full ones. |
+| [`AiPlayerbot.DungeonRunLinkedDeath`](#aiplayerbotdungeonrunlinkeddeath) | `0` | `1`: free DPS bots equalise a `linked_death` group's health, hold every member at its `param` % and burn them together (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunLootFfa`](#aiplayerbotdungeonrunlootffa) | `0` | A run leader loot step whose item is another member's under the group loot rules sets free-for-all for the carrier's loot, then puts the method back. |
 | [`AiPlayerbot.DungeonRunMaxMinutes`](#aiplayerbotdungeonrunmaxminutes) | `180` | Time limit of a run leader run (`0` = none). |
 | [`AiPlayerbot.DungeonRunNearWipeStop`](#aiplayerbotdungeonrunnearwipestop) | `2` | Wipe events within the window that pause a raid run once the fight is over (`0` = off). |
@@ -200,6 +203,28 @@ Lets the run leader (`.bot run`) estimate how many creatures a pull would bring 
 
 </details>
 
+### `AiPlayerbot.DungeonRunAggroRingYd`
+How far a call for help carries in the ring estimate, in yards.
+**Default:** `20` · **Values:** `5` to `40` · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only read while [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) is `1`. A creature already counted calls every creature of its own faction template within this many yards of itself, for two hops, so a neighbour on the far side of the party's own family-assistance radius still comes. The server's `CreatureFamilyAssistanceRadius` is used instead when it is larger. The measured wakes that needed this were 11.0-19.5 yd apart while the server's radius is 10. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+
+</details>
+
+### `AiPlayerbot.DungeonRunAggroWalkRing`
+Makes the pull aggro estimate count what the party's walk to the pull, the stand and the fight point wake, and lets every creature already counted call its neighbours.
+**Default:** `0` · **Values:** `0` off (today's estimate), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only read while [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) is `1`. The estimate reads the navmesh walk from the lead bot to the pull's firing spot (at most 64 samples, its end always kept), the spot itself and the fight point, each widened by the party's spread (3 yd, 10 yd in a raid), and every creature counted calls its neighbours within [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) for two hops. A pull row's own bodies ceiling (the plan's `max_bodies`, the pulled creature included) replaces the config ceiling for that row, so a deliberately sized pull never rests; over it the note reads `pull estimate: N bodies over the ceiling M (plan|config): 0x...`. On the last move row before a pull the note also says once how many the coming pull would bring (`ahead: pull N brings ...`; `ahead: pull N estimate unavailable` when the row lists no creature on the map). Advice only: no order changes and no pause. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+
+</details>
+
 ### `AiPlayerbot.DungeonRunBotKeysForPlayers`
 Whether the bots carry the dungeon keys for a party that has real players in it.
 **Default:** `0` · **Values:** `0` players bring their own key, `1` the bots carry the keys and open the doors · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -241,6 +266,17 @@ Whether the run leader rests the party only to light lines before a small pull.
 <summary>How it works in detail</summary>
 
 **Light rest:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-10-23 (203 min of rest in 31 runs). Before a plain `pull` within the next 8 steps, or with no fight ahead, a rest starts only under 60 % health, 35 % healer mana or 25 % other mana and ends at 75 / 60 / 45; a bot still drinking above those lines holds the next order only while the lead bot itself is seated or eating. Before a `boss`, a `hold`, a `ritual`, a scripted event, a pull whose aggro estimate reads 8 joiners or more, or (with the estimate off) a pull whose pack in sight has 5 units or more, the full lines stand; such a big pack gets one rest to the full lines before its pull. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunLinkedDeath`
+Turns on the "die together" boss tactic: free DPS bots equalise a linked group's health, hold every member at the row's percent and burn them together.
+**Default:** `0` · **Values:** `0` off (DPS bots pick as before), `1` on (needs the boss tactics on and `linked_death` rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Linked death:** the AI boss tactics table's `linked_death` kind (see [Boss Tactics](../../play/boss-tactics.md)) marks a group that must die together: an `ai_boss_tactic` row lists one partner of the group, its `boss_entry` being the anchor, and its `param` a hold percent. While more than one member lives, every free DPS bot (never a tank or a healer) takes the living member with the highest health instead of the tank's victim, so the raid spreads its damage and the members stay level. A member at or below `param` percent is held — it is never the pick, the AoE density leaves it out, and an area cast or DoT that would reach it (within 10 yd of the action's target, or the bot) is stood down — while another living member stands above that. The veto ends with the hold, so AoE is allowed again once the group is released. A tank's own area actions (Thunder Clap, Consecration, Swipe) and the passive cleave toggles (Sweeping Strikes, Blade Flurry) get the same veto while a held member is in reach, and a free DPS bot whose current target is held stops attacking instead of nuking it; DoTs already ticking keep ticking. When every living member is at or below `param` percent the group is released: the release burn follows the row's `burn_order` (all DPS on the first living member of the list, then the next), and a release is latched once a member dies, so a heal or a raised member above `param` percent does not re-hold the group for 15 s. A group without a burn order keeps the old released pick (the lowest). The first use is Zul'Gurub's High Priest Thekal (14599) with the Zealots Lor'Khan (11347) and Zath (11348) at 2 %: each raises a dead sibling to full health 7 s after the death (with an 8 s fallback when its chosen raiser dies first), so the trio has to go down at once. The burn order is the raiser chain, Lor'Khan -> Zath -> Thekal, so every death kills the next corpse's raiser before its check; Lor'Khan's Greater Heal is an `interrupt` row. This is its own key because it changes every free DPS bot's target pick; the rows may exist with it off. An explicit `attack` order from a player still wins; a raid mark wins unless it names a member the hold is keeping alive, so a skull on a held member falls through to the equalise pick. A run leader's guard pickups move only the tank it orders, not the raid; and while the key is on the raid guard leaves the group's members alone (an `attack` order outranks the pick and would kill one alone).
 
 </details>
 

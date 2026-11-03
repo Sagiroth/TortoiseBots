@@ -56,6 +56,7 @@
 
 #include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
+#include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
 #include "RemoteCommanderTasks.h"
@@ -75,6 +76,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace TortoiseBots {
@@ -880,6 +882,11 @@ struct UnitFact
     bool joinersPatrol = false; // ... and a lone patrol alone puts that over the ceiling
     bool joinersRead = false;   // the count above is this step's (ReadPullJoiners judged the unit; a held
                                 // or off-index unit keeps its earlier read)
+    // The ring estimate (Facts::aggroWalkRing, ai::EstimateAggroRing): the bodies that come if this one is
+    // pulled, the target included, with their guids and whether its sight budget ran out.
+    std::uint32_t estBodies = 0;
+    std::vector<std::uint64_t> estGuids;
+    bool estLosBudget = false;
     // Pull step and hop units, when Facts::pullStand is set: the lead bot sees
     // it now (Unit::IsWithinLOSInMap).
     bool losLead = false;
@@ -1279,6 +1286,9 @@ struct Facts
     // The party (the commander's bound bots, the lead bot included).
     std::uint32_t total = 0, alive = 0, dead = 0;
     RaidFacts raid;                       // set on a raid binding with AiPlayerbot.DungeonRunRaid (off: every rule below as before)
+    // AiPlayerbot.DungeonRunLinkedDeath (default off): the boss tactics' die-together groups are live. The raid guard
+    // leaves their members to the group's own pick, and the run line reads the group (LinkedDeathNote).
+    bool linkedDeath = false;
     // The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop): this many near-wipe events within nearWipeStopWindowMs
     // pause the run once the fight is over (0: off; NearWipeStopCount keeps it to raids unless the party key is on).
     std::uint32_t nearWipeStopCount = 0;
@@ -1565,6 +1575,18 @@ struct Facts
     // (AiPlayerbot.DungeonRunAggroCeiling) while the estimate is on, 0 = off.
     // Off, the units carry no estimate and no pull ever waits for it.
     std::uint32_t joinerCeiling = 0;
+    // AiPlayerbot.DungeonRunAggroWalkRing: the ring estimate (ai::EstimateAggroRing) judges the units by
+    // their bodies against the row's own ceiling (a pull row's `item`, else joinerCeiling + 1), and the
+    // look-ahead estimate below is read. Off: every joiner note stays as it was.
+    bool aggroWalkRing = false;
+    // The look-ahead (ReadPullAhead), read on the last move row before a pull: the bodies that pull would
+    // bring, its ceiling, the pull row and the guids. aheadStep npos: not read.
+    std::uint32_t aheadBodies = 0;
+    std::uint32_t aheadCeiling = 0;
+    std::size_t aheadStep = static_cast<std::size_t>(-1);
+    std::vector<std::uint64_t> aheadGuids;
+    bool aheadLosBudget = false;    // its sight budget ran out: the count is high side
+    bool aheadUnavailable = false;  // the pull row lists no creature on the map: not read
     // AiPlayerbot.DungeonRunPullStand (HoldForShot): the key is on. Off (the
     // default) nothing below is read and the pull goes out as before, byte for byte.
     bool pullStand = false;
@@ -1656,6 +1678,9 @@ struct Run
 {
     const DungeonPlan* plan = nullptr;
     std::size_t step = 0;
+    // How many times the run entered the current step (ResetStep counts one): a walk back that
+    // revisits a row is a new pass, and the reads cached for the old one are stale.
+    std::uint32_t stepPass = 0;
     // Area triggers the plan's move steps name (ArmReachedTriggers): armed from the step on until one
     // fired for the run (NoteTriggerFired), then never again. triggerScan: the next step index to look at.
     std::size_t triggerScan = 0;
@@ -1664,6 +1689,14 @@ struct Run
     State state = State::Running;
     Phase phase = Phase::Begin;
     std::string note;        // what it does now, or why it paused
+    // The last health bracket of the linked_death note (the highest living member's hp in 5 % steps; -1 none read):
+    // the note is repeated only when it moves (LinkedDeathNote).
+    int linkedNotePct = -1;
+    std::string linkedNoteText;
+    // The group's entries seen alive on the last fight read, and each member's first death this fight: its entry and
+    // the fight time (ms). The note names them, so a walk tells a 15 s window from the 7 s one.
+    std::vector<std::uint32_t> linkedAlive;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> linkedDeaths;
 
     std::uint32_t phaseMs = 0;
     std::uint32_t stepIdleMs = 0;
@@ -2146,7 +2179,11 @@ struct Run
     bool joinerRest = false;                  // the rest check is due before the pull
     bool restForJoiners = false;              // the rest phase is the joiner rest: its time is not step idle time
     std::uint32_t joinerRests = 0;            // joiner rests used this step (kMaxJoinerRests)
-    std::string joinerNote;                   // "N joiners expected ..."
+    std::string joinerNote;                   // "N joiners expected ..." or the ring estimate's note
+    // The move row whose walk note already carries the look-ahead estimate (Facts::aheadStep), so the
+    // prefix goes out once a row (npos: none).
+    std::size_t aheadNotedStep = static_cast<std::size_t>(-1);
+    std::uint32_t aheadNotedPass = 0; // ... on which pass of that step
     // The pull stand (Facts::pullStand, HoldForShot): the unit the glue reads a
     // firing stand for on the next tick (0: none), the stands walked to per
     // unit this step, the stand walk under way (its unit and point), the time
@@ -2581,6 +2618,67 @@ struct Run
     std::uint32_t runBacks = 0;  // run backs this run (the report)
 };
 
+// The look-ahead estimate's one answer for a row (ReadPullAhead): the row it was computed on, the bodies, the
+// ceiling and their guids. Kept on the slot, so later ticks refill Facts from it instead of reading again.
+struct AheadEstimate
+{
+    std::size_t step = static_cast<std::size_t>(-1);
+    std::uint32_t pass = 0; // the pass of the step it was computed on (a walk back recomputes)
+    bool done = false;
+    std::uint32_t bodies = 0;
+    std::uint32_t ceiling = 0;
+    std::vector<std::uint64_t> guids;
+    bool losBudgetSpent = false;
+    bool unavailable = false; // the pull row lists no creature on the map
+};
+
+// The pull row's ring estimate, one per (row, pass, unit) (ReadPullJoiners): the glue reads it on the row's
+// first tick and refills the unit facts from it on the rest, so one row is one estimate, not one a tick.
+struct PullUnitEstimate
+{
+    bool read = false;
+    std::uint32_t bodies = 0;
+    std::vector<std::uint64_t> guids;
+    bool losBudgetSpent = false;
+};
+
+struct PullEstimateCache
+{
+    std::size_t step = static_cast<std::size_t>(-1);
+    // The run's stepPass the entries were read in (ResetStep bumps it: a wipe, a resume or a revisit
+    // of the row is a new pass, and the estimate read in the old one is stale).
+    std::uint32_t pass = 0;
+    std::unordered_map<std::uint64_t, PullUnitEstimate> units;
+
+    // Holds the entries for (row `at`, pass `passNo`). Another row or pass clears them, so entries of
+    // older passes are dropped as soon as a newer one is read.
+    void Hold(std::size_t at, std::uint32_t passNo)
+    {
+        if (step != at || pass != passNo)
+        {
+            step = at;
+            pass = passNo;
+            units.clear();
+        }
+    }
+
+    // The entry for `guid` on row `at` of pass `passNo`, cleared when another row or pass is read.
+    PullUnitEstimate& At(std::size_t at, std::uint32_t passNo, std::uint64_t guid)
+    {
+        Hold(at, passNo);
+        return units[guid];
+    }
+
+    // The row's read for `guid` in pass `passNo`, or null (another row or pass was read since).
+    PullUnitEstimate const* Find(std::size_t at, std::uint32_t passNo, std::uint64_t guid) const
+    {
+        if (step != at || pass != passNo)
+            return nullptr;
+        auto const it = units.find(guid);
+        return it == units.end() ? nullptr : &it->second;
+    }
+};
+
 inline const PlanStep* Current(const Run& r)
 {
     return r.plan && r.step < r.plan->steps.size() ? &r.plan->steps[r.step] : nullptr;
@@ -2663,6 +2761,60 @@ inline std::string GuidArg(std::uint64_t guid)
 inline std::string EntryArg(std::uint32_t entry, float x, float y, float z)
 {
     return "entry:" + std::to_string(entry) + "@" + Num(x) + "," + Num(y) + "," + Num(z);
+}
+
+// The bodies ceiling of a row (the ring estimate): a pull row's own `item`
+// (the plan's max_bodies), else the config ceiling in joiners + 1. 0: none.
+inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)
+{
+    return ai::PullCeilingBodies(s.kind == PlanStepKind::Pull ? s.item : 0, f.joinerCeiling);
+}
+
+// A pull estimate note with at most eight guids: "pull estimate: N bodies over
+// the ceiling M (plan|config): 0x..., 0x... (+K more)"; the sight budget is said.
+inline std::string EstimateNote(std::uint32_t bodies, std::uint32_t ceiling, bool plan,
+    const std::vector<std::uint64_t>& guids, bool budget)
+{
+    std::string note = "pull estimate: " + std::to_string(bodies) + " bodies over the ceiling " +
+        std::to_string(ceiling) + (plan ? " (plan)" : " (config)");
+    std::size_t const shown = std::min<std::size_t>(guids.size(), 8);
+    std::string list;
+    for (std::size_t i = 0; i < shown; ++i)
+        list += (i ? ", " : "") + GuidArg(guids[i]);
+    if (!list.empty())
+        note += ": " + list;
+    if (guids.size() > shown)
+        note += " (+" + std::to_string(guids.size() - shown) + " more)";
+    if (budget)
+        note += " (LOS budget spent)";
+    return note;
+}
+
+// The look-ahead's note (ReadPullAhead, Facts::ahead*): "" when there is nothing to say (no
+// ceiling, or the walk stays at or under it), else "ahead: pull <seq> brings N (ceiling M):
+// <guids> [(LOS budget spent)]", or "ahead: pull <seq> estimate unavailable" when the pull
+// row lists no creature on the map. At most eight guids, as the pull estimate's note.
+inline std::string AheadNoteText(const Facts& f)
+{
+    if (f.aheadStep == static_cast<std::size_t>(-1))
+        return std::string();
+    if (f.aheadUnavailable)
+        return "ahead: pull " + std::to_string(f.aheadStep + 1) + " estimate unavailable";
+    if (!f.aheadCeiling || f.aheadBodies <= f.aheadCeiling)
+        return std::string();
+    std::string ahead = "ahead: pull " + std::to_string(f.aheadStep + 1) + " brings " +
+        std::to_string(f.aheadBodies) + " (ceiling " + std::to_string(f.aheadCeiling) + ")";
+    std::size_t const shown = std::min<std::size_t>(f.aheadGuids.size(), 8);
+    std::string list;
+    for (std::size_t i = 0; i < shown; ++i)
+        list += (i ? ", " : "") + GuidArg(f.aheadGuids[i]);
+    if (!list.empty())
+        ahead += ": " + list;
+    if (f.aheadGuids.size() > shown)
+        ahead += " (+" + std::to_string(f.aheadGuids.size() - shown) + " more)";
+    if (f.aheadLosBudget)
+        ahead += " (LOS budget spent)";
+    return ahead;
 }
 
 inline void EnterPhase(Run& r, Phase p)
@@ -2887,6 +3039,8 @@ inline void DropFocus(Run& r)
 // fresh tries and ceilings).
 inline void ResetStep(Run& r)
 {
+    ++r.stepPass;
+    r.aheadNotedStep = static_cast<std::size_t>(-1); // a step entered again notes its walk again
     EnterPhase(r, Phase::Begin);
     r.stepIdleMs = 0;
     r.restDue = true;
@@ -3057,6 +3211,9 @@ inline void ResetStep(Run& r)
     r.guardReturn = false;
     r.offTankTurn = 0;
     r.raidBossFight = false;
+    r.linkedAlive.clear();
+    r.linkedDeaths.clear();
+    r.linkedNotePct = -1;
     r.raidGuardUnits.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
@@ -8983,7 +9140,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // judged; a unit held or out of the index keeps its earlier read, and its
     // count is not claimed). The joiners the pull really drew are read from the
     // fight and reported by JoinerReport, estimated or not.
-    if (f.joinerCeiling > 0 && u.joinersRead)
+    if (f.aggroWalkRing && u.joinersRead)
+        r.note += "; " + std::to_string(u.estBodies) + " bodies expected";
+    else if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
 }
 
@@ -11874,7 +12033,29 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         // kMaxJoinerRests such waits a step (counted when a rest really starts);
         // after that the pull goes out.
         std::string budgetNote;
-        if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
+        if (f.aggroWalkRing)
+        {
+            // The ring estimate: bodies against the row's own ceiling (a pull
+            // row's `item` first, deliberately sized pulls never rest).
+            std::uint32_t const ceiling = RowCeilingBodies(s, f);
+            if (ceiling && pick->estBodies > ceiling && !r.joinerHeld.count(pick->guid))
+            {
+                std::string const note = EstimateNote(pick->estBodies, ceiling,
+                    s.kind == PlanStepKind::Pull && s.item != 0, pick->estGuids, pick->estLosBudget);
+                if (r.joinerRests >= kMaxJoinerRests)
+                    budgetNote = note + ", rest budget used";
+                else
+                {
+                    r.joinerHeld.insert(pick->guid);
+                    r.joinerRest = true;
+                    r.standPullShotGuid = 0; // the pull never went out (the joiner rest holds this tick)
+                    r.joinerNote = note;
+                    r.note = r.joinerNote;
+                    return;
+                }
+            }
+        }
+        else if (f.joinerCeiling > 0 && pick->joiners > f.joinerCeiling && !r.joinerHeld.count(pick->guid))
         {
             if (r.joinerRests >= kMaxJoinerRests)
                 budgetNote = std::to_string(pick->joiners) + " joiners expected, rest budget used";
@@ -12086,6 +12267,29 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
 
 inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
 {
+    // The look-ahead estimate (Facts::aheadBodies): the last move row before the pull says once what
+    // the walk and the pull bring, over the pull's ceiling. Advice only: no order changes. It prefixes
+    // every note this row sets (a stand-pull row's hold note too) and marks the row done only where
+    // that note survives the tick.
+    bool const aheadDue = f.aggroWalkRing && f.aheadStep == r.step + 1 &&
+        !(r.aheadNotedStep == r.step && r.aheadNotedPass == r.stepPass);
+    std::string const ahead = aheadDue ? AheadNoteText(f) : std::string();
+    auto note = [&](std::string const& text)
+    {
+        r.note = ahead.empty() ? text : ahead + "; " + text;
+        if (aheadDue)
+        {
+            r.aheadNotedStep = r.step;
+            r.aheadNotedPass = r.stepPass;
+        }
+    };
+    // A later call (a pause, a stall) wrote its own note over the one above: the row's note did not
+    // survive the tick, so it is not marked and the next tick says it again.
+    auto keepNote = [&](std::string const& said)
+    {
+        if (aheadDue && r.note != said)
+            r.aheadNotedStep = static_cast<std::size_t>(-1);
+    };
     if (r.phase == Phase::AwaitPull)
     {
         AwaitPull(r);
@@ -12152,7 +12356,7 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         if (r.phase != Phase::Gather)
         {
             EnterPhase(r, Phase::Gather);
-            r.note = "gathering before a direct step";
+            note("gathering before a direct step");
             SendGather(r, f, order);
         }
         else if (StragglerLadderTick(r, f, order))
@@ -12169,7 +12373,8 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         return;
     if (r.detour)
     {
-        r.note = "walking around: the plan's point is off the walkable way";
+        note("walking around: the plan's point is off the walkable way");
+        std::string const said = r.note;
         if (WalkTo(r, f, r.detourX, r.detourY, r.detourZ, false, dt, order))
         {
             // A navmesh walk to a stand-in point: for a direct step it proves
@@ -12179,16 +12384,21 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
             NextStep(r, "arrived at the nearest reachable point, " +
                 Num(ai::PlanDistance(r.detourX, r.detourY, r.detourZ, s.x, s.y, s.z)) + " yd from the plan's");
         }
+        else
+            keepNote(said);
         return;
     }
     if (IsExactPoint(r.plan, r.step))
     {
-        r.note = "walking to an exact point";
+        note("walking to an exact point");
+        std::string const said = r.note;
         if (ExactWalkTo(r, f, r.step, dt, order))
         {
             NoteCheckpoint(r, r.step);
             NextStep(r, "arrived: the lead bot stands on the exact point");
         }
+        else
+            keepNote(said);
         return;
     }
     // AiPlayerbot.DungeonRunStandPullPreCc: the approach row of an authored stand-pull step ends at the last point of
@@ -12223,7 +12433,7 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
             else if (r.holdAheadMs < kHoldAheadWaitMs)
             {
                 r.holdAheadMs += dt;
-                r.note = "reading the last point outside the pack's wake reach";
+                note("reading the last point outside the pack's wake reach");
                 return;
             }
             else
@@ -12237,16 +12447,19 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
                 NextStep(r, "arrived at the hold point outside the pack's wake reach (the pull's CC goes out here)");
             }
             else
-                r.note = "to the hold point outside the pack's wake reach";
+                note("to the hold point outside the pack's wake reach");
             return;
         }
     }
-    r.note = noPreCcNote.empty() ? "walking" : noPreCcNote;
+    note(noPreCcNote.empty() ? "walking" : noPreCcNote);
+    std::string const said = r.note;
     if (WalkTo(r, f, s.x, s.y, s.z, s.kind == PlanStepKind::MoveDirect, dt, order))
     {
         NoteReached(r, f, r.step);
-        NextStep(r, "arrived");
+        NextStep(r, "arrived"); // this tick's note is "arrived": the row's walk note did not survive it
     }
+    else
+        keepNote(said);
 }
 
 // How far from a move step's point a stand-in may be (UseDetour, the glue's
@@ -14007,6 +14220,120 @@ inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
     return false;
 }
 
+// A unit entry of a linked_death group the fight has going: one of the group's rows names it, and two or more of the
+// group's living members are among the engaged units. The raid guard leaves such a unit to the group's own pick, the
+// same as a plan boss: an `attack <guid> <bot>` order is an explicit order, which outranks the pick, so the single
+// ordered dps would kill that member alone and the encounter's raiser would restore it. Off without
+// AiPlayerbot.DungeonRunLinkedDeath.
+inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry)
+{
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !entry)
+        return false;
+    for (const ai::LinkedDeathGroupKey& key : r.liveTactics->LinkedDeathGroups(r.plan->map))
+    {
+        const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, key.anchor);
+        if (!rows)
+            continue;
+        std::vector<std::uint32_t> entries;
+        bool member = false;
+        for (const ai::BossTacticRow& row : *rows)
+        {
+            if (row.kind != ai::BossTacticKind::LinkedDeath || row.priority != key.group)
+                continue;
+            if (std::find(entries.begin(), entries.end(), row.bossEntry) == entries.end())
+                entries.push_back(row.bossEntry);
+            if (std::find(entries.begin(), entries.end(), row.targetEntry) == entries.end())
+                entries.push_back(row.targetEntry);
+            member = member || entry == row.bossEntry || entry == row.targetEntry;
+        }
+        if (!member)
+            continue;
+        std::uint32_t living = 0;
+        for (const UnitFact& u : f.engagedUnits)
+            if (std::find(entries.begin(), entries.end(), u.entry) != entries.end())
+                ++living;
+        if (living >= 2)
+            return true;
+    }
+    return false;
+}
+
+// The linked_death note of a boss fight (ai_boss_tactic kind linked_death on the current boss step): the group's
+// living members among the engaged units, the highest of their health percentages and the burn order, with each
+// member's death time. `bracket` leaves the highest in 5 % steps (-1 when the note is empty) so the run line moves at
+// most 20 times a fight; `death` is set when a member's death was recorded this read, so the run line carries the
+// timing even when the bracket did not move (a walk can then tell a 15 s window from the 7 s one). "" outside a boss
+// step, with no live table, with no row of the kind, with the key off, or with no member engaged.
+inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)
+{
+    bracket = -1;
+    death = false;
+    if (!f.linkedDeath || !r.liveTactics || !r.plan || !Current(r))
+        return std::string();
+    const PlanStep& step = *Current(r);
+    if (step.kind != PlanStepKind::Boss || !step.entry)
+        return std::string();
+    const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, step.entry);
+    if (!rows)
+        return std::string();
+    ai::ActiveBossRows active;
+    active.reserve(rows->size());
+    for (const ai::BossTacticRow& row : *rows)
+        active.push_back(&row);
+    ai::LinkedDeathGroup group;
+    if (!ai::FindLinkedDeathGroup(active, step.entry, group))
+        return std::string();
+    std::string list, order;
+    std::uint32_t highest = 0;
+    std::vector<std::uint32_t> living;
+    for (const UnitFact& u : f.engagedUnits)
+    {
+        if (std::find(group.entries.begin(), group.entries.end(), u.entry) == group.entries.end())
+            continue;
+        living.push_back(u.entry);
+        const std::uint32_t hp = u.maxHealth ? static_cast<std::uint32_t>(u.health * 100 / u.maxHealth) : 100;
+        highest = std::max(highest, hp);
+        if (!list.empty())
+            list += "/";
+        list += std::to_string(u.entry);
+    }
+    // A member of the group that was engaged on the last read and is not now died: its first death time, in fight
+    // seconds. A raise puts it back in the list; its first death stays the one the window is read from.
+    for (std::uint32_t entry : r.linkedAlive)
+        if (std::find(living.begin(), living.end(), entry) == living.end() &&
+            std::none_of(r.linkedDeaths.begin(), r.linkedDeaths.end(),
+                [entry](const std::pair<std::uint32_t, std::uint32_t>& had) { return had.first == entry; }))
+        {
+            r.linkedDeaths.push_back(std::make_pair(entry, r.fightMs));
+            death = true;
+        }
+    r.linkedAlive = living;
+    if (living.empty())
+        return std::string();
+    bracket = static_cast<int>(highest / 5);
+    for (std::uint32_t entry : group.burnOrder)
+    {
+        if (!order.empty())
+            order += ">";
+        order += std::to_string(entry);
+    }
+    std::string text = "linked " + list + " at " + std::to_string(highest) + " %";
+    if (!order.empty() || !r.linkedDeaths.empty())
+    {
+        text += " (";
+        if (!order.empty())
+            text += "burn " + order;
+        for (const std::pair<std::uint32_t, std::uint32_t>& had : r.linkedDeaths)
+        {
+            if (text.back() != '(')
+                text += "; ";
+            text += std::to_string(had.first) + " fell at " + std::to_string(had.second / 1000) + " s";
+        }
+        text += ")";
+    }
+    return text;
+}
+
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
 // AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight). `raidTrashOffTanks`: a raid's trash fight whose off-tanks
 // pick up (RaidTrashFight with a living off-tank: GuardTarget's dead-lead branch).
@@ -14235,7 +14562,8 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
-            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || GuardLeavesCampAlone(u) ||
+            u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
+            GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
             continue;
         auto const had = r.healerGuardDps.find(u.guid);
@@ -14325,7 +14653,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             if (!u.victimName.empty() && u.victimName == name)
             {
                 holds = true;
-                if (PlanBossEntry(r, u.entry))
+                if (PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry))
                     holdsBoss = true;
             }
         if (!holdsBoss)
@@ -14337,7 +14665,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     if (!f.leadAlive || !f.leadIsTank) // no main tank: the lead bot dead, or a living one that is no tank
         for (const UnitFact& u : f.partyAttackers)
         {
-            if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
+            if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
+                !u.hitting || u.evading ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -14353,7 +14682,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kRaidBossGuardYd)
                 continue;
-            if (PlanBossEntry(r, u.entry) || u.victimTank)
+            if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
@@ -17698,6 +18027,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
             r.fightMs = 0;
             r.raidBossFight = false;
+            r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
+            r.linkedDeaths.clear();
+            r.linkedNotePct = -1;
             DropHopWaiver(r);
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
@@ -17810,6 +18142,24 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
+        // A linked_death group of the boss step: the tactic stays in the run line while it runs, appended to what the
+        // line already says rather than replacing it. The line moves at most once per 5 % of the highest living member
+        // (the bracket alone is compared, never the whole text), and once more when a member's death was recorded, so
+        // a walk sees each death time and the burn order.
+        int linkedBracket = -1;
+        bool linkedDeath = false;
+        const std::string linked = LinkedDeathNote(r, f, linkedBracket, linkedDeath);
+        if (!linked.empty())
+        {
+            if (linkedBracket != r.linkedNotePct || linkedDeath)
+            {
+                r.linkedNotePct = linkedBracket;
+                r.linkedNoteText = linked;
+            }
+            r.note += "; " + r.linkedNoteText;
+        }
+        else
+            r.linkedNotePct = -1;
         if (pastCeiling)
             r.note += "; past the " + std::to_string(cap / 1000) + " s ceiling: " +
                 (progress == FightProgress::Losing
@@ -17888,6 +18238,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidBossFight = false;
+        r.linkedAlive.clear();
+        r.linkedDeaths.clear();
+        r.linkedNotePct = -1;
         r.raidGuardUnits.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();

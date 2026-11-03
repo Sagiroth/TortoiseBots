@@ -15207,6 +15207,273 @@ static void TestJoinerRestSlotsAreSpentByRealRestsOnly()
     CHECK(notes[4] != notes[5]);
 }
 
+// A pull row's `item` is its own bodies ceiling (the plan's max_bodies); with
+// AiPlayerbot.DungeonRunAggroWalkRing on, the ring estimate's bodies are compared with it.
+static PlanStep BodiesPullStep(float x, std::vector<std::uint32_t> entries, std::uint32_t bodies)
+{
+    PlanStep s = PullStep(x, entries);
+    s.item = bodies;
+    ai::NormalizePlanStep(s);
+    return s;
+}
+
+static UnitFact Estimated(std::uint64_t guid, std::uint32_t entry, float dist, std::uint32_t bodies,
+    std::vector<std::uint64_t> guids = {})
+{
+    UnitFact u = Unit(guid, entry, dist);
+    u.estBodies = bodies;
+    u.estGuids = guids;
+    return u;
+}
+
+static void TestPlanCeilingReplacesTheConfigCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 100;
+    // 27 bodies at a plan ceiling of 27: the row is sized on purpose, the pull
+    // goes out at once and nothing rests.
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.phase == Phase::AwaitPull && !r.joinerRest && r.joinerHeld.empty());
+    // One more body than the plan sized: a rest note with the plan ceiling, not the config one.
+    f.units = {Estimated(31, 4852, 54.7f, 28, {31, 32, 33})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 28 bodies over the ceiling 27 (plan): 0x") == 0);
+    CHECK(over.joinerRest && over.joinerHeld.count(31));
+    CHECK(over.phase != Phase::AwaitPull && over.pulls == 0);
+}
+
+static void TestConfigCeilingInBodiesWhenNoPlanCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 0)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6; // bodies 7
+    f.minHealthPct = 85; // under the end lines: a rest would start
+    f.units = {Estimated(31, 4852, 54.7f, 7, {31})};
+    Run at = Start(&plan);
+    CHECK(Tick(at, f) == "pullback 31");
+    f.units = {Estimated(31, 4852, 54.7f, 8, {31, 32})};
+    Run over = Start(&plan);
+    CHECK(Tick(over, f).empty());
+    CHECK(over.note.compare(0, 55, "pull estimate: 8 bodies over the ceiling 7 (config): 0x") == 0);
+    CHECK(over.joinerRest);
+    // No ceiling at all: nothing is judged.
+    f.joinerCeiling = 0;
+    f.units = {Estimated(31, 4852, 54.7f, 99)};
+    Run off = Start(&plan);
+    f.minHealthPct = 100;
+    CHECK(Tick(off, f) == "pullback 31");
+}
+
+static void TestEstimateNoteListsAtMostEightGuids()
+{
+    std::vector<std::uint64_t> guids;
+    for (std::uint64_t g = 1; g <= 11; ++g)
+        guids.push_back(g);
+    std::string const note = EstimateNote(12, 7, false, guids, false);
+    CHECK(note.compare(0, 56, "pull estimate: 12 bodies over the ceiling 7 (config): 0x") == 0);
+    std::size_t count = 0;
+    for (std::size_t at = note.find("0x"); at != std::string::npos; at = note.find("0x", at + 2))
+        ++count;
+    CHECK(count == 8);
+    CHECK(note.find("(+3 more)") != std::string::npos);
+    // The sight budget is said, and a note without guids ends at the ceiling.
+    std::string const spent = EstimateNote(12, 7, true, guids, true);
+    CHECK(spent.find("(plan)") != std::string::npos);
+    CHECK(spent.find("(LOS budget spent)") != std::string::npos);
+    std::string const bare = EstimateNote(12, 7, true, {}, false);
+    CHECK(bare == "pull estimate: 12 bodies over the ceiling 7 (plan)");
+}
+
+static void TestAheadNoteOnceOnTheChainsMoveRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0),
+        BodiesPullStep(20, {4852}, 7)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.aheadStep = 2;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0");
+    f.leadX = 5.0f;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    // The walk note is prefixed once; the order is the one the key off sends.
+    std::string const order = Tick(r, f);
+    CHECK(order == "move 10.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 3 brings 14 (ceiling 7)") == 0);
+    CHECK(r.aheadNotedStep == 1);
+    std::string const again = Tick(r, f);
+    CHECK(again.empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+    // Key off: the same order, no note.
+    Facts off = f;
+    off.aggroWalkRing = false;
+    off.leadX = 0.0f;
+    Run plain = Start(&plan);
+    Tick(plain, off);
+    off.leadX = 5.0f;
+    Tick(plain, off);
+    CHECK(Tick(plain, off) == "move 10.0 0.0 0.0");
+    CHECK(plain.note == "walking");
+    // At or under the ceiling: the row is noted as done, the walk note is not prefixed.
+    Facts quiet = f;
+    quiet.aheadBodies = 7;
+    quiet.leadX = 0.0f;
+    Run q = Start(&plan);
+    Tick(q, quiet);
+    quiet.leadX = 5.0f;
+    Tick(q, quiet);
+    Tick(q, quiet);
+    CHECK(q.note == "walking" && q.aheadNotedStep == 1);
+}
+
+// The look-ahead estimate is prefixed on a stand-pull row's hold note too (that row returns before the
+// plain walk note), it carries the sight budget, and the row is noted once.
+static void TestAheadNoteOnTheStandPullRow()
+{
+    DungeonPlan plan;
+    PlanStep approach = Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(60.0f, {4852}, ai::kPlanFlagStandPull);
+    plan.steps = {approach, pull};
+    Facts f = Party(0);
+    f.seen = true;
+    f.standPullPreCc = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    f.aheadGuids = {31, 32};
+    f.aheadLosBudget = true;
+    f.holdAheadRead = true;
+    f.holdAheadKnown = true;
+    f.holdAheadX = 20.0f;
+    f.holdAheadY = 0.0f;
+    f.holdAheadZ = 0.0f;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    CHECK(r.note.compare(0, 35, "ahead: pull 2 brings 14 (ceiling 7)") == 0);
+    CHECK(r.note.find("(LOS budget spent); to the hold point") != std::string::npos);
+    CHECK(r.aheadNotedStep == 0 && r.aheadNotedPass == r.stepPass);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("ahead:") == std::string::npos);
+}
+
+// The look-ahead says the estimate is unavailable when the pull row lists no creature on the map, instead
+// of reading an unrelated hostile in the scan.
+static void TestAheadUnavailableNote()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10.0f, 0.0f, 0.0f), BodiesPullStep(30.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadUnavailable = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
+    CHECK(r.note == "ahead: pull 2 estimate unavailable; walking");
+    CHECK(r.aheadNotedStep == 0);
+}
+
+// The row is noted only when the ahead note survives the tick: a walk that ends the row sets "arrived",
+// and the estimate was not said.
+static void TestAheadNotMarkedWhenTheWalkEndsTheRow()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f), BodiesPullStep(20.0f, {4852}, 7)};
+    Facts f = Party(0);
+    f.seen = true;
+    f.aggroWalkRing = true;
+    f.aheadStep = 1;
+    f.aheadBodies = 14;
+    f.aheadCeiling = 7;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "arrived");
+    CHECK(r.aheadNotedStep != 0);
+}
+
+// The pull row's ring estimate is kept per (row, unit): a later tick refills the facts from it, and a
+// new row starts over.
+static void TestPullEstimateCacheKeepsOneReadPerRow()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& first = cache.At(3, 0, 31);
+    CHECK(!first.read && first.bodies == 0);
+    first.read = true;
+    first.bodies = 5;
+    first.guids = {31, 32};
+    PullUnitEstimate const* again = cache.Find(3, 0, 31);
+    CHECK(again && again->bodies == 5 && again->guids.size() == 2);
+    CHECK(&cache.At(3, 0, 31) == &first);
+    CHECK(cache.Find(3, 0, 32) == nullptr);
+    cache.At(4, 0, 31);
+    CHECK(cache.step == 4 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 0, 31) == nullptr && cache.Find(4, 0, 31) != nullptr);
+}
+
+// The same row and unit in a new step pass (a wipe, a resume or a revisit ran ResetStep) is read again:
+// the estimate of the old pass is stale, and reading the new pass drops it.
+static void TestPullEstimateCacheRereadsOnNewStepPass()
+{
+    PullEstimateCache cache;
+    PullUnitEstimate& old = cache.At(3, 0, 31);
+    old.read = true;
+    old.bodies = 5;
+    CHECK(cache.Find(3, 0, 31) != nullptr);
+    CHECK(cache.Find(3, 1, 31) == nullptr);
+    PullUnitEstimate& fresh = cache.At(3, 1, 31);
+    CHECK(!fresh.read && fresh.bodies == 0);
+    CHECK(cache.step == 3 && cache.pass == 1 && cache.units.size() == 1);
+    CHECK(cache.Find(3, 0, 31) == nullptr);
+    CHECK(cache.Find(3, 1, 31) == &fresh);
+}
+
+// The pull order's note says the bodies the ring estimate expects.
+static void TestRingPullNoteSaysBodiesExpected()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.units = {Estimated(31, 4852, 54.7f, 27, {31, 32})};
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.note == "pulling 4852; 27 bodies expected");
+}
+
+static void TestWalkRingKeyOffKeepsJoinerNotes()
+{
+    // AiPlayerbot.DungeonRunAggroWalkRing off: the old joiners and the config
+    // ceiling rule, whatever the ring estimate left on the unit.
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 27)};
+    Facts f = Party(0);
+    f.aggroWalkRing = false;
+    f.joinerCeiling = 6;
+    f.minHealthPct = 85;
+    f.units = {Estimated(31, 4852, 54.7f, 99, {31})};
+    f.units[0].joiners = 7;
+    f.units[0].joinersRead = true;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "7 joiners expected" && r.joinerRest);
+}
+
 // Both keys on (AiPlayerbot.DungeonRunAggroEstimate and DungeonRunRezHold): a loud pull, a death in its
 // fight, then the regroup, then the next loud pick. The joiner rest is a pull-step thing (cleared by
 // ResetStep, kept by BeginRegroup, which a single death reaches without a ResetStep); the rez hold's clocks
@@ -24511,6 +24778,61 @@ static void TestRaidHealerGuardPassesOverAHeldUnit()
     CHECK(q.healerGuardDps.empty());
 }
 
+// ... and a member of a live linked_death group (AiPlayerbot.DungeonRunLinkedDeath): the guard sends nobody at it, the
+// same as at a plan boss. An `attack <guid> <bot>` order is an explicit order that outranks the group's pick, so the
+// single ordered dps would kill that member alone and the encounter's raiser would restore it.
+static void TestRaidHealerGuardPassesOverALinkedDeathMember()
+{
+    DungeonPlan plan;
+    plan.map = 309;
+    Run r = RaidBossRun(plan);
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = RaidHealerGuardFacts();
+    f.linkedDeath = true;
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, near};
+    // Two living group members in the fight: the group is live.
+    f.engagedUnits = {Unit(50030, 11347, 20), Unit(50031, 11348, 12)};
+    UnitFact zealot = Hitter(50030, 11347, 20, true);
+    zealot.x = 22.0f;
+    f.partyAttackers = {zealot};
+    for (int k = 0; k < 5; ++k)
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardDps.empty());
+    CHECK(r.offTankTurn == 0);
+    // A non-member add on the healer is still the guard's.
+    UnitFact add = Hitter(50032, 11368, 20, true);
+    add.x = 22.0f;
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50032 NearDps");
+    // With the key off the member is ordered as before (the mutation: a guard that ignores the group kills it alone).
+    Run q = RaidBossRun(plan);
+    q.liveTactics = &table;
+    Facts g = RaidHealerGuardFacts();
+    g.linkedDeath = false;
+    g.members = f.members;
+    g.engagedUnits = f.engagedUnits;
+    g.partyAttackers = {zealot};
+    CHECK(GuardTick(q, g) == "attack 50030 NearDps");
+}
+
 // The per-unit cap of the off-tank path: a unit that had kGuardOrdersPerUnit orders gets no more until
 // kRaidGuardRearmMs after its last one, then it is re-armed and the nearest ranged dps is picked again.
 static void TestRaidHealerGuardCapsAndRearmsOneAdd()
@@ -29751,9 +30073,157 @@ static void TestPartyRulesUnchanged()
     CHECK(r.state == State::Running && r.regroup && r.wipes == 0 && r.nearWipes == 1);
 }
 
+// The run line of a linked_death boss fight: the group's engaged members and the highest health, in 5 % brackets;
+// nothing outside a boss step, without a row of the kind, or with fewer than two members engaged.
+static void TestLinkedDeathNoteFollowsTheGroupHealth()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    UnitFact thekal = Unit(1, 14599, 10);
+    thekal.health = 133250;
+    thekal.maxHealth = 133250;
+    UnitFact lor = Unit(2, 11347, 12);
+    lor.health = 51282;
+    lor.maxHealth = 85470;
+    UnitFact zath = Unit(3, 11348, 9);
+    zath.health = 96138;
+    zath.maxHealth = 106820;
+    UnitFact tiger = Unit(4, 11361, 7);   // not a member: never in the line
+    tiger.health = 5000;
+    tiger.maxHealth = 5000;
+    f.engagedUnits = {thekal, lor, zath, tiger};
+    int bracket = -1;
+    bool death = false;
+    const std::string withOrder = " (burn 11347>11348>14599)";
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 100 %" + withOrder);
+    CHECK(bracket == 20 && !death);
+    f.engagedUnits[2].health = 42728;      // 40 %
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 100 %" + withOrder);
+    CHECK(bracket == 20 && !death);
+    f.engagedUnits[0].health = 26650;      // 20 %: the highest is 60 % now
+    CHECK(LinkedDeathNote(r, f, bracket, death) == "linked 14599/11347/11348 at 60 %" + withOrder);
+    CHECK(bracket == 12 && !death);
+    // A member dies: its first death time goes into the line (the walk can then tell the 15 s window from the 7 s one),
+    // and the read reports the death even though the bracket did not move.
+    r.fightMs = 12000;
+    f.engagedUnits.erase(f.engagedUnits.end() - 2, f.engagedUnits.end() - 1); // Zath died; Thekal keeps its 20 %
+    CHECK(f.engagedUnits.size() == 3 && f.engagedUnits[0].health == 26650);
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599/11347 at 60 % (burn 11347>11348>14599; 11348 fell at 12 s)");
+    CHECK(death);
+    CHECK(bracket == 12);
+    // The next read has no new death, and the time is not recorded twice.
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599/11347 at 60 % (burn 11347>11348>14599; 11348 fell at 12 s)");
+    CHECK(!death);
+    // One member left: still the line (the group may be finishing), and the second death is recorded too.
+    f.engagedUnits = {f.engagedUnits[0]};
+    CHECK(LinkedDeathNote(r, f, bracket, death) ==
+          "linked 14599 at 20 % (burn 11347>11348>14599; 11348 fell at 12 s; 11347 fell at 12 s)");
+    CHECK(death);
+    // The key off: no line at all.
+    f.engagedUnits = {thekal, lor, zath};
+    f.linkedDeath = false;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    CHECK(bracket == -1 && !death);
+    f.linkedDeath = true;
+    // Not a boss step, no live table, no row of the kind: no line.
+    r.step = 1;
+    plan.steps.push_back(Step(PlanStepKind::Rest));
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    r.step = 0;
+    r.liveTactics = nullptr;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+    ai::BossTacticTable plain;
+    ai::BossTacticRow kill;
+    kill.map = 309;
+    kill.bossEntry = 14599;
+    kill.kind = ai::BossTacticKind::KillFirst;
+    kill.targetEntry = 11347;
+    CHECK(plain.Add(kill));
+    plain.Seal();
+    r.liveTactics = &plain;
+    CHECK(LinkedDeathNote(r, f, bracket, death).empty());
+}
+
+// The run line: the linked line is appended to what the line already says (never replacing the "fighting" clause), and
+// it stays there across quiet ticks; a bracket move or a member's death updates it.
+static void TestLinkedDeathNoteIsAppendedToTheFightLine()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {HpUnit(0xF130000000000001ull, 14599, 133250, 133250),
+                      HpUnit(0xF130000000000002ull, 11347, 51282, 85470),
+                      HpUnit(0xF130000000000003ull, 11348, 96138, 106820)};
+    const std::string expected = "linked 14599/11347/11348 at 100 % (burn 11347>11348>14599)";
+    Tick(r, f);
+    CHECK(r.note.find("fighting; " + expected) == 0);
+    // A quiet tick keeps the line (the stored text is appended again, not dropped).
+    Tick(r, f);
+    CHECK(r.note.find("fighting; " + expected) == 0);
+    CHECK(r.note.find(expected) != std::string::npos);
+    // 5 % down: the bracket moves and the line has the new percentage.
+    f.engagedUnits[0].health = 106600; // Thekal 80 %; Zath at 90 % is now the highest
+    Tick(r, f);
+    CHECK(r.note.find("at 90 %") != std::string::npos);
+    // A member dies: the line carries its death time.
+    f.engagedUnits = {f.engagedUnits[0], f.engagedUnits[1]};
+    Tick(r, f);
+    CHECK(r.note.find("11348 fell at ") != std::string::npos);
+}
+
 int main()
 {
     TestRunGossipStepOfReadsTheCurrentStep();
+    TestLinkedDeathNoteFollowsTheGroupHealth();
+    TestLinkedDeathNoteIsAppendedToTheFightLine();
     TestRunArmsAMoveTriggerUntilItFired();
     TestPatrollerOutsideTheRadiusIsWaitedForThenPulled();
     TestPatrollerWaitIsBounded();
@@ -30118,6 +30588,17 @@ int main()
     TestAggroEstimateHoldsOnceForARest();
     TestJoinerRestsAreBudgetedAndNotIdleTime();
     TestJoinerRestSlotsAreSpentByRealRestsOnly();
+    TestPlanCeilingReplacesTheConfigCeiling();
+    TestConfigCeilingInBodiesWhenNoPlanCeiling();
+    TestEstimateNoteListsAtMostEightGuids();
+    TestAheadNoteOnceOnTheChainsMoveRow();
+    TestAheadNoteOnTheStandPullRow();
+    TestAheadUnavailableNote();
+    TestAheadNotMarkedWhenTheWalkEndsTheRow();
+    TestPullEstimateCacheKeepsOneReadPerRow();
+    TestPullEstimateCacheRereadsOnNewStepPass();
+    TestRingPullNoteSaysBodiesExpected();
+    TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
     TestRezHoldClocks();
@@ -30412,6 +30893,7 @@ int main()
     TestRaidHealerGuardPassesOverAPlanBossOnAHealer();
     TestRaidHealerGuardPassesOverAnAddWithCcInFlight();
     TestRaidHealerGuardPassesOverAHeldUnit();
+    TestRaidHealerGuardPassesOverALinkedDeathMember();
     TestRaidHealerGuardCapsAndRearmsOneAdd();
     TestRaidHealerGuardPrunesMarksWithTheAddAndTheBot();
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
