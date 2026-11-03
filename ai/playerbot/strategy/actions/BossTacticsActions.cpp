@@ -3053,6 +3053,10 @@ bool BossTacticsUseObjectAction::Execute(Event& event)
         }
         return true;
     }
+    // The object proves usable before the record pays for the click: a refused use costs no attempt, moves no clock
+    // and keeps the claim, so the next tick retries it.
+    if (!bot->GetGameObjectIfCanInteractWith(task.object->getObjectGuid()))
+        return false;
     std::uint32_t tries = 0;
     if (!TakeUseObjectAttempt(bot, task, nowMs, tries))
     {
@@ -3063,8 +3067,6 @@ bool BossTacticsUseObjectAction::Execute(Event& event)
     if (logIt)
         LogUseObject(ai, bot, "click", task, nowMs, tries, nullptr);
     // The core re-checks the use; the packet is the module's established path to a gameobject use.
-    if (!bot->GetGameObjectIfCanInteractWith(task.object->getObjectGuid()))
-        return false;
     std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
     *packet << task.object->getObjectGuid();
     bot->GetSession()->QueuePacket(packet.release());

@@ -259,6 +259,21 @@ class UseObjectWiring(unittest.TestCase):
         execute = body(ACTIONS, "bool BossTacticsUseObjectAction::Execute(")
         self.assertLess(execute.index("GetGameObjectIfCanInteractWith"), execute.index("CMSG_GAMEOBJ_USE"))
 
+    def test_a_failed_interaction_costs_no_attempt(self):
+        execute = body(ACTIONS, "bool BossTacticsUseObjectAction::Execute(")
+        interact = execute.index("GetGameObjectIfCanInteractWith")
+        take = execute.index("TakeUseObjectAttempt(bot, task, nowMs, tries)")
+        packet = execute.index("CMSG_GAMEOBJ_USE")
+        # The validity check runs first: the attempt is only taken once the object proves usable.
+        self.assertLess(interact, take)
+        self.assertLess(take, packet)
+        # The click clock moves only inside the take (lastClickMs/everClicked and the claim release): a refused
+        # object reaches none of it.
+        takeBody = body(ACTIONS, "bool TakeUseObjectAttempt(")
+        self.assertIn("record.lastClickMs = nowMs;", takeBody)
+        self.assertIn("record.everClicked = true;", takeBody)
+        self.assertIn("record.clicker = 0;", takeBody)
+
     def test_devs_ossirian_runner_yields(self):
         trigger = body(OSSIRIAN, "bool OssirianCrystalRunTrigger::IsActive(")
         self.assertIn("sPlayerbotAIConfig.dungeonRunUseObject", trigger)
