@@ -17,6 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAYERBOT_AI = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
 PACKETS = (ROOT / "ai/playerbot/PlayerbotAIPackets.cpp").read_text()
 PLAYER_ADAPTER = (ROOT / "host/BotPlayerAdapter.cpp").read_text()
+COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -62,6 +63,14 @@ class MapChangeSummonTest(unittest.TestCase):
         self.assertIn("PlayerMapChange::BotLeftInDungeon(botMap != nullptr, botMap && botMap->IsDungeon())", fn)
         policy = (ROOT / "host/PlayerMapChangePolicy.h").read_text()
         self.assertIn("return hasMap && mapIsDungeon;", policy)
+
+
+class CommanderMapReadsTest(unittest.TestCase):
+    def test_the_cc_break_read_uses_find_map(self):
+        fn = body(COMMANDER, "void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead")
+        self.assertIn("Map* const map = lead->FindMap();", fn)
+        self.assertIn("bot->FindMap() != map", fn)
+        self.assertNotIn("GetMap()", fn)
 
 
 if __name__ == "__main__":
