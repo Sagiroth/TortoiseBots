@@ -10649,6 +10649,15 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
+    // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
+    // the canal at -11944.3 -1353.9 62.3 and the run stranded there).
+    if (Map* const map = lead->GetMap())
+        f.pointLiquid = [map](float x, float y, float z)
+        {
+            GridMapLiquidStatus const status = map->GetTerrain()->getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, nullptr);
+            return status == LIQUID_MAP_IN_WATER || status == LIQUID_MAP_UNDER_WATER;
+        };
     f.leadMoving = lead->IsMoving(); // an exact waypoint's stand-still proof (DungeonRunPolicy.h ExactWalkTo)
     // The walk after a rest (DungeonRun::RestWalkResendDue): a rest state confirms the stall, a cast defers it.
     f.leadResting = HasMealAura(lead) || lead->GetStandState() != UNIT_STAND_STATE_STAND;

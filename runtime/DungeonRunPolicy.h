@@ -1834,13 +1834,19 @@ struct Facts
     // (the key is off, or the party is out of combat).
     std::vector<UnitFact> ccHeld;
     bool ccHeldRead = false;
+    // The glue's terrain read at a point: true when the point is in or under liquid at its own z (the core's
+    // TerrainInfo liquid status, water, ocean, slime or magma). Every rescue, strand and return point picker
     // refuses such a point: a walk through water reads as dry ground and strands the lead bot. Null: unread, no
+    // point is liquid (the old behaviour).
+    std::function<bool(float, float, float)> pointLiquid;
 };
 
+// The glue's liquid read at a point (Facts::pointLiquid): true when the point is in or under liquid at its own z.
 // No rescue, strand or return point may be one (a walk through water reads as dry ground and strands the lead bot).
 // Unread (no callback, a test without the read): no point is liquid, the old behaviour.
 inline bool PointInLiquid(const Facts* f, float x, float y, float z)
 {
+    return f && f->pointLiquid && f->pointLiquid(x, y, z);
 }
 
 // A member the run may not move: a bot carrying a freeze_on_aura row's aura is held still by the tactics themselves
@@ -4370,10 +4376,11 @@ inline int FetchPoint(const Facts& f, ai::ApproachPoint& point, bool& clear)
     point.y = f.leadY;
     point.z = f.leadZ;
     clear = true;
-    if (FetchPointClear(f.leadX, f.leadY, f.leadZ, f.fetchReach))
+    if (!PointInLiquid(&f, f.leadX, f.leadY, f.leadZ) && FetchPointClear(f.leadX, f.leadY, f.leadZ, f.fetchReach))
         return -1;
     for (std::size_t i = 0; i < f.fetchSpots.size(); ++i)
-        if (FetchPointClear(f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z, f.fetchReach))
+        if (!PointInLiquid(&f, f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z) &&
+            FetchPointClear(f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z, f.fetchReach))
         {
             point = f.fetchSpots[i];
             return static_cast<int>(i);
@@ -11817,6 +11824,8 @@ inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_
             continue;
         if (minYd > 0.0f && ai::PlanDistance(p.x, p.y, p.z, t.x, t.y, t.z) < minYd)
             continue;
+        if (PointInLiquid(live, p.x, p.y, p.z))
+            continue; // never a point in liquid: the next dry one back
         if (!PointNearLivePack(r, team, p.x, p.y, p.z, live))
             return j;
     }
@@ -11839,16 +11848,17 @@ inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::si
     if (!r.plan || last >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
     const PlanStep& p = r.plan->steps[last];
-    if (!PointNearLivePack(r, team, p.x, p.y, p.z, live))
+    if (!PointInLiquid(live, p.x, p.y, p.z) && !PointNearLivePack(r, team, p.x, p.y, p.z, live))
         return last;
     return ClearPointBefore(r, team, last, 0.0f, live);
 }
 
 // The straight walk back's target: the safe point (SafePointAtOrBefore), or `last` itself when there is none (the walk
 // goes there as before; only the rescue's teleport refuses an unsafe point).
-inline std::size_t StraightWalkBackTarget(const Run& r, std::uint32_t team, std::size_t last)
+inline std::size_t StraightWalkBackTarget(const Run& r, std::uint32_t team, std::size_t last,
+    const Facts* live = nullptr)
 {
-    std::size_t const safe = SafePointAtOrBefore(r, team, last);
+    std::size_t const safe = SafePointAtOrBefore(r, team, last, live);
     return safe == static_cast<std::size_t>(-1) ? last : safe;
 }
 
@@ -11899,7 +11909,8 @@ inline bool PlacedRunRescue(Run& r, const Facts& f)
         const PlanStep& p = r.plan->steps[j];
         if (p.kind == PlanStepKind::MoveDirect)
             break;
-        if (p.kind == PlanStepKind::Move && !PointNearLivePack(r, f.team, p.x, p.y, p.z))
+        if (p.kind == PlanStepKind::Move && !PointInLiquid(&f, p.x, p.y, p.z) &&
+            !PointNearLivePack(r, f.team, p.x, p.y, p.z))
         {
             target = j;
             break;
@@ -12182,7 +12193,7 @@ inline void StartWalkBack(Run& r, const Facts& f)
         return; // back near the step already
     // The straight target clear of every live pack (StraightWalkBackTarget): the last point when it is, else the
     // latest point before it that is; the plan's points from there on are replayed.
-    std::size_t const target = StraightWalkBackTarget(r, f.team, last);
+    std::size_t const target = StraightWalkBackTarget(r, f.team, last, &f);
     r.walkBack = true;
     r.walkBackDirect = true;
     r.walkBackIdx = target;
@@ -12483,7 +12494,13 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     if (r.rescueBackIdx != static_cast<std::size_t>(-1))
     {
         const PlanStep& back = r.plan->steps[r.rescueBackIdx];
-        if (const std::vector<StandPackReach>* const backRead = RescueLiveReach(f, back.x, back.y, back.z))
+        if (PointInLiquid(&f, back.x, back.y, back.z))
+        {
+            r.rescueBackFrom = r.rescueBackIdx; // in liquid: the next one back
+            r.rescueBackIdx = static_cast<std::size_t>(-1);
+            r.rescueScanMs = 0;
+        }
+        else if (const std::vector<StandPackReach>* const backRead = RescueLiveReach(f, back.x, back.y, back.z))
         {
             if (!LiveHostileNearPoint(*backRead, back.x, back.y, back.z))
             {
@@ -12523,8 +12540,11 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
             // The next earlier point was just asked for: its read comes next tick.
             return true;
         }
-        // The fail-closed ask for the plan point itself: no read, no teleport onto it.
-        if (const std::vector<StandPackReach>* const liveRead = RescueLiveReach(f, p.x, p.y, p.z))
+        // The fail-closed ask for the plan point itself: no read, no teleport onto it. A point in liquid is held
+        // outright: the lead bot would stand in water there.
+        if (PointInLiquid(&f, p.x, p.y, p.z))
+            held = true;
+        else if (const std::vector<StandPackReach>* const liveRead = RescueLiveReach(f, p.x, p.y, p.z))
             held = LiveHostileNearPoint(*liveRead, p.x, p.y, p.z);
         else if (r.rescueBackFrom == static_cast<std::size_t>(-1) && r.rescueScanMs < kRescueScanWaitMs &&
             RequestRescueScan(r, r.strandIdx))
