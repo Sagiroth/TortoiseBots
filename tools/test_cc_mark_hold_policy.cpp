@@ -144,6 +144,16 @@ int main()
     // A ready CC mark still counts when it is the rogue's own target.
     CHECK(CcCancelBladeFlurry(true, CcGuardCountsUnit(true), true));
 
+    // A DoT must not go on a CC mark or a crowd-controlled unit with the run's
+    // automatic crowd control on (the tick breaks the hold); without the key a
+    // class bot keeps its held-mark-only behaviour.
+    CHECK(!CcDotTargetAllowed(true, false, true));   // a CC mark, auto cc on
+    CHECK(!CcDotTargetAllowed(true, true, false));   // a held mark, either way
+    CHECK(!CcDotTargetAllowed(false, true, true));   // ... held is always out
+    CHECK(CcDotTargetAllowed(false, false, false));  // key off, nothing held
+    CHECK(CcDotTargetAllowed(false, false, true));   // key off: a mark is no veto
+    CHECK(CcDotTargetAllowed(true, false, false));   // auto cc on, no CC there
+
     // CC chooser: the assigned mark, once picked, is never replaced by a
     // later free pick; any other interim pick may still be replaced.
     CHECK(CcChooserKeepsResult(true));

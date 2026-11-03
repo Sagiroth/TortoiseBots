@@ -116,6 +116,10 @@ namespace ai
         // cc", a bot's "rti cc target") or one already under damage-breakable
         // CC. The DoT ticks would break the hold the moment it lands.
         bool NoDotTarget(Unit* unit);
+        // The two halves of NoDotTarget, for the DoT rows' own policy call
+        // (CcDotTargetAllowed): a CC mark, and crowd control right now.
+        bool IsCcMarkedUnit(Unit* unit);
+        bool IsCrowdControlledUnit(Unit* unit);
 
     private:
         bool OnlyMarksLeftCached();

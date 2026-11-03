@@ -112,6 +112,16 @@ namespace ai
         return bladeFlurryUp && (protectedEnemyInReach || readyCcMarkInReach);
     }
 
+    // A DoT (Corruption, Curse of Agony, Immolate, Serpent Sting, Shadow Word:
+    // Pain, ...) must not go on a CC mark or a unit already under
+    // damage-breakable CC: the tick breaks the hold the moment it lands.
+    // `runAutoCc` gates the run's wider rule, so a class bot outside the run
+    // keeps its held-mark-only behaviour (AiPlayerbot.DungeonRunAutoCc).
+    inline bool CcDotTargetAllowed(bool runAutoCc, bool heldMark, bool ccMarkOrControlled)
+    {
+        return !heldMark && !(runAutoCc && ccMarkOrControlled);
+    }
+
     // CC target chooser: once the bot's own assigned mark is the result, a
     // later candidate (an open-world free pick) never replaces it.
     inline bool CcChooserKeepsResult(bool resultIsAssignedMark)

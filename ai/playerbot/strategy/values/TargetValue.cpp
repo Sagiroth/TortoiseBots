@@ -239,9 +239,17 @@ bool CcGuard::PartyDotOn(Unit* unit)
 
 bool CcGuard::NoDotTarget(Unit* unit)
 {
-    if (!unit)
-        return false;
-    return IsCcMark(unit) || IsCrowdControlled(ai, unit);
+    return IsCcMarkedUnit(unit) || IsCrowdControlledUnit(unit);
+}
+
+bool CcGuard::IsCcMarkedUnit(Unit* unit)
+{
+    return unit && IsCcMark(unit);
+}
+
+bool CcGuard::IsCrowdControlledUnit(Unit* unit)
+{
+    return unit && IsCrowdControlled(ai, unit);
 }
 
 bool CcGuard::GroupCastsCcAt(Unit* unit)
