@@ -78,6 +78,11 @@ if command -v g++ >/dev/null 2>&1; then
         -o "${BUILD_DIR}/test_decision_capture_files"
     "${BUILD_DIR}/test_decision_capture_files"
 
+    # Special case: the replay tool is not a discovered test. Build it and replay
+    # the committed synthetic fixture through its own `run` command.
+    g++ -std=c++17 -O2 -Wall -Wextra tools/replay_decisions.cpp -o "${BUILD_DIR}/replay_decisions"
+    "${BUILD_DIR}/replay_decisions" run tools/fixtures/decisions/synthetic-pull.json
+
     # Every other standalone test: discover the sources, compile and run in parallel.
     mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$' | grep -v '^tools/test_combat_monitor_service\.cpp$' | grep -v '^tools/test_decision_capture_codec\.cpp$' | grep -v '^tools/test_decision_capture_files\.cpp$')
 
@@ -113,7 +118,7 @@ if command -v g++ >/dev/null 2>&1; then
         echo "✗ Standalone policy tests FAILED."
         exit 1
     fi
-    echo "✓ $((${#CPP_TESTS[@]} + 5)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
+    echo "✓ $((${#CPP_TESTS[@]} + 6)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
 else
     echo "ℹ Skipping standalone policy tests (no g++ on PATH)."
 fi

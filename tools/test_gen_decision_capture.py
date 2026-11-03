@@ -22,8 +22,11 @@ import gen_decision_capture as gen  # noqa: E402
 #   botKeysForPlayers  a config flag (bots carry the key, not a player)
 #   passSpotKnown/...  the island pass spot (a position on the navmesh)
 #   passed             the units a pull already passed
+#   stepPass/aheadNotedPass  run counters (how many times a step was entered)
 PRIVACY_ALLOW = {
     "botKeysForPlayers": "doorKeys",
+    "stepPass": "runPass",
+    "aheadNotedPass": "runPass",
     "passSpotKnown": "islandPass",
     "passX": "islandPass",
     "passY": "islandPass",

@@ -32,6 +32,37 @@ It is **off by default** (`AiPlayerbot.DecisionCapture.Enabled = 0`) and costs n
 
 The keys are read when the configuration is loaded; a `.reload config` does not change a capture.
 
+### What `TotalMiB` measures
+
+The capture folder is measured exactly once, at server start, on a background thread. After that the total is the sum of the bytes every capture's segment writer accepted (for a finished capture, the numbers in its final `index.json`), so the sweep never walks the tree on the world thread. Two consequences are accepted for now: a file something else puts into the folder while the server runs is not counted until the next restart, and a running capture's counted bytes can trail the file size on disk by one writer queue. Retention deletes only what a folder's own `index.json` proves is a finished capture of this format.
+
+### Deploying it on the test servers
+
+The capture is off in the shipped template. On `m910q` and `tortoise-test2`, with `LogsDir` being the core's own key in `mangosd.conf` (shown so the path is unambiguous):
+
+```ini
+# mangosd.conf: the core's log folder, whatever the server already uses.
+LogsDir = "/opt/turtle/logs"
+
+# aiplayerbot.conf: the capture on, under LogsDir/decisions, with the shipped caps.
+AiPlayerbot.DecisionCapture.Enabled = 1
+AiPlayerbot.DecisionCapture.Dir = decisions
+AiPlayerbot.DecisionCapture.SegmentMiB = 32
+AiPlayerbot.DecisionCapture.CaptureMiB = 512
+AiPlayerbot.DecisionCapture.TotalMiB = 4096
+AiPlayerbot.DecisionCapture.RecordKiB = 512
+AiPlayerbot.DecisionCapture.KeyframeEvery = 60
+```
+
+That writes `/opt/turtle/logs/decisions/<captureId>/` (substitute the server's own `LogsDir`); an absolute `AiPlayerbot.DecisionCapture.Dir` works the same way and is what to use when the dashboard runs in a container with its own mounts. The caps keep about a night of three two-hour walks (roughly 900 MB) before anything is trimmed; raise `TotalMiB` if the folder is on a small disk and lower `CaptureMiB` to keep fewer segments per capture.
+
+The dashboard serves the folder over its normal login:
+
+- Host install: `TBDASH_DECISIONS_DIR=/opt/turtle/logs/decisions ./tools/observability/run-dashboard.sh` (the script passes the variable through). The daemon's flag is `--decisions-dir DIR`, env `TBDASH_DECISIONS_DIR`.
+- Container: mount the capture folder read-only at a path inside the container and name that path in the run command:
+  `docker run -d -p 8095:8095 -v /opt/turtle/logs/decisions:/logs/decisions:ro -e TBDASH_DECISIONS_DIR=/logs/decisions <image>`
+  (or append `--decisions-dir /logs/decisions` after the image; the image's entrypoint is the daemon). Without the mount the container cannot see the files; with the mount but no variable or flag the routes answer 404 `{"error":"decision capture folder not configured"}`.
+
 ## Files
 
 Under `LogsDir` and `AiPlayerbot.DecisionCapture.Dir`, one folder per capture:

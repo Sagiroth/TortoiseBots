@@ -25,6 +25,7 @@ struct Facts
   alive: std::uint32_t
   dead: std::uint32_t
   raid: RaidFacts
+  linkedDeath: bool
   nearWipeStopCount: std::uint32_t
   nearWipeStopWindowMs: std::uint32_t
   leadAlive: bool
@@ -165,6 +166,13 @@ struct Facts
   leadReaching: bool
   reachAggro: std::uint32_t
   joinerCeiling: std::uint32_t
+  aggroWalkRing: bool
+  aheadBodies: std::uint32_t
+  aheadCeiling: std::uint32_t
+  aheadStep: std::size_t
+  aheadGuids: std::vector<std::uint64_t>
+  aheadLosBudget: bool
+  aheadUnavailable: bool
   pullStand: bool
   standClearance: bool
   walkBackAfterWonFight: bool
@@ -270,12 +278,17 @@ struct RestLines
 struct Run
   plan: const DungeonPlan*
   step: std::size_t
+  stepPass: std::uint32_t
   triggerScan: std::size_t
   armedTriggers: std::vector<std::uint32_t>
   firedTriggers: std::vector<std::uint32_t>
   state: State
   phase: Phase
   note: std::string
+  linkedNotePct: int
+  linkedNoteText: std::string
+  linkedAlive: std::vector<std::uint32_t>
+  linkedDeaths: std::vector<std::pair<std::uint32_t, std::uint32_t>>
   phaseMs: std::uint32_t
   stepIdleMs: std::uint32_t
   playerGatherMs: std::uint32_t
@@ -526,6 +539,8 @@ struct Run
   restForJoiners: bool
   joinerRests: std::uint32_t
   joinerNote: std::string
+  aheadNotedStep: std::size_t
+  aheadNotedPass: std::uint32_t
   shotStandFor: std::uint64_t
   shotStandTries: std::unordered_map<std::uint64_t, std::uint32_t>
   shotStandWalk: bool
@@ -721,6 +736,10 @@ struct Run
   raidBossJoinMs: std::uint32_t
   raidBossJoinGuid: std::uint64_t
   raidBossJoined: std::unordered_map<std::uint64_t, std::uint32_t>
+  trashHealerGuard: bool
+  healerGuardLooseGuid: std::uint64_t
+  healerGuardLooseMs: std::uint32_t
+  healerGuardLastResortGuids: std::unordered_set<std::uint64_t>
   raidAssistMs: std::uint32_t
   raidAssistGuid: std::uint64_t
   raidAssisted: std::unordered_set<std::uint64_t>
@@ -852,6 +871,9 @@ struct UnitFact
   joiners: std::uint32_t
   joinersPatrol: bool
   joinersRead: bool
+  estBodies: std::uint32_t
+  estGuids: std::vector<std::uint64_t>
+  estLosBudget: bool
   losLead: bool
   attackable: bool
   health: std::uint32_t
@@ -896,6 +918,7 @@ struct BossTacticRow
   spellId: std::uint32_t
   priority: std::uint8_t
   param: float
+  burnOrder: std::vector<std::uint32_t>
 struct DungeonPlan
   name: std::string
   map: std::uint32_t
@@ -941,6 +964,6 @@ enum Phase: Begin=0,Gather=1,Walk=2,AwaitPull=3,AwaitTask=4,Rest=5,Wait=6,Hold=7
 enum Run::CombatDropKind: Unattackable=0,FarHeld=1,Wedged=2
 enum State: Running=0,Paused=1,Done=2
 enum RezClass: None=0,Priest=1,Paladin=2,Shaman=3,Druid=4
-enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7
+enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7,LinkedDeath=8
 enum LegNeedMode: None=0,Optional=1,Door=2,Blocking=3
 enum PlanStepKind: None=0,Move=1,MoveDirect=2,Pull=3,Boss=4,Loot=5,Open=6,UseItem=7,WaitObject=8,WaitClear=9,Rest=10,Ritual=11,Hold=12,Gossip=13,UseOn=14

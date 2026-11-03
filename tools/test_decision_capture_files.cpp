@@ -5,6 +5,8 @@
 //       runtime/RunTraceWriter.cpp runtime/DecisionCaptureFiles.cpp -pthread -o /tmp/t
 //   /tmp/t [tmpdir]
 #include "../runtime/DecisionCapture.h"
+#include "DecisionReplay.h"
+#include "DecisionReplayScenario.h"
 
 #include <algorithm>
 #include <atomic>
@@ -651,6 +653,86 @@ void TestShutdownLeavesIncomplete()
     CHECK(after->Find("status")->text == "incomplete");
 }
 
+// The whole offline path: the shared scenario recorded through the real
+// recorder and the real file sink into a temp folder, then the segment loaded,
+// cut into a fixture and replayed exactly as `replay_decisions run` does.
+void TestFileRoundTrip()
+{
+    std::string const dir = (Root() / "round-trip").string();
+    std::filesystem::create_directories(dir);
+
+    ai::DungeonPlan plan;
+    ai::BossTacticTable tactics;
+    DecisionReplay::BuildScenarioPlan(plan, tactics);
+
+    DecisionCapture::HeaderInfo header = DecisionReplay::ScenarioHeader();
+    std::string const id = FileSink::MakeCaptureId(dir, header.startedUnixMs, plan.name, header.commander);
+
+    FileLimits fileLimits;
+    fileLimits.segmentBytes = 32ull * 1024ull * 1024ull;
+    fileLimits.recordBytes = 512u * 1024u;
+    fileLimits.keyframeEvery = 60;
+    DecisionCapture::Limits limits;
+    limits.segmentBytes = fileLimits.segmentBytes;
+    limits.recordBytes = fileLimits.recordBytes;
+    limits.keyframeEvery = fileLimits.keyframeEvery;
+
+    IndexInfo info;
+    info.captureId = id;
+    info.commander = header.commander;
+    info.plan = plan.name;
+    info.map = plan.map;
+    info.startedUnixMs = header.startedUnixMs;
+    std::string err;
+    std::unique_ptr<FileSink> sink = FileSink::Open(dir, id, info, fileLimits, err);
+    CHECK(sink != nullptr);
+    DecisionCapture::Recorder recorder(header, limits, *sink);
+
+    Run run = DungeonRun::Start(&plan);
+    run.liveTactics = &tactics;
+    for (std::uint64_t seq = 1; seq <= DecisionReplay::kScenarioTicks; ++seq)
+    {
+        Facts facts;
+        DecisionReplay::ScenarioFacts(seq, facts);
+        recorder.BeforeTick(run, facts, 1000, header.startedUnixMs + seq * 1000ull);
+        std::string const order = DungeonRun::Tick(run, facts, 1000);
+        recorder.AfterTick(run, order);
+        if (seq == DecisionReplay::kScenarioGlueAfterSeq)
+            run.leadWalkReset = true;
+    }
+    sink->Finish(recorder, header.startedUnixMs + (DecisionReplay::kScenarioTicks + 1) * 1000ull, "stopped");
+    WaitWriters(*sink);
+
+    std::string const segment = (std::filesystem::path(dir) / id / "seg-0001.jsonl").string();
+    DecisionReplay::Capture capture;
+    CHECK(DecisionReplay::LoadSegments({segment}, capture, err));
+    CHECK(capture.ticks.size() == DecisionReplay::kScenarioTicks);
+
+    DecisionReplay::ExtractOptions options;
+    options.fromSeq = 1;
+    options.toSeq = DecisionReplay::kScenarioTicks;
+    options.name = "round-trip";
+    options.status = "fixed";
+    options.outDir = (std::filesystem::path(dir) / "fixtures").string();
+    std::string fixturePath;
+    CHECK(DecisionReplay::Extract(capture, options, fixturePath, err));
+
+    DecisionReplay::Fixture fixture;
+    CHECK(DecisionReplay::LoadFixture(fixturePath, fixture, err));
+    DecisionReplay::Report const report = DecisionReplay::Replay(fixture);
+    for (std::string const& failure : report.failures)
+        std::cerr << failure << "\n";
+    for (DecisionReplay::TickResult const& tick : report.ticks)
+        if (!tick.reproduced)
+        {
+            std::cerr << "tick " << tick.seq << " did not reproduce\n";
+            for (std::string const& diff : tick.diffs)
+                std::cerr << "  " << diff << "\n";
+        }
+    CHECK(report.pass);
+    CHECK(report.ticks.size() == DecisionReplay::kScenarioTicks);
+}
+
 void TestOffCreatesNothing()
 {
     std::string const dir = (Root() / "off").string();
@@ -693,6 +775,7 @@ int main()
     TestSweepMeasuresOffWorldThread();
     TestWriterFailureStatus();
     TestShutdownLeavesIncomplete();
+    TestFileRoundTrip();
     TestOffCreatesNothing();
     std::cout << "decision capture files: all checks passed\n";
     return 0;
