@@ -72,6 +72,11 @@ class ScoutCommandWiringTest(unittest.TestCase):
         self.assertNotIn("GetPositionX()", fn)
         self.assertIn("check.startSwim = terrain->IsSwimmable(origin.x, origin.y, origin.z);", fn)
         self.assertIn("check.endSwim = terrain->IsSwimmable(point.x, point.y, point.z);", fn)
+        # "Hold here" skips the path query: the end is the point itself, never
+        # the zero-initialized array (a zero answer reads as the map origin).
+        self.assertIn("check.actualEnd[0] = point.x;", fn)
+        self.assertLess(fn.index("check.actualEnd[0] = point.x;"),
+                        fn.index("if (!RemoteCommander::IsAtLead(check.facts.distanceFromLead))"))
 
     def test_documented(self):
         self.assertIn("## `.bot scout` (GM, test tooling)", DOC)

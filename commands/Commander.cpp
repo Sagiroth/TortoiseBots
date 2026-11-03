@@ -3314,6 +3314,10 @@ static LeadMoveCheck CheckLeadMove(Unit* mover, Vector3 const& origin, RemoteCom
         }
     }
     check.point = point;
+    // "Hold here": no path is asked for, and the point itself is the end.
+    check.actualEnd[0] = point.x;
+    check.actualEnd[1] = point.y;
+    check.actualEnd[2] = point.z;
     check.endSwim = terrain->IsSwimmable(point.x, point.y, point.z);
 
     RemoteCommander::MovePoint originPoint;
