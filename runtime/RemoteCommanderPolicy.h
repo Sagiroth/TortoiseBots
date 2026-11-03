@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
@@ -1761,6 +1762,7 @@ inline char const* TargetVerdictText(TargetVerdict verdict)
 
 // PathFinder::getPathType bits (core PathType), copied as plain numbers so the
 // policy stays standalone (the same values as TravelRepickPolicy.h).
+constexpr uint32_t kPathNormal = 0x0001;
 constexpr uint32_t kPathNoPath = 0x0008;
 constexpr uint32_t kPathIncomplete = 0x0004;
 
@@ -1867,6 +1869,29 @@ struct MoveFacts
     bool leadSpotGather = false;   // the run leader's gather on the lead bot's own spot (never a player's order)
     bool fromRunLeader = false;    // the run leader sent it (its approach hops and gathers end short on purpose)
 };
+
+// The facts of one lead-move check, all measured from `origin`: the mover's own
+// spot for `cmd move`, and any start for `.bot scout path` (the same floor snap
+// and CheckMove apply). `endFromOrigin` is the origin to the path's actual end
+// (< 0: not measured); `leadSpotGather` is the run leader's gather on the lead
+// bot's own spot. One function so the command and the scout cannot measure two
+// different distances.
+inline MoveFacts LeadMoveFacts(MovePoint const& origin, MovePoint const& point, uint32_t pathType,
+    float endOffset, float endFromOrigin, float maxDistance, bool leadSpotGather, bool fromRunLeader)
+{
+    MoveFacts facts;
+    float const dx = point.x - origin.x;
+    float const dy = point.y - origin.y;
+    float const dz = point.z - origin.z;
+    facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);
+    facts.maxDistance = maxDistance;
+    facts.pathType = pathType;
+    facts.endOffset = endOffset;
+    facts.endFromLead = endFromOrigin;
+    facts.leadSpotGather = leadSpotGather;
+    facts.fromRunLeader = fromRunLeader;
+    return facts;
+}
 
 enum class MoveVerdict : uint8_t
 {
@@ -2104,6 +2129,146 @@ inline char const* DirectVerdictCode(DirectVerdict verdict)
         case DirectVerdict::NoLos: return "no-los";
     }
     return "invalid";
+}
+
+// ---------------------------------------------------------------------------
+// `.bot scout` (GM, test tooling): cfg | path | walk | where
+// ---------------------------------------------------------------------------
+
+// The scout's four forms. `cfg` reads the live aggro numbers, `path` asks the
+// run leader's move check from any start and moves nobody, `walk` starts one
+// server-moved walk of the caller, `where` reads the caller's server position
+// and movement state.
+enum class ScoutForm : uint8_t
+{
+    None,
+    Cfg,
+    Path,
+    Walk,
+    Where,
+};
+
+struct ScoutArgs
+{
+    ScoutForm form = ScoutForm::None;
+    uint32_t id = 0;      // `#<id>`, 1 to 9 digits, echoed on the reply line
+    MovePoint point;      // path, walk: the destination
+    bool hasFrom = false; // path: `from <fx> <fy> <fz>`
+    MovePoint from;       // path: the start (default: the caller)
+};
+
+// `<cfg|path|walk|where> #<id> ...`. cfg and where take nothing else; walk and
+// path take three finite coordinates; path optionally takes `from` and three
+// more. Nothing else is accepted (a fourth coordinate, `from` with two numbers,
+// a NaN, a missing id).
+inline bool ParseScoutArgs(std::string const& text, ScoutArgs& out)
+{
+    std::vector<std::string> parts = SplitOrderArgs(text);
+    if (parts.empty())
+        return false;
+    std::string form = parts[0];
+    for (char& c : form)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    ScoutArgs args;
+    if (form == "cfg")
+        args.form = ScoutForm::Cfg;
+    else if (form == "path")
+        args.form = ScoutForm::Path;
+    else if (form == "walk")
+        args.form = ScoutForm::Walk;
+    else if (form == "where")
+        args.form = ScoutForm::Where;
+    else
+        return false;
+    if (parts.size() < 2 || parts[1].size() < 2 || parts[1].size() > 10 || parts[1][0] != '#')
+        return false;
+    for (size_t i = 1; i < parts[1].size(); ++i)
+    {
+        if (parts[1][i] < '0' || parts[1][i] > '9')
+            return false;
+        args.id = args.id * 10 + static_cast<uint32_t>(parts[1][i] - '0');
+    }
+    if (args.id == 0)
+        return false;
+    size_t const rest = parts.size() - 2;
+    if (args.form == ScoutForm::Cfg || args.form == ScoutForm::Where)
+    {
+        if (rest != 0)
+            return false;
+        out = args;
+        return true;
+    }
+    if (rest != 3 && !(args.form == ScoutForm::Path && rest == 7))
+        return false;
+    if (!ParseCoordinate(parts[2], args.point.x) || !ParseCoordinate(parts[3], args.point.y) ||
+        !ParseCoordinate(parts[4], args.point.z))
+        return false;
+    if (rest == 7)
+    {
+        std::string keyword = parts[5];
+        for (char& c : keyword)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (keyword != "from")
+            return false;
+        if (!ParseCoordinate(parts[6], args.from.x) || !ParseCoordinate(parts[7], args.from.y) ||
+            !ParseCoordinate(parts[8], args.from.z))
+            return false;
+        args.hasFrom = true;
+    }
+    out = args;
+    return true;
+}
+
+// The wire lines (plan-scout spec 4.2). Every field is a number in fixed %.2f
+// form, a fixed word or a hex path type, so none needs ProtocolSafe's escaping.
+inline std::string ScoutFixed(float value)
+{
+    char text[24];
+    std::snprintf(text, sizeof(text), "%.2f", value);
+    return text;
+}
+
+inline std::string ScoutPointText(float x, float y, float z)
+{
+    return ScoutFixed(x) + " " + ScoutFixed(y) + " " + ScoutFixed(z);
+}
+
+inline std::string ScoutFlags(bool first, bool second)
+{
+    return std::string(first ? "1" : "0") + "|" + (second ? "1" : "0");
+}
+
+// TBM:SCOUT_CFG|<id>|<reactDistance>|<rateCreatureAggro>|<familyAssistRadius>
+inline std::string ScoutCfgLine(uint32_t id, float reactDistance, float rateCreatureAggro, float familyAssistRadius)
+{
+    return "TBM:SCOUT_CFG|" + std::to_string(id) + "|" + ScoutFixed(reactDistance) + "|" +
+        ScoutFixed(rateCreatureAggro) + "|" + ScoutFixed(familyAssistRadius);
+}
+
+// TBM:SCOUT_PATH|<id>|<verdict>|0x<type>|<length>|<ex> <ey> <ez>|<endOffset>|<snappedZ>|<startSwim>|<endSwim>
+inline std::string ScoutPathLine(uint32_t id, MoveVerdict verdict, uint32_t rawPathType, float length,
+    float const end[3], float endOffset, float snappedZ, bool startSwim, bool endSwim)
+{
+    char type[16];
+    std::snprintf(type, sizeof(type), "0x%x", rawPathType);
+    return "TBM:SCOUT_PATH|" + std::to_string(id) + "|" + MoveVerdictCode(verdict) + "|" + type + "|" +
+        ScoutFixed(length) + "|" + ScoutPointText(end[0], end[1], end[2]) + "|" + ScoutFixed(endOffset) + "|" +
+        ScoutFixed(snappedZ) + "|" + ScoutFlags(startSwim, endSwim);
+}
+
+// TBM:SCOUT_WALK|<id>|started|0x<type>
+inline std::string ScoutWalkLine(uint32_t id, uint32_t rawPathType)
+{
+    char type[16];
+    std::snprintf(type, sizeof(type), "0x%x", rawPathType);
+    return "TBM:SCOUT_WALK|" + std::to_string(id) + "|started|" + type;
+}
+
+// TBM:SCOUT_POS|<id>|<x> <y> <z>|<moving>|<inWater>|<swimming>
+inline std::string ScoutPosLine(uint32_t id, float x, float y, float z, bool moving, bool inWater, bool swimming)
+{
+    return "TBM:SCOUT_POS|" + std::to_string(id) + "|" + ScoutPointText(x, y, z) + "|" +
+        (moving ? "1" : "0") + "|" + (inWater ? "1" : "0") + "|" + (swimming ? "1" : "0");
 }
 
 } // namespace RemoteCommander

@@ -1352,6 +1352,113 @@ static void TestRaidBindPlan()
     CHECK(!TakeBindRaid(plain) && plain.size() == 2);
 }
 
+// ---------------------------------------------------------------------------
+// `.bot scout` (GM, test tooling): the four forms, the wire lines of the
+// plan-scout spec 4.2 and the move facts the extracted check measures.
+// ---------------------------------------------------------------------------
+
+static void TestParseScoutArgs()
+{
+    ScoutArgs a;
+    CHECK(ParseScoutArgs("cfg #12", a));
+    CHECK(a.form == ScoutForm::Cfg && a.id == 12 && !a.hasFrom);
+    CHECK(ParseScoutArgs("where #999999999", a));
+    CHECK(a.form == ScoutForm::Where && a.id == 999999999); // nine digits is the most
+    CHECK(ParseScoutArgs("PATH #3 -11945.7 -1358.2 64.6", a));
+    CHECK(a.form == ScoutForm::Path && a.id == 3);
+    CHECK(a.point.x == -11945.7f && a.point.y == -1358.2f && a.point.z == 64.6f && !a.hasFrom);
+    CHECK(ParseScoutArgs("path #236 1 2 3 from 4 5 6", a));
+    CHECK(a.hasFrom && a.from.x == 4.0f && a.from.y == 5.0f && a.from.z == 6.0f);
+    CHECK(ParseScoutArgs("path #1 1,2,3", a) && a.point.z == 3.0f);
+    CHECK(ParseScoutArgs("walk #5 -1.5 2.5 3.5", a));
+    CHECK(a.form == ScoutForm::Walk && a.point.y == 2.5f);
+
+    // Refused: no id, a bad id, a missing or extra coordinate, a bad number,
+    // `from` with two or four numbers, an unknown form, a cfg with arguments.
+    CHECK(!ParseScoutArgs("", a));
+    CHECK(!ParseScoutArgs("cfg", a));
+    CHECK(!ParseScoutArgs("cfg #", a));
+    CHECK(!ParseScoutArgs("cfg #0", a));
+    CHECK(!ParseScoutArgs("cfg #1234567890", a));
+    CHECK(!ParseScoutArgs("cfg 12", a));
+    CHECK(!ParseScoutArgs("cfg #1x", a));
+    CHECK(!ParseScoutArgs("path #1 1 2", a));
+    CHECK(!ParseScoutArgs("path #1 1 2 3 4", a)); // a fourth coordinate
+    CHECK(!ParseScoutArgs("path #1 nan 2 3", a));
+    CHECK(!ParseScoutArgs("path #1 1 2 1e999", a)); // not finite
+    CHECK(!ParseScoutArgs("path #1 1 2 3 from 4 5", a));
+    CHECK(!ParseScoutArgs("path #1 1 2 3 from 4 5 6 7", a));
+    CHECK(!ParseScoutArgs("path #1 1 2 3 back 4 5 6", a));
+    CHECK(!ParseScoutArgs("walk #1 1 2 3 4", a));
+    CHECK(!ParseScoutArgs("where #1 1 2 3", a));
+    CHECK(!ParseScoutArgs("cfg #1 extra", a));
+    CHECK(!ParseScoutArgs("bogus #1", a));
+}
+
+static void TestScoutLines()
+{
+    CHECK(ScoutCfgLine(7, 150.0f, 1.0f, 10.0f) == "TBM:SCOUT_CFG|7|150.00|1.00|10.00");
+    float const end[3] = {-11951.0f, -1393.5f, 68.1f};
+    CHECK(ScoutPathLine(236, MoveVerdict::Ok, 0x81, 35.375f, end, 0.004f, 68.1f, true, true) ==
+        "TBM:SCOUT_PATH|236|ok|0x81|35.38|-11951.00 -1393.50 68.10|0.00|68.10|1|1");
+    CHECK(ScoutPathLine(1, MoveVerdict::TooFar, 0, 0.0f, end, 0.0f, 68.1f, false, false) ==
+        "TBM:SCOUT_PATH|1|too-far|0x0|0.00|-11951.00 -1393.50 68.10|0.00|68.10|0|0");
+    CHECK(ScoutWalkLine(9, 0x11) == "TBM:SCOUT_WALK|9|started|0x11");
+    CHECK(ScoutPosLine(4, 1.5f, -2.0f, 3.25f, true, false, true) == "TBM:SCOUT_POS|4|1.50 -2.00 3.25|1|0|1");
+    // The path line's verdict field is MoveVerdictCode's word, for every verdict.
+    std::string const want[] = {"ok", "too-far", "unreachable", "off-mesh"};
+    MoveVerdict const all[] = {MoveVerdict::Ok, MoveVerdict::TooFar, MoveVerdict::NoPath, MoveVerdict::OffMesh};
+    for (size_t i = 0; i < 4; ++i)
+    {
+        std::string const line = ScoutPathLine(2, all[i], 0, 0.0f, end, 0.0f, 0.0f, false, false);
+        std::string const wantField = "|" + std::string(MoveVerdictCode(all[i])) + "|";
+        CHECK(wantField == "|" + want[i] + "|");
+        CHECK(line.find(wantField) != std::string::npos);
+    }
+}
+
+// The extracted check's facts are measured from `origin`, the lead bot's own
+// spot for `cmd move` or the probe's start for the scout, and every number is
+// the one CommanderMove computed inline before the extraction.
+static void TestLeadMoveFactsMatchTheCommandsNumbers()
+{
+    auto oldDistance = [](MovePoint const& a, MovePoint const& b)
+    {
+        float const dx = b.x - a.x;
+        float const dy = b.y - a.y;
+        float const dz = b.z - a.z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+    // Walk 31 d step 650: the lead 154 yd off its origin.
+    MovePoint const origin{-11763.3f, -1249.2f, 112.6f};
+    MovePoint const point{-11632.0f, -1322.0f, 78.1f};
+    MoveFacts const facts = LeadMoveFacts(origin, point, kPathNormal, 0.0f, 0.0f, 150.0f, false, true);
+    CHECK(std::fabs(facts.distanceFromLead - oldDistance(origin, point)) < 0.0001f);
+    CHECK(std::fabs(facts.distanceFromLead - 154.05f) < 0.05f); // not the point's distance to itself
+    CHECK(CheckMove(facts) == MoveVerdict::TooFar);
+
+    // Every other field is the caller's, unchanged.
+    MoveFacts const full = LeadMoveFacts(origin, point, kPathIncomplete, 1.5f, 2.5f, 150.0f, true, false);
+    CHECK(full.pathType == kPathIncomplete && full.endOffset == 1.5f && full.endFromLead == 2.5f);
+    CHECK(full.maxDistance == 150.0f && full.leadSpotGather && !full.fromRunLeader);
+
+    // A grid: the extracted facts give exactly the old inline numbers and the
+    // same verdict (the equivalence CommanderMove relies on).
+    for (int i = -2; i <= 2; ++i)
+        for (int j = -2; j <= 2; ++j)
+        {
+            MovePoint const o{float(i) * 20.0f, float(j) * 20.0f, 50.0f};
+            MovePoint const p{float(i) * 20.0f + 3.0f, float(j) * 20.0f - 4.0f, 50.0f + float(i)};
+            MoveFacts old;
+            old.distanceFromLead = oldDistance(o, p);
+            old.maxDistance = 150.0f;
+            old.pathType = kPathNormal;
+            MoveFacts const now = LeadMoveFacts(o, p, kPathNormal, 0.0f, 0.0f, 150.0f, false, false);
+            CHECK(now.distanceFromLead == old.distanceFromLead);
+            CHECK(CheckMove(now) == CheckMove(old));
+        }
+}
+
 int main()
 {
     TestHiresOfTheCommander();
@@ -1397,6 +1504,9 @@ int main()
     TestRaidBindingRelease();
     TestRaidBindPlan();
     TestParseRunFor();
+    TestParseScoutArgs();
+    TestScoutLines();
+    TestLeadMoveFactsMatchTheCommandsNumbers();
     std::printf("remote commander policy: %d checks passed\n", checks);
     return 0;
 }
