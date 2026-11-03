@@ -130,6 +130,17 @@ namespace ai
         return !heldMark && !(runAutoCc && ccMarkOrControlled);
     }
 
+    // A DoT row's cast at the bot's current target (Corruption, Immolate,
+    // Serpent Sting, Flame Shock, Rupture ...): once that target is a CC mark
+    // or under damage-breakable CC the periodic damage does not go on it, so a
+    // mark that lands mid-fight is not dotted by the caster already on it.
+    // `periodicDamage` is the spell's own effect: a debuff without periodic
+    // damage (Demoralizing Shout) breaks nothing and goes.
+    inline bool CcDotCastAllowed(bool periodicDamage, bool runAutoCc, bool heldMark, bool ccMarkOrControlled)
+    {
+        return !periodicDamage || CcDotTargetAllowed(runAutoCc, heldMark, ccMarkOrControlled);
+    }
+
     // CC target chooser: once the bot's own assigned mark is the result, a
     // later candidate (an open-world free pick) never replaces it.
     inline bool CcChooserKeepsResult(bool resultIsAssignedMark)

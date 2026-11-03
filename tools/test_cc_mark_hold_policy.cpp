@@ -163,6 +163,16 @@ int main()
     CHECK(CcDotTargetAllowed(false, false, true));   // key off: a mark is no veto
     CHECK(CcDotTargetAllowed(true, false, false));   // auto cc on, no CC there
 
+    // A DoT cast at the bot's current target is the same rule, and only for a spell that applies periodic damage: the
+    // moment that target is a CC mark or crowd-controlled the caster stops applying and refreshing its DoTs, while a
+    // debuff without periodic damage (Demoralizing Shout) goes.
+    CHECK(!CcDotCastAllowed(true, true, false, true));   // a CC mark, auto cc on
+    CHECK(!CcDotCastAllowed(true, true, true, false));   // a held mark, either way
+    CHECK(!CcDotCastAllowed(true, false, true, true));   // held outside the run too
+    CHECK(CcDotCastAllowed(true, false, false, true));   // key off: a mark is no veto
+    CHECK(CcDotCastAllowed(true, true, false, false));   // nothing marked
+    CHECK(CcDotCastAllowed(false, true, true, true));    // a debuff that is no DoT
+
     // CC chooser: the assigned mark, once picked, is never replaced by a
     // later free pick; any other interim pick may still be replaced.
     CHECK(CcChooserKeepsResult(true));

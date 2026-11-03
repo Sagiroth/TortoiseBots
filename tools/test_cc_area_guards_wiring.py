@@ -43,6 +43,7 @@ TARGET_VALUE_H = (VALUES / "TargetValue.h").read_text()
 DOT_TARGET = (VALUES / "AttackerWithoutAuraTargetValue.cpp").read_text()
 POLICY = (VALUES / "CcMarkHoldPolicy.h").read_text()
 AREA_SPELL_H = (STRATEGY / "actions/EnemyAreaSpell.h").read_text()
+GENERIC_SPELL_ACTIONS = (STRATEGY / "actions/GenericSpellActions.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -132,6 +133,25 @@ class DotTargetWiring(unittest.TestCase):
         controlled = body(TARGET_VALUE, "bool CcGuard::IsCrowdControlledUnit(")
         self.assertIn("IsCrowdControlled(ai, unit)", controlled)
         self.assertIn("bool CcDotTargetAllowed(bool runAutoCc, bool heldMark, bool ccMarkOrControlled)", POLICY)
+
+    def test_the_dot_rows_guard_their_current_target(self):
+        # The caster's own rotation at its current target (Corruption, Immolate, Serpent Sting, Flame Shock, Rupture
+        # ...): once that target gets a CC mark, no periodic damage is applied or refreshed on it, so the mark is not
+        # broken by the caster already on it.
+        for name in ("bool CastMeleeDebuffSpellAction::isUseful()", "bool CastRangedDebuffSpellAction::isUseful()"):
+            fn = body(GENERIC_SPELL_ACTIONS, name)
+            self.assertIn("DotCastAtTarget(ai, GetTarget(), GetSpellID())", fn)
+            self.assertIn("CastAuraSpellAction::isUseful()", fn)
+        dot = body(GENERIC_SPELL_ACTIONS, "bool SpellAppliesPeriodicDamage(")
+        self.assertIn("SPELL_AURA_PERIODIC_DAMAGE", dot)
+        guard = body(GENERIC_SPELL_ACTIONS, "bool DotCastAtTarget(")
+        self.assertIn("ccGuard.IsCcMarkedUnit(target)", guard)
+        self.assertIn("ccGuard.IsCrowdControlledUnit(target)", guard)
+        self.assertIn("ccGuard.IsHeldCcMark(target)", guard)
+        self.assertIn("CcDotCastAllowed(", guard)
+        self.assertIn(
+            "bool CcDotCastAllowed(bool periodicDamage, bool runAutoCc, bool heldMark, bool ccMarkOrControlled)",
+            POLICY)
 
 
 if __name__ == "__main__":

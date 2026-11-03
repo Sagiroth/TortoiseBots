@@ -177,6 +177,8 @@ namespace ai
             range = ATTACK_DISTANCE;
         }
 
+        virtual bool isUseful() override;
+
     protected:
         virtual std::string GetReachActionName() override { return "reach melee"; }
     };
@@ -185,6 +187,8 @@ namespace ai
     {
     public:
         CastRangedDebuffSpellAction(PlayerbotAI* ai, std::string spell, bool isOwner = true) : CastAuraSpellAction(ai, spell, isOwner) {}
+
+        virtual bool isUseful() override;
 
     protected:
         virtual std::string GetReachActionName() override { return "reach spell"; }
