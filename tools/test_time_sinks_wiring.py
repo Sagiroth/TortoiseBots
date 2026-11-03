@@ -123,7 +123,7 @@ class TimeSinksWiringTest(unittest.TestCase):
         placed = body(POLICY, "inline bool PlacedRunRescue(Run& r, const Facts& f)", "\n}\n")
         # Bot-only: the safe point on the way it came, first; the first safe point from the start only as the fall-back.
         players = placed.index("if (f.players.empty())")
-        latest = placed.index("SafePointAtOrBefore(r, f.team, last)")
+        latest = placed.index("SafePointAtOrBefore(r, f.team, last, &f)")
         first = placed.index("for (std::size_t j = r.startStep; !byTheWipe &&")
         self.assertLess(placed.index("LastReachedBefore(r, r.step)"), latest)
         self.assertLess(players, latest)
@@ -150,7 +150,7 @@ class TimeSinksWiringTest(unittest.TestCase):
         self.assertLess(island, walk.index("if (DirectStillToCross(r, r.walkBackIdx))"))
         self.assertLess(island, walk.index('PassWalkBackPoint(r, f.leadX, f.leadY, f.leadZ, "walk back: " + why);'))
         isle = body(POLICY, "inline bool IslandWalkBackRescue(Run& r, const Facts& f, const std::string& why)", "\n}\n")
-        for part in ("r.noSpotKnown", "!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last)",
+        for part in ("r.noSpotKnown", "!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last, &f)",
                      "RescueDue(r, f, target);"):
             self.assertIn(part, isle)
         self.assertIn("ReplayStartPoint(r, f)", body(POLICY, "inline bool ReplayWalkBack(Run& r, const Facts& f)\n{", "\n}\n"))
@@ -166,7 +166,7 @@ class TimeSinksWiringTest(unittest.TestCase):
         self.assertEqual(walk.count("ReplayRescue("), 3)
         self.assertEqual(walk.count("if (ReplayWalkBack(r, f))"), 3)
         rescue = body(POLICY, "inline bool ReplayRescue(Run& r, const Facts& f, const std::string& why)", "\n}\n")
-        for part in ("!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last)",
+        for part in ("!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last, &f)",
                      "ReplayYardsTo(r, f, target)", "kReplayRescueYd", "RescueDue(r, f, target);"):
             self.assertIn(part, rescue)
         self.assertIn("ReplayStartPoint(r, f)", body(POLICY, "inline float ReplayYardsTo(", "\n}\n"))
@@ -184,7 +184,7 @@ class TimeSinksWiringTest(unittest.TestCase):
         self.assertEqual(walk.count("BackoffRescue("), 1)
         rescue = body(POLICY, "inline bool BackoffRescue(Run& r, const Facts& f, const std::string& why, std::size_t back)",
                       "\n}\n")
-        for part in ("!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last)",
+        for part in ("!f.players.empty()", "RescueAllowed(r, f)", "SafePointAtOrBefore(r, f.team, last, &f)",
                      "PointsYards(r, back, target)", "kReplayRescueYd", "RescueDue(r, f, target);",
                      "r.strandBotOnly = true;", "r.strandReplay = true;"):
             self.assertIn(part, rescue)

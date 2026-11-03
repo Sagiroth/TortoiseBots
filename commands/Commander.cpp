@@ -10425,6 +10425,9 @@ static void ReadRescueFacts(Player* lead, std::vector<Player*> const& bots, floa
         f.rescueReach.push_back(reach);
     }
     f.rescueRead = true;
+    f.rescueReadX = x;
+    f.rescueReadY = y;
+    f.rescueReadZ = z;
 }
 
 // The teleport return's read of the lead bot's ground (DungeonRun::FetchPoint), only while the run asks for it

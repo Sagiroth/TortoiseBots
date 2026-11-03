@@ -12181,11 +12181,21 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
     CHECK(!LiveHostileNearPoint(live, -422.4f, 82.4f + 29.0f, -172.9f));
 
     // The plan alone calls the point clear; the live read does not.
+    Facts read = StrandFacts(-960.0f, 620.0f, -172.9f);
+    read.rescueRead = true;
+    read.rescueReadX = -422.4f;
+    read.rescueReadY = 82.4f;
+    read.rescueReadZ = -172.9f;
+    read.rescueReach = live;
     {
         Run r = Start(&plan, 2);
         NoteCheckpoint(r, 0);
         CHECK(SafePointAtOrBefore(r, 2, 1) == 1);
-        CHECK(SafePointAtOrBefore(r, 2, 1, &live) == 0);
+        CHECK(SafePointAtOrBefore(r, 2, 1, &read) == 0);
+        // A read of another point answers nothing for this one.
+        Facts elsewhere = read;
+        elsewhere.rescueReadY = 900.0f;
+        CHECK(SafePointAtOrBefore(r, 2, 1, &elsewhere) == 1);
     }
     // A member group: two members together away from the point, one alone elsewhere.
     Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
@@ -12237,6 +12247,9 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
     {
         Facts g = f;
         g.rescueRead = true;
+        g.rescueReadX = -422.4f;
+        g.rescueReadY = 82.4f;
+        g.rescueReadZ = -172.9f;
         g.rescueReach = live;
         Run r = stranded();
         std::string const order = Tick(r, g);
@@ -12248,6 +12261,9 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
         // No member out of combat: it holds, nothing goes out.
         Facts g = f;
         g.rescueRead = true;
+        g.rescueReadX = -422.4f;
+        g.rescueReadY = 82.4f;
+        g.rescueReadZ = -172.9f;
         g.rescueReach = live;
         g.members[1].inCombat = true;
         g.members[2].inCombat = true;

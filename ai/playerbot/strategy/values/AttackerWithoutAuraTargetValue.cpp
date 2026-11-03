@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AttackerWithoutAuraTargetValue.h"
 #include "TargetValue.h"
+#include "CcMarkHoldPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;

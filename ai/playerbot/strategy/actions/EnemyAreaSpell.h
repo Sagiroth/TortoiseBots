@@ -1,6 +1,8 @@
 #pragma once
 #include "playerbot/playerbot.h"
 
+#include <algorithm>
+
 namespace ai
 {
     // Whether `spellInfo` damages enemies in an area. The ACTION_THREAT_AOE mark covers almost no real area spell in

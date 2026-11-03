@@ -887,7 +887,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)", policy)
         self.assertIn("inline std::string EstimateNote(", policy)
         self.assertIn("bool const aheadDue = f.aggroWalkRing && f.aheadStep == r.step + 1 &&", policy)
-        self.assertIn("std::to_string(u.estBodies) + \" bodies expected\"", policy)
+        self.assertIn("std::to_string(bodies) + \" bodies expected\"", policy)
         plan = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
         self.assertIn("step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies", plan)
 
