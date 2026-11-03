@@ -12,12 +12,12 @@ struct PatchwerkThreatPlayer
 };
 // In threat-list order, match the core's first four eligible players.
 // Test the caller as if it stepped into melee, even while it is outside.
-inline bool PatchwerkMeleeSlotsSafe(uint64_t main, std::vector<uint64_t> const& soakers,
+inline bool PatchwerkMeleeSlotsSafe(uint64_t mainTank, std::vector<uint64_t> const& soakers,
     std::vector<PatchwerkThreatPlayer> const& players, uint64_t caller)
 {
-    if (!main || soakers.size() != 3 || !caller)
+    if (!mainTank || soakers.size() != 3 || !caller)
         return false;
-    std::set<uint64_t> assigned{main};
+    std::set<uint64_t> assigned{mainTank};
     for (uint64_t soaker : soakers)
         if (!soaker || !assigned.insert(soaker).second)
             return false;

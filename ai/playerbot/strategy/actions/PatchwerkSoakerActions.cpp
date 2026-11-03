@@ -208,23 +208,23 @@ Player* ai::GetPatchwerkSoakPuller(PlayerbotAI* ai)
         !PullRendezvousExpired(PullStrategy::Get(peer)) ? main : nullptr;
 }
 
-bool ai::PatchwerkSoakersReadyForPull(PlayerbotAI* main)
+bool ai::PatchwerkSoakersReadyForPull(PlayerbotAI* puller)
 {
-    if (!PatchwerkMainPull(main)) return true;
-    PullStrategy* pull = PullStrategy::Get(main);
+    if (!PatchwerkMainPull(puller)) return true;
+    PullStrategy* pull = PullStrategy::Get(puller);
     // Never interrupt the arrow's windup. The existing pull-end trigger owns
     // timeout cleanup; an expired rendezvous must not authorize a late shot.
     if (pull->HasPullActionCast()) return true;
     if (PullRendezvousExpired(pull)) return false;
-    for (Player* member : LiveGroupMembers(main->GetBot()->GetGroup()))
+    for (Player* member : LiveGroupMembers(puller->GetBot()->GetGroup()))
     {
         PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
         if (!peer || !PatchwerkSoakerAssigned(peer)) continue;
-        if (!EligibleSoaker(peer) || !member->IsInMap(main->GetBot()) ||
-            !sServerFacade.IsFriendlyTo(main->GetBot(), member) || !peer->CanMove() ||
+        if (!EligibleSoaker(peer) || !member->IsInMap(puller->GetBot()) ||
+            !sServerFacade.IsFriendlyTo(puller->GetBot(), member) || !peer->CanMove() ||
             MissingSoakStance(peer) || peer->GetAIInternalUpdateDelay() > 250 ||
-            member->GetDistance(main->GetBot()) > 1.0f ||
-            !member->IsWithinLOSInMap(main->GetBot(), true))
+            member->GetDistance(puller->GetBot()) > 1.0f ||
+            !member->IsWithinLOSInMap(puller->GetBot(), true))
             return false;
     }
     return true;
