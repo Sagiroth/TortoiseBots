@@ -44,6 +44,7 @@ DPS_TARGET = (ROOT / "ai/playerbot/strategy/values/DpsTargetValue.cpp").read_tex
 DISPEL_VALUE = (ROOT / "ai/playerbot/strategy/values/PartyMemberToDispel.cpp").read_text()
 DISPEL_POLICY = (ROOT / "ai/playerbot/policy/heal/DispelTargetPolicy.h").read_text()
 PLAYERBOT_AI_H = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
+PLAYERBOT_AI_CPP = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
 PLAYERBOT_AI_SPELLS = (ROOT / "ai/playerbot/PlayerbotAISpells.cpp").read_text()
 ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
@@ -559,6 +560,30 @@ class FreezeFleeWiring(unittest.TestCase):
         self.assertIn("bot->GetMotionMaster()->MoveIdle();", action)
         self.assertIn('"BossTacticsFreeze"', ACTIONS)
         self.assertIn('"ms=%u,moved_yd=%.2f"', ACTIONS)
+
+    def test_the_fight_scan_is_cached_once_per_bot_and_update(self):
+        # The target pick asks the scan once per candidate and the freeze multiplier once per action: one table read
+        # and one world walk per bot per AI tick, keyed by the bot, its tick and the table (a reload replaces it).
+        self.assertIn("struct FightScanCache", ACTIONS)
+        self.assertIn("thread_local FightScanCache t_fightScan;", ACTIONS)
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
+        self.assertIn("std::uint32_t const tick = ai ? ai->UpdateTick() : 0;", scan)
+        self.assertIn("t_fightScan.ai == ai && t_fightScan.bot == bot && t_fightScan.tick == tick", scan)
+        self.assertIn("t_fightScan.tick = tick;", scan)
+        self.assertIn("t_fightScan.table = &table;", scan)
+        self.assertLess(scan.index("return t_fightScan.fight;"), scan.index("const uint32 mapId"))
+        self.assertIn("uint32 UpdateTick() const { return aiUpdateTick; }", PLAYERBOT_AI_H)
+        self.assertIn("++aiUpdateTick;", PLAYERBOT_AI_CPP)
+
+    def test_the_dps_hold_prune_throttle_is_read_before_the_lock(self):
+        # Every candidate read asks for the prune; the once-a-second test must not take the global lock.
+        self.assertIn("std::atomic<std::uint32_t> g_dpsHoldPruneMs{0};", ACTIONS)
+        prune = body(ACTIONS, "void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)", "\n}\n")
+        throttle = prune.index("g_dpsHoldPruneMs.load(std::memory_order_relaxed)")
+        self.assertLess(throttle, prune.index("std::lock_guard<std::mutex> lock(g_dpsHoldMutex)"))
+        # Two threads that pass the unlocked test re-check under the lock.
+        self.assertGreaterEqual(prune.count("g_dpsHoldPruneMs.load(std::memory_order_relaxed)"), 2)
+        self.assertIn("g_dpsHoldPruneMs.store(nowMs, std::memory_order_relaxed);", prune)
 
     def test_the_freeze_and_flee_triggers_skip_the_scan_with_the_key_off(self):
         # Both triggers sit in the reaction engine, which runs every update: without the key (or on a map with none of

@@ -328,6 +328,7 @@ static bool HasSeatedAura(Player* bot)
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)

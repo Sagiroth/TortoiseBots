@@ -807,6 +807,8 @@ public:
     void SetJumpTime(uint32 time) { jumpTime = time; }
     // ignoreReturnHold: the body's own state only (facing an attacker is no move).
     bool CanMove(bool ignoreReturnHold = false);
+    // The UpdateAI call this is (a scan cache's key): one bot updates at a time on a thread.
+    uint32 UpdateTick() const { return aiUpdateTick; }
     // A dungeon run is bringing this bot back (or it was revived far from the run): it stands still
     // (ai::ReturnHoldPolicy, the run leader's mark "return hold until ms").
     bool ReturnHeld();
@@ -1113,6 +1115,9 @@ protected:
     // Scripted area triggers the bot stands in (issue #984, BotAreaTriggers.h).
     ai::BotAreaTriggerState areaTriggerState;
     uint32 areaTriggerCheckDelay = 0;
+    // Counts UpdateAI calls: the per-tick caches (the boss tactics fight scan in BossTacticsActions.cpp) keep a value
+    // for one update only.
+    uint32 aiUpdateTick = 0;
     // Issue #84 (P2): bumped by HandleTeleportAck, consumed by engines.
     uint64_t transitionGeneration = 0;
     uint32 faceTargetUpdateDelay = 0;

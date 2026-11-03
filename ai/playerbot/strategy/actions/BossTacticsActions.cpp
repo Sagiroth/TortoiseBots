@@ -89,7 +89,7 @@ std::map<DpsHoldKey, DpsHoldState> g_dpsHolds;
 // The trigger start each bot has logged for each key: one row per trigger and bot, not one per read.
 std::mutex g_dpsHoldLogMutex;
 std::map<std::pair<std::uint64_t, DpsHoldKey>, std::uint32_t> g_dpsHoldLog;
-std::uint32_t g_dpsHoldPruneMs = 0;
+std::atomic<std::uint32_t> g_dpsHoldPruneMs{0};
 
 DpsHoldKey DpsHoldKeyOf(Player* bot, const BossTacticRow& row, Unit* subject)
 {
@@ -124,10 +124,16 @@ void LogDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow
 // goes with the hold it logged, and any row whose map instance is gone goes too.
 void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
 {
-    std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
-    if (g_dpsHoldPruneMs != 0 && nowMs - g_dpsHoldPruneMs < 1000)
+    // The once-a-second throttle is read unlocked (a target pick asks it per candidate): two threads that both pass
+    // the test re-check under the lock, which is what keeps the pass to once a second.
+    std::uint32_t const last = g_dpsHoldPruneMs.load(std::memory_order_relaxed);
+    if (last != 0 && nowMs - last < 1000)
         return;
-    g_dpsHoldPruneMs = nowMs;
+    std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
+    std::uint32_t const ran = g_dpsHoldPruneMs.load(std::memory_order_relaxed);
+    if (ran != 0 && nowMs - ran < 1000)
+        return;
+    g_dpsHoldPruneMs.store(nowMs, std::memory_order_relaxed);
     for (auto it = g_dpsHolds.begin(); it != g_dpsHolds.end();)
     {
         bool drop = nowMs - it->second.lastReadMs > kDpsHoldStaleMs;
@@ -577,10 +583,31 @@ std::uint64_t ai::SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry)
     return pick < 0 ? 0 : candidates[pick].guid;
 }
 
+namespace
+{
+// One bot updates at a time on a thread, and every caller of a scan in that update (the target pick once per
+// candidate, the freeze multiplier once per action, the triggers) asks the same question. Keep the last scan of the
+// current AI tick, keyed by the bot, its tick and the tactic table: a reload replaces the table, so the table's
+// identity makes a cached answer from the old one unusable rather than stale.
+struct FightScanCache
+{
+    PlayerbotAI* ai = nullptr;
+    Player* bot = nullptr;
+    std::uint32_t tick = 0;
+    const BossTacticTable* table = nullptr;
+    BossTacticsFight fight;
+};
+thread_local FightScanCache t_fightScan;
+}
+
 BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 {
-    BossTacticsFight fight;
     const BossTacticTable& table = GetBossTactics();
+    std::uint32_t const tick = ai ? ai->UpdateTick() : 0;
+    if (ai && t_fightScan.ai == ai && t_fightScan.bot == bot && t_fightScan.tick == tick &&
+        t_fightScan.table == &table)
+        return t_fightScan.fight;
+    BossTacticsFight fight;
     const uint32 mapId = bot->GetMapId();
     if (!table.HasMap(mapId))
         return fight;
@@ -638,6 +665,14 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
                 fight.rows.push_back(&row);
             }
         }
+    }
+    if (ai)
+    {
+        t_fightScan.ai = ai;
+        t_fightScan.bot = bot;
+        t_fightScan.tick = tick;
+        t_fightScan.table = &table;
+        t_fightScan.fight = fight;
     }
     return fight;
 }
