@@ -1165,7 +1165,8 @@ bool SweepDispelCures(PlayerbotAI* ai, Player* bot, const ActiveBossRows& rows, 
         }
         for (const auto& entry : doomed)
         {
-            member->RemoveAurasByCasterSpell(entry.first, entry.second);
+            if (apply)
+                member->RemoveAurasByCasterSpell(entry.first, entry.second);
             swept = true;
         }
     }

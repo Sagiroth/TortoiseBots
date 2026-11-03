@@ -294,6 +294,18 @@ class TheRunningCuresAreSwept(unittest.TestCase):
         self.assertIn("totem->UnSummon()", fn)
         self.assertIn("sServerFacade.GetDistance2d(totem, member) > radius", fn)
 
+    def test_probe_mode_reports_work_but_mutates_nothing(self):
+        # apply=false is the read-only probe the trigger evaluates: it must still report work, but the aura removal
+        # and the totem destroy both sit behind `if (apply)`.
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertRegex(
+            fn,
+            r"if \(apply\)\s*member->RemoveAurasByCasterSpell\(entry\.first, entry\.second\);\s*swept = true;",
+        )
+        self.assertRegex(fn, r"if \(apply\)\s*totem->UnSummon\(\);\s*swept = true;")
+        self.assertEqual(fn.count("RemoveAurasByCasterSpell("), 1)
+        self.assertEqual(fn.count("UnSummon("), 1)
+
     def test_sweep_is_gated_and_registered(self):
         fn = body(ACTIONS, "bool ai::SweepBossDispelCures(")
         self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
