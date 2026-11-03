@@ -14,6 +14,7 @@
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/DecisionCaptureLimits.h"
 #include "../../runtime/GossipOrderPolicy.h"
 #include <cerrno>
 #include <cstring>
@@ -735,6 +736,19 @@ bool PlayerbotAIConfig::Initialize()
     runTraceMaxFileMb = TortoiseBots::RunTrace::ClampMaxFileMb(
         config.GetIntDefault("AiPlayerbot.RunTrace.MaxFileMb",
             static_cast<int>(TortoiseBots::RunTrace::kDefaultMaxFileMb)));
+    // Decision capture (opt-in, test servers): see docs/server/decision-capture.md.
+    decisionCapture = config.GetBoolDefault("AiPlayerbot.DecisionCapture.Enabled", false);
+    decisionCaptureDir = config.GetStringDefault("AiPlayerbot.DecisionCapture.Dir", "decisions");
+    decisionCaptureSegmentMiB = TortoiseBots::DecisionCapture::ClampSegmentMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.SegmentMiB", 32));
+    decisionCaptureCaptureMiB = TortoiseBots::DecisionCapture::ClampCaptureMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.CaptureMiB", 512), decisionCaptureSegmentMiB);
+    decisionCaptureTotalMiB = TortoiseBots::DecisionCapture::ClampTotalMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.TotalMiB", 4096), decisionCaptureCaptureMiB);
+    decisionCaptureRecordKiB = TortoiseBots::DecisionCapture::ClampRecordKiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.RecordKiB", 512));
+    decisionCaptureKeyframeEvery = TortoiseBots::DecisionCapture::ClampKeyframeEvery(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.KeyframeEvery", 60));
     {
         // Issue #1012: the NPCs `.bot cmd gossip` may talk to. Empty (the default) = off.
         std::string const gossipText = config.GetStringDefault("AiPlayerbot.BotGossipNpcs", "");

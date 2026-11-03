@@ -513,6 +513,24 @@ public:
     bool runTraceGmOnly = true;
     // Size cap of one trace file, in MiB (1..1024); the trace stops when reached.
     uint32 runTraceMaxFileMb = 64;
+    // Decision capture (docs/server/decision-capture.md): a running run leader's
+    // every policy tick is written to a rotating JSONL capture, so a live
+    // failure can become a replay fixture. Off by default; test servers only.
+    bool decisionCapture = false;
+    // Output folder; relative paths are under LogsDir.
+    std::string decisionCaptureDir = "decisions";
+    // One segment rotates past this many MiB (1..256).
+    uint32 decisionCaptureSegmentMiB = 32;
+    // A capture's segments past this many MiB are deleted oldest first
+    // (SegmentMiB..4096).
+    uint32 decisionCaptureCaptureMiB = 512;
+    // The whole folder past this many MiB drops its oldest ended captures
+    // (CaptureMiB..65536).
+    uint32 decisionCaptureTotalMiB = 4096;
+    // A larger record becomes a stub (64..4096 KiB).
+    uint32 decisionCaptureRecordKiB = 512;
+    // A full keyframe every this many records (1..600).
+    uint32 decisionCaptureKeyframeEvery = 60;
     // Issue #1012: creature entries a commanded bot may talk to with `.bot cmd
     // gossip` (AiPlayerbot.BotGossipNpcs). Empty by default: the order is off.
     std::set<uint32> botGossipNpcs;

@@ -32,7 +32,7 @@ class ApproachStandWiringTest(unittest.TestCase):
     def test_glue_searches_the_stand_when_asked(self):
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         i = tick.index("if (slot.run.approachStandWanted)")
-        self.assertLess(tick.index(": TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), i)
+        self.assertLess(tick.index("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), i)
         self.assertLess(i, tick.index("if (!order.empty())"))
         block = tick[i:tick.index("if (!order.empty())", i)]
         self.assertIn("ApproachStandSearch(lead, slot.run, *step, facts.team, sx, sy, sz);", block)

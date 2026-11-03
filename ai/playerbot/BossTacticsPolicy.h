@@ -239,6 +239,13 @@ namespace ai
         return row.targetEntry ? row.targetEntry : row.bossEntry;
     }
 
+    // A table's revision: unique for the process, assigned when the table is constructed. A freed table's address can
+    // come back for a changed table, so a cache of the table's content keys on the revision, never on the address.
+    inline std::uint64_t NextBossTacticRevision()
+    {
+        static std::atomic<std::uint64_t> counter{0};
+        return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
     // One linked_death group: its anchor (the anchor's rows) and its group id (`priority`). One anchor can carry
     // several groups on one map.
     struct LinkedDeathGroupKey
@@ -250,6 +257,10 @@ namespace ai
     class BossTacticTable
     {
     public:
+        BossTacticTable() : revision_(NextBossTacticRevision()) {}
+
+        std::uint64_t Revision() const { return revision_; }
+
         // Loading only. False after Seal(), for an unusable row, or when the
         // (map, boss, kind, target, spell, hp_min, hp_max) key is already there: the
         // first row wins, as it would under the table's primary key.
@@ -359,7 +370,13 @@ namespace ai
             return true;
         }
 
-        void Seal() { sealed_.store(true, std::memory_order_release); }
+        // The seal opens the table to readers. The revision moves here too, so a content read taken before the seal
+        // (empty rows) is never served for the sealed table.
+        void Seal()
+        {
+            revision_ = NextBossTacticRevision();
+            sealed_.store(true, std::memory_order_release);
+        }
         bool Sealed() const { return sealed_.load(std::memory_order_acquire); }
         std::size_t Size() const { return size_; }
 
@@ -467,6 +484,31 @@ namespace ai
             return it == rows_.end() ? nullptr : &it->second;
         }
 
+        // Every row of one map, sorted by (bossEntry, kind, targetEntry, spellId):
+        // the decision capture stores the table once per capture segment and the
+        // replay rebuilds it from this list, so the order must not depend on the
+        // map's iteration. Empty before the seal.
+        std::vector<BossTacticRow> RowsOnMap(std::uint32_t map) const
+        {
+            std::vector<BossTacticRow> out;
+            if (!sealed_.load(std::memory_order_acquire))
+                return out;
+            for (const auto& entry : rows_)
+                if ((entry.first >> 32) == map)
+                    out.insert(out.end(), entry.second.begin(), entry.second.end());
+            std::sort(out.begin(), out.end(), [](const BossTacticRow& a, const BossTacticRow& b)
+            {
+                if (a.bossEntry != b.bossEntry)
+                    return a.bossEntry < b.bossEntry;
+                if (a.kind != b.kind)
+                    return a.kind < b.kind;
+                if (a.targetEntry != b.targetEntry)
+                    return a.targetEntry < b.targetEntry;
+                return a.spellId < b.spellId;
+            });
+            return out;
+        }
+
     private:
         static std::uint64_t Key(std::uint32_t map, std::uint32_t bossEntry)
         {
@@ -486,6 +528,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
+        std::uint64_t revision_;
     };
     // Activation gate. The tactics change how bots play, so they are not on for
     // everybody: either the server owner opted in (AiPlayerbot.DungeonTactics = 1)

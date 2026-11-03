@@ -433,3 +433,4 @@ Two limits:
 ### Cost
 
 Nothing while no run exists. A running run ticks once a second (never per bot tick) and does at most one local grid search around its lead bot (a `boss` or `hold` step: one per listed entry), only when the step's point is within 60 yd. A `hold` done by data reads one instance data value a tick. It counts each bot's attackers from the core's attacker set (no scan). No database access after startup.
+With `AiPlayerbot.DecisionCapture.Enabled = 1` (off by default, test servers only) every tick's facts, run and order are also written to a rotating capture, roughly 12-40 KB a tick: what it is and how a live failure becomes a replay fixture is in [Decision capture](../server/decision-capture.md).

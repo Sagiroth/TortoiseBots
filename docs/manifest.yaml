@@ -224,6 +224,10 @@ nodes:
     path: server/run-trace.md
     category: server
     summary: Record what a party of bots did during one run as a bt-trace v1 JSONL file plus a per-run summary, and score it offline.
+  - id: server-decision-capture
+    path: server/decision-capture.md
+    category: server
+    summary: Record every run-leader decision with the facts behind it, cut a live failure into a replay fixture, and keep it as a regression test.
 
   # Developers
   - id: developers

@@ -124,8 +124,8 @@ class PlayerLedGlueWiringTest(unittest.TestCase):
         self.assertLess(pick, tick.index("ReadRunFacts(slot, lead, bots, facts, binding->raid);"))
         self.assertIn("slot.playerLed.pullYd = sPlayerbotAIConfig.dungeonRunPlayerLedPullYd;", tick)
         self.assertIn("anchor = ReadPlayerLedAnchor(commander, bots, slot.run.plan->map, slot.playerLed);", tick)
-        self.assertIn("? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)", tick)
-        self.assertIn(": TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", tick)
+        self.assertIn("order = TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt);", tick)
+        self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", tick)
         # The tank is never put on stay for a rest in a player-led run.
         self.assertIn("PlayerbotAI* leadAi = slot.playerLed.on ? nullptr : PlayerbotAIStorage::Instance().GetAI(lead)", tick)
 
