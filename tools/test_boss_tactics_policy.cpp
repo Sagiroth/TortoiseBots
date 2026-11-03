@@ -974,17 +974,52 @@ int main()
         fighting[1].inCombat = true;
         CHECK(!LinkedDeathLatchTick(stillFights, p, nobody, none, 2000, fighting));
         CHECK(stillFights.known.size() == 2);
-        CHECK(!LinkedDeathEncounterEnded(stillFights, nobody, fighting, 2000));
+        CHECK(!LinkedDeathEncounterEnded(stillFights, 2000));
 
         // One visible idle member at full health is no evade while another known member is unresolved and recent (it may
-        // still fight out of view). The reset waits until every known guid is idle at full health in one scan.
+        // still fight out of view). The reset waits until every known guid's latest observation, from any observer, is
+        // idle at full health.
         LinkedDeathLatch partial;
         CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
         CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 2000, { Linked(1, 100, false) }));
         CHECK(partial.known.size() == 2);                                       // 2 unresolved, seen 1 s ago: no reset
-        CHECK(!LinkedDeathEncounterEnded(partial, nobody, { Linked(1, 100, false) }, 2000));
+        CHECK(!LinkedDeathEncounterEnded(partial, 2000));
         CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 3000, idleFull)); // all known idle at full health: reset
         CHECK(partial.known.empty());
+
+        // Two observers, each seeing only one of the two idle members (their scans do not overlap): the sightings
+        // combine, so the second observer's read resets the encounter even though neither scan saw the whole group.
+        LinkedDeathLatch split;
+        CHECK(!LinkedDeathLatchTick(split, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(split, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(split.known.size() == 2);                                          // 2's latest sighting is the fight
+        CHECK(!LinkedDeathEncounterEnded(split, 2000));
+        CHECK(!LinkedDeathLatchTick(split, p, nobody, none, 2500, { Linked(2, 100, false) }));
+        CHECK(split.known.empty());                                              // 1 and 2 idle across two reads
+
+        // An idle sighting older than kLinkedDeathSeenMs is not fresh enough to end the encounter: the group may have
+        // resumed out of view. The 30 s no-sighting timeout still applies to a member not seen at all.
+        LinkedDeathLatch staleIdle;
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 25000, idleFull)); // 3 unseen 24 s: still the fight
+        CHECK(staleIdle.known.size() == 3);
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 31000, nobody));
+        CHECK(staleIdle.known.size() == 3);   // 3 timed out, but 1 and 2's idle sighting is 6 s old: not an evade
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 31500, idleFull));
+        CHECK(staleIdle.known.empty());        // a fresh idle sighting resets
+
+        // The newest observation wins: after one observer sees 1 idle, another sees 2 still fighting at full health.
+        // 2's fighting sighting overrides any older idle one, so no reset; once 2 is seen out of combat it resets.
+        LinkedDeathLatch fightingWins;
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, { Linked(2, 100) }, none, 2500));  // 2 fights, 1 idle
+        CHECK(fightingWins.known.size() == 2);
+        CHECK(!LinkedDeathEncounterEnded(fightingWins, 2500));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 3000, { Linked(1, 100, false) }));
+        CHECK(fightingWins.known.size() == 2);                                   // 2 last seen fighting: no reset
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 3500, idleFull));
+        CHECK(fightingWins.known.empty());                                       // 2 idle again: reset
 
         // An unresolved known member not seen for kLinkedDeathEndMs times out even while another member is idle.
         LinkedDeathLatch timedOut;

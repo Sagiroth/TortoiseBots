@@ -906,7 +906,12 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         self.assertIn("if (known && !known->IsAlive())", fn)
         self.assertNotIn("static_cast<std::uint32_t>(groupScan.members.size())", fn)
         self.assertIn("inline std::vector<std::uint64_t> LinkedDeathUnseen(", POLICY)
-        self.assertIn("latch.dead.push_back(guid);", POLICY)
+        self.assertIn("known->alive = false;", POLICY)
+        # The encounter reset reads the latest observation of every known guid, so the eviction is not tied to one
+        # bot's scan: a fighting or not-full sighting anywhere blocks it, and an idle one seen by any bot counts.
+        self.assertIn("inline bool LinkedDeathEncounterEnded(const LinkedDeathLatch& latch, std::uint32_t nowMs)",
+                      POLICY)
+        self.assertIn("known.inCombat || known.hpPct < 100 || age > kLinkedDeathSeenMs", POLICY)
         # The arming reads every observer's union (LinkedDeathArmed over the known guids), never this bot's scan alone.
         self.assertIn("const bool armedNow = LinkedDeathArmed(latch, param, nowMs);", POLICY)
         pick = body(ACTIONS, "Unit* ai::FindBossLinkedDeath(")
