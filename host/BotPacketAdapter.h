@@ -30,6 +30,10 @@ public:
     // runs them up to each command first). `endOfTick` also reports what the
     // per-bot caps dropped.
     static void DrainDeferredPackets(uint64_t before, bool endOfTick = false);
+    // World thread: true when any bot of this master has a held-packet backlog.
+    // The command drain uses it to run a `.bot` command after the chat and
+    // packets that bot is still waiting on, never before them.
+    static bool HasHeldPacketsForMaster(uint64_t masterGuid);
     // World thread, at shutdown: forget queued packets.
     static void ClearDeferredPackets();
 

@@ -100,6 +100,14 @@ uint64_t BotChatAdapter::DrainQueuedCommands()
                 return;
             }
             ChatHandler(requester->GetSession()).SendSysMessage(text.c_str());
+        },
+        [](Player* requester, PendingBotCommand const&)
+        {
+            // A bot still holding chat or packets between maps has not acked
+            // the earlier order yet; run this command after it, on the next
+            // drain, so the older `stay` cannot land on top of the newer
+            // `follow`.
+            return BotPacketAdapter::HasHeldPacketsForMaster(requester->GetObjectGuid().GetRawValue());
         });
     return BotCommandQueue::Instance().DeferredRunLimit();
 }

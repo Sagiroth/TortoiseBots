@@ -22,10 +22,11 @@ enum class Verdict
     Drop,
 };
 
-// A held packet waits at most this many drains. After that the bot has been
-// between maps for longer than any legitimate teleport, so the packet is
-// stale and dropped.
-constexpr uint8_t kMaxHeldDrains = 3;
+// A held packet waits at most this long, in milliseconds. After that the bot
+// has been between maps for longer than any legitimate teleport, so the packet
+// is stale and dropped. Time is charged once per world tick, not once per
+// drain: a tick drains before every queued command and once more at its end.
+constexpr uint64_t kMaxHeldMs = 3000;
 
 // Wire values of the server packets whose AI handler reads the bot's map
 // (core Protocol/Opcodes_1_12_1.h; host/BotPacketAdapter.cpp static_asserts
@@ -45,13 +46,13 @@ inline bool ReadsBotMap(uint16_t opcode)
         opcode == kSmsgSpellFailure || opcode == kSmsgSpellDelayed;
 }
 
-inline Verdict Decide(bool inWorld, bool farTeleport, uint16_t opcode, uint8_t heldDrains)
+inline Verdict Decide(bool inWorld, bool farTeleport, uint16_t opcode)
 {
     if (inWorld && !farTeleport)
         return Verdict::Deliver;
     if (ReadsBotMap(opcode))
         return Verdict::Drop;
-    return heldDrains < kMaxHeldDrains ? Verdict::Hold : Verdict::Drop;
+    return Verdict::Hold;
 }
 
 } // namespace DeferredDelivery
