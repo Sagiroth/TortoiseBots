@@ -9180,6 +9180,57 @@ Creature* OwnBossSpawnCreature(Player* lead, ai::PlanStep const& step)
     return data ? map->GetCreature(data->GetObjectGuid(own)) : nullptr;
 }
 
+// The Zul'Gurub High Priests whose instance state is not DONE, by name: the pull gate's note names them, so a walk
+// report says why Hakkar is not pulled. The core's instance_zulgurub keeps one state per priest (zulgurub.h's
+// TYPE_ARLOKK 1, TYPE_JEKLIK 2, TYPE_VENOXIS 3, TYPE_MARLI 4, TYPE_THEKAL 6; the same five the saved instance data
+// lists first, in this order). Empty for another map or an instance no script owns.
+std::string ZulGurubPriestsAlive(Player* lead)
+{
+    Map* map = lead->GetMap();
+    InstanceData* data = map ? map->GetInstanceData() : nullptr;
+    if (!data || lead->GetMapId() != 309)
+        return std::string();
+    static const struct { uint32 state; char const* name; } priests[] = {
+        {1, "Arlokk"}, {2, "Jeklik"}, {3, "Venoxis"}, {4, "Mar'li"}, {6, "Thekal"}};
+    std::string out;
+    for (auto const& p : priests)
+    {
+        if (data->GetData(p.state) == 3) // DONE (ScriptedInstance.h)
+            continue;
+        if (!out.empty())
+            out += ", ";
+        out += p.name;
+    }
+    return out;
+}
+
+// The pull gate's read (DungeonRun::Facts::bossGate*, AiPlayerbot.DungeonRunPullGate): a boss step whose boss carries a
+// pull_gate row reads the row's stake aura off the living creature — its stacks, the band and the hold — plus the note's
+// list of the living High Priests. DungeonRun::BossPullGated then never pulls the boss while the aura is up, and the
+// run ends at the row's seconds (Zul'Gurub walk 33 pulled Hakkar with five Hakkar Power 24692 stacks and died in 25-36
+// s). One aura lookup per boss per tick; no row (or the key off) leaves the facts unread.
+void ReadBossPullGate(ai::PlanStep const& step, Player* lead, Creature* boss, TortoiseBots::DungeonRun::Facts& f)
+{
+    if (!sPlayerbotAIConfig.dungeonRunPullGate || !step.entry || !boss || !boss->IsAlive())
+        return;
+    const std::vector<ai::BossTacticRow>* rows = ai::GetBossTactics().Rows(lead->GetMapId(), step.entry);
+    if (!rows)
+        return;
+    for (ai::BossTacticRow const& row : *rows)
+    {
+        if (row.kind != ai::BossTacticKind::PullGate)
+            continue;
+        SpellAuraHolder* holder = boss->GetSpellAuraHolder(row.spellId);
+        f.bossGateStacks = holder ? static_cast<int32>(holder->GetStackAmount()) : 0;
+        f.bossGateSpell = row.spellId;
+        f.bossGateMax = row.priority;
+        f.bossGateHoldS = row.param;
+        f.bossSearchAliveEntry = boss->GetEntry(); // the entry the scan's units read (a script's changed form too)
+        f.bossGatePriests = ZulGurubPriestsAlive(lead);
+        return;
+    }
+}
+
 // A boss step's instance search (DungeonRun::Facts::bossSearch*), on the tick after the policy asked for it
 // (Run::bossSearchWanted, once per kBossSearchMs window): every spawn of the boss's entry on the lead bot's map,
 // looked up by guid in that map (no grid or world scan), wherever it stands. Alive: one lives (where); dead: one
@@ -11297,6 +11348,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         }
                         continue;
                     }
+                    // The pull gate (ReadBossPullGate): the boss's own stake aura, once per tick, off the creature
+                    // this scan found alive.
+                    if (bossEntry && f.bossGateStacks < 0)
+                        ReadBossPullGate(*step, lead, creature, f);
                     PullReadIn read;
                     bool residue = false;
                     if (pullStep)

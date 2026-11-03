@@ -1694,6 +1694,16 @@ struct Facts
     std::string bossSearchEventName;
     std::uint64_t bossSearchCorpseGuid = 0;
     float bossSearchCorpseX = 0.0f, bossSearchCorpseY = 0.0f, bossSearchCorpseZ = 0.0f;
+    // The boss step's pull gate (ai_boss_tactic's pull_gate row, AiPlayerbot.DungeonRunPullGate): the living boss wears
+    // `bossGateSpell` with `bossGateStacks` stacks (the glue's read of the aura; -1: no gate, the key off, no row, or
+    // the boss not seen alive). More than `bossGateMax` holds the pull, and after `bossGateHoldS` s the run ends (see
+    // BossPullGated). bossGatePriests is the glue's display list of the living High Priests off the instance data: the
+    // gate's note names them (empty: none read).
+    std::int32_t bossGateStacks = -1;
+    std::uint32_t bossGateSpell = 0;
+    std::uint32_t bossGateMax = 0;
+    float bossGateHoldS = 0.0f;
+    std::string bossGatePriests;
     int objectState = -1;               // wait_object, hold done by object: 0 ready, 1 active, 2 active_alt; -1 not found
     // wait_object: the -1 above is an authoritative "not there": the lead bot is alive and in the world on the plan's map,
     // the step's point lies within AiPlayerbot.ReactDistance of it (the by-entry search covers only that) and the point's
@@ -2103,6 +2113,10 @@ struct Run
     std::size_t openAtLastPull = 0;
     std::uint32_t fruitlessPulls = 0;
     std::uint32_t bossWaitMs = 0;   // a boss step: time at the spot with the boss neither alive nor dead in sight
+    // The pull gate's hold (Facts::bossGate*, BossPullGated): time the boss step spends held off a boss that wears its
+    // stake aura above the allowed stacks. ResetStep clears it, so a step change (or a resume of the same step) starts
+    // the row's hold over; at the row's seconds the run ends.
+    std::uint32_t bossGateHeldMs = 0;
     bool bossSeenAlive = false;     // a boss step: the boss was among the step's living units
     // The boss steps' entries a fight engaged on an earlier step (IsStepBoss, on any step): his own boss step then
     // starts with bossSeenAlive true, so his corpse near the lead bot counts as boss down even though that step's own
@@ -3454,6 +3468,7 @@ inline void ResetStep(Run& r)
     r.openAtLastPull = 0;
     r.fruitlessPulls = 0;
     r.bossWaitMs = 0;
+    r.bossGateHeldMs = 0; // the pull gate's hold counts this step's ticks
     // A boss of this step engaged on an earlier step (Run::bossFoughtEarly) was fought already: this step starts as
     // if he had been seen alive here, so his corpse near the lead bot is boss down.
     const PlanStep* const resetStep = Current(r);
@@ -10368,6 +10383,44 @@ inline bool StandDisciplineOutOfPlace(const Run& r, const Facts& f, std::string&
     return out;
 }
 
+// The boss step's pull gate (ai_boss_tactic's `pull_gate` row, AiPlayerbot.DungeonRunPullGate): the boss wears its
+// stake aura above the most stacks the row allows, so the run never pulls it. Zul'Gurub walk 33 opened a fresh instance
+// at the Hakkar leg with the five High Priests alive: Hakkar wore five Hakkar Power 24692 stacks (one per living
+// priest, +20 % damage and +10 % max health each) and every pull died in 25-36 s. `entry` is the unit the pull would
+// target: only the step's boss (the entry the glue saw him alive as) is gated, never a pack's trash.
+inline bool BossPullGated(const Facts& f, std::uint32_t entry)
+{
+    return f.bossGateStacks > static_cast<std::int32_t>(f.bossGateMax) && entry == f.bossSearchAliveEntry;
+}
+
+// The pull gate's note: the boss, the aura he wears, its stacks, the band, and the living High Priests the glue read
+// off the instance data when it had them. The hold's tail (`; not pulling`) and the end's (`; the run ends`) are the
+// caller's.
+inline std::string BossGateNote(const Facts& f, std::uint32_t entry)
+{
+    std::string note = "boss gate: " + std::to_string(entry) + " wears " + std::to_string(f.bossGateSpell) + " x" +
+        std::to_string(f.bossGateStacks) + " (" + std::to_string(f.bossGateMax) + " allowed)";
+    if (!f.bossGatePriests.empty())
+        note += "; priests alive: " + f.bossGatePriests;
+    return note;
+}
+
+// One tick of the pull gate on a gated boss (BossPullGated): advances the hold, writes the gate's note and ends the run
+// at the row's seconds. True when the run must leave the boss alone this tick (no pull, no engage on arrival).
+inline bool BossGateTick(Run& r, const Facts& f, std::uint32_t entry, std::uint32_t dt)
+{
+    if (!BossPullGated(f, entry))
+        return false;
+    r.bossGateHeldMs += dt;
+    if (r.bossGateHeldMs >= static_cast<std::uint32_t>(f.bossGateHoldS * 1000.0f))
+    {
+        EndRunEarly(r, BossGateNote(f, entry) + "; the run ends");
+        return true;
+    }
+    r.note = BossGateNote(f, entry) + "; not pulling";
+    return true;
+}
+
 // Gathers the party, crowd-controls the plan's cc targets of the pack (a
 // `cc <mark> <guid> <bot>` each, once per unit and step, PickCcOrder), then
 // sends `pullback <guid>`.
@@ -10385,6 +10438,11 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     bool walkBack = false, std::uint32_t dt = kTickMs, bool hop = false)
 {
     hop = hop || walkBack;
+    // The pull gate: a boss that wears its stake aura above the row's band is never the pull's target. The run holds
+    // it for the row's seconds (the note names the living priests when the glue read them), then ends: a fresh
+    // instance with the priests alive is a wipe, not a step to retry.
+    if (BossGateTick(r, f, u.entry, dt))
+        return;
     // The owner's wait rule at the pull itself (Uldaman 19z11: 17 of 63 pulls
     // went out with a member dead, 15 with the healer, two of them into
     // wipes): no pull while a bot is dead, outside a scripted event. Tick's
@@ -17718,6 +17776,10 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // without the spacing and the cap an order went out every tick. Not
         // one of the pick-ups (guardOrders).
         const UnitFact* arrival = EngageTarget(r, f);
+        // A gated boss is no engage's target either: the gate's hold runs here too (the run ends at its seconds), and
+        // no order goes out while it holds.
+        if (arrival && BossGateTick(r, f, arrival->entry, dt))
+            return true;
         if (arrival && arrival->guid != r.engageGuid && r.engageOrders < kGuardOrdersPerFight &&
             r.fightOrders < kGuardOrdersFightCap &&
             (r.fightOrders == 0 || r.guardSinceOrderMs >= kGuardRepeatMs))

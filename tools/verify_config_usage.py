@@ -57,9 +57,8 @@ DISPLAY_FILES = ("runtime/ObservabilityEmitter.cpp",)
 # Members read into PlayerbotAIConfig that no engine code consumes yet.
 # One line of player words why reading it is still the better choice.
 ALLOWLIST = {
-    # The last Zul'Gurub Hakkar key: its boss tactic kind's run-leader gate lands with the run leader, and the other
-    # three keys are consumed by the rows and the charm yield, so they are no longer listed here.
-    "dungeonRunPullGate": "read for the pull_gate boss tactic kind, whose run-leader gate lands with the rows",
+    # Every Zul'Gurub Hakkar key has a consumer now, so nothing is listed. A key read before its consumer
+    # lands gets a line here with the reason, and the line goes when the consumer lands.
 }
 
 DISPLAY_ONLY_ALLOWLIST = {}
