@@ -848,6 +848,9 @@ struct UnitFact
     // A run crowd-control aura is on it, any family (kRunCc's auras; the name
     // is from when the run had only Polymorph).
     bool polymorphed = false;
+    // The time left on the run cc read on it (the soonest-ending aura of kRunCc's spells), when the glue read
+    // it: RunCcBreakTick breaks the hold that ends first. 0: not read (the oldest hold goes then).
+    std::uint32_t ccRemainMs = 0;
     // Automatic crowd control (Facts::autoCc): a mana user (caster or healer)
     // goes before a melee unit, and its level bounds which bot may take it
     // (kRunCcMaxLevelOver). fleeRoomYd: for a fear family, the 3D distance to
@@ -1203,6 +1206,10 @@ constexpr std::uint32_t kRunCcOpenOrders = 3;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
+// A fight kept open only by the run's own holds (RunCcBreakTick) breaks them one at a time: a break order that has
+// not ended its unit's hold in this long no longer holds the fight ceiling off, so a hold the party cannot reach
+// still ends in the usual pause instead of a stall.
+constexpr std::uint32_t kCcBreakWaitMs = 20000;
 // A Sap goes out before the pull, which waits this long for its aura (the
 // rogue stealths and walks to the mob), then goes without it.
 constexpr std::uint32_t kSapWaitMs = 15000;
@@ -1822,7 +1829,19 @@ struct Facts
     bool autoCcRisky = false;
     std::uint32_t autoCcAbove = 6;
     std::uint64_t leadTargetGuid = 0;
+    // Automatic crowd control, a fight kept open only by the run's holds (RunCcBreakTick): the run's own held units
+    // that are still in combat, read from its holds (one object lookup each, no scan). ccHeldRead false: not read
+    // (the key is off, or the party is out of combat).
+    std::vector<UnitFact> ccHeld;
+    bool ccHeldRead = false;
+    // refuses such a point: a walk through water reads as dry ground and strands the lead bot. Null: unread, no
 };
+
+// No rescue, strand or return point may be one (a walk through water reads as dry ground and strands the lead bot).
+// Unread (no callback, a test without the read): no point is liquid, the old behaviour.
+inline bool PointInLiquid(const Facts* f, float x, float y, float z)
+{
+}
 
 // A member the run may not move: a bot carrying a freeze_on_aura row's aura is held still by the tactics themselves
 // (every one of its actions is multiplied to 0), and a run order walks it anyway (ExecuteAction applies no multiplier),
@@ -2445,6 +2464,12 @@ struct Run
     // The units marked before this fight began (the pull's pre-pull marks): the
     // opening re-sends their orders, and only theirs.
     std::unordered_set<std::uint64_t> ccOpenPrepull;
+    // A fight kept open only by the run's own holds (RunCcBreakTick): the unit being broken out of its hold now
+    // (never two at once), how long it has been tried, and when each held unit was first seen this fight (the
+    // oldest goes when no remaining hold time was read).
+    std::uint64_t ccBreakGuid = 0;
+    std::uint32_t ccBreakMs = 0;
+    std::unordered_map<std::uint64_t, std::uint32_t> ccBreakSeen;
     // The automatic cc order just sent, until the glue answers it
     // (CcOrderTaken): a refused order assigned nothing, so the unit, bot,
     // mark, budget and spacing it took go back. resend: CheckCc's re-send of
@@ -3490,6 +3515,9 @@ inline void ResetStep(Run& r)
     r.ccWaitMs = 0;
     r.ccHolds.clear();
     r.ccWatch.clear();
+    r.ccBreakGuid = 0;
+    r.ccBreakMs = 0;
+    r.ccBreakSeen.clear();
     r.ccLandedDrop.clear();
     r.ccSapFailed = false;
     r.ccRegather = false;
@@ -8706,6 +8734,11 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
     for (std::size_t i = 0; i < r.ccWatch.size();)
     {
         Run::CcWatch& w = r.ccWatch[i];
+        if (r.ccBreakGuid && w.guid == r.ccBreakGuid)
+        {
+            r.ccWatch.erase(r.ccWatch.begin() + static_cast<std::ptrdiff_t>(i));
+            continue; // a hold the run is breaking out of: no watch, no re-send
+        }
         // A joiner marked in the fight is an attacker, not one of the step's units: its aura must still count as
         // landed there (RunCcReapplyTick finds it the same way).
         const UnitFact* held = FightUnit(f, w.guid);
@@ -9522,6 +9555,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
             auto const reapplied = r.ccReapplied.find(u.guid);
             if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
                 r.ccSent.count(u.guid) || u.partyHits || u.victimTank || u.guid == f.leadTargetGuid ||
+                u.guid == r.ccBreakGuid ||
                 (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
@@ -9597,6 +9631,8 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
         // Held still, frozen or under a return hold: no order reaches it, and the land clock would start over.
         if (bot->frozen || bot->held || r.returnHold.count(bot->name))
             continue;
+        if (r.ccBreakGuid && entry.first == r.ccBreakGuid)
+            continue; // a hold the run is breaking out of is never put back
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
@@ -9638,6 +9674,81 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     const RunCcSpell* const spell = RunCcOf(pick.family);
     r.note = "auto cc: " + std::to_string(unit->entry) + " broke free: " + (spell ? spell->spell : "") + " again (" +
         std::to_string(count) + "/" + std::to_string(kRunCcReapplies) + ")";
+    return true;
+}
+
+// Facts::autoCc, a fight kept open only by the run's own holds (ZG walk 33 d: Jin'do steps 540/550 stalled about 50
+// min with eight shackled Sacrificed Trolls 14826; "a fight lasted more than 180 s (kept on by nothing hostile
+// engaged)"). Every hostile still in combat with the party that the facts read (Facts::engagedUnits, and each
+// member's own threat read) is one of the run's held units (Facts::ccHeld), and nothing else engages. The run breaks
+// them ONE at a time: the tank takes the hold that ends soonest (UnitFact::ccRemainMs), or the oldest (the first
+// sight this fight) when no time was read, the party kills it, then the next. Never two at once: the unit being
+// broken stays the one until it is dead, gone from the read, or its hold broke. The hold of that unit is never
+// re-applied. Returns true while the fight is such a fight; `order` carries the break order when one went out.
+inline bool RunCcBreakTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    if (!f.autoCc || !f.ccHeldRead || !f.leadAlive)
+        return false;
+    // Nothing else may engage: a hostile the party attacks, is attacked by, or that holds a member on its threat
+    // list is a real fight, unless the run holds it.
+    auto const unheld = [](const UnitFact& u) { return u.guid && u.hostile && !u.polymorphed; };
+    for (const UnitFact& u : f.engagedUnits)
+        if (unheld(u))
+            return false;
+    for (const MemberFact& m : f.members)
+        for (const UnitFact& u : m.engaged)
+            if (unheld(u))
+                return false;
+    if (f.ccHeld.empty())
+    {
+        r.ccBreakGuid = 0;
+        r.ccBreakMs = 0;
+        return false;
+    }
+    for (const UnitFact& u : f.ccHeld)
+        r.ccBreakSeen.emplace(u.guid, r.fightMs); // the oldest hold goes when no remaining time was read
+    const UnitFact* active = nullptr;
+    for (const UnitFact& u : f.ccHeld)
+        if (u.guid == r.ccBreakGuid)
+            active = &u;
+    if (active)
+    {
+        if (active->partyHits)
+            return true; // the break landed: the party is on it, no further order
+        r.ccBreakMs += dt;
+        return true; // one at a time: the next goes when this one is gone
+    }
+    const UnitFact* best = nullptr;
+    for (const UnitFact& u : f.ccHeld)
+    {
+        if (!u.guid || !u.attackable)
+            continue;
+        if (!best)
+        {
+            best = &u;
+            continue;
+        }
+        if (u.ccRemainMs && (!best->ccRemainMs || u.ccRemainMs < best->ccRemainMs))
+        {
+            best = &u;
+            continue;
+        }
+        if (!u.ccRemainMs && !best->ccRemainMs)
+        {
+            auto const a = r.ccBreakSeen.find(u.guid), b = r.ccBreakSeen.find(best->guid);
+            std::uint32_t const at = a == r.ccBreakSeen.end() ? r.fightMs : a->second;
+            std::uint32_t const bt = b == r.ccBreakSeen.end() ? r.fightMs : b->second;
+            if (at < bt || (at == bt && u.guid < best->guid))
+                best = &u;
+        }
+    }
+    if (!best)
+        return true;
+    r.ccBreakGuid = best->guid;
+    r.ccBreakMs = 0;
+    order = "attack " + std::to_string(best->guid) + " " + f.carrier;
+    r.note = "fighting: only the run's crowd control holds this fight: breaking " + std::to_string(best->entry) +
+        " one at a time (" + std::to_string(f.ccHeld.size()) + " held)";
     return true;
 }
 
@@ -20181,6 +20292,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
             r.fightMs = 0;
             r.raidBossFight = false;
+            r.ccBreakGuid = 0;
+            r.ccBreakMs = 0;
+            r.ccBreakSeen.clear();
             r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
             r.linkedDeaths.clear();
             r.linkedNotePct = -1;
@@ -20267,7 +20381,19 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         bool const progressHolds = !event && (progress == FightProgress::Losing || progress == FightProgress::Young);
         bool const pastCeiling = r.fightMs > cap && !staleGrace;
         bool const hardCapped = pastCeiling && progressHolds && r.fightMs > std::max(cap, kFightHardCapMs);
-        if (pastCeiling && (!progressHolds || hardCapped))
+        // A fight kept open only by the run's own crowd control is broken one unit at a time before anything else,
+        // and before the ceiling's pause: a stalled fight of held units would only be paused into itself.
+        std::string breakOrder;
+        bool const ccOnly = RunCcBreakTick(r, f, dt, breakOrder);
+        if (!breakOrder.empty())
+        {
+            order = breakOrder;
+            return order;
+        }
+        // The break's own grace: while its order has not ended the hold, the ceiling waits (kCcBreakWaitMs), so a
+        // hold the party cannot reach still ends in the pause rather than a longer stall.
+        bool const breakingCc = ccOnly && r.ccBreakGuid != 0 && r.ccBreakMs < kCcBreakWaitMs;
+        if (pastCeiling && (!progressHolds || hardCapped) && !breakingCc)
         {
             // The units that kept it going, so the pause shows at once what to look at; with their hp when the
             // watch read it (the old note when it did not, and in an event).
@@ -20406,6 +20532,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidBossFight = false;
+        r.ccBreakGuid = 0;
+        r.ccBreakMs = 0;
+        r.ccBreakSeen.clear();
         r.linkedAlive.clear();
         r.linkedDeaths.clear();
         r.linkedNotePct = -1;
