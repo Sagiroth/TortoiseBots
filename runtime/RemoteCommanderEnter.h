@@ -19,6 +19,7 @@
 //
 // Plain data and the standard library only. World thread only, like the rest of the commander.
 
+#include "InstanceLimitText.h"
 #include "RemoteCommanderTasks.h"
 
 #include <algorithm>
@@ -164,6 +165,8 @@ struct EntryFacts
     bool ignoreRaid = false;         // Instance.IgnoreRaid
     bool inRaidGroup = false;
     bool instanceCountOk = true;     // the account may enter one more instance this hour
+    std::string botName;             // named in the instance-limit refusal
+    uint32_t instanceLimit = 5;      // instances an account may enter an hour (MAX_INSTANCE_PER_ACCOUNT_PER_HOUR)
 };
 
 struct EntryVerdict
@@ -217,7 +220,7 @@ inline EntryVerdict JudgeEntry(EntryFacts const& facts)
         if (facts.raidMap && !facts.ignoreRaid && !facts.inRaidGroup)
             return RefuseEntry(kCodeRequirement, "A raid instance needs a raid group.");
         if (!facts.instanceCountOk)
-            return RefuseEntry(kCodeInstanceLimit, "The bot's account has entered too many instances this hour.");
+            return RefuseEntry(kCodeInstanceLimit, InstanceLimitReason(facts.botName, facts.instanceLimit));
     }
     return EntryVerdict();
 }

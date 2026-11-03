@@ -123,6 +123,9 @@ static void TestRequirements()
     facts.instanceCountOk = false;
     verdict = JudgeEntry(facts);
     CHECK(!verdict.ok && std::strcmp(verdict.code, kCodeInstanceLimit) == 0);
+    facts.botName = "Tankbot";
+    CHECK(JudgeEntry(facts).message == "instance limit: Tankbot's account entered 5 instances this hour");
+    CHECK(TortoiseBots::InstanceLimitReason("Healbot", 5) == "instance limit: Healbot's account entered 5 instances this hour");
 
     facts = Ready();
     facts.phaseOpen = false;

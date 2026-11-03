@@ -4900,6 +4900,8 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, uint32 triggerId, Area
     facts.inRaidGroup = group && group->isRaidGroup();
     auto* bound = bot->GetBoundInstanceSaveForSelfOrGroup(targetMap->id);
     facts.instanceCountOk = bot->CheckInstanceCount(bound ? bound->GetInstanceId() : 0);
+    facts.botName = bot->GetName();
+    facts.instanceLimit = MAX_INSTANCE_PER_ACCOUNT_PER_HOUR;
     return facts;
 }
 
@@ -7593,7 +7595,11 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     if (!sMapMgr.CanPlayerEnter(mapId, bot))
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::CanPlayerEnter;
     else if (!bot->CheckInstanceCount(lead->GetInstanceId()))
+    {
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::InstanceCount;
+        facts.botName = bot->GetName();
+        facts.instanceLimit = MAX_INSTANCE_PER_ACCOUNT_PER_HOUR;
+    }
     else if (!leadMap->CanEnter(bot))
         facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::MapCanEnter;
     // The binds Player::GetBoundInstanceSaveForSelfOrGroup (Player.cpp:17984) picks for the entry.
