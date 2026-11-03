@@ -1364,7 +1364,7 @@ class RunLeaderWiringTest(unittest.TestCase):
             self.assertEqual(config.count('"' + name + '"'), 1, name)
             self.assertNotIn('"' + name + '"', init)
         self.assertIn("LoadDungeonRunKeys();", init)
-        self.assertLess(init.index('enabled = config.GetBoolDefault("AiPlayerbot.Enabled", false);'),
+        self.assertLess(init.index('enabled = config.GetBoolDefault("AiPlayerbot.Enabled", true);'),
                         init.index("LoadDungeonRunKeys();"))
         self.assertIn("if (!enabled)\n        return false;", reload)
         self.assertIn("if (!config.Reload())", reload)

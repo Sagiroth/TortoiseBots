@@ -80,7 +80,7 @@ All interaction between the module and core server passes through explicit adapt
 * `BotPlayerAdapter`: Interacts with standard `Player` objects through native server APIs; answers the core LFT managed-bot hooks (`IsManagedBot` gate + `GetBotRoles` role answer).
 
 The world-tick entry returns before updating module services when
-`AiPlayerbot.Enabled = 0` (also the default when no AI configuration is loaded).
+`AiPlayerbot.Enabled = 0` (also when no AI configuration file is found).
 This leaves disabled services inert, including periodic performance reporting
 and stale-hire recovery. The AI enable flag is read at startup; changing it
 requires a restart.

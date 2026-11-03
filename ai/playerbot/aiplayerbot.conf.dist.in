@@ -8,14 +8,12 @@
 [AiPlayerbotConf]
 ConfVersion=2020072501
 
-# Enable or disable AI Playerbot
-# The bot subsystem is built into mangosd but inert
-# unless this is flipped to 1 + the user knows what they're doing. Flip when you
-# want to test/play with bots; flip back when you want guaranteed clean live play.
-AiPlayerbot.Enabled = 0
+# Enable or disable AI Playerbot (default 1). Set 0 to keep the module built in
+# but inert: no pool bots and no bot AI, a plain server.
+AiPlayerbot.Enabled = 1
 
-# Enable Observability telemetry UDP emitter (default 0, switched off)
-AiPlayerbot.Observability = 0
+# Enable Observability telemetry UDP emitter for the dashboard (default 1)
+AiPlayerbot.Observability = 1
 AiPlayerbot.ObservabilityPort = 9195
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1)
 AiPlayerbot.ObservabilityDungeonMobs = 1
@@ -2275,7 +2273,7 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 #       hold even 100, run fewer bots.
 # The pass cost and whether the budget cut a pass are reported by the
 # "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
-AiPlayerbot.PoolTickBudgetUs = 10000
+AiPlayerbot.PoolTickBudgetUs = 22000
 AiPlayerbot.PoolBudgetWhenTickOverMs = 0
 AiPlayerbot.CombatTickBudgetUs = 15000
 AiPlayerbot.TargetWorldTickMs = 100

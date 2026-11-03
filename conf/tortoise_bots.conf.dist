@@ -45,10 +45,10 @@ TortoiseBots.LogLevel = 2
 # AiPlayerbot.AsyncTravelPartitions = 0
 
 # Observability telemetry UDP emitter (non-blocking emission to tortoise-observability daemon).
-# Default 0 (switched off). Set to 1 to enable.
+# Default 1 (on). Set to 0 to stop sending dashboard data.
 # Host defaults to loopback. In Docker, point it at the observability service
 # name (e.g. "observability") or set the OBSERVABILITY_HOST environment variable.
-AiPlayerbot.Observability = 0
+AiPlayerbot.Observability = 1
 AiPlayerbot.ObservabilityPort = 9195
 AiPlayerbot.ObservabilityHost = 127.0.0.1
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1).
