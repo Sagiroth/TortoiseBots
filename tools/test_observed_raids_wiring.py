@@ -193,6 +193,26 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("FillRaidBotDebuffs(bot, extra)", unbound)
         self.assertNotIn("friendlyLow", unbound)
 
+    def test_detail_cache_is_pruned_and_bot_only(self):
+        # The G2 detail is the bots' own: a group that disbanded or left the
+        # raid maps drops its cache entry, a group with nothing to report is
+        # still cached for the cadence, and a real player's auras are not read.
+        code = strip_comments(OBSERVED)
+        collect = definition(code, "void CollectObservedRaids(")
+        self.assertIn("DetailCaches().erase(cache)", collect)
+        detail = definition(code, "void FillRaidDetail(")
+        self.assertIn("cache.read && now - cache.atMs < kDetailCadenceMs", detail)
+        self.assertIn("!PlayerbotAIStorage::Instance().GetAI(bot)", detail)
+
+    def test_raid_rotation_state_is_reset_on_start_and_stop(self):
+        # A re-initialization must not resume a previous session's rotation or
+        # keep its trim log (the fields are read at the RAIDS send).
+        code = strip_comments(EMITTER)
+        for name in ("void ObservabilityEmitter::Initialize()", "void ObservabilityEmitter::Shutdown()"):
+            fn = definition(code, name)
+            self.assertIn("m_raidOffset = 0;", fn, name)
+            self.assertIn("m_raidTrimLoggedAt.clear();", fn, name)
+
     def test_emitter_keeps_the_cached_detail_between_refreshes(self):
         # The collection fills the G2 detail itself at most every 5 s and repeats the cached read between refreshes, so
         # the emitter ships it on every cycle: readiness, cooldown, debuff and mind-control data must survive the
