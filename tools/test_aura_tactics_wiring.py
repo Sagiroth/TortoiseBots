@@ -221,7 +221,7 @@ class DpsHoldWiring(unittest.TestCase):
         self.assertIn('"boss tactics dps hold",', TACTICS_STRATEGY)
         self.assertIn('NextAction("boss tactics dps hold", ACTION_HIGH + 4)', TACTICS_STRATEGY)
         self.assertLess(TACTICS_STRATEGY.index("ACTION_HIGH + 3"),
-                        TACTICS_STRATEGY.index("ACTION_HIGH + 4"))
+                        TACTICS_STRATEGY.index('NextAction("boss tactics dps hold", ACTION_HIGH + 4)'))
         action = body(ACTIONS, "bool BossTacticsDpsHoldAction::Execute(")
         self.assertIn('AI_VALUE(Unit*, "current target")', action)
         self.assertIn("!IsDpsHeld(ai, bot, current)", action)

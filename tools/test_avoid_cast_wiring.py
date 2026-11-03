@@ -895,7 +895,10 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         # and never a grid search (the one site is HoldKillBlockersValue.cpp).
         self.assertIn("member.inCombat = known->IsInCombat();", fn)
         self.assertIn("if (!known || !groupScan.members.empty())", fn)
-        self.assertIn("WorldTimer::getMSTime(), idle);", fn)
+        self.assertIn("WorldTimer::getMSTime(), idle, LinkedDeathWindowMs(group.windowSec),", fn)
+        self.assertIn("&windowEvent);", fn)
+        self.assertIn('"BossTacticsLinkedWindow"', fn)
+        self.assertIn("first_ms=%u,last_ms=%u,window_ms=%u,inside=%d", fn)
         self.assertIn("inline bool LinkedDeathEncounterEnded(", POLICY)
         self.assertIn("inline void LinkedDeathDropStale(", POLICY)
         self.assertIn("LinkedDeathLatch();\n                return false;", POLICY)

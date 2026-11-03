@@ -1076,6 +1076,21 @@ namespace ai
         bool armed = false;                  // the release was armed at the end of the last read
         std::vector<LinkedDeathKnown> known; // every member guid seen living in this fight
         std::vector<std::uint64_t> dead;     // the known guids confirmed dead (each counted once)
+        // The current death episode's first and last explicit death, for the one window diagnostic the group's
+        // final death writes (first_ms is the episode start, last_ms the elapsed time).
+        std::uint32_t firstDeathMs = 0;
+        std::uint32_t lastDeathMs = 0;
+        bool firstDeathSeen = false;
+    };
+
+    // One final-death diagnostic per group episode: whether the whole group died inside its window.
+    struct LinkedDeathWindowEvent
+    {
+        bool fired = false;
+        std::uint32_t firstMs = 0;
+        std::uint32_t lastMs = 0;
+        std::uint32_t windowMs = 0;
+        bool inside = false;
     };
 
     inline bool LinkedDeathHasGuid(const std::vector<std::uint64_t>& guids, std::uint64_t guid)
@@ -1167,8 +1182,11 @@ namespace ai
     inline bool LinkedDeathLatchTick(LinkedDeathLatch& latch, float param, const std::vector<LinkedMember>& members,
                                      const std::vector<std::uint64_t>& deadNow, std::uint32_t nowMs,
                                      const std::vector<LinkedMember>& idle = std::vector<LinkedMember>(),
-                                     std::uint32_t windowMs = kLinkedDeathLatchMs)
+                                     std::uint32_t windowMs = kLinkedDeathLatchMs,
+                                     LinkedDeathWindowEvent* windowEvent = nullptr)
     {
+        if (windowEvent)
+            *windowEvent = LinkedDeathWindowEvent();
         for (const LinkedMember& member : members)
         {
             auto known = std::find_if(latch.known.begin(), latch.known.end(),
@@ -1188,6 +1206,8 @@ namespace ai
             }
             // A living member is no death: a raise undoes an earlier one, so its next death counts again.
             latch.dead.erase(std::remove(latch.dead.begin(), latch.dead.end(), member.guid), latch.dead.end());
+            if (latch.dead.empty())
+                latch.firstDeathSeen = false;
         }
         // An idle unit is a sighting of a known guid only (its health and time): an idle unit above param disarms it.
         for (const LinkedMember& member : idle)
@@ -1222,6 +1242,12 @@ namespace ai
                     known = true;
             if (!known || LinkedDeathHasGuid(latch.dead, guid))
                 continue;
+            if (!latch.firstDeathSeen)
+            {
+                latch.firstDeathSeen = true;
+                latch.firstDeathMs = nowMs;
+            }
+            latch.lastDeathMs = nowMs;
             latch.dead.push_back(guid);
             newDeaths.push_back(guid);
         }
@@ -1233,8 +1259,16 @@ namespace ai
             latch.deadGuid = newDeaths.front();
         }
         latch.armed = armedNow;
-        if (members.empty() && latch.dead.size() == latch.known.size())
+        if (members.empty() && !newDeaths.empty() && latch.dead.size() == latch.known.size())
         {
+            if (windowEvent && latch.firstDeathSeen)
+            {
+                windowEvent->fired = true;
+                windowEvent->firstMs = 0;
+                windowEvent->lastMs = nowMs - latch.firstDeathMs;
+                windowEvent->windowMs = windowMs;
+                windowEvent->inside = windowEvent->lastMs <= windowMs;
+            }
             latch = LinkedDeathLatch();
             return false;
         }

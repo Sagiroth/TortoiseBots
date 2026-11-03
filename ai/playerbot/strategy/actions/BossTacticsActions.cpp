@@ -891,8 +891,17 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
             member.inCombat = known->IsInCombat();
             idle.push_back(member);
         }
+        LinkedDeathWindowEvent windowEvent;
         groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
-                                                 WorldTimer::getMSTime(), idle, LinkedDeathWindowMs(group.windowSec));
+                                                 WorldTimer::getMSTime(), idle, LinkedDeathWindowMs(group.windowSec),
+                                                 &windowEvent);
+        if (windowEvent.fired)
+        {
+            char info[96];
+            snprintf(info, sizeof(info), "first_ms=%u,last_ms=%u,window_ms=%u,inside=%d", windowEvent.firstMs,
+                     windowEvent.lastMs, windowEvent.windowMs, windowEvent.inside ? 1 : 0);
+            sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedWindow", info);
+        }
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }

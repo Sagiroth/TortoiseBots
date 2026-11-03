@@ -1763,6 +1763,43 @@ int main()
         CHECK(picked == 0);
     }
 
+    // The group's final death writes one window diagnostic: first_ms 0 (the episode start), last_ms the span from
+    // the first death to the last, window_ms the group's window, inside whether the group died within it.
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> three = { Linked(1, 2), Linked(2, 2), Linked(3, 1) };
+        const std::vector<LinkedMember> two = { Linked(1, 2), Linked(2, 2) };
+
+        LinkedDeathLatch inside;
+        LinkedDeathWindowEvent event;
+        CHECK(!LinkedDeathLatchTick(inside, p, three, none, 500, {}, 7000, &event));
+        CHECK(!event.fired);
+        CHECK(LinkedDeathLatchTick(inside, p, two, { 3 }, 1000, {}, 7000, &event));  // first death
+        CHECK(!event.fired);
+        LinkedDeathLatchTick(inside, p, { Linked(1, 2) }, { 2 }, 4000, {}, 7000, &event);
+        CHECK(!event.fired);                                  // the group is not all dead yet
+        CHECK(!LinkedDeathLatchTick(inside, p, {}, { 1 }, 5000, {}, 7000, &event));
+        CHECK(event.fired);                                   // the final death
+        CHECK(event.firstMs == 0);
+        CHECK(event.lastMs == 4000);                          // 1000 -> 5000
+        CHECK(event.windowMs == 7000);
+        CHECK(event.inside);
+
+        // A final death past the window reports outside; a later empty read does not repeat the event.
+        LinkedDeathLatch outside;
+        CHECK(!LinkedDeathLatchTick(outside, p, three, none, 500, {}, 7000, &event));
+        CHECK(LinkedDeathLatchTick(outside, p, two, { 3 }, 1000, {}, 7000, &event));
+        LinkedDeathLatchTick(outside, p, { Linked(1, 2) }, { 2 }, 4000, {}, 7000, &event);
+        CHECK(!event.fired);                                  // one member still lives
+        CHECK(!LinkedDeathLatchTick(outside, p, {}, { 1 }, 10000, {}, 7000, &event));
+        CHECK(event.fired);
+        CHECK(event.lastMs == 9000);                          // 1000 -> 10000, past the 7 s window
+        CHECK(!event.inside);
+        CHECK(!LinkedDeathLatchTick(outside, p, {}, none, 11000, {}, 7000, &event));
+        CHECK(!event.fired);
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }
