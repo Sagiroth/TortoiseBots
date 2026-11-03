@@ -7938,6 +7938,27 @@ bool RunCcHeld(Unit const* unit)
         HasAnyAura(unit, kRepentanceSpells) || HasAnyAura(unit, kFearSpells) || HasAnyAura(unit, kScareBeastSpells);
 }
 
+// A periodic damage aura from the party is on it: a bot or player of the lead bot's group, or the pet of one
+// (DungeonRun::UnitFact::partyDots). The automatic crowd control leaves a dotted unit alone, since its ticks break
+// the hold the moment it lands. An aura an enemy cast is no reason to skip the unit.
+bool PartyDotOn(Unit* unit, Player* lead)
+{
+    if (!unit || !lead)
+        return false;
+    Group* const group = lead->GetGroup();
+    auto const inParty = [&](Unit* caster)
+    {
+        if (!caster)
+            return false;
+        Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+        return owner && (owner == lead || (group && group->IsMember(owner->GetObjectGuid())));
+    };
+    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
+        if (aura && inParty(aura->GetCaster()))
+            return true;
+    return false;
+}
+
 // In this fight: a party bot is its victim or attacks it.
 bool EngagedWithParty(Unit* unit, std::unordered_set<uint64> const& party)
 {
@@ -8693,6 +8714,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.partyDots = PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
@@ -11029,6 +11051,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
+                    unit.partyDots = PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11288,6 +11311,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
+                    unit.partyDots = PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11855,6 +11879,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.partyDots = PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;

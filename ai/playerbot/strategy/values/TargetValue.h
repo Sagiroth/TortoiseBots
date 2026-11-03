@@ -106,6 +106,16 @@ namespace ai
         // (IsCcBotReadyFor), at any combat time, while other enemies are
         // left. Only Blade Flurry's cancel uses it (CcCancelBladeFlurry).
         bool ReadyCcMarkNear(WorldObject* center, float radius);
+        // A periodic damage aura from the group is on `unit`: a member's, a
+        // player's or the pet of one. Its ticks break a crowd control the
+        // moment it lands, so the run's automatic crowd control never marks
+        // such a unit and its CC bot never casts on it (an enemy's aura is no
+        // reason to skip it).
+        bool PartyDotOn(Unit* unit);
+        // A unit no DoT goes on: a CC mark (the group's Moon, a member's "rti
+        // cc", a bot's "rti cc target") or one already under damage-breakable
+        // CC. The DoT ticks would break the hold the moment it lands.
+        bool NoDotTarget(Unit* unit);
 
     private:
         bool OnlyMarksLeftCached();

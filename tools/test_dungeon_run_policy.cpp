@@ -30997,6 +30997,64 @@ static void TestAutoCcNeverPicksFreezingTrap()
     }
 }
 
+// A unit the party has dotted is never an automatic pick, before the pull or in
+// the fight: its ticks break the hold the moment it lands (ZG walk 32: 767
+// Corruption and 550 Curse of Agony casts in the wipe fights, the joiners dotted
+// before their mark went out). A hold the party then dots is not re-sent.
+static void TestAutoCcSkipsDottedUnits()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact clean = AutoHumanoid(1, 10);
+        UnitFact dotted = AutoHumanoid(2, 20); // farther: the pick would take it without the rule
+        dotted.partyDots = true;
+        f.units = {clean, dotted};
+        CHECK(Tick(r, f) == "cc moon 1 Magey polymorph");
+        CHECK(Tick(r, f) == "pullback 2"); // the dotted unit is the pull's target, never the hold
+        CHECK(r.ccSent.count(2) == 0);
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            hit.partyDots = true; // dotted joiners on the party
+            f.partyAttackers.push_back(hit);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(900, 20)); // the one clean joiner
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run q = Start(&plan);
+        Facts h = AutoParty(1);
+        h.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        h.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(q, h) == "cc moon 2 Magey polymorph");
+        CHECK(Tick(q, h) == "pullback 1");
+        h.anyInCombat = true;
+        h.members[0].inCombat = true;
+        h.units[1].polymorphed = true;
+        CHECK(Tick(q, h).empty()); // the aura lands
+        CHECK(q.ccLandedSeen.count(2) == 1);
+        h.units[1].polymorphed = false;
+        h.units[1].partyDots = true; // the party dotted it: never re-held
+        for (int i = 0; i < 4; ++i)
+            CHECK(Tick(q, h).empty());
+        CHECK(q.ccReapplied.count(2) == 0);
+    }
+}
+
 static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
 {
     DungeonPlan plan = CcPlan({});
@@ -31630,6 +31688,7 @@ int main()
     TestAutoCcCastersFirstThenPlanRank();
     TestAutoCcPicksTheFamilyThatFits();
     TestAutoCcNeverPicksFreezingTrap();
+    TestAutoCcSkipsDottedUnits();
     TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
     TestAutoCcSevenMarks();
     TestAutoCcHealersKept();

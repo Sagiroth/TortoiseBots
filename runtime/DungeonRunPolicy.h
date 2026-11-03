@@ -895,6 +895,10 @@ struct UnitFact
     // Residue only by the flier rule (PullReadIn::airborne over the centre's floor, above kPackResidueZYd): a flier the
     // re-pulls did not bring down is left for the step at the re-pull cap, not paused for (PackResidueTick).
     bool aloft = false;
+    // A periodic damage aura from the party (a bot, a player, or a pet) is on it: its ticks break a crowd control the
+    // moment it lands, so the automatic crowd control never picks the unit (ZG walk 32: 767 Corruption and 550 Curse of
+    // Agony casts in the wipe fights, the joiners dotted before their mark went out).
+    bool partyDots = false;
     // Pull step units only, when Facts::joinerCeiling is set: how many other
     // creatures an estimate (ai::EstimateAggro) says come if this one is pulled.
     std::uint32_t joiners = 0;
@@ -9154,7 +9158,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
         auto const reapplied = r.ccReapplied.find(u.guid);
         if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
-            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits ||
+            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyDots || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
             r.healerGuardAssigned.count(u.guid) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
@@ -9254,8 +9258,9 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         for (const UnitFact& u : *list)
         {
             auto const reapplied = r.ccReapplied.find(u.guid);
-            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || r.ccSent.count(u.guid) ||
-                u.partyHits || u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
+            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || u.partyDots ||
+                r.ccSent.count(u.guid) || u.partyHits || u.victimTank || u.guid == f.leadTargetGuid ||
+                (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
                 f.bossTacticNoCc.count(u.entry) || r.healerGuardAssigned.count(u.guid) ||
@@ -9328,8 +9333,8 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
-        if (!u || u->polymorphed || u->partyHits || u->victimTank || u->guid == f.leadTargetGuid ||
-            (r.focusGuid && u->guid == r.focusGuid))
+        if (!u || u->polymorphed || u->partyDots || u->partyHits || u->victimTank ||
+            u->guid == f.leadTargetGuid || (r.focusGuid && u->guid == r.focusGuid))
             continue;
         auto const had = r.ccReapplied.find(entry.first);
         std::uint32_t const times = had == r.ccReapplied.end() ? 0 : had->second;

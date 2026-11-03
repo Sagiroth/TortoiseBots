@@ -219,6 +219,31 @@ bool FindNonCcTargetStrategy::IsCastingCcAt(Unit* caster, Unit* target)
     return IsCcSpell(spell->m_spellInfo);
 }
 
+bool CcGuard::PartyDotOn(Unit* unit)
+{
+    if (!unit)
+        return false;
+    Player* const bot = ai->GetBot();
+    Group* const group = bot->GetGroup();
+    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
+    {
+        Unit* const caster = aura ? aura->GetCaster() : nullptr;
+        if (!caster)
+            continue;
+        Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (owner && (owner == bot || (group && group->IsMember(owner->GetObjectGuid()))))
+            return true;
+    }
+    return false;
+}
+
+bool CcGuard::NoDotTarget(Unit* unit)
+{
+    if (!unit)
+        return false;
+    return IsCcMark(unit) || IsCrowdControlled(ai, unit);
+}
+
 bool CcGuard::GroupCastsCcAt(Unit* unit)
 {
     Group* group = unit ? ai->GetBot()->GetGroup() : nullptr;
