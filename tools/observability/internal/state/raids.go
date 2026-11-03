@@ -19,7 +19,7 @@ const RaidsStaleAfter = 12 * time.Second
 // trimmed, not rejected. Groups rotate past 40 on the module side.
 const (
 	maxRaidsGroups = 40
-	maxRaidsParts = 20
+	maxRaidsParts  = 20
 )
 
 // raidsState is the latest RAIDS payload. It has its own lock so a 2 s
@@ -48,8 +48,13 @@ type raidsPending struct {
 	seq     uint64
 	ts      int64
 	tsMs    int64
-	parts   int
 	got     map[int][]model.RaidGroupRow
+}
+
+// raidGroupKey names one raid group's copy: one group id can stand on several
+// copies, and detail retained for one copy must not leak onto another.
+type raidGroupKey struct {
+	group, mapID, instance uint32
 }
 
 // maxPriorRaidsSessions bounds the superseded sessions ApplyRaids remembers:
@@ -169,13 +174,27 @@ func (s *Store) ApplyRaids(p *model.RaidsPayload) bool {
 }
 
 // applyListLocked replaces the standing rows, capped and normalised. Called
-// with the lock held.
+// with the lock held. A row whose payload omits the detail keeps the last
+// detail the daemon saw for that group (map + instance + group id): the
+// module ships it at most every 5 s on a ~2 s cycle, and the dashboard would
+// otherwise lose readiness, cooldown, debuff and mind-control data between
+// refreshes. A row that carries detail replaces it; an emptied group (clearing
+// the rows) drops it with the row.
 func (st *raidsState) applyListLocked(list []model.RaidGroupRow, p *model.RaidsPayload, now time.Time) {
 	if len(list) > maxRaidsGroups {
 		list = list[:maxRaidsGroups]
 	}
+	prior := make(map[raidGroupKey]model.RaidGroupRow, len(st.list))
+	for _, r := range st.list {
+		prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}] = r
+	}
 	out := make([]model.RaidGroupRow, 0, len(list))
 	for _, r := range list {
+		if len(r.Detail) == 0 {
+			if prev, ok := prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}]; ok && len(prev.Detail) > 0 {
+				r.Detail = append([]model.RaidDetailEntry(nil), prev.Detail...)
+			}
+		}
 		out = append(out, r)
 	}
 	// Own each row's members and keep them ordered: published rows are
@@ -203,6 +222,70 @@ func (s *Store) RaidsPartials() uint64 {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.partials
+}
+
+// RaidRows returns the fresh RAIDS rows whose fight key is in asked
+// (group key "raid#<group>" or the bound commander's name). The live
+// snapshot carries them so an open raid card draws positions at once.
+// Rows are nil-safe copies: published rows are shared read-only.
+func (s *Store) RaidRows(asked map[string]bool) []model.RaidGroupRow {
+	st := &s.raids
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(asked) == 0 || s.now().Sub(st.at) > RaidsStaleAfter {
+		return nil
+	}
+	out := make([]model.RaidGroupRow, 0, len(st.list))
+	for _, r := range st.list {
+		key := r.Key
+		if key == "" {
+			if r.Commander != "" {
+				key = r.Commander
+			} else {
+				key = raidKey(r.Group)
+			}
+		}
+		if !asked[key] {
+			continue
+		}
+		members := append([]model.RaidMemberRef(nil), r.Members...)
+		row := r
+		row.Members = members
+		out = append(out, row)
+	}
+	return out
+}
+
+// RaidKeysForCommander returns the fight keys of the fresh RAIDS rows
+// naming commander (the bound commander's rows): the live fan-out keys of
+// the open raid card of a bound group.
+func (s *Store) RaidKeysForCommander(commander string) []string {
+	if commander == "" {
+		return nil
+	}
+	st := &s.raids
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if s.now().Sub(st.at) > RaidsStaleAfter {
+		return nil
+	}
+	var out []string
+	for _, r := range st.list {
+		if r.Commander != commander || r.Key == "" || r.Key == commander {
+			continue
+		}
+		dup := false
+		for _, k := range out {
+			if k == r.Key {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, r.Key)
+		}
+	}
+	return out
 }
 
 // raidRowByGroup returns the fresh RAIDS row for one group on one instance
@@ -284,7 +367,10 @@ func (s *Store) Raids() model.RaidsView {
 		for _, gid := range groupIDs {
 			seen[gid] = true
 			row := raidRowByGroup(raidRows, gid, r.run.MapID, r.run.Instance)
-			groups = append(groups, raidGroupView(gid, byGroup[gid], row, bindings, s.bots))
+			gv := raidGroupView(gid, byGroup[gid], row, bindings, s.bots)
+			joinRaidGroupMobs(&gv, r.run, mobs)
+			joinRaidGroupExtras(&gv, bindings)
+			groups = append(groups, gv)
 		}
 		for i := range raidRows {
 			row := &raidRows[i]
@@ -295,7 +381,10 @@ func (s *Store) Raids() model.RaidsView {
 				continue
 			}
 			seen[row.Group] = true
-			groups = append(groups, raidGroupView(row.Group, nil, row, bindings, s.bots))
+			gv := raidGroupView(row.Group, nil, row, bindings, s.bots)
+			joinRaidGroupMobs(&gv, r.run, mobs)
+			joinRaidGroupExtras(&gv, bindings)
+			groups = append(groups, gv)
 		}
 		sort.Slice(groups, func(i, j int) bool { return groups[i].Group < groups[j].Group })
 
@@ -366,8 +455,8 @@ func boundBindingOf(bindings []model.CommanderBinding, group uint32) *model.Comm
 }
 
 // raidGroupView joins one group: roster members, the fresh RAIDS row (leader,
-// offline members, combat window) and the bound COMMANDERS binding (bound,
-// commander, run). A row member outside this run's subset is resolved against
+// offline members, combat window, detail) and the bound COMMANDERS binding (bound,
+// commander, run, layout). A row member outside this run's subset is resolved against
 // the full roster first, so a bot standing on another copy keeps its online
 // state and fields; only a guid the roster has nowhere, or one the row marks
 // offline, is drawn as an offline stub.
@@ -385,6 +474,7 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 		merged = append(merged, dungeonMember(m))
 		byGUID[m.GUID] = true
 	}
+	var detailByGUID map[uint32]model.RaidDetailEntry
 	if row != nil {
 		g.Observed = true
 		g.Leader = row.Leader
@@ -393,6 +483,13 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 		g.More = row.More
 		g.Combat = row.Combat
 		g.Trimmed = row.Trimmed
+		g.Detail = row.Detail
+		if len(row.Detail) > 0 {
+			detailByGUID = make(map[uint32]model.RaidDetailEntry, len(row.Detail))
+			for _, d := range row.Detail {
+				detailByGUID[d.GUID] = d
+			}
+		}
 		if row.Commander != "" {
 			g.Commander = row.Commander
 		}
@@ -417,6 +514,15 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 	}
 	sortRunMembers(merged)
 	g.Members = merged
+	if detailByGUID != nil {
+		for i := range g.Members {
+			if d, ok := detailByGUID[g.Members[i].GUID]; ok {
+				g.Members[i].Ready = d.Ready
+				g.Members[i].Debuffs = d.Debuffs
+				g.Members[i].MC = d.MC
+			}
+		}
+	}
 	if bound != nil {
 		g.Bound = true
 		g.Commander = bound.Commander
@@ -425,8 +531,68 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 			run := *bound.Run
 			g.Run = &run
 		}
+		if bound.Layout != nil {
+			layout := *bound.Layout
+			g.Layout = &layout
+		}
 	} else if row != nil && row.Commander != "" {
 		g.Commander = row.Commander
 	}
 	return g
+}
+
+// joinRaidGroupMobs adds the run's DUNGEON_MOBS member ids/targets to the
+// group members (the party rows' target column needs the target guid).
+func joinRaidGroupMobs(g *model.RaidGroupView, run model.DungeonRun, mobs map[string]dungeonMobsEntry) {
+	if g == nil {
+		return
+	}
+	e, ok := mobs[run.Key]
+	if !ok {
+		return
+	}
+	byGUID := make(map[uint32]model.DungeonMobsMember, len(e.run.Members))
+	for _, m := range e.run.Members {
+		byGUID[m.GUID] = m
+	}
+	for i := range g.Members {
+		if m, ok := byGUID[g.Members[i].GUID]; ok {
+			g.Members[i].ID = m.ID
+			g.Members[i].Target = m.Target
+		}
+	}
+}
+
+// joinRaidGroupExtras copies the bound COMMANDERS binding's per-bot
+// activity fields (st/act/cast/cc/rest/mv/tname) onto the group members,
+// so the party rows read "doing" without a RAIDS datagram change.
+func joinRaidGroupExtras(g *model.RaidGroupView, bindings []model.CommanderBinding) {
+	if g == nil || !g.Bound {
+		return
+	}
+	for _, b := range bindings {
+		if b.Commander != g.Commander {
+			continue
+		}
+		byGUID := map[uint32]model.CommanderBot{}
+		for _, bot := range b.Bots {
+			byGUID[bot.GUID] = bot
+		}
+		for i := range g.Members {
+			bot, ok := byGUID[g.Members[i].GUID]
+			if !ok {
+				continue
+			}
+			g.Members[i].State2 = bot.State
+			g.Members[i].Action = bot.Action
+			g.Members[i].Result = bot.Result
+			g.Members[i].Cast = bot.Cast
+			g.Members[i].CastTarget = bot.CastTarget
+			g.Members[i].CC = bot.CC
+			g.Members[i].Rest = bot.Rest
+			g.Members[i].Moving = bot.Moving
+			g.Members[i].TargetName = bot.TargetName
+		}
+		return
+	}
 }

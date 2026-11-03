@@ -580,10 +580,9 @@ void ObservabilityEmitter::Initialize()
     // Gates the RAIDS datagram and the observed-raid combat sampler.
     m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+    m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
     m_raidsSent = false;
-    m_raidOffset = 0;
-    m_raidTrimLoggedAt.clear();
-
     // The live fight stream and the cast poller; a `.reload config` re-reads them.
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
     m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
@@ -685,9 +684,8 @@ void ObservabilityEmitter::Shutdown()
 
     m_enabled = false;
     m_raids = ObservabilityFlag::Feed();
+    m_raidsDetail = ObservabilityFlag::Feed();
     m_raidsSent = false;
-    m_raidOffset = 0;
-    m_raidTrimLoggedAt.clear();
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
@@ -759,6 +757,8 @@ void ObservabilityEmitter::ReloadRealtimeKeys()
     // the aiplayerbot.conf half again in ReloadDungeonRunKeys, which runs before this on the same world tick.
     m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+    m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1818,6 +1818,9 @@ void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vect
     if (!m_raidProvider)
         return;
     m_raidProvider(bots, players, m_raidGroups);
+    // The collection fills the G2 detail itself at most every 5 s and repeats the cached read between refreshes, so
+    // every cycle ships it: clearing it here would drop readiness, cooldown, debuff and mind-control data on every
+    // cycle the collection did not refresh.
     if (m_raidGroups.empty())
     {
         if (m_raidsSent)

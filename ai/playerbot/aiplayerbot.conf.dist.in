@@ -21,6 +21,9 @@ AiPlayerbot.ObservabilityDungeonMobs = 1
 # with Observability = 1; the fight window needs AiPlayerbot.CombatMonitor = 1 in this file). On only when both this
 # file and the world config say 1; 0 in either turns it off (re-read on .reload config).
 AiPlayerbot.ObservabilityRaids = 0
+# Raids tab detail: the ready check and the boss debuffs, appended at the END of the RAIDS line (only acts with
+# ObservabilityRaids = 1 here and in the world config; sent at most every 5 s). 0 in either turns it off.
+AiPlayerbot.ObservabilityRaidsDetail = 0
 
 # Enable random bot system
 # On by default: a fresh install brings up a living world of random bots

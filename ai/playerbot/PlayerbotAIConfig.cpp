@@ -185,6 +185,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
 void PlayerbotAIConfig::LoadObservabilityRaids()
 {
     observabilityRaids = config.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+    observabilityRaidsDetail = config.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false);
 }
 
 bool PlayerbotAIConfig::ReloadDungeonRunKeys()

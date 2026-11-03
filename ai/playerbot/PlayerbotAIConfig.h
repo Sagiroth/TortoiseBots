@@ -193,6 +193,9 @@ public:
     // Spec dash-raids-tab: the RAIDS datagram and the observed-raid combat sampler (leader, offline members and the live
     // fight window of unbound raid groups); only acts while observability is on, off by default.
     bool observabilityRaids = false;
+    // Raids tab detail (ready check, boss debuffs): appended at the END of the RAIDS line behind
+    // AiPlayerbot.ObservabilityRaidsDetail, sent at most every 5 s. Off by default.
+    bool observabilityRaidsDetail = false;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
     uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)

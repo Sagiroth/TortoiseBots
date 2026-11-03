@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "../runtime/CommandedGroupQuery.h" // IsInCommandedGroup
@@ -73,6 +74,14 @@ std::vector<CombatMonitor::MemberInfo> CombatMonitorMembersOf(std::vector<Player
 std::string BoundCommanderNameOfGroup(uint32_t groupId);
 bool GroupIsBound(uint32_t groupId);
 void NoteFightBoss(uint32_t groupId, Player* anchor);
+// The G2 raid detail readers (ready facts, boss debuffs): the same per-bot reads the bound path does, shared so
+// CollectObservedRaids fills them at most every 5 s without duplicating the aura logic.
+void ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32_t nowMs);
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra);
+// The bound path's overload: the exclusion set also holds the binding's bots and the commander, so a debuff another
+// binding member cast on the bot is not the boss's work. The unbound raid detail passes no set.
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,
+    std::unordered_set<uint32_t> const& friendlyLow);
 // Any order a player gives the party pauses its run (`.bot run`); the run's own orders never pause it. Does nothing without a run.
 void PauseDungeonRunForPlayer(uint64_t commanderRaw, std::string const& order);
 // Another real player of a run-bound party: the run's commander (players in the party, 2026-10-23), else 0.
