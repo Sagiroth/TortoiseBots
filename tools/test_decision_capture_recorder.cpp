@@ -201,8 +201,9 @@ static void TestStubThenKeyframe()
     MemSink sink;
     Limits limits;
     // A delta record that does not fit becomes a stub; the next tick is a
-    // keyframe again and fits once the run is smaller.
-    limits.recordBytes = 15000;
+    // keyframe again and fits once the run is smaller. The budget sits above
+    // the empty keyframe (~16 kB) and below the 30-unit delta (~22 kB).
+    limits.recordBytes = 18000;
     Recorder recorder(Header(), limits, sink);
     Run run;
     ai::DungeonPlan plan;
@@ -229,7 +230,7 @@ static void TestStubThenKeyframe()
     MiniJson::Value const stub = ParseLine(sink.lines[2]);
     CHECK(Str(stub, "k") == "stub");
     CHECK(Num(stub, "seq") == 2);
-    CHECK(Num(stub, "bytes") > 15000);
+    CHECK(Num(stub, "bytes") > 18000);
     MiniJson::Value const third = ParseLine(sink.lines[3]);
     CHECK(Str(third, "k") == "tick");
     CHECK(Num(third, "seq") == 3);
