@@ -56,7 +56,7 @@ std::vector<Player*> Tanks(PlayerbotAI* ai, Unit* boss)
     std::sort(tanks.begin(), tanks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
     return tanks;
 }
-struct Opening { ObjectGuid boss, main; uint32_t started = 0; };
+struct Opening { ObjectGuid boss, mainTank; uint32_t started = 0; };
 using Key = std::pair<uint32_t,uint32_t>;
 std::mutex openingMutex;
 std::map<Key, Opening> openings;
@@ -105,12 +105,12 @@ Player* ai::PatchwerkSafetyMain(PlayerbotAI* ai, Unit* boss)
             state = {boss->GetObjectGuid(), ObjectGuid(), WorldTimer::getMSTime()};
         std::vector<PatchwerkTankState> candidates;
         for (Player* tank : tanks) candidates.push_back({tank->GetObjectGuid().GetRawValue(), boss->GetThreatManager().getThreat(tank)});
-        uint64_t next = PatchwerkChooseMain(state.main.GetRawValue(),
+        uint64_t next = PatchwerkChooseMain(state.mainTank.GetRawValue(),
             boss->GetVictim() ? boss->GetVictim()->GetObjectGuid().GetRawValue() : 0, candidates);
         for (Player* tank : tanks) if (tank->GetObjectGuid().GetRawValue() == next) selected = tank;
         ObjectGuid guid = selected ? selected->GetObjectGuid() : ObjectGuid();
-        changed = guid != state.main;
-        state.main = guid;
+        changed = guid != state.mainTank;
+        state.mainTank = guid;
     }
     if (changed) LogPatchwerk(ai, "PatchwerkOwner", selected, "first tank holder or surviving tank takeover");
     return selected;
@@ -124,8 +124,8 @@ Player* ai::PatchwerkHealingTarget(PlayerbotAI* ai)
     if (!boss) return nullptr;
     auto tanks = Tanks(ai, boss);
     if (tanks.empty()) return nullptr;
-    if (Player* main = PatchwerkSafetyMain(ai, boss))
-        std::stable_sort(tanks.begin(), tanks.end(), [main](Player* a, Player* b) { return a == main && b != main; });
+    if (Player* mainTank = PatchwerkSafetyMain(ai, boss))
+        std::stable_sort(tanks.begin(), tanks.end(), [mainTank](Player* a, Player* b) { return a == mainTank && b != mainTank; });
     // Seats go to bot healers only: a human healer does not follow the seat,
     // and counting one would leave a tank without its bot healers.
     std::vector<Player*> healers;
@@ -143,28 +143,28 @@ bool ai::PatchwerkSafetyHold(PlayerbotAI* ai)
     if (!bot->IsAlive() || ai->IsHeal(bot)) return false;
     Unit* boss = PatchwerkSafetyBoss(ai);
     if (!boss) return false;
-    Player* main = PatchwerkSafetyMain(ai, boss);
-    if (!main) return !ai->IsTank(bot);
-    if (!ai->IsTank(bot) && boss->GetVictim() != main) return true;
+    Player* mainTank = PatchwerkSafetyMain(ai, boss);
+    if (!mainTank) return !ai->IsTank(bot);
+    if (!ai->IsTank(bot) && boss->GetVictim() != mainTank) return true;
     if (ai->IsTank(bot))
-        return Assigned(bot) && bot != main && boss->GetThreatManager().getThreat(main) > 1000 &&
+        return Assigned(bot) && bot != mainTank && boss->GetThreatManager().getThreat(mainTank) > 1000 &&
             boss->CanReachWithMeleeSpellAttack(bot) &&
-            boss->GetThreatManager().getThreat(bot) >= 0.90f * boss->GetThreatManager().getThreat(main);
+            boss->GetThreatManager().getThreat(bot) >= 0.90f * boss->GetThreatManager().getThreat(mainTank);
     auto tanks = Tanks(ai, boss);
-    float low = boss->GetThreatManager().getThreat(main);
+    float low = boss->GetThreatManager().getThreat(mainTank);
     unsigned present = 0;
     for (Player* tank : tanks)
         if (boss->CanReachWithMeleeSpellAttack(tank))
         { ++present; low = std::min(low, boss->GetThreatManager().getThreat(tank)); }
     auto* latch = ai->GetAiObjectContext()->GetValue<bool>("manual bool", "patchwerk threat held");
     bool hold = !PatchwerkDamageBudget(boss->GetThreatManager().getThreat(bot),
-        boss->GetThreatManager().getThreat(main), low, present,
+        boss->GetThreatManager().getThreat(mainTank), low, present,
         WorldTimer::getMSTime() - Started(bot), latch->Get(), ai->IsRanged(bot) ? 1u : 4u);
     if (hold != latch->Get())
     {
         std::ostringstream detail;
         detail << "hold=" << hold << "|mine=" << boss->GetThreatManager().getThreat(bot)
-            << "|holder=" << boss->GetThreatManager().getThreat(main) << "|lowest_tank=" << low << "|tanks=" << present;
+            << "|holder=" << boss->GetThreatManager().getThreat(mainTank) << "|lowest_tank=" << low << "|tanks=" << present;
         LogPatchwerk(ai, "PatchwerkThreatGate", boss, detail.str());
         latch->Set(hold);
     }
@@ -175,15 +175,15 @@ bool ai::PatchwerkSafetyMeleeHold(PlayerbotAI* ai, Unit* boss)
 {
     if (!boss || ai->IsTank(ai->GetBot()) || ai->IsHeal(ai->GetBot()) || ai->IsRanged(ai->GetBot()) || !PatchwerkSafetyBoss(ai)) return false;
     auto tanks = Tanks(ai, boss);
-    Player* main = PatchwerkSafetyMain(ai, boss);
-    if (tanks.size() != 4 || !main || boss->GetVictim() != main) return true;
+    Player* mainTank = PatchwerkSafetyMain(ai, boss);
+    if (tanks.size() != 4 || !mainTank || boss->GetVictim() != mainTank) return true;
     std::vector<uint64_t> soakers;
     SpellEntry const* strike = sServerFacade.LookupSpellInfo(28308);
     if (!strike) return true;
     for (Player* tank : tanks)
     {
         if (!boss->CanReachWithMeleeSpellAttack(tank) || tank->IsImmuneToSpell(strike, false)) return true;
-        if (tank != main) soakers.push_back(tank->GetObjectGuid().GetRawValue());
+        if (tank != mainTank) soakers.push_back(tank->GetObjectGuid().GetRawValue());
     }
     std::vector<PatchwerkThreatPlayer> players;
     for (HostileReference const* ref : boss->GetThreatManager().getThreatList())
@@ -195,7 +195,7 @@ bool ai::PatchwerkSafetyMeleeHold(PlayerbotAI* ai, Unit* boss)
             !player->IsImmuneToSpell(strike, false);
         players.push_back({player->GetObjectGuid().GetRawValue(), eligible});
     }
-    return !PatchwerkMeleeSlotsSafe(main->GetObjectGuid().GetRawValue(), soakers, players,
+    return !PatchwerkMeleeSlotsSafe(mainTank->GetObjectGuid().GetRawValue(), soakers, players,
         ai->GetBot()->GetObjectGuid().GetRawValue());
 }
 
@@ -209,8 +209,8 @@ bool ai::PatchwerkSafetyBlocksSpell(PlayerbotAI* ai, unsigned spellId, Unit* tar
         if (spell->Effect[i] == SPELL_EFFECT_ATTACK_ME || spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_TAUNT) return true;
     if (Assigned(ai->GetBot()))
     {
-        Player* main = PatchwerkSafetyMain(ai, boss);
-        if (main && main != ai->GetBot() && !IsPositiveSpell(spell))
+        Player* mainTank = PatchwerkSafetyMain(ai, boss);
+        if (mainTank && mainTank != ai->GetBot() && !IsPositiveSpell(spell))
             return PatchwerkSafetyHold(ai);
         return false;
     }
@@ -228,7 +228,7 @@ bool ai::UpdatePatchwerkSafety(PlayerbotAI* ai)
         openings.erase(KeyFor(bot));
         return false;
     }
-    Player* main = PatchwerkSafetyMain(ai, boss);
+    Player* mainTank = PatchwerkSafetyMain(ai, boss);
     if (!bot->IsAlive() || bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)) return false;
     if (Player* patient = PatchwerkHealingTarget(ai))
     {

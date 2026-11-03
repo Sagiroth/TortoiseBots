@@ -160,9 +160,9 @@ bool ai::PatchwerkDpsOpeningHold(PlayerbotAI* ai)
     AiObjectContext* context = ai->GetAiObjectContext();
     Unit* owner = ai->GetUnit(AI_VALUE(ObjectGuid, "patchwerk opening owner"));
     if (!owner || !owner->IsPlayer() || !owner->IsInMap(bot)) return false;
-    Player* main = static_cast<Player*>(owner);
-    if (main->GetGroup() != bot->GetGroup()) return false;
-    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(main);
+    Player* mainTank = static_cast<Player*>(owner);
+    if (mainTank->GetGroup() != bot->GetGroup()) return false;
+    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(mainTank);
     if (!peer || !Has(peer, "patchwerk main") || Has(peer, "patchwerk soak")) return false;
     PatchwerkOpeningWindow window = peer->GetAiObjectContext()->GetValue<PatchwerkOpeningWindow>("patchwerk opening window")->Get();
     return window.Holds(WorldTimer::getMSTime(), sPlayerbotAIConfig.patchwerkOpeningDelay * 1000);
@@ -199,13 +199,13 @@ Player* ai::GetPatchwerkSoakPuller(PlayerbotAI* ai)
     AiObjectContext* context = ai->GetAiObjectContext();
     Unit* unit = ai->GetUnit(AI_VALUE(ObjectGuid, "patchwerk soak puller"));
     if (!unit || !unit->IsPlayer()) return nullptr;
-    Player* main = static_cast<Player*>(unit);
-    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(main);
+    Player* mainTank = static_cast<Player*>(unit);
+    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(mainTank);
     // Recheck the cached GUID: cancellation, death, retarget and expiry must
     // stop staging immediately, not one cache interval later.
-    return main->IsInMap(ai->GetBot()) && main->GetGroup() == ai->GetBot()->GetGroup() &&
-        sServerFacade.IsFriendlyTo(ai->GetBot(), main) && PatchwerkMainPull(peer) &&
-        !PullRendezvousExpired(PullStrategy::Get(peer)) ? main : nullptr;
+    return mainTank->IsInMap(ai->GetBot()) && mainTank->GetGroup() == ai->GetBot()->GetGroup() &&
+        sServerFacade.IsFriendlyTo(ai->GetBot(), mainTank) && PatchwerkMainPull(peer) &&
+        !PullRendezvousExpired(PullStrategy::Get(peer)) ? mainTank : nullptr;
 }
 
 bool ai::PatchwerkSoakersReadyForPull(PlayerbotAI* puller)
@@ -232,18 +232,18 @@ bool ai::PatchwerkSoakersReadyForPull(PlayerbotAI* puller)
 
 bool PatchwerkSoakStageAction::Execute(Event& event)
 {
-    Player* main = GetPatchwerkSoakPuller(ai);
-    if (!main || !isPossible()) return false;
+    Player* mainTank = GetPatchwerkSoakPuller(ai);
+    if (!mainTank || !isPossible()) return false;
     if (char const* stance = MissingSoakStance(ai))
         return ai->DoSpecificAction(stance, event, true);
-    if (bot->GetDistance(main) <= 1.0f && bot->IsWithinLOSInMap(main, true))
+    if (bot->GetDistance(mainTank) <= 1.0f && bot->IsWithinLOSInMap(mainTank, true))
     {
         if (bot->IsMoving()) ai->StopMoving();
         return true;
     }
     // A friendly rendezvous, never an Attack/Chase of an idle boss. Use the
     // standard checked path to the main's current point, including on stay.
-    bool const moved = MoveTo(main->GetMapId(), main->getPositionX(), main->getPositionY(), main->getPositionZ());
+    bool const moved = MoveTo(mainTank->GetMapId(), mainTank->getPositionX(), mainTank->getPositionY(), mainTank->getPositionZ());
     if (moved) ai->SetActionDuration(std::min<uint32>(GetDuration(), 250));
     return moved;
 }
@@ -409,7 +409,7 @@ bool ai::PatchwerkNeedsMeleeHold(PlayerbotAI* ai, Unit* boss)
     if (boss && PatchwerkSafetyBoss(ai) == boss) return PatchwerkSafetyMeleeHold(ai, boss);
     if (!boss || !Has(ai,"patchwerk melee safety") || ai->IsTank(ai->GetBot()))
         return false;
-    Player* main = nullptr;
+    Player* mainTank = nullptr;
     std::vector<uint64> soakers;
     SpellEntry const* strike = sSpellTemplate.LookupEntry<SpellEntry>(28308);
     if (!strike)
@@ -430,14 +430,14 @@ bool ai::PatchwerkNeedsMeleeHold(PlayerbotAI* ai, Unit* boss)
             return true;
         if (isMain)
         {
-            if (main)
+            if (mainTank)
                 return true;
-            main = member;
+            mainTank = member;
         }
         else
             soakers.push_back(member->GetObjectGuid().GetRawValue());
     }
-    if (!main || boss->GetVictim() != main)
+    if (!mainTank || boss->GetVictim() != mainTank)
         return true;
     std::vector<PatchwerkThreatPlayer> players;
     for (HostileReference const* ref : boss->GetThreatManager().getThreatList())
@@ -451,7 +451,7 @@ bool ai::PatchwerkNeedsMeleeHold(PlayerbotAI* ai, Unit* boss)
             !member->IsImmuneToSpell(strike,false);
         players.push_back({member->GetObjectGuid().GetRawValue(),eligible});
     }
-    return !PatchwerkMeleeSlotsSafe(main->GetObjectGuid().GetRawValue(),soakers,players,
+    return !PatchwerkMeleeSlotsSafe(mainTank->GetObjectGuid().GetRawValue(),soakers,players,
         ai->GetBot()->GetObjectGuid().GetRawValue());
 }
 
