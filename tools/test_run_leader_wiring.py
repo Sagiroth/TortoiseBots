@@ -368,7 +368,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertLess(check, policy.index("if (RunAutoCcFightTick(r, f, *s, dt, order))"))
         # The trigger gates the pre-pull mark on the threshold, and only the row's own pack is a candidate.
         self.assertIn("std::uint32_t const threshold = RunAutoCcThreshold(s, f);", policy)
-        self.assertIn("bool const over = bodies > marked && bodies - marked > threshold;", policy)
+        self.assertIn("bool const over = CcBodiesOpen(r, f, bodies) > threshold;", policy)
         self.assertIn("busy = RunCcHolders(r, f);", policy)
         # The seven marks with the key on, the plan's four key off.
         self.assertIn('constexpr const char* kRunCcMarksAuto[] = {"moon", "square", "diamond", "triangle", "star", "circle", "cross"};', policy)
@@ -887,7 +887,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("inline std::uint32_t RowCeilingBodies(const PlanStep& s, const Facts& f)", policy)
         self.assertIn("inline std::string EstimateNote(", policy)
         self.assertIn("bool const aheadDue = f.aggroWalkRing && f.aheadStep == r.step + 1 &&", policy)
-        self.assertIn("std::to_string(bodies) + \" bodies expected\"", policy)
+        self.assertIn("std::to_string(u.estBodies) + \" bodies expected\"", policy)
         plan = (ROOT / "ai/playerbot/DungeonPlanPolicy.h").read_text()
         self.assertIn("step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies", plan)
 

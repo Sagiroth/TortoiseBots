@@ -238,11 +238,6 @@ bool CcGuard::PartyDotOn(Unit* unit)
     return false;
 }
 
-bool CcGuard::NoDotTarget(Unit* unit)
-{
-    return IsCcMarkedUnit(unit) || IsCrowdControlledUnit(unit);
-}
-
 bool CcGuard::IsCcMarkedUnit(Unit* unit)
 {
     return unit && IsCcMark(unit);

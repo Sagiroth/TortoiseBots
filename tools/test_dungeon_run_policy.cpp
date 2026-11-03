@@ -12551,6 +12551,22 @@ static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
     CHECK(near.note.find(": on to the next") != std::string::npos);
 }
 
+// The rescue read's creature filter: a trigger NPC no one can attack, one that never aggros, a summoned thing, one
+// running home or one a storey up or down holds no point. Each used to give a false "held" and a needless party jump
+// or pause.
+static void TestTheRescueReadFiltersTriggerCreatures()
+{
+    CHECK(RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, false, false, false, false, true)); // a live hostile in reach
+    CHECK(!RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, true, false, false, false, true));  // NO_AGGRO trigger NPC
+    CHECK(!RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, false, true, false, false, true));  // not attackable/selectable
+    CHECK(!RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, false, false, true, false, true));  // running home
+    CHECK(!RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, false, false, false, true, true));  // summoned or charmed
+    CHECK(!RescueHostileHolds(ai::kAggroFloorDz + 1.0f, 10.0f, kRescueScanYd, false, false, false, false, true)); // a storey up
+    CHECK(RescueHostileHolds(ai::kAggroFloorDz, 10.0f, kRescueScanYd, false, false, false, false, true)); // at the floor limit
+    CHECK(!RescueHostileHolds(0.0f, kRescueScanYd + 1.0f, kRescueScanYd, false, false, false, false, true)); // out of the scan
+    CHECK(!RescueHostileHolds(0.0f, 10.0f, kRescueScanYd, false, false, false, false, false)); // friendly
+}
+
 // The re-arm is capped at kStrandRearmsPerStep a step: a glue that keeps putting the lead bot back at the instance
 // entrance (its own mass summons racing the run's recovery) could otherwise teleport it back again and again on one
 // step. Past the cap the latch holds, the point is refused as before and the walk back goes on ("on to the next");
@@ -32044,6 +32060,62 @@ static void TestAWalkInFightSendsItsFirstOrdersAtOnce()
     CHECK(Tick(r, f).empty()); // the opening is over: kRunCcFightGapMs holds
 }
 
+// L1: the opening burst and the re-apply tick skip a bot held still, frozen or under a return hold. The order would
+// never land (the bot side holds the cast) and the land clock would start over, so the mark only spends the budget.
+static void TestTheCcReSendsSkipAHeldBot()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.anyInCombat = true;
+        // The pack opens with one pre-pull mark on unit 2, its bot held still.
+        r.ccOpenDue = true;
+        r.ccOpenPrepull = {2};
+        r.ccHolds[2] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+        std::string order;
+        f.members[0].held = true;
+        CHECK(!RunAutoCcPrePullOpenTick(r, f, kTickMs, order) && order.empty());
+        f.members[0].held = false;
+        f.members[0].frozen = true;
+        CHECK(!RunAutoCcPrePullOpenTick(r, f, kTickMs, order) && order.empty());
+        f.members[0].frozen = false;
+        r.returnHold["Magey"] = Run::ReturnHold();
+        CHECK(!RunAutoCcPrePullOpenTick(r, f, kTickMs, order) && order.empty());
+        r.returnHold.clear();
+        // The list survives a held bot (the mark is not lost for the fight): the order goes once it is free.
+        CHECK(!r.ccOpenPrepull.empty());
+        CHECK(RunAutoCcPrePullOpenTick(r, f, kTickMs, order) && order == "cc moon 2 Magey polymorph");
+    }
+    {
+        // End to end: the hold breaks while the bot is held, and nothing goes out until it is free.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        f.members[0].inCombat = true;
+        f.units[1].polymorphed = true;
+        CHECK(Tick(r, f).empty()); // the aura lands
+        f.units[1].polymorphed = false;
+        f.members[0].held = true;
+        for (int i = 0; i < 6; ++i)
+            CHECK(Tick(r, f).empty()); // the held bot: no re-apply, however long
+        CHECK(r.ccReapplied.count(2) == 0);
+        f.members[0].held = false;
+        std::string sent;
+        for (int i = 0; i < 6 && sent.empty(); ++i)
+            sent = Tick(r, f);
+        CHECK(sent == "cc moon 2 Magey polymorph"); // the hold ended: the broken hold goes again
+        CHECK(r.ccReapplied[2] == 1);
+    }
+}
+
 static void TestAutoCcReappliesTwiceThenStops()
 {
     DungeonPlan plan = CcPlan({});
@@ -32335,6 +32407,7 @@ int main()
     TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcReappliesTwiceThenStops();
+    TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
@@ -32775,6 +32848,7 @@ int main()
     TestTheRescueRetryAsksForItsRead();
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
+    TestTheRescueReadFiltersTriggerCreatures();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();
     TestPullStandNeedsMoreRangeThanTheMargin();

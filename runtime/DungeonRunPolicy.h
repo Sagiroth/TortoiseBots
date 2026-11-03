@@ -9393,6 +9393,7 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
     if (!f.autoCc || !r.ccOpenDue)
         return false;
     std::uint64_t guid = 0;
+    bool heldBot = false;
     Run::CcHold hold;
     for (std::uint64_t prepull : r.ccOpenPrepull)
     {
@@ -9406,15 +9407,23 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
             continue;
         if (u->partyDots && entry->second.family != CcFamily::Banish && entry->second.family != CcFamily::Fear)
             continue; // a party DoT's ticks break the hold; Banish and Fear are immune to that
-        bool botAlive = false;
+        // A bot held still (a return or revive hold), frozen by a gaze row or under a return hold obeys no order: the
+        // re-send would be wasted and the land clock would start over (MemberFact::frozen's invariant: every run order
+        // that would move it skips it). The burst is not over then: it goes on when the bot is free.
+        const MemberFact* bot = nullptr;
         for (const MemberFact& m : f.members)
             if (m.name == entry->second.bot)
             {
-                botAlive = true;
+                bot = &m;
                 break;
             }
-        if (!botAlive)
+        if (!bot)
             continue;
+        if (bot->frozen || bot->held || r.returnHold.count(bot->name))
+        {
+            heldBot = true;
+            continue;
+        }
         if (!guid || entry->first < guid)
         {
             guid = entry->first;
@@ -9425,8 +9434,10 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
     if (!unit)
     {
         // Every pre-pull mark was sent once, held, or its unit/bot is gone: the burst is over (the fight tick's own
-        // opening grace, kRunCcOpenOrders without the gap, still runs on ccOpenDue and kRunCcOpenWindowMs).
-        r.ccOpenPrepull.clear();
+        // opening grace, kRunCcOpenOrders without the gap, still runs on ccOpenDue and kRunCcOpenWindowMs). A bot only
+        // held still keeps the list: its mark goes when the hold ends.
+        if (!heldBot)
+            r.ccOpenPrepull.clear();
         return false;
     }
     CcPick pick;
@@ -9571,18 +9582,21 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     std::uint32_t done = 0;
     for (auto const& entry : r.ccHolds)
     {
-        bool botAlive = false;
+        const MemberFact* bot = nullptr;
         for (const MemberFact& m : f.members)
             if (m.name == entry.second.bot)
             {
-                botAlive = true;
+                bot = &m;
                 break;
             }
-        if (!botAlive)
+        if (!bot)
         {
             deadBots.push_back(entry.first);
             continue;
         }
+        // Held still, frozen or under a return hold: no order reaches it, and the land clock would start over.
+        if (bot->frozen || bot->held || r.returnHold.count(bot->name))
+            continue;
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
@@ -11559,6 +11573,16 @@ inline bool WalkBackPackLive(const Run& r, std::size_t i)
     return i >= LiveFrom(r, true) || r.notCleared.count(i) || i < r.startStep;
 }
 
+// The rescue read's creature filter (the glue's RescueHostileNear): the creatures that hold a point. A creature the
+// group cannot attack (a trigger NPC, a not selectable one), one that never aggros, one running home, a summoned or
+// charmed one, and one a storey up or down holds nothing: it was a false "held" and a needless party jump or pause.
+inline bool RescueHostileHolds(float dz, float distance2d, float range, bool noAggro, bool notAttackable, bool evading,
+    bool owned, bool hostile)
+{
+    return hostile && !owned && !noAggro && !notAttackable && !evading && std::fabs(dz) <= ai::kAggroFloorDz &&
+        distance2d <= range;
+}
+
 // A live hostile stands within its own aggro reach plus kLiveHostileMarginYd of (x, y, z): the glue's rescue read
 // (Facts::rescueReach: living, not evading creatures with their aggro reach at the party's lowest level). An empty
 // read holds nothing; a read that never came (Facts::rescueRead false) is the caller's to refuse, not this test's.
@@ -12289,6 +12313,10 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         return false;
     if (f.anyInCombat || f.leadInCombat)
     {
+        // A read taken now says nothing the send will use: the point's live hostiles have moved by the fight's end.
+        // The glue's bounded grid visit is not made every tick of a long fight; out of combat the rescue asks again
+        // (the fail-closed ask below).
+        r.rescueScanWanted = false;
         r.note = "the lead bot is stranded at " + Num(f.leadX) + " " + Num(f.leadY) + " " + Num(f.leadZ) +
             " with no way back: the teleport to " + target + " waits for the fight to end";
         return true;

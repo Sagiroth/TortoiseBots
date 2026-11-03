@@ -10375,19 +10375,23 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
 // aggro reach at the party's lowest level. One bounded grid visit around the point, never a load.
 namespace
 {
+// The read's own filters (RescueHostileHolds): the same shape as the fetch read's, so a trigger NPC the group cannot
+// attack, one that never aggros, a summoned thing or one a storey up or down is no live hostile holding the point.
 struct RescueHostileNear
 {
     Player* lead;
     float x, y, z, range;
     bool operator()(Unit* unit) const
     {
-        if (!unit || !unit->IsCreature() || !unit->IsAlive() || !unit->GetOwnerGuid().IsEmpty() ||
-            !lead->IsHostileTo(unit))
+        if (!unit || !unit->IsCreature() || !unit->IsAlive())
             return false;
-        if (static_cast<Creature*>(unit)->IsInEvadeMode())
-            return false;
+        Creature* const creature = static_cast<Creature*>(unit);
         float const dx = unit->GetPositionX() - x, dy = unit->GetPositionY() - y;
-        return dx * dx + dy * dy <= range * range;
+        return TortoiseBots::DungeonRun::RescueHostileHolds(unit->GetPositionZ() - z, std::sqrt(dx * dx + dy * dy),
+            range, creature->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO),
+            creature->HasFlag(UNIT_FIELD_FLAGS,
+                UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_NOT_SELECTABLE),
+            creature->IsInEvadeMode(), !unit->GetOwnerGuid().IsEmpty(), lead->IsHostileTo(unit));
     }
 };
 }
