@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GuildOrderContract.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -84,6 +86,34 @@ inline uint32_t SearchNameRank(std::string const& lowerName, std::string const& 
         pos = wordEnd == std::string::npos ? lowerName.size() + 1 : wordEnd + 1;
     }
     return 3;
+}
+
+// What the search knows about an item to decide whether a type shows it.
+// material: Trade Goods or Reagent class. craftable: a profession recipe
+// (primary or secondary skill) creates it. sources: SourceFlag bits.
+struct OrderItemFacts
+{
+    bool material = false;
+    bool craftable = false;
+    uint8_t sources = 0;
+};
+
+// Farm shows what a bot can gather, or a material a mob drops; never a
+// crafted item or random-drop gear. Craft shows only recipe items. Buy
+// shows materials and crafted items, not random-drop gear or recipes.
+inline bool OrderSearchShows(OrderType type, OrderItemFacts const& item)
+{
+    uint8_t const gathered = SourceHerb | SourceOre | SourceSkin | SourceFish;
+    switch (type)
+    {
+        case OrderType::Farm:
+            return (item.sources & gathered) || (item.material && (item.sources & SourceDrop));
+        case OrderType::Craft:
+            return item.craftable;
+        case OrderType::Buy:
+            return item.material || item.craftable || (item.sources & gathered);
+    }
+    return false;
 }
 
 } // namespace GuildOrders

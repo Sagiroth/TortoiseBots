@@ -11,12 +11,15 @@
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
+#include "Database/DBCStores.h"
+#include "Database/SQLStorages.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
 
 #include <algorithm>
 #include <cctype>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 namespace TortoiseBots {
@@ -45,6 +48,7 @@ struct SearchRow
     std::string name;
     std::string lower;
     OrderItemCategory category = OrderItemCategory::Other;
+    TortoiseBots::GuildOrders::OrderItemFacts facts;
 };
 
 std::mutex& SearchIndexLock()
@@ -80,6 +84,27 @@ std::string ZoneName(uint32_t zoneId)
     if (!area || !area->Name)
         return "-";
     return area->Name;
+}
+
+// Items a primary or secondary profession recipe creates. Class skills
+// (a warlock's Healthstone, a mage's conjured food) are not crafting.
+std::unordered_set<uint32_t> ProfessionCraftedItems()
+{
+    std::unordered_set<uint32_t> items;
+    for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); ++i)
+    {
+        SkillLineAbilityEntry const* ability = sSkillLineAbilityStore.LookupEntry(i);
+        SkillLineEntry const* skill = ability ? sSkillLineStore.LookupEntry(ability->skillId) : nullptr;
+        if (!skill || (skill->categoryId != SKILL_CATEGORY_PROFESSION && skill->categoryId != SKILL_CATEGORY_SECONDARY))
+            continue;
+        SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(ability->spellId);
+        if (!spell)
+            continue;
+        for (int e = 0; e < 3; ++e)
+            if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[e])
+                items.insert(spell->EffectItemType[e]);
+    }
+    return items;
 }
 
 // Only the small gather kinds browse without text: drop and other hold
@@ -142,11 +167,12 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         std::lock_guard<std::mutex> guard(SearchIndexLock());
         if (!SearchIndexBuilt())
         {
+            std::unordered_set<uint32_t> const crafted = ProfessionCraftedItems();
             // The item map, not the 0..max-entry range: transmog clones
             // push the largest id far past the real templates.
             for (auto const& [itemId, proto] : sObjectMgr.GetItemPrototypeMap())
             {
-                if (!TortoiseBots::GuildOrders::IsOrderableItem(&proto))
+                if (!TortoiseBots::GuildOrders::IsOrderableItem(&proto) || (proto.Flags & ITEM_FLAG_CONJURED))
                     continue;
                 SearchRow row;
                 row.itemId = itemId;
@@ -159,6 +185,9 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
                 for (ai::GuildOrderEntrySource const& source : ai::GuildOrderSourcesFor(itemId))
                     flags |= source.flag;
                 row.category = ClassifyOrderCategory(SourcesToken(flags), IsTradeCloth(proto.Class, row.lower));
+                row.facts.material = proto.Class == ITEM_CLASS_TRADE_GOODS || proto.Class == ITEM_CLASS_REAGENT;
+                row.facts.craftable = crafted.count(itemId) != 0;
+                row.facts.sources = flags;
                 SearchIndex().push_back(std::move(row));
             }
             if (sourcesReady)
@@ -179,6 +208,8 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         for (SearchRow const& row : SearchIndex())
         {
             if (hasCategory && row.category != category)
+                continue;
+            if (!TortoiseBots::GuildOrders::OrderSearchShows(orderType, row.facts))
                 continue;
             if (!words.empty() && !SearchNameMatches(row.lower, words))
                 continue;
