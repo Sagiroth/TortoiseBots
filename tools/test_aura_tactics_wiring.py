@@ -560,6 +560,20 @@ class FreezeFleeWiring(unittest.TestCase):
         self.assertIn('"BossTacticsFreeze"', ACTIONS)
         self.assertIn('"ms=%u,moved_yd=%.2f"', ACTIONS)
 
+    def test_the_freeze_and_flee_triggers_skip_the_scan_with_the_key_off(self):
+        # Both triggers sit in the reaction engine, which runs every update: without the key (or on a map with none of
+        # the six aura kinds) the scan can only answer 0, so the trigger must not pay for it.
+        for name in ("bool BossTacticsFreezeTrigger::IsActive()", "bool BossTacticsFleeTrigger::IsActive()"):
+            trigger = body(TRIGGERS, name)
+            self.assertIn("!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap("
+                          "bot->GetMapId())", trigger, name)
+            self.assertLess(trigger.index("HasAuraTacticMap(bot->GetMapId())"), trigger.index("ScanBossTactics(ai, bot)"),
+                            name)
+        # The freeze trigger still closes the episode it may have open before it returns.
+        freeze = body(TRIGGERS, "bool BossTacticsFreezeTrigger::IsActive()")
+        guard = freeze[freeze.index("HasAuraTacticMap(bot->GetMapId())"):freeze.index("ScanBossTactics(ai, bot)")]
+        self.assertIn("FreezeEpisodeTick(ai, bot, 0)", guard)
+
     def test_the_raid_bomb_trigger_defers_to_an_active_flee_row(self):
         bomb = body(DUNGEON_TRIGGERS, "bool RaidBombDebuffTrigger::IsActive()")
         self.assertIn("FleeRowListsAura(ai, bot, spellId)", bomb)

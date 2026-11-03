@@ -123,6 +123,13 @@ bool BossTacticsFreezeTrigger::IsActive()
         FreezeEpisodeTick(ai, bot, 0);
         return false;
     }
+    // The scan drops the six aura kinds with the key off (and a map without one has none to read), so this trigger's
+    // answer would always be no: the reaction engine runs it every update, so do not pay for the scan.
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+    {
+        FreezeEpisodeTick(ai, bot, 0);
+        return false;
+    }
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
     FreezeEpisodeTick(ai, bot, aura);
@@ -132,6 +139,8 @@ bool BossTacticsFreezeTrigger::IsActive()
 bool BossTacticsFleeTrigger::IsActive()
 {
     if (!Ready(ai, bot))
+        return false;
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     const BossTacticRow* row = ActiveFleeRow(ai, bot, fight);
