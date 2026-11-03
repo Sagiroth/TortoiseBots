@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.15.1 (2026-11-03)
+
+### Bots & Setup
+- Bots now work as soon as you install the module, with no extra setting to switch them on. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- Prefer a server with no bots? Set AiPlayerbot.Enabled to 0 to keep the module installed but idle. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- The dashboard feed is on by default too, and it only sends data to your own machine. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- Bots now take a smaller share of server processing time, which keeps busy servers smoother. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+
+### Raids & Dungeons
+- Dungeon runs can now handle crowd control for you; it stays switched off until you enable it. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Boss fight tactics can now check for more kinds of effects active on a boss. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Bots that are revived now come back to the group instead of being left behind. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Bots following you spread out properly instead of bunching up behind you. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Ground cloud effects now behave correctly around bots. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+
+### Guild & Economy
+- Farm orders now list only things bots can actually gather or loot from creatures. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Craft orders now list only items a profession makes, so class skills like Healthstones are gone. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Buy orders now list materials and crafted goods. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Recipes and random-drop gear no longer show up in orders bots could never fill. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+
+---
+
 ## v1.15.0 (2026-11-03)
 
 ### Classes & Combat
