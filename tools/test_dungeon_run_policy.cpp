@@ -19309,6 +19309,249 @@ static void TestSpawnOwnedPatrollerCapPauses()
 
 // The gate off (margin 0) restores the old patroller rule exactly: a spawn-owned patroller standing in a later
 // step's radius is that step's and the run walks on; with the gate on its spawn ownership wins and it is waited for.
+// --- The straggler pull (AiPlayerbot.DungeonRunStragglerPull): a pack unit that spawned in the step's radius and
+// walked its loop away is walked to and pulled by the acting tank after the 60 s wait, not paused for (ZG walks 32 and
+// 33: "11365 ... is 12.7 yd out and did not come within 60 s").
+
+// A pull step whose pack split: the unit spawned 12.7 yd from the centre and its loop took it out of the radius.
+static DungeonPlan StragglerPlan()
+{
+    DungeonPlan plan;
+    plan.name = "straggler";
+    PlanStep pull = PullStep(0, {11365});
+    pull.radius = 10.0f;
+    plan.steps = {pull, Step(PlanStepKind::Move, 60)};
+    return plan;
+}
+
+static Facts StragglerFacts()
+{
+    Facts f = Party(0);
+    f.leadX = 0.0f;
+    f.leadY = 0.0f;
+    f.leadZ = 0.0f;
+    f.packClearMarginYd = 10.0f;
+    f.packClearRepulls = 3;
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    return f;
+}
+
+static UnitFact StragglerUnit(std::uint64_t guid = 0xd001, std::uint32_t entry = 11365)
+{
+    UnitFact u = Unit(guid, entry, 12.7f);
+    u.hostile = true;
+    u.distSpot = 12.7f;
+    u.x = 12.7f;
+    u.y = 0.0f;
+    u.z = 0.0f;
+    u.spawnOwned = true;
+    u.spawnYd = 12.7f;
+    return u;
+}
+
+// The way was read clear for this guid and tank (the glue's answer).
+static void StragglerWayClear(Facts& f, std::uint64_t guid, const std::string& tank)
+{
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = guid;
+    f.stragglerPathTank = tank;
+    f.stragglerPathOk = true;
+}
+
+static void TestStragglerPullWalksToAPackUnitAndPullsIt()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 0);
+    CHECK(Tick(r, f).empty()); // the wait is over: the tank's way to it is read
+    CHECK(r.state == State::Running && r.stragglerPathWanted == 0xd001);
+    CHECK(r.note == "pack not cleared: Tanky walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and pulls it (try 1)");
+    StragglerWayClear(f, 0xd001, "Tanky");
+    CHECK(Tick(r, f) == "attack 53249 Tanky"); // the attack walks the tank at it
+    CHECK(r.state == State::Running && r.step == 0);
+    // It comes into the fight: the step's own fight rules take it from here, with no straggler state left.
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerGuid == 0 && r.stragglerTry == 0);
+}
+
+static void TestStragglerPullPausesWhenTheWayPassesAnotherPack()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    StragglerWayClear(f, 0xd001, "Tanky");
+    f.stragglerPathBlockEntry = 11368;
+    f.stragglerPathBlockYd = 12.0f;
+    f.stragglerPathBlockReachYd = 20.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared: 11365 0x000000000000d001 of this pack (spawned 12.7 yd from the centre) is 12.7 yd "
+        "out and did not come within 60 s; the walk to it passes 11368 at 12.0 yd (its 20.0 yd reach plus 5.0 yd); "
+        "no living tank is left to pull it: pull it, then .bot run resume (the step no longer waits for it), or "
+        ".bot run skip");
+    CHECK(r.spawnPatrolGaveUp.count(0xd001) == 1);
+}
+
+static void TestStragglerPullFallsBackToTheOffTank()
+{
+    Facts f = StragglerFacts();
+    MemberFact faraway = Mem("Faraway", 100.0f);
+    faraway.tank = true;
+    faraway.offPlanMap = true; // a tank the party cannot reach is never the one sent
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {faraway, off};
+    CHECK(StragglerTankName(f, "") == "Tanky"); // the lead bot, a tank, goes first
+    CHECK(StragglerTankName(f, "Tanky") == "Offy");
+    f.members = {off};
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    StragglerWayClear(f, 0xd001, "Tanky");
+    CHECK(Tick(r, f) == "attack 53249 Tanky");
+    for (int i = 0; i < 45; ++i)
+        CHECK(Tick(r, f).empty()); // the lead bot's 45 s run out
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    CHECK(r.note == "pack not cleared: Offy (the off-tank) walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and "
+        "pulls it (try 2)");
+    StragglerWayClear(f, 0xd001, "Offy");
+    CHECK(Tick(r, f) == "attack 53249 Offy");
+    for (int i = 0; i < 44; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running);
+    CHECK(Tick(r, f).empty()); // the off-tank's try ran out: the pause as before, with the reason
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared: 11365 0x000000000000d001 of this pack (spawned 12.7 yd from the centre) is 12.7 yd "
+        "out and did not come within 60 s; Offy did not pull it within 45 s: pull it, then .bot run resume (the step "
+        "no longer waits for it), or .bot run skip");
+}
+
+// A refused lead bot's order is a failed try like the 45 s run out: the off-tank's one try goes out, not a pause.
+static void TestStragglerPullRefusedLeadOrderFallsBackToTheOffTank()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {off};
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    StragglerWayClear(f, 0xd001, "Tanky");
+    CHECK(Tick(r, f) == "attack 53249 Tanky");
+    OrderRefused(r, "attack 53249 Tanky", "invalid-target: The group cannot attack that target.");
+    CHECK(Tick(r, f).empty()); // the refused try moves to the off-tank
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    CHECK(r.note == "pack not cleared: Offy (the off-tank) walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and "
+        "pulls it (try 2)");
+    StragglerWayClear(f, 0xd001, "Offy");
+    CHECK(Tick(r, f) == "attack 53249 Offy");
+}
+
+// A lead-only path failure (no path to the point) is the same failed try: the off-tank gets its read and its attack.
+static void TestStragglerPullLeadPathFailureFallsBackToTheOffTank()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {off};
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    CHECK(r.stragglerPathWanted == 0xd001);
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = 0xd001;
+    f.stragglerPathTank = "Tanky";
+    f.stragglerPathOk = false;
+    CHECK(Tick(r, f).empty()); // the lead bot's way has no path: the off-tank's try starts
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    CHECK(r.stragglerPathWanted == 0xd001); // the off-tank's way is read next
+    CHECK(r.note == "pack not cleared: Offy (the off-tank) walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and "
+        "pulls it (try 2)");
+    StragglerWayClear(f, 0xd001, "Offy");
+    CHECK(Tick(r, f) == "attack 53249 Offy");
+}
+
+// Both tanks fail their way: no try is left, so the run pauses with the reason.
+static void TestStragglerPullBothTanksFailPauses()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {off};
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = 0xd001;
+    f.stragglerPathTank = "Tanky";
+    f.stragglerPathOk = false;
+    CHECK(Tick(r, f).empty()); // the lead bot's way has no path: the off-tank's try starts
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = 0xd001;
+    f.stragglerPathTank = "Offy";
+    f.stragglerPathOk = false;
+    CHECK(Tick(r, f).empty()); // the off-tank's way has no path either: the pause
+    CHECK(r.state == State::Paused && r.stragglerTry == 2);
+    CHECK(r.note.find("the walk to it has no path that ends at the point") != std::string::npos);
+    CHECK(r.spawnPatrolGaveUp.count(0xd001) == 1);
+}
+
+// A pack that comes into the tank's remaining way after the first read aborts that try at the 2 s recheck and sends
+// the off-tank, with the run's note naming it.
+static void TestStragglerPullRecheckAbortsOnANewBlocker()
+{
+    DungeonPlan plan = StragglerPlan();
+    Run r = Start(&plan);
+    Facts f = StragglerFacts();
+    MemberFact off = Mem("Offy", 5.0f);
+    off.tank = true;
+    f.members = {off};
+    f.patrollers = {StragglerUnit()};
+    for (int i = 0; i < 60; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty()); // the way is read
+    StragglerWayClear(f, 0xd001, "Tanky");
+    CHECK(Tick(r, f) == "attack 53249 Tanky");
+    CHECK(Tick(r, f).empty()); // 1 s of the attack's wait
+    CHECK(Tick(r, f).empty()); // 2 s: the way is read again
+    CHECK(r.stragglerPathWanted == 0xd001);
+    // The glue's fresh read finds a not-yet-pulled pack on the remaining way.
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = 0xd001;
+    f.stragglerPathTank = "Tanky";
+    f.stragglerPathOk = true;
+    f.stragglerPathBlockEntry = 11368;
+    f.stragglerPathBlockYd = 9.0f;
+    f.stragglerPathBlockReachYd = 20.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.stragglerTry == 2 && r.stragglerTank == "Offy");
+    CHECK(r.note == "pack not cleared: Offy (the off-tank) walks to 11365 0x000000000000d001 (12.7 0.0 0.0) and "
+        "pulls it (try 2)");
+}
+
 static void TestSpawnOwnedPatrollerGateOffUsesTheOldRule()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -23221,6 +23464,73 @@ static void TestPatrolStandPullHoldsForAResidueUnit()
 
 // No unit in the radius: a patroller of the row (the formation walking its loop) in shot is pulled from the stand.
 // (On 4e87c71eb: "waiting for the patroller 14750 9 (outside the 4.0 yd radius; up to 60 s)", no order.)
+// A unit in the row's shot that another patrol blocks is the row's own hold, not a straggler: the 600 s wait and
+// the pause stay, with the key on too.
+static void TestStragglerPullLeavesTheInShotWaitAlone()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(22.0f);
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    f.units.front().entry = 11368;
+    f.units.front().cycleMs = 30000;
+    f.standPatrols.push_back(PatrolUnit(20, 11368, 30.0f, 200));
+    for (int i = 0; i < 40; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.stragglerGuid == 0 && r.standPullMs == 40000);
+    CHECK(r.note.find("waiting for 11368") != std::string::npos);
+}
+
+static void TestStragglerPullNeverTakesABossKillFirstOrLinkedDeathUnit()
+{
+    // The plan's kill_first rider: the 600 s wait and the pause stay exactly as they were with the key off.
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(22.0f);
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    f.standPatrols.push_back(PatrolUnit(20, 11368, 30.0f, 200));
+    for (std::uint32_t i = 0; i < kStandPullWaitMs / kTickMs - 1 && r.state == State::Running; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1 && r.stragglerGuid == 0);
+    Tick(r, f);
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "patrol pull: 14750 0x0000000000000009 did not come within 24.0 yd of the stand with no other patrol "
+        "within 40.0 yd in 600 s: pull it, then .bot run resume (the step then pulls as a plain pull), or .bot run skip");
+}
+
+static void TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    f.units.front().entry = 11368; // not the plan's kill_first
+    f.units.front().cycleMs = 30000;
+    f.units.front().loop = {ai::ApproachPoint{-12240.0f, -1490.0f, kPatrolPullFloorZ},
+        ai::ApproachPoint{-12220.0f, -1480.0f, kPatrolPullFloorZ}};
+    f.standPatrols = {f.units.front()};
+    for (int i = 0; i < 29; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1 && r.standPullMs == 29000);
+    CHECK(Tick(r, f).empty()); // one loop (30 s) is over: the way to its nearest point is read
+    CHECK(r.state == State::Running && r.stragglerPathWanted == 9);
+    StragglerWayClear(f, 9, "Tanky");
+    CHECK(Tick(r, f) == "move -12240.0 -1490.0 130.9");
+    f.leadX = -12240.0f;
+    f.leadY = -1490.0f;
+    f.leadZ = kPatrolPullFloorZ;
+    CHECK(Tick(r, f).empty()); // at the loop point: the way is read once more before the attack
+    CHECK(Tick(r, f) == "attack 9 Tanky");
+    CHECK(r.state == State::Running && r.step == 1);
+    // It comes into the fight: the gate is done for the step, the fight handles it.
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerGuid == 0);
+}
+
 static void TestPatrolStandPullShootsAPatrollerInShot()
 {
     DungeonPlan plan = PatrolPullPlan();
@@ -32438,6 +32748,16 @@ int main()
     TestResidueInAnotherStepsRadiusIsLeft();
     TestPassedResidueIsNamed();
     TestSpawnOwnedPatrollerCapPauses();
+    TestStragglerPullWalksToAPackUnitAndPullsIt();
+    TestStragglerPullLeavesTheInShotWaitAlone();
+    TestStragglerPullPausesWhenTheWayPassesAnotherPack();
+    TestStragglerPullFallsBackToTheOffTank();
+    TestStragglerPullRefusedLeadOrderFallsBackToTheOffTank();
+    TestStragglerPullLeadPathFailureFallsBackToTheOffTank();
+    TestStragglerPullBothTanksFailPauses();
+    TestStragglerPullRecheckAbortsOnANewBlocker();
+    TestStragglerPullNeverTakesABossKillFirstOrLinkedDeathUnit();
+    TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint();
     TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
     TestFightStepEndWaitsOnResidue();
     TestZeroPullClearNamesNearestLeft();

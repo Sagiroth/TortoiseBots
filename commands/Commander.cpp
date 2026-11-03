@@ -6987,6 +6987,72 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
         f.shortcutFor = run.shortcutWanted;
         f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way);
     }
+
+}
+
+// The straggler pull's way (DungeonRun::StragglerPullTick): the acting tank's navmesh path to the point it was sent
+// to, and the first living hostile of another pack the way passes within its own aggro reach plus the margin of. One
+// path and one grid search, only on a try's first tick (the read the policy asked for). Read with the lead bot dead
+// too: the tank that holds the main tank role is the one that goes (an off-tank).
+void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!run.stragglerPathWanted || !lead || !lead->IsInWorld() || !run.plan)
+        return;
+    std::uint64_t const wanted = run.stragglerPathWanted;
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = wanted;
+    f.stragglerPathTank = run.stragglerTank;
+    Player* tank = run.stragglerTank.empty() ? lead : FindOnlineByName(run.stragglerTank);
+    std::vector<PathPoint> way;
+    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId() ||
+        !DirectNavPath(tank, run.stragglerX, run.stragglerY, run.stragglerZ, way))
+        return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
+    float length = 0.0f;
+    for (std::size_t i = 1; i < way.size(); ++i)
+        length += ai::PlanDistance(way[i - 1].x, way[i - 1].y, way[i - 1].z, way[i].x, way[i].y, way[i].z);
+    if (length > kBotWalkMaxPathYd)
+        return; // too long a way round for a pull: as no way (the longest such walk the glue walks a bot)
+    f.stragglerPathOk = true;
+    ai::PlanStep const* const step = run.step < run.plan->steps.size() ? &run.plan->steps[run.step] : nullptr;
+    std::list<Unit*> around;
+    HostileCreaturesAround(tank, std::min(length + 60.0f, 200.0f), around);
+    float closest = -1.0f;
+    for (Unit* unit : around)
+    {
+        if (!unit->IsAlive() || unit->IsInCombat() || unit->GetObjectGuid().GetRawValue() == wanted)
+            continue;
+        Creature* const creature = unit->ToCreature();
+        if (!creature)
+            continue;
+        // The step's own pack is no other pack: its entries within its radius, and its boss.
+        bool own = false;
+        if (step)
+            for (std::uint32_t entry : step->entries)
+                own = own || (creature->GetEntry() == entry &&
+                    ai::PlanDistance(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                        step->x, step->y, step->z) <= step->radius);
+        own = own || (step && step->entry && creature->GetEntry() == step->entry);
+        if (own)
+            continue;
+        float gapYd = -1.0f;
+        for (std::size_t i = 1; i < way.size(); ++i)
+        {
+            float const d = SegmentDistance(way[i - 1], way[i], creature->GetPositionX(),
+                creature->GetPositionY(), creature->GetPositionZ());
+            gapYd = gapYd < 0.0f || d < gapYd ? d : gapYd;
+        }
+        float const reach = creature->GetAttackDistance(tank) + kStragglerPullAggroMarginYd;
+        if (gapYd < 0.0f || gapYd > reach)
+            continue;
+        if (closest < 0.0f || gapYd < closest)
+        {
+            closest = gapYd;
+            f.stragglerPathBlockEntry = creature->GetEntry();
+            f.stragglerPathBlockYd = gapYd;
+            f.stragglerPathBlockReachYd = reach;
+        }
+    }
 }
 
 // A leg toward (x,y,z) for a move refused too-far (DungeonRun::TooFarLegWanted): the
@@ -10646,6 +10712,39 @@ static void ReadFetchFacts(Player* lead, std::vector<Player*> const& bots, Torto
     f.fetchRead = true;
 }
 
+// The loop a creature walks (its waypoint path, closed) and one full cycle's time at its walk speed
+// (DungeonRun::StragglerPullTick: a patrol is waited for one loop at most). Read only with
+// AiPlayerbot.DungeonRunStragglerPull on, on a stand-pull row's read: one map lookup per patroller a tick, no more.
+void ReadPatrolLoop(Creature* creature, TortoiseBots::DungeonRun::UnitFact& unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunStragglerPull)
+        return;
+    // A formation follower walks its leader's loop (PatrolWalker): its own entry has no waypoint path.
+    Creature* const walker = PatrolWalker(creature);
+    WaypointPath const* const loop = walker ? sWaypointMgr.GetDefaultPath(walker->GetEntry(), walker->GetGUIDLow())
+                                            : nullptr;
+    if (!loop)
+        return;
+    float loopYd = 0.0f;
+    for (auto const& node : *loop)
+    {
+        ai::ApproachPoint point;
+        point.x = node.second.x;
+        point.y = node.second.y;
+        point.z = node.second.z;
+        if (!unit.loop.empty())
+            loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+                point.x, point.y, point.z);
+        unit.loop.push_back(point);
+    }
+    if (unit.loop.size() > 1)
+        loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+            unit.loop.front().x, unit.loop.front().y, unit.loop.front().z);
+    float const speed = creature->GetSpeed(MOVE_WALK);
+    if (loopYd > 0.0f && speed > 0.1f)
+        unit.cycleMs = static_cast<std::uint32_t>(loopYd / speed * 1000.0f + 0.5f);
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -10658,6 +10757,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // The pack-cleared gate (DungeonRun::ClassifyPullRead): read every tick, so a reload switches it mid-run.
     f.packClearMarginYd = sPlayerbotAIConfig.dungeonRunPackClearMarginYd;
     f.packClearRepulls = sPlayerbotAIConfig.dungeonRunPackClearRepulls;
+    // The straggler pull (DungeonRun::StragglerPullTick): a unit the step waits for is pulled by the tank instead of
+    // the pause. Read every tick, like the gate's keys.
+    f.stragglerPull = sPlayerbotAIConfig.dungeonRunStragglerPull;
     // The pull stand (DungeonRun::HoldForShot): off, no sight ray, range or stand is read.
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
@@ -11152,6 +11254,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.losLead = lead->IsWithinLOSInMap(creature);
                     unit.formation = RunFormationOf(creature);
                     unit.patrols = RunWalksPatrol(creature);
+                    ReadPatrolLoop(creature, unit);
                     unit.attackable = GroupCanAttack(judge, creature);
                     unit.stealthed = IsStealthed(creature);
                 }
@@ -11290,6 +11393,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.y = creature->GetPositionY();
                         unit.formation = RunFormationOf(creature); // its pack, only a stand-pull row's own read
                         unit.patrols = RunWalksPatrol(creature);
+                        ReadPatrolLoop(creature, unit);
                         unit.spawnOwned = SpawnOwned(read, step->radius); // the pack's formations (ScopeStandPullFacts)
                     }
                     if (residue)
@@ -11299,6 +11403,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.distSpot = read.fromPoint2d;
                         unit.spawnOwned = SpawnOwned(read, step->radius);
                         unit.spawnYd = read.spawnYd;
+                        ReadPatrolLoop(creature, unit);
                         // Residue only by the flier rule: left at the re-pull cap, not paused for (ZG walk 5).
                         unit.aloft = read.airborne && read.airborneSameFloor && std::fabs(read.dz) > kPackResidueZYd;
                         f.packResidue.push_back(unit);
@@ -11664,6 +11769,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     if (f.leadIsland && lead->IsAlive())
         f.goodSpotCut = GoodSpotCutOff(lead, slot.run);
     ReadTimeSinkWays(slot, lead, f);
+    ReadStragglerWay(lead, slot.run, f);
     ReadPullStand(slot, lead, bots, f);
     ReadStandPullHold(slot, lead, bots, f);
     // The ring estimate's look-ahead (AiPlayerbot.DungeonRunAggroWalkRing), on the row before a pull.
