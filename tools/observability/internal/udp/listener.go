@@ -316,7 +316,21 @@ func (l *Listener) processPacket(data []byte) {
 		partials := l.store.RaidsPartials()
 		if l.store.ApplyRaids(&raids) {
 			// The applied rows: a cycle that arrived in parts applied everything.
-			l.hub.Broadcast("raids", l.store.Raids())
+			view := l.store.Raids()
+			l.hub.Broadcast("raids", view)
+			// The live stream's raid rows: the open card's map draws member
+			// positions from the 2 s cycle, and the fight key's events strip
+			// stays live between RAIDS cycles.
+			if l.live != nil {
+				for i := range view.Runs {
+					for j := range view.Runs[i].Groups {
+						g := view.Runs[i].Groups[j]
+						if g.Combat != nil {
+							l.live.Publish(g.Key, "raid_combat", g.Combat)
+						}
+					}
+				}
+			}
 		}
 		l.metricsReg.AddRaidsPartials(l.store.RaidsPartials() - partials)
 
@@ -335,6 +349,11 @@ func (l *Listener) processPacket(data []byte) {
 			l.hub.Broadcast("combat", dg.Fight)
 			if l.live != nil {
 				l.live.Publish(dg.Fight.Commander, "fight", summary)
+				for _, key := range l.store.RaidKeysForCommander(dg.Fight.Commander) {
+					if key != dg.Fight.Commander {
+						l.live.Publish(key, "fight", summary)
+					}
+				}
 			}
 			if l.history != nil {
 				l.history.Enqueue(history.Item{Session: dg.Session, Fight: stored, Warnings: summary.Warnings, At: time.Now()})
@@ -358,6 +377,14 @@ func (l *Listener) processPacket(data []byte) {
 		if changed {
 			l.live.Publish(dg.Commander, "fight_live", summary)
 		}
+		for _, key := range l.store.RaidKeysForCommander(dg.Commander) {
+			if key != dg.Commander {
+				l.live.Publish(key, "events", dg)
+				if changed {
+					l.live.Publish(key, "fight_live", summary)
+				}
+			}
+		}
 
 	case "COMMANDER_POS":
 		var p model.CommanderPosPayload
@@ -367,6 +394,13 @@ func (l *Listener) processPacket(data []byte) {
 		l.metricsReg.RecordRealtimeDatagram("COMMANDER_POS", len(data))
 		if frame, ok := l.store.ApplyCommanderPos(&p); ok && l.live != nil {
 			l.live.Publish(p.Commander, "pos", frame)
+			// The same positions feed the open raid card of a bound group
+			// under its raid fight key (the RAIDS row names the commander).
+			for _, key := range l.store.RaidKeysForCommander(p.Commander) {
+				if key != p.Commander {
+					l.live.Publish(key, "pos", frame)
+				}
+			}
 		}
 	default:
 		var anomaly model.AnomalyPayload
