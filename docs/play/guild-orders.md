@@ -53,7 +53,7 @@ For the auction house step the bot picks one auction house and walks there. A co
 
 ## Options
 
-- **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items); those never show up in the search.
+- **Craft rules:** a craft order needs a recipe the bot can really make and you can really use. It is refused when the bot does not know the recipe, for enchants (not orderable yet), for items that cannot go to the bank (bound when picked up, quest or temporary), for items that need a profession to use (engineering goggles need Engineering), and for recipes with a long cooldown (transmutes, Mooncloth). The Professions view marks each recipe `ok` or with the reason; the search shows the same verdict.
 - **Hours:** optional whole hours 1-24; no hours given (or `inf`) means no time limit: the bot farms until it has the amount, however long it takes. When the time runs out, the bot still brings what it has to the guild bank (or mails it to the guild master) and the order ends as `cant` with reason `timeout`.
 - **Keep:** add the word `keep` at the end and the order does not end after delivery: it watches the guild bank and, when the bank holds fewer than the ordered amount, the bot brings the missing amount again. Each new round gets the full hours again. Keep needs a working bank: if a round ends mailed, `cant` or `noskill`, the keep ends with it.
 - **Guild gold cap:** add `gold=<copper>` after the other options to limit how much guild bank money this order may use on auction house purchases. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
@@ -125,7 +125,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 | `stocked` | Keep order: delivered, the bank holds the ordered amount, watching it (checks about every 10 minutes). |
 | `mailed` | The bank refused, mailed to the guild master. |
 | `noskill` | The item needs a profession the bot lacks, or its skill is too low. |
-| `cant` | No source in level range, no source at all, only elite sources, unknown recipe, farm time ran out (`timeout`), no new item in 3 worked hours (`noprogress`), or stuck while crafting or delivering. |
+| `cant` | No source in level range, no source at all, only elite sources, a craft recipe the bot may not make (unknown, enchant, bound item, profession-locked item, or long cooldown), farm time ran out (`timeout`), no new item in 3 worked hours (`noprogress`), or stuck while crafting or delivering. |
 
 ## Requirements
 

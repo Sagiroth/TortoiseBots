@@ -4,6 +4,8 @@
 #include "BotCommandContext.h"
 
 #include "../runtime/BotManager.h"
+#include "../runtime/GuildOrderCraftPolicy.h"
+#include "../runtime/GuildOrderStore.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
 
@@ -185,9 +187,25 @@ void FillAbilityRow(AbilityRow& row, SkillLineAbilityEntry const* ability, Playe
 
 // TBM:PROF_BEGIN|<bot>
 // TBM:PROF|<skillId>|<value>|<max>
-// TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>
+// TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>|<order>
 // TBM:RECIPE_MISSING|<skillId>|<spellId>|<itemId or 0>|<reqSkill>|<recipeItemId or 0>
 // TBM:PROF_END|<bot>|<recipeCount>|<missingCount>
+// <order> is ok when the recipe may be ordered as Craft, else the reason
+// token (shared with the order give refusal and the search verdict).
+std::string CraftOrderField(AbilityRow const& row)
+{
+    GuildOrders::CraftOrderableInputs inputs;
+    inputs.known = row.known;
+    inputs.createsItem = row.createsItem;
+    if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(row.createdItemId))
+    {
+        inputs.itemOrderable = GuildOrders::IsOrderableItem(proto);
+        inputs.itemNeedsProfession = proto->RequiredSkill != 0;
+    }
+    if (SpellEntry const* spell = sSpellMgr.GetSpellEntry(row.spellId))
+        inputs.spellRecoveryMs = spell->GetRecoveryTime();
+    return GuildOrders::CraftOrderToken(GuildOrders::CraftOrderableVerdict(inputs));
+}
 void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
 {
     using namespace TortoiseBots::ProfessionSnapshotPolicy;
@@ -224,7 +242,7 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
             FillAbilityRow(row, ability, bot);
             if (IsKnownRecipe(row))
             {
-                handler->PSendSysMessage("%s", FormatRecipe(row).c_str());
+                handler->PSendSysMessage("%s", FormatRecipe(row, CraftOrderField(row)).c_str());
                 ++recipeCount;
                 continue;
             }

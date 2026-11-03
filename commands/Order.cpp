@@ -6,6 +6,7 @@
 #include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
+#include "../runtime/GuildOrderCraftPolicy.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/RandomBotAccountRegistry.h"
 #include "../ai/playerbot/GuildOrderSources.h"
@@ -346,13 +347,13 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         GuildOrders::SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, type);
         if (type == OrderType::Craft && plan.verdict != OrderReason::None)
         {
-            if (plan.verdict == OrderReason::NoRecipe)
-            {
-                // Refuse at give, like search does: storing Cant would still
-                // ACK the giver and start the reporting round-trip.
-                OrderError(handler, "norecipe", "The bot does not know that recipe.");
-                return true;
-            }
+            // Refuse at give, like search does: storing Cant would still
+            // ACK the giver and start the reporting round-trip. The plan
+            // verdict already ran the shared orderable rule, so the text
+            // matches the Professions view and the search verdict.
+            OrderError(handler, ReasonToken(plan.verdict),
+                GuildOrders::CraftOrderRefusal(plan.verdict));
+            return true;
         }
         else if (!plan.zones.empty())
         {

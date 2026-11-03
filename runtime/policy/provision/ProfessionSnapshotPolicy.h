@@ -104,14 +104,14 @@ inline std::string FormatProfession(ProfessionRow const& row)
     return line;
 }
 
-inline std::string FormatRecipe(AbilityRow const& ability)
+inline std::string FormatRecipe(AbilityRow const& ability, std::string const& order)
 {
     uint32_t orange = 0, yellow = 0, green = 0, grey = 0;
     SkillSteps(ability.minValue, ability.maxValue, orange, yellow, green, grey);
-    char line[96];
-    std::snprintf(line, sizeof(line), "TBM:RECIPE|%u|%u|%u|%u|%u|%u|%u",
+    char line[112];
+    std::snprintf(line, sizeof(line), "TBM:RECIPE|%u|%u|%u|%u|%u|%u|%u|%s",
         ability.skillId, ability.spellId, ability.createdItemId,
-        orange, yellow, green, grey);
+        orange, yellow, green, grey, order.c_str());
     return line;
 }
 
