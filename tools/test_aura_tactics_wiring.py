@@ -35,6 +35,17 @@ TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").rea
 TACTICS_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
 DPS_TARGET = (ROOT / "ai/playerbot/strategy/values/DpsTargetValue.cpp").read_text()
 
+# Step 3 (dispel_priority): the dispel predicate, the cure multiplier, the AI-side hard never-dispel list and the
+# fight strategy that owns the multiplier.
+DISPEL_VALUE = (ROOT / "ai/playerbot/strategy/values/PartyMemberToDispel.cpp").read_text()
+DISPEL_POLICY = (ROOT / "ai/playerbot/policy/heal/DispelTargetPolicy.h").read_text()
+PLAYERBOT_AI_H = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
+PLAYERBOT_AI_SPELLS = (ROOT / "ai/playerbot/PlayerbotAISpells.cpp").read_text()
+TACTICS_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
+ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
+TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
+
 
 def body(text, start, end="\n}\n"):
     i = text.index(start)
@@ -275,6 +286,201 @@ class DpsHoldWiring(unittest.TestCase):
         self.assertIn("std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), "
                       "subject->GetObjectGuid().GetRawValue(),", ACTIONS)
         self.assertIn("row.bossEntry, row.spellId, row.hpMin, row.hpMax)", ACTIONS)
+
+
+class DispelPriorityIsRanked(unittest.TestCase):
+    """The predicate asks the pure verdict for the member and orders by the
+    row's rank first, the target tier second. Without this the row's
+    priorities never reach the cure pick."""
+
+    def test_predicate_calls_the_verdict_and_the_rank_order(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertIn("DispelMemberVerdict(rows, auras, dispelType", fn)
+        self.assertIn("DispelCandidateBetter(rank, tier, bestRank, bestTier)", fn)
+        # The tier-0 early return may only fire for a rank-0 member, or a rank-2 carrier in reach would end the search.
+        self.assertIn("if (ranked && rank == 0 && tier == 0)", fn)
+
+    def test_excluded_member_is_skipped_before_its_aura_is_offered(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertLess(fn.index("LogDispelExcluded"), fn.index("HasAuraToDispel"))
+        self.assertIn("verdict.excluded", fn)
+
+    def test_plain_predicate_when_no_row_is_active(self):
+        fn = body(DISPEL_VALUE, "virtual bool Check(Unit* unit) override", "\n    }\n")
+        self.assertIn("tier >= bestTier", fn)  # the old order is still there, unranked
+        self.assertIn("ranked ? &overrideSet : nullptr", fn)
+
+
+class DispelPriorityIsGated(unittest.TestCase):
+    """Off, the rows are inert: the predicate reads no row and the
+    hard never-dispel list keeps deciding exactly as before."""
+
+    def test_predicate_needs_the_key_the_map_and_the_strategy(self):
+        fn = body(DISPEL_VALUE, "Unit* PartyMemberToDispel::Calculate()")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+    def test_multiplier_needs_the_key_the_map_and_the_strategy(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+
+class DispelHoldIsRegistered(unittest.TestCase):
+    """The safety net only exists when the combat engine owns it."""
+
+    def test_multiplier_is_on_the_combat_engine(self):
+        fn = body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitCombatMultipliers")
+        self.assertIn("new BossTacticsDispelHoldMultiplier(ai)", fn)
+
+    def test_multiplier_is_not_on_the_non_combat_or_reaction_engine(self):
+        self.assertNotIn("BossTacticsDispelHoldMultiplier",
+                         body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitNonCombatMultipliers"))
+        self.assertNotIn("BossTacticsDispelHoldMultiplier",
+                         body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitCombatTriggers"))
+
+
+class DispelHoldCoversTheAreaCures(unittest.TestCase):
+    """Abolish Poison's later ticks, the cleansing totems and Stoneform remove
+    auras the row never chose, so the multiplier checks every nearby member."""
+
+    def test_multiplier_checks_the_party_cure_target(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("dynamic_cast<CurePartyMemberAction*>(action)", fn)
+        self.assertIn("verdict.excluded", fn)
+        self.assertIn("return 0.0f;", fn)
+
+    def test_the_hold_judges_every_type_the_cast_spell_removes(self):
+        # A poison-triggered Cleanse also strips magic and disease, so the hold must not read only GetDispelType().
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertIn("ActionDispelTypes(ai, spell)", fn)
+        self.assertIn("DispelCureVerdict(rows, auras, types, allyYd, defaultClearYd)", fn)
+        self.assertNotIn("GetDispelType()", fn)
+        # The type set comes from the spell's effects, not a name table.
+        types = body(ACTIONS, "void CollectSpellDispelTypes(")
+        self.assertIn("SPELL_EFFECT_DISPEL", types)
+        self.assertIn("EffectMiscValue[i]", types)
+        self.assertIn("SPELL_AURA_DISPEL_IMMUNITY", types)
+        self.assertIn("SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY", types)
+        self.assertIn("SPELL_AURA_PERIODIC_TRIGGER_SPELL", types)
+        self.assertNotIn("CureDispelTypes", ACTIONS)
+
+    def test_area_cures_scan_the_nearby_group(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        for name in ('"abolish disease"', '"disease cleansing totem"', '"poison cleansing totem"', '"stoneform"'):
+            self.assertIn(name, ACTIONS)
+        self.assertIn("kDispelSafetyYd", fn)
+        self.assertIn("LiveGroupMembers(group)", fn)
+
+    def test_self_cures_judge_the_bot(self):
+        fn = body(ACTIONS, "float BossTacticsDispelHoldMultiplier::GetValue")
+        self.assertLess(fn.index("if (!areaCure)"), fn.index("veto(bot)"))
+
+
+class TheRunningCuresAreSwept(unittest.TestCase):
+    """A protected aura applied after an area cure started would be removed by its next tick or pulse: the bot-cast
+    Abolish aura is removed and the bot's own cleansing totem destroyed, and only those."""
+
+    def test_sweep_removes_only_bot_cast_auras(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("GET_PLAYERBOT_AI(caster)", fn)
+        self.assertIn("RemoveAurasByCasterSpell(entry.first, entry.second)", fn)
+        # The aura that decided the verdict is the protected one itself: never remove that.
+        self.assertIn("verdict.auraId == aura->GetId()", fn)
+
+    def test_sweep_destroys_the_bots_own_totem_in_range(self):
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertIn("bot->GetTotem(TotemSlot(slot))", fn)
+        self.assertIn("TotemDispelRadius(totemSpell)", fn)
+        self.assertIn("totem->UnSummon()", fn)
+        self.assertIn("sServerFacade.GetDistance2d(totem, member) > radius", fn)
+
+    def test_probe_mode_reports_work_but_mutates_nothing(self):
+        # apply=false is the read-only probe the trigger evaluates: it must still report work, but the aura removal
+        # and the totem destroy both sit behind `if (apply)`.
+        fn = body(ACTIONS, "bool SweepDispelCures(")
+        self.assertRegex(
+            fn,
+            r"if \(apply\)\s*member->RemoveAurasByCasterSpell\(entry\.first, entry\.second\);\s*swept = true;",
+        )
+        self.assertRegex(fn, r"if \(apply\)\s*totem->UnSummon\(\);\s*swept = true;")
+        self.assertEqual(fn.count("RemoveAurasByCasterSpell("), 1)
+        self.assertEqual(fn.count("UnSummon("), 1)
+
+    def test_sweep_is_gated_and_registered(self):
+        fn = body(ACTIONS, "bool ai::SweepBossDispelCures(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn("DispelRows(ScanBossTactics(ai, bot))", fn)
+        self.assertIn("SweepBossDispelCures(ai, bot, false)", TRIGGERS)
+        self.assertIn("SweepBossDispelCures(ai, bot, true)", ACTIONS)
+        self.assertIn('"boss tactics dispel sweep"', TACTICS_STRATEGY)
+        self.assertIn('creators["boss tactics dispel sweep"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics dispel sweep"]', TRIGGER_CONTEXT)
+
+
+class TheHardNeverListIsShared(unittest.TestCase):
+    """28169 must stay excluded with no row (today's behaviour), and a clear
+    row must be able to release it: both readers need the same list."""
+
+    def test_list_lives_in_the_dispel_policy(self):
+        self.assertIn("constexpr std::uint32_t kNeverDispelSpellIds[] = { 28169 };", DISPEL_POLICY)
+        self.assertIn("inline bool IsNeverDispelSpellId(", DISPEL_POLICY)
+        self.assertIn("struct DispelOverride", DISPEL_POLICY)
+
+    def test_ai_side_has_no_copy_of_the_list(self):
+        self.assertNotIn("static constexpr uint32 kNeverDispelSpellIds[]", PLAYERBOT_AI_SPELLS)
+        self.assertIn("return IsNeverDispelSpellId(spellId);", PLAYERBOT_AI_SPELLS)
+
+    def test_candispel_consults_the_override(self):
+        fn = body(PLAYERBOT_AI_SPELLS, "bool PlayerbotAI::canDispel(")
+        self.assertIn("override->deny", fn)
+        self.assertIn("override->allow", fn)
+        self.assertIn("DispelOverrideContains(", fn)
+
+    def test_has_aura_to_dispel_has_the_override_overload(self):
+        self.assertIn(
+            "virtual bool HasAuraToDispel(Unit* player, uint32 dispelType, const DispelOverride* override = nullptr);",
+            PLAYERBOT_AI_H)
+        self.assertIn(
+            "bool canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override = nullptr);",
+            PLAYERBOT_AI_H)
+
+    def test_verdict_is_the_single_reader_of_the_list(self):
+        fn = body(POLICY, "inline DispelVerdict DispelMemberVerdict(", "\n    }\n")
+        self.assertIn("IsNeverDispelSpellId(aura.spellId)", fn)
+        self.assertIn("TacticMode::Never", fn)
+        self.assertIn("TacticMode::Clear", fn)
+
+
+class TheDispelDecisionIsLogged(unittest.TestCase):
+    def test_log_row_carries_the_reported_fields(self):
+        self.assertIn('"BossTacticsDispel"', ACTIONS)
+        for field in ("aura=", "carrier=", "mode=", "rank=", "ally_yd=", "verdict="):
+            self.assertIn(field, ACTIONS)
+        self.assertIn('"pick"', ACTIONS)
+        self.assertIn('verdict.wait ? "wait" : "excluded"', ACTIONS)
+
+
+class DispelHoldAtCastTime(unittest.TestCase):
+    """The member can gain the protected aura after the action was chosen, and a paladin Cure resolves one of its
+    dispel types at random, so the same hold is judged again at the last gate: the cast itself."""
+
+    def test_the_cast_path_refuses_the_spell_before_the_core_cast(self):
+        fn = body(PLAYERBOT_AI_SPELLS, "bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target")
+        self.assertIn("DispelCastBlocked(this, target, spellId)", fn)
+        self.assertLess(fn.index("DispelCastBlocked"), fn.index("new Spell("))
+        self.assertIn("reason=dispel-hold", fn)
+
+    def test_the_cast_gate_judges_every_type_the_spell_removes(self):
+        fn = body(ACTIONS, "bool ai::DispelCastBlocked")
+        self.assertIn("CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types)", fn)
+        self.assertIn("DispelMemberState(target, type, rows", fn)
+        self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
+        self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,27 @@ static ActiveBossRows Active(const std::vector<BossTacticRow>& rows)
     return out;
 }
 
+static BossTacticRow DispelRow(std::uint32_t spell, std::uint8_t priority, TacticMode mode, float param = 0.0f)
+{
+    BossTacticRow row = Row(309, 11380, BossTacticKind::DispelPriority, 0, spell, priority, param);
+    row.mode = mode;
+    return row;
+}
+
+// The 1.12 dispel types (SpellEntry::Dispel): magic 1, curse 2, disease 3, poison 4. The policy header takes the raw
+// number so it stays free of core includes, exactly like the loader passes the row's columns.
+static const std::uint32_t kMagic = 1;
+static const std::uint32_t kCurse = 2;
+static const std::uint32_t kPoison = 4;
+
+static AuraOnMember Aura(std::uint32_t spellId, std::uint32_t dispelType)
+{
+    AuraOnMember aura;
+    aura.spellId = spellId;
+    aura.dispelType = dispelType;
+    return aura;
+}
+
 static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable = true)
 {
     TacticCandidate c;
@@ -1292,6 +1313,7 @@ int main()
         CHECK(last - first <= 7);
     }
 
+
     // dps_hold_after: one fight-wide state per subject and row, whose triggers (engage, band opening, a spell or aura
     // rising edge, a blink) restart a hold of `param` seconds. The hold is what the free DPS bots of the instance obey;
     // any bot's read feeds the same state, as the linked_death latch does.
@@ -1506,6 +1528,121 @@ int main()
         in.victimIsTank = true;
         CHECK(DpsHoldTick(done, in, 0, nullptr));
         CHECK(!DpsHoldTick(done, in, 4000, nullptr));               // on the tank: released at param
+    }
+
+    // dispel_priority: a `never` aura excludes the whole dispel type, not only its own id. Delusions 24306 (curse) must
+    // stay on the Shade killer, so a decurser may not touch any other curse on that member either: the core picks a random
+    // aura of the type.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24306, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(24306, kCurse), Aura(9001, kCurse) };
+        DispelVerdict const never = DispelMemberVerdict(active, auras, kCurse, 50.0f, 30.0f);
+        CHECK(never.excluded);
+        CHECK(!never.wait);
+        CHECK(never.auraId == 24306);
+        CHECK(never.mode == TacticMode::Never);
+    }
+
+    // A never aura of one type never blocks another type on the same member: a magic dispel still lands beside it.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9001, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(9001, kCurse), Aura(9002, kCurse), Aura(9003, kMagic) };
+        DispelVerdict const magic = DispelMemberVerdict(active, auras, kMagic, 50.0f, 30.0f);
+        CHECK(!magic.excluded);
+        CHECK(magic.rank == kUnlistedDispelRank);
+    }
+
+    // A `clear` row waits until the carrier is clear of every other living group member: the donated Grobbulus release.
+    // The hard never-dispel list (28169) is exactly the opt-in case: no row or an un-clear carrier keeps it excluded, a
+    // `clear` row with the carrier clear releases it.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(28169, 0, TacticMode::Clear, 30.0f) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(28169, kPoison) };
+        DispelVerdict const close = DispelMemberVerdict(active, auras, kPoison, 12.0f, 30.0f);
+        CHECK(close.excluded);
+        CHECK(close.wait);
+        CHECK(close.mode == TacticMode::Clear);
+        DispelVerdict const clear = DispelMemberVerdict(active, auras, kPoison, 30.0f, 30.0f);
+        CHECK(!clear.excluded);
+        CHECK(!clear.wait);
+        CHECK(clear.rank == 0);
+        // param 0 falls back to the config distance, not to "always clear".
+        std::vector<BossTacticRow> fallback = { DispelRow(28169, 0, TacticMode::Clear) };
+        ActiveBossRows fallbackRows = Active(fallback);
+        CHECK(DispelMemberVerdict(fallbackRows, auras, kPoison, 29.9f, 30.0f).excluded);
+        CHECK(!DispelMemberVerdict(fallbackRows, auras, kPoison, 30.0f, 30.0f).excluded);
+    }
+
+    // Without any active row a hard never-dispel aura stays excluded: 28169 is never cured, exactly as before the rows.
+    {
+        ActiveBossRows const empty;
+        std::vector<AuraOnMember> auras = { Aura(28169, kPoison) };
+        DispelVerdict const verdict = DispelMemberVerdict(empty, auras, kPoison, 100.0f, 30.0f);
+        CHECK(verdict.excluded);
+        CHECK(verdict.auraId == 28169);
+        // An ordinary aura without a row is not excluded, it just ranks last.
+        std::vector<AuraOnMember> plain = { Aura(9005, kPoison) };
+        DispelVerdict const unlisted = DispelMemberVerdict(empty, plain, kPoison, 100.0f, 30.0f);
+        CHECK(!unlisted.excluded);
+        CHECK(unlisted.rank == kUnlistedDispelRank);
+        CHECK(DispelNeedsAllyDistance(empty, plain) == false);
+    }
+
+    // Rank first, tier second: a rank-0 carrier that needs a short walk is cured before a rank-2 carrier in cast range
+    // that has already been claimed by another dispeller.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9005, 2, TacticMode::Now), DispelRow(9006, 0, TacticMode::Now) };
+        ActiveBossRows active = Active(rows);
+        DispelVerdict const low = DispelMemberVerdict(active, { Aura(9006, kMagic) }, kMagic, 50.0f, 30.0f);
+        DispelVerdict const high = DispelMemberVerdict(active, { Aura(9005, kMagic) }, kMagic, 5.0f, 30.0f);
+        CHECK(low.rank == 0 && high.rank == 2);
+        CHECK(DispelCandidateBetter(low.rank, 2, high.rank, 0));
+        CHECK(!DispelCandidateBetter(high.rank, 0, low.rank, 2));
+    }
+
+    // On equal rank the tier decides, so two auras of the same priority still prefer the member already in reach.
+    {
+        CHECK(DispelCandidateBetter(0, 0, 0, 1));
+        CHECK(!DispelCandidateBetter(0, 1, 0, 0));
+        CHECK(DispelCandidateBetter(0, 2, 0, 3));
+        CHECK(!DispelCandidateBetter(1, 0, 0, 3));
+    }
+
+    // A cure is judged by every type its spell removes, not only the one that triggered it: a poison-triggered Cleanse
+    // (poison, disease, magic) on a member carrying a protected magic aura is held, while the same member under a
+    // poison-only cure is not.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(9007, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(9007, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kPoison, 3, kMagic };
+        std::vector<std::uint32_t> const poisonOnly = { kPoison };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 50.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 9007);
+        CHECK(held.mode == TacticMode::Never);
+        CHECK(!DispelCureVerdict(active, auras, poisonOnly, 50.0f, 30.0f).excluded);
+        // No type excluded: the default verdict, so the cure runs.
+        CHECK(!DispelCureVerdict(active, { Aura(9008, kPoison) }, cleanse, 50.0f, 30.0f).excluded);
+    }
+
+    // The cast-time case: Cleanse chosen for a magic Hex on a member that also carries Poisonous Blood 24321, whose
+    // dispel_priority row is never. The core resolves one of Cleanse's dispel types at random, so the poison can be
+    // picked and the aura stripped: the cure is held even though the triggering type (magic) is not protected.
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24321, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<AuraOnMember> auras = { Aura(24321, kPoison), Aura(24053, kMagic) };
+        std::vector<std::uint32_t> const cleanse = { kMagic, kPoison, 3 };
+        DispelVerdict const held = DispelCureVerdict(active, auras, cleanse, 20.0f, 30.0f);
+        CHECK(held.excluded);
+        CHECK(held.auraId == 24321);
+        CHECK(held.mode == TacticMode::Never);
+        // Without the poison aura the same Cleanse runs on the Hex.
+        CHECK(!DispelCureVerdict(active, { Aura(24053, kMagic) }, cleanse, 20.0f, 30.0f).excluded);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

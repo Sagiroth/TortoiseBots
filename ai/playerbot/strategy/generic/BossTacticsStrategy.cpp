@@ -13,6 +13,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics interrupt",
         NextAction::array(0, new NextAction("boss tactics interrupt", ACTION_INTERRUPT + 1), NULL)));
 
+    // A protected aura applied after an area cure started: the cure's next tick or pulse would remove it, so the
+    // bot-cast Abolish aura is removed and the bot's own cleansing totem destroyed before that.
+    triggers.push_back(new TriggerNode(
+        "boss tactics dispel sweep",
+        NextAction::array(0, new NextAction("boss tactics dispel sweep", ACTION_HIGH + 4), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
@@ -83,6 +89,7 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
 {
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
 }
 
 // The hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the

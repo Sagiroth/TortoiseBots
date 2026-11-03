@@ -58,6 +58,13 @@ bool BossTacticsInterruptTrigger::IsActive()
     return !fight.rows.empty() && FindBossInterrupt(ai, bot, fight).caster != nullptr;
 }
 
+bool BossTacticsDispelSweepTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return SweepBossDispelCures(ai, bot, false);
+}
+
 bool BossTacticsKillFirstTrigger::IsActive()
 {
     if (!Ready(ai, bot))
