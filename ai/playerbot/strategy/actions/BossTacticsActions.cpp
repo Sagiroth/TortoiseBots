@@ -84,8 +84,6 @@ bool IsFreeDps(PlayerbotAI* ai, Player* bot)
 // The row's own key columns identify it: two rows of one boss differ in their spell or in their health band, so each
 // keeps its own hold. Any bot's read feeds the state, as the linked_death latch does, so a hold one bot sees applies
 // to every bot that reads it.
-using DpsHoldKey = std::tuple<std::uint32_t, std::uint32_t, std::uint64_t, std::uint32_t, std::uint32_t,
-                              std::uint8_t, std::uint8_t>;
 std::mutex g_dpsHoldMutex;
 std::map<DpsHoldKey, DpsHoldState> g_dpsHolds;
 // The trigger start each bot has logged for each key: one row per trigger and bot, not one per read.
@@ -122,7 +120,8 @@ void LogDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow
 
 // Drops the state of a subject that died and of a row nobody has read for kDpsHoldStaleMs; runs at most once a
 // second, whatever asks. The dead subject's state is erased at once rather than after the stale timeout, so a
-// respawned subject never inherits its previous pull's hold.
+// respawned subject never inherits its previous pull's hold. The telemetry rows follow their holds: each bot's row
+// goes with the hold it logged, and any row whose map instance is gone goes too.
 void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
 {
     std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
@@ -139,6 +138,12 @@ void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
         }
         it = drop ? g_dpsHolds.erase(it) : std::next(it);
     }
+    // Lock order: the hold map, then the log. LogDpsHold takes the log alone, after the hold lock is released.
+    std::lock_guard<std::mutex> logLock(g_dpsHoldLogMutex);
+    ai::PruneDpsHoldLog(g_dpsHoldLog, g_dpsHolds, [](std::uint32_t mapId, std::uint32_t instanceId)
+    {
+        return sMapMgr.FindMap(mapId, instanceId) != nullptr;
+    });
 }
 
 // One read of a dps_hold_after row against its subject: the gate, the cast slot or aura, the victim's role and the

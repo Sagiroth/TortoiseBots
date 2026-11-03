@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <limits>
 #include <iostream>
+#include <map>
+#include <utility>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -1925,6 +1927,43 @@ int main()
         CHECK(!event.inside);
         CHECK(!LinkedDeathLatchTick(outside, p, {}, none, 11000, {}, 7000, &event));
         CHECK(!event.fired);
+    }
+
+    // The dps_hold_after telemetry rows follow their holds. A row of a hold that was dropped (a dead subject, a stale row)
+    // or whose map instance is gone is erased, whichever bot logged it; the rows of a live hold in a live instance stay,
+    // one per bot. Before the fix nothing pruned the rows, so every old instance and subject kept its rows for good.
+    {
+        auto key = [](std::uint32_t mapId, std::uint32_t instanceId, std::uint64_t subject) {
+            return DpsHoldKey(mapId, instanceId, subject, 11583u, 15263u, std::uint8_t(0), std::uint8_t(100));
+        };
+        auto instanceAlive = [](std::uint32_t mapId, std::uint32_t instanceId) {
+            return !(mapId == 309u && instanceId == 3u);  // instance 3 has been torn down
+        };
+        DpsHoldKey const live = key(309u, 7u, 100u);
+        DpsHoldKey const oldInstance = key(309u, 3u, 100u);
+        DpsHoldKey const deadSubject = key(309u, 7u, 200u);
+        std::map<DpsHoldKey, DpsHoldState> holds;
+        holds[live];
+        holds[oldInstance];  // still in the hold map: only the instance is gone
+        // deadSubject is not in `holds`: its hold was dropped when the subject died.
+        std::map<std::pair<std::uint64_t, DpsHoldKey>, std::uint32_t> log;
+        log[std::make_pair(std::uint64_t{1}, live)] = 5000;
+        log[std::make_pair(std::uint64_t{2}, live)] = 5000;
+        log[std::make_pair(std::uint64_t{1}, oldInstance)] = 4000;
+        log[std::make_pair(std::uint64_t{1}, deadSubject)] = 3000;
+
+        CHECK(PruneDpsHoldLog(log, holds, instanceAlive) == 2);
+        CHECK(log.size() == 2);
+        CHECK(log.count(std::make_pair(std::uint64_t{1}, live)) == 1);  // a live hold keeps each bot's row
+        CHECK(log.count(std::make_pair(std::uint64_t{2}, live)) == 1);
+        CHECK(log.count(std::make_pair(std::uint64_t{1}, oldInstance)) == 0);
+        CHECK(log.count(std::make_pair(std::uint64_t{1}, deadSubject)) == 0);
+
+        // The live hold goes stale: its rows follow, and a second prune finds nothing left to do.
+        holds.erase(live);
+        CHECK(PruneDpsHoldLog(log, holds, instanceAlive) == 2);
+        CHECK(log.empty());
+        CHECK(PruneDpsHoldLog(log, holds, instanceAlive) == 0);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

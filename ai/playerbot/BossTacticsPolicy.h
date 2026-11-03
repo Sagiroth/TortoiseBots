@@ -1493,6 +1493,33 @@ namespace ai
         std::vector<DpsHoldObserver> observers;
     };
 
+    // A dps_hold_after row's fight key: map, instance, subject guid, boss entry, spell and health band (the row's own key
+    // columns, BossTacticsActions.cpp DpsHoldKeyOf). The fight state and its telemetry rows share it.
+    using DpsHoldKey = std::tuple<std::uint32_t, std::uint32_t, std::uint64_t, std::uint32_t, std::uint32_t,
+                                  std::uint8_t, std::uint8_t>;
+
+    // Prunes the telemetry rows (BossTacticsActions.cpp g_dpsHoldLog: one per observing bot and hold key). A row stays
+    // only while its hold is still in `holds` and its map instance (key parts 0 and 1) still exists; every other row is
+    // erased. Returns how many were erased.
+    template <typename LogMap, typename HoldMap, typename InstanceAlive>
+    std::size_t PruneDpsHoldLog(LogMap& log, const HoldMap& holds, InstanceAlive instanceAlive)
+    {
+        std::size_t erased = 0;
+        for (auto it = log.begin(); it != log.end();)
+        {
+            DpsHoldKey const& key = it->first.second;
+            bool const keep = holds.count(key) != 0 && instanceAlive(std::get<0>(key), std::get<1>(key));
+            if (keep)
+                ++it;
+            else
+            {
+                it = log.erase(it);
+                ++erased;
+            }
+        }
+        return erased;
+    }
+
     // One read's facts. `engageEnabled`/`gateEnabled`/`castEnabled`/`blinkEnabled` say which triggers the row uses
     // (the SQL shape decides, so the rule stays data): engage for a spell-less row that is not a blink, the band for
     // a row with one, the spell for a row that has one, and blink for mode `blink`.
