@@ -195,6 +195,23 @@ namespace ai
             effect == 31;      // SPELL_EFFECT_WEAPON_PERCENT_DAMAGE
     }
 
+    // A periodic-trigger aura whose triggered spell lays a ground cloud
+    // (SPELL_EFFECT_PERSISTENT_AREA_AURA 27) on every tick: Sapphiron's
+    // Blizzard emitter 16474 carries Chill 28534, which drops Chill 28547 (a
+    // persistent periodic-damage aura at the emitter's feet) every 3 s. The
+    // circle is the effect-27 spell's own radius around the emitter, and the
+    // emitter is a hazard between ticks too, not only while a cloud exists.
+    // Harmful effects only, and invisible (NOT_SELECTABLE) emitters only, the
+    // school-damage rule: a selectable mob that drops a cloud on itself must
+    // stay fightable; the cloud it leaves behind is seen by the dynamic-object
+    // sensor (it does not follow the mob). No placement-target check: a
+    // periodic tick casts on the aura holder, so the cloud lands on the
+    // emitter. Effect-only test; callers own the radius gate and the range.
+    inline bool TriggerSpellMarksGroundHazard(int effect, bool positiveEffect, bool selectable)
+    {
+        return effect == 27 && !positiveEffect && !selectable; // SPELL_EFFECT_PERSISTENT_AREA_AURA
+    }
+
     // Strafe-first candidate order. Returns the ordered heading offsets
     // (radians, relative to the angle bot->target) for the melee case:
     // left/right strafe, then straight away from the target.

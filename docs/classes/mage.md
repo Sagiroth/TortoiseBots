@@ -29,7 +29,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 - If enemies close within 8 yards and attack the mage, turns away and casts *Blink* to reset distance.
 - Roots attackers with *Frost Nova* — only when a mob within reach is attacking the mage itself, and skipping targets already frozen or immune.
 - Casts *Arcane Explosion* when 3 or more enemies cluster inside 10 yards and none of them is loose on the party.
-- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone.
+- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone; a running *Blizzard* is cancelled when a mob under the party's crowd control stands in it.
 - Weaves *Cone of Cold* against 2 or more attackers in front of the mage within 10 yards.
 - Activates *Cold Snap* once Frost cooldowns (*Frost Nova*, *Cone of Cold*, *Ice Barrier*, *Ice Block*, *Frost Ward*) are spent.
 - Area spells (*Blizzard*, *Flamestrike*, *Cone of Cold*) pause during [party threat back-off](overview.md#party-threat-back-off) if holding 50% or more tank threat.

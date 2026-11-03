@@ -211,7 +211,12 @@ Unit* PartyMemberToHeal::Calculate()
                 ? 0
                 : currentHealth - incomingDamage;
             uint8 health = ((effectiveHealth * 100.0f) / player->GetMaxHealth());
-            if (isTank || (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(player, predicate)))
+            // Above the critical line a member another healer is already casting
+            // at is left to that healer; at or below it the member stays a
+            // candidate for everybody (MemberNeedsHeal).
+            if (isTank || MemberNeedsHeal(float(health), float(sPlayerbotAIConfig.almostFullHealth),
+                    float(sPlayerbotAIConfig.criticalHealth),
+                    [&]() { return IsTargetOfSpellCast(player, predicate); }))
             {
                 needHeals.push_back(player);
             }
@@ -220,7 +225,11 @@ Unit* PartyMemberToHeal::Calculate()
             if (pet && CanHealPet(pet))
             {
                 health = pet->GetHealthPercent();
-                if (health < sPlayerbotAIConfig.almostFullHealth || !IsTargetOfSpellCast(player, predicate))
+                // Hurt AND not already being healed. The heal cast is looked up on the
+                // pet itself: the old test asked about the owner, so a healed owner
+                // hid a hurt pet.
+                if (PetNeedsHeal(float(health), float(sPlayerbotAIConfig.almostFullHealth),
+                        [&]() { return IsTargetOfSpellCast(pet, predicate); }))
                 {
                     needHeals.push_back(pet);
                 }

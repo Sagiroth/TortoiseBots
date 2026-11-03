@@ -3499,8 +3499,12 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
                 // weapon-damage spins (Herod's Whirlwind 8989 -> 15578) list
                 // anyone. The radius gate and the range test below are
                 // unchanged.
+                // A periodic tick that lays a ground cloud (effect 27) at an
+                // invisible emitter's feet marks the cloud's circle too.
                 if (!TriggerSpellMarksSpinHazard((int)triggerProto->Effect[i],
-                    (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable))
+                    (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable) &&
+                    !TriggerSpellMarksGroundHazard((int)triggerProto->Effect[i],
+                    triggerProto->IsPositiveEffect(SpellEffectIndex(i)), selectable))
                     continue;
                 SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(triggerProto->EffectRadiusIndex[i]);
                 float radius = radiusEntry ? radiusEntry->Radius : 0.0f;

@@ -726,7 +726,10 @@ AiPlayerbot.RandomGearMaxDiff = 9
 
 # Seed gear progressively by bot level instead of throwing the full band at once
 #AiPlayerbot.RandomGearProgression = 1
-# Upgrade pooled bots' gear as they level (from level 5, bots without a real master)
+# One-time starter gear for fresh pool bots (level 5 and up): seeds a bot's gear
+# at its first login while its played time is still 0, and for the timer backstop
+# retry of a bot that never played. It does NOT upgrade gear as bots level up;
+# after the seed a bot gears from loot, quest rewards and vendor buys.
 #AiPlayerbot.RandomGearUpgradeEnabled = 1
 
 # Owner-rule source-tier cap for seeded/hired bot gear (roadmap #289: higher
@@ -799,7 +802,7 @@ AiPlayerbot.GenerateItemCaches = 1
 # AiPlayerbot.BoostFollow = 0
 
 # Dungeon follow: hold before a pack (audit fix 127).
-# Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
+# Inside a dungeon or raid, with the bot out of combat (the leader may be fighting), a bot whose leader is more
 # than 30 yd ahead walks the route to the leader itself and stops just outside
 # the aggro range of the first unpulled hostile creature on that route, instead
 # of walking past or through it. It whispers its master once per pack ("pack in
@@ -897,6 +900,31 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # 0 - off, except for commander-bound groups (Default)
 # 1 - on for every bot on a map that has rows
 AiPlayerbot.DungeonTactics = 0
+
+# The "die together" boss tactic (ai_boss_tactic kind linked_death, docs/play/boss-tactics.md).
+# A linked_death row lists one partner of a group (its boss_entry is the group's anchor) and a hold percent
+# (param). While more than one member lives, the free DPS bots spread their damage to equalise the members'
+# health: the pick is the living member with the highest health, and never one at or below param % while
+# another stands above it. Once every living member is at or below param % the hold ends and the ordinary pick
+# burns the lowest, so the group dies together. On Zul'Gurub's Thekal (14599 with the Zealots Lor'Khan 11347
+# and Zath 11348) the row's 3 % is the point inside the 7 s in which a dead sibling is raised to full health.
+# This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because it changes every
+# free DPS bot's target pick. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: DPS bots pick as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunLinkedDeath = 0
+
+# The aura tactics of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): the dispel_priority,
+# flee_on_aura, freeze_on_aura, dps_hold_after, taunt_after_cast and swap_on_aura kinds, and the shared row gates.
+# A row can gate itself to a boss health band (hp_min/hp_max %) and to bots carrying an aura (bot_aura); only a row
+# the fight scan reads can gate, so the loader skips a gate on hold_kill, tank_hold, one_at_a_time and linked_death.
+# With this key off a gated row is closed and the six kinds are not read at all, so the table behaves exactly as
+# before them. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because the
+# kinds change what every bot does mid-fight. `.reload config` reads it again with the other AiPlayerbot.DungeonRun*
+# keys.
+# 0 - off: no gate is honoured, the six aura kinds are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAuraTactics = 0
 
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
@@ -1005,6 +1033,30 @@ AiPlayerbot.DungeonRunRetreatAt2Dead = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunWalkBackRescue = 1
 
+# The run leader's teleport return. A party bot the run brings back from farther
+# than this many yards from the lead bot (revived far away, left behind after the
+# lead bot's rescue teleport, wedged on another floor, or a summon the portal
+# dropped because the bot was fighting) has its combat dropped and is teleported
+# to the lead bot at once, in a fight or not, instead of the 3 s summon portal or
+# a walk back through the packs. If the lead bot stands in the reach of a pack
+# not pulled yet, the bot lands beside it outside that reach. Three tries 5 s
+# apart, then the run's note names the bot. Parties with no real player only.
+# 0 - off (the shipped default): the summon portal, and a walk back when it fails, as before
+# Recommended 120.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.RunTeleportReturnYd = 0
+
+# The run leader's hold for bots waiting to be brought back. A run's bot revived
+# in a dungeon farther than this many yards from the lead bot (any revive: the
+# run's, a player's, a GameMaster's, with the run paused too) stands still for up
+# to 60 s for a summon or teleport, and so does every bot the run is summoning
+# or teleporting back, until it is within 10 yd of where it is brought: no
+# follow, no walking, no chasing; it fights back only from where it stands.
+# 0 - off (the shipped default)
+# Recommended 100.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonReviveHoldYd = 0
+
 # The run leader's fight forward. After a won fight, the next pack within 30 yd
 # of the tank is pulled from where the tank stands instead of walking the plan's
 # rows back to its stand, when the navmesh path to it is direct, the tank sees it
@@ -1030,9 +1082,10 @@ AiPlayerbot.DungeonRunMaxMinutes = 180
 
 # The run leader's pull aggro estimate. Before each pack pull it works out how many
 # other creatures the pull would bring (the pack, creatures in aggro range of the
-# party, one ring of family assistance) and, when that is more than the ceiling
-# below, rests the party to its end lines once before it pulls (status note
-# "N joiners expected"). It adds no movement and never skips a pull.
+# party, one ring of family assistance from every member of the pulled pack, at
+# least 20 yd wide) and, when that is more than the ceiling below, rests the party
+# to its end lines once before it pulls (status note "N joiners expected"). It adds
+# no movement and never skips a pull.
 # 0 - off, the run leader pulls as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunAggroEstimate = 0
@@ -1040,6 +1093,23 @@ AiPlayerbot.DungeonRunAggroEstimate = 0
 # Joiners (creatures besides the pulled one) above which the estimate rests the party first.
 # 6 - default; 1 and up. Only read while AiPlayerbot.DungeonRunAggroEstimate = 1.
 AiPlayerbot.DungeonRunAggroCeiling = 6
+
+# The ring estimate: instead of counting only from where the party stands, the estimate also
+# counts every creature the walk to the pull, the stand and the fight point would wake, and
+# every creature within the ring below of one already counted (a call for help carries: two
+# hops). The count is compared with a pull row's own ceiling (a plan's max_bodies, the target
+# included), else with DungeonRunAggroCeiling + 1. A pull over its ceiling rests once and notes
+# "pull estimate: N bodies over the ceiling M"; the last approach row also notes once how many
+# the coming pull would bring ("ahead: pull N brings ..."). Advice only: no order changes.
+# 0 - off, the estimate as before (Default)
+# 1 - on; only read while AiPlayerbot.DungeonRunAggroEstimate = 1
+AiPlayerbot.DungeonRunAggroWalkRing = 0
+
+# How far a call for help carries in the ring estimate, in yards (the measured wakes were
+# 11.0-19.5 yd; the server's own CreatureFamilyAssistanceRadius is 10). The larger of the two
+# is used.
+# 20 - default; 5 to 40
+AiPlayerbot.DungeonRunAggroRingYd = 20
 
 # The run leader's pack-cleared gate. A `pull` step is done only when nothing of its
 # entries is left: no living unit in its radius, no unit in the band around it
@@ -1130,6 +1200,47 @@ AiPlayerbot.DungeonRunStandClearance = 0
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunStandPullPreCc = 0
+
+# The plan's stand is the only stand a pull row uses. With this key the run leader
+# never searches a closer firing stand when the plan's authored approach cannot see
+# the pulled unit: it walks the tank back to that approach and holds there for up to
+# 20 s per unit (status note "no LOS from the authored stand; holding"), then searches a
+# firing stand as with 0 (note "no LOS from the authored stand after 20 s; searching a
+# firing stand"). It needs no AiPlayerbot.DungeonRunPullStand. Before the row fires it also
+# waits for every living tank and melee to stand at that approach (within 5 yd) or
+# clear of the next pull's pack (farther than its radius plus the core's 20 yd aggro
+# ring from its point): up to 10 s, then the row fires and its note names those still
+# out of place. A hop pull and a walk-back pull never wait.
+# 0 - off, a stand the path offers is searched as before and the row fires as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandDiscipline = 0
+
+# Automatic crowd control: the run leader marks crowd control on a pack from what the raid
+# actually has, not only the plan's cc_priority/cc_always entries. Before a pull that brings
+# more than DungeonRunAutoCcAbove bodies it marks the pack's best targets (casters and healers
+# first, then the plan's rank, then the class families Polymorph, Shackle, Banish, Hibernate,
+# Seduction, Freezing Trap, Sap, Repentance) until the unmarked bodies fit the threshold; in
+# the fight it marks a joiner while more than the threshold of unheld units fight it, and it
+# re-sends a crowd control that broke (twice a unit a step). The pack's own units are the only
+# pre-pull candidates; a tank, the lead bot, a healer while fewer than 4 healers (1 in a party)
+# would stay free, and the unit the tank or an off-tank holds are never marked. With the key on
+# the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; skull stays
+# the fight's focus); a player's icon is never moved.
+# 0 - off, the plan's cc list only, as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunAutoCc = 0
+
+# How many bodies a pull may bring before the automatic crowd control starts (CC starts above
+# it), and the ceiling a plan row's own max_bodies still lowers.
+# 6 - default (CC from 7 bodies); 2 to 40. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcAbove = 6
+
+# The risky crowd control families (Fear, Scare Beast): the mob runs. Only with 35 yd of room
+# to the nearest creature outside its pack, and only when no other family has a free bot.
+# 0 - off (Default); 1 - on. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcRisky = 0
 
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
@@ -1296,8 +1407,11 @@ AiPlayerbot.RandomBotShowCloak = 1
 # level-bound skills, professions and starter gear are seeded, so a fresh pool
 # starts playable instead of walking up from level 1. Bots level up normally
 # from there. 1/1 keeps the historic behaviour (start at level 1).
-# Default: 1 / 60 (fresh bots spread over every level)
-AiPlayerbot.RandomBotStartLevelMin = 1
+# The minimum defaults to 5: gear seeding starts at level 5, and a bot that
+# rolls 1-4 keeps its level-1 outfit for good (its played time is no longer 0
+# when it reaches level 5), so the default never rolls below 5.
+# Default: 5 / 60 (fresh bots spread over levels 5-60)
+AiPlayerbot.RandomBotStartLevelMin = 5
 AiPlayerbot.RandomBotStartLevelMax = 60
 
 # Set XP rate for bots (default: 1)
@@ -2230,7 +2344,7 @@ AiPlayerbot.ShootDistance = 26.0
 #AiPlayerbot.TooCloseDistance = 5.0
 #AiPlayerbot.MeleeDistance = 1.5
 #AiPlayerbot.FollowDistance = 1.5
-#AiPlayerbot.RaidFollowDistance = 5.0
+#AiPlayerbot.RaidFollowDistance = 4.0
 #AiPlayerbot.WhisperDistance = 6000.0
 #AiPlayerbot.ContactDistance = 0.5
 #AiPlayerbot.AoeRadius = 5.0
@@ -2450,6 +2564,13 @@ AiPlayerbot.UseKnockback = 1
 
 # Default bot formation
 #AiPlayerbot.DefaultFormation = chaos
+
+# Raid/dungeon follow wedge: inside an instance a group follows in a 150 degree
+# arc behind the leader (near formation, raid follow distance, two rings above
+# ten followers), and a follower more than 20 yd behind, out of combat, walks
+# the leader's own path. An explicit .bot formation order still wins.
+# 0 keeps the configured formation everywhere.
+#AiPlayerbot.RaidFollowWedge = 0
 
 # Debug switches
 #AiPlayerbot.SpellDump = 0

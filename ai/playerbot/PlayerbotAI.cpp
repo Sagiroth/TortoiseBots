@@ -1,6 +1,7 @@
 #include <vector>
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
+#include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/CommandedGroupQuery.h"
@@ -66,6 +67,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/FishAction.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
@@ -327,6 +329,10 @@ static bool HasSeatedAura(Player* bot)
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
+    // thread and the same tick, after the maps may have despawned an add of the cached scan.
+    ai::BossTacticsScanScope bossTacticsScan;
+    ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)
@@ -385,6 +391,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
+
+    // Raid/dungeon wedge: sample the leader's path on every AI tick, because the
+    // follow action is not called while the core follow runs and a straggler
+    // needs the points from before it fell behind. One branch while off.
+    if (sPlayerbotAIConfig.raidFollowWedge)
+        UpdateLeadTrail();
 
     if(aiInternalUpdateDelay > elapsed)
     {
@@ -911,6 +923,31 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     }
 
     return reactionInProgress;
+}
+
+// The leader's recent positions for the raid/dungeon trail catch-up
+// (FollowTrailPolicy.h). The trail is per follower and dropped as soon as the
+// pair leaves an instance group, so it never carries a stale route.
+void PlayerbotAI::UpdateLeadTrail()
+{
+    Map* map = bot ? bot->GetMap() : nullptr;
+    if (!bot || !map || !bot->GetGroup() || !(map->IsDungeon() || map->IsRaid()) || !aiObjectContext)
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    Unit* followTarget = aiObjectContext->GetValue<Unit*>("follow target")->Get();
+    if (!followTarget || followTarget == bot || !followTarget->IsPlayer() || !bot->IsAlive() ||
+        !followTarget->IsAlive() || !IsSafe(followTarget) || bot->GetMapId() != followTarget->GetMapId() ||
+        bot->GetTransport() || followTarget->GetTransport())
+    {
+        leadTrail.clear();
+        return;
+    }
+
+    FollowTrailRecord(leadTrail, followTarget->GetPositionX(), followTarget->GetPositionY(),
+        followTarget->GetPositionZ());
 }
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
@@ -4974,8 +5011,20 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
     return hostileUnitsNonPlayers;
 }
 
-bool PlayerbotAI::CanMove()
+bool PlayerbotAI::ReturnHeld()
 {
+    return ai::ReturnHoldOn((uint32)aiObjectContext->GetValue<int32>("manual int", "return hold until ms")->Get(),
+        WorldTimer::getMSTime());
+}
+
+bool PlayerbotAI::CanMove(bool ignoreReturnHold)
+{
+    // No follow, walk, chase or pull while the run brings the bot back: it fights from where it stands. The mark is
+    // only written with the revive hold key on (Commander's SyncReturnHolds), so the lookup itself waits for it.
+    if (!ignoreReturnHold && sPlayerbotAIConfig.dungeonReviveHoldYd > 0.0f && ReturnHeld())
+    {
+        return false;
+    }
     if (sServerFacade.IsFrozen(bot))
     {
         return false;

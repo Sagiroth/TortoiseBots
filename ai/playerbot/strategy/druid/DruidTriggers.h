@@ -523,6 +523,17 @@ namespace ai
         ClearcastingTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "clearcasting") {}
     };
 
+    // Hurricane is a channel: a unit under the party's crowd control inside its
+    // area breaks the hold on the next tick, so the channel is cancelled at once
+    // (CcGuard::CcInRunningArea; the cast-start guard only saw the area before
+    // the sheep landed). Defined in DruidTriggers.cpp.
+    class HurricaneChannelCheckTrigger : public Trigger
+    {
+    public:
+        HurricaneChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "hurricane channel check") {}
+        bool IsActive() override;
+    };
+
     // mod-playerbots parity (DRU-8): donor "no healer dps strategy" gate.
     // True while the opt-in offdps kit is NOT running, so Tree of Life
     // maintenance stands down during healer-dps instead of livelocking

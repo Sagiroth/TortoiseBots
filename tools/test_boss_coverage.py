@@ -135,7 +135,8 @@ class CoverageTest(unittest.TestCase):
 
         files = sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql")))
         raw = {}
-        for name, map_id, boss, kind, target, spell, priority, param in migration_rows():
+        for row in migration_rows():
+            name, map_id, boss, kind, target, spell, priority, param = row[:8]
             raw.setdefault(name, []).append(
                 (int(map_id), int(boss), kind, int(target), int(spell),
                  int(priority), float(param))

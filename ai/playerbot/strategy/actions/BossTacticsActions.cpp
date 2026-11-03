@@ -6,7 +6,10 @@
 #include <limits>
 #include <atomic>
 #include <functional>
+#include <iterator>
+#include <map>
 #include <mutex>
+#include <tuple>
 #include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
@@ -23,6 +26,10 @@
 #include "EnemyAreaSpell.h"
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "Objects/Totem.h"
+#include "Spells/SpellMgr.h"
+#include "Database/DBCStores.h"
+#include "playerbot/strategy/values/PartyMemberToHeal.h"
 
 using namespace ai;
 
@@ -73,6 +80,134 @@ bool IsFreeDps(PlayerbotAI* ai, Player* bot)
     return AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty();
 }
 
+// dps_hold_after's fight-wide state, one entry per map instance, subject and row (BossTacticsPolicy.h DpsHoldState).
+// The row's own key columns identify it: two rows of one boss differ in their spell or in their health band, so each
+// keeps its own hold. Any bot's read feeds the state, as the linked_death latch does, so a hold one bot sees applies
+// to every bot that reads it.
+std::mutex g_dpsHoldMutex;
+std::map<DpsHoldKey, DpsHoldState> g_dpsHolds;
+// The trigger start each bot has logged for each key: one row per trigger and bot, not one per read.
+std::mutex g_dpsHoldLogMutex;
+std::map<std::pair<std::uint64_t, DpsHoldKey>, std::uint32_t> g_dpsHoldLog;
+std::atomic<std::uint32_t> g_dpsHoldPruneMs{0};
+
+DpsHoldKey DpsHoldKeyOf(Player* bot, const BossTacticRow& row, Unit* subject)
+{
+    return std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), subject->GetObjectGuid().GetRawValue(),
+                           row.bossEntry, row.spellId, row.hpMin, row.hpMax);
+}
+
+// The row's log row: the subject, the trigger and the hold it started.
+void LogDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow& row, DpsHoldTrigger trigger,
+                std::uint32_t triggerMs, const DpsHoldKey& key)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || trigger == DpsHoldTrigger::None)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_dpsHoldLogMutex);
+        std::uint32_t& logged = g_dpsHoldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), key)];
+        if (logged == triggerMs)
+            return;
+        logged = triggerMs;
+    }
+    char info1[48];
+    snprintf(info1, sizeof(info1), "subject=%u", subject->GetEntry());
+    char info2[96];
+    snprintf(info2, sizeof(info2), "trigger=%s,held_ms=%u", DpsHoldTriggerName(trigger),
+             static_cast<std::uint32_t>(row.param * 1000.0f + 0.5f));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsDpsHold", info1, info2);
+}
+
+// Drops the state of a subject that died and of a row nobody has read for kDpsHoldStaleMs; runs at most once a
+// second, whatever asks. The dead subject's state is erased at once rather than after the stale timeout, so a
+// respawned subject never inherits its previous pull's hold. The telemetry rows follow their holds: each bot's row
+// goes with the hold it logged, and any row whose map instance is gone goes too.
+void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
+{
+    // The once-a-second throttle is read unlocked (a target pick asks it per candidate): two threads that both pass
+    // the test re-check under the lock, which is what keeps the pass to once a second.
+    std::uint32_t const last = g_dpsHoldPruneMs.load(std::memory_order_relaxed);
+    if (last != 0 && nowMs - last < 1000)
+        return;
+    std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
+    std::uint32_t const ran = g_dpsHoldPruneMs.load(std::memory_order_relaxed);
+    if (ran != 0 && nowMs - ran < 1000)
+        return;
+    g_dpsHoldPruneMs.store(nowMs, std::memory_order_relaxed);
+    for (auto it = g_dpsHolds.begin(); it != g_dpsHolds.end();)
+    {
+        bool drop = nowMs - it->second.lastReadMs > kDpsHoldStaleMs;
+        if (!drop)
+        {
+            Unit* subject = ai->GetUnit(ObjectGuid(std::get<2>(it->first)));
+            drop = subject && !subject->IsAlive();
+        }
+        it = drop ? g_dpsHolds.erase(it) : std::next(it);
+    }
+    // Lock order: the hold map, then the log. LogDpsHold takes the log alone, after the hold lock is released.
+    std::lock_guard<std::mutex> logLock(g_dpsHoldLogMutex);
+    PruneDpsHoldLog(g_dpsHoldLog, g_dpsHolds, [](std::uint32_t mapId, std::uint32_t instanceId)
+    {
+        return sMapMgr.FindMap(mapId, instanceId) != nullptr;
+    });
+}
+
+// One read of a dps_hold_after row against its subject: the gate, the cast slot or aura, the victim's role and the
+// position, then DpsHoldTick. The state is the fight's, so a trigger one bot sees holds every bot that reads it.
+// Returns whether the subject is held after this read. `bossUnit` is the row's boss entry unit, whose health the
+// gate reads (never an add's).
+bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRow& row, Unit* bossUnit,
+                 DpsHoldTrigger* fired = nullptr)
+{
+    if (fired)
+        *fired = DpsHoldTrigger::None;
+    if (!ai || !bot || !subject || !subject->IsAlive() || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    int const bossHpPct = static_cast<int>((bossUnit ? bossUnit : subject)->GetHealthPercent());
+    bool const botHasAura = row.botAura != 0 && bot->HasAura(row.botAura);
+    bool const gateOpen = RowGateOpen(row, true, bossHpPct, botHasAura);
+    uint32 genericId = 0;
+    uint32 channeledId = 0;
+    CurrentCastIds(subject, genericId, channeledId);
+    bool const casting = row.spellId != 0 && (genericId == row.spellId || channeledId == row.spellId);
+    bool const carrying = row.spellId != 0 && subject->HasAura(row.spellId);
+    Unit* const victim = subject->GetVictim();
+    bool const victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
+        PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    DpsHoldInputs in;
+    in.engaged = true;
+    // A spell-less row holds from the first sighting (mode engage, until_tank or the default); a blink row holds only
+    // on the jump, and a row with a spell on the cast or aura edge.
+    in.engageEnabled = row.spellId == 0 && row.mode != TacticMode::Blink;
+    in.gateOpen = gateOpen;
+    in.botEligible = row.botAura == 0 || botHasAura;
+    in.observer = bot->GetObjectGuid().GetRawValue();
+    in.gateEnabled = row.hpMin != 0 || row.hpMax != 100;
+    in.castOrAuraSeen = casting || carrying;
+    in.castEnabled = row.spellId != 0;
+    in.blinkEnabled = row.mode == TacticMode::Blink;
+    in.untilTank = row.mode == TacticMode::UntilTank;
+    in.victimIsTank = victimIsTank;
+    in.holdSec = row.param;
+    in.x = subject->GetPositionX();
+    in.y = subject->GetPositionY();
+    const DpsHoldKey key = DpsHoldKeyOf(bot, row, subject);
+    DpsHoldTrigger lastTrigger = DpsHoldTrigger::None;
+    std::uint32_t lastTriggerMs = 0;
+    bool held = false;
+    {
+        std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
+        DpsHoldState& state = g_dpsHolds[key];
+        held = DpsHoldTick(state, in, WorldTimer::getMSTime(), fired);
+        lastTrigger = state.lastTrigger;
+        lastTriggerMs = state.lastTriggerMs;
+    }
+    if (held && IsFreeDps(ai, bot))
+        LogDpsHold(ai, bot, subject, row, lastTrigger, lastTriggerMs, key);
+    return held;
+}
+
+
 // Whether the action damages enemies in an area: the threat mark, the shared action-name set (the thrown consumables,
 // the class blasts the mark misses) or the spell's own shape (IsEnemyAreaSpell: every effect enumerating enemy units in
 // an area, chains included). The mark alone carries almost no real area spell in this tree, which is why the other two
@@ -99,6 +234,29 @@ bool IsAreaDamageAction(PlayerbotAI* ai, Action* action)
     return IsEnemyAreaSpell(sServerFacade.LookupSpellInfo(spellId));
 }
 
+// A buff that turns the bot's own swings into an area: Sweeping Strikes and Blade Flurry copy each melee hit onto
+// nearby enemies, so a held member in melee reach is damaged without the action looking like an area cast.
+bool IsCleaveToggleAction(Action* action)
+{
+    if (!action)
+        return false;
+    std::string const& name = action->GetName();
+    return name == "sweeping strikes" || name == "blade flurry";
+}
+
+// A single-target damage action that lands on the bot's current target: a melee swing or an attack spell. Heals, the
+// attacker debuff and area casts have their own clauses.
+bool IsSingleTargetDamageAction(Action* action)
+{
+    if (!action)
+        return false;
+    if (dynamic_cast<CastHealingSpellAction*>(action) != nullptr)
+        return false;
+    if (action->GetTargetName() != "current target")
+        return false;
+    return dynamic_cast<AttackAction*>(action) != nullptr || dynamic_cast<CastSpellAction*>(action) != nullptr;
+}
+
 // Why every bot leaves `unit` alone right now: a hold_kill row of its entry with its blocker budget over (KillHeld),
 // or a one_at_a_time row of its entry whose sole pick is another unit (OneAtATimeHolds). None when it is not held.
 enum class HoldReason
@@ -106,7 +264,49 @@ enum class HoldReason
     None,
     Budget,
     Sole,
+    DpsHold,
 };
+
+// The subject of an active dps_hold_after row within `maxDistance` of `around`, or null: an area cast that lands
+// beside it (or a DoT on it) would damage the creature the hold exists to keep quiet.
+bool DpsHoldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFight& fight, float maxDistance,
+                          Unit** subject)
+{
+    if (subject)
+        *subject = nullptr;
+    if (!ai || !around)
+        return false;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::DpsHoldAfter)
+            continue;
+        // Every live unit of the row's subject entry is read, so each one's trigger edge advances on this tick; the veto
+        // is any of them held within range. The boss unit feeds the health gate (the subject's own health without one).
+        std::vector<Unit*> subjects;
+        Unit* bossUnit = nullptr;
+        for (Unit* unit : fight.units)
+        {
+            if (unit->GetEntry() == TacticSubjectEntry(*row))
+                subjects.push_back(unit);
+            if (unit->GetEntry() == row->bossEntry)
+                bossUnit = unit;
+        }
+        std::vector<bool> held;
+        std::vector<float> distance;
+        for (Unit* unit : subjects)
+        {
+            held.push_back(ReadDpsHold(ai, ai->GetBot(), unit, *row, bossUnit));
+            distance.push_back(around->GetDistance(unit));
+        }
+        int const hit = DpsHoldVetoIndex(held, distance, maxDistance);
+        if (hit < 0)
+            continue;
+        if (subject)
+            *subject = subjects[hit];
+        return true;
+    }
+    return false;
+}
 
 // The held subject within `maxDistance` of `around` (the action's target, or the bot itself), the unit itself and why
 // it is held: an area cast that lands there would take it as well, and one area cast that kills several held Mad
@@ -148,6 +348,18 @@ HoldReason HeldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFig
             *subject = units[index];
         return budget ? HoldReason::Budget : HoldReason::Sole;
     }
+    // dps_hold_after: the subject of an active hold is left alone too, so an area cast that lands beside it (or a
+    // DoT on it) does not damage the boss/creature the hold exists to keep quiet.
+    if (sPlayerbotAIConfig.dungeonRunAuraTactics)
+    {
+        Unit* held = nullptr;
+        if (DpsHoldSubjectWithin(ai, around, fight, maxDistance, &held))
+        {
+            if (subject)
+                *subject = held;
+            return HoldReason::DpsHold;
+        }
+    }
     return HoldReason::None;
 }
 
@@ -173,6 +385,25 @@ bool HeldUnitNear(PlayerbotAI* ai, Unit* around, const BossTacticsFight& fight,
     return HeldSubjectNear(ai, around, fight, countNear, nullptr) != HoldReason::None;
 }
 
+// The held member of a linked_death group within `maxDistance` of `around` (the action's target, or the bot itself),
+// or null. While the group is held, an area cast that lands next to the held member takes it as well and a DoT on it
+// ticks on after the hold: both damage a member that still has to live to the burn. The reach is the hold_kill veto's
+// kHoldKillAoeNearYd; the member pick is BossTacticsPolicy's LinkedDeathHeldIndex.
+Unit* LinkedDeathHeldNear(PlayerbotAI* ai, Unit* around, const BossLinkedDeathScan& scan, float maxDistance)
+{
+    if (!ai || !around || !scan.active)
+        return nullptr;
+    std::vector<float> distance(scan.members.size(), std::numeric_limits<float>::infinity());
+    for (std::size_t i = 0; i < scan.units.size() && i < distance.size(); ++i)
+    {
+        Unit* unit = scan.units[i];
+        if (unit && unit->IsAlive())
+            distance[i] = around->GetDistance(unit);
+    }
+    const int index = LinkedDeathHeldIndex(scan.param, scan.members, distance, maxDistance);
+    return index < 0 ? nullptr : scan.units[index];
+}
+
 // One bot_events.csv row per hold decision, at most one per bot per kHoldKillLogGapMs: the multiplier runs on every
 // action of every tick and the action on every tick a blocker lives, while the walk that reads the rows needs the
 // decision, not the repetition. The buckets are per bot AND kind: a bot whose hold-kill action fires every tick must
@@ -187,6 +418,15 @@ enum class HoldKillLogKind : std::uint8_t
 };
 std::mutex g_holdKillLogMutex;
 std::unordered_map<uint64, uint32> g_holdKillLog;
+
+// The linked_death release latch per group and map instance: map, instance, anchor, group id. Its state is the group's
+// (a heal or a raise must not re-hold it for one bot while another still burns). Its members are tracked by guid with
+// the latest observation from any bot; only an explicit death of a known one latches it, every known member confirmed
+// dead clears it, and an evade resets it once every known member's latest observation is idle at full health whichever
+// bot saw it (LinkedDeathLatchTick).
+std::mutex g_linkedDeathLatchMutex;
+std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint8_t>, LinkedDeathLatch>
+    g_linkedDeathLatches;
 
 bool HoldKillLogDue(Player* bot, HoldKillLogKind kind)
 {
@@ -252,6 +492,63 @@ void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subje
         snprintf(info2, sizeof(info2), "held=none");
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);
 }
+
+// One bot_events.csv row per dispel decision (picked, waiting for a clear carrier, or excluded), at most one per bot
+// and kind per kDispelLogGapMs: the predicate and the multiplier see the same member every tick, while the walk needs
+// the decision, not the repetition. The two kinds never swallow each other's rows. A no-op unless bot_events.csv is in
+// AiPlayerbot.AllowedLogFiles, like the hold rows; the throttle is checked before any string is built.
+constexpr uint32 kDispelLogGapMs = 5000;
+enum class DispelLogKind : std::uint8_t
+{
+    Pick,
+    Excluded,
+};
+std::mutex g_dispelLogMutex;
+std::unordered_map<uint64, uint32> g_dispelLog;
+
+bool DispelLogDue(Player* bot, DispelLogKind kind)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return false;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 key = bot->GetObjectGuid().GetRawValue() ^ ((static_cast<uint64>(kind) + 1) * 0x9E3779B97F4A7C15ull);
+    std::lock_guard<std::mutex> lock(g_dispelLogMutex);
+    uint32& last = g_dispelLog[key];
+    if (last != 0 && nowMs - last < kDispelLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+const char* DispelModeWord(TacticMode mode)
+{
+    switch (mode)
+    {
+        case TacticMode::Clear:
+            return "clear";
+        case TacticMode::Never:
+            return "never";
+        default:
+            return "now";
+    }
+}
+
+// The verdict row: the aura that decided, its carrier, the row's mode, the member's rank, the carrier's distance to the
+// nearest group member (the `clear` test) and what the cure did about it. A row without a listed aura names mode now
+// (the default) and rank 255 (after every listed aura).
+void LogDispel(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd,
+               DispelLogKind kind, const char* word)
+{
+    if (!ai || !bot || !carrier || verdict.auraId == 0 || !DispelLogDue(bot, kind))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "aura=%u,carrier=%u", verdict.auraId, carrier->GetGUIDLow());
+    char info2[96];
+    int const ally = allyYd == std::numeric_limits<float>::max() ? -1 : static_cast<int>(allyYd + 0.5f);
+    snprintf(info2, sizeof(info2), "mode=%s,rank=%d,ally_yd=%d,verdict=%s", DispelModeWord(verdict.mode),
+             verdict.rank, ally, word);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsDispel", info1, info2);
+}
 }
 
 // The blocker count of the hold_kill rows ("hold kill blockers" value: one grid search per bot and blocker entry per
@@ -286,17 +583,58 @@ std::uint64_t ai::SoleKillGuid(PlayerbotAI* ai, std::uint32_t entry)
     return pick < 0 ? 0 : candidates[pick].guid;
 }
 
+namespace
+{
+// One bot updates at a time on a thread, and every caller of a scan in that update (the target pick once per
+// candidate, the freeze multiplier once per action, the triggers) asks the same question. Keep the last scan of the
+// current AI update, keyed by the bot, its tick and the tactic table: a reload replaces the table, so the table's
+// identity makes a cached answer from the old one unusable rather than stale. `live` is set only while an update
+// runs (BossTacticsScanScope): an explicit command runs between updates where the tick does not move and the maps
+// may have changed, so it re-scans and stores nothing.
+struct FightScanCache
+{
+    bool live = false;
+    PlayerbotAI* ai = nullptr;
+    Player* bot = nullptr;
+    std::uint32_t tick = 0;
+    const BossTacticTable* table = nullptr;
+    BossTacticsFight fight;
+};
+thread_local FightScanCache t_fightScan;
+}
+
+ai::BossTacticsScanScope::BossTacticsScanScope()
+{
+    t_fightScan.live = true;
+}
+
+ai::BossTacticsScanScope::~BossTacticsScanScope()
+{
+    t_fightScan.live = false;
+    t_fightScan.ai = nullptr;
+    t_fightScan.bot = nullptr;
+    t_fightScan.table = nullptr;
+    t_fightScan.fight = BossTacticsFight();
+}
+
 BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 {
-    BossTacticsFight fight;
     const BossTacticTable& table = GetBossTactics();
+    std::uint32_t const tick = ai ? ai->UpdateTick() : 0;
+    if (ai && FightScanCacheHit(t_fightScan.live, t_fightScan.ai == ai, t_fightScan.bot == bot, t_fightScan.tick,
+            tick, t_fightScan.table == &table))
+        return t_fightScan.fight;
+    BossTacticsFight fight;
     const uint32 mapId = bot->GetMapId();
     if (!table.HasMap(mapId))
         return fight;
 
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
-    std::vector<uint32> seen;
+    // The living units of each entry the fight sees, in the order the attackers list showed them; an entry's rows are
+    // loaded once, in its first-seen order.
+    std::vector<std::uint32_t> seen;
+    std::vector<std::vector<Unit*>> entryUnits;
     for (const ObjectGuid& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
@@ -304,16 +642,144 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             continue;
         fight.units.push_back(unit);
         const uint32 entry = unit->GetEntry();
-        if (std::find(seen.begin(), seen.end(), entry) != seen.end())
-            continue;
-        seen.push_back(entry);
-        if (const std::vector<BossTacticRow>* rows = table.Rows(mapId, entry))
+        const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
+        if (known == seen.end())
         {
+            seen.push_back(entry);
+            entryUnits.push_back(std::vector<Unit*>(1, unit));
+        }
+        else
+            entryUnits[known - seen.begin()].push_back(unit);
+    }
+    for (std::size_t i = 0; i < seen.size(); ++i)
+    {
+        const std::vector<BossTacticRow>* rows = table.Rows(mapId, seen[i]);
+        if (rows)
+        {
+            // The band reads one unit of the row's boss entry, never an add's: of the same-entry attackers the one with
+            // the highest max health (the real boss over its clones and adds), the highest current %, then the lowest
+            // guid. A first-seen pick would let a low-health clone open a phase row.
+            std::vector<BossGateUnit> gateUnits;
+            for (Unit* unit : entryUnits[i])
+            {
+                BossGateUnit gateUnit;
+                gateUnit.maxHealth = unit->GetMaxHealth();
+                gateUnit.hpPct = static_cast<int>(unit->GetHealthPercent());
+                gateUnit.guid = unit->GetObjectGuid().GetRawValue();
+                gateUnits.push_back(gateUnit);
+            }
+            const int gatePick = PickBossGateUnit(gateUnits);
+            int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;
+            bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
             for (const BossTacticRow& row : *rows)
+            {
+                // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
+                // an older kind is closed by RowGateOpen instead, so key-off behaviour is exactly the pre-gate one.
+                if (!keyOn && IsAuraTacticKind(row.kind))
+                    continue;
+                if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
+                    continue;
                 fight.rows.push_back(&row);
+            }
         }
     }
+    if (ai && t_fightScan.live)
+    {
+        t_fightScan.ai = ai;
+        t_fightScan.bot = bot;
+        t_fightScan.tick = tick;
+        t_fightScan.table = &table;
+        t_fightScan.fight = fight;
+    }
     return fight;
+}
+
+void ai::CollectDispelAuras(Unit* member, uint32 dispelType, std::vector<AuraOnMember>& out)
+{
+    if (!member)
+        return;
+    for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
+    {
+        Unit::AuraList const& auras = member->GetAurasByType((AuraType)type);
+        for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            const SpellEntry* entry = (*itr)->GetSpellProto();
+            if (entry && entry->Dispel == dispelType)
+            {
+                AuraOnMember aura;
+                aura.spellId = entry->Id;
+                aura.dispelType = dispelType;
+                out.push_back(aura);
+            }
+        }
+    }
+}
+
+void ai::CollectAllDispelAuras(Unit* member, std::vector<AuraOnMember>& out)
+{
+    if (!member)
+        return;
+    for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
+    {
+        Unit::AuraList const& auras = member->GetAurasByType((AuraType)type);
+        for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            const SpellEntry* entry = (*itr)->GetSpellProto();
+            if (entry && entry->Dispel != DISPEL_NONE)
+            {
+                AuraOnMember aura;
+                aura.spellId = entry->Id;
+                aura.dispelType = entry->Dispel;
+                out.push_back(aura);
+            }
+        }
+    }
+}
+
+float ai::NearestGroupMemberYd(Unit* member)
+{
+    if (!member)
+        return std::numeric_limits<float>::max();
+    // A dispelled unit can be a pet: its owner's group is the carrier's group, the distance is the pet's.
+    Player* carrier = dynamic_cast<Player*>(member);
+    if (!carrier)
+    {
+        Pet* pet = dynamic_cast<Pet*>(member);
+        if (pet)
+            carrier = dynamic_cast<Player*>(pet->GetOwner());
+    }
+    if (!carrier || !carrier->GetGroup())
+        return std::numeric_limits<float>::max();
+    float nearest = std::numeric_limits<float>::max();
+    for (Player* other : LiveGroupMembers(carrier->GetGroup()))
+    {
+        if (!other || other == member || !other->IsAlive() || other->GetMapId() != member->GetMapId())
+            continue;
+        nearest = std::min(nearest, sServerFacade.GetDistance2d(member, other));
+    }
+    return nearest;
+}
+
+DispelVerdict ai::DispelMemberState(Unit* member, uint32 dispelType, const ActiveBossRows& rows, float defaultClearYd,
+                                    float* allyYdOut)
+{
+    std::vector<AuraOnMember> auras;
+    CollectDispelAuras(member, dispelType, auras);
+    float const allyYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(member)
+                                                             : std::numeric_limits<float>::max();
+    if (allyYdOut)
+        *allyYdOut = allyYd;
+    return DispelMemberVerdict(rows, auras, dispelType, allyYd, defaultClearYd);
+}
+
+void ai::LogDispelPick(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd)
+{
+    LogDispel(ai, bot, verdict, carrier, allyYd, DispelLogKind::Pick, "pick");
+}
+
+void ai::LogDispelExcluded(PlayerbotAI* ai, Player* bot, const DispelVerdict& verdict, Unit* carrier, float allyYd)
+{
+    LogDispel(ai, bot, verdict, carrier, allyYd, DispelLogKind::Excluded, verdict.wait ? "wait" : "excluded");
 }
 
 BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -322,8 +788,18 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
     (void)bot;
     for (Unit* unit : fight.units)
     {
-        Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (!spell || !spell->m_spellInfo || !IsInterruptListed(fight.rows, unit->GetEntry(), spell->m_spellInfo->Id))
+        // Either slot: a channelled rotation runs in the channel slot and never the generic one, and the kick on a
+        // channel is the same rule as on a cast. The generic slot is read first, so a listing of the same id in both
+        // resolves the same way for every bot.
+        uint32 genericId = 0;
+        uint32 channeledId = 0;
+        CurrentCastIds(unit, genericId, channeledId);
+        uint32 spellId = 0;
+        if (genericId != 0 && IsInterruptListed(fight.rows, unit->GetEntry(), genericId))
+            spellId = genericId;
+        else if (channeledId != 0 && IsInterruptListed(fight.rows, unit->GetEntry(), channeledId))
+            spellId = channeledId;
+        if (spellId == 0)
             continue;
         for (const char* name : kInterruptSpells)
         {
@@ -367,6 +843,172 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
         return nullptr;
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
+}
+
+bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger)
+{
+    if (trigger)
+        *trigger = DpsHoldTrigger::None;
+    if (!ai || !bot || !unit || !unit->IsAlive())
+        return false;
+    // The kind is the new key's own, and the map flag keeps every other map at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !IsFreeDps(ai, bot))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    PruneDpsHolds(ai, WorldTimer::getMSTime());
+    // The rows are read from the table, not from fight.rows: the scan drops a band-closed row, and a band opening
+    // is one of the triggers (the edge has to be seen from the closed side too). The row's boss entry has to be in
+    // the fight; the subject is the row's target or that boss.
+    for (Unit* boss : fight.units)
+    {
+        const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), boss->GetEntry());
+        if (!rows)
+            continue;
+        for (const BossTacticRow& row : *rows)
+        {
+            if (row.kind != BossTacticKind::DpsHoldAfter || TacticSubjectEntry(row) != unit->GetEntry())
+                continue;
+            Unit* bossUnit = boss;
+            if (TacticSubjectEntry(row) != boss->GetEntry())
+            {
+                bossUnit = nullptr;
+                for (Unit* other : fight.units)
+                    if (other->GetEntry() == row.bossEntry)
+                    {
+                        bossUnit = other;
+                        break;
+                    }
+                if (!bossUnit)
+                    continue;
+            }
+            DpsHoldTrigger fired = DpsHoldTrigger::None;
+            if (ReadDpsHold(ai, bot, unit, row, bossUnit, &fired))
+            {
+                if (trigger && fired != DpsHoldTrigger::None)
+                    *trigger = fired;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// The linked_death group of the fight: every living, fighting unit of the group's entries within kHoldKillRangeYd of
+// the bot, with the health fraction the pick compares and the attackability rule the kill_first pick applies. The
+// group comes from the table's map rows and the members from the grid search the "sole kill candidates" value reads,
+// never the bot's "attackers" list: "focus rti targets" collapses that one to the raid mark, so a mark on the anchor or
+// on a partner would leave the group a single member (or none at all) and the hold released. A map that carries several
+// groups: the one with the most living, fighting members is the fight's, the first on a tie.
+BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
+{
+    BossLinkedDeathScan scan;
+    const BossTacticTable& table = GetBossTactics();
+    // One anchor can carry several groups (its rows' priorities): each is scanned, so a group the old anchor list
+    // hid under the first row's priority is not lost.
+    for (const LinkedDeathGroupKey& key : table.LinkedDeathGroups(bot->GetMapId()))
+    {
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), key.anchor);
+        if (!rows)
+            continue;
+        ActiveBossRows groupRows;
+        groupRows.reserve(rows->size());
+        for (const BossTacticRow& row : *rows)
+            if (row.kind == BossTacticKind::LinkedDeath && row.priority == key.group)
+                groupRows.push_back(&row);
+        LinkedDeathGroup group;
+        if (!FindLinkedDeathGroup(groupRows, key.anchor, group))
+            continue;
+        BossLinkedDeathScan groupScan;
+        groupScan.active = true;
+        groupScan.groupId = group.groupId;
+        groupScan.anchor = group.bossEntry;
+        groupScan.param = group.param;
+        groupScan.order = group.burnOrder;
+        // The time this scan is taken, before its reads and before the lock: every sighting it makes is stamped with it
+        // (LinkedDeathLatchTick), so the order in which bots reach the lock does not decide which observation is newer.
+        const std::uint32_t scanMs = WorldTimer::getMSTime();
+        for (std::uint32_t entry : group.entries)
+        {
+            for (const SoleCandidate& candidate : SoleKillCandidates(ai, entry))
+            {
+                Unit* unit = ai->GetUnit(ObjectGuid(candidate.guid));
+                if (!unit || !unit->IsAlive() || unit->GetEntry() != entry)
+                    continue;
+                LinkedMember member;
+                member.guid = candidate.guid;
+                member.entry = entry;
+                member.hpPct = static_cast<int>(unit->GetHealthPercent());
+                member.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
+                groupScan.members.push_back(member);
+                groupScan.units.push_back(unit);
+            }
+        }
+        groupScan.released = LinkedDeathReleased(groupScan.param, groupScan.members);
+        // The latch is per group and instance: a known member that dies while the release is armed keeps the burn on for
+        // the rest of the group (M2), whichever bot reads it first. The arming is over every known member (the union of
+        // all bots' reads, LinkedDeathArmed), never this bot's scan alone: a bot that sees two low members but not a
+        // healthy third does not arm it. A known member this bot did not see living is looked up by its own guid: only
+        // a unit found dead (or a corpse) is a death. One merely out of this bot's range or cache is not.
+        std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);
+        LinkedDeathLatch& latch = g_linkedDeathLatches[std::make_tuple(bot->GetMapId(), bot->GetInstanceId(),
+                                                                      groupScan.anchor, groupScan.groupId)];
+        // A known guid not seen fighting is looked up too: found dead (or a corpse) it is a death; found alive it is an
+        // idle sighting, read only while no member fights (the encounter-end check: an evade has every one back at full
+        // health and out of combat). The reset compares the latest sighting of every known member from any bot, so two
+        // observers that each see only part of the idle group still reset it. Never registered as a new member.
+        std::vector<std::uint64_t> deadNow;
+        std::vector<LinkedMember> idle;
+        for (std::uint64_t guid : LinkedDeathUnseen(latch, groupScan.members))
+        {
+            Unit* known = ai->GetUnit(ObjectGuid(guid));
+            if (known && !known->IsAlive())
+            {
+                deadNow.push_back(guid);
+                continue;
+            }
+            if (!known || !groupScan.members.empty())
+                continue;
+            LinkedMember member;
+            member.guid = guid;
+            member.entry = known->GetEntry();
+            member.hpPct = static_cast<int>(known->GetHealthPercent());
+            member.inCombat = known->IsInCombat();
+            idle.push_back(member);
+        }
+        LinkedDeathWindowEvent windowEvent;
+        groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
+                                                 WorldTimer::getMSTime(), scanMs, idle,
+                                                 LinkedDeathWindowMs(group.windowSec), &windowEvent);
+        if (windowEvent.fired)
+        {
+            char info[96];
+            snprintf(info, sizeof(info), "first_ms=%u,last_ms=%u,window_ms=%u,inside=%d", windowEvent.firstMs,
+                     windowEvent.lastMs, windowEvent.windowMs, windowEvent.inside ? 1 : 0);
+            sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedWindow", info);
+        }
+        if (!scan.active || groupScan.members.size() > scan.members.size())
+            scan = groupScan;
+    }
+    return scan;
+}
+
+Unit* ai::FindBossLinkedDeath(PlayerbotAI* ai, Player* bot)
+{
+    if (!IsFreeDps(ai, bot) || !sPlayerbotAIConfig.dungeonRunLinkedDeath ||
+        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasLinkedDeathMap(bot->GetMapId()))
+        return nullptr;
+    const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
+    if (!scan.active)
+        return nullptr;
+    // Held: the highest member (the equalise). Released, or latched released with a member back above param: the
+    // burn order, every free DPS on the first living member of it, then the next.
+    const bool hold = !scan.released && !scan.latched;
+    const int pick = hold ? PickLinkedDeath(scan.param, scan.members)
+                          : scan.order.empty() ? -1 : PickLinkedDeathBurn(scan.order, scan.members);
+    return pick < 0 ? nullptr : scan.units[pick];
 }
 
 Unit* ai::FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -481,12 +1123,280 @@ BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTa
     return danger;
 }
 
+namespace
+{
+// One bot's freeze_on_aura episode: from the rising edge to the aura's end. maxDrift is how far it moved since the
+// freeze caught it, the walk's proof that the hold kept it inside Mandokir's 2 yd.
+struct FreezeEpisode
+{
+    bool active = false;
+    std::uint32_t aura = 0;
+    std::uint32_t startMs = 0;
+    float startX = 0.0f;
+    float startY = 0.0f;
+    float maxDrift = 0.0f;
+    bool stopped = false;
+};
+
+std::mutex g_freezeMutex;
+std::unordered_map<uint64, FreezeEpisode> g_freezeEpisodes;
+
+// The episode's row: the aura, how long it held the bot and how far the bot drifted.
+//   info1 = "aura=<id>"
+//   info2 = "ms=<duration>,moved_yd=<max drift>"
+void LogFreeze(PlayerbotAI* ai, const FreezeEpisode& episode, std::uint32_t nowMs)
+{
+    char info1[32];
+    snprintf(info1, sizeof(info1), "aura=%u", episode.aura);
+    char info2[64];
+    snprintf(info2, sizeof(info2), "ms=%u,moved_yd=%.2f", nowMs - episode.startMs, episode.maxDrift);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsFreeze", info1, info2);
+}
+
+// The flee action's row, throttled per bot and aura (a walk takes several ticks): where the carrier stood when it
+// was sent, the clearance it needs and whether a walk started.
+constexpr uint32 kFleeLogGapMs = 2000;
+std::mutex g_fleeLogMutex;
+std::unordered_map<uint64, uint32> g_fleeLog;
+
+bool FleeLogDue(Player* bot, std::uint32_t aura)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return false;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 key = bot->GetObjectGuid().GetRawValue() ^ (static_cast<uint64>(aura) << 32);
+    std::lock_guard<std::mutex> lock(g_fleeLogMutex);
+    uint32& last = g_fleeLog[key];
+    if (last != 0 && nowMs - last < kFleeLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+inline const char* FleeModeName(TacticMode mode)
+{
+    return mode == TacticMode::ToTank ? "to_tank" : "away";
+}
+
+//   info1 = "aura=<id>,mode=<away|to_tank>"
+//   info2 = "ally_yd=<d|none>,radius=<d>,walk=<started|none>"
+void LogFlee(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, float allyYd, float radius, bool started)
+{
+    if (!FleeLogDue(bot, row.spellId))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "aura=%u,mode=%s", row.spellId, FleeModeName(row.mode));
+    char info2[96];
+    if (allyYd >= 0.0f)
+        snprintf(info2, sizeof(info2), "ally_yd=%.1f,radius=%.1f,walk=%s", allyYd, radius, started ? "started" : "none");
+    else
+        snprintf(info2, sizeof(info2), "ally_yd=none,radius=%.1f,walk=%s", radius, started ? "started" : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsFlee", info1, info2);
+}
+}
+
+std::uint32_t ai::FreezeAuraOnBot(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FreezeOnAura && row->spellId != 0 && bot->HasAura(row->spellId))
+            return row->spellId;
+    }
+    return 0;
+}
+
+void ai::FreezeEpisodeTick(PlayerbotAI* ai, Player* bot, std::uint32_t aura)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const float x = bot->GetPositionX();
+    const float y = bot->GetPositionY();
+    const uint64 guid = bot->GetObjectGuid().GetRawValue();
+    FreezeEpisode ended;
+    bool logEnded = false;
+    {
+        std::lock_guard<std::mutex> lock(g_freezeMutex);
+        auto it = g_freezeEpisodes.find(guid);
+        if (aura == 0)
+        {
+            if (it != g_freezeEpisodes.end())
+            {
+                if (it->second.active)
+                {
+                    ended = it->second;
+                    logEnded = true;
+                }
+                g_freezeEpisodes.erase(it);
+            }
+        }
+        else if (it == g_freezeEpisodes.end() || !it->second.active || it->second.aura != aura)
+        {
+            FreezeEpisode& state = g_freezeEpisodes[guid];
+            state = FreezeEpisode();
+            state.active = true;
+            state.aura = aura;
+            state.startMs = nowMs;
+            state.startX = x;
+            state.startY = y;
+        }
+        else
+        {
+            const float dx = x - it->second.startX;
+            const float dy = y - it->second.startY;
+            const float drift = std::sqrt(dx * dx + dy * dy);
+            if (drift > it->second.maxDrift)
+                it->second.maxDrift = drift;
+        }
+    }
+    if (logEnded && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        LogFreeze(ai, ended, nowMs);
+}
+
+bool ai::FreezeStopDue(PlayerbotAI* ai, Player* bot, std::uint32_t aura)
+{
+    (void)ai;
+    if (aura == 0)
+        return false;
+    std::lock_guard<std::mutex> lock(g_freezeMutex);
+    auto it = g_freezeEpisodes.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_freezeEpisodes.end() || !it->second.active || it->second.aura != aura || it->second.stopped)
+        return false;
+    it->second.stopped = true;
+    return true;
+}
+
+const BossTacticRow* ai::ActiveFleeRow(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FleeOnAura && row->spellId != 0 && bot->HasAura(row->spellId))
+            return row;
+    }
+    return nullptr;
+}
+
+bool ai::FleeRowListsAura(PlayerbotAI* ai, Player* bot, std::uint32_t spellId)
+{
+    if (!spellId || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    // Only a row the tactics actually run wins: without the strategy (the gate off) the hard-coded runout stays the
+    // carrier's only mover.
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::FleeOnAura && row->spellId == spellId)
+            return true;
+    }
+    return false;
+}
+
+bool BossTacticsFreezeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
+    if (!aura)
+        return false;
+    FreezeEpisodeTick(ai, bot, aura);
+    // Fear, confuse and knockback run their own movement generator and end on their own: the carrier is stood still
+    // once they are over, never cut out of them.
+    bool const lostControl = bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
+    // Attack and cast once on the rising edge: the multiplier keeps every other action down, so repeating them each
+    // tick would only re-break a cast the bot cannot start anyway.
+    bool const risingEdge = !lostControl && FreezeStopDue(ai, bot, aura);
+    // Read before the clear: a chase's or a follow's Finalize drops the generator and leaves its spline walking, so
+    // only this test tells the carrier is still being carried forward.
+    bool const splineFinalized = bot->movespline->Finalized();
+    const FreezeStill still = FreezeStillTick(risingEdge, lostControl,
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE, splineFinalized);
+    if (still.attackStop)
+    {
+        bot->AttackStop();
+        bot->CastStop();
+    }
+    if (still.dropGenerator)
+    {
+        bot->GetMotionMaster()->Clear();
+        bot->GetMotionMaster()->MoveIdle();
+    }
+    if (still.stopSpline)
+        ai->StopMoving();
+    return true;
+}
+
+bool BossTacticsFleeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const BossTacticRow* row = ActiveFleeRow(ai, bot, fight);
+    if (!row)
+        return false;
+    const bool toTank = row->mode == TacticMode::ToTank;
+    const float radius = row->param > 0.0f ? row->param : (toTank ? 5.0f : sPlayerbotAIConfig.bombRunoutDistance);
+    float allyYd = -1.0f;
+    bool started = false;
+    if (toTank)
+    {
+        // The mark already moves the tank's own add; a tank carrier has nothing to bring to itself.
+        if (PlayerbotAI::IsTank(bot))
+            return false;
+        Player* tank = GetRaidTankRoles(ai).MainTank();
+        if (!tank || tank == bot || !sServerFacade.IsAlive(tank) || tank->GetMapId() != bot->GetMapId())
+            return false;
+        allyYd = bot->GetDistance2d(tank);
+        if (allyYd > radius)
+            started = MoveTo(tank, radius);
+    }
+    else
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !sServerFacade.IsAlive(member) || member->GetMapId() != bot->GetMapId())
+                continue;
+            const float distance = bot->GetDistance2d(member);
+            if (allyYd < 0.0f || distance < allyYd)
+                allyYd = distance;
+        }
+        started = RunOutFromGroup(*this, ai, bot, radius, true);
+    }
+    LogFlee(ai, bot, *row, allyYd, radius, started);
+    return started;
+}
+
+float BossTacticsFreezeMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return 1.0f;
+    if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return 1.0f;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    if (fight.rows.empty())
+        return 1.0f;
+    const std::uint32_t aura = FreezeAuraOnBot(ai, bot, fight);
+    const bool isFreeze = dynamic_cast<BossTacticsFreezeAction*>(action) != nullptr;
+    return FreezeHoldsAction(aura != 0, isFreeze) ? 1.0f : 0.0f;
+}
+
 bool BossTacticsInterruptAction::Execute(Event& event)
 {
     (void)event;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     const BossInterruptScan scan = FindBossInterrupt(ai, bot, fight);
     return scan.caster && ai->CastSpell(std::string(scan.spell), scan.caster);
+}
+
+bool BossTacticsDispelSweepAction::Execute(Event& event)
+{
+    (void)event;
+    return SweepBossDispelCures(ai, bot, true);
 }
 
 bool BossTacticsKillFirstAction::Execute(Event& event)
@@ -548,6 +1458,38 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     return true;
 }
 
+bool BossTacticsDpsHoldAction::Execute(Event& event)
+{
+    (void)event;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (!current || !IsDpsHeld(ai, bot, current))
+        return false;
+    // The kill_first add is still fair game (an add that has to die is not the subject whose damage is held); with
+    // none, drop the pick and stop, so every picker (all of which skip a held subject) re-picks once the hold is over.
+    if (Unit* pick = FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot)))
+    {
+        if (pick != current)
+            return Attack(bot, pick);
+    }
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    bot->AttackStop();
+    return true;
+}
+
+bool BossTacticsLinkedDeathAction::Execute(Event& event)
+{
+    (void)event;
+    Unit* pick = FindBossLinkedDeath(ai, bot);
+    if (!pick)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (AI_VALUE(Unit*, "current target") == pick)
+        return false;
+    return Attack(bot, pick);
+}
+
 float BossTacticsHoldMultiplier::GetValue(Action* action)
 {
     if (!action)
@@ -557,31 +1499,47 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     const bool aoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;
     const bool attackerDebuff = dynamic_cast<CastRangedDebuffSpellOnAttackerAction*>(action) != nullptr;
     const bool other = !dpsAssist && !tankAssist && !aoe && !attackerDebuff;
-    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill or one_at_a_time row: a
-    // map with only kill_first or interrupt rows (every other raid) pays for no scan here.
-    if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()))
+    // The linked_death clause is opt-in like its pick: without the key or the strategy the rows are inert.
+    const bool linkedDeath = sPlayerbotAIConfig.dungeonRunLinkedDeath &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
+    // dps_hold_after is the aura-tactics key's own: with it off (or the strategy off) its rows are inert here too.
+    const bool auraHolds = sPlayerbotAIConfig.dungeonRunAuraTactics &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
+        GetBossTactics().HasAuraTacticMap(bot->GetMapId());
+    // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time,
+    // linked_death or dps_hold_after row: a map with only kill_first or interrupt rows (every other raid) pays for no
+    // scan here.
+    if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&
+        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
-    // The area test (a dynamic_cast and a spell lookup) only runs for a map that has a hold_kill or one_at_a_time row
-    // in the fight: on any other map, and for any other action class, the clause below is dead weight.
-    bool holdsRows = false;
+    // The area test (a dynamic_cast and a spell lookup) only runs for a fight whose rows can hold a member: on any
+    // other fight, and for any other action class, the clause below is dead weight. The linked rows are read from the
+    // map, not from the fight's rows: "focus rti targets" gives the fight the raid mark's entry only, so a mark on a
+    // partner would hide the group from the veto.
+    bool holdsRows = linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId());
+    bool dpsHoldRows = false;
     for (const BossTacticRow* row : fight.rows)
     {
         if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
-        {
             holdsRows = true;
-            break;
-        }
+        if (auraHolds && row->kind == BossTacticKind::DpsHoldAfter)
+            dpsHoldRows = true;
     }
-    const bool area = holdsRows && IsAreaDamageAction(ai, action);
-    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff)
+    const bool area = (holdsRows || dpsHoldRows) && IsAreaDamageAction(ai, action);
+    // The linked_death clauses also answer a tank's area action (Thunder Clap, Consecration, Swipe), a passive cleave
+    // toggle (Sweeping Strikes, Blade Flurry) and a single-target attack on the current target: none of those is a
+    // hold_kill clause, and the area test alone misses the cleave buffs.
+    const bool cleaveToggle = linkedDeath && IsCleaveToggleAction(action);
+    const bool singleTarget = linkedDeath && !area && IsSingleTargetDamageAction(action);
+    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget)
         return 1.0f;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // The log row's veto kind: the action class that was stood down, replaced by "sole" wherever the one_at_a_time
     // pick rather than a hold_kill budget is what holds the subject (the two need different fixes).
-    const char* const veto = dpsAssist || tankAssist ? "assist"
-        : aoe ? "aoe"
+    const char* const veto = dpsAssist || tankAssist || singleTarget ? "assist"
+        : aoe || cleaveToggle ? "aoe"
         : attackerDebuff ? "dot" : "area";
     // A held subject is left alone by every bot that is not a tank or a healer, an explicit attack order included: the
     // bot stands in the same pile, its area cast or grenade would take the held Mad Servants with it, and a DoT on a
@@ -599,6 +1557,41 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         if (held != HoldReason::None)
         {
             LogHoldKillVeto(ai, bot, held == HoldReason::Sole ? "sole" : veto, subject);
+            return 0.0f;
+        }
+    }
+    // The same veto for a linked_death group, on every bot but a healer: an area cast on another member that stands
+    // beside a held one takes the held member too, and a DoT on it ticks on after the hold. A tank's Thunder Clap,
+    // Consecration or Swipe and a cleave buff have the same reach (M3); so has a melee swing or bolt on a held current
+    // target, which a bot left with only held members in reach would otherwise keep doing (M4). The burn phase
+    // releases the group, so the casts are allowed again and the members die together. DoTs already ticking on a
+    // member keep ticking: the veto only stands down new casts (documented limit).
+    if (linkedDeath && !PlayerbotAI::IsHeal(bot) && (area || attackerDebuff || cleaveToggle || singleTarget))
+    {
+        const BossLinkedDeathScan scan = ScanBossLinkedDeath(ai, bot);
+        Unit* linkedHeld = nullptr;
+        if (singleTarget)
+        {
+            // A tank's swing counts too: it kills the held member just as a DPS's does. An explicit attack order still
+            // wins, as for the pick; a healer has no damage action here.
+            const bool ordered = !context->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+            Unit* current = ordered ? nullptr : AI_VALUE(Unit*, "current target");
+            if (current && LinkedDeathHoldsMember(scan.param, scan.members,
+                                                  current->GetObjectGuid().GetRawValue()))
+                linkedHeld = current;
+        }
+        else if (cleaveToggle)
+            linkedHeld = LinkedDeathHeldNear(ai, bot, scan, kHoldKillAoeNearYd);
+        else
+        {
+            const float reach = attackerDebuff ? std::numeric_limits<float>::max() : kHoldKillAoeNearYd;
+            linkedHeld = LinkedDeathHeldNear(ai, action->GetTarget(), scan, reach);
+            if (!linkedHeld && area)
+                linkedHeld = LinkedDeathHeldNear(ai, bot, scan, reach);
+        }
+        if (linkedHeld)
+        {
+            LogHoldKillVeto(ai, bot, veto, linkedHeld);
             return 0.0f;
         }
     }
@@ -642,6 +1635,332 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     {
         LogHoldKillVeto(ai, bot, veto, current);
         return 0.0f;
+    }
+    return 1.0f;
+}
+
+namespace
+{
+// How far a member can carry a protected aura and still be hit by an area cure (a totem pulse, Stoneform's own
+// removal, an Abolish Poison tick on a nearby ally): the raid's practical radius, the same 30 yd the bomb runout uses.
+constexpr float kDispelSafetyYd = 30.0f;
+
+// The area and periodic cures a dispel_priority row must be able to stand down as a whole: one cast removes (or keeps
+// removing each tick) auras from more than the chosen target.
+bool IsDispelAreaCure(const std::string& spell)
+{
+    return spell == "abolish disease" || spell == "disease cleansing totem" ||
+           spell == "poison cleansing totem" || spell == "stoneform";
+}
+
+void AddDispelType(std::vector<uint32>& out, int32 type)
+{
+    if (type < 0)  // DISPEL_ALL: every type a friendly cure can remove
+    {
+        for (int32 t = DISPEL_MAGIC; t <= DISPEL_POISON; ++t)
+            AddDispelType(out, t);
+        return;
+    }
+    if (type == DISPEL_NONE || std::find(out.begin(), out.end(), static_cast<uint32>(type)) != out.end())
+        return;
+    out.push_back(static_cast<uint32>(type));
+}
+
+// The dispel types a spell removes, read from its effects: a dispel effect names its type, and an immunity that strips
+// auras on application (Stoneform) names the types it strips. A periodic trigger is followed one step, so a cleansing
+// totem's passive aura yields the type its pulse removes. Empty when the spell removes nothing.
+void CollectSpellDispelTypes(SpellEntry const* entry, std::vector<uint32>& out, int depth = 0)
+{
+    if (!entry)
+        return;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (entry->Effect[i] == SPELL_EFFECT_DISPEL)
+            AddDispelType(out, entry->EffectMiscValue[i]);
+        else if (entry->EffectApplyAuraName[i] == SPELL_AURA_DISPEL_IMMUNITY &&
+                 (entry->AttributesEx & SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY))
+            AddDispelType(out, entry->EffectMiscValue[i]);
+        else if (depth == 0 && entry->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_TRIGGER_SPELL)
+            CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(entry->EffectTriggerSpell[i]), out, depth + 1);
+    }
+}
+
+// The dispel types the spell an action casts removes, resolved by name the way the action resolves it.
+std::vector<uint32> ActionDispelTypes(PlayerbotAI* ai, const std::string& spell)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 const spellId = AI_VALUE2(uint32, "spell id", spell);
+    std::vector<uint32> types;
+    CollectSpellDispelTypes(sServerFacade.LookupSpellInfo(spellId), types);
+    return types;
+}
+
+// The fight's dispel rows only: a map without one has nothing to rank, and the scan is not paid for.
+ActiveBossRows DispelRows(const BossTacticsFight& fight)
+{
+    ActiveBossRows rows;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind == BossTacticKind::DispelPriority)
+            rows.push_back(row);
+    }
+    return rows;
+}
+
+// The living group members a cure can reach, the bot included.
+std::vector<Unit*> DispelSweepMembers(Player* bot)
+{
+    std::vector<Unit*> members;
+    members.push_back(bot);
+    Group* group = bot->GetGroup();
+    if (!group)
+        return members;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            continue;
+        members.push_back(member);
+    }
+    return members;
+}
+
+// The radius a totem's pulse reaches: the dispel effect of the spell it triggers, or the safety radius when the data
+// names none.
+float TotemDispelRadius(SpellEntry const* totemSpell)
+{
+    if (!totemSpell)
+        return kDispelSafetyYd;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (totemSpell->EffectApplyAuraName[i] != SPELL_AURA_PERIODIC_TRIGGER_SPELL)
+            continue;
+        SpellEntry const* pulse = sSpellMgr.GetSpellEntry(totemSpell->EffectTriggerSpell[i]);
+        if (!pulse)
+            continue;
+        for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        {
+            if (pulse->Effect[j] != SPELL_EFFECT_DISPEL)
+                continue;
+            SpellRadiusEntry const* entry = sSpellRadiusStore.LookupEntry(pulse->EffectRadiusIndex[j]);
+            if (entry && entry->Radius > 0.0f)
+                return entry->Radius;
+        }
+    }
+    return kDispelSafetyYd;
+}
+
+// What an already-running area cure would do to a protected aura: the Abolish aura a bot cast on a member (removed
+// server-side, only auras cast by our bots), and the bot's own cleansing totem of the type (destroyed). With `apply`
+// false the scan only reports whether there is anything to do.
+bool SweepDispelCures(PlayerbotAI* ai, Player* bot, const ActiveBossRows& rows, float defaultClearYd, bool apply)
+{
+    bool swept = false;
+    const std::vector<Unit*> members = DispelSweepMembers(bot);
+    for (Unit* member : members)
+    {
+        // Collected first: the removal below mutates the holder map.
+        std::vector<std::pair<uint32, ObjectGuid>> doomed;
+        for (const auto& held : member->GetSpellAuraHolderMap())
+        {
+            SpellAuraHolder* aura = held.second;
+            if (!aura)
+                continue;
+            std::vector<uint32> types;
+            CollectSpellDispelTypes(aura->GetSpellProto(), types);
+            if (types.empty())
+                continue;
+            ObjectGuid const casterGuid = aura->GetCasterGuid();
+            Player* caster = sObjectMgr.GetPlayer(casterGuid);
+            if (!caster || !GET_PLAYERBOT_AI(caster))
+                continue;
+            for (uint32 type : types)
+            {
+                const DispelVerdict verdict = DispelMemberState(member, type, rows, defaultClearYd);
+                // The aura that decided is the protected one itself: never remove that.
+                if (!verdict.excluded || verdict.auraId == aura->GetId())
+                    continue;
+                doomed.push_back(std::make_pair(aura->GetId(), casterGuid));
+                break;
+            }
+        }
+        for (const auto& entry : doomed)
+        {
+            if (apply)
+                member->RemoveAurasByCasterSpell(entry.first, entry.second);
+            swept = true;
+        }
+    }
+
+    for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+    {
+        Totem* totem = bot->GetTotem(TotemSlot(slot));
+        if (!totem || !totem->IsAlive())
+            continue;
+        SpellEntry const* totemSpell = sSpellMgr.GetSpellEntry(totem->GetSpell());
+        std::vector<uint32> types;
+        CollectSpellDispelTypes(totemSpell, types);
+        if (types.empty())
+            continue;
+        float const radius = TotemDispelRadius(totemSpell);
+        bool destroy = false;
+        for (Unit* member : members)
+        {
+            if (sServerFacade.GetDistance2d(totem, member) > radius)
+                continue;
+            for (uint32 type : types)
+            {
+                if (DispelMemberState(member, type, rows, defaultClearYd).excluded)
+                {
+                    destroy = true;
+                    break;
+                }
+            }
+            if (destroy)
+                break;
+        }
+        if (!destroy)
+            continue;
+        if (apply)
+            totem->UnSummon();
+        swept = true;
+    }
+    return swept;
+}
+}
+
+// The sweep an already-running area cure needs: a protected aura applied after the cure started would be removed by
+// its next tick or pulse, so the bot-cast Abolish aura is removed and the bot's own cleansing totem destroyed. Gated
+// by AiPlayerbot.DungeonRunAuraTactics, the map's dispel rows and the "boss tactics" strategy.
+bool ai::SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
+    if (rows.empty())
+        return false;
+    return SweepDispelCures(ai, bot, rows, sPlayerbotAIConfig.bombRunoutDistance, apply);
+}
+
+// The hold at the last gate: the engine consults the multiplier when it picks the action, but a group member can gain
+// a protected aura in between (a debuff lands while the bot walks into range), and the core resolves the dispel type
+// of a Cure cast at random, so the cast itself has to be refused rather than merely deprioritised.
+bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
+{
+    if (!ai || !target || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    Player* bot = ai->GetBot();
+    if (!bot || !target->IsAlive() || target->GetMapId() != bot->GetMapId())
+        return false;
+    // PartyMemberToDispel offers non-summoned pets as well as players; a hunter pet has no Player, so it is placed by
+    // its owner's group and judged like a member. A target that is none of these is unknown, and the cast is refused.
+    DispelTargetKind targetKind = DispelTargetKind::Unknown;
+    if (target == bot)
+    {
+        targetKind = DispelTargetKind::Self;
+    }
+    else if (Player* member = sObjectMgr.GetPlayer(target->GetObjectGuid()))
+    {
+        if (member->GetGroup() && member->GetGroup() == bot->GetGroup())
+            targetKind = DispelTargetKind::GroupMember;
+    }
+    else if (Pet* pet = dynamic_cast<Pet*>(target))
+    {
+        Player* owner = dynamic_cast<Player*>(pet->GetOwner());
+        if (owner && owner->GetGroup() && owner->GetGroup() == bot->GetGroup())
+            targetKind = DispelTargetKind::GroupPet;
+    }
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    std::vector<uint32> types;
+    CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types);
+    if (types.empty())
+        return false;
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
+    if (rows.empty())
+        return false;
+    std::vector<AuraOnMember> auras;
+    CollectAllDispelAuras(target, auras);
+    float const verdictYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(target)
+                                                                : std::numeric_limits<float>::max();
+    DispelVerdict const verdict = DispelCastVerdict(targetKind, rows, auras, types, verdictYd,
+                                                    sPlayerbotAIConfig.bombRunoutDistance);
+    if (!verdict.excluded)
+        return false;
+    LogDispelExcluded(ai, bot, verdict, target, sServerFacade.GetDistance2d(bot, target));
+    return true;
+}
+
+float BossTacticsDispelHoldMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return 1.0f;
+    if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
+        return 1.0f;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return 1.0f;
+
+    // A cure action, by its typed target (a party cure) or by the spell it casts (a self, totem or Stoneform cure).
+    // The hold judges every type the cast spell removes, not only the one that triggered it: a poison-triggered
+    // Cleanse also strips magic and disease, and the core picks one of the spell's types at random.
+    CurePartyMemberAction* partyCure = dynamic_cast<CurePartyMemberAction*>(action);
+    CastSpellAction* cast = partyCure ? nullptr : dynamic_cast<CastSpellAction*>(action);
+    if (!partyCure && !cast)
+        return 1.0f;
+    const std::string& spell = partyCure ? partyCure->GetSpellName() : cast->GetSpellName();
+    const std::vector<uint32> types = ActionDispelTypes(ai, spell);
+    if (types.empty())
+        return 1.0f;
+    bool const areaCure = !partyCure && IsDispelAreaCure(spell);
+
+    const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
+    if (rows.empty())
+        return 1.0f;
+    const float defaultClearYd = sPlayerbotAIConfig.bombRunoutDistance;
+
+    const auto veto = [&](Unit* member)
+    {
+        std::vector<AuraOnMember> auras;
+        CollectAllDispelAuras(member, auras);
+        float const allyYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(member)
+                                                                 : std::numeric_limits<float>::max();
+        const DispelVerdict verdict = DispelCureVerdict(rows, auras, types, allyYd, defaultClearYd);
+        if (!verdict.excluded)
+            return false;
+        LogDispelExcluded(ai, bot, verdict, member, allyYd);
+        return true;
+    };
+
+    if (partyCure)
+    {
+        // The chosen member: a cure on an excluded one would remove the aura that must stay (the core picks one of
+        // the type at random), so the action is stood down and the predicate offers somebody else.
+        Unit* target = action->GetTarget();
+        return target && veto(target) ? 0.0f : 1.0f;
+    }
+
+    // A self cure judges the bot itself; an area or periodic cure judges every living group member it can reach.
+    if (!areaCure)
+        return veto(bot) ? 0.0f : 1.0f;
+    if (veto(bot))
+        return 0.0f;
+    Group* group = bot->GetGroup();
+    if (group)
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+                continue;
+            if (sServerFacade.GetDistance2d(bot, member) > kDispelSafetyYd)
+                continue;
+            if (veto(member))
+                return 0.0f;
+        }
     }
     return 1.0f;
 }

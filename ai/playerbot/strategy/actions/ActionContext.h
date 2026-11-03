@@ -352,10 +352,15 @@ namespace ai
             creators["enable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsEnableStrategyAction(ai); };
             creators["disable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsDisableStrategyAction(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
+            creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepAction(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };
+            creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathAction(ai); };
+            creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldAction(ai); };
             creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
             creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastAction(ai); };
+            creators["boss tactics freeze"] = [](PlayerbotAI* ai) { return new BossTacticsFreezeAction(ai); };
+            creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeAction(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };

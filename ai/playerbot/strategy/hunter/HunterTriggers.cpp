@@ -304,7 +304,14 @@ bool VolleyChannelCheckTrigger::IsActive()
         {
             uint32 id = spell->m_spellInfo->Id;
             if (id == 1510 || id == 14294 || id == 14295)
+            {
+                // A unit under our crowd control inside the volley breaks the
+                // hold on its next tick: stop the channel at once.
+                CcGuard ccGuard(ai);
+                if (ccGuard.CcInRunningArea(spell))
+                    return true;
                 return AI_VALUE(uint8, "aoe count") < 2;
+            }
         }
     }
     return false;

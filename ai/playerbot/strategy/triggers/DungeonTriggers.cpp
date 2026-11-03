@@ -10,6 +10,7 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/actions/MovementActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/CombatSpreadPolicy.h"
 #include "playerbot/policy/combat/DebuffSpreadPolicy.h"
@@ -377,11 +378,15 @@ bool RaidBombDebuffTrigger::IsActive()
         return false;
     // Spell-ID based: Geddon Living Bomb, Vael Burning Adrenaline
     // (Turtle 23620 + classic 18173), Grobbulus Mutating Injection,
-    // Kel'Thuzad Detonate Mana (27819, vanilla-only).
+    // Kel'Thuzad Detonate Mana (27819, vanilla-only). An active flee_on_aura
+    // row for the same aura owns the carrier's escape: two movers would fight.
     for (uint32 spellId : kRaidBombSpellIds)
     {
-        if (ai->HasAura(spellId, bot))
-            return true;
+        if (!ai->HasAura(spellId, bot))
+            continue;
+        if (FleeRowListsAura(ai, bot, spellId))
+            continue;
+        return true;
     }
     return false;
 }

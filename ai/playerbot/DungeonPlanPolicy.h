@@ -191,9 +191,16 @@ namespace ai
     constexpr float kPlanMaxProofRadius = 20.0f;
     constexpr std::uint32_t kPlanDefaultTimeoutS = 60;
     constexpr std::uint32_t kPlanMaxTimeoutS = 600;
+    // A hold row's own ceiling (turtle-agent dungeon.MaxHoldTimeoutS): an event can outlast any single wait, AQ20's
+    // Rajaxx runs seven army waves in about 1500 s. Every other kind keeps kPlanMaxTimeoutS.
+    constexpr std::uint32_t kPlanMaxHoldTimeoutS = 1800;
     constexpr std::size_t kPlanMaxEntries = 16;
     // A stand-pull pull row's clearance (`param` in yd): past this the row is refused (BadParam).
     constexpr std::uint32_t kPlanMaxStandPullClear = 60;
+    // A pull row's `item` column is the aggro estimate's bodies ceiling (the plan export's
+    // max_bodies, the target included: AiPlayerbot.DungeonRunAggroWalkRing). Past this a row
+    // is refused (BadParam); a row without one keeps the config ceiling.
+    constexpr std::uint32_t kPlanMaxPullBodies = 80;
     // A step row's comment as the dashboard shows it: the row's `comment`, clipped at this many bytes.
     constexpr std::size_t kPlanMaxLabel = 80;
     // gossip: `param` is the option the way `.bot cmd gossip` takes it, counted from 1 at the top of the NPC's
@@ -419,12 +426,13 @@ namespace ai
                           // use_on without item; open_proof without proof entries;
                           // hold done by object without entry, by its units without entries
         BadRadius,        // negative, over kPlanMaxRadius (over kPlanMaxProofRadius on an open_proof), or a wait_clear without one
-        BadTimeout,       // over kPlanMaxTimeoutS; any timeout_s on an open_proof (the proof wait is kOpenProofWaitMs)
+        BadTimeout,       // over kPlanMaxTimeoutS (a hold: kPlanMaxHoldTimeoutS); any timeout_s on an open_proof (the proof wait is kOpenProofWaitMs)
         BadParam,         // wait_object state other than 0-2; hold with both done flags, an encounter
                           // flag without the data flag or a state above 4, an object state above 2;
                           // the exact flag on a step that is not a move; gossip with an option
                           // outside 1-15 or with any flag; use_on with any flag or param;
                           // a stand_pull pull with param above kPlanMaxStandPullClear;
+                          // a pull row whose item (the bodies ceiling) is above kPlanMaxPullBodies;
                           // an open_proof whose proof equals its entry (no 2048), with param, a flag but 2048,
                           // or 2048 on any row that is not open_proof
         BadPoint,         // not a finite point; a use_on or an open_proof without a point (0,0,0)
@@ -460,7 +468,7 @@ namespace ai
             return PlanStepRefusal::BadPoint;
         if (step.radius < 0.0f || step.radius > kPlanMaxRadius)
             return PlanStepRefusal::BadRadius;
-        if (step.timeoutS > kPlanMaxTimeoutS)
+        if (step.timeoutS > (step.kind == PlanStepKind::Hold ? kPlanMaxHoldTimeoutS : kPlanMaxTimeoutS))
             return PlanStepRefusal::BadTimeout;
         if ((step.flags & kPlanFlagExact) && step.kind != PlanStepKind::Move)
             return PlanStepRefusal::BadParam;
@@ -476,6 +484,9 @@ namespace ai
         if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Pull)
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagStandPull) && step.kind == PlanStepKind::Pull && step.param > kPlanMaxStandPullClear)
+            return PlanStepRefusal::BadParam;
+        // A pull row's `item` is the estimate's bodies ceiling (max_bodies), not a use_item item.
+        if (step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies)
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold)
             return PlanStepRefusal::BadParam;

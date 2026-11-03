@@ -561,6 +561,9 @@ public:
 
 	bool RandombotsWalkingRPG;
     bool boostFollow;
+    // Inside an instance, a group follows in a 150 degree wedge behind the leader
+    // (RaidFollowWedgePolicy.h), with far stragglers walking the leader's trail.
+    bool raidFollowWedge;
     // Dungeon follow holds short of unpulled packs when the leader is far ahead (audit fix 127).
     bool dungeonFollowHoldBeforePacks;
     // Warlock summons the demon that fits its spec in PvE instead of the Voidwalker (opt-in).
@@ -584,12 +587,25 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // The linked_death boss tactic ("die together"): free DPS bots equalise a group's health, hold every member at or
+    // below the row's param % and burn them together once all are there (BossTacticsPolicy.h; its own key on top of
+    // the tactics gate, default off).
+    bool dungeonRunLinkedDeath = false;
+    // The aura tactic kinds and their row gates (dps_hold_after, dispel_priority, flee_on_aura, freeze_on_aura,
+    // taunt_after_cast, swap_on_aura, and a row's hp_min/hp_max/bot_aura gate): on, the fight scan keeps them (its own
+    // key on top of the tactics gate). Off, the six kinds are ignored and a gated row is closed, so the table behaves
+    // exactly as before them (BossTacticsPolicy.h RowGateOpen; default off).
+    bool dungeonRunAuraTactics = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
     // once before a pull that brings more than the ceiling (opt-in; ceiling default 6 joiners).
     bool dungeonRunAggroEstimate;
     uint32 dungeonRunAggroCeiling;
+    // ... the ring estimate (EstimateAggroRing): the walk to the pull, the stand and the fight point wake a pack, and
+    // every member calls for help within dungeonRunAggroRingYd (only read with dungeonRunAggroEstimate).
+    bool dungeonRunAggroWalkRing;
+    float dungeonRunAggroRingYd;
     // The run leader's pack-cleared gate: a pull step is done only when no unit of its entries is left within its
     // radius + this many yards (2D, 10 yd of height), a unit that spawned inside the radius belongs to the step
     // wherever it walks, and a formation follower of a waypoint leader counts as a patroller. 0 turns it off.
@@ -613,11 +629,26 @@ public:
     // The approach row before a stand-pull step holds outside the pulled pack's wake reach and the pull's crowd
     // control goes out there, before the walk in wakes the pack (DungeonRunPolicy.h NextStandPull; default off).
     bool dungeonRunStandPullPreCc;
+    // A pull row fires from the plan's authored approach only (no closer firing stand), and every tank and melee is
+    // waited for at that stand or clear of the next pull's pack before the row fires (DungeonRunPolicy.h
+    // HoldForShot, StandDisciplineOutOfPlace; default off).
+    bool dungeonRunStandDiscipline;
+    // The run leader marks crowd control on a pack from what the raid has when the pull brings more than
+    // dungeonRunAutoCcAbove bodies (DungeonRunPolicy.h RunAutoCcPickOrder; default off), the fear families only with
+    // dungeonRunAutoCcRisky.
+    bool dungeonRunAutoCc;
+    uint32 dungeonRunAutoCcAbove;
+    bool dungeonRunAutoCcRisky;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;
     bool dungeonRunRetreatAt2Dead;
     bool dungeonRunWalkBackRescue;
+    // A member a run brings back from farther than this is teleported with its combat dropped (0: the old summon).
+    float runTeleportReturnYd;
+    // A run's bot revived farther than this from the lead bot, and any bot the run brings back, stands still
+    // until it arrives (0: off).
+    float dungeonReviveHoldYd;
     bool dungeonRunFightForward;
     bool dungeonRunLightRest;
     // A run leader loot step whose item is another member's under the group's loot rules sets free-for-all for the

@@ -4,6 +4,7 @@
 #include "CcMarkHoldPolicy.h"
 
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/EnemyAreaSpell.h"
 #include "PossibleAttackTargetsValue.h"
 #include "RtiTargetValue.h"
 #include "Objects/Unit.h"
@@ -217,6 +218,66 @@ bool FindNonCcTargetStrategy::IsCastingCcAt(Unit* caster, Unit* target)
     if (!spell || !spell->m_spellInfo || spell->m_targets.getUnitTarget() != target)
         return false;
     return IsCcSpell(spell->m_spellInfo);
+}
+
+bool CcGuard::PartyDotOn(Unit* unit)
+{
+    if (!unit)
+        return false;
+    Player* const bot = ai->GetBot();
+    Group* const group = bot->GetGroup();
+    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
+    {
+        Unit* const caster = aura ? aura->GetCaster() : nullptr;
+        if (!caster)
+            continue;
+        Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (owner && (owner == bot || (group && group->IsMember(owner->GetObjectGuid()))))
+            return true;
+    }
+    return false;
+}
+
+bool CcGuard::NoDotTarget(Unit* unit)
+{
+    return IsCcMarkedUnit(unit) || IsCrowdControlledUnit(unit);
+}
+
+bool CcGuard::IsCcMarkedUnit(Unit* unit)
+{
+    return unit && IsCcMark(unit);
+}
+
+bool CcGuard::IsCrowdControlledUnit(Unit* unit)
+{
+    return unit && IsCrowdControlled(ai, unit);
+}
+
+bool CcGuard::CcInRunningArea(Spell const* spell)
+{
+    if (!spell || !spell->m_spellInfo)
+        return false;
+    bool atTarget = false;
+    float radius = 0.0f;
+    if (!EnemyAreaOf(spell->m_spellInfo, atTarget, radius) || radius <= 0.0f)
+        return false;
+    Player* const bot = ai->GetBot();
+    float x = bot->GetPositionX(), y = bot->GetPositionY(), z = bot->GetPositionZ();
+    if (atTarget)
+        spell->m_targets.getDestination(x, y, z);
+    // "possible targets" (no line of sight): a crowd-controlled unit attacks
+    // nobody, so the "attackers" list the other guards read cannot see it.
+    std::list<ObjectGuid> const possible =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
+    for (ObjectGuid const& guid : possible)
+    {
+        Unit* const unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsAlive() || unit->GetMap() != bot->GetMap() || unit->GetDistance(x, y, z) > radius)
+            continue;
+        if (PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot))
+            return true;
+    }
+    return false;
 }
 
 bool CcGuard::GroupCastsCcAt(Unit* unit)

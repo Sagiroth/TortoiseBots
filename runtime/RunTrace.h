@@ -6,7 +6,7 @@
 // runtime/RunTraceRecords.h; file writer: runtime/RunTraceWriter.h.
 //
 // Off by default (AiPlayerbot.RunTrace.Enabled = 0). Started and stopped by
-// `.bot trace start <run_id> [party|bot <Name>] [driver=<model>:<effort>:<run>]` / `.bot trace stop` (a GM, or
+// `.bot trace start <run_id> [party|bot <Name>] [driver=<model>:<effort>:<run>]` / `.bot trace stop [<run_id>]` (a GM, or
 // the owner of every bot in scope, unless AiPlayerbot.RunTrace.GmOnly); one run
 // at a time. While no run is active the only costs are one relaxed atomic load
 // per world tick, and one walk over the engine's listener list per action in

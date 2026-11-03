@@ -51,6 +51,10 @@ public:
     // both the dead-bot and revive knobs are on; repair runs after arrival.
     bool RequestGroupSummon(Player* requester, Player* bot, SummonConditions const& conditions);
     bool IsBusy(ObjectGuid botGuid) const;
+    // How many of this bot's summons were dropped before the teleport (it fought, died, flew or teleported while
+    // the portal waited) since the server started. A queued summon is answered "queued" at once; a dungeon run
+    // reads a rise of this count as a failed summon (DungeonRun::UpdateSummonOutcomes).
+    uint32 SummonCancels(ObjectGuid botGuid) const;
     // An explicit stationary order (`stay`, `guard`, `hold`, `comestay`) for
     // this bot: if a summon is pending, the follow restore on arrival is
     // cancelled (latest explicit order wins). Returns true when a pending
@@ -89,6 +93,8 @@ private:
     // time). Bounds uninvite/invite macro abuse; entries are tiny and only
     // created for bots that actually group-summoned.
     std::unordered_map<uint32, time_t> m_groupSummonAt;
+    // Summons dropped before the teleport, per bot (character counter -> count): see SummonCancels.
+    std::unordered_map<uint32, uint32> m_summonCancels;
 };
 
 } // namespace TortoiseBots
