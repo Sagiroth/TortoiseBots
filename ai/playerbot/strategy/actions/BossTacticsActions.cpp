@@ -140,7 +140,7 @@ void PruneDpsHolds(PlayerbotAI* ai, std::uint32_t nowMs)
     }
     // Lock order: the hold map, then the log. LogDpsHold takes the log alone, after the hold lock is released.
     std::lock_guard<std::mutex> logLock(g_dpsHoldLogMutex);
-    ai::PruneDpsHoldLog(g_dpsHoldLog, g_dpsHolds, [](std::uint32_t mapId, std::uint32_t instanceId)
+    PruneDpsHoldLog(g_dpsHoldLog, g_dpsHolds, [](std::uint32_t mapId, std::uint32_t instanceId)
     {
         return sMapMgr.FindMap(mapId, instanceId) != nullptr;
     });
