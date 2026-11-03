@@ -1125,6 +1125,10 @@ namespace ai
     constexpr std::uint32_t kDpsHoldBlinkMs = 1500;
     // A hold state nobody read for 10 minutes is stale (the subject left the fight); the caller drops it.
     constexpr std::uint32_t kDpsHoldStaleMs = 600000;
+    // The cast/aura edge is kept per observing bot. An observer nobody heard from for 10 s is gone (it no longer
+    // vouches that a signal was already seen), and one record holds at most 64 observers.
+    constexpr std::uint32_t kDpsHoldObserverStaleMs = 10000;
+    constexpr std::size_t kDpsHoldMaxObservers = 64;
 
     inline bool DpsHoldBlinked(float lastX, float lastY, float x, float y, std::uint32_t dtMs)
     {
@@ -1135,10 +1139,19 @@ namespace ai
         return std::sqrt(dx * dx + dy * dy) > kDpsHoldBlinkYd;
     }
 
+    // One eligible bot's view of the cast/aura signal: whether it has already seen the signal true (its edge bit).
+    struct DpsHoldObserver
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t lastReadMs = 0;
+        bool castSeen = false;
+    };
+
     // The hold of one subject and row, shared by every bot of the instance (the caller owns the map and its mutex).
     // `startMs` is the latest trigger, `untilMs` its `param` seconds, `capMs` the until_tank cap (3 * param): the hold
-    // can never outlive it. The gate, cast and engage edges are stored, so a signal that stays true does not restart
-    // the hold; the last position and read time are the blink trigger's other half.
+    // can never outlive it. The band, engage and blink edges are shared; the cast/aura edge is kept per observing bot
+    // (`observers`), so one bot's view of a cast never hides the rising edge from another, and a signal that stays true
+    // does not restart the hold. The last position and read time are the blink trigger's other half.
     struct DpsHoldState
     {
         std::uint32_t startMs = 0;
@@ -1148,12 +1161,12 @@ namespace ai
         float lastX = 0.0f;
         float lastY = 0.0f;
         bool gateWasOpen = false;
-        bool castSeen = false;
         bool engageSeen = false;
         bool hasPos = false;
         // The trigger that last restarted the hold, and when: one log row per trigger and bot reads them.
         DpsHoldTrigger lastTrigger = DpsHoldTrigger::None;
         std::uint32_t lastTriggerMs = 0;
+        std::vector<DpsHoldObserver> observers;
     };
 
     // One read's facts. `engageEnabled`/`gateEnabled`/`castEnabled`/`blinkEnabled` say which triggers the row uses
@@ -1168,9 +1181,11 @@ namespace ai
         bool gateOpen = true;
         bool gateEnabled = false;
         // Whether this bot is part of the row at all (no `bot_aura`, or it carries it). A read by a bot outside the row
-        // is not a read of the fight: it returns without touching any edge, so an eligible bot's later read still sees
-        // the rising edge the fight had.
+        // returns without touching the shared hold or any other bot's edge, and drops this bot's own cast/aura edge:
+        // when it is eligible again it starts from "not seen", so the next cast's rising edge is its to promote.
         bool botEligible = true;
+        // Who reads (the bot's guid): the key of the per-observer cast/aura edge.
+        std::uint64_t observer = 0;
         bool castOrAuraSeen = false;
         bool castEnabled = false;
         bool blinkEnabled = false;
@@ -1190,7 +1205,57 @@ namespace ai
         if (fired)
             *fired = DpsHoldTrigger::None;
         if (!in.botEligible)
+        {
+            for (std::size_t i = 0; i < state.observers.size(); ++i)
+            {
+                if (state.observers[i].guid == in.observer)
+                {
+                    state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(i));
+                    break;
+                }
+            }
             return false;
+        }
+        // This observer's cast/aura edge. Observers not heard from for a while are dropped; a new one starts as the
+        // others see the signal (a bot joining mid-cast does not restart a hold the cast already started), or as
+        // "not seen" when nobody else is watching it.
+        for (std::size_t i = state.observers.size(); i-- > 0;)
+        {
+            if (state.observers[i].guid != in.observer &&
+                nowMs - state.observers[i].lastReadMs > kDpsHoldObserverStaleMs)
+                state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+        DpsHoldObserver* me = nullptr;
+        for (DpsHoldObserver& o : state.observers)
+        {
+            if (o.guid == in.observer)
+            {
+                me = &o;
+                break;
+            }
+        }
+        if (!me)
+        {
+            bool othersSee = false;
+            for (const DpsHoldObserver& o : state.observers)
+                othersSee = othersSee || o.castSeen;
+            if (state.observers.size() >= kDpsHoldMaxObservers)
+            {
+                std::size_t oldest = 0;
+                for (std::size_t i = 1; i < state.observers.size(); ++i)
+                {
+                    if (nowMs - state.observers[i].lastReadMs > nowMs - state.observers[oldest].lastReadMs)
+                        oldest = i;
+                }
+                state.observers.erase(state.observers.begin() + static_cast<std::ptrdiff_t>(oldest));
+            }
+            DpsHoldObserver fresh;
+            fresh.guid = in.observer;
+            fresh.castSeen = othersSee;
+            state.observers.push_back(fresh);
+            me = &state.observers.back();
+        }
+        me->lastReadMs = nowMs;
         std::uint32_t const holdMs = in.holdSec > 0.0f
             ? static_cast<std::uint32_t>(in.holdSec * 1000.0f + 0.5f)
             : 0;
@@ -1202,7 +1267,7 @@ namespace ai
         }
         if (in.gateOpen && in.gateEnabled && !state.gateWasOpen && trigger == DpsHoldTrigger::None)
             trigger = DpsHoldTrigger::Band;
-        if (in.gateOpen && in.castEnabled && in.castOrAuraSeen && !state.castSeen &&
+        if (in.gateOpen && in.castEnabled && in.castOrAuraSeen && !me->castSeen &&
             trigger == DpsHoldTrigger::None)
             trigger = DpsHoldTrigger::Spell;
         if (in.gateOpen && in.blinkEnabled && state.hasPos &&
@@ -1210,7 +1275,7 @@ namespace ai
             trigger == DpsHoldTrigger::None)
             trigger = DpsHoldTrigger::Blink;
         state.gateWasOpen = in.gateOpen;
-        state.castSeen = in.castOrAuraSeen;
+        me->castSeen = in.castOrAuraSeen;
         state.lastX = in.x;
         state.lastY = in.y;
         state.lastReadMs = nowMs;

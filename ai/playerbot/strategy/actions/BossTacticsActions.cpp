@@ -166,6 +166,7 @@ bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRo
     in.engageEnabled = row.spellId == 0 && row.mode != TacticMode::Blink;
     in.gateOpen = gateOpen;
     in.botEligible = row.botAura == 0 || botHasAura;
+    in.observer = bot->GetObjectGuid().GetRawValue();
     in.gateEnabled = row.hpMin != 0 || row.hpMax != 100;
     in.castOrAuraSeen = casting || carrying;
     in.castEnabled = row.spellId != 0;

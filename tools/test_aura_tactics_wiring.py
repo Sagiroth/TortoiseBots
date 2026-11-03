@@ -192,7 +192,7 @@ class DpsHoldWiring(unittest.TestCase):
         # restart the hold on every read.
         self.assertIn("in.engageEnabled && in.engaged && !state.engageSeen", tick)
         self.assertIn("in.gateOpen && in.gateEnabled && !state.gateWasOpen", tick)
-        self.assertIn("in.castEnabled && in.castOrAuraSeen && !state.castSeen", tick)
+        self.assertIn("in.castEnabled && in.castOrAuraSeen && !me->castSeen", tick)
         self.assertIn("DpsHoldBlinked(state.lastX, state.lastY, in.x, in.y, nowMs - state.lastReadMs)", tick)
         # until_tank cannot deadlock: the cap is 3 * param from the latest trigger.
         self.assertIn("state.capMs = nowMs + 3 * holdMs;", tick)

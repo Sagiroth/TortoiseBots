@@ -1298,6 +1298,72 @@ int main()
         CHECK(fired == DpsHoldTrigger::None);
     }
 
+    // Eligibility is lost through the end of cast 1 and regained during cast 2: the hold starts on cast 2. The
+    // ineligible read resets the bot's own edge, so the stale "seen" of cast 1 cannot hide cast 2's rising edge.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        in.observer = 7;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        in.castOrAuraSeen = true;                                   // cast 1, the bot carries the aura
+        CHECK(DpsHoldTick(spell, in, 0, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        in.botEligible = false;                                     // the aura is lost; cast 1 ends meanwhile
+        in.castOrAuraSeen = false;
+        CHECK(!DpsHoldTick(spell, in, 4000, &fired));
+        in.castOrAuraSeen = true;                                   // cast 2 starts, still no aura
+        CHECK(!DpsHoldTick(spell, in, 8000, &fired));
+        in.botEligible = true;                                      // the aura returns during cast 2
+        CHECK(DpsHoldTick(spell, in, 9000, &fired));
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 9000);
+    }
+
+    // The cast/aura edge is per observer: one bot seeing a cast does not hide its rising edge from another bot that
+    // starts watching before the cast (a bot already seen true is not a restart for a bot joining mid-cast).
+    {
+        DpsHoldState spell;
+        DpsHoldInputs a;
+        a.castEnabled = true;
+        a.holdSec = 3.0f;
+        a.observer = 1;
+        DpsHoldInputs b = a;
+        b.observer = 2;
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(!DpsHoldTick(spell, a, 0, &fired));                   // A watches, no cast
+        CHECK(!DpsHoldTick(spell, b, 0, &fired));                   // B watches, no cast
+        a.castOrAuraSeen = true;
+        b.castOrAuraSeen = true;
+        CHECK(DpsHoldTick(spell, a, 100, &fired));                  // A's rising edge starts the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 100);
+        CHECK(DpsHoldTick(spell, b, 200, &fired));                  // B's own rising edge promotes into the hold
+        CHECK(fired == DpsHoldTrigger::Spell);
+        CHECK(spell.startMs == 200);
+        DpsHoldInputs c = a;                                        // C joins mid-cast: A and B see it, no restart
+        c.observer = 3;
+        CHECK(DpsHoldTick(spell, c, 300, &fired));
+        CHECK(fired == DpsHoldTrigger::None);
+        CHECK(spell.startMs == 200);
+        CHECK(spell.observers.size() == 3);
+    }
+
+    // The observer list is bounded.
+    {
+        DpsHoldState spell;
+        DpsHoldInputs in;
+        in.castEnabled = true;
+        in.holdSec = 3.0f;
+        for (std::uint64_t g = 1; g <= 200; ++g)
+        {
+            in.observer = g;
+            DpsHoldTick(spell, in, static_cast<std::uint32_t>(g), nullptr);
+        }
+        CHECK(spell.observers.size() <= kDpsHoldMaxObservers);
+    }
+
     // The held-subject veto: any held unit within range vetoes, not only the last unit read.
     {
         CHECK(DpsHoldVetoIndex({true, false}, {5.0f, 5.0f}, 10.0f) == 0);    // first held and in range
