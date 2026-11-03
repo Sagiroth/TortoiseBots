@@ -10589,7 +10589,16 @@
     const entry = cmdFightsCache[bind.commander];
     const list = entry && Array.isArray(entry.list) ? entry.list.filter(f => f && !f.live) : [];
     if (!list.length) return '<p class="empty-hint">No fight yet: the first pull shows here.</p>';
-    const fight = list[0];
+    const row = list[0];
+    const sel = row && row.key;
+    // Like the debugger's rail, only the picked fight's detail is fetched;
+    // the summary alone has no per-bot numbers to tabulate.
+    const det = sel && card && card._raidDetails ? card._raidDetails[sel] : null;
+    const fight = det && det.fight ? det.fight : null;
+    if (!fight) {
+      raidDetailFetch(card, bind, sel);
+      return '<p class="empty-hint">Loading the fight…</p>';
+    }
     const mode = card && card.dataset ? (card.dataset.raidTotals === 'run' ? 'run' : 'fight') : 'fight';
     let tables = FightDebug.roleTables(fight, bind.layout || null), title = '', chips = '';
     const secs = Math.max(1, (Number(fight.dur_ms) || 0) / 1000);
@@ -10601,7 +10610,7 @@
       title = fdTotalTitleHtml(totals, card._raidTotals.session, !!card._raidTotals.more);
       chips = fdTotalChipsHtml(totals);
     } else {
-      title = (fight.boss_name || fight.label || 'trash') + ' · ' + secs.toFixed(1) + ' s';
+      title = (fight.boss_name || row.boss_name || row.label || 'trash') + ' · ' + secs.toFixed(1) + ' s';
       chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
         + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`;
     }
@@ -10609,6 +10618,28 @@
     return fdTotalsSegHtml(mode)
       + `<p class="fd-title">${esc(title)}</p><div class="fd-chips">${chips}</div>`
       + three[0] + three[1] + three[2];
+  }
+
+  // The picked fight's detail for the inline role tables: one fetch per
+  // fight key until it answers, like the debugger's detail row.
+  function raidDetailFetch(card, bind, sel) {
+    if (!card || !bind || !sel) return;
+    if (!card._raidDetails) card._raidDetails = {};
+    const have = card._raidDetails[sel];
+    if (have && (have.fight || have.failed)) return;
+    if (have && have.pending) return;
+    card._raidDetails[sel] = { pending: true };
+    fetch('/api/v1/combat/fight/' + encodeURIComponent(sel), { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(res => {
+        if (res && res.fight) card._raidDetails[sel] = { fight: res.fight };
+        else card._raidDetails[sel] = { failed: true };
+      }).catch(() => {
+        card._raidDetails[sel] = { failed: true };
+      }).then(() => {
+        const roles = card.querySelector('.raid-roles');
+        if (roles) setHtml(roles, raidRolesHtml(card, bind));
+      });
   }
 
   // The run totals row under the role tables (#22): the run's sums from the
@@ -10634,8 +10665,19 @@
   // debugger exactly; with the detail key off the card names the key.
   function raidInlineSync(card, bind) {
     if (!card || !bind) return;
+    // The fights list moved on: drop the picked detail and the totals of
+    // the run before it so the tables follow the newest finished fight.
+    const entry = cmdFightsCache[bind.commander];
+    const head = entry && Array.isArray(entry.list)
+      ? (entry.list.filter(f => f && !f.live)[0] || {}).key || ''
+      : '';
+    if (card._raidHead !== undefined && card._raidHead !== head) {
+      card._raidDetails = {};
+      card._raidTotals = null;
+      card._raidTotalsFetch = false;
+    }
+    card._raidHead = head;
     const roles = card.querySelector('.raid-roles');
-    if (roles) setHtml(roles, raidRolesHtml(card, bind));
     const totals = card.querySelector('.raid-totals');
     if (totals) setHtml(totals, raidTotalsLineHtml(card));
     raidReadyPaint(card, bind);
