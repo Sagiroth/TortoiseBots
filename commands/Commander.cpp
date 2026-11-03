@@ -11979,6 +11979,15 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     std::string const order = slot.playerLed.on
         ? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)
         : TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+    // The linked_death state changes of this tick (hold, release armed, released, reset): one bot_events.csv row each,
+    // from the lead bot, the same gate as the boss tactics rows. The queue is taken every tick, logged or not.
+    if (std::vector<TortoiseBots::DungeonRun::Run::LinkedEvent> const linkedEvents =
+            TortoiseBots::DungeonRun::TakeLinkedEvents(slot.run);
+        !linkedEvents.empty() && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        if (Player* linkedLead = FindCharacter(binding->leadGuid))
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(linkedLead))
+                for (TortoiseBots::DungeonRun::Run::LinkedEvent const& event : linkedEvents)
+                    sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedDeath", event.kind, event.detail);
     // The lead bot says what the run needs on /s (a door's key, a skipped leg's item), once per event.
     if (std::string const say = TortoiseBots::DungeonRun::TakeSay(slot.run); !say.empty())
         if (Player* sayLead = FindCharacter(binding->leadGuid))

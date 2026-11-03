@@ -233,8 +233,10 @@ std::mutex g_holdKillLogMutex;
 std::unordered_map<uint64, uint32> g_holdKillLog;
 
 // The linked_death release latch per group and map instance: map, instance, anchor, group id. Its state is the group's
-// (a heal or a raise must not re-hold it for one bot while another still burns). Its members are tracked by guid and
-// only an explicit death of a known one latches it; every known member confirmed dead clears it (LinkedDeathLatchTick).
+// (a heal or a raise must not re-hold it for one bot while another still burns). Its members are tracked by guid with
+// the latest observation from any bot; only an explicit death of a known one latches it, every known member confirmed
+// dead clears it, and an evade resets it once every known member's latest observation is idle at full health whichever
+// bot saw it (LinkedDeathLatchTick).
 std::mutex g_linkedDeathLatchMutex;
 std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint8_t>, LinkedDeathLatch>
     g_linkedDeathLatches;
@@ -451,6 +453,9 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
         groupScan.anchor = group.bossEntry;
         groupScan.param = group.param;
         groupScan.order = group.burnOrder;
+        // The time this scan is taken, before its reads and before the lock: every sighting it makes is stamped with it
+        // (LinkedDeathLatchTick), so the order in which bots reach the lock does not decide which observation is newer.
+        const std::uint32_t scanMs = WorldTimer::getMSTime();
         for (std::uint32_t entry : group.entries)
         {
             for (const SoleCandidate& candidate : SoleKillCandidates(ai, entry))
@@ -478,7 +483,8 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
                                                                       groupScan.anchor, groupScan.groupId)];
         // A known guid not seen fighting is looked up too: found dead (or a corpse) it is a death; found alive it is an
         // idle sighting, read only while no member fights (the encounter-end check: an evade has every one back at full
-        // health and out of combat). Never registered as a new member.
+        // health and out of combat). The reset compares the latest sighting of every known member from any bot, so two
+        // observers that each see only part of the idle group still reset it. Never registered as a new member.
         std::vector<std::uint64_t> deadNow;
         std::vector<LinkedMember> idle;
         for (std::uint64_t guid : LinkedDeathUnseen(latch, groupScan.members))
@@ -499,7 +505,7 @@ BossLinkedDeathScan ai::ScanBossLinkedDeath(PlayerbotAI* ai, Player* bot)
             idle.push_back(member);
         }
         groupScan.latched = LinkedDeathLatchTick(latch, groupScan.param, groupScan.members, deadNow,
-                                                 WorldTimer::getMSTime(), idle);
+                                                 WorldTimer::getMSTime(), scanMs, idle);
         if (!scan.active || groupScan.members.size() > scan.members.size())
             scan = groupScan;
     }
