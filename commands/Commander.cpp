@@ -8512,6 +8512,15 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
             f.leadHasAttacker = true;
         }
+        // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
+        // in melee reach above is only EngageTarget's pick).
+        std::unordered_set<uint64> seenLead;
+        for (Unit* attacker : lead->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
+                !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
+                f.leadAttackers.push_back(
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers

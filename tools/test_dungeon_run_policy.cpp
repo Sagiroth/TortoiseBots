@@ -30814,6 +30814,75 @@ static void TestAutoCcJoinerInTheFight()
     CHECK(r.ccSent.count(901) == 0);                  // never the tank's
 }
 
+// The fight's pull counts the mobs on the lead bot too: eight on the tank and one joiner is a pull of nine, and the
+// joiner is marked (the mutation that leaves the lead bot's attackers out of the count reads one and sends nothing).
+// A guid in two lists is one mob (adding the lists up would cross the threshold alone), and the lead bot's held mobs
+// count as held, never as more unheld bodies.
+static void TestAutoCcCountsTheLeadBotsAttackers()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.partyAttackers = {AutoHumanoid(900, 20)}; // the joiner, free
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 9 over 6") != std::string::npos);
+    }
+    {
+        // Five on the tank, one of them twice, and a joiner: six mobs, not over the threshold.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 104; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(104, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.ccSent.empty());
+    }
+    {
+        // Six on the tank, one of them twice, and a joiner: seven mobs, the joiner marked.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(100, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+    {
+        // One mob the tank's mark holds is a held body: seven unheld fighters, the joiner among them.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.leadAttackers.push_back({106, true}); // held by a run cc
+        f.partyAttackers = {AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+}
+
 static void TestAutoCcReappliesTwiceThenStops()
 {
     DungeonPlan plan = CcPlan({});
@@ -30981,6 +31050,7 @@ int main()
     TestAutoCcRefusedOrderIsNoHold();
     TestAutoCcLevelGap();
     TestAutoCcJoinerInTheFight();
+    TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcReappliesTwiceThenStops();
     TestAutoCcBudget();
     TestAutoCcKeyOffIsToday();

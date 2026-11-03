@@ -1341,6 +1341,14 @@ struct PullReadIn
     bool airborneSameFloor = false;
 };
 
+// One of the lead bot's attackers, as the automatic cc's fight threshold counts it: by guid (the union with the
+// party's and the walk's attackers counts a mob once) and held now (a run cc's aura on it).
+struct LeadAttackerFact
+{
+    std::uint64_t guid = 0;
+    bool held = false;
+};
+
 // What the glue reads once a tick for the run's current step.
 struct Facts
 {
@@ -1649,6 +1657,10 @@ struct Facts
     // evading and hitting set. leadHasAttacker is false when no mob is on the lead bot.
     UnitFact leadAttacker;
     bool leadHasAttacker = false;
+    // The living, not friendly mobs with the lead bot as their victim when it guards the party (GuardRead::Lead), each
+    // once: the nearest in melee reach is leadAttacker above (EngageTarget's pick); the automatic cc's fight threshold
+    // counts all of them with the party's attackers (RunAutoCcFightTick), a held one only as held.
+    std::vector<LeadAttackerFact> leadAttackers;
     // In a raid's boss fight (RaidBossRulesFight) only: the entries of the living mobs with the lead bot as their
     // victim (LeadHoldsPlanBoss: the main tank holding a plan boss is never sent off it).
     std::vector<std::uint32_t> leadHeldEntries;
@@ -8928,10 +8940,12 @@ inline const UnitFact* PickCc(const Run& r, const Facts& f, std::uint64_t pullGu
     return PickCcOrder(r, f, pullGuid).unit;
 }
 
-// Facts::autoCc, in a fight: the living hostiles engaged with the party that
-// no run cc holds now; while more than the row's threshold of them fight, one
-// auto cc order a tick (kRunCcFightGapMs after the last one) on the best of
-// them (RunAutoCcBetter, RunCcBotFor). Returns true when it sent one.
+// Facts::autoCc, in a fight: the living hostiles engaged with the party, the
+// lead bot's own attackers included, that no run cc holds now; while more than
+// the row's threshold of them fight, one auto cc order a tick (kRunCcFightGapMs
+// after the last one) on the best of them (RunAutoCcBetter, RunCcBotFor). The
+// lead bot's are never candidates (its tank holds them), only counted. Returns
+// true when it sent one.
 inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
 {
     static_cast<void>(dt); // the spacing clock is RunCcReapplyTick's (it runs first)
@@ -8948,16 +8962,28 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     }
     if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs)
         return false;
+    // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
+    // union is by guid so a guid reaching the count from two lists still counts once).
     std::uint32_t engaged = 0, held = 0;
+    std::unordered_set<std::uint64_t> engagedGuids;
+    auto const countEngaged = [&](std::uint64_t guid, bool polymorphed)
+    {
+        if (!engagedGuids.insert(guid).second)
+            return;
+        ++engaged;
+        if (polymorphed)
+            ++held;
+    };
     for (const std::vector<UnitFact>* const list : {&f.partyAttackers, &f.raid.walkAttackers})
         for (const UnitFact& u : *list)
         {
             if (!u.guid || !u.hostile || !u.attackable || u.evading)
                 continue;
-            ++engaged;
-            if (u.polymorphed)
-                ++held;
+            countEngaged(u.guid, u.polymorphed);
         }
+    for (const LeadAttackerFact& u : f.leadAttackers)
+        if (u.guid)
+            countEngaged(u.guid, u.held);
     std::uint32_t const threshold = RunAutoCcThreshold(s, f);
     if (engaged <= held || engaged - held <= threshold)
         return false;
