@@ -797,7 +797,11 @@ public:
     bool IsJumping() { return jumpTime; }
     void SetFallAfterJump() { fallAfterJump = true; }
     void SetJumpTime(uint32 time) { jumpTime = time; }
-    bool CanMove();
+    // ignoreReturnHold: the body's own state only (facing an attacker is no move).
+    bool CanMove(bool ignoreReturnHold = false);
+    // A dungeon run is bringing this bot back (or it was revived far from the run): it stands still
+    // (ai::ReturnHoldPolicy, the run leader's mark "return hold until ms").
+    bool ReturnHeld();
     void StopMoving();
     // Before a cast on a game object (Opening, Mining, Herb Gathering): a bot
     // still moving - by its movement flags or by a server spline its flags do

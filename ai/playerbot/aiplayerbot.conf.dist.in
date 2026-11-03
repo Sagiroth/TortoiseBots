@@ -796,7 +796,7 @@ AiPlayerbot.GenerateItemCaches = 1
 # AiPlayerbot.BoostFollow = 0
 
 # Dungeon follow: hold before a pack (audit fix 127).
-# Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
+# Inside a dungeon or raid, with the bot out of combat (the leader may be fighting), a bot whose leader is more
 # than 30 yd ahead walks the route to the leader itself and stops just outside
 # the aggro range of the first unpulled hostile creature on that route, instead
 # of walking past or through it. It whispers its master once per pack ("pack in
@@ -1014,6 +1014,30 @@ AiPlayerbot.DungeonRunRetreatAt2Dead = 0
 # 1 - on (Default)
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunWalkBackRescue = 1
+
+# The run leader's teleport return. A party bot the run brings back from farther
+# than this many yards from the lead bot (revived far away, left behind after the
+# lead bot's rescue teleport, wedged on another floor, or a summon the portal
+# dropped because the bot was fighting) has its combat dropped and is teleported
+# to the lead bot at once, in a fight or not, instead of the 3 s summon portal or
+# a walk back through the packs. If the lead bot stands in the reach of a pack
+# not pulled yet, the bot lands beside it outside that reach. Three tries 5 s
+# apart, then the run's note names the bot. Parties with no real player only.
+# 0 - off (the shipped default): the summon portal, and a walk back when it fails, as before
+# Recommended 120.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.RunTeleportReturnYd = 0
+
+# The run leader's hold for bots waiting to be brought back. A run's bot revived
+# in a dungeon farther than this many yards from the lead bot (any revive: the
+# run's, a player's, a GameMaster's, with the run paused too) stands still for up
+# to 60 s for a summon or teleport, and so does every bot the run is summoning
+# or teleporting back, until it is within 10 yd of where it is brought: no
+# follow, no walking, no chasing; it fights back only from where it stands.
+# 0 - off (the shipped default)
+# Recommended 100.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonReviveHoldYd = 0
 
 # The run leader's fight forward. After a won fight, the next pack within 30 yd
 # of the tank is pulled from where the tank stands instead of walking the plan's

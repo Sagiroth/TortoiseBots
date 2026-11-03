@@ -45,9 +45,12 @@ int main()
     CHECK(!UseDungeonFollowHold(false, true, false, false, 80.0f)); // option off (default)
     CHECK(!UseDungeonFollowHold(true, false, false, false, 80.0f)); // open world
     CHECK(!UseDungeonFollowHold(true, true, true, false, 80.0f));   // bot fighting
-    CHECK(!UseDungeonFollowHold(true, true, false, true, 80.0f));   // leader fighting: go help
+    // Leader fighting: the hold still stands before the packs on the way (a bot walking to a fight 300 yd off pulls
+    // every pack between, ZG walk 29); the pack the leader fights is in combat, never a hold pack.
+    CHECK(UseDungeonFollowHold(true, true, false, true, 80.0f));
+    CHECK(UseDungeonFollowHold(true, true, false, true, 27.0f, true));
     CHECK(!UseDungeonFollowHold(true, true, false, false, 30.0f));  // leader close: core follow
-    std::cout << "  [PASS] gate: dungeon, out of combat, leader far ahead, option on\n";
+    std::cout << "  [PASS] gate: dungeon, bot out of combat, leader far ahead, option on\n";
 
     // Hysteresis: on beyond 30 yd, stays on until the leader is within 25 yd.
     CHECK(kDungeonFollowHoldReleaseDistanceYd == 25.0f);

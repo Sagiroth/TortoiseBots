@@ -58,6 +58,7 @@
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
+#include "../ai/playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "GossipOrderPolicy.h"
 #include "RemoteCommanderTasks.h"
 #include "RaidLayoutPolicy.h"
@@ -1162,6 +1163,10 @@ struct MemberFact
     // instance id than the lead bot's); the glue gives it kOtherMapYd. A summon cannot reach it there (a same-map
     // teleport stays in its copy): InstanceRejoinTick moves it. Unread: false.
     bool otherCopy = false;
+    // How many of its summons the summon portal dropped since the server started (the bot was in combat, dead,
+    // teleporting or flying when the portal went: PlayerConvenience::SummonCancels). A rise is a failed summon
+    // (UpdateSummonOutcomes), whoever queued it. Unread: 0.
+    std::uint32_t summonCancels = 0;
 };
 
 // An instance door: where an area trigger into the plan's map puts a player
@@ -1366,6 +1371,18 @@ struct Facts
     // AiPlayerbot.DungeonRunWalkBackRescue (default 1): a stuck walk back, and a placed run's lead bot revived behind
     // its start step, are teleported to a safe point (WalkBackStuckRescue, PlacedRunRescue). Off: the old pause.
     bool walkBackRescue = true;
+    // AiPlayerbot.RunTeleportReturnYd (default 0: off; recommended 120): a member the run brings back from farther than this is
+    // teleported to the lead bot with its combat dropped (FarReturnTick, the glue's RunFetchReturn), never summoned
+    // with the portal and never left to walk. Bot-only parties only.
+    float teleportReturnYd = 0.0f;
+    // AiPlayerbot.DungeonReviveHoldYd (default 0: off; recommended 100): a member the run brings back stands still until it
+    // arrives (Run::returnHold, ai::ReturnHoldPolicy); the glue also holds a bot revived farther than this.
+    float reviveHoldYd = 0.0f;
+    // The teleport return's read of the lead bot's ground (Run::fetchReadWanted): the unpulled hostiles around it
+    // with their aggro reach, and points around it on its floor in its sight, nearest first (FetchPoint).
+    bool fetchRead = false;
+    std::vector<StandPackReach> fetchReach;
+    std::vector<ai::ApproachPoint> fetchSpots;
     // AiPlayerbot.DungeonRunFightForward (default 1): FightForwardTick may leave the moves to a close pack out.
     bool fightForward = true;
     // AiPlayerbot.DungeonRunLightRest (default 1): the light rest lines before a small pull (LightRestAhead). Off:
@@ -2061,6 +2078,34 @@ struct Run
     // gather ceiling; one that fails (refused, or not there in
     // kReviveSummonWaitMs) leaves the list and walks back.
     std::unordered_map<std::string, std::uint32_t> reviveSummons;
+    // Teleport returns (FarReturnTick, AiPlayerbot.RunTeleportReturnYd): each bot queued or sent, its tries
+    // (kFetchTries, kFetchRetryMs apart), the run clock of the last one and the point it went to; the bots whose
+    // tries are spent (until they die again); this tick's key and whether it applies (a bot-only party); and the
+    // glue's read of the lead bot's ground, asked for while any is pending (Facts::fetchRead).
+    struct FetchState
+    {
+        std::uint32_t tries = 0;
+        std::uint64_t lastMs = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+    };
+    std::map<std::string, FetchState> fetch;
+    std::set<std::string> fetchGaveUp;
+    bool fetchOn = false;
+    bool fetchReadWanted = false;
+    // Summons the portal dropped (UpdateSummonOutcomes): each bot's count as last seen, and this tick's new ones.
+    std::unordered_map<std::string, std::uint32_t> summonCancelSeen;
+    std::set<std::string> summonCancelled;
+    // The members the run is bringing back, who stand still until they arrive (AiPlayerbot.DungeonReviveHoldYd;
+    // the glue stamps the bots, ai::ReturnHoldPolicy): the time held, and the point they come to when it is not
+    // the lead bot (a teleport return's). kReturnHoldMs at most.
+    struct ReturnHold
+    {
+        std::uint32_t ms = 0;
+        bool pointKnown = false;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+    };
+    std::map<std::string, ReturnHold> returnHold;
+    bool holdOn = false;
     std::uint32_t regroupGatherCapMs = kRegroupGatherMs; // the regroup's gather ceiling (RegroupGatherCap)
     // Each living bot's stand-still watch (UpdateStill, every tick): where it
     // stood when it last moved kStillYd, and how long it has stayed there.
@@ -2329,7 +2374,9 @@ struct Run
     bool strandOn = false;
     std::uint32_t strandMs = 0;
     bool strandSummon = false;
-    std::set<std::string> strandSummoned;
+    std::map<std::string, std::uint32_t> strandSummoned; // a summon out, not arrived yet: the time since it went
+    std::set<std::string> strandArrived;                  // ... and arrived (kReturnArriveYd of the lead bot)
+    std::map<std::string, std::uint32_t> strandSummonTries;
     std::uint32_t strandSummonMs = 0; // how long the summons waited for a bot left behind in a fight
     std::size_t strandCountStep = static_cast<std::size_t>(-1);
     std::uint32_t strandTries = 0;
@@ -2948,6 +2995,9 @@ inline void Pause(Run& r, const std::string& why)
     r.playerHoldBackMs = 0;
     r.doorPaused = false; // PauseDoor sets it after
     ClearRunBack(r); // a paused run leaves every bot to its own AI
+    r.returnHold.clear(); // ... the glue's revive hold still covers a bot revived far meanwhile
+    r.fetch.clear();
+    r.fetchReadWanted = false;
     r.hold.clear();
     r.heldSummons.clear();
     r.holdDue = false;
@@ -3183,6 +3233,8 @@ inline void ResetStep(Run& r)
     r.strandMs = 0;
     r.strandSummon = false;
     r.strandSummoned.clear();
+    r.strandArrived.clear();
+    r.strandSummonTries.clear();
     r.strandSummonMs = 0;
     r.escapeFromMove = false;
     r.resendIdx = static_cast<std::size_t>(-1);
@@ -3889,6 +3941,102 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
 
 inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (used from RunawaySummon), defined by the fight progress
 
+// The teleport return (AiPlayerbot.RunTeleportReturnYd): a member the run brings back from far away comes by a
+// teleport that drops its combat first (the glue's RunFetchReturn), since the summon portal is cancelled by any
+// combat and a bot left to walk back pulls every pack on the way. kFetchTries tries kFetchRetryMs apart, then a note.
+constexpr std::uint32_t kFetchTries = 3;
+constexpr std::uint32_t kFetchRetryMs = 5000;
+constexpr float kFetchClearMarginYd = 3.0f;      // a return point stands this far outside every unpulled unit's reach
+constexpr std::uint32_t kStrandSummonTries = 3;  // the stranded lead bot's summons per bot left behind
+
+// Bot-only parties only: a real player would see his party mates teleport.
+inline bool TeleportReturnOn(const Facts& f)
+{
+    return f.teleportReturnYd > 0.0f && f.players.empty();
+}
+
+inline const MemberFact* MemberNamed(const Facts& f, const std::string& name)
+{
+    for (const MemberFact& m : f.members)
+        if (m.name == name)
+            return &m;
+    return nullptr;
+}
+
+// Far enough for the teleport return, and on the lead bot's map in its copy (the other cases have their own).
+inline bool FetchFar(const Run& r, const Facts& f, const MemberFact& m)
+{
+    return r.fetchOn && m.yd > f.teleportReturnYd && !m.offPlanMap && !m.otherCopy;
+}
+
+// The run is bringing `name` back: it stands still until it arrives (Run::returnHold).
+inline void HoldForReturn(Run& r, const std::string& name)
+{
+    if (r.holdOn && !name.empty())
+        r.returnHold.emplace(name, Run::ReturnHold());
+}
+
+// Queues a teleport return of `name` (FarReturnTick sends it). False: the key is off, a player is in the party, or
+// its tries are spent.
+inline bool QueueFetch(Run& r, const std::string& name)
+{
+    if (!r.fetchOn || name.empty() || r.fetchGaveUp.count(name))
+        return false;
+    r.fetch.emplace(name, Run::FetchState());
+    HoldForReturn(r, name);
+    return true;
+}
+
+// The summons the portal dropped this tick: a member's cancel count rose since the last tick (MemberFact::
+// summonCancels). The first sight of a bot only learns its count.
+inline void UpdateSummonOutcomes(Run& r, const Facts& f)
+{
+    r.summonCancelled.clear();
+    for (const MemberFact& m : f.members)
+    {
+        auto const seen = r.summonCancelSeen.find(m.name);
+        if (seen == r.summonCancelSeen.end())
+        {
+            r.summonCancelSeen.emplace(m.name, m.summonCancels);
+            continue;
+        }
+        if (m.summonCancels > seen->second)
+            r.summonCancelled.insert(m.name);
+        seen->second = m.summonCancels;
+    }
+}
+
+// Outside every unpulled unit's aggro reach (with kFetchClearMarginYd).
+inline bool FetchPointClear(float x, float y, float z, const std::vector<StandPackReach>& reach)
+{
+    for (const StandPackReach& unit : reach)
+        if (ai::PlanDistance(x, y, z, unit.x, unit.y, unit.z) < unit.reachYd + kFetchClearMarginYd)
+            return false;
+    return true;
+}
+
+// Where a teleport return puts the bot: the lead bot's own spot, unless it stands in the reach of a pack not pulled
+// yet (Jin'do, ZG walk 29 run d: the whole raid was summoned onto the live pull and wiped there); then the nearest
+// of the glue's points around it that is outside every such reach. -1: the lead bot's spot; else the index in
+// Facts::fetchSpots. `clear` false: no point is outside the reach, the lead bot's spot it is.
+inline int FetchPoint(const Facts& f, ai::ApproachPoint& point, bool& clear)
+{
+    point.x = f.leadX;
+    point.y = f.leadY;
+    point.z = f.leadZ;
+    clear = true;
+    if (FetchPointClear(f.leadX, f.leadY, f.leadZ, f.fetchReach))
+        return -1;
+    for (std::size_t i = 0; i < f.fetchSpots.size(); ++i)
+        if (FetchPointClear(f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z, f.fetchReach))
+        {
+            point = f.fetchSpots[i];
+            return static_cast<int>(i);
+        }
+    clear = false;
+    return -1;
+}
+
 constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
 constexpr std::uint32_t kWedgedSummonsPerStep = 2;  // per step, all bots together (like kRunawaySummonsPerStep)
 // Made actual combat progress this recently (MemberFact::actedMs): a spell cast started or finished, a swing, a
@@ -3993,10 +4141,11 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
     std::uint32_t pickStillMs = 0;
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || m.name == f.carrier)
+        if (m.name.empty() || m.name == f.carrier || r.fetch.count(m.name))
             continue;
-        if (m.inCombat || m.attackers > 0)
-            continue; // never one in a fight or with something on it (cmd summon refuses it too)
+        bool const fetchable = FetchFar(r, f, m) && !r.fetchGaveUp.count(m.name);
+        if ((m.inCombat || m.attackers > 0) && !fetchable)
+            continue; // never one in a fight or with something on it (cmd summon refuses it too), unless teleported
         auto const still = r.still.find(m.name);
         std::uint32_t const stillMs = still == r.still.end() ? 0 : still->second.ms;
         if (!WedgedOnOtherFloor(m, stillMs))
@@ -4015,13 +4164,18 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
     }
     if (!pick)
         return false;
-    order = "summon " + pick->name;
-    MarkSummoned(r, pick->name);
+    bool const fetched = FetchFar(r, f, *pick) && QueueFetch(r, pick->name);
+    if (!fetched)
+    {
+        order = "summon " + pick->name;
+        MarkSummoned(r, pick->name);
+        HoldForReturn(r, pick->name);
+    }
     ++r.wedgedSummons;
     r.wedgedLastMs = r.runMs;
     r.note = pick->name + " is wedged " + Num(std::fabs(pick->dz)) + " yd " +
         (pick->dz < 0.0f ? "below" : "above") + " the lead bot (" + Num(pick->yd) + " yd, still " +
-        std::to_string(pickStillMs / 1000) + " s): summoned";
+        std::to_string(pickStillMs / 1000) + " s): " + (fetched ? "teleported back" : "summoned");
     return true;
 }
 
@@ -4235,6 +4389,12 @@ inline void ReviveSummonFailed(Run& r, const std::string& name, const std::strin
     r.reviveSummons.erase(name);
     if (r.regroupGatherSent)
         r.RestartRegroupClock();
+    if (QueueFetch(r, name))
+    {
+        r.note = "regroup: the summon of " + name + " " + why + ": it is teleported back instead";
+        return;
+    }
+    r.returnHold.erase(name);
     r.note = "regroup: the summon of " + name + " " + why + ": it walks back";
 }
 
@@ -4248,9 +4408,15 @@ inline void UpdateReviveSummons(Run& r, const Facts& f, std::uint32_t dt)
         r.summoned.erase(name); // one summon per bot per revive
         r.reviveSummons.erase(name);
     }
-    std::vector<std::string> failed;
+    std::vector<std::string> failed, cancelled;
     for (auto it = r.reviveSummons.begin(); it != r.reviveSummons.end();)
     {
+        if (r.summonCancelled.count(it->first))
+        {
+            cancelled.push_back(it->first);
+            ++it;
+            continue;
+        }
         const MemberFact* m = nullptr;
         for (const MemberFact& x : f.members)
             if (x.name == it->first)
@@ -4267,6 +4433,8 @@ inline void UpdateReviveSummons(Run& r, const Facts& f, std::uint32_t dt)
     }
     for (const std::string& name : failed)
         ReviveSummonFailed(r, name, "did not bring it in " + std::to_string(kReviveSummonWaitMs / 1000) + " s");
+    for (const std::string& name : cancelled)
+        ReviveSummonFailed(r, name, "was cancelled by the portal (a fight)");
 }
 
 // The owner's fix of 2026-10-17 (Uldaman run 3, kReviveSummonWaitMs): a
@@ -4284,7 +4452,9 @@ inline bool SummonRevived(Run& r, const Facts& f, std::string& order)
     const MemberFact* pick = nullptr;
     for (const MemberFact& m : f.members)
     {
+        // A bot past the teleport return's reach is FarReturnTick's, in a fight or not.
         if (m.name.empty() || m.name == f.carrier || !r.waitFor.count(m.name) || r.summoned.count(m.name) ||
+            r.fetch.count(m.name) || (FetchFar(r, f, m) && !r.fetchGaveUp.count(m.name)) ||
             m.inCombat || m.attackers || (m.yd <= kSummonYd && m.dz <= kStragglerDzYd))
             continue;
         if (!pick || m.yd > pick->yd)
@@ -4293,6 +4463,7 @@ inline bool SummonRevived(Run& r, const Facts& f, std::string& order)
     if (!pick)
         return false;
     MarkSummoned(r, pick->name);
+    HoldForReturn(r, pick->name);
     r.reviveSummons[pick->name] = 0;
     order = "summon " + pick->name;
     r.note = "regroup: " + pick->name + " is alive again " + Num(pick->yd) +
@@ -6909,6 +7080,12 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
             DropFocus(r);
         r.note = order + " refused: " + answer + ": the focus is picked again (that unit left out " +
             std::to_string(kFocusRefusedIgnoreMs / 1000) + " s)";
+        return;
+    }
+    // A teleport return (FarReturnTick): never a pause; the bots not back go again after kFetchRetryMs.
+    if (order.compare(0, 6, "fetch ") == 0)
+    {
+        r.note = order + " refused: " + answer + ": tried again in " + std::to_string(kFetchRetryMs / 1000) + " s";
         return;
     }
     // The return of a bot outside the instance (OffMapReturnTick): never a pause; the next one after its 30 s.
@@ -10708,43 +10885,80 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     {
         // A bot left behind that fights (in combat, or with attackers) is only
         // waited for: it is summoned on the first tick it is free, for at most
-        // kStrandSummonWaitMs, then the run pauses naming it.
+        // kStrandSummonWaitMs, then the run pauses naming it. A summon counts as
+        // done only once the bot stands within kReturnArriveYd of the lead bot: one
+        // the portal dropped, or not there in kReviveSummonWaitMs, goes out again
+        // (kStrandSummonTries a bot). One farther than the teleport return's reach
+        // is teleported instead (FarReturnTick), in a fight or not.
         const MemberFact* busy = nullptr;
+        const MemberFact* pending = nullptr;
         for (const MemberFact& m : f.members)
         {
-            if (m.name.empty() || m.name == f.carrier || r.strandSummoned.count(m.name))
+            if (m.name.empty() || m.name == f.carrier || r.strandArrived.count(m.name))
                 continue;
+            bool const close = std::fabs(m.dz) <= kStragglerDzYd && m.yd <= ai::kReturnArriveYd;
+            auto const sent = r.strandSummoned.find(m.name);
+            if (sent != r.strandSummoned.end())
+            {
+                if (close)
+                {
+                    r.strandSummoned.erase(sent);
+                    r.strandArrived.insert(m.name);
+                    continue;
+                }
+                sent->second += dt;
+                bool const failed = r.summonCancelled.count(m.name) || sent->second >= kReviveSummonWaitMs;
+                if (!failed || r.strandSummonTries[m.name] >= kStrandSummonTries)
+                {
+                    if (!pending)
+                        pending = &m;
+                    continue;
+                }
+                r.strandSummoned.erase(sent); // dropped or not there: summoned again below
+            }
             if (std::fabs(m.dz) <= kStragglerDzYd && m.yd <= kGatherYd)
                 continue;
+            if (r.fetch.count(m.name) || (FetchFar(r, f, m) && QueueFetch(r, m.name)))
+            {
+                if (!pending)
+                    pending = &m;
+                continue;
+            }
+            HoldForReturn(r, m.name);
             if (m.inCombat || m.attackers > 0)
             {
                 if (!busy)
                     busy = &m;
                 continue;
             }
-            r.strandSummoned.insert(m.name);
+            r.strandSummoned[m.name] = 0;
+            ++r.strandSummonTries[m.name];
             MarkSummoned(r, m.name);
             order = "summon " + m.name;
             r.note = "the lead bot was teleported to " + target + ": " + m.name + " was left behind (" + Num(m.yd) +
                 " yd from it): summoned";
             return true;
         }
-        if (!busy)
+        if (!busy && !pending)
         {
             r.strandSummon = false;
             r.strandSummonMs = 0;
             return false;
         }
         r.strandSummonMs += dt;
+        const MemberFact* const late = busy ? busy : pending;
         if (r.strandSummonMs >= kStrandSummonWaitMs)
         {
-            Pause(r, "the lead bot was teleported to " + target + ", but " + busy->name + " stayed in a fight " +
-                Num(busy->yd) + " yd from it at " + Num(busy->x) + " " + Num(busy->y) + " " + Num(busy->z) + " for " +
+            Pause(r, "the lead bot was teleported to " + target + ", but " + late->name +
+                (busy ? " stayed in a fight " : " did not arrive, ") +
+                Num(late->yd) + " yd from it at " + Num(late->x) + " " + Num(late->y) + " " + Num(late->z) + " for " +
                 std::to_string(kStrandSummonWaitMs / 1000) + " s: bring it to the lead bot, then .bot run resume");
             return true;
         }
-        r.note = "the lead bot was teleported to " + target + ": waiting for " + busy->name + " (left behind, " +
-            Num(busy->yd) + " yd from it) to leave its fight before summoning it";
+        r.note = busy ? "the lead bot was teleported to " + target + ": waiting for " + busy->name + " (left behind, " +
+                Num(busy->yd) + " yd from it) to leave its fight before summoning it"
+                      : "the lead bot was teleported to " + target + ": waiting for " + pending->name + " (" +
+                Num(pending->yd) + " yd from it) to arrive";
         return true;
     }
     if (!r.strandDue)
@@ -15736,8 +15950,8 @@ inline bool RunBack(Run& r, const Facts& f, std::uint32_t dt)
         if (f.leadInCombat)
             break;
         if (m.name.empty() || m.name == f.carrier || !m.attackers || m.yd <= kGatherYd || m.yd > kRunBackMaxYd ||
-            r.runBackDone.count(m.name) || r.combatDrop.count(m.name) ||
-            std::find(r.runBack.begin(), r.runBack.end(), m.name) != r.runBack.end())
+            r.runBackDone.count(m.name) || r.combatDrop.count(m.name) || r.returnHold.count(m.name) ||
+            r.fetch.count(m.name) || std::find(r.runBack.begin(), r.runBack.end(), m.name) != r.runBack.end())
             continue;
         r.runBack.push_back(m.name);
         Run::RunBackState st;
@@ -15757,6 +15971,153 @@ inline bool RunBack(Run& r, const Facts& f, std::uint32_t dt)
     }
     r.note = note;
     return true;
+}
+
+// One second of the members the run brings back (lead decisions 1 and 3, ZG walk 29: 57 bots revived 300-650 yd
+// from the raid died walking back through packs a placed walk never cleared, and the summons that should have saved
+// them were skipped for a fight or silently dropped by the portal).
+// - The return holds (Run::returnHold): one within ai::kReturnArriveYd of its point (the lead bot, or a teleport
+//   return's point) is released; one held ai::kReturnHoldMs is released with a note.
+// - The teleport returns (AiPlayerbot.RunTeleportReturnYd, bot-only parties): a fallen bot (Run::waitFor) alive
+//   again farther than the key, in a fight or not, and any member whose summon the portal dropped this tick, are
+//   queued; the queue goes out as one `fetch x y z <names>` (the glue drops each bot's combat and teleports it) to
+//   the point FetchPoint picks from the glue's read. A bot not within ai::kReturnArriveYd of the point
+//   kFetchRetryMs later is sent again; after kFetchTries the run notes it by name. Not toward a dead lead bot or
+//   one in another part, not while the lead bot's own stranded teleport is due or under way, not with a plan boss
+//   engaged.
+// True when the tick ends here: an order went out, or a give-up note must reach the commander.
+inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    std::string gaveUp;
+    auto addNote = [&gaveUp](const std::string& piece)
+    {
+        gaveUp += (gaveUp.empty() ? "" : "; ") + piece;
+    };
+    for (auto it = r.returnHold.begin(); it != r.returnHold.end();)
+    {
+        const MemberFact* m = MemberNamed(f, it->first);
+        if (!m)
+        {
+            it = r.returnHold.erase(it); // dead (or gone): a new revive is a new case
+            continue;
+        }
+        Run::ReturnHold& hold = it->second;
+        bool const arrived = (m->yd <= ai::kReturnArriveYd && m->dz <= kStragglerDzYd) ||
+            (hold.pointKnown && ai::PlanDistance(m->x, m->y, m->z, hold.x, hold.y, hold.z) <= ai::kReturnArriveYd);
+        if (arrived)
+        {
+            it = r.returnHold.erase(it);
+            continue;
+        }
+        hold.ms += dt;
+        if (hold.ms >= ai::kReturnHoldMs)
+        {
+            addNote(it->first + " waited " + std::to_string(ai::kReturnHoldMs / 1000) + " s " + Num(m->yd) +
+                " yd from the lead bot for its summon or teleport: released");
+            it = r.returnHold.erase(it);
+            continue;
+        }
+        ++it;
+    }
+    for (const std::string& name : f.deadNames)
+    {
+        r.fetch.erase(name);
+        r.fetchGaveUp.erase(name);
+    }
+    if (!r.fetchOn)
+    {
+        r.fetch.clear();
+        r.fetchReadWanted = false;
+    }
+    else
+    {
+        bool const canSend = f.leadAlive && !LeadInOtherPart(r, f) && !r.strandDue && !r.strandOn &&
+            !EngagedPlanBoss(r, f);
+        if (canSend)
+            for (const MemberFact& m : f.members)
+            {
+                if (m.name.empty() || m.name == f.carrier)
+                    continue;
+                // A bot the party holds where the lead bot fell has its own summons (Run::hold, heldSummons).
+                bool const revivedFar = r.waitFor.count(m.name) && FetchFar(r, f, m) &&
+                    std::find(r.hold.begin(), r.hold.end(), m.name) == r.hold.end();
+                bool const dropped = r.summonCancelled.count(m.name) && !m.offPlanMap && !m.otherCopy &&
+                    (m.yd > kGatherYd || m.dz > kStragglerDzYd);
+                if (revivedFar || dropped)
+                    QueueFetch(r, m.name);
+            }
+        std::vector<std::string> due;
+        for (auto it = r.fetch.begin(); it != r.fetch.end();)
+        {
+            const MemberFact* m = MemberNamed(f, it->first);
+            if (!m)
+            {
+                it = r.fetch.erase(it);
+                continue;
+            }
+            Run::FetchState& st = it->second;
+            bool const arrived = (m->yd <= ai::kReturnArriveYd && m->dz <= kStragglerDzYd) ||
+                (st.tries > 0 && ai::PlanDistance(m->x, m->y, m->z, st.x, st.y, st.z) <= ai::kReturnArriveYd);
+            if (arrived)
+            {
+                it = r.fetch.erase(it);
+                continue;
+            }
+            bool const again = st.tries == 0 || r.runMs >= st.lastMs + kFetchRetryMs;
+            if (again && st.tries >= kFetchTries)
+            {
+                r.fetchGaveUp.insert(it->first);
+                addNote(it->first + " is still " + Num(m->yd) + " yd from the lead bot after " +
+                    std::to_string(kFetchTries) + " teleport returns in " +
+                    std::to_string(kFetchTries * kFetchRetryMs / 1000) + " s: bring it to the lead bot");
+                it = r.fetch.erase(it);
+                continue;
+            }
+            if (again && canSend)
+                due.push_back(it->first);
+            ++it;
+        }
+        r.fetchReadWanted = !r.fetch.empty();
+        if (gaveUp.empty() && !due.empty() && f.fetchRead)
+        {
+            ai::ApproachPoint point;
+            bool clear = true;
+            int const at = FetchPoint(f, point, clear);
+            order = "fetch " + Num(point.x) + " " + Num(point.y) + " " + Num(point.z);
+            std::string names;
+            for (const std::string& name : due)
+            {
+                Run::FetchState& st = r.fetch[name];
+                ++st.tries;
+                st.lastMs = r.runMs;
+                st.x = point.x;
+                st.y = point.y;
+                st.z = point.z;
+                auto const hold = r.returnHold.find(name);
+                if (hold != r.returnHold.end())
+                {
+                    hold->second.pointKnown = true;
+                    hold->second.x = point.x;
+                    hold->second.y = point.y;
+                    hold->second.z = point.z;
+                }
+                order += " " + name;
+                names += (names.empty() ? "" : ", ") + name + " (try " + std::to_string(st.tries) + " of " +
+                    std::to_string(kFetchTries) + ")";
+            }
+            r.note = "teleporting " + names + " back to the lead bot" +
+                (at >= 0 ? std::string(": beside it, outside the reach of the pack it stands by")
+                         : clear ? std::string()
+                                 : std::string(": no point near it is outside the packs' reach, onto the lead bot"));
+            return true;
+        }
+    }
+    if (!gaveUp.empty())
+    {
+        r.note = gaveUp;
+        return true;
+    }
+    return false;
 }
 
 // The out-of-combat ceiling of a step: kStepIdleCapMs, or a wait's own
@@ -17602,6 +17963,11 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.anchorPathWanted = false;
     UpdateStill(r, f, dt);
     UpdateStraggle(r, f, dt);
+    r.fetchOn = TeleportReturnOn(f);
+    r.holdOn = f.reviveHoldYd > 0.0f;
+    if (!r.holdOn)
+        r.returnHold.clear();
+    UpdateSummonOutcomes(r, f);
     NoteDeadSeen(r, f);
     NoteLeadDeath(r, f);
     NoteLeadPath(r, f);
@@ -17680,6 +18046,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // the fight handling below still runs.
     bool const runBackWait = RunBack(r, f, dt);
     std::string const runBackNote = runBackWait ? r.note : std::string();
+    // A member the run brings back from far away is teleported, in a fight or not (FarReturnTick).
+    if (FarReturnTick(r, f, dt, order))
+        return order;
 
     // After a resume or a skip from a pause: the dead get up, the living
     // gather on the lead bot, then the step goes on.

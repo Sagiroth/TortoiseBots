@@ -310,7 +310,7 @@ bool AttackAction::Attack(Player* requester, Unit* target, float maxDistance, bo
 
         const bool isWaitingForAttack = WaitForAttackStrategy::ShouldWait(ai);
 
-        if (ai->CanMove() && !sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+        if (ai->CanMove(true) && !sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
         {
             sServerFacade.SetFacingTo(bot, target);
         }
