@@ -181,11 +181,23 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertIn("TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,\n"
                       "        clock.spellId, baseSwing, rangedSwing);", progress)
         self.assertIn("bot->GetAttackTimer(BASE_ATTACK)", progress)
-        # A shot that fired is the ranged timer reset above the auto-repeat re-arm shove (exactly 500 ms): the
-        # auto-repeat spell being on is never progress, so a bot with Auto Shot on and no shot stays stale.
-        self.assertIn("bot->GetAttackTimer(RANGED_ATTACK)", progress)
-        self.assertIn("rangedTimer > kRangedShotTimerMs && rangedTimer > clock.rangedTimer", progress)
-        self.assertIn("constexpr std::uint32_t kRangedShotTimerMs = 500;", CODE)
+        # A shot that fired is the module's own shot count (the ledger the core's spell cast hook feeds), never a
+        # snapshot of the ranged attack timer: a 1 Hz read misses shots of a 1.4 to 3 s weapon. The auto-repeat spell
+        # being on is never progress, but with the ledger unarmed a bot with it on is held out of the rescue.
+        self.assertIn("ledger.Count(bot->GetObjectGuid().GetRawValue())", progress)
+        self.assertIn("RangedShotFiredSince(clock.observed, clock.shots, shots)", progress)
+        self.assertIn("RangedShotEvidenceMissing(ledger.Armed(),", progress)
+        self.assertNotIn("RANGED_ATTACK", progress)
+        self.assertNotIn("rangedTimer", progress)
+        self.assertNotIn("kRangedShotTimerMs", CODE)
+        # The ledger is fed by the core's spell cast hook for the auto-repeat spell, registered at module start.
+        adapter = (ROOT / "host" / "RangedShotAdapter.cpp").read_text()
+        self.assertIn("PLAYERHOOK_ON_SPELL_CAST", adapter)
+        self.assertIn("info->IsAutoRepeatRangedSpell()", adapter)
+        self.assertIn("RangedShotLedger::Instance().Record(player->GetObjectGuid().GetRawValue());", adapter)
+        self.assertIn("RangedShotLedger::Instance().Arm();", adapter)
+        self.assertIn("new RangedShotAdapter();", (ROOT / "host" / "Module.cpp").read_text())
+        self.assertIn("host/RangedShotAdapter.cpp", (ROOT / "TortoiseBots.cmake").read_text())
         self.assertNotIn("AutoRepeatSpellId", progress)
         self.assertNotIn("CURRENT_AUTOREPEAT_SPELL", progress)
         self.assertNotIn("GetTargetGuid", progress)

@@ -26,7 +26,7 @@ static void TestSeventySeenBotsKeepTheirClocks()
     std::unordered_map<std::uint64_t, ParticipationClock> clocks;
     for (std::uint64_t guid = 1; guid <= 70; ++guid)
         clocks[guid] = ParticipationClock{0, now};
-    clocks[70].actMs = now; // the wanding bot: a shot fired (the glue set actMs from its ranged timer)
+    clocks[70].actMs = now; // the wanding bot: a shot fired (the glue set actMs from the shot count)
     PruneParticipationClocks(clocks, now);
     CHECK(clocks.size() == 70);
     CHECK(clocks.count(70) == 1 && clocks[70].actMs == now);
@@ -79,10 +79,10 @@ static void TestProgressReadings()
 
 // Auto Shot or a wand on with no shot fired: the auto-repeat flag alone is no progress, so the clock stays stale and
 // the wedged rescue is due for it (MemberParticipates reads actedMs >= kParticipateMs). A shot that fired is the
-// glue's ranged timer reset, and that is progress.
+// shot count moving, and that is progress.
 static void TestAutoRepeatWithNoShotIsNoProgress()
 {
-    // 30 s of ticks with Auto Shot on, the bot out of reach and not shooting: no cast, the ranged timer never reset.
+    // 30 s of ticks with Auto Shot on, the bot out of reach and not shooting: no cast, no shot counted.
     // The clock's actMs stays where it was while seenMs moves on, so the member reads as not participating and the
     // wedged rescue is due for it (kParticipateMs).
     std::uint32_t actMs = 1000;
@@ -95,7 +95,7 @@ static void TestAutoRepeatWithNoShotIsNoProgress()
     }
     CHECK(actMs == 1000);
     CHECK(seenMs - actMs >= 5000);
-    // The first shot that fires (the glue's ranged timer reset) is progress.
+    // The first shot that fires (the shot count moves) is progress.
     CHECK(ParticipationProgress(true, 0, true, 0, false, true));
 }
 

@@ -68,6 +68,7 @@
 #include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/MemberParticipationPolicy.h"
+#include "../runtime/RangedShotLedger.h"
 #include "../host/CreatureForm.h" // ScriptChangedFrom: the entry a script changed a creature away from
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
@@ -7951,7 +7952,7 @@ struct MemberParticipation
     std::uint32_t seenMs = 0;
     std::uint32_t spellId = 0;
     std::uint32_t baseTimer = 0;
-    std::uint32_t rangedTimer = 0;
+    std::uint32_t shots = 0;
     bool observed = false;
 };
 
@@ -7961,33 +7962,53 @@ std::unordered_map<uint64, MemberParticipation>& ParticipationClocks()
     return clocks;
 }
 
-// The ranged timer a fired shot leaves: a shot resets it to the weapon's attack time (Unit::_UpdateAutoRepeatSpell
-// Resets RANGED_ATTACK after the cast), so an increase over the last read is a shot that fired. The auto-repeat
-// re-arm shove is exactly 500 (Unit::_UpdateAutoRepeatSpell sets it when the spell is turned on again), and a bot
-// that cannot shoot re-arms it every time the cast fails: the shove alone is no shot.
-constexpr std::uint32_t kRangedShotTimerMs = 500;
+// Whether the bot has an auto-repeat spell (Auto Shot, a wand's Shoot) on. That alone is never progress; it is only
+// read to hold the bot out of the wedged rescue when no shot evidence exists (MemberProgressed).
+bool AutoRepeatSpellOn(Unit* unit)
+{
+    return unit->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL) != nullptr;
+}
 
 // Whether the bot made actual combat progress since the last read: a spell being cast or channelled now (a cast
 // started, or is still running) that is not cast on the bot itself, a cast that started or finished (the current
-// spell differs), or a melee or ranged swing (the attack timer runs down to the swing and the swing resets it, so an
-// increase means one landed). The auto-repeat spell being on is no progress: it stays on while the bot cannot shoot,
-// and only a shot that fired (the ranged timer reset above kRangedShotTimerMs) counts. A melee swing reset is never
-// under 100 ms: Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a victim out of
-// reach, so that shove alone is no swing. Its selected target and its place on a threat list are never read: holding
-// a target it cannot reach is no progress.
+// spell differs), a melee swing (the attack timer runs down to the swing and the swing resets it, so an increase
+// means one landed), or a ranged shot that fired. A shot is read from the module's authoritative shot count
+// (DungeonRun::RangedShotLedger, recorded by the core's spell cast hook when Auto Shot or a wand's Shoot executes),
+// never from the ranged attack timer: the run reads a bot about once a second and a shot every 1.4 to 3 s can fall
+// between two reads whatever the timer shows, so a bot that keeps firing looked idle. The auto-repeat spell being
+// on is no progress: it stays on while the bot cannot shoot. When the ledger was never armed (no shot can be
+// counted), a bot with an auto-repeat spell on counts as progressing, so the destructive rescue (combat drop +
+// summon) never hits it on missing evidence; the run notes that once. A melee swing reset is never under 100 ms:
+// Unit::DelayAutoAttacks shoves the timer back to exactly 100 on every attempt at a victim out of reach, so that
+// shove alone is no swing. Its selected target and its place on a threat list are never read: holding a target it
+// cannot reach is no progress.
 bool MemberProgressed(Player* bot, MemberParticipation& clock)
 {
     bool const inFight = bot->IsInCombat();
     std::uint32_t const spell = inFight ? ProgressSpellId(bot) : 0;
     std::uint32_t const baseTimer = bot->GetAttackTimer(BASE_ATTACK);
-    std::uint32_t const rangedTimer = bot->GetAttackTimer(RANGED_ATTACK);
+    TortoiseBots::DungeonRun::RangedShotLedger& ledger = TortoiseBots::DungeonRun::RangedShotLedger::Instance();
+    std::uint32_t const shots = ledger.Count(bot->GetObjectGuid().GetRawValue());
     bool const baseSwing = baseTimer > 100 && baseTimer > clock.baseTimer;
-    bool const rangedSwing = rangedTimer > kRangedShotTimerMs && rangedTimer > clock.rangedTimer;
-    bool const progress = TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,
+    bool const rangedSwing = TortoiseBots::DungeonRun::RangedShotFiredSince(clock.observed, clock.shots, shots);
+    bool progress = TortoiseBots::DungeonRun::ParticipationProgress(inFight, spell, clock.observed,
         clock.spellId, baseSwing, rangedSwing);
+    if (inFight && !progress &&
+        TortoiseBots::DungeonRun::RangedShotEvidenceMissing(ledger.Armed(),
+            AutoRepeatSpellOn(bot)))
+    {
+        static bool noted = false;
+        if (!noted)
+        {
+            noted = true;
+            sLog.outBasic("[RUN] the ranged shot ledger is not armed: a bot with auto-repeat on is held out of the "
+                          "wedged rescue (no shot evidence)");
+        }
+        progress = true;
+    }
     clock.spellId = spell;
     clock.baseTimer = baseTimer;
-    clock.rangedTimer = rangedTimer;
+    clock.shots = shots;
     clock.observed = true;
     return progress;
 }
