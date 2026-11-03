@@ -1788,6 +1788,33 @@ int main()
         CHECK(FreezeHoldsAction(false, true));
     }
 
+    // The freeze action's per-tick still: a lost-control state (fear, confuse, knockback) is never touched, so it
+    // never cancels the generator that owns the bot; otherwise the edge stops attack and cast, a generator on top is
+    // dropped, and an unfinished spline is stopped even when the generator is already idle.
+    {
+        // Rising edge: stop the attack and the cast, drop the generator, stop the walk.
+        FreezeStill edge = FreezeStillTick(true, false, true, true);
+        CHECK(edge.attackStop);
+        CHECK(edge.dropGenerator);
+        CHECK(edge.stopSpline);
+        // A later tick with a chase or follow generator on top: dropped, its spline stopped.
+        FreezeStill chase = FreezeStillTick(false, false, false, false);
+        CHECK(!chase.attackStop);
+        CHECK(chase.dropGenerator);
+        CHECK(chase.stopSpline);
+        // The generator is gone yet the spline still walks (a chase's Finalize does not stop it): still stopped.
+        FreezeStill walking = FreezeStillTick(false, false, true, false);
+        CHECK(!walking.attackStop);
+        CHECK(!walking.dropGenerator);
+        CHECK(walking.stopSpline);
+        // Nothing to do.
+        FreezeStill still = FreezeStillTick(false, false, true, true);
+        CHECK(!still.attackStop && !still.dropGenerator && !still.stopSpline);
+        // Fearing, confused or knocked back: the generator that runs it stays, the spline is not cut mid-flight.
+        FreezeStill lost = FreezeStillTick(true, true, false, false);
+        CHECK(!lost.attackStop && !lost.dropGenerator && !lost.stopSpline);
+    }
+
     // The fight scan's cache answers only inside an AI update: an explicit command runs between updates where the
     // tick does not move, so its second scan re-scans instead of reusing the update's (possibly dead) units.
     {

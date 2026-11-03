@@ -24803,6 +24803,135 @@ static void TestRaidHealerGuardPicksByDistanceToTheAdd()
     CHECK(!HealerGuardMarked(r.healerGuardDps[50013], "NearLead"));
 }
 
+// A ranged dps a freeze_on_aura row holds still takes no healer guard order: an `attack` applies no multiplier, so
+// the order would walk the gazed bot out of the aura's 2 yd (Mandokir: Ohgan on a healer). The next free dps takes
+// the add instead, and with the aura gone the nearer dps is picked again.
+static void TestRaidHealerGuardSkipsAFrozenDps()
+{
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        MemberFact frozen = Mem("GazedDps", 24);
+        frozen.ranged = true;
+        frozen.rangedDps = true;
+        frozen.frozen = true;
+        MemberFact free = Mem("FreeDps", 26);
+        free.ranged = true;
+        free.rangedDps = true;
+        f.members = {Mem("Tanky", 0), frozen, free};
+        UnitFact add = Hitter(50021, 11368, 20, true);
+        add.x = 22.0f; // GazedDps 2 yd, FreeDps 4
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50021 FreeDps");
+        CHECK(!HealerGuardMarked(r.healerGuardDps[50021], "GazedDps"));
+        CHECK(HealerGuardMarked(r.healerGuardDps[50021], "FreeDps"));
+    }
+    {
+        // The same facts with no freeze: the nearer dps is the one sent.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        MemberFact near = Mem("GazedDps", 24);
+        near.ranged = true;
+        near.rangedDps = true;
+        MemberFact far = Mem("FreeDps", 26);
+        far.ranged = true;
+        far.rangedDps = true;
+        f.members = {Mem("Tanky", 0), near, far};
+        UnitFact add = Hitter(50021, 11368, 20, true);
+        add.x = 22.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50021 GazedDps");
+    }
+}
+
+// A bot a freeze_on_aura row holds still takes no run order that would move it: no summon, no run back, no loot walk,
+// and the main tank it holds takes no guard pick-up. The next bot takes the order, and the order goes out once the
+// aura is gone.
+static void TestFrozenMembersTakeNoMovingOrder()
+{
+    {
+        // A summon of a straggler: the frozen bot is left where it stands, the farther one is summoned instead.
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 60);
+        frozen.frozen = true;
+        f.members = {Mem("Tanky", 0), frozen, Mem("Far", 50)};
+        // The sample the ceiling compares against: both stood where they are (not on their way in).
+        r.memberYd["Gazed"] = 60.0f;
+        r.memberYd["Far"] = 50.0f;
+        std::string order;
+        CHECK(SummonStraggler(r, f, order));
+        CHECK(order == "summon Far");
+        CHECK(!r.summoned.count("Gazed"));
+        f.members[1].frozen = false;
+        Run again = Start(&plan);
+        again.phase = Phase::Gather;
+        again.memberYd["Gazed"] = 60.0f;
+        again.memberYd["Far"] = 50.0f;
+        std::string order2;
+        CHECK(SummonStraggler(again, f, order2));
+        CHECK(order2 == "summon Gazed"); // the farthest, as before
+    }
+    {
+        // A run back: the frozen bot's attackers are not answered by walking it to the party.
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {6206}), Step(PlanStepKind::Move, 9)};
+        Run r = Start(&plan);
+        r.regroup = true;
+        r.reviveSent = true;
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 35);
+        frozen.attackers = 2;
+        frozen.frozen = true;
+        f.members = {Mem("Tanky", 0), frozen};
+        CHECK(!RunBack(r, f, kTickMs) && r.runBack.empty());
+        f.members[1].frozen = false;
+        CHECK(RunBack(r, f, kTickMs) && r.runBack.size() == 1);
+    }
+    {
+        // The loot turn: a frozen bot is not the one sent to the corpse.
+        DungeonPlan plan;
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 10);
+        frozen.frozen = true;
+        f.members = {frozen, Mem("Looter", 12)};
+        f.lootTurn = "Gazed";
+        CHECK(NextLootBot(r, f) == "Looter");
+        f.members[0].frozen = false;
+        CHECK(NextLootBot(r, f) == "Gazed");
+    }
+    {
+        // The guard's pick-up: a frozen main tank stands still, and takes the mob once its aura is gone.
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4855, 4853})};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.leadIsTank = true;
+        f.leadStaying = true;
+        Tick(r, f);
+        f.units = {Unit(31, 4853, 40)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        MemberFact tank = Mem("Tanky", 0);
+        tank.frozen = true;
+        f.members = {tank, Mem("Healy", 12), Mem("Dps", 20)};
+        f.partyAttackers = {Hitter(41, 7320, 35)};
+        for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs + 4 * kGuardRepeatMs; ms += kTickMs)
+            CHECK(Tick(r, f).empty());
+        f.members[0].frozen = false;
+        std::string order;
+        for (std::uint32_t ms = 0; ms < kGuardWaitMs + 4 * kGuardRepeatMs && order.empty(); ms += kTickMs)
+            order = Tick(r, f);
+        CHECK(order == "attack 41 Tanky");
+    }
+}
+
 // No ranged dps in reach of the add: bots farther than kRaidHealerGuardRangeYd from it are no help (their order is
 // refused beyond sight range, and a covered add blocks the cap), so the off-tank takes it as without the key.
 static void TestRaidHealerGuardIgnoresRangedDpsOutOfReachOfTheAdd()
@@ -32134,6 +32263,8 @@ int main()
     TestDeadLeadOffTanksMustBeInTheFight();
     TestRaidHealerGuardSendsTheNearestRangedDps();
     TestRaidHealerGuardPicksByDistanceToTheAdd();
+    TestRaidHealerGuardSkipsAFrozenDps();
+    TestFrozenMembersTakeNoMovingOrder();
     TestRaidHealerGuardIgnoresRangedDpsOutOfReachOfTheAdd();
     TestRaidHealerGuardRecordsOnlyAnAcceptedOrder();
     TestRaidHealerGuardExpiresAnAssignmentTheBotNeverTakes();

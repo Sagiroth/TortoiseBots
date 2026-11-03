@@ -10659,8 +10659,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // key is on (SyncReturnHolds), so the read waits for that key.
         member.held = f.reviveHoldYd > 0.0f && memberAi && memberAi->ReturnHeld();
         // A bot carrying a freeze_on_aura row's aura is held still by the tactics themselves (every action is
-        // multiplied to 0): no crowd control order either.
-        if (f.autoCc && sPlayerbotAIConfig.dungeonRunAuraTactics)
+        // multiplied to 0), and every run order that would move it skips it (DungeonRun::FrozenMember), an automatic
+        // crowd control included: the order would be applied by ExecuteAction, which no multiplier holds.
+        if (sPlayerbotAIConfig.dungeonRunAuraTactics)
             for (std::uint32_t spell : ai::GetBossTactics().FreezeAuras(bot->GetMapId()))
                 if (bot->HasAura(spell))
                 {

@@ -549,15 +549,21 @@ class FreezeFleeWiring(unittest.TestCase):
         action = body(ACTIONS, "bool BossTacticsFreezeAction::Execute(")
         self.assertIn("FreezeEpisodeTick(ai, bot, aura)", action)
         self.assertIn("FreezeStopDue(ai, bot, aura)", action)
-        for call in ("bot->AttackStop();", "bot->CastStop();", "bot->StopMoving();"):
+        for call in ("bot->AttackStop();", "bot->CastStop();"):
             self.assertIn(call, action)
+        # Fear, confuse and knockback keep their own generator and end on their own.
+        self.assertIn("bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", action)
+        self.assertIn("FreezeStillTick(risingEdge, lostControl,", action)
         # The core's movement generator is idled too: a chase into the boss or a follow left over walks the carrier
-        # past the gaze's 2 yd though every action of the bot is held. On the rising edge and again every tick.
-        self.assertIn("bool const risingEdge = FreezeStopDue(ai, bot, aura)", action)
-        self.assertIn("risingEdge || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE",
-                      action)
-        self.assertIn("bot->GetMotionMaster()->Clear(false, true);", action)
+        # past the gaze's 2 yd though every action of the bot is held. The plain clear, never the one that pops a
+        # fearing or knocked-back bot's own generator.
+        self.assertIn("bot->GetMotionMaster()->Clear();", action)
+        self.assertNotIn("Clear(false, true)", action)
         self.assertIn("bot->GetMotionMaster()->MoveIdle();", action)
+        # A chase's or a follow's Finalize leaves its spline walking: stopped every tick it is not finished.
+        self.assertIn("bool const splineFinalized = bot->movespline->Finalized();", action)
+        self.assertLess(action.index("bot->movespline->Finalized()"), action.index("bot->GetMotionMaster()->Clear();"))
+        self.assertIn("if (still.stopSpline)\n        ai->StopMoving();", action)
         self.assertIn('"BossTacticsFreeze"', ACTIONS)
         self.assertIn('"ms=%u,moved_yd=%.2f"', ACTIONS)
 
@@ -651,7 +657,9 @@ class FreezeFleeWiring(unittest.TestCase):
         self.assertIn("BossTacticsFleeTrigger(ai)", TRIGGER_CONTEXT)
 
     def test_declarations_match_definitions(self):
-        pairs = ((ACTIONS_H, "class BossTacticsFreezeAction", ACTIONS,
+        pairs = ((ACTIONS_H, "class BossTacticsScanScope", ACTIONS,
+                  "ai::BossTacticsScanScope::~BossTacticsScanScope()"),
+                 (ACTIONS_H, "class BossTacticsFreezeAction", ACTIONS,
                   "bool BossTacticsFreezeAction::Execute(Event& event)"),
                  (ACTIONS_H, "class BossTacticsFleeAction", ACTIONS,
                   "bool BossTacticsFleeAction::Execute(Event& event)"),

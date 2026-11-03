@@ -353,6 +353,11 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("member.held = f.reviveHoldYd > 0.0f && memberAi && memberAi->ReturnHeld();", facts)
         self.assertIn("ai::GetBossTactics().FreezeAuras(bot->GetMapId())", facts)
         self.assertIn("member.frozen = true;", facts)
+        # The freeze is filled whenever the tactics key is on, an automatic cc or not: a run order walks a frozen bot
+        # as surely as a mark does.
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunAuraTactics)\n"
+                      "            for (std::uint32_t spell : ai::GetBossTactics().FreezeAuras", facts)
+        self.assertNotIn("if (f.autoCc && sPlayerbotAIConfig.dungeonRunAuraTactics)", facts)
         self.assertIn("f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());", facts)
         self.assertIn("m.held || m.frozen || r.returnHold.count(m.name) || m.yd > kRunCcMaxYd", policy)
         self.assertEqual(policy.count("f.bossTacticNoCc.count(u.entry)"), 2)  # pre-pull and fight picks

@@ -700,6 +700,29 @@ namespace ai
         return !carriesAura || actionIsFreeze;
     }
 
+    // What the freeze action does to its carrier this tick (BossTacticsFreezeAction::Execute). A lost-control state
+    // (fear, confuse, knockback) owns the bot's movement and ends on its own: nothing is touched, and the rising edge
+    // waits until it is over. Otherwise the rising edge stops the attack, the cast and the walk, a movement generator
+    // on top is dropped (Clear then MoveIdle, as the commander's KeepStillDuringAct), and an unfinished spline is
+    // stopped every tick: a chase's or a follow's own Finalize leaves it walking past the gaze's 2 yd.
+    struct FreezeStill
+    {
+        bool attackStop = false;    // the rising edge: stop the attack and the cast
+        bool dropGenerator = false; // drop the movement generator on top and idle
+        bool stopSpline = false;    // the spline is not finished: stop it
+    };
+
+    inline FreezeStill FreezeStillTick(bool risingEdge, bool lostControl, bool generatorIdle, bool splineFinalized)
+    {
+        FreezeStill still;
+        if (lostControl)
+            return still;
+        still.attackStop = risingEdge;
+        still.dropGenerator = risingEdge || !generatorIdle;
+        still.stopSpline = risingEdge || !splineFinalized;
+        return still;
+    }
+
     // Whether the one-slot fight-scan cache may answer this call (BossTacticsActions.cpp): only inside an AI update,
     // whose end closes and clears the slot (BossTacticsScanScope), for the same bot, at the same update tick, on the
     // same tactics table. An explicit command runs between updates on the same world thread where the tick does not

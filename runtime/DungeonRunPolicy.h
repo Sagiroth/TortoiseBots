@@ -1205,7 +1205,8 @@ struct MemberFact
     // The run's return hold or the glue's revive hold (PlayerbotAI::ReturnHeld): the bot stands still for a summon or
     // a teleport return, so it takes no crowd control mark (RunCcBotFor).
     bool held = false;
-    // Carries a freeze_on_aura row's aura (BossTacticsFreezeAction): every action is held, so no crowd control either.
+    // Carries a freeze_on_aura row's aura (BossTacticsFreezeAction): every one of its actions is held, and every run
+    // order that would move it skips it (FrozenMember): no crowd control, no walk, no summon, no attack order.
     bool frozen = false;
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
@@ -1796,6 +1797,19 @@ struct Facts
     std::uint32_t autoCcAbove = 6;
     std::uint64_t leadTargetGuid = 0;
 };
+
+// A member the run may not move: a bot carrying a freeze_on_aura row's aura is held still by the tactics themselves
+// (every one of its actions is multiplied to 0), and a run order walks it anyway (ExecuteAction applies no multiplier),
+// so every pick that names a bot to walk, attack or be summoned skips it.
+inline bool FrozenMember(const Facts& f, const std::string& name)
+{
+    if (name.empty())
+        return false;
+    for (const MemberFact& m : f.members)
+        if (m.name == name)
+            return m.frozen;
+    return false;
+}
 
 // Task A5: declared here (used from the first gate), defined next to PartyDead.
 inline std::uint32_t WipeDead(const Facts& f);
@@ -3984,7 +3998,7 @@ inline bool SummonStraggler(Run& r, const Facts& f, std::string& order, bool sti
     bool pickStill = false;
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || r.summoned.count(m.name))
+        if (m.name.empty() || m.frozen || r.summoned.count(m.name))
             continue;
         // A bot in a fight, or with something on it, is never summoned, far or
         // not: `cmd summon` refuses a bot in combat, and one with attackers
@@ -4102,7 +4116,7 @@ inline void UpdateStraggle(Run& r, const Facts& f, std::uint32_t dt)
     }
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || m.name == f.carrier || !OutOfGather(m) || OnCcWait(r, m.name))
+        if (m.name.empty() || m.name == f.carrier || m.frozen || !OutOfGather(m) || OnCcWait(r, m.name))
             continue;
         Run::Straggle s;
         auto const it = r.straggle.find(m.name);
@@ -4133,7 +4147,7 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
     for (const MemberFact& m : f.members)
     {
         auto const it = r.straggle.find(m.name);
-        if (it == r.straggle.end() || m.inCombat || m.attackers || !OutOfGather(m))
+        if (it == r.straggle.end() || m.inCombat || m.attackers || m.frozen || !OutOfGather(m))
             continue;
         bool const due = (it->second.rung == 0 && it->second.outMs >= kStragglerWalkMs) ||
             (it->second.rung == 1 && it->second.rungMs >= kStragglerSummonMs);
@@ -4330,6 +4344,8 @@ inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string&
     {
         if (m.name.empty())
             continue;
+        if (m.frozen)
+            continue; // held still by a freeze_on_aura row: a summon would move it as surely as a walk
         if (m.inCombat || m.attackers > 0)
             continue; // never one in a fight or with something on it (cmd summon refuses it too)
         if (!m.offPlanMap && m.yd < kRunawayYd)
@@ -4377,7 +4393,7 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
     std::uint32_t pickStillMs = 0;
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || m.name == f.carrier || r.fetch.count(m.name))
+        if (m.name.empty() || m.name == f.carrier || m.frozen || r.fetch.count(m.name))
             continue;
         bool const fetchable = FetchFar(r, f, m) && !r.fetchGaveUp.count(m.name);
         if ((m.inCombat || m.attackers > 0) && !fetchable)
@@ -4429,7 +4445,7 @@ inline bool StragglerLadderPending(Run& r, const Facts& f)
     for (const MemberFact& m : f.members)
     {
         auto const it = r.straggle.find(m.name);
-        if (it == r.straggle.end() || m.inCombat || m.attackers || !OutOfGather(m))
+        if (it == r.straggle.end() || m.inCombat || m.attackers || m.frozen || !OutOfGather(m))
             continue;
         if (it->second.rung < 2 || it->second.rungMs < kStragglerSettleMs)
         {
@@ -4484,7 +4500,7 @@ inline void GatherCeiling(Run& r, const Facts& f, std::string& order, const std:
     }
     const MemberFact* farthest = nullptr;
     for (const MemberFact& m : f.members)
-        if (!m.name.empty() && m.yd > kGatherYd && (!farthest || m.yd > farthest->yd))
+        if (!m.name.empty() && !m.frozen && m.yd > kGatherYd && (!farthest || m.yd > farthest->yd))
             farthest = &m;
     if (direct && !farthest)
         farthest = NotWithLead(f);
@@ -4568,7 +4584,7 @@ inline bool SummonStuckInRegroup(Run& r, const Facts& f, std::string& order)
     const MemberFact* pick = nullptr;
     for (const MemberFact& m : f.members)
     {
-        if (m.name.empty() || m.name == f.carrier || r.summoned.count(m.name) || m.inCombat || m.attackers)
+        if (m.name.empty() || m.name == f.carrier || m.frozen || r.summoned.count(m.name) || m.inCombat || m.attackers)
             continue;
         if (m.yd <= kSummonYd && std::fabs(m.dz) <= kStragglerDzYd)
             continue;
@@ -4692,7 +4708,7 @@ inline bool SummonRevived(Run& r, const Facts& f, std::string& order)
     for (const MemberFact& m : f.members)
     {
         // A bot past the teleport return's reach is FarReturnTick's, in a fight or not.
-        if (m.name.empty() || m.name == f.carrier || !r.waitFor.count(m.name) || r.summoned.count(m.name) ||
+        if (m.name.empty() || m.name == f.carrier || m.frozen || !r.waitFor.count(m.name) || r.summoned.count(m.name) ||
             r.fetch.count(m.name) || (FetchFar(r, f, m) && !r.fetchGaveUp.count(m.name)) ||
             m.inCombat || m.attackers || (m.yd <= kSummonYd && std::fabs(m.dz) <= kStragglerDzYd))
             continue;
@@ -11839,7 +11855,7 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         const MemberFact* pending = nullptr;
         for (const MemberFact& m : f.members)
         {
-            if (m.name.empty() || m.name == f.carrier || r.strandArrived.count(m.name))
+            if (m.name.empty() || m.name == f.carrier || m.frozen || r.strandArrived.count(m.name))
                 continue;
             bool const close = std::fabs(m.dz) <= kStragglerDzYd && m.yd <= ai::kReturnArriveYd;
             auto const sent = r.strandSummoned.find(m.name);
@@ -13976,10 +13992,10 @@ inline std::string NextLootBot(const Run& r, const Facts& f)
     };
     if (!f.lootTurn.empty() && !tried(f.lootTurn))
         for (const MemberFact& m : f.members)
-            if (m.name == f.lootTurn && m.yd < 1000.0f)
+            if (m.name == f.lootTurn && !m.frozen && m.yd < 1000.0f)
                 return f.lootTurn;
     for (const MemberFact& m : f.members)
-        if (!m.name.empty() && !tried(m.name) && m.yd < 1000.0f)
+        if (!m.name.empty() && !m.frozen && !tried(m.name) && m.yd < 1000.0f)
             return m.name;
     return std::string();
 }
@@ -15683,7 +15699,7 @@ inline std::unordered_set<std::string> HealerGuardTaken(const Run& r)
 inline bool HealerGuardDpsFits(const Run& r, const MemberFact& m, const UnitFact& u,
     const std::unordered_set<std::string>& taken)
 {
-    if (!m.rangedDps || m.offPlanMap || m.otherCopy || taken.count(m.name))
+    if (!m.rangedDps || m.offPlanMap || m.otherCopy || m.frozen || taken.count(m.name))
         return false;
     auto const tried = r.healerGuardTried.find(u.guid);
     if (tried != r.healerGuardTried.end() && HealerGuardMarked(tried->second, m.name))
@@ -15954,6 +15970,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     std::vector<const std::string*> free, busy;
     for (const std::string& name : f.raid.bossOffTanksAlive)
     {
+        if (FrozenMember(f, name))
+            continue; // held still by a freeze_on_aura row: it cannot take the add
         bool holds = false, holdsBoss = false;
         for (const UnitFact& u : f.partyAttackers)
             if (!u.victimName.empty() && u.victimName == name)
@@ -16043,7 +16061,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
 inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
-        LeadHoldsPlanBoss(r, f))
+        FrozenMember(f, f.carrier) || LeadHoldsPlanBoss(r, f))
     {
         r.raidBossJoinMs = 0;
         r.raidBossJoinGuid = 0;
@@ -16433,6 +16451,8 @@ inline std::string RefillNote(Run& r)
 // (GuardTarget). Not a pick-up: guardOrders and guardUnitOrders are untouched.
 inline bool RaidAssist(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
+    if (FrozenMember(f, f.carrier))
+        return false;
     const UnitFact* u = RaidAssistTarget(r, f);
     if (!u)
     {
@@ -16472,6 +16492,8 @@ inline bool RaidAssist(Run& r, const Facts& f, std::uint32_t dt, std::string& or
 // untouched.
 inline bool RaidWalkJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
+    if (FrozenMember(f, f.carrier))
+        return false;
     const UnitFact* u = RaidWalkJoinTarget(r, f);
     if (!u)
     {
@@ -16588,6 +16610,8 @@ inline bool RaidSwarmPendingTick(Run& r, const Facts& f, std::uint32_t dt)
 // guardOrders and guardUnitOrders are untouched.
 inline bool RaidSwarmJoin(Run& r, const Facts& f, std::string& order, std::uint32_t dt)
 {
+    if (FrozenMember(f, f.carrier))
+        return false;
     if (RaidSwarmPendingTick(r, f, dt))
         return false;
     if (r.raidSwarmJoined || r.raidSwarmTries >= kRaidSwarmMaxTries)
@@ -16628,6 +16652,10 @@ inline bool RaidSwarmJoin(Run& r, const Facts& f, std::string& order, std::uint3
 // Keepers one after the other). True when `order` holds it.
 inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
+    // A frozen lead bot (the carrier) obeys no order: it stands still until its aura is gone, so the guard sends
+    // none (an off-tank's would still be fine, but the main tank's are the fight's usual pick-ups).
+    if (FrozenMember(f, f.carrier))
+        return false;
     r.guardSinceOrderMs += dt;
     bool const hold = InHoldArea(r, f) != nullptr;
     if (hold && r.eventDown != r.guardEventDown)
@@ -16765,7 +16793,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     std::vector<const std::string*> free;
     if (trashOffTank)
         for (const std::string& name : f.raid.offTanksAlive)
-            if (!trashGuard || !RaidTrashOffTankHolds(f, name))
+            if (!FrozenMember(f, name) && (!trashGuard || !RaidTrashOffTankHolds(f, name)))
                 free.push_back(&name);
     // The last resort's clock: a healer's add no ranged dps took (RaidHealerGuard would have ordered one) and no free
     // off-tank takes waits for the main tank, kRaidHealerGuardLastResortMs from when it became that add. It runs
@@ -17048,8 +17076,9 @@ inline bool RunBack(Run& r, const Facts& f, std::uint32_t dt)
     {
         if (f.leadInCombat)
             break;
-        if (m.name.empty() || m.name == f.carrier || !m.attackers || m.yd <= kGatherYd || m.yd > kRunBackMaxYd ||
-            r.runBackDone.count(m.name) || r.combatDrop.count(m.name) || r.returnHold.count(m.name) ||
+        if (m.name.empty() || m.name == f.carrier || m.frozen || !m.attackers || m.yd <= kGatherYd ||
+            m.yd > kRunBackMaxYd || r.runBackDone.count(m.name) || r.combatDrop.count(m.name) ||
+            r.returnHold.count(m.name) ||
             r.fetch.count(m.name) || std::find(r.runBack.begin(), r.runBack.end(), m.name) != r.runBack.end())
             continue;
         r.runBack.push_back(m.name);
@@ -17500,7 +17529,7 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
         for (const MemberFact& c : f.members)
             if (c.name == *it)
                 m = &c;
-        if (!m || m->offPlanMap || m->name == f.carrier)
+        if (!m || m->offPlanMap || m->name == f.carrier || m->frozen)
             continue;
         auto const mark = r.heldSummons.find(*it);
         if (mark != r.heldSummons.end() && (mark->second.pending || mark->second.refusals >= kHeldSummonTries))
@@ -19963,7 +19992,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // one too (Run::hold); the wait below then sees it through HoldView, which
     // shows the bot being waited for. It stays held until it arrives, so a
     // refused or timed-out summon leaves it held where it was.
-    if (!r.summonDue.empty())
+    if (!r.summonDue.empty() && !FrozenMember(f, r.summonDue))
     {
         order = "summon " + r.summonDue;
         r.summonWait = r.summonDue;

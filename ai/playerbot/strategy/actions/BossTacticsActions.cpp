@@ -1303,23 +1303,29 @@ bool BossTacticsFreezeAction::Execute(Event& event)
     if (!aura)
         return false;
     FreezeEpisodeTick(ai, bot, aura);
-    // Once on the rising edge: the multiplier keeps every other action down, so repeating these each tick would only
-    // re-break a cast the bot cannot start anyway.
-    bool const risingEdge = FreezeStopDue(ai, bot, aura);
-    if (risingEdge)
+    // Fear, confuse and knockback run their own movement generator and end on their own: the carrier is stood still
+    // once they are over, never cut out of them.
+    bool const lostControl = bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
+    // Attack and cast once on the rising edge: the multiplier keeps every other action down, so repeating them each
+    // tick would only re-break a cast the bot cannot start anyway.
+    bool const risingEdge = !lostControl && FreezeStopDue(ai, bot, aura);
+    // Read before the clear: a chase's or a follow's Finalize drops the generator and leaves its spline walking, so
+    // only this test tells the carrier is still being carried forward.
+    bool const splineFinalized = bot->movespline->Finalized();
+    const FreezeStill still = FreezeStillTick(risingEdge, lostControl,
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE, splineFinalized);
+    if (still.attackStop)
     {
         bot->AttackStop();
         bot->CastStop();
-        bot->StopMoving();
     }
-    // StopMoving only sends a stop spline and the multiplier holds the bot's own actions, not the core's movement
-    // generator: a chase into the boss or a follow left over walks the carrier past the gaze's 2 yd. Idle it on the
-    // aura's rising edge and again every tick one is up, so no generator can start in between.
-    if (risingEdge || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    if (still.dropGenerator)
     {
-        bot->GetMotionMaster()->Clear(false, true);
+        bot->GetMotionMaster()->Clear();
         bot->GetMotionMaster()->MoveIdle();
     }
+    if (still.stopSpline)
+        ai->StopMoving();
     return true;
 }
 
