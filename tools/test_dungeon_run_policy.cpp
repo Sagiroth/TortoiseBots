@@ -12409,6 +12409,22 @@ static void TestTheRescueNeverPicksALiquidPoint()
     CHECK(FetchPoint(g, point, clear) == 1 && clear && point.x == -460.0f);
     g.fetchSpots = {wet}; // only wet spots: no teleport (the member holds)
     CHECK(FetchPoint(g, point, clear) == -1 && !clear);
+    // A teleport return's fallback anchor is no member swimming either.
+    Facts returned = f;
+    returned.leadInCombat = true; // the lead bot's own spot is out of the question
+    MemberFact swimmer = Mem("Swimmer", 50.0f);
+    swimmer.x = -420.0f;
+    swimmer.y = 80.0f;
+    swimmer.z = -172.9f;
+    returned.members.push_back(swimmer);
+    std::string why;
+    CHECK(!FarReturnPoint(returned, {}, point, why));
+    MemberFact dryMember = swimmer;
+    dryMember.name = "Dry";
+    dryMember.x = -460.0f;
+    dryMember.y = 50.0f;
+    returned.members = {returned.members[0], dryMember};
+    CHECK(FarReturnPoint(returned, {}, point, why) && point.x == -460.0f);
     // The stranded rescue refuses the wet plan point and steps back to the earlier dry one.
     Run s = Start(&plan, 2);
     NoteCheckpoint(s, 0);
@@ -32326,9 +32342,11 @@ static void TestCcOnlyFightIsBrokenOneAtATime()
     CHECK(r.ccBreakGuid == 0x107);
     CHECK(Tick(r, f).empty()); // still held: the next waits for this one
     CHECK(f.ccHeld.size() == 8);
-    // The party is on it: the hold is about to break, still no second order.
+    // The party is on it: still no second order, and the break's grace keeps running (a hold that never breaks
+    // under the attack ends in the ceiling's pause, not a stall).
     f.ccHeld[7].partyHits = true;
     CHECK(Tick(r, f).empty());
+    CHECK(r.ccBreakMs >= 2 * kTickMs);
     // It dies (out of the read): the next soonest hold goes.
     f.ccHeld.erase(f.ccHeld.begin() + 7);
     CHECK(Tick(r, f) == "attack 262 Tanky");

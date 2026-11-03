@@ -4418,6 +4418,8 @@ inline bool FarReturnPoint(const Facts& f, const std::vector<std::string>& due, 
             continue;
         if (std::find(due.begin(), due.end(), m.name) != due.end())
             continue; // one of the members being brought back
+        if (PointInLiquid(&f, m.x, m.y, m.z))
+            continue; // a member swimming is no anchor to bring another bot to
         if (!best || m.yd < best->yd)
             best = &m;
     }
@@ -9720,10 +9722,10 @@ inline bool RunCcBreakTick(Run& r, const Facts& f, std::uint32_t dt, std::string
             active = &u;
     if (active)
     {
-        if (active->partyHits)
-            return true; // the break landed: the party is on it, no further order
+        // One at a time: the next goes when this one is gone. The grace runs while the hold stands, whether the
+        // party is already on it or not: a hold that does not break under the attack still ends in the pause.
         r.ccBreakMs += dt;
-        return true; // one at a time: the next goes when this one is gone
+        return true;
     }
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.ccHeld)
