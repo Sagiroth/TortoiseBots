@@ -317,7 +317,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     }
     if (!GuildOrders::IsOrderableItem(proto))
     {
-        OrderError(handler, "bound", "That item cannot go to the guild bank.");
+        OrderError(handler, "bound", "That item is bound when picked up (or a quest or timed item), so the bot cannot hand it over.");
         return true;
     }
 
