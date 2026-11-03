@@ -1724,10 +1724,28 @@ struct Run
     // the note is repeated only when it moves (LinkedDeathNote).
     int linkedNotePct = -1;
     std::string linkedNoteText;
-    // The group's entries seen alive on the last fight read, and each member's first death this fight: its entry and
-    // the fight time (ms). The note names them, so a walk tells a 15 s window from the 7 s one.
-    std::vector<std::uint32_t> linkedAlive;
+    // The group's members seen alive on the last fight read (entry and guid), and each member's first death this fight:
+    // its entry and the fight time (ms). The note names them, so a walk tells a 15 s window from the 7 s one.
+    std::vector<std::pair<std::uint32_t, std::uint64_t>> linkedAlive;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> linkedDeaths;
+    // The linked_death state the run line reports (LinkedStateStep): hold, release armed, released (a member died first
+    // while armed) or reset (evade). The note is sticky: it changes only on a state change, so the TBM:RUN line does
+    // too. Each change queues one row for the glue (TakeLinkedEvents, bot_events.csv BossTacticsLinkedDeath).
+    enum class LinkedState : std::uint8_t
+    {
+        None,
+        Hold,
+        Armed,
+        Released,
+    };
+    struct LinkedEvent
+    {
+        std::string kind;   // hold | armed | released | reset
+        std::string detail; // group, the living members and their highest health, or the death
+    };
+    LinkedState linkedState = LinkedState::None;
+    std::string linkedStateNote;
+    std::vector<LinkedEvent> linkedEvents;
 
     std::uint32_t phaseMs = 0;
     std::uint32_t stepIdleMs = 0;
@@ -3292,6 +3310,9 @@ inline void ResetStep(Run& r)
     r.linkedAlive.clear();
     r.linkedDeaths.clear();
     r.linkedNotePct = -1;
+    r.linkedState = Run::LinkedState::None;
+    r.linkedStateNote.clear();
+    r.linkedEvents.clear();
     r.raidGuardUnits.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
@@ -14642,51 +14663,142 @@ inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t e
 // most 20 times a fight; `death` is set when a member's death was recorded this read, so the run line carries the
 // timing even when the bracket did not move (a walk can then tell a 15 s window from the 7 s one). "" outside a boss
 // step, with no live table, with no row of the kind, with the key off, or with no member engaged.
+// One linked_death state change: the sticky run-line note and one queued bot_events row (kind, detail).
+inline void LinkedStateChange(Run& r, Run::LinkedState to, const char* kind, const std::string& note,
+                              const std::string& detail)
+{
+    r.linkedState = to;
+    r.linkedStateNote = note;
+    r.linkedEvents.push_back(Run::LinkedEvent{kind, detail});
+}
+
+// The linked_death state machine, the run's view of the bot-side latch (ai::LinkedDeathLatchTick), read from the
+// engaged units of one tick. Hold: the group is not released (ai::LinkedDeathReleased is false). Release armed: every
+// living member is at or below the group's percent. Released: a member died while armed and the group is still armed
+// (the death that latches it). Reset (evade): an armed group whose members all left the engaged units, with no release
+// first. Released has no reset here: its last members leaving is the burn finishing, and the run ends the step after it.
+// Only a change does anything: the same state on the next read leaves the note and the queue as they were.
+// `newDeaths` are the guids that died this read, `hadLiving` says whether the last read still had a member engaged.
+inline void LinkedStateStep(Run& r, float param, const std::vector<ai::LinkedMember>& members,
+                            const std::vector<std::uint64_t>& newDeaths, bool hadLiving, std::uint32_t anchor,
+                            std::uint32_t groupId, const std::string& list, std::uint32_t highest)
+{
+    const Run::LinkedState prev = r.linkedState;
+    const std::string group = "group " + std::to_string(anchor) + ":" + std::to_string(groupId);
+    if (members.empty())
+    {
+        // An armed group whose members all left the engaged units (no release came first) has evaded: the reset. A
+        // released group is finishing (its deaths are the burn, not an evade): it keeps its state, quietly. A hold ends
+        // quietly.
+        if (prev == Run::LinkedState::Armed && hadLiving)
+            LinkedStateChange(r, Run::LinkedState::None, "reset", "linked_death reset (evade)", group + " left the fight");
+        else if (prev == Run::LinkedState::Hold)
+            r.linkedState = Run::LinkedState::None;
+        return;
+    }
+    const bool armedNow = ai::LinkedDeathReleased(param, members);
+    Run::LinkedState next = armedNow ? Run::LinkedState::Armed : Run::LinkedState::Hold;
+    if (prev == Run::LinkedState::Released)
+        next = Run::LinkedState::Released;
+    else if (prev == Run::LinkedState::Armed && armedNow && !newDeaths.empty())
+        next = Run::LinkedState::Released;
+    if (next == prev)
+        return;
+    if (next == Run::LinkedState::Hold)
+        LinkedStateChange(r, next, "hold", "linked_death hold: " + list + " at " + std::to_string(highest) + " %",
+                          group + " living " + list + " at " + std::to_string(highest) + " %");
+    else if (next == Run::LinkedState::Armed)
+        LinkedStateChange(r, next, "armed", "linked_death release armed",
+                          group + " living " + list + " at " + std::to_string(highest) + " %");
+    else
+        LinkedStateChange(r, next, "released",
+                          "linked_death released: " + std::to_string(newDeaths.front()) + " died first at " +
+                              std::to_string(r.fightMs / 1000) + " s",
+                          group + " died " + std::to_string(newDeaths.front()) + " at " +
+                              std::to_string(r.fightMs / 1000) + " s");
+}
+
+inline void LinkedStateLeave(Run& r)
+{
+    r.linkedState = Run::LinkedState::None;
+    r.linkedStateNote.clear();
+}
+
 inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& death)
 {
     bracket = -1;
     death = false;
+    r.linkedEvents.clear();
     if (!f.linkedDeath || !r.liveTactics || !r.plan || !Current(r))
+    {
+        LinkedStateLeave(r);
         return std::string();
+    }
     const PlanStep& step = *Current(r);
     if (step.kind != PlanStepKind::Boss || !step.entry)
+    {
+        LinkedStateLeave(r);
         return std::string();
+    }
     const std::vector<ai::BossTacticRow>* rows = r.liveTactics->Rows(r.plan->map, step.entry);
     if (!rows)
+    {
+        LinkedStateLeave(r);
         return std::string();
+    }
     ai::ActiveBossRows active;
     active.reserve(rows->size());
     for (const ai::BossTacticRow& row : *rows)
         active.push_back(&row);
     ai::LinkedDeathGroup group;
     if (!ai::FindLinkedDeathGroup(active, step.entry, group))
+    {
+        LinkedStateLeave(r);
         return std::string();
+    }
     std::string list, order;
     std::uint32_t highest = 0;
-    std::vector<std::uint32_t> living;
+    std::vector<ai::LinkedMember> members;
     for (const UnitFact& u : f.engagedUnits)
     {
         if (std::find(group.entries.begin(), group.entries.end(), u.entry) == group.entries.end())
             continue;
-        living.push_back(u.entry);
         const std::uint32_t hp = u.maxHealth ? static_cast<std::uint32_t>(u.health * 100 / u.maxHealth) : 100;
         highest = std::max(highest, hp);
+        ai::LinkedMember member;
+        member.guid = u.guid;
+        member.entry = u.entry;
+        member.hpPct = static_cast<int>(hp);
+        members.push_back(member);
         if (!list.empty())
             list += "/";
         list += std::to_string(u.entry);
     }
     // A member of the group that was engaged on the last read and is not now died: its first death time, in fight
-    // seconds. A raise puts it back in the list; its first death stays the one the window is read from.
-    for (std::uint32_t entry : r.linkedAlive)
-        if (std::find(living.begin(), living.end(), entry) == living.end() &&
-            std::none_of(r.linkedDeaths.begin(), r.linkedDeaths.end(),
-                [entry](const std::pair<std::uint32_t, std::uint32_t>& had) { return had.first == entry; }))
+    // seconds. A raise puts it back in the list; its first death stays the one the window is read from. Only a read
+    // with a living member counts deaths: an empty read is the whole group leaving the fight (an evade or the end), and
+    // the engaged units cannot tell those apart from the deaths, so it records none.
+    const bool hadLiving = !r.linkedAlive.empty();
+    std::vector<std::uint64_t> newDeaths;
+    if (!members.empty())
+        for (const std::pair<std::uint32_t, std::uint64_t>& was : r.linkedAlive)
         {
-            r.linkedDeaths.push_back(std::make_pair(entry, r.fightMs));
-            death = true;
+            const std::uint32_t entry = was.first;
+            if (std::find_if(members.begin(), members.end(),
+                    [entry](const ai::LinkedMember& m) { return m.entry == entry; }) == members.end() &&
+                std::none_of(r.linkedDeaths.begin(), r.linkedDeaths.end(),
+                    [entry](const std::pair<std::uint32_t, std::uint32_t>& had) { return had.first == entry; }))
+            {
+                r.linkedDeaths.push_back(std::make_pair(entry, r.fightMs));
+                newDeaths.push_back(was.second);
+                death = true;
+            }
         }
-    r.linkedAlive = living;
-    if (living.empty())
+    r.linkedAlive.clear();
+    for (const ai::LinkedMember& member : members)
+        r.linkedAlive.push_back(std::make_pair(member.entry, member.guid));
+    LinkedStateStep(r, group.param, members, newDeaths, hadLiving, group.bossEntry, group.groupId, list, highest);
+    if (members.empty())
         return std::string();
     bracket = static_cast<int>(highest / 5);
     for (std::uint32_t entry : group.burnOrder)
@@ -14710,6 +14822,14 @@ inline std::string LinkedDeathNote(Run& r, const Facts& f, int& bracket, bool& d
         text += ")";
     }
     return text;
+}
+
+// The linked_death state changes of this tick, taken once by the glue for bot_events.csv (BossTacticsLinkedDeath).
+inline std::vector<Run::LinkedEvent> TakeLinkedEvents(Run& r)
+{
+    std::vector<Run::LinkedEvent> out;
+    out.swap(r.linkedEvents);
+    return out;
 }
 
 // What the glue's guard read (ReadGuardFacts) reads this fight tick. `raidBoss`: a raid's boss fight under
@@ -18563,6 +18683,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
             r.linkedDeaths.clear();
             r.linkedNotePct = -1;
+            r.linkedState = Run::LinkedState::None;
+            r.linkedStateNote.clear();
+            r.linkedEvents.clear();
             DropHopWaiver(r);
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
@@ -18693,6 +18816,10 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         }
         else
             r.linkedNotePct = -1;
+        // The state note (hold, release armed, released, reset) is sticky: appended on every read, it changes only with
+        // the state, so the run line changes once per state change.
+        if (!r.linkedStateNote.empty())
+            r.note += "; " + r.linkedStateNote;
         if (pastCeiling)
             r.note += "; past the " + std::to_string(cap / 1000) + " s ceiling: " +
                 (progress == FightProgress::Losing
@@ -18774,6 +18901,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.linkedAlive.clear();
         r.linkedDeaths.clear();
         r.linkedNotePct = -1;
+        r.linkedState = Run::LinkedState::None;
+        r.linkedStateNote.clear();
+        r.linkedEvents.clear();
         r.raidGuardUnits.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();

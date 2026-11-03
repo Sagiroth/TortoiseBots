@@ -974,17 +974,52 @@ int main()
         fighting[1].inCombat = true;
         CHECK(!LinkedDeathLatchTick(stillFights, p, nobody, none, 2000, fighting));
         CHECK(stillFights.known.size() == 2);
-        CHECK(!LinkedDeathEncounterEnded(stillFights, nobody, fighting, 2000));
+        CHECK(!LinkedDeathEncounterEnded(stillFights, 2000));
 
         // One visible idle member at full health is no evade while another known member is unresolved and recent (it may
-        // still fight out of view). The reset waits until every known guid is idle at full health in one scan.
+        // still fight out of view). The reset waits until every known guid's latest observation, from any observer, is
+        // idle at full health.
         LinkedDeathLatch partial;
         CHECK(!LinkedDeathLatchTick(partial, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
         CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 2000, { Linked(1, 100, false) }));
         CHECK(partial.known.size() == 2);                                       // 2 unresolved, seen 1 s ago: no reset
-        CHECK(!LinkedDeathEncounterEnded(partial, nobody, { Linked(1, 100, false) }, 2000));
+        CHECK(!LinkedDeathEncounterEnded(partial, 2000));
         CHECK(!LinkedDeathLatchTick(partial, p, nobody, none, 3000, idleFull)); // all known idle at full health: reset
         CHECK(partial.known.empty());
+
+        // Two observers, each seeing only one of the two idle members (their scans do not overlap): the sightings
+        // combine, so the second observer's read resets the encounter even though neither scan saw the whole group.
+        LinkedDeathLatch split;
+        CHECK(!LinkedDeathLatchTick(split, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(split, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(split.known.size() == 2);                                          // 2's latest sighting is the fight
+        CHECK(!LinkedDeathEncounterEnded(split, 2000));
+        CHECK(!LinkedDeathLatchTick(split, p, nobody, none, 2500, { Linked(2, 100, false) }));
+        CHECK(split.known.empty());                                              // 1 and 2 idle across two reads
+
+        // An idle sighting older than kLinkedDeathSeenMs is not fresh enough to end the encounter: the group may have
+        // resumed out of view. The 30 s no-sighting timeout still applies to a member not seen at all.
+        LinkedDeathLatch staleIdle;
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, three, none, 1000));
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 25000, idleFull)); // 3 unseen 24 s: still the fight
+        CHECK(staleIdle.known.size() == 3);
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 31000, nobody));
+        CHECK(staleIdle.known.size() == 3);   // 3 timed out, but 1 and 2's idle sighting is 6 s old: not an evade
+        CHECK(!LinkedDeathLatchTick(staleIdle, p, nobody, none, 31500, idleFull));
+        CHECK(staleIdle.known.empty());        // a fresh idle sighting resets
+
+        // The newest observation wins: after one observer sees 1 idle, another sees 2 still fighting at full health.
+        // 2's fighting sighting overrides any older idle one, so no reset; once 2 is seen out of combat it resets.
+        LinkedDeathLatch fightingWins;
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, { Linked(1, 2), Linked(2, 2) }, none, 1000));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 2000, { Linked(1, 100, false) }));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, { Linked(2, 100) }, none, 2500));  // 2 fights, 1 idle
+        CHECK(fightingWins.known.size() == 2);
+        CHECK(!LinkedDeathEncounterEnded(fightingWins, 2500));
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 3000, { Linked(1, 100, false) }));
+        CHECK(fightingWins.known.size() == 2);                                   // 2 last seen fighting: no reset
+        CHECK(!LinkedDeathLatchTick(fightingWins, p, nobody, none, 3500, idleFull));
+        CHECK(fightingWins.known.empty());                                       // 2 idle again: reset
 
         // An unresolved known member not seen for kLinkedDeathEndMs times out even while another member is idle.
         LinkedDeathLatch timedOut;
@@ -1021,6 +1056,27 @@ int main()
         CHECK(!LinkedDeathLatchTick(failsafe, p, three, none, 1000));
         CHECK(!LinkedDeathLatchTick(failsafe, p, { Linked(2, 2) }, { 1 }, 6600));
         CHECK(!failsafe.latched);
+    }
+
+    // Write order is not observation order: each sighting carries the time its bot's scan was taken. Bot B scans at 2
+    // (guid 1 fighting) and writes at 2; bot A scans at 1 (guids 1 and 2 idle at full health) and writes at 3. A's older
+    // idle sighting of guid 1 must not overwrite B's newer fight, so the encounter does not end; guid 2's sighting is
+    // newer than anything stored and is applied. A later idle sighting (scanned at 4) does end it.
+    {
+        const float p = 3.0f;
+        const std::vector<std::uint64_t> none;
+        const std::vector<LinkedMember> nobody;
+        LinkedDeathLatch order;
+        CHECK(!LinkedDeathLatchTick(order, p, { Linked(1, 2), Linked(2, 2) }, none, 0));
+        std::vector<LinkedMember> fighting = { Linked(1, 100, false) };
+        fighting[0].inCombat = true;
+        CHECK(!LinkedDeathLatchTick(order, p, fighting, none, 2, 2));                  // B: scanned 2, written 2
+        std::vector<LinkedMember> idleOld = { Linked(1, 100, false), Linked(2, 100, false) };
+        CHECK(!LinkedDeathLatchTick(order, p, nobody, none, 3, 1, idleOld));           // A: scanned 1, written 3
+        CHECK(order.known.size() == 2);                                                // no reset: guid 1 still fights
+        CHECK(!LinkedDeathEncounterEnded(order, 3));
+        CHECK(!LinkedDeathLatchTick(order, p, nobody, none, 4, 4, idleOld));           // A's newer idle: encounter over
+        CHECK(order.known.empty());
     }
 
     // The ordered burn at walk 27's numbers: the trio at the 2 % hold is 1 709 + 2 136 + 2 665 hp, so at 2.2-3.0 k
