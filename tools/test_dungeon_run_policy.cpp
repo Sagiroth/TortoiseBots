@@ -15707,16 +15707,18 @@ static void TestPullNoteCarriesTheJoinerCount()
 }
 
 // The pull's joiners (the server half of turtle-agent #369): the pull records its pack by guid (the target and
-// its own creature group, linked mates and crowd control, UnitFact::packGuids), every hostile engaged with the
-// party outside it in the first 10 s is a joiner, and the status note reports
-// "joiners N (entry <entry> x<count>, ...)". A pull step's read lists the units of several packs, so a second
-// pack that joins is a joiner too.
+// its own creature group, linked mates and crowd control, UnitFact::packGuids), and every hostile engaged with the
+// party outside it in the kJoinerWindowMs that start with the first combat tick after the pullback is a joiner.
+// The report goes on the pull's line once, when the window closes: "joiners N (entry <entry> x<count>, ...)",
+// never into later status or pause notes. A pull step's read lists the units of several packs, so a second pack
+// that joins is a joiner too, and a unit already engaged at the pullback is not.
 static void TestPullJoinersReported()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(40, {4852})};
 
-    // The target and its formation partner fight: no joiner, and the line says so.
+    // The target and its formation partner fight: no joiner. The pull's own line carries no count before the
+    // fight: the window starts with it.
     {
         Run r = Start(&plan);
         Facts f = Party(0);
@@ -15724,7 +15726,7 @@ static void TestPullJoinersReported()
         target.packGuids = {33}; // the "aggro together" group the glue read for it (33 is not in the read)
         f.units = {target};
         CHECK(Tick(r, f) == "pullback 31");
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "joiners")); // read over the fight, not at the pullback
         f.anyInCombat = true;
         f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(33, 4852, 6.0f)};
         for (int i = 0; i < 10; ++i)
@@ -15734,7 +15736,10 @@ static void TestPullJoinersReported()
         // A hostile that joins after the 10 s window is no joiner of that pull.
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "6000")); // the window is over: nothing is counted after it
+        // The report rode on the pull's line only: a later pause note does not carry it.
+        Pause(r, "paused for the test");
+        CHECK(StatusParts(r).note == "paused for the test");
     }
 
     // A plain formation (no "aggro together"): the glue reads no pack for the target, so its formation partner
@@ -15768,8 +15773,8 @@ static void TestPullJoinersReported()
         CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         CHECK(!Has(StatusParts(r).note, "6000"));
+        CHECK(!Has(StatusParts(r).note, "joiners 5"));
     }
 
     // An unrelated pack of the residue band joins: a joiner too.
@@ -15803,6 +15808,41 @@ static void TestPullJoinersReported()
             Tick(r, f);
         CHECK(Has(StatusParts(r).note, "joiners 0"));
     }
+
+    // A unit already engaged when the pullback went out fights its own fight: it is no joiner of this pull.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        f.engagedUnits = {Unit(51, 6000, 12.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(51, 6000, 12.0f), Unit(31, 4852, 5.0f), Unit(52, 6001, 9.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 6001 x1)"));
+        CHECK(!Has(StatusParts(r).note, "6000"));
+    }
+}
+
+// The 10 s joiner window starts on the first tick the party is in combat after the pullback, not at the pullback:
+// a target dragged into the fight 15 s later still reports the joiner it drew (the quiet ticks spent none of it).
+static void TestPullJoinerWindowStartsWithTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4852})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(31, 4852, 40.0f)};
+    CHECK(Tick(r, f) == "pullback 31");
+    for (int i = 0; i < 15; ++i)
+        Tick(r, f);
+    CHECK(!Has(StatusParts(r).note, "joiners"));
+    f.anyInCombat = true;
+    f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(41, 5000, 8.0f)};
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(Has(StatusParts(r).note, "joiners 1 (entry 5000 x1)"));
 }
 
 // The glue's read of a stand for the unit the policy asked for (Run::shotStandFor).
@@ -24132,18 +24172,67 @@ static void TestRaidBossMainTankJoinSkipsAnEvadingBoss()
         CHECK(Tick(r, f).empty());
 }
 
+// The join is an `attack`, so it is bounded by the attack range (kRaidWalkJoinYd, the SightDistance bound), not by
+// the boss fight's own 100 yd guard reach: 70 yd is a boss the main tank cannot be sent at (no order, no note).
 static void TestRaidBossMainTankJoinStaysInRange()
 {
     DungeonPlan plan;
     Run r = RaidBossRun(plan);
     Facts f = RaidBossGuardFacts();
     f.leadHeldEntries.clear();
-    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 101);
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 70);
     boss.victimTank = true;
     boss.victimName = "Off";
     f.partyAttackers = {boss};
-    for (int k = 0; k < 8; ++k)
+    for (int k = 0; k < 30; ++k)
+    {
         CHECK(Tick(r, f).empty());
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    // The same boss inside the attack range is joined once its wait is due.
+    boss.distLead = kRaidWalkJoinYd;
+    f.partyAttackers = {boss};
+    std::string join;
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + kTickMs && join.empty(); ms += kTickMs)
+        join = Tick(r, f);
+    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+// The join is only for a plan boss an off-tank holds: a boss on a healer or a dps is the guard's to hand out (and
+// a boss already on the main tank needs no join), so the main tank stays put with no note of its own.
+static void TestRaidBossMainTankJoinOnlyAnOffTanksBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimName = "Healy"; // on a healer: no victimTank
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+    {
+        Tick(r, f);
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    CHECK(r.raidBossJoined.empty());
+    // Two plan-boss entries, the main tank holding one of them: the off-tank's boss is left alone too (the main
+    // tank never leaves a plan boss for another).
+    DungeonPlan two;
+    PlanStep first = Step(PlanStepKind::Boss, 80);
+    first.entry = 10184;
+    PlanStep second = Step(PlanStepKind::Boss, 90);
+    second.entry = 10185;
+    two.steps = {first, second};
+    Run q = Start(&two);
+    Facts g = RaidBossGuardFacts();
+    g.leadHeldEntries = {10184}; // the main tank holds the first plan boss
+    UnitFact other = Hitter(0xF1300027C9000002ull, 10185, 20);
+    other.victimTank = true;
+    other.victimName = "Off";
+    g.partyAttackers = {other};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+        CHECK(Tick(q, g).empty());
+    CHECK(q.raidBossJoined.empty() && q.note.find("takes boss") == std::string::npos);
 }
 
 static void TestRaidBossMainTankJoinNeedsStay()
@@ -24224,10 +24313,17 @@ static void TestRaidBossMainTankJoinLeavesAddsToTheOffTank()
     boss.victimName = "Off";
     f.partyAttackers = {boss, Hitter(45311, 11262, 20, true)};
     CHECK(Tick(r, f) == "attack 45311 Offy");
+    std::string const want = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky";
     std::string join;
-    for (int k = 0; k < 8 && join.empty(); ++k)
-        join = Tick(r, f);
-    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 2 * kTickMs; ms += kTickMs)
+    {
+        if (Tick(r, f) == want)
+        {
+            join = want; // the guard's add orders meanwhile are not the join
+            break;
+        }
+    }
+    CHECK(join == want);
 }
 
 static void TestRaidBossMainTankJoinRestartsAfterTheStayEnds()
@@ -29825,8 +29921,8 @@ static void TestWedgedNeverInAPartyRun()
     CHECK(r.wedgedSummons == 0);
 }
 
-// T8: the step gives two wedged bots its summons, the most wedged first, the second no sooner than
-// kRunawayResummonMs after the first, and the third never comes before the next step.
+// T8: the step gives four wedged bots its summons (the cap), the most wedged first, one no sooner than
+// kRunawayResummonMs after the last, and the fifth never before the next step.
 static void TestWedgedSummonCapAndStepReset()
 {
     DungeonPlan plan;
@@ -29835,16 +29931,15 @@ static void TestWedgedSummonCapAndStepReset()
     Facts f = WedgedFacts(60.0f, -30.0f);
     f.members.push_back(Mem("B", 50.0f, -20.0f));
     f.members.push_back(Mem("C", 40.0f, -10.0f));
-    f.members[2].x = 60.0f;
-    f.members[3].x = 50.0f;
-    f.members[4].x = 40.0f;
-    f.total = 5;
-    f.alive = 5;
+    f.members.push_back(Mem("D", 35.0f, -15.0f));
+    f.members.push_back(Mem("E", 30.0f, -25.0f));
+    f.total = 7;
+    f.alive = 7;
     f.maxMemberYd = 60.0f;
     CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
     std::vector<std::uint64_t> at;
     std::vector<std::string> orders;
-    for (int i = 0; i < 120; ++i)
+    for (int i = 0; i < 150; ++i)
     {
         WalkOn(f);
         std::string const order = Tick(r, f);
@@ -29860,14 +29955,19 @@ static void TestWedgedSummonCapAndStepReset()
                 }
         }
     }
-    CHECK(orders.size() == 2);
+    CHECK(orders.size() == 4); // the step's cap
     CHECK(orders[0] == "summon X"); // the largest |dz| first
-    CHECK(orders[1] == "summon B"); // the farther still out; C never gets one, the step is spent
+    CHECK(orders[1] == "summon E");
+    CHECK(orders[2] == "summon B");
+    CHECK(orders[3] == "summon D"); // C (the smallest |dz|) never gets one, the step is spent
     CHECK(at[0] == kWedgedMs + kTickMs);
     CHECK(at[1] - at[0] == kRunawayResummonMs);
+    CHECK(at[2] - at[1] == kRunawayResummonMs);
+    CHECK(at[3] - at[2] == kRunawayResummonMs);
+    CHECK(r.wedgedSummons == 4);
     NextStep(r, "test");
-    CHECK(r.step == 1 && r.wedgedSummons == 0 && r.wedgedLastMs == 0);
-    // A new step: the waiting third goes before its move (its still clock is long due, the budget is clear).
+    CHECK(r.step == 1 && r.wedgedSummons == 0 && r.wedgedLastMs == 0 && r.wedgedSummoned.empty());
+    // A new step: the waiting fifth goes before its move (its still clock is long due, the budget is clear).
     CHECK(Tick(r, f) == "summon C");
     f.members[4].yd = 3.0f; // C brought to the lead bot
     f.members[4].dz = 0.0f;
@@ -29876,11 +29976,11 @@ static void TestWedgedSummonCapAndStepReset()
 }
 
 // T9: a pause/resume or a wipe recovery restarts the SAME step (ResetStep) and must keep the step's wedged budget:
-// the cap and the 30 s between summons hold across it.
+// one summon a bot, the step's cap and the 30 s between summons all hold across it.
 static void TestWedgedBudgetSurvivesASameStepReset()
 {
     DungeonPlan plan;
-    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    plan.steps = {Step(PlanStepKind::Move, 9000), Step(PlanStepKind::Move, 9000)};
     Run r = Start(&plan);
     Facts f = WedgedFacts(45.0f, 56.0f);
     for (int i = 0; i < 16; ++i)
@@ -29890,9 +29990,8 @@ static void TestWedgedBudgetSurvivesASameStepReset()
     }
     CHECK(r.wedgedSummons == 1);
     ResetStep(r); // a resume of the same step
-    CHECK(r.step == 0 && r.wedgedSummons == 1 && r.wedgedLastMs != 0);
-    f.members[2].yd = 3.0f; // the summon brought X to the lead bot
-    f.members[2].dz = 0.0f;
+    CHECK(r.step == 0 && r.wedgedSummons == 1 && r.wedgedLastMs != 0 && r.wedgedSummoned.count("X") == 1);
+    // X stays where it is (this test never moves it in): one summon a bot means it is not sent for again.
     f.members.push_back(Mem("Y", 45.0f, 56.0f));
     f.members.back().x = 45.0f;
     f.total = 4;
@@ -29902,23 +30001,42 @@ static void TestWedgedBudgetSurvivesASameStepReset()
         WalkOn(f);
         CHECK(Tick(r, f) != "summon Y"); // within 30 s of the first: no second summon
     }
-    for (int i = 0; i < 30; ++i)
+    std::string got;
+    for (int i = 0; i < 30 && got.empty(); ++i)
     {
         WalkOn(f);
-        Tick(r, f);
+        std::string const order = Tick(r, f);
+        if (order.compare(0, 7, "summon ") == 0)
+            got = order;
     }
-    CHECK(r.wedgedSummons == 2);
+    CHECK(got == "summon Y" && r.wedgedSummons == 2); // X was due again: the per-bot record skipped it
+    f.members[3].yd = 3.0f; // Y brought to the lead bot
+    f.members[3].dz = 0.0f;
     ResetStep(r); // a wipe recovery on the same step
     f.members.push_back(Mem("Z", 45.0f, 56.0f));
     f.members.back().x = 45.0f;
     f.total = 5;
     f.alive = 5;
-    for (int i = 0; i < 40; ++i)
+    for (int i = 0; i < 40 && r.wedgedSummons < 3; ++i)
     {
         WalkOn(f);
-        CHECK(Tick(r, f) != "summon Z"); // the cap stays spent
+        Tick(r, f);
     }
-    CHECK(r.wedgedSummons == 2);
+    CHECK(r.wedgedSummons == 3); // 3 of the step's 4: the reset kept the budget, it did not spend the cap
+    f.members[4].yd = 3.0f;
+    f.members[4].dz = 0.0f;
+    f.members.push_back(Mem("W", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.members.push_back(Mem("V", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.total = 7;
+    f.alive = 7;
+    for (int i = 0; i < 150; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.wedgedSummons == 4); // W got the fourth; V never comes: the step's cap stays spent
 }
 
 // T10: a bot off the plan's map, or in another copy of the instance, is never wedged: those have their own paths.
@@ -30040,20 +30158,69 @@ static void TestMemberParticipatesFacts()
     CHECK(!MemberParticipates(m));
 }
 
-// The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table.
+// WedgedOutOfReach: a member that sees the lead bot, or has a complete path to it of at most 2.5 times the
+// straight distance, can get back to it; anything else is out of reach.
+static void TestWedgedOutOfReachTable()
+{
+    MemberFact m = Mem("X", 20.0f, 9.0f);
+    CHECK(WedgedOutOfReach(m));  // no line of sight, no path read: out of reach, as before
+    m.losLead = true;
+    CHECK(!WedgedOutOfReach(m)); // it sees the main tank: idle where it stands, not wedged
+    m.losLead = false;
+    m.pathToLead = true;
+    m.pathLenYd = 50.0f;
+    CHECK(!WedgedOutOfReach(m)); // 50 yd to a bot 20 yd away: the mesh gets there
+    m.pathLenYd = 51.0f;
+    CHECK(WedgedOutOfReach(m)); // over 2.5 x 20: the long way round
+    m.pathLenYd = 50.0f;
+    CHECK(!WedgedOutOfReach(m));
+    m.yd = 0.0f;
+    CHECK(WedgedOutOfReach(m)); // a path of any length off a straight distance of 0 cannot be short
+}
+
+// A healthy idle healer 28 yd from the lead bot and 9 yd above it, in combat, with the tank in its line of sight:
+// it holds its spot (a heal it cannot cast for want of a target, a terrace above the fight). The policy names no
+// drop and no summon: only a member that cannot get back to the raid is rescued.
+static void TestWedgedHealerInSightIsNotDropped()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(28.0f, 9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    MemberFact& healer = f.members[2];
+    healer.inCombat = true;
+    healer.ranged = true;
+    healer.losLead = true;
+    for (int i = 0; i < 40; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        CHECK(r.combatDrops.empty());
+    }
+    CHECK(r.wedgedSummons == 0);
+}
+
+// The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table. The reach facts are the glue's
+// own read (line of sight and a complete path to the lead bot, with its length).
 static void TestWedgedDropRecheckTable()
 {
-    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0, false));
-    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0, false)); // the yd boundary: at 20, not out
-    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0, false));
-    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0, false)); // the dz boundary: at 8, the same floor
-    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0, false));
-    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1, false)); // fighting: never wedged
-    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, true)); // in the fight there: the same participation test
-    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0, false));
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0, false, false, false, 0.0f)); // the yd boundary: at 20, not out
+    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0, false, false, false, 0.0f)); // the dz boundary: at 8
+    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1, false, false, false, 0.0f)); // fighting: never wedged
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, true, false, false, 0.0f)); // in the fight there: participation
+    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, true, false, 0.0f)); // in sight: idle, never wedged
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 52.0f)); // a path at most 2.5 x 21 yd
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 53.0f));  // ... and over it: the long way round
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 0.0f));  // a complete path of length 0
 }
 
 static void TestPartyRulesUnchanged()
@@ -30608,6 +30775,7 @@ int main()
     TestBothKeysOffChangeNothing();
     TestPullNoteCarriesTheJoinerCount();
     TestPullJoinersReported();
+    TestPullJoinerWindowStartsWithTheFight();
     TestPullShootsFromStand();
     TestPullWaitsForStillTank();
     TestPullWalksToStandOutOfRange();
@@ -30913,6 +31081,7 @@ int main()
     TestRaidBossMainTankHoldingTheBossIsNotSent();
     TestRaidBossMainTankJoinSkipsAnEvadingBoss();
     TestRaidBossMainTankJoinStaysInRange();
+    TestRaidBossMainTankJoinOnlyAnOffTanksBoss();
     TestRaidBossMainTankJoinNeedsStay();
     TestRaidBossMainTankJoinKeyOffKeepsRaidGuard();
     TestRaidBossMainTankJoinRearmsAfterTwentySeconds();
@@ -31022,6 +31191,8 @@ int main()
     TestWedgedSelectedTargetIsNoParticipation();
     TestWedgedDamageEveryTwoSecondsKeepsAMember();
     TestMemberParticipatesFacts();
+    TestWedgedOutOfReachTable();
+    TestWedgedHealerInSightIsNotDropped();
     TestWedgedDropRecheckTable();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();

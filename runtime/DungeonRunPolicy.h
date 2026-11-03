@@ -655,7 +655,7 @@ constexpr std::uint32_t kGuardHealerWaitMs = 0;   // ... a mob hitting a healer 
                                                   // took the healer from 73 % to dead in 4 s
 constexpr std::uint32_t kGuardRepeatMs = 2000;    // a further pick-up no sooner than this after the last one
 constexpr std::uint32_t kGuardOrdersPerFight = 3; // pick-up orders one fight may send (per budget: see below)
-constexpr std::uint32_t kRaidAssistWaitMs = 3000; // a main tank on stay with no mob of its own
+constexpr std::uint32_t kRaidAssistWaitMs = 8000; // a main tank on stay with no mob of its own
                                                   // helps on an off-tank's mob after this (the off-tank takes it first)
 // ... and in a raid's walk (#1368): the main tank parks at the walk's end and a pack that breaks out behind it is out of
 // every lift's reach. ZG walk 11 step 6: the tank at -11917,-1442, the hurt mobs 38-52 yd behind it, 25 s with no order.
@@ -1162,6 +1162,13 @@ struct MemberFact
     // instance id than the lead bot's); the glue gives it kOtherMapYd. A summon cannot reach it there (a same-map
     // teleport stays in its copy): InstanceRejoinTick moves it. Unread: false.
     bool otherCopy = false;
+    // The glue's reach read to the lead bot (the main tank), refreshed at most once per 5 s a bot: its line of
+    // sight to it, whether a complete navmesh path to it exists, and that path's length in yd. A member that can
+    // see and walk to the lead bot is only idle, never wedged (WedgedOnOtherFloor). Unread: no line of sight and
+    // no complete path: the other facts decide, as before.
+    bool losLead = false;
+    bool pathToLead = false;
+    float pathLenYd = 0.0f;
 };
 
 // An instance door: where an area trigger into the plan's map puts a player
@@ -1924,14 +1931,19 @@ struct Run
     std::unordered_map<std::uint64_t, std::uint32_t> joinerSeen;
     // The joiners the pull's own pack did not explain: when a pull goes out its
     // pack is recorded by guid (the target and its own group, PullPackOf: the
-    // read's other packs are not pack), and for kJoinerWindowMs every hostile
-    // engaged with the party outside that set counts once (guid -> entry). The
-    // report rides on the status note until the next pull or the step's reset.
+    // read's other packs are not pack), and for kJoinerWindowMs after the first tick the party is in combat every
+    // hostile engaged with the party outside that set counts once (guid -> entry). A unit already engaged when the
+    // pullback went out is no joiner of it. The report goes on the pull's line once, when the window closes, never
+    // into later status or pause notes.
     std::unordered_set<std::uint64_t> joinerPack;
     std::unordered_map<std::uint64_t, std::uint32_t> joinerAdds;
+    std::unordered_set<std::uint64_t> joinerBefore; // engaged with the party when the pullback went out
     std::uint32_t joinerMs = 0;
     bool joinerWindow = false;
     bool joinerTracked = false;
+    bool joinerCombatSeen = false; // the window's clock has started (the first combat tick after the pullback)
+    bool joinerReported = false;   // the pull's line carries its joiner report (once)
+    bool joinerReportDue = false;  // the window closed: the report goes on this tick's note (Tick's end)
     std::uint32_t walkBackPulls = 0; // pulls on the way of the walk back (not counted in `pulls`)
     // Run-wide (kept across steps).
     std::unordered_set<std::uint64_t> unreachable;   // units given up on: never pulled again this run
@@ -2046,6 +2058,9 @@ struct Run
     // cleared with the runaway budget below.
     std::uint32_t wedgedSummons = 0;
     std::uint64_t wedgedLastMs = 0;
+    // The bots this step summoned already (one summon a bot a step, however many times it is wedged): kept with the
+    // budget across a pause/resume or a wipe recovery of the same step.
+    std::unordered_set<std::string> wedgedSummoned;
     // The plan step the wedged budget belongs to: the same rule as the runaway's.
     std::size_t wedgedStep = static_cast<std::size_t>(-1);
     std::unordered_map<std::string, std::uint64_t> deadSeenMs; // the run clock a bot was last seen dead (NoteDeadSeen), the whole run
@@ -2452,6 +2467,10 @@ struct Run
     std::unordered_map<std::string, CombatDropState> combatDrop;
     std::unordered_map<std::string, std::uint64_t> combatDroppedAt;
     std::vector<std::string> combatDrops;
+    // ... and of `combatDrops`, the bots the run named wedged on another floor: the glue's drop re-checks only these
+    // for the wedged shape (the others for the units they are held by), so a bot named for an unattackable unit is
+    // never dropped for looking wedged on the re-read.
+    std::unordered_set<std::string> combatDropWedged;
     // HpHeldTick: per engaged unit (guid) at 1 hp (or 1 % or less) its entry, the hit points it stands at, and how
     // long a party member has had it as its victim since without a change. Cleared out of combat and by ResetStep.
     struct HpWatch
@@ -3106,9 +3125,13 @@ inline void ResetStep(Run& r)
     r.joinerSeen.clear();
     r.joinerPack.clear();
     r.joinerAdds.clear();
+    r.joinerBefore.clear();
     r.joinerMs = 0;
     r.joinerWindow = false;
     r.joinerTracked = false;
+    r.joinerCombatSeen = false;
+    r.joinerReported = false;
+    r.joinerReportDue = false;
     r.walkBackPulls = 0;
     r.gatherOrder.clear();
     r.gatherRefusals = 0;
@@ -3130,6 +3153,7 @@ inline void ResetStep(Run& r)
     {
         r.wedgedSummons = 0;
         r.wedgedLastMs = 0;
+        r.wedgedSummoned.clear();
         r.wedgedStep = r.step;
     }
     r.directRefusedOn = false;
@@ -3890,7 +3914,9 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
 inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (used from RunawaySummon), defined by the fight progress
 
 constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
-constexpr std::uint32_t kWedgedSummonsPerStep = 2;  // per step, all bots together (like kRunawaySummonsPerStep)
+// One summon per bot a step (a bot summoned once is not summoned again on the same step), and kWedgedSummonsPerStep
+// a step all bots together: a raid can have several members on another floor, and each rescue is its own follow.
+constexpr std::uint32_t kWedgedSummonsPerStep = 4;
 // Made actual combat progress this recently (MemberFact::actedMs): a spell cast started or finished, a swing, a
 // heal: the member is in the fight where it stands, whatever the floor under it (MemberParticipates).
 constexpr std::uint32_t kParticipateMs = 5000;
@@ -3906,26 +3932,38 @@ inline bool MemberParticipates(const MemberFact& m)
     return m.actedMs < kParticipateMs;
 }
 
+// A member that cannot get back to the lead bot: no line of sight to the main tank, and no complete navmesh path
+// to it or one more than 2.5 times the straight distance (a terrace above a balcony that the mesh only reaches the
+// long way round). A member that sees or can walk to the lead bot is only idle where it stands: a healthy healer
+// 28 yd away and 9 yd up with the tank in sight is holding its spot, not wedged.
+inline bool WedgedOutOfReach(const MemberFact& m)
+{
+    return !m.losLead && (!m.pathToLead || m.pathLenYd > 2.5f * m.yd);
+}
+
 // A raid member on another floor (fell off a ledge, stands still under or over the raid, follow and reach spell
 // fail) that stayed so kWedgedMs: ZG walks 23-25, Nack/Maevrayah/Elmind wedged below the Jeklik path. True when all
 // hold: named, on the plan's map in this copy (FightMember-style), more than kStragglerDzYd up or down, more than
-// kGatherYd out, nothing on it (attackers fight, never wedged), in no fight there (MemberParticipates), still this
-// long. stillMs is r.still[m.name].ms (UpdateStill, kStillYd 2 yd), not IsStill (its kStillMs is 6 s).
+// kGatherYd out, nothing on it (attackers fight, never wedged), in no fight there (MemberParticipates), out of reach
+// of the lead bot (WedgedOutOfReach), still this long. stillMs is r.still[m.name].ms (UpdateStill, kStillYd 2 yd),
+// not IsStill (its kStillMs is 6 s).
 inline bool WedgedOnOtherFloor(const MemberFact& m, std::uint32_t stillMs)
 {
     return !m.name.empty() && m.yd < 1000.0f && !m.offPlanMap && !m.otherCopy &&
         std::fabs(m.dz) > kStragglerDzYd && m.yd > kGatherYd && m.attackers == 0 && !MemberParticipates(m) &&
-        stillMs >= kWedgedMs;
+        stillMs >= kWedgedMs && WedgedOutOfReach(m);
 }
 
 // The glue's re-check in DropUnattackableCombat before it drops a bot's combat (Commander.cpp): the same shape as
 // the policy's own test, without the still clock (the glue drops what the run named; it re-checks the bot still
 // stands wedged). True when the bot stands more than kGatherYd out, more than kStragglerDzYd up or down, with
-// nothing on it and in no fight there (MemberParticipates, read again by the glue from the bot's own progress
-// clock).
-inline bool WedgedDropRecheck(float yd, float dz, std::uint32_t attackers, bool participates)
+// nothing on it, in no fight there (MemberParticipates, read again by the glue from the bot's own progress clock),
+// and out of reach of the lead bot at the glue's own read (MemberFact::losLead/pathToLead/pathLenYd).
+inline bool WedgedDropRecheck(float yd, float dz, std::uint32_t attackers, bool participates, bool losLead,
+    bool pathToLead, float pathLenYd)
 {
-    return yd > kGatherYd && std::fabs(dz) > kStragglerDzYd && attackers == 0 && !participates;
+    return yd > kGatherYd && std::fabs(dz) > kStragglerDzYd && attackers == 0 && !participates && !losLead &&
+        (!pathToLead || pathLenYd > 2.5f * yd);
 }
 
 // A raid bot left far behind the lead bot with no fight on (a stale follow after a teleport): the gather and the
@@ -4001,6 +4039,8 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
         std::uint32_t const stillMs = still == r.still.end() ? 0 : still->second.ms;
         if (!WedgedOnOtherFloor(m, stillMs))
             continue;
+        if (r.wedgedSummoned.count(m.name))
+            continue; // one summon a bot a step: it was brought (or sent for) already
         if (r.wedgedSummons >= kWedgedSummonsPerStep)
             continue; // the step's summons are spent
         if (r.wedgedSummons > 0 && r.runMs - r.wedgedLastMs < kRunawayResummonMs)
@@ -4017,6 +4057,7 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
         return false;
     order = "summon " + pick->name;
     MarkSummoned(r, pick->name);
+    r.wedgedSummoned.insert(pick->name);
     ++r.wedgedSummons;
     r.wedgedLastMs = r.runMs;
     r.note = pick->name + " is wedged " + Num(std::fabs(pick->dz)) + " yd " +
@@ -4255,7 +4296,7 @@ inline void UpdateReviveSummons(Run& r, const Facts& f, std::uint32_t dt)
         for (const MemberFact& x : f.members)
             if (x.name == it->first)
                 m = &x;
-        if (!m || (m->yd <= kGatherYd && m->dz <= kStragglerDzYd))
+        if (!m || (m->yd <= kGatherYd && std::fabs(m->dz) <= kStragglerDzYd))
         {
             it = r.reviveSummons.erase(it);
             continue;
@@ -9113,9 +9154,16 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // the read is still pack, and the joiners are read against this set.
     r.joinerPack = PullPackOf(r, u, cc);
     r.joinerAdds.clear();
+    // A unit already engaged when the pullback goes out fights its own fight: it is no joiner of this pull.
+    r.joinerBefore.clear();
+    for (const UnitFact& engaged : f.engagedUnits)
+        r.joinerBefore.insert(engaged.guid);
     r.joinerMs = 0;
     r.joinerWindow = true;
     r.joinerTracked = true;
+    r.joinerCombatSeen = false;
+    r.joinerReported = false;
+    r.joinerReportDue = false;
     r.pullHop = hop;
     r.residuePullGuid = 0; // a residue pull marks its unit after this (PackResidueTick)
     r.reachStopped = false;
@@ -14719,14 +14767,16 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
 }
 // ZG walk 24 Jeklik: Orlara on stay 169 s, 9 casts, while Rageshield held her, and RaidGuardTick only hands adds to
 // off-tanks. So in a raid's boss fight under
-// AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at the plan
+// AiPlayerbot.DungeonRunRaidBossRules the lead bot, a living tank on stay holding no plan boss, goes once at a plan
 // boss an off-tank holds (`attack <guid> <carrier>` ends its stay and its own tank AI taunts it back from there),
-// after the off-tank's wait (kRaidAssistWaitMs). The wait is continuous: any break (the lead bot off stay, dead or no
-// tank, holding a plan boss, the rules off, no boss waiting) starts it over. The boss picked keeps the wait while it
-// stays eligible, so a nearer boss swapping places with it does not restart the wait (RaidAssistTarget's pattern).
-// Once per boss guid until kRaidGuardRearmMs after the last one, and only while the lead bot is again staying and
-// holding nothing. Not under fightOrders (like RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when
-// `order` holds it.
+// after the off-tank's wait (kRaidAssistWaitMs). Only a boss an off-tank actually holds counts (the victim is a
+// tank other than the lead bot: a boss on a healer or a pet is the guard's, and one already on the main tank needs
+// no join), and only one within attack range (kRaidWalkJoinYd, the SightDistance bound `attack` refuses past). The
+// wait is continuous: any break (the lead bot off stay, dead or no tank, holding a plan boss, the rules off, no
+// boss waiting) starts it over. The boss picked keeps the wait while it stays eligible, so a nearer boss swapping
+// places with it does not restart the wait (RaidAssistTarget's pattern). Once per boss guid until kRaidGuardRearmMs
+// after the last one, and only while the lead bot is again staying and holding nothing. Not under fightOrders (like
+// RaidGuardTick); guardOrders and guardUnitOrders are untouched. True when `order` holds it.
 inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!RaidBossRulesFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.carrier.empty() ||
@@ -14739,10 +14789,10 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     // A boss joined within kRaidGuardRearmMs is not eligible. The boss already picked (raidBossJoinGuid) stays the pick
     // while it is eligible, so two bosses trading which one is nearer do not restart the wait every tick; only once it
     // is no longer eligible does the nearest one take over (with its own full wait).
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-            u.distLead > kRaidBossGuardYd)
+            u.distLead > kRaidWalkJoinYd || !u.victimTank || u.victimName == f.carrier)
             return false;
         auto const joined = r.raidBossJoined.find(u.guid);
         return joined == r.raidBossJoined.end() || r.fightMs - joined->second >= kRaidGuardRearmMs;
@@ -16612,14 +16662,17 @@ constexpr std::uint32_t kCombatDropRepeatMs = 10000;
 inline std::string CombatDropTick(Run& r, const Facts& f, std::uint32_t dt)
 {
     r.combatDrops.clear();
+    r.combatDropWedged.clear();
     bool const letGo = r.state == State::Running && UnattackableLetGoStep(r);
     bool const farOff = r.state == State::Running && LeadFarFromPlan(r, f);
     // A raid member wedged on another floor (WedgedOnOtherFloor): raids only (a party run keeps its straggler
     // ladder), never on a boss step and never with a plan boss engaged (the summon would drop the bot on the boss),
-    // never paused. ZG walks 23-25: Nack/Maevrayah/Elmind wedged below the Jeklik path while the raid fought on.
+    // never paused, and never with the lead bot dead (the rescue needs a live main tank to summon it to and a
+    // fight that is still the raid's). ZG walks 23-25: Nack/Maevrayah/Elmind wedged below the Jeklik path while
+    // the raid fought on.
     const PlanStep* const step = Current(r);
-    bool const wedgedOn = r.state == State::Running && f.raid.on && step && step->kind != PlanStepKind::Boss &&
-        !EngagedPlanBoss(r, f);
+    bool const wedgedOn = r.state == State::Running && f.raid.on && f.leadAlive && step &&
+        step->kind != PlanStepKind::Boss && !EngagedPlanBoss(r, f);
     if (!letGo && !farOff && !wedgedOn)
     {
         r.combatDrop.clear();
@@ -16668,6 +16721,8 @@ inline std::string CombatDropTick(Run& r, const Facts& f, std::uint32_t dt)
         if (due && spaced)
         {
             r.combatDrops.push_back(m.name);
+            if (wedged)
+                r.combatDropWedged.insert(m.name);
             r.combatDroppedAt[m.name] = r.runMs;
             if (wedged)
                 note += (note.empty() ? "" : "; ") + m.name + " dropped combat: wedged " + Num(std::fabs(m.dz)) +
@@ -17099,6 +17154,7 @@ inline bool RegroupPlayerWait(Run& r, const Facts& f, std::uint32_t dt)
 
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines);
 inline void EndRetreat(Run& r);
+inline std::string JoinerReport(const Run& r);
 
 inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, const RestLines& lines = RestLines())
 {
@@ -17183,6 +17239,17 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
             EngagedUnitsNote(in) + "): not counted as a fight";
     if (!dropNote.empty())
         r.note += (r.note.empty() ? "" : "; ") + dropNote;
+    // The pull's joiners, measured over its window: one line, appended to the tick's note once the rest of the
+    // tick has written it (a fight note would otherwise replace it), never carried by later status or pause notes.
+    if (r.joinerReportDue)
+    {
+        r.joinerReportDue = false;
+        if (!r.joinerReported)
+        {
+            r.note += (r.note.empty() ? "" : "; ") + JoinerReport(r);
+            r.joinerReported = true;
+        }
+    }
     return order;
 }
 
@@ -17538,23 +17605,7 @@ inline void NoteWipes(Run& r, const Facts& f)
     r.wipeEventOn = eventNow;
 }
 
-// Counts a pull's joiners: every hostile engaged with the party in the first
-// kJoinerWindowMs after its pullback that is not in the pulled pack, once. A
-// unit that comes after the window is no joiner of that pull.
-inline void JoinersTick(Run& r, const Facts& f, std::uint32_t dt)
-{
-    if (!r.joinerTracked || !r.joinerWindow)
-        return;
-    if (f.anyInCombat)
-        for (const UnitFact& u : f.engagedUnits)
-            if (!r.joinerPack.count(u.guid) && !r.joinerAdds.count(u.guid))
-                r.joinerAdds.emplace(u.guid, u.entry);
-    r.joinerMs += dt;
-    if (r.joinerMs >= kJoinerWindowMs)
-        r.joinerWindow = false;
-}
-
-// The pull's joiner report for the status note: "joiners N" and, with any,
+// The pull's joiner report for the pull's line: "joiners N" and, with any,
 // "(entry <entry> x<count>, ...)" in ascending entry order. "" before the first
 // pull of the step.
 inline std::string JoinerReport(const Run& r)
@@ -17577,6 +17628,33 @@ inline std::string JoinerReport(const Run& r)
         text += ")";
     }
     return text;
+}
+
+// Counts a pull's joiners: the kJoinerWindowMs start on the first tick the party is in combat after the pullback
+// (the pull target's drag and the fight's own start take their time: a fight 15 s later still reports its joiners),
+// and every hostile engaged with the party in that window outside the pulled pack counts once. A unit already
+// engaged when the pullback went out is no joiner of it, and neither is one that comes after the window. When the
+// window closes the report goes on the pull's line, once (JoinerReport): later status and pause notes never carry
+// it.
+inline void JoinersTick(Run& r, const Facts& f, std::uint32_t dt)
+{
+    if (!r.joinerTracked || !r.joinerWindow)
+        return;
+    if (!r.joinerCombatSeen)
+    {
+        if (!f.anyInCombat)
+            return; // the window's clock starts with the fight, not with the pullback
+        r.joinerCombatSeen = true;
+    }
+    for (const UnitFact& u : f.engagedUnits)
+        if (!r.joinerPack.count(u.guid) && !r.joinerAdds.count(u.guid) && !r.joinerBefore.count(u.guid))
+            r.joinerAdds.emplace(u.guid, u.entry);
+    r.joinerMs += dt;
+    if (r.joinerMs >= kJoinerWindowMs)
+    {
+        r.joinerWindow = false;
+        r.joinerReportDue = !r.joinerReported; // Tick's end puts the report on the pull's line
+    }
 }
 
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)
@@ -18678,9 +18756,8 @@ inline StatusFields StatusParts(const Run& r)
     f.kind = s ? ai::PlanStepKindName(s->kind) : std::string();
     f.phase = PhaseText(r);
     f.note = r.note;
-    std::string const joiners = JoinerReport(r);
-    if (!joiners.empty())
-        f.note += (f.note.empty() ? "" : "; ") + joiners;
+    // The pull's joiners ride on its own line (JoinersTick, when the window closes), never on every later status or
+    // pause note: a run paused 20 min later still read "joiners 3" from here.
     for (char& c : f.note)
         if (c == '|' || c == '\n' || c == '\r')
             c = ' ';

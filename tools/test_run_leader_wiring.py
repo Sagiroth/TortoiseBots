@@ -65,7 +65,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
         self.assertIn("member.name = bot->GetName();", facts)
         self.assertIn("member.yd = yd;", facts)
-        self.assertIn("member.dz = bot->GetMap() == lead->GetMap() ? std::fabs(bot->GetPositionZ() - lead->GetPositionZ()) : 0.0f;", facts)
+        self.assertIn("member.dz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;", facts)
         # During a walk back out of sight the hop pulls are read around the next approach hop.
         self.assertIn("cx = f.approachX;", facts)
         self.assertIn("f.members.push_back(member);", facts)
@@ -1707,7 +1707,7 @@ class RunTestSpeedWiringTest(unittest.TestCase):
         self.assertLess(tick.index("SpeedCapAfterTick(slot.run, stepBeforeTick)"),
                         tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"))
         self.assertLess(tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"),
-                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops);"))
+                        tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"))
 
     def test_the_rate_is_forced_and_goes_back(self):
         code = strip_comments(COMMANDS)
