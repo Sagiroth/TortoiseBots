@@ -727,6 +727,29 @@ static void TestResetToGossipFlagOnlyOnUnitsHold()
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
 }
 
+// A hold row may run to kPlanMaxHoldTimeoutS (AQ20 Rajaxx's seven waves, about 1500 s); every other kind stops at 600.
+static void TestHoldTimeoutCeiling()
+{
+    CHECK(kPlanMaxHoldTimeoutS == 1800 && kPlanMaxTimeoutS == 600);
+    PlanStep hold = Step(0, 40, PlanStepKind::Hold);
+    hold.entries = {15341};
+    hold.timeoutS = 1500;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None && hold.timeoutS == 1500);
+    hold.timeoutS = 1800;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::None);
+    hold.timeoutS = 1801;
+    CHECK(NormalizePlanStep(hold) == PlanStepRefusal::BadTimeout);
+    PlanStep wait = Step(0, 41, PlanStepKind::WaitObject);
+    wait.entry = 124372;
+    wait.param = 1;
+    wait.timeoutS = 601;
+    CHECK(NormalizePlanStep(wait) == PlanStepRefusal::BadTimeout);
+    PlanStep boss = Step(0, 42, PlanStepKind::Boss);
+    boss.entry = 7228;
+    boss.timeoutS = 601;
+    CHECK(NormalizePlanStep(boss) == PlanStepRefusal::BadTimeout);
+}
+
 static void TestDeadGossipFlagOnlyOnUnitsHold()
 {
     // #243 round 1: a units hold whose starting NPC may already be dead (Zul'Farrak's Bly). The run leader only knows the NPC
@@ -867,6 +890,7 @@ int main()
     TestStandPullFlagOnBossAndPull();
     TestResetToGossipFlagOnlyOnUnitsHold();
     TestDeadGossipFlagOnlyOnUnitsHold();
+    TestHoldTimeoutCeiling();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
     TestKinds();
