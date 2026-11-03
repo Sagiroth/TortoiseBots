@@ -1758,6 +1758,24 @@ int main()
         CHECK(!DispelCureVerdict(active, { Aura(24053, kMagic) }, cleanse, 20.0f, 30.0f).excluded);
     }
 
+    // The last gate at cast time places its target: PartyMemberToDispel offers a non-summoned pet (a hunter pet has no
+    // Player), so a pet is judged by its owner's group exactly like a member. A pet with a never aura is held, a pet
+    // with an allowed aura is not, and a unit the gate cannot place is refused whatever its auras (fail closed).
+    {
+        std::vector<BossTacticRow> rows = { DispelRow(24306, 0, TacticMode::Never) };
+        ActiveBossRows active = Active(rows);
+        std::vector<std::uint32_t> const curse = { kCurse };
+        // Hunter pet with a never aura: blocked.
+        CHECK(DispelCastVerdict(DispelTargetKind::GroupPet, active, { Aura(24306, kCurse) }, curse, 50.0f, 30.0f).excluded);
+        // Hunter pet with an allowed aura: not blocked.
+        CHECK(!DispelCastVerdict(DispelTargetKind::GroupPet, active, { Aura(9001, kCurse) }, curse, 50.0f, 30.0f).excluded);
+        // A unit that is neither the bot, a group member nor a group pet: blocked.
+        CHECK(DispelCastVerdict(DispelTargetKind::Unknown, active, {}, curse, 50.0f, 30.0f).excluded);
+        CHECK(DispelCastVerdict(DispelTargetKind::Unknown, active, { Aura(9001, kCurse) }, curse, 50.0f, 30.0f).excluded);
+        // The same allowed aura on a group member stays allowed, so only the unknown target fails closed.
+        CHECK(!DispelCastVerdict(DispelTargetKind::GroupMember, active, { Aura(9001, kCurse) }, curse, 50.0f, 30.0f).excluded);
+    }
+
     // freeze_on_aura: nothing but the freeze itself runs, the heals included (healing threat reaches every enemy in
     // combat with the healer, and Mandokir's Gaze allows no threat at all).
     {

@@ -1783,11 +1783,23 @@ bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
     Player* bot = ai->GetBot();
     if (!bot || !target->IsAlive() || target->GetMapId() != bot->GetMapId())
         return false;
-    if (target != bot)
+    // PartyMemberToDispel offers non-summoned pets as well as players; a hunter pet has no Player, so it is placed by
+    // its owner's group and judged like a member. A target that is none of these is unknown, and the cast is refused.
+    DispelTargetKind targetKind = DispelTargetKind::Unknown;
+    if (target == bot)
     {
-        Player* member = sObjectMgr.GetPlayer(target->GetObjectGuid());
-        if (!member || !member->GetGroup() || member->GetGroup() != bot->GetGroup())
-            return false;
+        targetKind = DispelTargetKind::Self;
+    }
+    else if (Player* member = sObjectMgr.GetPlayer(target->GetObjectGuid()))
+    {
+        if (member->GetGroup() && member->GetGroup() == bot->GetGroup())
+            targetKind = DispelTargetKind::GroupMember;
+    }
+    else if (Pet* pet = dynamic_cast<Pet*>(target))
+    {
+        Player* owner = dynamic_cast<Player*>(pet->GetOwner());
+        if (owner && owner->GetGroup() && owner->GetGroup() == bot->GetGroup())
+            targetKind = DispelTargetKind::GroupPet;
     }
     if (!GetBossTactics().HasDispelMap(bot->GetMapId()))
         return false;
@@ -1800,16 +1812,16 @@ bool ai::DispelCastBlocked(PlayerbotAI* ai, Unit* target, uint32 spellId)
     const ActiveBossRows rows = DispelRows(ScanBossTactics(ai, bot));
     if (rows.empty())
         return false;
-    float const allyYd = sServerFacade.GetDistance2d(bot, target);
-    for (uint32 type : types)
-    {
-        const DispelVerdict verdict = DispelMemberState(target, type, rows, sPlayerbotAIConfig.bombRunoutDistance);
-        if (!verdict.excluded)
-            continue;
-        LogDispelExcluded(ai, bot, verdict, target, allyYd);
-        return true;
-    }
-    return false;
+    std::vector<AuraOnMember> auras;
+    CollectAllDispelAuras(target, auras);
+    float const verdictYd = DispelNeedsAllyDistance(rows, auras) ? NearestGroupMemberYd(target)
+                                                                : std::numeric_limits<float>::max();
+    DispelVerdict const verdict = DispelCastVerdict(targetKind, rows, auras, types, verdictYd,
+                                                    sPlayerbotAIConfig.bombRunoutDistance);
+    if (!verdict.excluded)
+        return false;
+    LogDispelExcluded(ai, bot, verdict, target, sServerFacade.GetDistance2d(bot, target));
+    return true;
 }
 
 float BossTacticsDispelHoldMultiplier::GetValue(Action* action)

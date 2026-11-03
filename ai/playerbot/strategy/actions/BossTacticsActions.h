@@ -51,7 +51,8 @@ namespace ai
     bool SweepBossDispelCures(PlayerbotAI* ai, Player* bot, bool apply);
     // The same hold judged again at cast time (PlayerbotAI::CastSpell): the target may have gained a protected aura
     // after the action was chosen. True when the cast must not be issued because the spell removes, by any of the
-    // dispel types read from its effects, a protected aura the target carries. Gated like SweepBossDispelCures.
+    // dispel types read from its effects, a protected aura the target carries, or because the target is a unit the
+    // gate cannot place (not the bot, a group member or a group member's pet). Gated like SweepBossDispelCures.
     bool DispelCastBlocked(PlayerbotAI* ai, Unit* target, std::uint32_t spellId);
 
     // How many living units of `entry`, a hold_kill row's blocker, stand within kHoldKillRangeYd of the bot and count

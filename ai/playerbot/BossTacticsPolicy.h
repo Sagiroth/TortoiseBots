@@ -550,6 +550,38 @@ namespace ai
         return tierA < tierB;
     }
 
+    // Who a cure cast is aimed at, as the last gate can place it: the bot itself, a group member, a pet whose owner
+    // is a group member (a hunter pet has no Player, so PartyMemberToDispel offers it by its owner's group), or a unit
+    // the gate cannot place. A target that is neither is refused: an unknown unit must never receive a cure whose
+    // protected auras the rows did not judge.
+    enum class DispelTargetKind : std::uint8_t
+    {
+        Self,
+        GroupMember,
+        GroupPet,
+        Unknown
+    };
+
+    inline bool DispelTargetEligible(DispelTargetKind target)
+    {
+        return target != DispelTargetKind::Unknown;
+    }
+
+    // The cast-time verdict for a cure: an ineligible target is refused outright (fail closed), otherwise the same
+    // per-type verdict as the cure action over every dispel type the cast spell removes.
+    inline DispelVerdict DispelCastVerdict(DispelTargetKind target, const ActiveBossRows& active,
+                                           const std::vector<AuraOnMember>& auras,
+                                           const std::vector<std::uint32_t>& types, float nearestAllyYd,
+                                           float defaultClearYd)
+    {
+        if (!DispelTargetEligible(target))
+        {
+            DispelVerdict verdict;
+            verdict.excluded = true;
+            return verdict;
+        }
+        return DispelCureVerdict(active, auras, types, nearestAllyYd, defaultClearYd);
+    }
 
     // True when a creature of `casterEntry` casting `spellId` must be interrupted.
     inline bool IsInterruptListed(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t spellId)

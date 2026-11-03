@@ -498,9 +498,18 @@ class DispelHoldAtCastTime(unittest.TestCase):
     def test_the_cast_gate_judges_every_type_the_spell_removes(self):
         fn = body(ACTIONS, "bool ai::DispelCastBlocked")
         self.assertIn("CollectSpellDispelTypes(sSpellMgr.GetSpellEntry(spellId), types)", fn)
-        self.assertIn("DispelMemberState(target, type, rows", fn)
+        self.assertIn("DispelCastVerdict(targetKind, rows, auras, types", fn)
         self.assertIn("GetBossTactics().HasDispelMap(bot->GetMapId())", fn)
         self.assertIn('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+
+    def test_a_group_pet_is_judged_by_its_owners_group(self):
+        fn = body(ACTIONS, "bool ai::DispelCastBlocked")
+        self.assertIn("dynamic_cast<Pet*>(target)", fn)
+        self.assertIn("dynamic_cast<Player*>(pet->GetOwner())", fn)
+        self.assertIn("owner->GetGroup() == bot->GetGroup()", fn)
+        self.assertIn("DispelTargetKind::GroupPet", fn)
+        # A target the gate cannot place stays blocked (fail closed).
+        self.assertIn("DispelTargetKind::Unknown", fn)
 
 
 class FreezeFleeWiring(unittest.TestCase):
