@@ -54,6 +54,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
 | [`AiPlayerbot.DungeonRunStandPullPreCc`](#aiplayerbotdungeonrunstandpullprecc) | `0` | A stand-pull step's crowd control goes out at the last point of the approach walk outside the pulled pack's own aggro range, before the party walks in. |
+| [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) | `0` | `1`: the run leader marks crowd control on a pack from what the raid has (casters first, the plan's `cc_priority`/`cc_always` as a hint), above the body threshold, and re-applies a mark that broke. |
+| [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) | `6` | How many bodies a pull may bring before the automatic crowd control starts (crowd control from the body after it). |
+| [`AiPlayerbot.DungeonRunAutoCcRisky`](#aiplayerbotdungeonrunautoccrisky) | `0` | `1`: the automatic crowd control may use Fear and Scare Beast, only with 35 yd of room and when no other family has a free bot. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -472,6 +475,39 @@ Sends a stand-pull step's crowd control from the last point of the approach walk
 <summary>How it works in detail</summary>
 
 **Crowd control before the walk in:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-11-02 for Zul'Gurub's Mar'li leg: a stand-pull step's approach can lie inside the pulled pack's own aggro range (Mar'li's pack-1 approach is 15.0 yd from the Venombrood 49254, whose radius at the plan's lowest level is 22 yd), so the party woke the pack on the approach walk and the step's three Polymorphs went out 18 s later, into a pack already on the party. With `1`, the move row right before a stand-pull pull or boss row (the same row `stand_pull` reads its stand from) ends at the last point of the lead bot's navmesh path to the plan's approach that stands outside the pack's wake reach: the widest aggro reach of the pack's living units (detection range minus the party's level advantage over it, the aggro estimate's rule) plus the party's 10 yd spread plus 1 yd. The pack is the next row's own: its entries' spawns in its radius, by creature formation, alive or dead, wherever their loop has taken them. At that point the step's crowd control (`cc_priority` marks) goes out, the party waits up to 6 s for the marks to read held (or for the cast's time to pass), then walks to the plan's approach, reads its firing stand from there and pulls: the pack wakes after the marks, not before them. A walk with no such point (an approach inside the pack by design) walks the plan's point as before and the note reads `stand_pull: no pre-cc point for <entry>`; a point the glue has not read within 3 s is dropped the same way, so a read never holds the run. A stand-pull step whose approach is already clear, every other step and the key off are unchanged.
+
+</details>
+
+### `AiPlayerbot.DungeonRunAutoCc`
+Marks crowd control on a pack from what the raid actually has, instead of only the plan's `cc_priority`/`cc_always` entries.
+**Default:** `0` · **Values:** `0` off (the plan's list only, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Automatic crowd control:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Before a pull that brings more bodies than [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (the row's own `max_bodies` lowers the threshold when it is smaller), the run marks the row's own pack, one order a tick, until the unmarked bodies fit the threshold. The order is casters and healers first, then the plan's rank (`cc_always`, then `cc_priority`, as a hint now, not a gate), then the class family's reliability (Polymorph, Shackle Undead, Banish, Hibernate, Seduction, Freezing Trap, Sap, Repentance, and the risky Fear and Scare Beast last), then the higher level, then the unit farther from the pull target. The families are the classes' own `* on cc` rows: a druid's Hibernate, a hunter's Freezing Trap, a warlock's Seduction with a live succubus, a paladin's Repentance. Never marked: the pull target, the tank's selection, a unit an off-tank holds, the fight's focus, a `kill_first` unit, a held unit, a unit the party hits, and an add the raid's healer guard has a bot on. In the fight the run marks a joiner while more unheld units fight than the threshold, two seconds apart, and re-sends a mark whose aura broke (twice a unit a step; a bot that died frees its hold). A tank and the lead bot are never crowd-control bots; a healer only while 4 healers (1 in a party) stay free, and it holds one unit. At most 24 auto orders a step pass. With the key on the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; the skull stays the fight's focus); a player's icon is never moved.
+
+</details>
+
+### `AiPlayerbot.DungeonRunAutoCcAbove`
+How many bodies a pull may bring before the automatic crowd control starts.
+**Default:** `6` · **Values:** `2` to `40` (crowd control starts at the body after it; `6` starts at 7) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Threshold:** the run's body count is the ring estimate's count when it read the pull (`AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`), else the old joiner estimate with the target, else the row's own living pullable units. The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunAutoCcRisky`
+Lets the automatic crowd control use the fear families (Fear, Scare Beast).
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Risky families:** a feared mob runs. A fear family is only picked with this key on, with at least 35 yd between the unit and the nearest creature the read knows outside its pack, and only when no other family has a free bot for the unit. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
 
 </details>
 
