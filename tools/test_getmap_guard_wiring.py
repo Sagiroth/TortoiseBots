@@ -16,6 +16,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAYERBOT_AI = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
 PACKETS = (ROOT / "ai/playerbot/PlayerbotAIPackets.cpp").read_text()
+PLAYER_ADAPTER = (ROOT / "host/BotPlayerAdapter.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -51,6 +52,16 @@ class PacketHandlerMapGuardTest(unittest.TestCase):
         self.assertLess(guard, fn.index("switch (packet.getOpcode())"))
         # The cast-result handler still looks its crowd-control target up.
         self.assertIn("GetUnit(last.target)", fn)
+
+
+class MapChangeSummonTest(unittest.TestCase):
+    def test_only_bots_still_in_the_dungeon_are_returned(self):
+        # The sweep's bot filter is the pinned policy (the polarity had been
+        # inverted: bots left inside stayed, bots already outside were summoned).
+        fn = body(PLAYER_ADAPTER, "void BotPlayerAdapter::OnMapChanged(Player* player)")
+        self.assertIn("PlayerMapChange::BotLeftInDungeon(botMap != nullptr, botMap && botMap->IsDungeon())", fn)
+        policy = (ROOT / "host/PlayerMapChangePolicy.h").read_text()
+        self.assertIn("return hasMap && mapIsDungeon;", policy)
 
 
 if __name__ == "__main__":
