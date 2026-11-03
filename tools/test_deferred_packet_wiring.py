@@ -44,6 +44,20 @@ class DrainGateWiringTest(unittest.TestCase):
         self.assertIn("g_heldBacklogs.AnyBefore(", held)
 
 
+class DirectHandOffWiringTest(unittest.TestCase):
+    def test_world_thread_hand_offs_use_the_same_gate(self):
+        # A packet arriving on the world thread must not overtake the bot's
+        # backlog, and a master-outgoing packet must not reach an AI whose bot
+        # is between maps.
+        direct = body(ADAPTER, "void DeliverNowOrHold(uint64_t botGuid, PacketRoute route, WorldPacket const& packet)")
+        self.assertIn("g_heldBacklogs.Contains(botGuid)", direct)
+        self.assertIn("g_heldBacklogs.Append(botGuid, NextWorldQueueSequence(),", direct)
+        self.assertIn("DeferredDelivery::Decide(bot->IsInWorld(), bot->IsBeingTeleportedFar(), packet.getOpcode())",
+            direct)
+        self.assertIn("DeliverNowOrHold(botGuid.GetRawValue(), PacketRoute::BotOutgoing, packet);", ADAPTER)
+        self.assertIn("DeliverNowOrHold(botGuid, PacketRoute::MasterOutgoing, packet);", ADAPTER)
+
+
 class CommandDeferWiringTest(unittest.TestCase):
     def test_command_drain_runs_before_the_defer_check(self):
         # tools/test_bot_packet_backlog.cpp proves the gate order; this pins

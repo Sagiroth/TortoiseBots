@@ -124,8 +124,9 @@ static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellDelayed == SMSG_SPELL_DE
 // The world thread deletes AIs, so a hook running on it can hand a packet to
 // the AI at once, as before: the AI's own casts, hire provisioning (which drops
 // its queued level-up echo right after the jump) and world-processed packets
-// keep their timing. Marked at the top of every world tick
-// (BotHostAdapter::OnUpdate); until the first tick every hook defers.
+// keep their timing. A bot between maps, or one already holding a backlog, gets
+// the item held instead (DeliverNowOrHold). Marked at the top of every world
+// tick (BotHostAdapter::OnUpdate); until the first tick every hook defers.
 WorldThreadMark& WorldThread()
 {
     static WorldThreadMark mark;
@@ -230,6 +231,39 @@ void DeliverOrHold(WorldThreadQueue<DeferredPacket>::Entry& entry)
             break;
     }
 }
+
+// World thread: the hook's direct hand-off. Same rules as the drain, so a
+// packet arriving on this thread never overtakes the bot's backlog and never
+// runs a map-reading handler on a bot between maps; a held item keeps its
+// arrival sequence among the queue's items.
+void DeliverNowOrHold(uint64_t botGuid, PacketRoute route, WorldPacket const& packet)
+{
+    PlayerbotAI* ai = FindBotAI(botGuid);
+    if (!ai || !ai->GetBot())
+        return;
+    Player* bot = ai->GetBot();
+    auto const hold = [&]()
+    {
+        g_heldBacklogs.Append(botGuid, NextWorldQueueSequence(),
+            DeferredPacket{ route, std::make_shared<WorldPacket const>(packet) }, SteadyNowMs());
+    };
+    if (g_heldBacklogs.Contains(botGuid))
+    {
+        hold();
+        return;
+    }
+    switch (DeferredDelivery::Decide(bot->IsInWorld(), bot->IsBeingTeleportedFar(), packet.getOpcode()))
+    {
+        case DeferredDelivery::Verdict::Deliver:
+            DeliverToAI(ai, route, packet);
+            break;
+        case DeferredDelivery::Verdict::Hold:
+            hold();
+            break;
+        case DeferredDelivery::Verdict::Drop:
+            break;
+    }
+}
 } // namespace
 
 bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& packet)
@@ -261,8 +295,7 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
 
         if (opcode != SMSG_MESSAGECHAT && OnWorldThread())
         {
-            if (PlayerbotAI* ai = FindBotAI(botGuid.GetRawValue()))
-                ai->HandleBotOutgoingPacket(packet);
+            DeliverNowOrHold(botGuid.GetRawValue(), PacketRoute::BotOutgoing, packet);
             return true;
         }
 
@@ -298,8 +331,7 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
                 master->GetName(), static_cast<unsigned long long>(botGuid));
         if (onWorldThread)
         {
-            if (PlayerbotAI* ai = FindBotAI(botGuid))
-                ai->HandleMasterOutgoingPacket(packet);
+            DeliverNowOrHold(botGuid, PacketRoute::MasterOutgoing, packet);
             continue;
         }
         if (!copy)

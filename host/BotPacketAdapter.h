@@ -20,7 +20,8 @@ public:
 
     // World thread, first thing every tick (BotHostAdapter::OnUpdate, before
     // the command drain): records this thread as the world thread, so packet
-    // hooks running on it hand packets to the AI at once (issue #844).
+    // hooks running on it hand packets to the AI at once (issue #844), or hold
+    // them behind the bot's backlog / between maps.
     static void MarkWorldThread();
     // World thread only (BotHostAdapter::OnUpdate, before the bot update):
     // hands the packets queued by the hooks since the last tick to the bots'
