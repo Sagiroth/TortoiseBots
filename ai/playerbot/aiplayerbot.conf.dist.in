@@ -31,7 +31,7 @@ AiPlayerbot.ObservabilityRaids = 0
 AiPlayerbot.RandomBotAutologin = 1
 
 # Log on all random bots on start
-AiPlayerbot.RandomBotLoginAtStartup = 0
+AiPlayerbot.RandomBotLoginAtStartup = 1
 
 # Disable automatic DBStore save
 AiPlayerbot.ExplicitDbStoreSave = 0
@@ -386,10 +386,10 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # warns once, entering dismisses them, hiring is refused while queued or
 # inside). 1 = today's behaviour (hires may go to battlegrounds).
 #AiPlayerbot.HireAllowPvP = 0
-# HireLoot: 1 = hired companions loot corpses and roll on group loot (today's
-# behaviour). 0 = a hire never loots: it passes on every roll and leaves every
+# HireLoot: 1 = hired companions loot corpses and roll on group loot.
+# 0 (default) = a hire never loots: it passes on every roll and leaves every
 # corpse alone. Hires never quest, whatever this is set to.
-#AiPlayerbot.HireLoot = 1
+#AiPlayerbot.HireLoot = 0
 # ShamanTankEnabled: 1 = the experimental 7.3 shaman tank build (Enhancement
 # (Tank)) is offered at recruiters and by `.bot hire`, and random pool shamans
 # may roll it. 0 = withheld everywhere. Shamans already on the build keep it.
@@ -589,7 +589,7 @@ AiPlayerbot.BotGearPresets = prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20
 # donor AhBot thread, per-tick AH/DB scan, or second owner. Interval is 5..3600 seconds
 # (default 120), batch is 1..5 (default 1), and the shared AH try_lock is respected.
 # Requires RandomBotAutologin=1. Failed attempts are rate-limited per bot.
-AiPlayerbot.AhMarketEnabled = 0
+AiPlayerbot.AhMarketEnabled = 1
 AiPlayerbot.AhMarketInterval = 120
 AiPlayerbot.AhMarketBatchSize = 1
 
@@ -599,7 +599,9 @@ AiPlayerbot.AhMarketBatchSize = 1
 # per-tick time budgets and operation count caps so tick latency is unaffected.
 # Synthetic inventory is isolated and tagged, never entering real inventories.
 AiPlayerbot.AhMarketSyntheticSupply = 0
-AiPlayerbot.AhMarketBuyer = 0
+# AhMarketBuyer is not synthetic: a pool bot already standing at an auctioneer
+# bids on or buys an auction with its own gold.
+AiPlayerbot.AhMarketBuyer = 1
 AiPlayerbot.AhMarketBudgetUs = 2000
 AiPlayerbot.AhMarketMaxOperations = 32
 AiPlayerbot.AhMarketChanceSell = 10
@@ -793,7 +795,7 @@ AiPlayerbot.GenerateItemCaches = 1
 #AiPlayerbot.UsePotionChance = 1.0
 
 # Bots will mount up to catch up when far behind the master while following.
-# AiPlayerbot.BoostFollow = 0
+# AiPlayerbot.BoostFollow = 1
 
 # Dungeon follow: hold before a pack (audit fix 127).
 # Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
@@ -1369,9 +1371,9 @@ AiPlayerbot.ImmuneSpellIds = 19428
 
 # Enable per-bot action log files (logs/bots/<botname>_acc<id>_<timestamp>.log)
 # and "[BOT]" prefixed structured log lines in the server log. Useful for
-# diagnosing bot lifecycle issues; off in production. The crash handler also
+# diagnosing bot lifecycle issues; on by default, limited by ActionLogScope. The crash handler also
 # reads a thread-local "last phase" tag set by SC_PHASE when this is on.
-# AiPlayerbot.EnableActionLog = 0
+# AiPlayerbot.EnableActionLog = 1
 
 # Safeguards for the per-bot action log files (they once filled a disk: about
 # 8 GB a day, up to 176 MB for one bot). They apply only while EnableActionLog
@@ -1499,8 +1501,8 @@ AiPlayerbot.AutoTrainSpells = yes
 AiPlayerbot.AutoPickTalents = full
 
 # Bots automatically learn trainable spells on levelup
-# Default: 0 (disabled)
-AiPlayerbot.AutoLearnTrainerSpells = 0
+# Default: 1 (enabled)
+AiPlayerbot.AutoLearnTrainerSpells = 1
 
 # Bots automatically learn classquest reward spells on levelup
 # Default: 1 (enabled)
@@ -2293,13 +2295,13 @@ AiPlayerbot.FleeingEnabled = 1
 # master never get this flee anyway. Takes effect after a server restart.
 #AiPlayerbot.PoolMeleeHoldGround = 0
 
-# Alt-bots (issue #872, opt-in). 1 = an alt you brought in with `.bot add`
+# Alt-bots (issue #872, on by default). 1 = an alt you brought in with `.bot add`
 # keeps playing on its own when you kick it from your party (or the party
 # breaks up): it quests, grinds and travels like a pool bot, with protections
 # for your gear, gold and talents, and takes one pool bot's slot while it is
 # out. `.bot remove`, `.bot add` again or logging in on the alt ends it.
 # Hardcore characters are refused. 0 = a kicked alt stays your companion.
-#AiPlayerbot.AltBots = 0
+#AiPlayerbot.AltBots = 1
 
 # 1 = alt-bots log out when their owner logs out. 0 = they keep playing until
 # `.bot remove` (or a server restart; they do not come back after one).

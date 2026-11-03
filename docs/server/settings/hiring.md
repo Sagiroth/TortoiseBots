@@ -24,7 +24,7 @@ These settings configure mercenary companion hiring, party cost scaling, raid pr
 | [`AiPlayerbot.HireMaxLevelAboveHirer`](#aiplayerbothiremaxlevelabovehirer) | `0` | Maximum character levels a hired companion may exceed its employer. |
 | [`AiPlayerbot.HireAnywhere`](#aiplayerbothireanywhere) | `0` | Allows hiring companions from anywhere via chat command. |
 | [`AiPlayerbot.HireAllowPvP`](#aiplayerbothireallowpvp) | `0` | Allows hired companions into battlegrounds (off = PvE-only). |
-| [`AiPlayerbot.HireLoot`](#aiplayerbothireloot) | `1` | Hired companions loot and roll on group loot (off = never loot, always pass). |
+| [`AiPlayerbot.HireLoot`](#aiplayerbothireloot) | `0` | Hired companions loot and roll on group loot (off = never loot, always pass). |
 | [`AiPlayerbot.ShamanTankEnabled`](#aiplayerbotshamantankenabled) | `1` | Offers the experimental 7.3 shaman tank build at recruiters, by `.bot hire`, and to random pool shamans. |
 | [`AiPlayerbot.HireBaseCostCopper`](#aiplayerbothirebasecostcopper) | `15000` | Base copper fee used for level-scaled party companion hiring. |
 | [`AiPlayerbot.HirePartyMult2`](#aiplayerbothirepartymult2) | `1.66` | Cost multiplier applied when hiring a second party companion. |
@@ -153,7 +153,7 @@ When set to `1`, hires may go to battlegrounds as before.
 
 ### `AiPlayerbot.HireLoot`
 Controls whether hired companions loot corpses and roll on group loot.
-**Default:** `1` · **Values:** `1` loots, `0` never loots · **Restart:** needed
+**Default:** `0` · **Values:** `1` loots, `0` never loots · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

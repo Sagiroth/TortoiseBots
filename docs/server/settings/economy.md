@@ -20,11 +20,11 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
-| [`AiPlayerbot.AhMarketEnabled`](#aiplayerbotahmarketenabled) | `0` | Enables bots posting surplus items and bidding from their own bags on the Auction House. |
+| [`AiPlayerbot.AhMarketEnabled`](#aiplayerbotahmarketenabled) | `1` | Enables bots posting surplus items and bidding from their own bags on the Auction House. |
 | [`AiPlayerbot.AhMarketInterval`](#aiplayerbotahmarketinterval) | `120` | Interval in seconds between seller ticks that attempt bot auction postings. |
 | [`AiPlayerbot.AhMarketBatchSize`](#aiplayerbotahmarketbatchsize) | `1` | Maximum bots (one listing each) attempted per seller tick (effective 1..5). |
 | [`AiPlayerbot.AhMarketSyntheticSupply`](#aiplayerbotahmarketsyntheticsupply) | `0` | Injects synthetic profession materials and gear to stock empty auction houses. |
-| [`AiPlayerbot.AhMarketBuyer`](#aiplayerbotahmarketbuyer) | `0` | Enables synthetic bot buyer orders to purchase player auctions. |
+| [`AiPlayerbot.AhMarketBuyer`](#aiplayerbotahmarketbuyer) | `1` | Pool bots standing at an auctioneer bid on and buy auctions with their own gold. |
 | [`AiPlayerbot.AhMarketBudgetUs`](#aiplayerbotahmarketbudgetus) | `2000` | Microsecond time budget ceiling per world tick for the synthetic-market engine. |
 | [`AiPlayerbot.AhMarketMaxOperations`](#aiplayerbotahmarketmaxoperations) | `32` | Maximum synthetic-market engine work steps processed per tick. |
 | [`AiPlayerbot.AhMarketChanceSell`](#aiplayerbotahmarketchancesell) | `10` | Percentage chance per engine cycle to generate a synthetic supply batch. |
@@ -50,7 +50,7 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 
 ### `AiPlayerbot.AhMarketEnabled`
 Enables the autonomous Auction House market service for pool bots.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -97,8 +97,8 @@ When enabled, the service periodically generates synthetic listings of crafting 
 </details>
 
 ### `AiPlayerbot.AhMarketBuyer`
-Enables synthetic buyer bids that purchase auctions posted by human players.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+Pool bots standing at an auctioneer bid on and buy auctions with their own gold (not synthetic).
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

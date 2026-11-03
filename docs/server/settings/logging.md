@@ -23,7 +23,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.AllowedLogFiles`](#aiplayerbotallowedlogfiles) | `bot_events.csv,deaths.csv` | Comma-separated list of structured diagnostic CSV files enabled for writing. |
 | [`AiPlayerbot.RaidBossDiagnostics`](#aiplayerbotraidbossdiagnostics) | `0` | Opt-in raid boss threat snapshots and spell-hit observations in `bot_events.csv`. |
 | [`AiPlayerbot.LogRetentionDays`](#aiplayerbotlogretentiondays) | `3` | Days to keep compressed historical CSV logs before automatic deletion. |
-| [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `0` | Writes dedicated per-bot execution logs under `logs/bots/`. |
+| [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `1` | Writes dedicated per-bot execution logs under `logs/bots/`. |
 | [`AiPlayerbot.ActionLogScope`](#aiplayerbotactionlogscope) | `commanded` | Filters which bots generate action log files (`commanded`, `all`, `none`). |
 | [`AiPlayerbot.ActionLogMaxAgeDays`](#aiplayerbotactionlogmaxagedays) | `3` | Maximum age in days for per-bot action log files before cleanup. |
 | [`AiPlayerbot.ActionLogMaxTotalMB`](#aiplayerbotactionlogmaxtotalmb) | `2048` | Maximum cumulative disk space in megabytes for the `logs/bots/` folder. |
@@ -103,7 +103,7 @@ Setting this to `0` disables automated deletion, preserving all archives permane
 
 ### `AiPlayerbot.EnableActionLog`
 Enables verbose per-bot execution logs written to the `logs/bots/` directory.
-**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
