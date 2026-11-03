@@ -242,12 +242,22 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertEqual(code.count("unit.creatureType = creature->GetCreatureType();"), 2)
         self.assertNotIn("Polymorphed(", COMMANDS)
         known = body(COMMANDS, "uint32 KnownRunCc(", "\n}\n")
-        self.assertIn("case CLASS_PRIEST: return KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0;", known)
-        self.assertIn("case CLASS_WARLOCK: return KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0;", known)
-        self.assertIn("case CLASS_ROGUE: return KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0;", known)
+        self.assertIn("case CLASS_PRIEST: cc = KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0; break;", known)
+        self.assertIn("(KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0) |", known)
+        self.assertIn("(KnowsAny(bot, kFearSpells) ? CcBit(CcFamily::Fear) : 0)", known)
+        self.assertIn("case CLASS_ROGUE: cc = KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0; break;", known)
+        self.assertIn("case CLASS_DRUID: cc = KnowsAny(bot, kHibernateSpells) ? CcBit(CcFamily::Hibernate) : 0; break;", known)
+        self.assertIn("(KnowsAny(bot, kFreezingTrapSpells) ? CcBit(CcFamily::FreezingTrap) : 0) |", known)
+        self.assertIn("(KnowsAny(bot, kScareBeastSpells) ? CcBit(CcFamily::ScareBeast) : 0)", known)
+        self.assertIn("case CLASS_PALADIN: cc = KnowsAny(bot, kRepentanceSpells) ? CcBit(CcFamily::Repentance) : 0; break;", known)
+        # The read is cached for 5 s a bot (HasSpell walks the spell book).
+        self.assertIn("if (read.atMs != 0 && WorldTimer::getMSTimeDiff(read.atMs, now) < 5000)", known)
         held = body(COMMANDS, "bool RunCcHeld(", "\n}\n")
-        for spells in ("kPolymorphSpells", "kShackleUndeadSpells", "kBanishSpells", "kSapSpells"):
+        for spells in ("kPolymorphSpells", "kShackleUndeadSpells", "kBanishSpells", "kSapSpells", "kHibernateSpells",
+                       "kFreezingTrapAuras", "kSeductionSpells", "kRepentanceSpells", "kFearSpells", "kScareBeastSpells"):
             self.assertIn("HasAnyAura(unit, %s)" % spells, held)
+        # A warlock's live succubus is the only way the run may Seduce.
+        self.assertIn("pet->GetCreatureInfo()->family == CREATURE_FAMILY_SUCCUBUS;", code)
         # Review of fe5d4109: each unit's immunity, the rogue's live master and the live raid icons are read.
         self.assertEqual(code.count("unit.ccImmune = RunCcImmune(creature);"), 2)
         self.assertIn("member.canSap = (member.cc & CcBit(CcFamily::Sap)) && memberAi && memberAi->HasRealPlayerMaster() &&", code)
@@ -255,6 +265,14 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.raidIcons[i] = iconGroup->GetTargetIcon(i).GetRawValue();", code)
         immune = strip_comments(body(COMMANDS, "uint32 RunCcImmune(", "\n}\n"))
         self.assertIn("(templateMask & (1u << (mechanic - 1))) || creature->IsImmuneToMechanic(Mechanics(mechanic))", immune)
+        for family in ("Hibernate", "FreezingTrap", "Seduction", "Repentance", "Fear", "ScareBeast"):
+            self.assertIn("{ CcFamily::%s," % family, immune)
+        # The attackers (joiners) carry the same cc facts as the step's units.
+        guard = body(COMMANDS, "void ReadGuardFacts(", "\n}\n")
+        self.assertIn("fact.creatureType = attacker->GetCreatureType();", guard)
+        self.assertIn("fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;", guard)
+        self.assertIn("fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;", guard)
+        self.assertIn("fact.level = attacker->GetLevel();", guard)
 
         # Kill-first units come from the bots' cached attackers lists: no grid or world scan (AGENTS.md).
         self.assertIn("ReadKillFirst(*slot.run.plan, lead, bots, f);", facts)
@@ -305,6 +323,42 @@ class RunLeaderWiringTest(unittest.TestCase):
         loader = (ROOT / "ai/playerbot/DungeonPlanMgr.cpp").read_text()
         self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first` FROM `ai_dungeon_plan`", loader)
         self.assertIn("table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString())", loader)
+
+    def test_auto_cc_is_wired(self):
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        # The three keys, and the threshold's clamp.
+        conf = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn("AiPlayerbot.DungeonRunAutoCc = 0", conf)
+        self.assertIn("AiPlayerbot.DungeonRunAutoCcAbove = 6", conf)
+        self.assertIn("AiPlayerbot.DungeonRunAutoCcRisky = 0", conf)
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        self.assertIn('dungeonRunAutoCc = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCc", false);', config)
+        self.assertIn('config.GetIntDefault("AiPlayerbot.DungeonRunAutoCcAbove", 6)', config)
+        self.assertIn('dungeonRunAutoCcRisky = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCcRisky", false);', config)
+        header = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        for field in ("dungeonRunAutoCc;", "dungeonRunAutoCcAbove;", "dungeonRunAutoCcRisky;"):
+            self.assertIn("bool " + field if field != "dungeonRunAutoCcAbove;" else "uint32 " + field, header)
+        # The glue reads them, and the lead bot's selection.
+        facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
+        self.assertIn("f.autoCc = sPlayerbotAIConfig.dungeonRunAutoCc;", facts)
+        self.assertIn("f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;", facts)
+        self.assertIn("f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;", facts)
+        self.assertIn("f.leadTargetGuid = f.autoCc ? lead->GetSelectionGuid().GetRawValue() : 0;", facts)
+        self.assertIn("unit.caster = creature->GetMaxPower(POWER_MANA) > 0;", facts)
+        self.assertIn("unit.level = creature->GetLevel();", facts)
+        self.assertIn("member.healer = f.raid.on ? isHeal : PlayerbotAI::IsHeal(bot);", facts)
+        self.assertIn("member.tank = f.raid.on ? isTank : PlayerbotAI::IsTank(bot);", facts)
+        # Both fight ticks run right after CheckCc in the fight branch.
+        check = policy.index("if (CheckCc(r, f, dt, order))\n            return order;")
+        self.assertLess(check, policy.index("if (RunCcReapplyTick(r, f, dt, order))"))
+        self.assertLess(check, policy.index("if (RunAutoCcFightTick(r, f, *s, dt, order))"))
+        # The trigger gates the pre-pull mark on the threshold, and only the row's own pack is a candidate.
+        self.assertIn("std::uint32_t const threshold = RunAutoCcThreshold(s, f);", policy)
+        self.assertIn("bool const over = bodies > marked && bodies - marked > threshold;", policy)
+        self.assertIn("busy = RunCcHolders(r, f);", policy)
+        # The seven marks with the key on, the plan's four key off.
+        self.assertIn('constexpr const char* kRunCcMarksAuto[] = {"moon", "square", "diamond", "triangle", "star", "circle", "cross"};', policy)
+        self.assertIn("const char* const* list = f.autoCc ? kRunCcMarksAuto : kCcMarks;", policy)
 
     def test_crowd_control_keeps_to_the_runs_mark(self):
         cc = (ROOT / "ai/playerbot/strategy/values/CcTargetValue.cpp").read_text()
@@ -871,7 +925,8 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("if (!PullStandRuleOn(r, f, hop))", hold)
         self.assertIn("r.shotStandFor = u.guid;", hold)
         # Every pull caller hands its tick length to the stand walk.
-        self.assertIn("CcPick const ccPick = PickCcOrder(r, f, pick->guid);\n        PullUnit(r, f, *pick, order, ccPick.unit, false, dt);", policy)
+        self.assertIn("CcPick ccPick = PickCcOrder(r, f, pick->guid);", policy)
+        self.assertIn("PullUnit(r, f, *pick, order, ccPick.unit, false, dt);", policy)
         self.assertIn("PullUnit(r, f, *hopUnit, order, nullptr, false, dt, true);", policy)
         self.assertIn("PullUnit(r, f, *hopUnit, order, nullptr, true, dt);", policy)
         # PLAN-ZF-NOFIGHT: a move's and the walk back's pulls are hop pulls; a hop unit the tank cannot shoot is
