@@ -2073,7 +2073,8 @@ int AvoidCastSpots(Player* bot, Unit* caster, float radius, const std::vector<Ca
 // would keep its cast; see ShouldReactionInterruptCast).
 bool BossTacticsAvoidCastAction::isPossible()
 {
-    if (!MovementAction::isPossible() || !ai->CanMove())
+    // A return-held bot still steps out of a listed cast (CanMove(true)).
+    if (!MovementAction::isPossible() || !ai->CanMove(true))
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     const BossCastDanger danger = FindBossCastDanger(ai, bot, fight);

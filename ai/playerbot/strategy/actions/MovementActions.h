@@ -214,7 +214,8 @@ namespace ai
         AvoidAoeAction(PlayerbotAI* ai) : MovementAction(ai, "avoid aoe") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+        // A return-held bot still steps out of a hazard (CanMove(true)): the hold is not a stay order.
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(true); }
 
     private:
         bool AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter);
