@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "TargetValue.h"
 #include "CcMarkHoldPolicy.h"
+#include "PeriodicDamageAura.h"
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/EnemyAreaSpell.h"
@@ -226,15 +227,16 @@ bool CcGuard::PartyDotOn(Unit* unit)
         return false;
     Player* const bot = ai->GetBot();
     Group* const group = bot->GetGroup();
-    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
-    {
-        Unit* const caster = aura ? aura->GetCaster() : nullptr;
-        if (!caster)
-            continue;
-        Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
-        if (owner && (owner == bot || (group && group->IsMember(owner->GetObjectGuid()))))
-            return true;
-    }
+    for (uint32 const type : kPeriodicDamageAuraTypes)
+        for (Aura const* aura : unit->GetAurasByType(static_cast<AuraType>(type)))
+        {
+            Unit* const caster = aura ? aura->GetCaster() : nullptr;
+            if (!caster)
+                continue;
+            Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+            if (owner && (owner == bot || (group && group->IsMember(owner->GetObjectGuid()))))
+                return true;
+        }
     return false;
 }
 

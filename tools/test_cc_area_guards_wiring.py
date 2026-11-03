@@ -38,6 +38,9 @@ WARRIOR_TRIGGERS = (STRATEGY / "warrior/WarriorTriggers.cpp").read_text()
 WARRIOR_TRIGGERS_H = (STRATEGY / "warrior/WarriorTriggers.h").read_text()
 WARRIOR_CONTEXT = (STRATEGY / "warrior/WarriorAiObjectContext.cpp").read_text()
 ARMS = (STRATEGY / "warrior/ArmsWarriorStrategy.cpp").read_text()
+PERIODIC_AURA = (VALUES / "PeriodicDamageAura.h").read_text()
+COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
+CC_TARGET_VALUE = (VALUES / "CcTargetValue.cpp").read_text()
 TARGET_VALUE = (VALUES / "TargetValue.cpp").read_text()
 TARGET_VALUE_H = (VALUES / "TargetValue.h").read_text()
 DOT_TARGET = (VALUES / "AttackerWithoutAuraTargetValue.cpp").read_text()
@@ -143,7 +146,7 @@ class DotTargetWiring(unittest.TestCase):
             self.assertIn("DotCastAtTarget(ai, GetTarget(), GetSpellID())", fn)
             self.assertIn("CastAuraSpellAction::isUseful()", fn)
         dot = body(GENERIC_SPELL_ACTIONS, "bool SpellAppliesPeriodicDamage(")
-        self.assertIn("SPELL_AURA_PERIODIC_DAMAGE", dot)
+        self.assertIn("IsPeriodicDamageAura(info->EffectApplyAuraName[i])", dot)
         guard = body(GENERIC_SPELL_ACTIONS, "bool DotCastAtTarget(")
         self.assertIn("ccGuard.IsCcMarkedUnit(target)", guard)
         self.assertIn("ccGuard.IsCrowdControlledUnit(target)", guard)
@@ -152,6 +155,39 @@ class DotTargetWiring(unittest.TestCase):
         self.assertIn(
             "bool CcDotCastAllowed(bool periodicDamage, bool runAutoCc, bool heldMark, bool ccMarkOrControlled)",
             POLICY)
+
+
+class PeriodicDamageAuraWiring(unittest.TestCase):
+    """The core counts three aura types as a DoT's periodic damage; every guard reads all three.
+
+    Behaviour (an assigned Polymorph target skipped for each type from a party caster) needs live Unit and Aura
+    objects, so it is pinned here by source and proven in game, not by this file.
+    """
+
+    def test_the_helper_names_all_three_periodic_damage_auras(self):
+        self.assertIn("SPELL_AURA_PERIODIC_DAMAGE,", PERIODIC_AURA)
+        self.assertIn("SPELL_AURA_PERIODIC_LEECH,", PERIODIC_AURA)
+        self.assertIn("SPELL_AURA_PERIODIC_DAMAGE_PERCENT,", PERIODIC_AURA)
+        self.assertIn("inline bool IsPeriodicDamageAura(uint32 auraType)", PERIODIC_AURA)
+
+    def test_the_party_dot_guards_walk_all_three_types(self):
+        for text, start, qualifier in (
+            (TARGET_VALUE, "bool CcGuard::PartyDotOn(", ""),
+            (COMMANDER, "bool PartyDotOn(Unit* unit, Player* lead)", "ai::"),
+        ):
+            fn = body(text, start)
+            self.assertIn(f"{qualifier}kPeriodicDamageAuraTypes", fn)
+            self.assertNotIn("GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE)", fn)
+
+    def test_the_assigned_cc_keeps_the_banish_and_fear_exemption(self):
+        assigned = body(CC_TARGET_VALUE, "if (assignedTarget)", "\n        }\n")
+        self.assertIn('spell != "fear" && spell != "banish"', assigned)
+        self.assertIn("ccGuard.PartyDotOn(creature)", assigned)
+
+    def test_the_spell_check_uses_the_same_helper(self):
+        dot = body(GENERIC_SPELL_ACTIONS, "bool SpellAppliesPeriodicDamage(")
+        self.assertIn("IsPeriodicDamageAura(info->EffectApplyAuraName[i])", dot)
+        self.assertNotIn("== SPELL_AURA_PERIODIC_DAMAGE", dot)
 
 
 if __name__ == "__main__":

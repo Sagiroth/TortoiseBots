@@ -12,6 +12,7 @@
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/values/PeriodicDamageAura.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/strategy/values/MountValues.h"
@@ -615,7 +616,7 @@ namespace
         if (!info)
             return false;
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
-            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && info->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
+            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
                 return true;
         return false;
     }

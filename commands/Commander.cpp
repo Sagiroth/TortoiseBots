@@ -40,6 +40,7 @@
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
 #include "../ai/playerbot/strategy/values/AttackersValue.h"
+#include "../ai/playerbot/strategy/values/PeriodicDamageAura.h"
 #include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/strategy/values/LastMovementValue.h"
@@ -7953,9 +7954,10 @@ bool PartyDotOn(Unit* unit, Player* lead)
         Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
         return owner && (owner == lead || (group && group->IsMember(owner->GetObjectGuid())));
     };
-    for (Aura const* aura : unit->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
-        if (aura && inParty(aura->GetCaster()))
-            return true;
+    for (uint32 const type : ai::kPeriodicDamageAuraTypes)
+        for (Aura const* aura : unit->GetAurasByType(static_cast<AuraType>(type)))
+            if (aura && inParty(aura->GetCaster()))
+                return true;
     return false;
 }
 
