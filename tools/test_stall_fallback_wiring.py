@@ -37,7 +37,7 @@ class StallFallbackWiringTest(unittest.TestCase):
         self.assertIn("r.stallStandInWanted = false;", fresh)
 
     def test_glue_searches_a_dry_stand_in_when_asked(self):
-        i = COMMANDS.index("    DropUnattackableCombat(lead, bots, slot.run.combatDrops);\n")
+        i = COMMANDS.index("    DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);\n")
         block = COMMANDS[i:COMMANDS.index("if (!order.empty())", i)]
         self.assertLess(COMMANDS.index("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), i)
         self.assertIn("if (slot.run.stallStandInWanted)", block)

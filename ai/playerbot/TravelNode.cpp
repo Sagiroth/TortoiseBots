@@ -1300,8 +1300,8 @@ void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTa
         if (!creature || !creature->IsAlive())
             continue;
 
-        // Already fighting someone else (a pet, an escort, another member: the
-        // gate keeps the bot and its leader out of combat). Not held for: in a
+        // Already fighting someone (the leader's own fight, a pet, an escort,
+        // another member: the gate keeps the bot out of combat). Not held for: in a
         // dungeon such a creature also pulls a passer-by, but that fight is
         // already on and the bot joining it is acceptable.
         if (creature->IsInCombat() || creature->GetVictim())

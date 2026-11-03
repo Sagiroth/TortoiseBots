@@ -184,7 +184,9 @@ bool PossibleTriggersValue::AcceptUnit(Unit* unit)
             continue;
         for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
             if (TriggerSpellMarksSpinHazard((int)triggerProto->Effect[i],
-                (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable))
+                (int)triggerProto->EffectImplicitTargetA[i], (int)triggerProto->EffectImplicitTargetB[i], selectable) ||
+                TriggerSpellMarksGroundHazard((int)triggerProto->Effect[i],
+                triggerProto->IsPositiveEffect(SpellEffectIndex(i)), selectable))
                 spinning = true;
     }
     return spinning;

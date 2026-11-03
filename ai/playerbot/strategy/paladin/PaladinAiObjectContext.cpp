@@ -303,6 +303,7 @@ namespace ai
                 creators["exorcism and healer should attack"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "exorcism", "healer should attack"); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new RepentanceOnHealerTrigger(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new RepentanceSnareTrigger(ai); };
+                creators["repentance on cc"] = [](PlayerbotAI* ai) { return new RepentanceCcTrigger(ai); };
                 creators["repentance interrupt"] = [](PlayerbotAI* ai) { return new RepentanceInterruptTrigger(ai); };
                 creators["hammer of justice on enemy"] = [](PlayerbotAI* ai) { return new HammerOfJusticeOnEnemyTrigger(ai); };
                 creators["blessing of sacrifice"] = [](PlayerbotAI* ai) { return new BlessingOfSacrificeTrigger(ai); };
@@ -423,6 +424,7 @@ namespace ai
                 creators["repentance"] = [](PlayerbotAI* ai) { return new CastRepentanceAction(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new CastRepentanceSnareAction(ai); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new CastRepentanceOnHealerAction(ai); };
+                creators["repentance on cc"] = [](PlayerbotAI* ai) { return new CastRepentanceOnCcAction(ai); };
                 creators["holy shock"] = [](PlayerbotAI* ai) { return new CastHolyShockAction(ai); };
                 creators["holy shock on party"] = [](PlayerbotAI* ai) { return new CastHolyShockOnPartyAction(ai); };
                 creators["blessing of freedom"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomAction(ai); };

@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/LastSpellCastValue.h"
 #include "playerbot/policy/class/HotStreakPolicy.h"
 #include "playerbot/strategy/values/AoeValues.h"
+#include "playerbot/strategy/values/TargetValue.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
 
@@ -379,6 +380,11 @@ bool BlizzardChannelCheckTrigger::IsActive()
             if (id == 10 || id == 6141 || id == 8427 ||
                 id == 10185 || id == 10186 || id == 10187)
             {
+                // A unit under our crowd control inside the blizzard breaks
+                // the hold on its next tick: stop the channel at once.
+                CcGuard ccGuard(ai);
+                if (ccGuard.CcInRunningArea(spell))
+                    return true;
                 // Pack thinned below a blizzard's worth: stop channeling.
                 // NOTE: the donor reads singular "attacker count", which is
                 // NOT registered here (only "attackers count" plural is) —

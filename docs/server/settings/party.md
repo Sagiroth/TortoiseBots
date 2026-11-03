@@ -21,6 +21,7 @@ These settings configure player-owned bots, alt-bots, formation positioning, and
 | [`AiPlayerbot.BoostFollow`](#aiplayerbotboostfollow) | `0` | Causes bots trailing far behind to mount up to catch up. |
 | [`AiPlayerbot.DungeonFollowHoldBeforePacks`](#aiplayerbotdungeonfollowholdbeforepacks) | `0` | Stops follower bots outside unpulled pack aggro radius (attack detection range). |
 | [`AiPlayerbot.DefaultFormation`](#aiplayerbotdefaultformation) | `chaos` | Sets default idle follow formation around the party leader. |
+| [`AiPlayerbot.RaidFollowWedge`](#aiplayerbotraidfollowwedge) | `0` | Spreads raid and dungeon followers behind the leader and has far stragglers walk the leader's path. |
 | [`AiPlayerbot.NonGmFreeSummon`](#aiplayerbotnongmfreesummon) | `0` | Enables the free instant summon action for non-staff players. |
 | [`AiPlayerbot.OwnedBotMaintenanceEnabled`](#aiplayerbotownedbotmaintenanceenabled) | `0` | Enables the maintenance command for owned and hired companion bots. |
 | [`AiPlayerbot.OwnedBotAutogearEnabled`](#aiplayerbotownedbotautogearenabled) | `0` | Enables automated incremental re-gearing for owned and hired bots. |
@@ -77,7 +78,7 @@ Prevents follower bots from running through unpulled monster packs when trailing
 <details>
 <summary>How it works in detail</summary>
 
-Inside a dungeon or raid instance, while neither the bot nor the leader is in combat (aggro: the radius in which monsters attack), a bot whose leader is more than 30 yards ahead calculates its own travel path along the route.
+Inside a dungeon or raid instance, while the bot is not in combat (aggro: the radius in which monsters attack), a bot whose leader is more than 30 yards ahead calculates its own travel path along the route. The leader may be fighting: a bot far behind still stops before the packs on its way to that fight (the pack the leader fights is already in combat and never holds the bot).
 
 If an unpulled hostile creature stands along that path, the bot stops 3 yards outside the creature aggro radius and holds its position rather than running through. The bot whispers its master once per pack (at most every 30 seconds): `Pack in the way: <name>. Waiting here - pull it or come back for me.`
 
@@ -106,6 +107,21 @@ Idle party bots arrange themselves in the chosen geometric formation relative to
 Bots walk into their slot once when a formation is set or changed, and once each time the leader stops moving. After that they stand still and follow the leader normally, so an idle party does not shuffle.
 
 Individual bots can be assigned custom formations during gameplay using the [`.bot formation`](../../play/commands/party-actions.md#bot-formation) command.
+
+</details>
+
+### `AiPlayerbot.RaidFollowWedge`
+Inside a dungeon or raid, followers stand in a 150 degree arc directly behind the group leader instead of around it, and a straggler walks the leader's own path.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Inside a dungeon or raid, while the bot is in a group, the configured formation gives way to a `near` formation spread over a 150 degree wedge behind the leader. No slot is ahead of or beside the leader, so a move row that passes a pack no longer puts a follower in front of the tank. With more than ten followers the wedge uses a second ring three yards further back; tanks and healers stay on the inner ring.
+
+The follow distance in the wedge is `AiPlayerbot.RaidFollowDistance` (4 yd). A follower more than 20 yards behind the leader, while neither of them is in combat, walks the leader's recorded recent positions instead of the direct route to its slot, so stairs and corners are taken the way the leader took them.
+
+The open world, and a bot whose player chose a formation with [`.bot formation`](../../play/commands/party-actions.md#bot-formation), keep the configured formation. `0` keeps the configured formation everywhere.
 
 </details>
 

@@ -122,6 +122,8 @@ namespace ai
     // repentance triggers
     INTERRUPT_HEALER_TRIGGER(RepentanceOnHealerTrigger, "repentance on enemy healer");
     SNARE_TRIGGER(RepentanceSnareTrigger, "repentance on snare target");
+    // The run leader's cc mark (CastRepentanceOnCcAction), as the warlock's "seduction".
+    CC_TRIGGER(RepentanceCcTrigger, "repentance");
     // The "repentance" action is shared with the "repentance or shield"
     // critical-health row, which repents the current target, so this trigger
     // stays on the current target too.

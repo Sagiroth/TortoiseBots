@@ -12036,14 +12036,24 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
     freed.members[4].inCombat = false;
     CHECK(Tick(r, freed) == "summon Bowjangles");
     CHECK(r.summoned.count("Bowjangles"));
-    CHECK(Tick(r, freed).compare(0, 7, "summon ") != 0 && !r.strandSummon && r.state == State::Running);
+    // A summon is done only on arrival (within 10 yd of the lead bot), not when it goes out: still away, they hold
+    // the summons open; there, the summons end.
+    CHECK(Tick(r, freed).compare(0, 7, "summon ") != 0 && r.strandSummon);
+    CHECK(r.note.find("to arrive") != std::string::npos);
+    Facts landed = freed;
+    for (MemberFact& m : landed.members)
+    {
+        m.yd = 5.0f;
+        m.dz = 0.0f;
+    }
+    CHECK(Tick(r, landed).compare(0, 7, "summon ") != 0 && !r.strandSummon && r.state == State::Running);
     // Attackers alone count as a fight too (asked of the summon tick itself: Tick's regroup takes such a
     // bot first, "running back with 1 attacker").
     Facts hit = atPoint;
     hit.members[4].inCombat = false;
     hit.members[4].attackers = 1;
     Run att = fightLeft;
-    att.strandSummoned = {"Yssia", "Beardinator", "Wendrick"};
+    att.strandSummoned = {{"Yssia", 0}, {"Beardinator", 0}, {"Wendrick", 0}};
     std::string attOrder;
     CHECK(StrandedTeleportTick(att, hit, kTickMs, attOrder) && attOrder.empty() && att.strandSummon);
     CHECK(att.note.find("waiting for Bowjangles") != std::string::npos);
@@ -12148,6 +12158,198 @@ static void TestStrandedLeadIsTeleportedToTheLastReachedPoint()
 // teleported to; the walk back that followed could not teleport it a second time (RescueAllowed false), so it gave
 // the point up and the lead bot ended stuck in the river. The latch re-arms, out of combat and in the same step,
 // when the lead bot stands farther than kStrandRearmYd from the point it was teleported to.
+// ZG walk 32 c-r1: after a wipe the lead bot is revived at the graveyard, rescue-teleported alone to step 573 beside
+// the 574 pack and engaged 0.6 yd after it, while the other 19 members stood 360-475 yd away and the healers got no
+// cast off. A rescue never sends the lead bot alone onto a point live hostiles hold: it joins the party's group
+// instead, or holds until the party is together.
+static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f),
+        Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f), Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f),
+        Step(PlanStepKind::Rest)};
+    // A live hostile at the point, its aggro reach 20 yd: kLiveHostileMarginYd makes 28 yd the held radius.
+    std::vector<StandPackReach> live;
+    StandPackReach mob;
+    mob.x = -422.4f;
+    mob.y = 82.4f;
+    mob.z = -172.9f;
+    mob.reachYd = 20.0f;
+    live.push_back(mob);
+    CHECK(LiveHostileNearPoint(live, -422.4f, 82.4f, -172.9f));
+    CHECK(LiveHostileNearPoint(live, -422.4f, 82.4f + 28.0f, -172.9f));
+    CHECK(!LiveHostileNearPoint(live, -422.4f, 82.4f + 29.0f, -172.9f));
+
+    // The plan alone calls the point clear; the live read does not.
+    Facts read = StrandFacts(-960.0f, 620.0f, -172.9f);
+    read.rescueRead = true;
+    read.rescueReadX = -422.4f;
+    read.rescueReadY = 82.4f;
+    read.rescueReadZ = -172.9f;
+    read.rescueReach = live;
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 0);
+        CHECK(SafePointAtOrBefore(r, 2, 1) == 1);
+        CHECK(SafePointAtOrBefore(r, 2, 1, &read) == 0);
+        // A read of another point answers nothing for this one.
+        Facts elsewhere = read;
+        elsewhere.rescueReadY = 900.0f;
+        CHECK(SafePointAtOrBefore(r, 2, 1, &elsewhere) == 1);
+    }
+    // A member group: two members together away from the point, one alone elsewhere.
+    Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
+    MemberFact a = Mem("Aaa", 0);
+    a.x = -900.0f;
+    a.y = 600.0f;
+    a.z = -172.9f;
+    a.yd = 100.0f;
+    MemberFact b = Mem("Bbb", 0);
+    b.x = -905.0f;
+    b.y = 604.0f;
+    b.z = -172.9f;
+    b.yd = 105.0f;
+    MemberFact c = Mem("Ccc", 0);
+    c.x = -300.0f;
+    c.y = 300.0f;
+    c.z = -172.9f;
+    c.yd = 500.0f;
+    f.members = {f.members[0], a, b, c}; // the lead bot, then the party
+    MemberGroup group;
+    CHECK(MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group));
+    CHECK(group.count == 2 && group.nearest == "Aaa");
+    CHECK(group.x == -900.0f && group.y == 600.0f);
+    // Nobody out of combat: no group.
+    f.members[1].inCombat = true;
+    f.members[2].inCombat = true;
+    f.members[3].attackers = 3;
+    CHECK(!MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group));
+    f.members[1].inCombat = false;
+    f.members[2].inCombat = false;
+    f.members[3].attackers = 0;
+
+    // The rescue: the point is held, so the lead bot goes to the party.
+    auto stranded = [&]()
+    {
+        Run r = Start(&plan, 2);
+        NoteCheckpoint(r, 0);
+        r.walkBack = true;
+        r.walkBackIdx = 1;
+        r.walkBackStart = 1;
+        r.strandDue = true;
+        r.strandIdx = 1;
+        r.rescueScanWanted = true;
+        r.rescueScanX = -422.4f;
+        r.rescueScanY = 82.4f;
+        r.rescueScanZ = -172.9f;
+        return r;
+    };
+    {
+        Facts g = f;
+        g.rescueRead = true;
+        g.rescueReadX = -422.4f;
+        g.rescueReadY = 82.4f;
+        g.rescueReadZ = -172.9f;
+        g.rescueReach = live;
+        Run r = stranded();
+        std::string const order = Tick(r, g);
+        CHECK(order == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+        CHECK(r.note.find("the party (Aaa's spot, 2 out of combat)") != std::string::npos);
+        CHECK(r.strandOn && r.strandParty);
+    }
+    {
+        // No member out of combat: it holds, nothing goes out.
+        Facts g = f;
+        g.rescueRead = true;
+        g.rescueReadX = -422.4f;
+        g.rescueReadY = 82.4f;
+        g.rescueReadZ = -172.9f;
+        g.rescueReach = live;
+        g.members[1].inCombat = true;
+        g.members[2].inCombat = true;
+        g.members[3].attackers = 3;
+        Run r = stranded();
+        CHECK(Tick(r, g).empty());
+        CHECK(r.note.find("held by live hostiles and no member stands out of combat") != std::string::npos);
+        CHECK(!r.strandOn);
+        // And after kRescueHoldMs the run pauses for the party to be put together.
+        for (std::uint32_t ms = kTickMs; ms < kRescueHoldMs; ms += kTickMs)
+            Tick(r, g);
+        CHECK(r.state == State::Paused);
+        CHECK(r.note.find("put the party together") != std::string::npos);
+    }
+    {
+        // No live read (the glue did not answer): the plan point stands, as before.
+        Facts g = f;
+        Run r = stranded();
+        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -422.4 82.4 -172.9");
+        CHECK(!r.strandParty);
+    }
+}
+
+// A fetch with no member out of combat to bring the bot to is bounded: each such tick spends one of the kFetchTries
+// attempts, so the run gives up by name instead of holding for ever (a dead lead with every living member in the queue
+// is exactly that state).
+static void TestAFetchWithoutAnAnchorGivesUp()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.teleportReturnYd = 250.0f; // far enough that the revived member is a fetch, not a summon
+    f.fetchRead = true;
+    f.leadInCombat = true; // the lead bot fights: no spot of its own to bring the member to
+    MemberFact tanky = Mem("Tanky", 0.0f);
+    tanky.inCombat = true;
+    MemberFact runner = Mem("Runner", 300.0f);
+    f.members = {tanky, runner}; // and Runner is the only other living member
+    r.waitFor.insert("Runner"); // a fallen member, alive again
+    r.fetchOn = true;           // AiPlayerbot.RunTeleportReturnYd is on (the glue's tick reads it)
+    std::string order;
+    std::uint32_t ticks = 0;
+    for (; ticks < kFetchTries + 2 && r.note.find("bring it to the lead bot") == std::string::npos; ++ticks)
+    {
+        r.runMs += kFetchRetryMs;
+        FarReturnTick(r, f, kTickMs, order);
+    }
+    CHECK(r.note.find("after 3 teleport returns") != std::string::npos);
+    CHECK(ticks <= kFetchTries + 1);
+    CHECK(!r.fetch.count("Runner"));
+}
+
+// A fetched member (a revived bot, a dropped summon) is never teleported alone into a fight: the lead bot's spot while
+// it lives out of combat, else the nearest member out of combat, else nowhere (it holds where it is).
+static void TestAFetchedMemberIsNotTeleportedIntoAFight()
+{
+    Facts f = Party(0);
+    f.fetchRead = true;
+    ai::ApproachPoint point;
+    std::string why;
+    std::vector<std::string> due = {"Revived"};
+    CHECK(FarReturnPoint(f, due, point, why)); // the lead bot's own spot, nothing near it
+    CHECK(point.x == 0.0f && point.y == 0.0f);
+    CHECK(why.empty());
+    // The lead bot fights: the nearest member out of combat takes the fetch.
+    MemberFact front = Mem("Front", 25);
+    front.inCombat = true;
+    MemberFact back = Mem("Back", 40);
+    MemberFact revived = Mem("Revived", 300);
+    f.members = {front, back, revived};
+    f.leadInCombat = true;
+    CHECK(FarReturnPoint(f, due, point, why));
+    CHECK(point.x == 40.0f);
+    CHECK(why.find("Back") != std::string::npos);
+    // Nobody out of combat: the member holds where it is.
+    back.inCombat = true;
+    f.members[1] = back;
+    CHECK(!FarReturnPoint(f, due, point, why));
+    // The lead bot out of combat again: its spot.
+    f.leadInCombat = false;
+    f.members[1].inCombat = false;
+    CHECK(FarReturnPoint(f, due, point, why));
+    CHECK(point.x == 0.0f);
+}
+
 static void TestTheStrandRescueRearmsWhenTheLeadIsMovedAway()
 {
     DungeonPlan plan;
@@ -15442,6 +15644,38 @@ static void TestPullEstimateCacheRereadsOnNewStepPass()
 }
 
 // The pull order's note says the bodies the ring estimate expects.
+// A re-pull keeps the step's last ring reading: on the re-pull the target is in
+// combat, so this tick's read carries no estimate (ReadPullJoiners skips it) and
+// the pull fell back to the cheap joiners + 1. ZG walk 32 e-r1 846: "5 bodies
+// expected" on a pack the ring read at 16, and 15 came.
+static void TestRePullKeepsTheRingEstimate()
+{
+    DungeonPlan plan;
+    plan.steps = {BodiesPullStep(40, {4852}, 20)}; // a plan ceiling over the estimate: no rest
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.aggroWalkRing = true;
+    f.joinerCeiling = 6;
+    f.units = {Estimated(31, 4852, 54.7f, 16, {31})};
+    f.units[0].joinersRead = true;
+    CHECK(Tick(r, f) == "pullback 31");
+    CHECK(r.note.find("16 bodies expected") != std::string::npos);
+    CHECK(r.ringSeen[31] == 16);
+    // The re-pull: the unit fights now, so the estimate is not read this tick.
+    f.units[0].joinersRead = false;
+    f.units[0].estBodies = 0;
+    f.units[0].joiners = 4;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 16); // not the cheap 4 + 1
+    // A tick that does read the ring again wins over the memory.
+    f.units[0].joinersRead = true;
+    f.units[0].estBodies = 15;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 15);
+    // The key off: the ring memory is never consulted, the row's own pack is counted.
+    f.aggroWalkRing = false;
+    f.units[0].joinersRead = false;
+    CHECK(RunAutoCcBodies(r, f, f.units[0]) == 1);
+}
+
 static void TestRingPullNoteSaysBodiesExpected()
 {
     DungeonPlan plan;
@@ -15707,16 +15941,18 @@ static void TestPullNoteCarriesTheJoinerCount()
 }
 
 // The pull's joiners (the server half of turtle-agent #369): the pull records its pack by guid (the target and
-// its own creature group, linked mates and crowd control, UnitFact::packGuids), every hostile engaged with the
-// party outside it in the first 10 s is a joiner, and the status note reports
-// "joiners N (entry <entry> x<count>, ...)". A pull step's read lists the units of several packs, so a second
-// pack that joins is a joiner too.
+// its own creature group, linked mates and crowd control, UnitFact::packGuids), and every hostile engaged with the
+// party outside it in the kJoinerWindowMs that start with the first combat tick after the pullback is a joiner.
+// The report goes on the pull's line once, when the window closes: "joiners N (entry <entry> x<count>, ...)",
+// never into later status or pause notes. A pull step's read lists the units of several packs, so a second pack
+// that joins is a joiner too, and a unit already engaged at the pullback is not.
 static void TestPullJoinersReported()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(40, {4852})};
 
-    // The target and its formation partner fight: no joiner, and the line says so.
+    // The target and its formation partner fight: no joiner. The pull's own line carries no count before the
+    // fight: the window starts with it.
     {
         Run r = Start(&plan);
         Facts f = Party(0);
@@ -15724,7 +15960,7 @@ static void TestPullJoinersReported()
         target.packGuids = {33}; // the "aggro together" group the glue read for it (33 is not in the read)
         f.units = {target};
         CHECK(Tick(r, f) == "pullback 31");
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "joiners")); // read over the fight, not at the pullback
         f.anyInCombat = true;
         f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(33, 4852, 6.0f)};
         for (int i = 0; i < 10; ++i)
@@ -15734,7 +15970,10 @@ static void TestPullJoinersReported()
         // A hostile that joins after the 10 s window is no joiner of that pull.
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 0"));
+        CHECK(!Has(StatusParts(r).note, "6000")); // the window is over: nothing is counted after it
+        // The report rode on the pull's line only: a later pause note does not carry it.
+        Pause(r, "paused for the test");
+        CHECK(StatusParts(r).note == "paused for the test");
     }
 
     // A plain formation (no "aggro together"): the glue reads no pack for the target, so its formation partner
@@ -15768,8 +16007,8 @@ static void TestPullJoinersReported()
         CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         f.engagedUnits.push_back(Unit(51, 6000, 12.0f));
         Tick(r, f);
-        CHECK(Has(StatusParts(r).note, "joiners 4 (entry 4852 x1, 5000 x2, 5001 x1)"));
         CHECK(!Has(StatusParts(r).note, "6000"));
+        CHECK(!Has(StatusParts(r).note, "joiners 5"));
     }
 
     // An unrelated pack of the residue band joins: a joiner too.
@@ -15803,6 +16042,41 @@ static void TestPullJoinersReported()
             Tick(r, f);
         CHECK(Has(StatusParts(r).note, "joiners 0"));
     }
+
+    // A unit already engaged when the pullback went out fights its own fight: it is no joiner of this pull.
+    {
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.units = {Unit(31, 4852, 40.0f)};
+        f.engagedUnits = {Unit(51, 6000, 12.0f)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        f.engagedUnits = {Unit(51, 6000, 12.0f), Unit(31, 4852, 5.0f), Unit(52, 6001, 9.0f)};
+        for (int i = 0; i < 10; ++i)
+            Tick(r, f);
+        CHECK(Has(StatusParts(r).note, "joiners 1 (entry 6001 x1)"));
+        CHECK(!Has(StatusParts(r).note, "6000"));
+    }
+}
+
+// The 10 s joiner window starts on the first tick the party is in combat after the pullback, not at the pullback:
+// a target dragged into the fight 15 s later still reports the joiner it drew (the quiet ticks spent none of it).
+static void TestPullJoinerWindowStartsWithTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4852})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(31, 4852, 40.0f)};
+    CHECK(Tick(r, f) == "pullback 31");
+    for (int i = 0; i < 15; ++i)
+        Tick(r, f);
+    CHECK(!Has(StatusParts(r).note, "joiners"));
+    f.anyInCombat = true;
+    f.engagedUnits = {Unit(31, 4852, 5.0f), Unit(41, 5000, 8.0f)};
+    for (int i = 0; i < 10; ++i)
+        Tick(r, f);
+    CHECK(Has(StatusParts(r).note, "joiners 1 (entry 5000 x1)"));
 }
 
 // The glue's read of a stand for the unit the policy asked for (Run::shotStandFor).
@@ -16635,6 +16909,185 @@ static void TestAuthoredStandRuleSkipsHopPulls()
         std::string order;
         PullUnit(r, f, Seen(11, 4851, 40.0f, false), order);
         CHECK(order.empty() && r.shotStandFor == 11);
+    }
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: a pull row whose authored approach cannot see its unit holds there. It does
+// not search a closer firing stand (ZG walk 28 step 315: the 8.7 yd stand stood 24 yd nearer the middle packs than
+// the authored approach and woke them through the open ring).
+static void TestStandDisciplineHoldsAtTheAuthoredStand()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)}; // in range, no line of sight from the authored stand
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+        CHECK(r.shotStandFor == 0); // no closer stand searched
+        CHECK(r.shotStandTries[11] == 0);
+    }
+    // Key off: the old stand search runs.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.shotStandFor == 11);
+        CHECK(Has(r.note, "reading a firing stand"));
+    }
+    // Key on, the unit in sight: the pull goes out from the authored stand as before.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.units = {Seen(11, 4851, 24.0f, true)};
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline alone (the stand-pull key off): the pull row still fires from the authored
+// stand only. A tank that cannot see its unit from there holds; a tank that can fires as before.
+static void TestStandDisciplineAloneEnforcesTheAuthoredStand()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.pullStand = false;
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)};
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+        CHECK(r.shotStandFor == 0);
+    }
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.units = {Seen(11, 4851, 24.0f, true)};
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+    // Both keys off: no stand rule, the pull goes out at once.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: the no-LOS hold at the plan's stand lasts kStandLosWaitMs (20 s) for one unit.
+// The 20th second's tick says the firing-stand search takes over; the next read finds no stand, so the pull goes out
+// from where the tank stands, and the walk back to the plan's stand is not resumed for that unit.
+static void TestStandDisciplineLosHoldEndsAfterTwentySeconds()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)};
+    Run r = Start(&plan, 1);
+    std::string order;
+    for (int s = 1; s <= 19; ++s) // 1 s to 19 s: held at the authored stand
+    {
+        order.clear();
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+    }
+    CHECK(r.shotStandFor == 0);
+    order.clear();
+    PullUnit(r, f, f.units[0], order); // 20 s: the firing-stand search takes over
+    CHECK(order.empty());
+    CHECK(r.note == "no LOS from the authored stand after 20 s; searching a firing stand");
+    CHECK(r.shotStandFor == 11);
+    f.shotStandGuid = 11; // the glue's read: no firing stand on the path
+    order.clear();
+    PullUnit(r, f, f.units[0], order);
+    CHECK(order == "pullback 11");
+    CHECK(Has(r.note, "no firing stand found"));
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: every living tank and melee is at the plan's stand (within 5 yd) or clear of
+// the next pull's radius plus the 20 yd ring before the pull row fires. The row waits up to 10 s, then fires with a
+// note naming who was out of place (ZG walk 28 step 323: the OT stood 3 yd from the next pack while the MT pulled).
+static void TestStandDisciplineWaitsForTanksAndMelee()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    PlanStep next = PullStep(18.0f, {4852});
+    next.radius = 5.0f;
+    plan.steps = {stand, pull, next};
+    Facts f = Party(0);
+    f.standDiscipline = true;
+    f.leadShotYd = 29.5f;
+    f.units = {Seen(11, 4851, 20.0f)};
+    f.members = {Mem("Tanky", 0.0f), Mem("Offy", 15.0f), Mem("Roguey", 2.0f)};
+    MemberFact healer = Mem("Healy", 19.0f);
+    healer.ranged = true;
+    f.members.push_back(healer);
+    f.maxMemberYd = 19.0f;
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(Has(r.note, "waiting") && Has(r.note, "Offy"));
+        CHECK(!Has(r.note, "Healy") && !Has(r.note, "Roguey"));
+        for (int i = 0; i < 8; ++i) // 9 s waited: still holding
+        {
+            order.clear();
+            PullUnit(r, f, f.units[0], order);
+            CHECK(order.empty());
+        }
+        order.clear();
+        PullUnit(r, f, f.units[0], order); // 10 s: the row fires with the note
+        CHECK(order == "pullback 11");
+        CHECK(Has(r.note, "out of place") && Has(r.note, "Offy"));
+    }
+    // Key off: no wait, the pull goes out at once.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+        CHECK(!Has(r.note, "out of place"));
+    }
+    // The OT at the stand: no wait.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.members[1] = Mem("Offy", 2.0f);
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+        CHECK(!Has(r.note, "out of place"));
     }
 }
 
@@ -21709,24 +22162,24 @@ static void TestPlanRejoinBind()
     using E = RejoinEntryCheck;
     // (a) the normal case: the group is bound to the lead bot's copy. The group's bind wins over a solo one that is
     // not permanent (Player::GetBoundInstanceSaveForSelfOrGroup), so nothing is written, the stale solo bind included.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, true}) == P::Teleport);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, true}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, true, {}, 5}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, true, {}, 5}) == P::Teleport);
     // (b) the group has no bind (Dire Maul West rf-B-4): only the bot's own solo bind moves.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, false, false}) == P::BindSolo);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, false, false}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, false, false, {}, 5}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, false, false, {}, 5}) == P::BindSolo);
     // (c) the group is bound to another copy: the group's bind would have to change, so it refuses (never rebinds a
     // party), permanent or not.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, false}) == P::GroupElsewhere);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, false}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, false, {}, 5}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, false, {}, 5}) == P::GroupElsewhere);
     // (d) a permanent solo bind to another copy: a saved lockout, refused, also with the group on the lead's copy.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, true, true}) == P::Locked);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, false, false}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, true, true, {}, 5}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, false, false, {}, 5}) == P::Locked);
     // (e) a permanent solo bind to the lead bot's copy: it already wins, nothing is written.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, true, false, false}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, true, false, false, {}, 5}) == P::Teleport);
     // (f) the preflight (the core's own entry checks) failed: refused before anything else, so no bind is touched.
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::CanPlayerEnter, true, false, false, false, false}) == P::EntryRefused);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::InstanceCount, false, false, false, true, true}) == P::EntryRefused);
-    CHECK(PlanRejoinBind(RejoinBindFacts{E::MapCanEnter, true, true, false, false, false}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::CanPlayerEnter, true, false, false, false, false, {}, 5}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::InstanceCount, false, false, false, true, true, {}, 5}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::MapCanEnter, true, true, false, false, false, {}, 5}) == P::EntryRefused);
     // Only BindSolo writes a bind.
     CHECK(!RejoinBindWrites(P::EntryRefused) && !RejoinBindWrites(P::Locked) && !RejoinBindWrites(P::GroupElsewhere) &&
         !RejoinBindWrites(P::Teleport) && RejoinBindWrites(P::BindSolo));
@@ -21740,22 +22193,31 @@ static void TestRejoinBindReason()
     f.entry = E::CanPlayerEnter;
     CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: can-player-enter)");
     f.entry = E::InstanceCount;
-    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: instance-count)");
+    f.botName = "Bob";
+    f.instanceLimit = 5;
+    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (instance limit: Bob's account entered 5 instances this hour)");
+    f.botName.clear();
+    f.instanceLimit = 5;
     f.entry = E::MapCanEnter;
     CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: map-can-enter)");
     CHECK(RejoinBindRefusal(f, 113, 0) == "entry check: map-can-enter");
+    // The instance limit is named exactly, with the bot (an unnamed one reads "the bot"); the other checks keep their names.
+    f.entry = E::InstanceCount;
+    CHECK(RejoinBindRefusal(f, 113, 0) == "instance limit: the bot's account entered 5 instances this hour");
+    f.entry = E::MapCanEnter;
     CHECK(std::string(RejoinEntryCheckName(E::Ok)) == "ok");
     // The live shape: the instance count refused and the group is bound to the bot's own copy.
     RejoinBindFacts live;
     live.entry = E::InstanceCount;
+    live.botName = "Bot113";
     live.groupBind = true;
     live.groupIsLeads = false;
     CHECK(PlanRejoinBind(live) == RejoinBindPlan::EntryRefused);
     CHECK(RejoinBindVerdictText(live, 113, 113) ==
-        "refused (entry check: instance-count; group bound to the bot's copy 113)");
+        "refused (instance limit: Bot113's account entered 5 instances this hour; group bound to the bot's copy 113)");
     // The group's bind in a third copy: named by its id.
     CHECK(RejoinBindVerdictText(live, 113, 114) ==
-        "refused (entry check: instance-count; group bound to another copy 114)");
+        "refused (instance limit: Bot113's account entered 5 instances this hour; group bound to another copy 114)");
     // The spec's GroupElsewhere on its own: the entry checks pass, the group leads to the bot's copy.
     RejoinBindFacts elsewhere;
     elsewhere.groupBind = true;
@@ -24132,18 +24594,67 @@ static void TestRaidBossMainTankJoinSkipsAnEvadingBoss()
         CHECK(Tick(r, f).empty());
 }
 
+// The join is an `attack`, so it is bounded by the attack range (kRaidWalkJoinYd, the SightDistance bound), not by
+// the boss fight's own 100 yd guard reach: 70 yd is a boss the main tank cannot be sent at (no order, no note).
 static void TestRaidBossMainTankJoinStaysInRange()
 {
     DungeonPlan plan;
     Run r = RaidBossRun(plan);
     Facts f = RaidBossGuardFacts();
     f.leadHeldEntries.clear();
-    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 101);
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 70);
     boss.victimTank = true;
     boss.victimName = "Off";
     f.partyAttackers = {boss};
-    for (int k = 0; k < 8; ++k)
+    for (int k = 0; k < 30; ++k)
+    {
         CHECK(Tick(r, f).empty());
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    // The same boss inside the attack range is joined once its wait is due.
+    boss.distLead = kRaidWalkJoinYd;
+    f.partyAttackers = {boss};
+    std::string join;
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + kTickMs && join.empty(); ms += kTickMs)
+        join = Tick(r, f);
+    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+}
+
+// The join is only for a plan boss an off-tank holds: a boss on a healer or a dps is the guard's to hand out (and
+// a boss already on the main tank needs no join), so the main tank stays put with no note of its own.
+static void TestRaidBossMainTankJoinOnlyAnOffTanksBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHeldEntries.clear();
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimName = "Healy"; // on a healer: no victimTank
+    f.partyAttackers = {boss};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+    {
+        Tick(r, f);
+        CHECK(r.note.find("takes boss") == std::string::npos);
+    }
+    CHECK(r.raidBossJoined.empty());
+    // Two plan-boss entries, the main tank holding one of them: the off-tank's boss is left alone too (the main
+    // tank never leaves a plan boss for another).
+    DungeonPlan two;
+    PlanStep first = Step(PlanStepKind::Boss, 80);
+    first.entry = 10184;
+    PlanStep second = Step(PlanStepKind::Boss, 90);
+    second.entry = 10185;
+    two.steps = {first, second};
+    Run q = Start(&two);
+    Facts g = RaidBossGuardFacts();
+    g.leadHeldEntries = {10184}; // the main tank holds the first plan boss
+    UnitFact other = Hitter(0xF1300027C9000002ull, 10185, 20);
+    other.victimTank = true;
+    other.victimName = "Off";
+    g.partyAttackers = {other};
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 4 * kTickMs; ms += kTickMs)
+        CHECK(Tick(q, g).empty());
+    CHECK(q.raidBossJoined.empty() && q.note.find("takes boss") == std::string::npos);
 }
 
 static void TestRaidBossMainTankJoinNeedsStay()
@@ -24224,10 +24735,17 @@ static void TestRaidBossMainTankJoinLeavesAddsToTheOffTank()
     boss.victimName = "Off";
     f.partyAttackers = {boss, Hitter(45311, 11262, 20, true)};
     CHECK(Tick(r, f) == "attack 45311 Offy");
+    std::string const want = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky";
     std::string join;
-    for (int k = 0; k < 8 && join.empty(); ++k)
-        join = Tick(r, f);
-    CHECK(join == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    for (std::uint32_t ms = 0; ms <= kRaidAssistWaitMs + 2 * kTickMs; ms += kTickMs)
+    {
+        if (Tick(r, f) == want)
+        {
+            join = want; // the guard's add orders meanwhile are not the join
+            break;
+        }
+    }
+    CHECK(join == want);
 }
 
 static void TestRaidBossMainTankJoinRestartsAfterTheStayEnds()
@@ -24507,6 +25025,135 @@ static void TestRaidHealerGuardPicksByDistanceToTheAdd()
     CHECK(GuardTick(r, f) == "attack 50013 NearAdd");
     CHECK(HealerGuardMarked(r.healerGuardDps[50013], "NearAdd"));
     CHECK(!HealerGuardMarked(r.healerGuardDps[50013], "NearLead"));
+}
+
+// A ranged dps a freeze_on_aura row holds still takes no healer guard order: an `attack` applies no multiplier, so
+// the order would walk the gazed bot out of the aura's 2 yd (Mandokir: Ohgan on a healer). The next free dps takes
+// the add instead, and with the aura gone the nearer dps is picked again.
+static void TestRaidHealerGuardSkipsAFrozenDps()
+{
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        MemberFact frozen = Mem("GazedDps", 24);
+        frozen.ranged = true;
+        frozen.rangedDps = true;
+        frozen.frozen = true;
+        MemberFact free = Mem("FreeDps", 26);
+        free.ranged = true;
+        free.rangedDps = true;
+        f.members = {Mem("Tanky", 0), frozen, free};
+        UnitFact add = Hitter(50021, 11368, 20, true);
+        add.x = 22.0f; // GazedDps 2 yd, FreeDps 4
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50021 FreeDps");
+        CHECK(!HealerGuardMarked(r.healerGuardDps[50021], "GazedDps"));
+        CHECK(HealerGuardMarked(r.healerGuardDps[50021], "FreeDps"));
+    }
+    {
+        // The same facts with no freeze: the nearer dps is the one sent.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        MemberFact near = Mem("GazedDps", 24);
+        near.ranged = true;
+        near.rangedDps = true;
+        MemberFact far = Mem("FreeDps", 26);
+        far.ranged = true;
+        far.rangedDps = true;
+        f.members = {Mem("Tanky", 0), near, far};
+        UnitFact add = Hitter(50021, 11368, 20, true);
+        add.x = 22.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50021 GazedDps");
+    }
+}
+
+// A bot a freeze_on_aura row holds still takes no run order that would move it: no summon, no run back, no loot walk,
+// and the main tank it holds takes no guard pick-up. The next bot takes the order, and the order goes out once the
+// aura is gone.
+static void TestFrozenMembersTakeNoMovingOrder()
+{
+    {
+        // A summon of a straggler: the frozen bot is left where it stands, the farther one is summoned instead.
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 60);
+        frozen.frozen = true;
+        f.members = {Mem("Tanky", 0), frozen, Mem("Far", 50)};
+        // The sample the ceiling compares against: both stood where they are (not on their way in).
+        r.memberYd["Gazed"] = 60.0f;
+        r.memberYd["Far"] = 50.0f;
+        std::string order;
+        CHECK(SummonStraggler(r, f, order));
+        CHECK(order == "summon Far");
+        CHECK(!r.summoned.count("Gazed"));
+        f.members[1].frozen = false;
+        Run again = Start(&plan);
+        again.phase = Phase::Gather;
+        again.memberYd["Gazed"] = 60.0f;
+        again.memberYd["Far"] = 50.0f;
+        std::string order2;
+        CHECK(SummonStraggler(again, f, order2));
+        CHECK(order2 == "summon Gazed"); // the farthest, as before
+    }
+    {
+        // A run back: the frozen bot's attackers are not answered by walking it to the party.
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {6206}), Step(PlanStepKind::Move, 9)};
+        Run r = Start(&plan);
+        r.regroup = true;
+        r.reviveSent = true;
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 35);
+        frozen.attackers = 2;
+        frozen.frozen = true;
+        f.members = {Mem("Tanky", 0), frozen};
+        CHECK(!RunBack(r, f, kTickMs) && r.runBack.empty());
+        f.members[1].frozen = false;
+        CHECK(RunBack(r, f, kTickMs) && r.runBack.size() == 1);
+    }
+    {
+        // The loot turn: a frozen bot is not the one sent to the corpse.
+        DungeonPlan plan;
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        MemberFact frozen = Mem("Gazed", 10);
+        frozen.frozen = true;
+        f.members = {frozen, Mem("Looter", 12)};
+        f.lootTurn = "Gazed";
+        CHECK(NextLootBot(r, f) == "Looter");
+        f.members[0].frozen = false;
+        CHECK(NextLootBot(r, f) == "Gazed");
+    }
+    {
+        // The guard's pick-up: a frozen main tank stands still, and takes the mob once its aura is gone.
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4855, 4853})};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.leadIsTank = true;
+        f.leadStaying = true;
+        Tick(r, f);
+        f.units = {Unit(31, 4853, 40)};
+        CHECK(Tick(r, f) == "pullback 31");
+        f.anyInCombat = true;
+        MemberFact tank = Mem("Tanky", 0);
+        tank.frozen = true;
+        f.members = {tank, Mem("Healy", 12), Mem("Dps", 20)};
+        f.partyAttackers = {Hitter(41, 7320, 35)};
+        for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs + 4 * kGuardRepeatMs; ms += kTickMs)
+            CHECK(Tick(r, f).empty());
+        f.members[0].frozen = false;
+        std::string order;
+        for (std::uint32_t ms = 0; ms < kGuardWaitMs + 4 * kGuardRepeatMs && order.empty(); ms += kTickMs)
+            order = Tick(r, f);
+        CHECK(order == "attack 41 Tanky");
+    }
 }
 
 // No ranged dps in reach of the add: bots farther than kRaidHealerGuardRangeYd from it are no help (their order is
@@ -27879,6 +28526,79 @@ static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry 
     return r;
 }
 
+// ZG walk 32: the lead bot dies mid-pull and the fight goes on without a main tank. The first living off-tank takes
+// the role for the rest of the fight (its engage on arrival and the healer guard's), and the lead bot takes it back
+// when it is up again.
+static void TestDeadLeadLeavesTheMainTankRoleToTheOffTank()
+{
+    {
+        // The role is held by the lead bot while it lives, else by a living off-tank.
+        Facts f = RaidTrashFacts();
+        CHECK(MainTankRoleHeld(f));
+        f.leadAlive = false;
+        CHECK(MainTankRoleHeld(f));
+        f.raid.offTanksAlive.clear();
+        CHECK(!MainTankRoleHeld(f)); // the lead bot dead, no off-tank: the role is nobody's
+        // Not a tank lead bot: no role while it lives, no off-tank fallback for a living lead.
+        f.leadAlive = true;
+        f.leadIsTank = false;
+        f.raid.offTanksAlive = {"Brun"};
+        CHECK(!MainTankRoleHeld(f));
+    }
+    {
+        // The lead bot is up again: the role is its own, and its engage on arrival works as before.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0), Mem("Healy", 10)};
+        UnitFact add = Hitter(50071, 12129, 12, true); // on the healer
+        add.x = 10.0f;
+        f.partyAttackers = {add};
+        CHECK(GuardTick(r, f) == "attack 50071 Tanky");
+    }
+    {
+        // The ranged dps healer guard stays on with the lead dead while an off-tank lives: the add on the healer is the
+        // ranged dps' first, not the off-tank's.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        f.raid.healerGuard = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.leadAlive = false; // the lead bot died mid-pull
+        f.leadHasAttacker = false;
+        MemberFact tank = Mem("Brun", 0);
+        tank.ranged = false;
+        MemberFact healer = Mem("Healy", 10);
+        healer.healer = true;
+        MemberFact dps = Mem("Ranged", 12);
+        dps.ranged = true;
+        dps.rangedDps = true;
+        f.members = {tank, healer, dps};
+        UnitFact add = Hitter(50071, 12129, 20, true); // on the healer
+        add.x = 10.0f;
+        UnitFact held = TankHeld(50070, 12129, 25); // Brun holds one of its own: the latch's evidence
+        held.victimName = "Brun";
+        held.x = 20.0f;
+        f.partyAttackers = {add, held};
+        CHECK(GuardTick(r, f) == "attack 50071 Ranged");
+        CHECK(r.trashHealerGuard);
+        // No off-tank holding a mob: the latch does not arm on a living off-tank alone.
+        Facts g = RaidTrashFacts();
+        g.raid.healerGuard = true;
+        Run q = StartRaidTrashFight(plan, g);
+        g.leadAlive = false;
+        g.members = {tank, healer, dps};
+        UnitFact lone = Hitter(50071, 12129, 20, true);
+        lone.x = 10.0f;
+        g.partyAttackers = {lone};
+        CHECK(!RaidHealerGuardOn(q, g, true));
+        LatchTrashHealerGuard(q, g);
+        CHECK(!q.trashHealerGuard);
+        // Now no tank at all: the guard is off, the off-tank pick-up path is left.
+        f.raid.offTanksAlive.clear();
+        CHECK(!RaidHealerGuardOn(r, f, true));
+    }
+}
+
 static void TestRaidMainTankHelpsOnAMobAnOffTankHolds()
 {
     DungeonPlan plan;
@@ -29825,8 +30545,8 @@ static void TestWedgedNeverInAPartyRun()
     CHECK(r.wedgedSummons == 0);
 }
 
-// T8: the step gives two wedged bots its summons, the most wedged first, the second no sooner than
-// kRunawayResummonMs after the first, and the third never comes before the next step.
+// T8: the step gives four wedged bots its summons (the cap), the most wedged first, one no sooner than
+// kRunawayResummonMs after the last, and the fifth never before the next step.
 static void TestWedgedSummonCapAndStepReset()
 {
     DungeonPlan plan;
@@ -29835,16 +30555,15 @@ static void TestWedgedSummonCapAndStepReset()
     Facts f = WedgedFacts(60.0f, -30.0f);
     f.members.push_back(Mem("B", 50.0f, -20.0f));
     f.members.push_back(Mem("C", 40.0f, -10.0f));
-    f.members[2].x = 60.0f;
-    f.members[3].x = 50.0f;
-    f.members[4].x = 40.0f;
-    f.total = 5;
-    f.alive = 5;
+    f.members.push_back(Mem("D", 35.0f, -15.0f));
+    f.members.push_back(Mem("E", 30.0f, -25.0f));
+    f.total = 7;
+    f.alive = 7;
     f.maxMemberYd = 60.0f;
     CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
     std::vector<std::uint64_t> at;
     std::vector<std::string> orders;
-    for (int i = 0; i < 120; ++i)
+    for (int i = 0; i < 150; ++i)
     {
         WalkOn(f);
         std::string const order = Tick(r, f);
@@ -29860,14 +30579,19 @@ static void TestWedgedSummonCapAndStepReset()
                 }
         }
     }
-    CHECK(orders.size() == 2);
+    CHECK(orders.size() == 4); // the step's cap
     CHECK(orders[0] == "summon X"); // the largest |dz| first
-    CHECK(orders[1] == "summon B"); // the farther still out; C never gets one, the step is spent
+    CHECK(orders[1] == "summon E");
+    CHECK(orders[2] == "summon B");
+    CHECK(orders[3] == "summon D"); // C (the smallest |dz|) never gets one, the step is spent
     CHECK(at[0] == kWedgedMs + kTickMs);
     CHECK(at[1] - at[0] == kRunawayResummonMs);
+    CHECK(at[2] - at[1] == kRunawayResummonMs);
+    CHECK(at[3] - at[2] == kRunawayResummonMs);
+    CHECK(r.wedgedSummons == 4);
     NextStep(r, "test");
-    CHECK(r.step == 1 && r.wedgedSummons == 0 && r.wedgedLastMs == 0);
-    // A new step: the waiting third goes before its move (its still clock is long due, the budget is clear).
+    CHECK(r.step == 1 && r.wedgedSummons == 0 && r.wedgedLastMs == 0 && r.wedgedSummoned.empty());
+    // A new step: the waiting fifth goes before its move (its still clock is long due, the budget is clear).
     CHECK(Tick(r, f) == "summon C");
     f.members[4].yd = 3.0f; // C brought to the lead bot
     f.members[4].dz = 0.0f;
@@ -29876,11 +30600,11 @@ static void TestWedgedSummonCapAndStepReset()
 }
 
 // T9: a pause/resume or a wipe recovery restarts the SAME step (ResetStep) and must keep the step's wedged budget:
-// the cap and the 30 s between summons hold across it.
+// one summon a bot, the step's cap and the 30 s between summons all hold across it.
 static void TestWedgedBudgetSurvivesASameStepReset()
 {
     DungeonPlan plan;
-    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    plan.steps = {Step(PlanStepKind::Move, 9000), Step(PlanStepKind::Move, 9000)};
     Run r = Start(&plan);
     Facts f = WedgedFacts(45.0f, 56.0f);
     for (int i = 0; i < 16; ++i)
@@ -29890,9 +30614,8 @@ static void TestWedgedBudgetSurvivesASameStepReset()
     }
     CHECK(r.wedgedSummons == 1);
     ResetStep(r); // a resume of the same step
-    CHECK(r.step == 0 && r.wedgedSummons == 1 && r.wedgedLastMs != 0);
-    f.members[2].yd = 3.0f; // the summon brought X to the lead bot
-    f.members[2].dz = 0.0f;
+    CHECK(r.step == 0 && r.wedgedSummons == 1 && r.wedgedLastMs != 0 && r.wedgedSummoned.count("X") == 1);
+    // X stays where it is (this test never moves it in): one summon a bot means it is not sent for again.
     f.members.push_back(Mem("Y", 45.0f, 56.0f));
     f.members.back().x = 45.0f;
     f.total = 4;
@@ -29902,23 +30625,42 @@ static void TestWedgedBudgetSurvivesASameStepReset()
         WalkOn(f);
         CHECK(Tick(r, f) != "summon Y"); // within 30 s of the first: no second summon
     }
-    for (int i = 0; i < 30; ++i)
+    std::string got;
+    for (int i = 0; i < 30 && got.empty(); ++i)
     {
         WalkOn(f);
-        Tick(r, f);
+        std::string const order = Tick(r, f);
+        if (order.compare(0, 7, "summon ") == 0)
+            got = order;
     }
-    CHECK(r.wedgedSummons == 2);
+    CHECK(got == "summon Y" && r.wedgedSummons == 2); // X was due again: the per-bot record skipped it
+    f.members[3].yd = 3.0f; // Y brought to the lead bot
+    f.members[3].dz = 0.0f;
     ResetStep(r); // a wipe recovery on the same step
     f.members.push_back(Mem("Z", 45.0f, 56.0f));
     f.members.back().x = 45.0f;
     f.total = 5;
     f.alive = 5;
-    for (int i = 0; i < 40; ++i)
+    for (int i = 0; i < 40 && r.wedgedSummons < 3; ++i)
     {
         WalkOn(f);
-        CHECK(Tick(r, f) != "summon Z"); // the cap stays spent
+        Tick(r, f);
     }
-    CHECK(r.wedgedSummons == 2);
+    CHECK(r.wedgedSummons == 3); // 3 of the step's 4: the reset kept the budget, it did not spend the cap
+    f.members[4].yd = 3.0f;
+    f.members[4].dz = 0.0f;
+    f.members.push_back(Mem("W", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.members.push_back(Mem("V", 45.0f, 56.0f));
+    f.members.back().x = 45.0f;
+    f.total = 7;
+    f.alive = 7;
+    for (int i = 0; i < 150; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.wedgedSummons == 4); // W got the fourth; V never comes: the step's cap stays spent
 }
 
 // T10: a bot off the plan's map, or in another copy of the instance, is never wedged: those have their own paths.
@@ -30040,20 +30782,69 @@ static void TestMemberParticipatesFacts()
     CHECK(!MemberParticipates(m));
 }
 
-// The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table.
+// WedgedOutOfReach: a member that sees the lead bot, or has a complete path to it of at most 2.5 times the
+// straight distance, can get back to it; anything else is out of reach.
+static void TestWedgedOutOfReachTable()
+{
+    MemberFact m = Mem("X", 20.0f, 9.0f);
+    CHECK(WedgedOutOfReach(m));  // no line of sight, no path read: out of reach, as before
+    m.losLead = true;
+    CHECK(!WedgedOutOfReach(m)); // it sees the main tank: idle where it stands, not wedged
+    m.losLead = false;
+    m.pathToLead = true;
+    m.pathLenYd = 50.0f;
+    CHECK(!WedgedOutOfReach(m)); // 50 yd to a bot 20 yd away: the mesh gets there
+    m.pathLenYd = 51.0f;
+    CHECK(WedgedOutOfReach(m)); // over 2.5 x 20: the long way round
+    m.pathLenYd = 50.0f;
+    CHECK(!WedgedOutOfReach(m));
+    m.yd = 0.0f;
+    CHECK(WedgedOutOfReach(m)); // a path of any length off a straight distance of 0 cannot be short
+}
+
+// A healthy idle healer 28 yd from the lead bot and 9 yd above it, in combat, with the tank in its line of sight:
+// it holds its spot (a heal it cannot cast for want of a target, a terrace above the fight). The policy names no
+// drop and no summon: only a member that cannot get back to the raid is rescued.
+static void TestWedgedHealerInSightIsNotDropped()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = WedgedFacts(28.0f, 9.0f);
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    MemberFact& healer = f.members[2];
+    healer.inCombat = true;
+    healer.ranged = true;
+    healer.losLead = true;
+    for (int i = 0; i < 40; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).compare(0, 7, "summon ") != 0);
+        CHECK(r.combatDrops.empty());
+    }
+    CHECK(r.wedgedSummons == 0);
+}
+
+// The glue's re-check (Commander.cpp DropUnattackableCombat): true/false table. The reach facts are the glue's
+// own read (line of sight and a complete path to the lead bot, with its length).
 static void TestWedgedDropRecheckTable()
 {
-    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0, false));
-    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0, false)); // the yd boundary: at 20, not out
-    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0, false));
-    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0, false)); // the dz boundary: at 8, the same floor
-    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0, false));
-    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0, false));
-    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1, false)); // fighting: never wedged
-    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, true)); // in the fight there: the same participation test
-    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0, false));
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, -9.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(kGatherYd, 9.0f, 0, false, false, false, 0.0f)); // the yd boundary: at 20, not out
+    CHECK(WedgedDropRecheck(kGatherYd + 0.5f, 9.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, kStragglerDzYd, 0, false, false, false, 0.0f)); // the dz boundary: at 8
+    CHECK(!WedgedDropRecheck(21.0f, -kStragglerDzYd, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, kStragglerDzYd + 0.5f, 0, false, false, false, 0.0f));
+    CHECK(WedgedDropRecheck(21.0f, -kStragglerDzYd - 0.5f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 1, false, false, false, 0.0f)); // fighting: never wedged
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, true, false, false, 0.0f)); // in the fight there: participation
+    CHECK(!WedgedDropRecheck(10.0f, 2.0f, 0, false, false, false, 0.0f));
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, true, false, 0.0f)); // in sight: idle, never wedged
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 52.0f)); // a path at most 2.5 x 21 yd
+    CHECK(WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 53.0f));  // ... and over it: the long way round
+    CHECK(!WedgedDropRecheck(21.0f, 9.0f, 0, false, false, true, 0.0f));  // a complete path of length 0
 }
 
 static void TestPartyRulesUnchanged()
@@ -30168,6 +30959,98 @@ static void TestLinkedDeathNoteFollowsTheGroupHealth()
     CHECK(LinkedDeathNote(r, f, bracket, death).empty());
 }
 
+// The linked_death state notes: one note and one queued row per state change, none on a read that changes nothing.
+// Hold at the start, release armed when every living member is at or below the group's percent, a disarm back to hold,
+// a death while armed releases the group, and an evade (an armed group leaves the engaged units) resets it.
+static void TestLinkedDeathStateNotesOncePerChange()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 14599;
+    plan.steps = {boss};
+    plan.map = 309;
+    Run r = Start(&plan);
+
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14599;
+    row.kind = ai::BossTacticKind::LinkedDeath;
+    row.targetEntry = 11347;
+    row.priority = 1;
+    row.param = 2.0f;
+    row.burnOrder = {11347, 11348, 14599};
+    CHECK(table.Add(row));
+    row.targetEntry = 11348;
+    CHECK(table.Add(row));
+    table.Seal();
+    r.liveTactics = &table;
+
+    Facts f = Party(0);
+    f.linkedDeath = true;
+    UnitFact thekal = Unit(1, 14599, 10);
+    thekal.health = 133250;
+    thekal.maxHealth = 133250;
+    UnitFact lor = Unit(2, 11347, 12);
+    lor.health = 51282;
+    lor.maxHealth = 85470;
+    UnitFact zath = Unit(3, 11348, 9);
+    zath.health = 96138;
+    zath.maxHealth = 106820;
+    f.engagedUnits = {thekal, lor, zath};
+    int bracket = -1;
+    bool death = false;
+    // One read as the glue sees it: the kinds it queued this tick (comma list, "" for none).
+    const auto read = [&]() {
+        LinkedDeathNote(r, f, bracket, death);
+        std::string kinds;
+        for (const Run::LinkedEvent& ev : TakeLinkedEvents(r))
+            kinds += (kinds.empty() ? "" : ",") + ev.kind;
+        return kinds;
+    };
+    const std::string holdNote = "linked_death hold: 14599/11347/11348 at 100 %";
+    CHECK(read() == "hold");
+    CHECK(r.linkedStateNote == holdNote);
+    CHECK(read() == "");                           // the same state: no row, the note stays
+    CHECK(r.linkedStateNote == holdNote);
+    // Every living member at or below 2 %: the release is armed.
+    f.engagedUnits[0].health = 2665;               // 2 %
+    f.engagedUnits[1].health = 1000;               // 1 %
+    f.engagedUnits[2].health = 2136;               // 2 %
+    CHECK(read() == "armed");
+    CHECK(r.linkedStateNote == "linked_death release armed");
+    CHECK(read() == "");
+    // Lor climbs back above the percent: the hold runs again (a state change, so one row and a new note).
+    f.engagedUnits[1].health = 51282;              // 60 %
+    CHECK(read() == "hold");
+    CHECK(r.linkedStateNote == "linked_death hold: 14599/11347/11348 at 60 %");
+    f.engagedUnits[1].health = 1000;               // 1 %
+    CHECK(read() == "armed");
+    // Evade: the armed group leaves the engaged units with no release first. One reset row, and the note says so.
+    f.engagedUnits.clear();
+    CHECK(read() == "reset");
+    CHECK(r.linkedStateNote == "linked_death reset (evade)");
+    CHECK(r.linkedState == Run::LinkedState::None);
+    CHECK(read() == "");
+    // The group re-engages at low health: armed again, then zath dies while armed, which releases the group.
+    f.engagedUnits = {thekal, lor, zath};
+    f.engagedUnits[0].health = 2665;
+    f.engagedUnits[1].health = 1000;
+    f.engagedUnits[2].health = 2136;
+    CHECK(read() == "armed");
+    r.fightMs = 12000;
+    f.engagedUnits.erase(f.engagedUnits.begin() + 2);
+    CHECK(read() == "released");
+    CHECK(r.linkedStateNote == "linked_death released: 3 died first at 12 s");
+    CHECK(death);
+    CHECK(read() == "");                           // released sticks; no second row for the next reads
+    CHECK(r.linkedState == Run::LinkedState::Released);
+    // The key off: the state and its note go, and the group reads nothing.
+    f.linkedDeath = false;
+    CHECK(read() == "");
+    CHECK(r.linkedState == Run::LinkedState::None && r.linkedStateNote.empty());
+}
+
 // The run line: the linked line is appended to what the line already says (never replacing the "fighting" clause), and
 // it stays there across quiet ticks; a bracket move or a member's death updates it.
 static void TestLinkedDeathNoteIsAppendedToTheFightLine()
@@ -30219,11 +31102,993 @@ static void TestLinkedDeathNoteIsAppendedToTheFightLine()
     CHECK(r.note.find("11348 fell at ") != std::string::npos);
 }
 
+// The automatic crowd control (Facts::autoCc, AiPlayerbot.DungeonRunAutoCc): the run marks the pack from what the
+// raid has when the pull brings more than the threshold.
+static Facts AutoParty(std::uint32_t above)
+{
+    Facts f = Party(0);
+    f.autoCc = true;
+    f.autoCcAbove = above;
+    return f;
+}
+
+static MemberFact AutoCcMem(const std::string& name, CcFamily family, std::uint32_t level = 0)
+{
+    MemberFact m = CcMem(name, family);
+    m.level = level;
+    return m;
+}
+
+// A humanoid unit at `dist` from the lead bot, its entry derived from the guid.
+static UnitFact AutoHumanoid(std::uint64_t guid, float dist, bool caster = false, std::uint32_t level = 0)
+{
+    UnitFact u = Typed(guid, 100 + static_cast<std::uint32_t>(guid), dist, kCreatureHumanoid);
+    u.caster = caster;
+    u.level = level;
+    return u;
+}
+
+// Fails on the plan-only picker (no cc order: every unit unlisted).
+static void TestAutoCcMarksUnlistedUnits()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(r, f) == "cc moon 9 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 8 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 7 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+}
+
+static void TestAutoCcStopsAtTheThreshold()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph), AutoCcMem("Magefour", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
+    // A mark whose aura is not read holds no body (CcMarkedLive): the pull is
+    // still 8 over 6, so the next free mage marks, up to the last free bot.
+    CHECK(Tick(r, f) == "cc diamond 6 Magethree polymorph");
+    CHECK(Tick(r, f) == "cc triangle 5 Magefour polymorph");
+    CHECK(Tick(r, f) == "pullback 1"); // no free crowd control left: 8 bodies over 6
+    CHECK(r.ccHolds.size() == 4);
+    // Two auras read on their units make the pull 8 - 2 = 6, not over 6: the
+    // marks now count as held.
+    f.units[7].polymorphed = true;
+    f.units[6].polymorphed = true;
+    CHECK(CcMarkedLive(r, f) == 2);
+}
+
+static void TestAutoCcCastersFirstThenPlanRank()
+{
+    // The plan's rank outranks the caster rule; between listed units the rank decides.
+    DungeonPlan plan = CcPlan({200, 201, 202});
+    Run r = Start(&plan);
+    Facts f = AutoParty(0);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    UnitFact listedCaster = AutoHumanoid(10, 12, true);
+    listedCaster.entry = 200;
+    UnitFact listedA = AutoHumanoid(11, 14);
+    listedA.entry = 201;
+    UnitFact listedB = AutoHumanoid(12, 16);
+    listedB.entry = 202;
+    UnitFact unlistedCaster = AutoHumanoid(13, 30, true);
+    UnitFact unlisted = AutoHumanoid(14, 25);
+    f.units = {listedCaster, listedA, listedB, unlistedCaster, unlisted};
+    CHECK(Tick(r, f) == "cc moon 10 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 11 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 12 Magethree polymorph");
+
+    // No plan list: the casters go first (the farther one first), though a non-caster stands farther still.
+    DungeonPlan plain = CcPlan({});
+    Run p = Start(&plain);
+    Facts g = AutoParty(0);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph)};
+    g.units = {AutoHumanoid(20, 22), AutoHumanoid(21, 20, true), AutoHumanoid(22, 12), AutoHumanoid(23, 18, true)};
+    CHECK(Tick(p, g) == "cc moon 21 Magey polymorph");
+    CHECK(Tick(p, g) == "cc square 23 Magetwo polymorph");
+}
+
+static void TestAutoCcPicksTheFamilyThatFits()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Druidy", CcFamily::Hibernate)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 200, 20, kCreatureBeast)};
+        CHECK(Tick(r, f) == "cc moon 2 Druidy hibernate");
+        CHECK(r.note.find("Hibernate") != std::string::npos);
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 200, 20, kCreatureUndead)};
+        CHECK(Tick(r, f) == "cc moon 2 Priesty shackleundead");
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Locky", CcFamily::Banish)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 300, 20, kCreatureDemon)};
+        CHECK(Tick(r, f) == "cc moon 2 Locky banish");
+    }
+    {
+        // A beast immune to Polymorph: the druid's Hibernate fits it.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Druidy", CcFamily::Hibernate)};
+        UnitFact beast = Typed(2, 200, 20, kCreatureBeast);
+        beast.ccImmune = CcBit(CcFamily::Polymorph);
+        f.units = {Typed(1, 201, 10, kCreatureBeast), beast}; // the farther one is the immune one
+        CHECK(Tick(r, f) == "cc moon 2 Druidy hibernate");
+        CHECK(r.note.find("Hibernate") != std::string::npos);
+    }
+    {
+        // Immune to the only family the party has: nothing goes out, and the note says so.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap)};
+        UnitFact near = AutoHumanoid(1, 10);
+        near.ccImmune = CcBit(CcFamily::FreezingTrap);
+        UnitFact humanoid = AutoHumanoid(2, 20);
+        humanoid.ccImmune = CcBit(CcFamily::FreezingTrap);
+        f.units = {near, humanoid};
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+        CHECK(r.note.find("no free crowd control fits") != std::string::npos);
+    }
+}
+
+// Freezing Trap is no automatic family: a trap freezes only a mob that walks
+// over it, so a pre-pull or in-fight order on a joiner never lands (ZG walk 32:
+// 54 in-fight orders, none landed). The hunter is no CC bot for the automatic
+// pick; another family the party has still goes out.
+static void TestAutoCcNeverPicksFreezingTrap()
+{
+    // Before the pull: a hunter with only the trap gives no order at all.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+        CHECK(r.ccHolds.empty());
+    }
+    // In the fight: the same, over the threshold and over the ceiling alike.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 108; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        for (int i = 0; i < 3; ++i)
+            CHECK(Tick(r, f).find("cc ") != 0);
+        CHECK(r.ccSent.empty());
+        CHECK(r.ccHolds.empty());
+    }
+    // A second family the party has is picked instead: the trap never wins.
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap), AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
+// A unit the party has dotted is never an automatic pick, before the pull or in
+// the fight: its ticks break the hold the moment it lands (ZG walk 32: 767
+// Corruption and 550 Curse of Agony casts in the wipe fights, the joiners dotted
+// before their mark went out). A hold the party then dots is not re-sent.
+static void TestAutoCcSkipsDottedUnits()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact clean = AutoHumanoid(1, 10);
+        UnitFact dotted = AutoHumanoid(2, 20); // farther: the pick would take it without the rule
+        dotted.partyDots = true;
+        f.units = {clean, dotted};
+        CHECK(Tick(r, f) == "cc moon 1 Magey polymorph");
+        CHECK(Tick(r, f) == "pullback 2"); // the dotted unit is the pull's target, never the hold
+        CHECK(r.ccSent.count(2) == 0);
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            hit.partyDots = true; // dotted joiners on the party
+            f.partyAttackers.push_back(hit);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(900, 20)); // the one clean joiner
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run q = Start(&plan);
+        Facts h = AutoParty(1);
+        h.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        h.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(q, h) == "cc moon 2 Magey polymorph");
+        CHECK(Tick(q, h) == "pullback 1");
+        h.anyInCombat = true;
+        h.members[0].inCombat = true;
+        h.units[1].polymorphed = true;
+        CHECK(Tick(q, h).empty()); // the aura lands
+        CHECK(q.ccLandedSeen.count(2) == 1);
+        h.units[1].polymorphed = false;
+        h.units[1].partyDots = true; // the party dotted it: never re-held
+        for (int i = 0; i < 4; ++i)
+            CHECK(Tick(q, h).empty());
+        CHECK(q.ccReapplied.count(2) == 0);
+    }
+}
+
+static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.killFirst = {104};
+    Run r = Start(&plan);
+    Facts f = AutoParty(0);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    UnitFact tankTarget = AutoHumanoid(101, 12);
+    UnitFact offTankHeld = AutoHumanoid(102, 14);
+    offTankHeld.victimTank = true;
+    UnitFact killFirst = AutoHumanoid(103, 16);
+    killFirst.entry = 104;
+    UnitFact focused = AutoHumanoid(105, 18);
+    UnitFact free = AutoHumanoid(106, 20);
+    UnitFact leadPick = AutoHumanoid(107, 22); // the tank's own selection, farther than the free one
+    f.units = {tankTarget, offTankHeld, killFirst, focused, free, leadPick};
+    f.leadTargetGuid = 107;
+    r.focusGuid = 105;
+    CHECK(Tick(r, f) == "cc moon 106 Magey polymorph");
+    CHECK(Tick(r, f) == "pullback 103"); // the kill_first unit is the pull's target
+    CHECK(r.ccSent.size() == 1 && r.ccSent.count(106) == 1);
+}
+
+static void TestAutoCcSevenMarks()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(2);
+    for (int i = 1; i <= 7; ++i)
+        f.members.push_back(AutoCcMem("Mage" + std::to_string(i), CcFamily::Polymorph));
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    f.raidIcons[0] = 0x9999; // a player's star: never moved
+    char const* const marks[] = {"moon", "square", "diamond", "triangle", "circle", "cross"};
+    for (int i = 0; i < 6; ++i)
+    {
+        std::string const guid = std::to_string(9 - i);
+        CHECK(Tick(r, f) == std::string("cc ") + marks[i] + " " + guid + " Mage" + std::to_string(i + 1) +
+            " polymorph");
+    }
+    CHECK(Tick(r, f) == "pullback 1"); // the seventh mark would be star: a player's
+    CHECK(r.ccSent.size() == 6);
+    CHECK(r.note.find("no free raid mark") != std::string::npos);
+}
+
+static void TestAutoCcHealersKept()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.raid.on = true;
+    MemberFact priestA = AutoCcMem("PriestA", CcFamily::Shackle);
+    MemberFact priestB = AutoCcMem("PriestB", CcFamily::Shackle);
+    MemberFact healA = AutoCcMem("HealA", CcFamily::None);
+    MemberFact healB = AutoCcMem("HealB", CcFamily::None);
+    MemberFact healC = AutoCcMem("HealC", CcFamily::None);
+    for (MemberFact* m : {&priestA, &priestB, &healA, &healB, &healC})
+        m->healer = true;
+    f.members = {priestA, priestB, healA, healB, healC};
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        f.units.push_back(Typed(guid, 200 + static_cast<std::uint32_t>(guid), 10.0f + static_cast<float>(guid),
+            kCreatureUndead));
+    CHECK(Tick(r, f) == "cc moon 4 PriestA shackleundead"); // 5 healers - 1 stays 4 free
+    CHECK(Tick(r, f) == "pullback 1");        // the second priest would leave 3
+    CHECK(r.ccHolds.size() == 1);
+    CHECK(r.note.find("no free crowd control fits") != std::string::npos);
+}
+
+static void TestAutoCcFearOnlyWithRoomAndKey()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "pullback 1"); // the risky key is off
+        CHECK(r.ccSent.empty());
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 20.0f; // not enough room to run
+        CHECK(Tick(r, f) == "pullback 1");
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 40.0f;
+        CHECK(Tick(r, f) == "cc moon 2 Locky fear");
+        CHECK(r.note.find("Fear") != std::string::npos);
+    }
+    {
+        // A family that fits goes before the fear.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear), AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 40.0f;
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
+// A warlock holding a succubus, assigned a humanoid: the automatic pick is
+// Seduction, and its order names it. The warlock's Fear row sits above
+// Seduction, so without the family the mark would run the mob into the next
+// pack. Every class row consults the same gate (CcOrderFamilyAllows): only the
+// ordered family may fire; a hand-written order carries none and is unchanged.
+static void TestAutoCcSeductionOrderNamesItsFamily()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Locky", CcFamily::None)};
+    f.members[0].succubus = true;
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(r, f) == "cc moon 2 Locky seduction");
+    auto const hold = r.ccHolds.find(2);
+    CHECK(hold != r.ccHolds.end() && hold->second.family == CcFamily::Seduction && hold->second.autoOrder);
+
+    // The trigger gate: a Seduction order never lets Fear fire, a Fear order
+    // never lets Seduction fire, and no family leaves every row as before.
+    CHECK(CcOrderFamilyAllows("seduction", "seduction"));
+    CHECK(!CcOrderFamilyAllows("seduction", "fear"));
+    CHECK(!CcOrderFamilyAllows("fear", "seduction"));
+    CHECK(CcOrderFamilyAllows("fear", "fear"));
+    CHECK(CcOrderFamilyAllows("none", "fear"));
+    CHECK(CcOrderFamilyAllows("", "seduction"));
+    CHECK(CcOrderFamilyAllows("none", "seduction"));
+
+    // The command's family check (CcOrderFamilyKnown): every family the automatic pick can name is known, "none" and
+    // the empty text name no family, and a misspelling or a family outside the run's set is refused before a mark moves.
+    for (const RunCcSpell& c : kRunCc)
+        CHECK(CcOrderFamilyKnown(c.spell));
+    CHECK(CcOrderFamilyKnown(""));
+    CHECK(CcOrderFamilyKnown("none"));
+    CHECK(CcOrderFamilyKnown("Shackle Undead"));
+    CHECK(!CcOrderFamilyKnown("fearr"));           // misspelled
+    CHECK(!CcOrderFamilyKnown("Shakle Undead"));   // misspelled
+    CHECK(!CcOrderFamilyKnown("sleep"));           // unsupported: the mage's Sleep is no run family
+    CHECK(!CcOrderFamilyKnown("gouge"));           // unsupported
+    CHECK(!CcOrderFamilyKnown("fear extra"));      // two tokens after the mark normalize to one unknown token
+    CHECK(!CcOrderFamilyKnown("!!!"));             // no family letters at all
+
+    // Risky off: a fear-only party never sends a fear order, whatever the room.
+    Run s = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Locky", CcFamily::Fear)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    g.units[1].fleeRoomYd = 40.0f;
+    CHECK(Tick(s, g) == "pullback 1");
+    CHECK(s.ccSent.empty());
+}
+
+// The glue answers every run order (CcOrderTaken). An automatic cc order that was refused assigned nothing: the
+// unit, its bot, its mark, the order budget and the spacing go back, so the next tick may pick it again. Accepted
+// orders keep their hold; a refused re-apply keeps the existing hold and only gives back the order's cost.
+static void TestAutoCcRefusedOrderIsNoHold()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        // Pre-pull: the refused mark is no hold, and the next tick sends it again.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 2 Magey polymorph");
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+        CcOrderTaken(r, order, true); // accepted: the hold stands
+        CHECK(r.ccAutoPending.order.empty() && r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+
+        Run q = Start(&plan);
+        Facts g = f;
+        std::string const refused = Tick(q, g);
+        CHECK(refused == order);
+        CcOrderTaken(q, refused, false);
+        CHECK(q.ccSent.empty() && q.ccHolds.empty() && q.ccWatch.empty() && q.ccIcons.empty());
+        CHECK(q.ccAutoOrders == 0);
+        CHECK(Tick(q, g) == refused); // the pick is free again
+    }
+    {
+        // A fight joiner: the refusal gives the budget and the spacing back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(900, 20));
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 900 Magey polymorph");
+        CHECK(r.ccAutoOrders == 1 && r.ccSent.count(900) == 1);
+        CcOrderTaken(r, order, false);
+        CHECK(r.ccAutoOrders == 0 && !r.ccSent.count(900) && !r.ccHolds.count(900) && r.ccWatch.empty());
+        CHECK(Tick(r, f) == order); // the joiner is picked again
+    }
+    {
+        // A refused re-apply: the hold and its mark stay, the budget and the re-apply count go back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const first = Tick(r, f);
+        CHECK(first == "cc moon 2 Magey polymorph");
+        CcOrderTaken(r, first, true);
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        f.members[0].inCombat = true;
+        f.units[1].polymorphed = true;
+        CHECK(Tick(r, f).empty()); // the aura lands
+        f.units[1].polymorphed = false;
+        CHECK(Tick(r, f).empty()); // 1 s
+        std::string const again = Tick(r, f); // the aura broke: re-apply
+        CHECK(again == "cc moon 2 Magey polymorph");
+        CHECK(r.ccReapplied[2] == 1 && r.ccAutoOrders == 2);
+        CcOrderTaken(r, again, false);
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1); // still the run's hold
+        CHECK(r.ccReapplied.find(2) == r.ccReapplied.end() && r.ccAutoOrders == 1);
+        CHECK(Tick(r, f) == again); // retried at once
+    }
+}
+
+static void TestAutoCcLevelGap()
+{
+    DungeonPlan plan = CcPlan({});
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    UnitFact held = AutoHumanoid(1, 10, false, 60);
+    held.polymorphed = true; // not a candidate: the level gap decides on unit 2 alone
+    f.units = {held, AutoHumanoid(2, 20, false, 64)};
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f) == "pullback 1"); // +4 levels: another bot's
+    }
+    f.units[1].level = 63;
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // +3 is the core's hit chance's edge
+    }
+}
+
+static void TestAutoCcJoinerInTheFight()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60), AutoCcMem("Magetwo", CcFamily::Polymorph, 60)};
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    std::vector<UnitFact> engaged;
+    for (std::uint64_t guid = 100; guid <= 107; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        engaged.push_back(hit);
+    }
+    UnitFact joiner = AutoHumanoid(900, 25);
+    engaged.push_back(joiner);
+    UnitFact second = AutoHumanoid(902, 20);
+    engaged.push_back(second);
+    UnitFact tankTarget = AutoHumanoid(901, 18);
+    engaged.push_back(tankTarget);
+    UnitFact liveKill = AutoHumanoid(903, 30); // the fight's own kill_first read: killed, never held
+    engaged.push_back(liveKill);
+    f.killFirst = {liveKill};
+    f.partyAttackers = engaged;
+    f.leadTargetGuid = 901;
+    CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+    CHECK(r.note.find("engaged 12 over 6") != std::string::npos);
+    // The fight's opening: the next order follows at once, no kRunCcFightGapMs
+    // (the healers are dying while the orders would wait).
+    CHECK(Tick(r, f) == "cc square 902 Magetwo polymorph");
+    CHECK(Tick(r, f).empty());                        // both mages hold a unit: no free bot
+    CHECK(r.ccSent.count(901) == 0);                  // never the tank's
+}
+
+// The fight's pull counts the mobs on the lead bot too: eight on the tank and one joiner is a pull of nine, and the
+// joiner is marked (the mutation that leaves the lead bot's attackers out of the count reads one and sends nothing).
+// A guid in two lists is one mob (adding the lists up would cross the threshold alone), and the lead bot's held mobs
+// count as held, never as more unheld bodies.
+static void TestAutoCcCountsTheLeadBotsAttackers()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.partyAttackers = {AutoHumanoid(900, 20)}; // the joiner, free
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 9 over 6") != std::string::npos);
+    }
+    {
+        // Five on the tank, one of them twice, and a joiner: six mobs, not over the threshold.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 104; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(104, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.ccSent.empty());
+    }
+    {
+        // Six on the tank, one of them twice, and a joiner: seven mobs, the joiner marked.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(100, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+    {
+        // One mob the tank's mark holds is a held body: seven unheld fighters, the joiner among them.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.leadAttackers.push_back({106, true}); // held by a run cc
+        f.partyAttackers = {AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+}
+
+// The pull's opening: every unit a pre-pull order marked and whose aura is not
+// read gets its order again on the fight's first ticks, at once: no engaged
+// threshold, no 2 s gap. ZG walk 32: no pre-pull mark ever landed, every flow
+// ended in "the crowd control did not land".
+static void TestPrePullMarksCastWhenThePackOpens()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    // Three marks before the pull: an unlanded mark is no held body, so the
+    // estimate keeps marking (CcMarkedLive reads the auras).
+    CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    // The pack opens with nobody engaged: the marks are cast at once, each
+    // unit once, the lowest guid first.
+    f.anyInCombat = true;
+    CHECK(Tick(r, f) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(r, f) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(r, f).empty()); // each pre-marked unit once
+    CHECK(r.note.find("the pack is in combat") != std::string::npos || r.note == "fighting");
+    // A mark whose aura landed before the fight is not re-sent.
+    Run q = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = f.members;
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        g.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(q, g) == "cc moon 4 Magey polymorph");
+    CHECK(Tick(q, g) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(q, g) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(q, g) == "pullback 1");
+    g.units[3].polymorphed = true; // the moon mark's aura is there
+    g.anyInCombat = true;
+    CHECK(Tick(q, g) == "cc diamond 2 Magethree polymorph");
+    CHECK(Tick(q, g) == "cc square 3 Magetwo polymorph");
+    CHECK(Tick(q, g).empty());
+}
+
+// A fight the party walked into (no pull order) opens already over the
+// threshold: its first orders go out one tick after the other, not two seconds
+// apart, then the usual gap resumes.
+static void TestAWalkInFightSendsItsFirstOrdersAtOnce()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0)};
+    Run r = Start(&plan);
+    Facts f = AutoParty(2);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph), AutoCcMem("Magefour", CcFamily::Polymorph)};
+    f.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 105; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true; // engaged bodies nobody ordered
+        f.partyAttackers.push_back(hit);
+    }
+    for (std::uint64_t guid = 200; guid <= 202; ++guid)
+        f.partyAttackers.push_back(AutoHumanoid(guid, 20));
+    CHECK(Tick(r, f) == "cc moon 200 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 201 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 202 Magethree polymorph");
+    CHECK(Tick(r, f).empty()); // the opening is over: kRunCcFightGapMs holds
+}
+
+static void TestAutoCcReappliesTwiceThenStops()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.members[0].inCombat = true;
+    f.units[1].polymorphed = true;
+    CHECK(Tick(r, f).empty()); // the aura lands
+    CHECK(r.ccLandedSeen.count(2) == 1);
+    f.units[1].polymorphed = false;
+    CHECK(Tick(r, f).empty()); // 1 s
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // 3 s: broke free, again
+    CHECK(r.note.find("broke free") != std::string::npos);
+    CHECK(Tick(r, f).empty()); // 1 s
+    CHECK(Tick(r, f).empty()); // 2 s
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // 3 s: the second
+    CHECK(r.ccReapplied[2] == 2);
+    for (int i = 0; i < 3; ++i)
+        CHECK(Tick(r, f).empty()); // the limit: nothing more
+
+    // A joiner marked in the fight is an attacker: its aura lands and a break is re-applied the same way.
+    Run q = Start(&plan);
+    Facts h = AutoParty(6);
+    h.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    h.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(q, h) == "pullback 1");
+    h.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 106; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        h.partyAttackers.push_back(hit);
+    }
+    h.partyAttackers.push_back(AutoHumanoid(900, 20)); // the joiner
+    UnitFact other = AutoHumanoid(901, 18);
+    other.partyHits = true; // a second unit is on it
+    h.partyAttackers.push_back(other);
+    CHECK(Tick(q, h) == "cc moon 900 Magey polymorph");
+    h.partyAttackers[7].polymorphed = true;
+    CHECK(Tick(q, h).empty());
+    CHECK(q.ccLandedSeen.count(900) == 1);
+    h.partyAttackers[7].polymorphed = false;
+    CHECK(Tick(q, h).empty()); // 2 s since the order, the reapply waits 3
+    CHECK(Tick(q, h) == "cc moon 900 Magey polymorph");
+
+    // The fight's own read decides: a step unit the party now hits (its attacker record) is not re-applied.
+    Run s = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(s, g) == "cc moon 2 Magey polymorph");
+    CHECK(Tick(s, g) == "pullback 1");
+    g.anyInCombat = true;
+    g.members[0].inCombat = true;
+    g.units[1].polymorphed = true;
+    CHECK(Tick(s, g).empty()); // the aura lands
+    g.units[1].polymorphed = false;
+    UnitFact hit = AutoHumanoid(2, 20);
+    hit.partyHits = true;
+    g.partyAttackers = {hit};
+    for (int i = 0; i < 4; ++i)
+        CHECK(Tick(s, g).empty()); // no re-apply on a unit the party is on
+}
+
+static void TestAutoCcBudget()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    r.ccAutoOrders = kRunCcAutoOrdersPerStep; // 24 orders this step pass
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.empty());
+    CHECK(r.note.find("budget is spent") != std::string::npos);
+}
+
+static void TestAutoCcKeyOffIsToday()
+{
+    // A beast a druid could Hibernate: with the key off the plan's four families only, so nothing goes out.
+    DungeonPlan plan = CcPlan({300});
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.members = {AutoCcMem("Druidy", CcFamily::Hibernate)};
+    f.units = {AutoHumanoid(1, 10), Typed(2, 300, 20, kCreatureBeast)};
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.empty());
+
+    // The plan's four marks still cap it: nine listed humanoids and five mages give four orders.
+    DungeonPlan listed = CcPlan({200});
+    Run s = Start(&listed);
+    Facts g = Party(0);
+    for (int i = 1; i <= 5; ++i)
+        g.members.push_back(AutoCcMem("Mage" + std::to_string(i), CcFamily::Polymorph));
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+    {
+        UnitFact u = AutoHumanoid(guid, 9.0f + static_cast<float>(guid));
+        u.entry = 200;
+        g.units.push_back(u);
+    }
+    char const* const marks[] = {"moon", "square", "diamond", "triangle"};
+    for (int i = 0; i < 4; ++i)
+    {
+        // The plan's picker takes the nearest listed unit.
+        std::string const guid = std::to_string(i + 1);
+        CHECK(Tick(s, g) == std::string("cc ") + marks[i] + " " + guid + " Mage" + std::to_string(i + 1));
+    }
+    CHECK(Tick(s, g) == "pullback 5");
+    CHECK(s.ccSent.size() == 4);
+}
+
+static void TestHealerGuardSkipsCcHolders()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.autoCc = true;
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact sheepy = Mem("Sheepy", 21); // holds the run's sheep, nearer the add
+    sheepy.ranged = true;
+    sheepy.rangedDps = true;
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, sheepy, near};
+    r.ccHolds[999] = Run::CcHold{"Sheepy", "moon", CcFamily::Polymorph};
+    UnitFact sheep = Unit(999, 11368, 22);
+    sheep.polymorphed = true; // the sheep is on it: no opening order for it
+    f.units.push_back(sheep);
+    UnitFact add = Hitter(50071, 11368, 20, true);
+    add.x = 22.0f; // Sheepy 1 yd, NearDps 2 yd
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50071 NearDps");
+    CHECK(r.healerGuardAssigned.count(50071) == 1);
+}
+
+
+// RunCcBotFor never picks a bot the run holds still (its return hold or the glue's revive hold), one a freeze_on_aura
+// row holds every action of, or one too far from the pack for its spell: the order could not land, and the mark would
+// stay on it for CheckCc to re-send and count.
+static void TestRunCcHeldFrozenAndRemoteBotsSkipNoOrder()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    UnitFact const u = AutoHumanoid(2, 20);
+    std::unordered_set<std::string> const busy;
+    std::size_t spell = 0;
+    // Sanity: the free mage is the bot.
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == &f.members[0]);
+    // Held still: the run's return hold, the glue's revive hold mark.
+    f.members[0].held = true;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].held = false;
+    // A freeze_on_aura row holds every action of it.
+    f.members[0].frozen = true;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].frozen = false;
+    // The run's own return-hold list, the same hold from the leader's side.
+    r.returnHold["Magey"] = Run::ReturnHold();
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    r.returnHold.clear();
+    // Out of every ranged family's reach from the lead bot.
+    f.members[0].yd = kRunCcMaxYd + 1.0f;
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == nullptr);
+    f.members[0].yd = kRunCcMaxYd; // at the limit it still fits
+    CHECK(RunCcBotFor(r, f, u, busy, spell) == &f.members[0]);
+
+    // End to end: a held bot spends no mark of the pack's over-threshold pull.
+    Run q = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.members[0].held = true;
+    g.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22), AutoHumanoid(4, 24)};
+    CHECK(Tick(q, g).compare(0, 9, "pullback ") == 0);
+    CHECK(q.ccSent.empty());
+}
+
+// A unit of a boss-tactics kill_first or linked_death row is never an automatic cc's candidate: the run kills those
+// first, and a linked_death group must die together. Another unit of the pack is picked instead.
+static void TestAutoCcSkipsBossTacticKillFirstAndLinkedDeathUnits()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22)};
+        f.bossTacticNoCc = {f.units[0].entry, f.units[1].entry};
+        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
+        CHECK(r.ccHolds.empty());
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(2, 20), AutoHumanoid(3, 22), AutoHumanoid(4, 24)};
+        f.bossTacticNoCc = {f.units[0].entry, f.units[1].entry};
+        // The unlisted one, farther from the lead bot, is the pick.
+        CHECK(Tick(r, f) == "cc moon 4 Magey polymorph");
+    }
+}
+
+static void TestRunCcFamilyTableKeyOffOrder()
+{
+    std::vector<CcFamily> order;
+    for (const RunCcSpell& c : kRunCc)
+        if (!c.autoOnly)
+            order.push_back(c.family);
+    CHECK(order == std::vector<CcFamily>({CcFamily::Polymorph, CcFamily::Shackle, CcFamily::Banish, CcFamily::Sap}));
+}
+
+// MemberFact::dz is signed (bot z - lead z), so every "height apart" test reads the absolute value: a bot on the floor
+// below the lead bot is out of the gather, is not back for WaitForFallen, and has not arrived for a return hold. The
+// signed value is for the wedged note's direction only.
+static void TestSignedDzCountsEitherFloor()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(100, {1})};
+    MemberFact below = Mem("Magey", 12.0f);
+    below.dz = -(kStragglerDzYd + 7.0f); // 15 yd below the lead bot, on the lower floor
+    MemberFact above = below;
+    above.dz = kStragglerDzYd + 7.0f;
+    MemberFact same = Mem("Magey", 12.0f, kStragglerDzYd - 1.0f);
+    CHECK(OutOfGather(below));
+    CHECK(OutOfGather(above));
+    CHECK(!OutOfGather(same));
+
+    // WaitForFallen: a fallen bot below the lead bot has not come back.
+    {
+        Run r = Start(&plan);
+        r.waitFor.insert("Magey");
+        Facts f = Party(0);
+        f.members = {Mem("Tanky", 0.0f), below};
+        CHECK(WaitForFallen(r, f));
+        CHECK(r.waitFor.count("Magey") == 1);
+        f.members[1] = same;
+        CHECK(!WaitForFallen(r, f));
+        CHECK(r.waitFor.empty());
+    }
+    // A return hold releases only a bot on the lead bot's floor (or one at its own known point).
+    {
+        Run r = Start(&plan);
+        r.returnHold["Magey"] = Run::ReturnHold();
+        Facts f = Party(0);
+        f.members = {Mem("Tanky", 0.0f), below};
+        f.members[1].yd = 8.0f;
+        std::string order;
+        FarReturnTick(r, f, kTickMs, order);
+        CHECK(r.returnHold.count("Magey") == 1);
+        f.members[1] = Mem("Magey", 8.0f, kStragglerDzYd - 1.0f);
+        FarReturnTick(r, f, kTickMs, order);
+        CHECK(r.returnHold.empty());
+    }
+}
+
 int main()
 {
+    TestSignedDzCountsEitherFloor();
+    TestRunCcHeldFrozenAndRemoteBotsSkipNoOrder();
+    TestAutoCcSkipsBossTacticKillFirstAndLinkedDeathUnits();
+    TestAutoCcMarksUnlistedUnits();
+    TestAutoCcStopsAtTheThreshold();
+    TestAutoCcCastersFirstThenPlanRank();
+    TestAutoCcPicksTheFamilyThatFits();
+    TestAutoCcNeverPicksFreezingTrap();
+    TestAutoCcSkipsDottedUnits();
+    TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
+    TestAutoCcSevenMarks();
+    TestAutoCcHealersKept();
+    TestAutoCcFearOnlyWithRoomAndKey();
+    TestAutoCcSeductionOrderNamesItsFamily();
+    TestAutoCcRefusedOrderIsNoHold();
+    TestAutoCcLevelGap();
+    TestAutoCcJoinerInTheFight();
+    TestPrePullMarksCastWhenThePackOpens();
+    TestAWalkInFightSendsItsFirstOrdersAtOnce();
+    TestAutoCcCountsTheLeadBotsAttackers();
+    TestAutoCcReappliesTwiceThenStops();
+    TestAutoCcBudget();
+    TestAutoCcKeyOffIsToday();
+    TestHealerGuardSkipsCcHolders();
+    TestRunCcFamilyTableKeyOffOrder();
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();
     TestLinkedDeathNoteIsAppendedToTheFightLine();
+    TestLinkedDeathStateNotesOncePerChange();
     TestRunArmsAMoveTriggerUntilItFired();
     TestPatrollerOutsideTheRadiusIsWaitedForThenPulled();
     TestPatrollerWaitIsBounded();
@@ -30598,6 +32463,7 @@ int main()
     TestPullEstimateCacheKeepsOneReadPerRow();
     TestPullEstimateCacheRereadsOnNewStepPass();
     TestRingPullNoteSaysBodiesExpected();
+    TestRePullKeepsTheRingEstimate();
     TestWalkRingKeyOffKeepsJoinerNotes();
     TestRezHoldOffIsUnchanged();
     TestRezHoldOn();
@@ -30608,6 +32474,7 @@ int main()
     TestBothKeysOffChangeNothing();
     TestPullNoteCarriesTheJoinerCount();
     TestPullJoinersReported();
+    TestPullJoinerWindowStartsWithTheFight();
     TestPullShootsFromStand();
     TestPullWaitsForStillTank();
     TestPullWalksToStandOutOfRange();
@@ -30622,6 +32489,10 @@ int main()
     TestStandClearanceKeepsOffOtherPacksOnly();
     TestStandClearanceCoversTheAuthoredStandPull();
     TestAuthoredStandRuleSkipsHopPulls();
+    TestStandDisciplineHoldsAtTheAuthoredStand();
+    TestStandDisciplineAloneEnforcesTheAuthoredStand();
+    TestStandDisciplineLosHoldEndsAfterTwentySeconds();
+    TestStandDisciplineWaitsForTanksAndMelee();
     TestStandApproachHoldsOutsideThePackReach();
     TestStandApproachHoldsAtThePlanPointWhenItIsClear();
     TestStandApproachUnreadableWalksThePlanPoint();
@@ -30645,6 +32516,9 @@ int main()
     TestStandClearanceIgnoresAnotherStoreyOutOfSight();
     TestStandClearanceJudgesAPatrolByItsLoopStorey();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
+    TestAFetchWithoutAnAnchorGivesUp();
+    TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
+    TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
     TestTheStrandRearmIsCappedPerStep();
     TestPullStandNeedsMoreRangeThanTheMargin();
@@ -30883,6 +32757,8 @@ int main()
     TestDeadLeadOffTanksMustBeInTheFight();
     TestRaidHealerGuardSendsTheNearestRangedDps();
     TestRaidHealerGuardPicksByDistanceToTheAdd();
+    TestRaidHealerGuardSkipsAFrozenDps();
+    TestFrozenMembersTakeNoMovingOrder();
     TestRaidHealerGuardIgnoresRangedDpsOutOfReachOfTheAdd();
     TestRaidHealerGuardRecordsOnlyAnAcceptedOrder();
     TestRaidHealerGuardExpiresAnAssignmentTheBotNeverTakes();
@@ -30913,6 +32789,7 @@ int main()
     TestRaidBossMainTankHoldingTheBossIsNotSent();
     TestRaidBossMainTankJoinSkipsAnEvadingBoss();
     TestRaidBossMainTankJoinStaysInRange();
+    TestRaidBossMainTankJoinOnlyAnOffTanksBoss();
     TestRaidBossMainTankJoinNeedsStay();
     TestRaidBossMainTankJoinKeyOffKeepsRaidGuard();
     TestRaidBossMainTankJoinRearmsAfterTwentySeconds();
@@ -30973,6 +32850,7 @@ int main()
     TestRaidCcRegatherDone();
     TestRaidRunBackBelowWipeLevel();
     TestRaidHoldRegroupGathers();
+    TestDeadLeadLeavesTheMainTankRoleToTheOffTank();
     TestRaidMainTankHelpsOnAMobAnOffTankHolds();
     TestRaidGuardRoundRobinsTheOffTanks();
     TestRaidTrashHealerGuardSendsTheNearestRangedDps();
@@ -31022,6 +32900,8 @@ int main()
     TestWedgedSelectedTargetIsNoParticipation();
     TestWedgedDamageEveryTwoSecondsKeepsAMember();
     TestMemberParticipatesFacts();
+    TestWedgedOutOfReachTable();
+    TestWedgedHealerInSightIsNotDropped();
     TestWedgedDropRecheckTable();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();

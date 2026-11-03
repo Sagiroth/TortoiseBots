@@ -118,7 +118,7 @@ class StayArrivalWiringTest(unittest.TestCase):
     def test_run_leader_has_no_separate_deadband(self):
         self.assertNotIn("InFollowDeadband", RUN.replace("separate deadband rule, InFollowDeadband, was removed", ""))
         self.assertNotIn("plainWalk", RUN)
-        self.assertIn("static_assert(kStalledArriveYd >= 5.0f,", RUN)
+        self.assertIn("static_assert(kStalledArriveYd >= 4.0f,", RUN)
 
     def test_only_these_callers(self):
         callers = []

@@ -5,6 +5,7 @@
 #include "MovementActions.h"
 #include "playerbot/OpenFollowStepPolicy.h"
 #include "playerbot/DungeonFollowStallPolicy.h"
+#include "playerbot/FollowTrailPolicy.h"
 
 namespace ai
 {
@@ -16,6 +17,11 @@ namespace ai
         virtual bool CanDeadFollow(Unit* target);
 
     private:
+        // Lead-trail catch-up (AiPlayerbot.RaidFollowWedge): a far follower
+        // walks the leader's recorded positions (PlayerbotAI::GetLeadTrail)
+        // instead of cutting at its slot.
+        bool WalkLeadTrail(Unit* followTarget, bool& moved);
+
         // Dungeon "hold before a pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks).
         bool UseHoldBeforePacks(Unit* followTarget);
         bool FollowHoldingBeforePacks(Unit* followTarget, bool& moved);

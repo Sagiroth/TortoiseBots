@@ -87,7 +87,7 @@ class LeadOtherPartWiringTest(unittest.TestCase):
             self.assertLess(why.index(first), why.index(second))
         point = body(POLICY, "inline std::size_t OtherPartSafePoint(const Run& r, const Facts& f)", "\n}\n")
         self.assertIn("std::size_t const last = LastReachedBefore(r, r.step);", point)
-        self.assertIn("return SafePointAtOrBefore(r, f.team, last);", point)
+        self.assertIn("return SafePointAtOrBefore(r, f.team, last, &f);", point)
         target = body(POLICY, "inline std::size_t OtherPartRescueTarget(const Run& r, const Facts& f)", "\n}\n")
         self.assertIn("if (OtherPartRescueWhy(r, f) != OtherPartBlock::None)", target)
         rescue = body(POLICY, "inline bool OtherPartRescue(Run& r, const Facts& f)\n{", "\n}\n")

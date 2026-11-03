@@ -24,7 +24,7 @@ namespace ai
         PartyMemberValue(PlayerbotAI* ai, std::string name = "party member") : UnitCalculatedValue(ai, name) {}
 
     public:
-        bool IsTargetOfSpellCast(Player* target, SpellEntryPredicate &predicate);
+        bool IsTargetOfSpellCast(Unit* target, SpellEntryPredicate &predicate);
 
     protected:
         Unit* FindPartyMember(FindPlayerPredicate &predicate, bool ignoreOutOfGroup = false, bool ignoreTanks = false);

@@ -128,6 +128,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRaidBossRules = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidBossRules", false);
     dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
+    dungeonRunAuraTactics = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraTactics", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
@@ -148,9 +149,16 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunPullStand = config.GetBoolDefault("AiPlayerbot.DungeonRunPullStand", false);
     dungeonRunStandClearance = config.GetBoolDefault("AiPlayerbot.DungeonRunStandClearance", false);
     dungeonRunStandPullPreCc = config.GetBoolDefault("AiPlayerbot.DungeonRunStandPullPreCc", false);
+    dungeonRunStandDiscipline = config.GetBoolDefault("AiPlayerbot.DungeonRunStandDiscipline", false);
+    dungeonRunAutoCc = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCc", false);
+    dungeonRunAutoCcAbove = static_cast<uint32>(std::min(40, std::max(2,
+        config.GetIntDefault("AiPlayerbot.DungeonRunAutoCcAbove", 6))));
+    dungeonRunAutoCcRisky = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCcRisky", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);
     dungeonRunRetreatAt2Dead = config.GetBoolDefault("AiPlayerbot.DungeonRunRetreatAt2Dead", false);
     dungeonRunWalkBackRescue = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackRescue", true);
+    runTeleportReturnYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.RunTeleportReturnYd", 0.0f));
+    dungeonReviveHoldYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.DungeonReviveHoldYd", 0.0f));
     dungeonRunFightForward = config.GetBoolDefault("AiPlayerbot.DungeonRunFightForward", true);
     dungeonRunLightRest = config.GetBoolDefault("AiPlayerbot.DungeonRunLightRest", true);
     dungeonRunLootFfa = config.GetBoolDefault("AiPlayerbot.DungeonRunLootFfa", false);
@@ -296,7 +304,7 @@ bool PlayerbotAIConfig::Initialize()
     tooCloseDistance = config.GetFloatDefault("AiPlayerbot.TooCloseDistance", 5.0f);
     meleeDistance = config.GetFloatDefault("AiPlayerbot.MeleeDistance", 1.5f);
     followDistance = config.GetFloatDefault("AiPlayerbot.FollowDistance", 1.5f);
-    raidFollowDistance = config.GetFloatDefault("AiPlayerbot.RaidFollowDistance", 5.0f);
+    raidFollowDistance = config.GetFloatDefault("AiPlayerbot.RaidFollowDistance", 4.0f);
     wanderMinDistance = config.GetFloatDefault("AiPlayerbot.WanderMinDistance", 5.0f);
     wanderMaxDistance = config.GetFloatDefault("AiPlayerbot.WanderMaxDistance", 50.0f);
     whisperDistance = config.GetFloatDefault("AiPlayerbot.WhisperDistance", 6000.0f);
@@ -963,7 +971,7 @@ bool PlayerbotAIConfig::Initialize()
     pullBackMaxReturnTime = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.PullBackMaxReturnTime", 15));
     rangedPull = config.GetBoolDefault("AiPlayerbot.RangedPull", true);
     rangedPullMeleeApproach = config.GetFloatDefault("AiPlayerbot.RangedPullMeleeApproach", 20.0f);
-    randomBotStartLevelMin = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMin", 1);
+    randomBotStartLevelMin = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMin", 5);
     randomBotStartLevelMax = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMax", 60);
     gearscorecheck = config.GetBoolDefault("AiPlayerbot.GearScoreCheck", false);
     levelCheck = config.GetIntDefault("AiPlayerbot.LevelCheck", 30);
@@ -1009,6 +1017,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", true);
 
     boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", false);
+    raidFollowWedge = config.GetBoolDefault("AiPlayerbot.RaidFollowWedge", false);
     dungeonFollowHoldBeforePacks = config.GetBoolDefault("AiPlayerbot.DungeonFollowHoldBeforePacks", false);
     warlockPetBySpec = config.GetBoolDefault("AiPlayerbot.WarlockPetBySpec", true);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
