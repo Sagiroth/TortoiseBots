@@ -153,4 +153,13 @@ namespace ai
         BossTacticsSeekKillTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek kill", 1) {}
         bool IsActive() override;
     };
+
+    // A taunt_after_cast row (mode until_tank) names this tank and its subject's victim is no tank any more: the tank
+    // takes the subject back inside the row's deadline.
+    class BossTacticsTauntAfterTrigger : public Trigger
+    {
+    public:
+        BossTacticsTauntAfterTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics taunt after", 1) {}
+        bool IsActive() override;
+    };
 }

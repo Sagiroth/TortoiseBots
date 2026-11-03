@@ -18,6 +18,7 @@
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
+#include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
@@ -248,6 +249,77 @@ bool IsCleaveToggleAction(Action* action)
         return false;
     std::string const& name = action->GetName();
     return name == "sweeping strikes" || name == "blade flurry";
+}
+
+// The creature-charmed members of the bot's group, read once per AI update: the hold multiplier asks for every action
+// the engine weighs, and the roster cannot change inside one update. Aura-free by design (GetCharmerGuid only): an
+// aura walk here would run for every action of every bot.
+constexpr std::size_t kCharmedAllyMax = 40;  // a raid's member slots
+struct CharmedAllyCache
+{
+    PlayerbotAI* ai = nullptr;
+    Player* bot = nullptr;
+    std::uint32_t tick = 0;
+    bool valid = false;
+    std::size_t count = 0;
+    Player* members[kCharmedAllyMax] = {};
+};
+thread_local CharmedAllyCache t_charmedAllies;
+
+const CharmedAllyCache& CharmedAllies(PlayerbotAI* ai, Player* bot)
+{
+    std::uint32_t const tick = ai->UpdateTick();
+    if (t_charmedAllies.valid && t_charmedAllies.ai == ai && t_charmedAllies.bot == bot && t_charmedAllies.tick == tick)
+        return t_charmedAllies;
+    t_charmedAllies = CharmedAllyCache();
+    t_charmedAllies.ai = ai;
+    t_charmedAllies.bot = bot;
+    t_charmedAllies.tick = tick;
+    t_charmedAllies.valid = true;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return t_charmedAllies;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (t_charmedAllies.count >= kCharmedAllyMax)
+            break;
+        if (!member || member == bot)
+            continue;
+        ObjectGuid const charmer = member->GetCharmerGuid();
+        // A player charmer is the core's business (it installs its own AI); only a creature's charm leaves the bot's
+        // own AI running beside the charmer's control.
+        if (charmer.IsEmpty() || charmer.IsPlayer())
+            continue;
+        t_charmedAllies.members[t_charmedAllies.count++] = member;
+    }
+    return t_charmedAllies;
+}
+
+// Whether this area action stands down because a creature-charmed group member would take it (DungeonRunCharmYield):
+// a hostile ally is healable damage for ten seconds, while an ally's blast on him is not. Any map: the key is the
+// encounter's, no row is needed. A self-centred blast (Thunder Clap, Consecration, Swipe, the cleave toggles) has no
+// point but the bot; anything else is judged at its target, and an action with nothing picked yet from the bot, the
+// conservative side.
+bool CharmedAllyAreaVeto(PlayerbotAI* ai, Player* bot, Action* action)
+{
+    if (!sPlayerbotAIConfig.dungeonRunCharmYield || !action)
+        return false;
+    const CharmedAllyCache& charmed = CharmedAllies(ai, bot);
+    if (charmed.count == 0)
+        return false;
+    bool const cleave = IsCleaveToggleAction(action);
+    if (!cleave && !IsAreaDamageAction(ai, action))
+        return false;
+    Unit* const point = cleave ? nullptr : action->GetTarget();
+    bool const selfCentred = !point || point == bot || action->GetTargetName() == "self target";
+    for (std::size_t i = 0; i < charmed.count; ++i)
+    {
+        Player* const member = charmed.members[i];
+        float const toPoint = selfCentred ? 0.0f : point->GetDistance(member);
+        if (CharmedAllyInArea(toPoint, bot->GetDistance(member), selfCentred))
+            return true;
+    }
+    return false;
 }
 
 // A single-target damage action that lands on the bot's current target: a melee swing or an attack spell. Heals, the
@@ -2061,6 +2133,13 @@ bool BossTacticsLinkedDeathAction::Execute(Event& event)
     if (AI_VALUE(Unit*, "current target") == pick)
         return false;
     return Attack(bot, pick);
+}
+
+float CharmedAllyHoldMultiplier::GetValue(Action* action)
+{
+    // The charmed ally's veto is not boss tactics': every bot carries this multiplier (avoid aoe and the dungeon
+    // strategy), so AiPlayerbot.DungeonRunCharmYield alone stands an area action down, on any map, with no row.
+    return CharmedAllyAreaVeto(ai, bot, action) ? 0.0f : 1.0f;
 }
 
 float BossTacticsHoldMultiplier::GetValue(Action* action)
@@ -3954,4 +4033,242 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
     if (!BossSeeking(ai, bot))
         return 1.0f;
     return 0.0f;
+}
+
+namespace
+{
+// taunt_after_cast's fight state (mode until_tank): the subject's victim stopped being a tank, so the row's tank has
+// `param` seconds to take it back. One entry per map instance, subject and row, keyed like a dps_hold_after hold.
+using TauntAfterKey = std::tuple<std::uint32_t, std::uint32_t, std::uint64_t, std::uint32_t, std::uint32_t,
+                                 std::uint8_t, std::uint8_t>;
+
+struct TauntAfterEpisode
+{
+    std::uint32_t lastReadMs = 0;
+    std::uint32_t startMs = 0;
+    std::uint32_t regainedMs = 0;
+    bool open = false;
+    bool taunted = false;
+    // This charm's window is spent (regained or missed): no second attempt until the subject's victim is a tank again,
+    // which is where the next charm starts afresh.
+    bool spent = false;
+};
+
+std::mutex g_tauntAfterMutex;
+std::map<TauntAfterKey, TauntAfterEpisode> g_tauntAfter;
+std::atomic<std::uint32_t> g_tauntAfterPruneMs{0};
+// A subject nobody read for two minutes left the fight; the episode goes with it.
+constexpr std::uint32_t kTauntAfterStaleMs = 120000;
+
+TauntAfterKey TauntAfterKeyOf(Player* bot, Unit* subject, const BossTacticRow& row)
+{
+    return std::make_tuple(bot->GetMapId(), bot->GetInstanceId(), subject->GetObjectGuid().GetRawValue(),
+                           row.bossEntry, row.spellId, row.hpMin, row.hpMax);
+}
+
+// Drops the episodes nobody has read for kTauntAfterStaleMs and those of a subject that died (a respawned one must
+// not inherit its previous pull's deadline). Runs at most once a second, whatever asks.
+void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t nowMs)
+{
+    // The once-a-second throttle is read unlocked (a tank asks it every tick): two threads that both pass the test
+    // re-check under the lock, which is what keeps the pass to once a second.
+    std::uint32_t const last = g_tauntAfterPruneMs.load(std::memory_order_relaxed);
+    if (last != 0 && nowMs - last < 1000)
+        return;
+    std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
+    std::uint32_t const ran = g_tauntAfterPruneMs.load(std::memory_order_relaxed);
+    if (ran != 0 && nowMs - ran < 1000)
+        return;
+    g_tauntAfterPruneMs.store(nowMs, std::memory_order_relaxed);
+    for (auto it = g_tauntAfter.begin(); it != g_tauntAfter.end();)
+    {
+        bool drop = nowMs - it->second.lastReadMs > kTauntAfterStaleMs;
+        if (!drop)
+        {
+            Unit* subject = ai->GetUnit(ObjectGuid(std::get<2>(it->first)));
+            drop = subject && !subject->IsAlive();
+        }
+        it = drop ? g_tauntAfter.erase(it) : std::next(it);
+    }
+}
+
+// The class taunt of the 1.12 cores (the GluthTauntSwapAction set): a paladin has none.
+const char* ClassTauntSpell(Player* bot)
+{
+    switch (bot->GetClass())
+    {
+        case CLASS_WARRIOR:
+            return "taunt";
+        case CLASS_DRUID:
+            return "growl";
+        default:
+            return nullptr;
+    }
+}
+
+// The outcome row of one episode: how long after the rising edge the subject was on a tank again (none for a miss),
+// and whether the row's tank got its taunt off.
+void LogTauntAfter(PlayerbotAI* ai, Unit* subject, int tankIndex, const TauntAfterEpisode& episode, bool regained)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[48];
+    snprintf(info1, sizeof(info1), "subject=%u", subject->GetEntry());
+    char regainedText[16];
+    if (regained)
+        snprintf(regainedText, sizeof(regainedText), "%u", episode.regainedMs);
+    else
+        snprintf(regainedText, sizeof(regainedText), "none");
+    char info2[128];
+    snprintf(info2, sizeof(info2), "trigger=until_tank,tank=%d,regained_ms=%s,taunted=%d", tankIndex, regainedText,
+             episode.taunted ? 1 : 0);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntAfter", info1, info2);
+}
+}  // namespace
+
+BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    BossTauntAfter out;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return out;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
+        return out;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.tanks.empty() || roles.botIndex < 0)
+        return out;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    PruneTauntAfter(ai, nowMs);
+    // The role order already drops a dead or absent tank, so every slot it reports is alive; the pure pick's wrap is
+    // what covers a row that names an index past the end (fewer tanks than the row expects).
+    std::vector<bool> const alive(roles.tanks.size(), true);
+    for (const BossTacticRow* row : fight.rows)
+    {
+        // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
+        // the scan having no teleport edge or cast slot to offer them.
+        if (row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank)
+            continue;
+        int const assigned = TauntAfterTankIndex(alive, static_cast<int>(row->priority));
+        if (assigned < 0 || roles.tanks[assigned] != bot)
+            continue;
+        std::uint32_t const deadlineMs = static_cast<std::uint32_t>(row->param * 1000.0f + 0.5f);
+        for (Unit* unit : fight.units)
+        {
+            if (!unit || unit->GetEntry() != TacticSubjectEntry(*row))
+                continue;
+            Unit* const victim = unit->GetVictim();
+            bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;
+            bool victimIsTank = false;
+            if (victimIsPlayer)
+            {
+                // A charmed player is hostile and its threat is gone (the charm handler deletes it), so it cannot be
+                // the tank on the subject any more: the episode opens on it exactly as on a DPS.
+                Player* const player = static_cast<Player*>(victim);
+                ObjectGuid const charmer = player->GetCharmerGuid();
+                bool const charmed = !charmer.IsEmpty() && !charmer.IsPlayer();
+                victimIsTank = !charmed &&
+                    std::find(roles.tanks.begin(), roles.tanks.end(), player) != roles.tanks.end();
+            }
+            bool const onNonTank = victimIsPlayer && !victimIsTank;
+            bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
+            TauntAfterEpisode episode;
+            bool close = false;
+            bool regained = false;
+            bool missed = false;
+            {
+                std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
+                TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
+                state.lastReadMs = nowMs;
+                if (onNonTank)
+                {
+                    if (!state.open && !state.spent)
+                    {
+                        state.open = true;
+                        state.startMs = nowMs;
+                        state.taunted = false;
+                    }
+                    if (state.open)
+                    {
+                        std::uint32_t const sinceMs = nowMs - state.startMs;
+                        if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
+                        {
+                            out.valid = true;
+                            out.subject = unit;
+                            out.row = row;
+                            out.tankIndex = assigned;
+                            out.deadlineMs = deadlineMs;
+                            out.sinceMs = sinceMs;
+                        }
+                        else
+                        {
+                            // The deadline ran out on a non-tank: the miss is logged once and the window is spent.
+                            episode = state;
+                            close = true;
+                            missed = true;
+                        }
+                    }
+                }
+                else if (victimIsTank)
+                {
+                    // A tank has the subject back: the episode ends here (regained) and the next charm starts from a
+                    // clean state.
+                    if (state.open)
+                    {
+                        episode = state;
+                        episode.regainedMs = nowMs - state.startMs;
+                        regained = true;
+                        close = true;
+                    }
+                    state = TauntAfterEpisode();
+                    state.lastReadMs = nowMs;
+                }
+                // A subject between victims, or one on a pet, is mid-transition: the episode stays open and its
+                // deadline keeps running, so a rival victim retarget does not hand the off-tank a second window.
+                if (close)
+                {
+                    state.open = false;
+                    state.spent = missed;
+                }
+            }
+            if (close)
+                LogTauntAfter(ai, unit, assigned, episode, regained);
+            if (out.valid)
+                return out;
+        }
+    }
+    return out;
+}
+
+void ai::NoteBossTauntAfterCast(PlayerbotAI* ai, Player* bot, const BossTauntAfter& task)
+{
+    if (!ai || !bot || !task.valid || !task.subject || !task.row)
+        return;
+    std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
+    auto it = g_tauntAfter.find(TauntAfterKeyOf(bot, task.subject, *task.row));
+    if (it != g_tauntAfter.end() && it->second.open)
+        it->second.taunted = true;
+}
+
+bool BossTacticsTauntAfterAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTauntAfter task = FindBossTauntAfter(ai, bot, ScanBossTactics(ai, bot));
+    if (!task.valid)
+        return false;
+    const char* const taunt = ClassTauntSpell(bot);
+    if (!taunt)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (AI_VALUE(Unit*, "current target") != task.subject)
+    {
+        // The taunt only sets the selection: without the attack first the rotation keeps hitting the other target and
+        // the subject snaps back to whoever it was on.
+        if (Attack(bot, task.subject) && !ai->CanCastSpell(taunt, task.subject))
+            return true;
+    }
+    if (!ai->CanCastSpell(taunt, task.subject))
+        return false;
+    bool const cast = ai->CastSpell(taunt, task.subject);
+    if (cast)
+        NoteBossTauntAfterCast(ai, bot, task);
+    return cast;
 }

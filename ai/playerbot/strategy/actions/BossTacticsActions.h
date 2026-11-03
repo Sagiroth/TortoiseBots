@@ -251,6 +251,16 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // AiPlayerbot.DungeonRunCharmYield: an area action that would land within kCharmedAllyAreaYd of a creature-charmed
+    // group member is stood down. Not a boss-tactics rule: the key alone decides, on any map, so the class is
+    // registered on the always-on combat strategies (the TrapHoldMultiplier placement), not on BossTacticsStrategy.
+    class CharmedAllyHoldMultiplier : public Multiplier
+    {
+    public:
+        CharmedAllyHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "charmed ally hold") {}
+        float GetValue(Action* action) override;
+    };
+
     // Once on the kill-first creature, the generic assist/AoE re-pick would swing
     // the bot back to the boss the next tick.
     class BossTacticsHoldMultiplier : public Multiplier
@@ -507,5 +517,34 @@ namespace ai
     public:
         BossTacticsSeekHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek hold") {}
         float GetValue(Action* action) override;
+    };
+    // A taunt_after_cast row (mode until_tank) whose subject stopped being on a tank, for the one bot the row's raid
+    // order names (`priority`, the first alive at or after it): `valid` is true only while that bot is the one asking
+    // and the deadline the rising edge opened has not run out. `sinceMs` is how long ago it opened, `deadlineMs` the
+    // row's param. blink and the spell triggers stay unimplemented: the loader accepts those rows, this scan ignores
+    // them.
+    struct BossTauntAfter
+    {
+        bool valid = false;
+        Unit* subject = nullptr;
+        const BossTacticRow* row = nullptr;
+        int tankIndex = -1;          // the bot's slot in the raid tank order
+        std::uint32_t deadlineMs = 0;
+        std::uint32_t sinceMs = 0;   // since the subject's victim stopped being a tank
+    };
+    // One read of the taunt_after_cast rows of the fight: opens the episode on the rising edge, closes and logs it
+    // when the subject is on a tank again or the deadline ran out (`BossTacticsTauntAfter`). Gated by
+    // AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; the episode state is the fight's, shared by
+    // every bot of the instance, so a tank taking over mid-episode continues it.
+    BossTauntAfter FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+    // The taunt of the episode was cast: its outcome row then says taunted=1.
+    void NoteBossTauntAfterCast(PlayerbotAI* ai, Player* bot, const BossTauntAfter& task);
+
+    // The row's tank attacks the subject and casts its class taunt (`taunt`/`growl`) as soon as it can.
+    class BossTacticsTauntAfterAction : public AttackAction
+    {
+    public:
+        BossTacticsTauntAfterAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics taunt after") {}
+        bool Execute(Event& event) override;
     };
 }

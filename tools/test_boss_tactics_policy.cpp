@@ -2221,6 +2221,30 @@ int main()
         CHECK(table.FreezeAuras(531).empty());
     }
 
+    // TauntAfterTankIndexWraps / TauntAfterDue (taunt_after_cast, mode until_tank): a row names the tank that takes the
+    // subject back after its victim stops being a tank. The index is the first ALIVE tank at or after the row's
+    // `priority`, wrapping to the front; the deadline runs from the rising edge and nothing is taken back while the
+    // victim is the assigned tank.
+    {
+        const std::vector<bool> gap = { true, false, true };
+        CHECK(TauntAfterTankIndex(gap, 1) == 2);          // no wrap: the dead first off-tank keeps the job
+        const std::vector<bool> onlyLast = { false, false, true };
+        CHECK(TauntAfterTankIndex(onlyLast, 2) == 2);
+        const std::vector<bool> onlyFirst = { true, false, false };
+        CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);    // wraps
+        CHECK(TauntAfterTankIndex(onlyFirst, 0) == 0);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{}, 0) == -1);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{ false, false }, 1) == -1);
+        CHECK(TauntAfterTankIndex(onlyFirst, -1) == -1);
+
+        CHECK(TauntAfterDue(true, 0, 10000, false));      // the rising edge itself
+        CHECK(TauntAfterDue(true, 1, 10000, false));
+        CHECK(TauntAfterDue(true, 9999, 10000, false));
+        CHECK(!TauntAfterDue(true, 10000, 10000, false)); // the deadline passed
+        CHECK(!TauntAfterDue(false, 1, 10000, false));    // no episode
+        CHECK(!TauntAfterDue(true, 1, 10000, true));      // the assigned tank already has it
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

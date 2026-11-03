@@ -98,6 +98,9 @@ void AvoidAoeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers
     // the combat engine - which runs the reach, the follow and the stay - carries its own copy on the
     // always-on dungeon strategy; no engine ever gets both.
     multipliers.push_back(new TrapHoldMultiplier(ai));
+    // The charmed ally's area veto (AiPlayerbot.DungeonRunCharmYield) travels with the trap hold for the same reason:
+    // every bot has this strategy, so one charmed member's blast is stood down without an encounter gate.
+    multipliers.push_back(new CharmedAllyHoldMultiplier(ai));
 }
 
 void AvoidAoeStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
