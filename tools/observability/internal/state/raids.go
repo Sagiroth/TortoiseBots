@@ -48,12 +48,13 @@ type raidsPending struct {
 	seq     uint64
 	ts      int64
 	tsMs    int64
+	parts   int
 	got     map[int][]model.RaidGroupRow
 }
 
-// raidGroupKey names one raid group's copy: one group id can stand on several
+// raidDetailKey names one raid group's copy: one group id can stand on several
 // copies, and detail retained for one copy must not leak onto another.
-type raidGroupKey struct {
+type raidDetailKey struct {
 	group, mapID, instance uint32
 }
 
@@ -184,14 +185,14 @@ func (st *raidsState) applyListLocked(list []model.RaidGroupRow, p *model.RaidsP
 	if len(list) > maxRaidsGroups {
 		list = list[:maxRaidsGroups]
 	}
-	prior := make(map[raidGroupKey]model.RaidGroupRow, len(st.list))
+	prior := make(map[raidDetailKey]model.RaidGroupRow, len(st.list))
 	for _, r := range st.list {
-		prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}] = r
+		prior[raidDetailKey{group: r.Group, mapID: r.Map, instance: r.Instance}] = r
 	}
 	out := make([]model.RaidGroupRow, 0, len(list))
 	for _, r := range list {
 		if len(r.Detail) == 0 {
-			if prev, ok := prior[raidGroupKey{group: r.Group, mapID: r.Map, instance: r.Instance}]; ok && len(prev.Detail) > 0 {
+			if prev, ok := prior[raidDetailKey{group: r.Group, mapID: r.Map, instance: r.Instance}]; ok && len(prev.Detail) > 0 {
 				r.Detail = append([]model.RaidDetailEntry(nil), prev.Detail...)
 			}
 		}
