@@ -12423,10 +12423,10 @@ static void TestAFullWipeRescueStepsBackToAnEarlierClearPoint()
     CHECK(r.rescueHoldMs == 0);
 }
 
-// A fetch with no member out of combat to bring the bot to is bounded: each such tick spends one of the kFetchTries
-// attempts, so the run gives up by name instead of holding for ever (a dead lead with every living member in the queue
-// is exactly that state).
-static void TestAFetchWithoutAnAnchorGivesUp()
+// A fetch with no member out of combat to bring the bot to attempts no teleport, so it spends no try: the member
+// stays queued until an anchor stands free, then the first fetch goes out (a revived healer in a 45 s trash fight was
+// given up for good after three waits of about 15 s).
+static void TestAFetchWithoutAnAnchorWaitsForOne()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 0, 0, 0)};
@@ -12442,15 +12442,22 @@ static void TestAFetchWithoutAnAnchorGivesUp()
     r.waitFor.insert("Runner"); // a fallen member, alive again
     r.fetchOn = true;           // AiPlayerbot.RunTeleportReturnYd is on (the glue's tick reads it)
     std::string order;
-    std::uint32_t ticks = 0;
-    for (; ticks < kFetchTries + 2 && r.note.find("bring it to the lead bot") == std::string::npos; ++ticks)
+    for (std::uint32_t i = 0; i < 30; ++i)
     {
         r.runMs += kFetchRetryMs;
         FarReturnTick(r, f, kTickMs, order);
     }
-    CHECK(r.note.find("after 3 teleport returns") != std::string::npos);
-    CHECK(ticks <= kFetchTries + 1);
-    CHECK(!r.fetch.count("Runner"));
+    CHECK(r.note.find("bring it to the lead bot") == std::string::npos); // never given up
+    CHECK(r.note.find("no member stands out of combat to bring Runner to") != std::string::npos);
+    CHECK(r.fetch.count("Runner") && r.fetch["Runner"].tries == 0); // no teleport was attempted
+    // The fight ends: the lead bot's own spot is the anchor, and the first real try goes out.
+    f.leadInCombat = false;
+    r.runMs += kFetchRetryMs;
+    order.clear();
+    CHECK(FarReturnTick(r, f, kTickMs, order));
+    CHECK(order == "fetch 0.0 0.0 0.0 Runner");
+    CHECK(r.fetch["Runner"].tries == 1);
+    CHECK(r.note.find("try 1 of 3") != std::string::npos);
 }
 
 // A fetched member (a revived bot, a dropped summon) is never teleported alone into a fight: the lead bot's spot while
@@ -32710,7 +32717,7 @@ int main()
     TestStandClearanceIgnoresAnotherStoreyOutOfSight();
     TestStandClearanceJudgesAPatrolByItsLoopStorey();
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
-    TestAFetchWithoutAnAnchorGivesUp();
+    TestAFetchWithoutAnAnchorWaitsForOne();
     TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
     TestTheRescueRetryAsksForItsRead();
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();

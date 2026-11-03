@@ -2289,6 +2289,9 @@ struct Run
         std::uint32_t tries = 0;
         std::uint64_t lastMs = 0;
         float x = 0.0f, y = 0.0f, z = 0.0f;
+        // The time waited with no member out of combat to bring the bot to: no teleport is attempted then, so no
+        // try is spent (its own clock bounds the wait's note, never the queue).
+        std::uint32_t waitMs = 0;
     };
     std::map<std::string, FetchState> fetch;
     std::set<std::string> fetchGaveUp;
@@ -17770,18 +17773,25 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             std::string why;
             if (!FarReturnPoint(f, due, point, why))
             {
-                // No member out of combat to bring them to: the try is spent, so the queue is bounded (kFetchTries
-                // then gives up by name) and a dead lead with everyone else in the queue is no endless wait.
+                // No member out of combat to bring them to (the party fights, and the lead bot's own spot is not
+                // clear): no teleport is attempted, so no try is spent and the member stays queued until an anchor
+                // stands free. Its own wait clock (kReturnHoldMs) bounds the note, not the queue: a revived bot used
+                // to be given up for good after three waits of about 15 s.
                 std::string names;
+                bool longWait = false;
                 for (const std::string& name : due)
                 {
                     Run::FetchState& st = r.fetch[name];
-                    ++st.tries;
-                    st.lastMs = r.runMs;
+                    st.waitMs += dt;
+                    if (st.waitMs >= ai::kReturnHoldMs)
+                    {
+                        st.waitMs = 0;
+                        longWait = true;
+                    }
                     names += (names.empty() ? "" : ", ") + name;
                 }
-                r.note = "the teleport return waits: no member stands out of combat to bring " + names +
-                    " to (the party is regrouping)";
+                r.note = "the teleport return waits: no member stands out of combat to bring " + names + " to" +
+                    (longWait ? " (the party is regrouping: it holds where it stands)" : " (the party is regrouping)");
                 return true;
             }
             order = "fetch " + Num(point.x) + " " + Num(point.y) + " " + Num(point.z);
@@ -17791,6 +17801,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 Run::FetchState& st = r.fetch[name];
                 ++st.tries;
                 st.lastMs = r.runMs;
+                st.waitMs = 0;
                 st.x = point.x;
                 st.y = point.y;
                 st.z = point.z;
