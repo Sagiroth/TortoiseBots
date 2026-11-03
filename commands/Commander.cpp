@@ -6900,7 +6900,6 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
         }
     }
 }
-}
 
 // A leg toward (x,y,z) for a move refused too-far (DungeonRun::TooFarLegWanted): the
 // point maxYd along the lead bot's own navmesh path to it (the path `cmd move` reads,
