@@ -34,6 +34,7 @@
 #include "HireUnlockKillAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "CombatMonitorAdapter.h"
+#include "RangedShotAdapter.h"
 
 namespace TortoiseBots {
 
@@ -66,6 +67,8 @@ void RegisterScripts()
     new HireUnlockKillAdapter();
     new CombatMonitorUnitAdapter();
     new CombatMonitorCastAdapter();
+    // The wedged rescue's shot count (runtime/RangedShotLedger.h): the authoritative evidence a ranged bot fired.
+    new RangedShotAdapter();
 }
 
 } // namespace TortoiseBots

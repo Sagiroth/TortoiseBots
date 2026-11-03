@@ -723,7 +723,10 @@ AiPlayerbot.RandomGearMaxDiff = 9
 
 # Seed gear progressively by bot level instead of throwing the full band at once
 #AiPlayerbot.RandomGearProgression = 1
-# Upgrade pooled bots' gear as they level (from level 5, bots without a real master)
+# One-time starter gear for fresh pool bots (level 5 and up): seeds a bot's gear
+# at its first login while its played time is still 0, and for the timer backstop
+# retry of a bot that never played. It does NOT upgrade gear as bots level up;
+# after the seed a bot gears from loot, quest rewards and vendor buys.
 #AiPlayerbot.RandomGearUpgradeEnabled = 1
 
 # Owner-rule source-tier cap for seeded/hired bot gear (roadmap #289: higher
@@ -1363,8 +1366,11 @@ AiPlayerbot.RandomBotShowCloak = 1
 # level-bound skills, professions and starter gear are seeded, so a fresh pool
 # starts playable instead of walking up from level 1. Bots level up normally
 # from there. 1/1 keeps the historic behaviour (start at level 1).
-# Default: 1 / 60 (fresh bots spread over every level)
-AiPlayerbot.RandomBotStartLevelMin = 1
+# The minimum defaults to 5: gear seeding starts at level 5, and a bot that
+# rolls 1-4 keeps its level-1 outfit for good (its played time is no longer 0
+# when it reaches level 5), so the default never rolls below 5.
+# Default: 5 / 60 (fresh bots spread over levels 5-60)
+AiPlayerbot.RandomBotStartLevelMin = 5
 AiPlayerbot.RandomBotStartLevelMax = 60
 
 # Set XP rate for bots (default: 1)
