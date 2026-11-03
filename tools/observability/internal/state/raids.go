@@ -425,6 +425,10 @@ func raidGroupView(group uint32, members []model.BotSnapshot, row *model.RaidGro
 			run := *bound.Run
 			g.Run = &run
 		}
+		if bound.Layout != nil {
+			layout := *bound.Layout
+			g.Layout = &layout
+		}
 	} else if row != nil && row.Commander != "" {
 		g.Commander = row.Commander
 	}

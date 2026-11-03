@@ -24,8 +24,8 @@
       lead: leader ? leader.name : "",
       online: true,
       bound: !!g.bound,
-      raidCommander: g.commander || "",
       run: g.run || null,
+      layout: g.layout || null,
       raidRun: r,
       bots: members.map((m) => {
         const bot = {

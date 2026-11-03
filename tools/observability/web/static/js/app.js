@@ -10451,14 +10451,17 @@
   function raidRenderCard(run, group) {
     const bind = RaidView.bindOf(run, group);
     const name = dgnRunName(run);
-    const up = (group.members || []).filter(m => !m.dead && !m.offline).length;
-    const total = (group.members || []).length;
-    const word = RaidView.stateWord(group);
+    const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, cmdNowFor(bind)));
+    const place = cmdPlace(bind);
     document.getElementById('raid-run-title').innerHTML =
       `${esc(name)} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`;
     const wins = group.combat ? RaidView.windowTotals(group.combat) : null;
+    const rb = group.run ? UnitInfo.runBrief(bind, cmdNowFor(bind)) : null;
+    const why = group.run ? CmdView.whyWaiting(bind, cmdNowFor(bind)) : '';
     setHtml(document.getElementById('raid-run-sub'),
-      `Group ${esc(group.key)} &middot; led by <b>${esc(group.leader || bind.lead || '?')}</b> &middot; ${up}/${total} up`
+      `${esc(name)} &middot; group ${esc(group.key)} &middot; ${bind.bots.length} bots &middot; led by <b>${esc(bind.lead || group.leader || '?')}</b>`
+      + (place ? ` &middot; ${esc(place)}` : '')
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}${why ? ' · ' + esc(why) : ''}</span>` : why ? ` &middot; <span class="cmd-waiting">${esc(why)}</span>` : '')
       + ` &middot; seen ${esc(DgnView.seenText(run.seen_sec))}`
       + (wins ? ` &middot; window ${wins.dps} dps / ${wins.hps} hps` : ''));
     const key = 'raid:' + run.key + ':' + group.key;
@@ -10480,13 +10483,17 @@
         ? ` <a class="badge badge-info" href="#/commanders/${esc(encodeURIComponent(group.commander))}" title="Open the bound commander's card">bound &middot; ${esc(group.commander)}</a>`
         : '')
       + ` <span class="badge badge-info" title="Instance copy ${esc(String(run.instance))} of map ${esc(String(run.map))}">instance ${esc(String(run.instance))}</span>`);
-    const rb = group.run ? UnitInfo.runBrief(bind, cmdServerNow()) : null;
+    setHtml(card.querySelector('.cmd-title'), `${esc(name)} &middot; group ${esc(group.key)} &middot; led by <b>${bind.lead ? cmdBotLink((bind.bots.find(b => b.name === bind.lead) || {}).guid, bind.lead) : esc(group.leader || '?')}</b> &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
     setHtml(card.querySelector('.cmd-sub'),
       `Led by <b>${bind.lead ? cmdBotLink(bind.bots.find(b => b.name === bind.lead)?.guid, bind.lead) : esc(group.leader || '?')}</b> &middot; group ${esc(String(group.group))}`
-      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}">${esc(rb.text)}</span>` : ''));
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}${why ? ' · ' + esc(why) : ''}</span>` : why ? ` &middot; <span class="cmd-waiting" title="What the run waits on and for how long">${esc(why)}</span>` : ''));
     card.querySelector('.cmd-orders').parentElement.querySelector('.cmd-h').style.display = 'none';
     setHtml(card.querySelector('.cmd-orders'), '');
-    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind) + raidUngroupedHtml(run));
+    const warns = CmdView.warnings(bind, { ageSec: null });
+    setHtml(card.querySelector('.cmd-warn'), warns.length
+      ? warns.filter(w => w.kind !== 'refused').map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
+      : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
+    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind) + raidWindowHtml(bind) + raidUngroupedHtml(run));
     setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
     setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
     setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
@@ -10495,6 +10502,13 @@
     if (fightsHost) setHtml(fightsHost, fightsBtn);
     mountFightPanel(card, bind);
     drawCmdMap(key);
+  }
+  // The live combat window as a per-bot table (dps/hps/casts/last spell), reusing the debugger's live-table renderer.
+  // Same data as the sub-line's `window X dps / Y hps` sum; absent outside a fight or without RAIDS numbers.
+  function raidWindowHtml(bind) {
+    const bots = (bind && bind.combat && bind.combat.bots) || [];
+    if (!bots.length || typeof FightDebug === 'undefined' || !FightDebug.liveTables) return '';
+    return `<h4 class="cmd-subgroup">Window &middot; last ${bind.combat.win_s || 0} s</h4>` + fdLiveTableHtml(FightDebug.liveTables(bind), null, bind.combat.win_s || 0);
   }
 
   // The copy's units with no group: one muted block, as the list shows. A copy with only ungrouped bots shows this,

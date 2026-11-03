@@ -1013,6 +1013,7 @@ type RaidGroupView struct {
 	Bound      bool             `json:"bound,omitempty"`
 	Commander  string           `json:"commander,omitempty"`
 	Run        *CommanderRun    `json:"run,omitempty"`
+	Layout     *CommanderLayout `json:"layout,omitempty"`
 	Observed   bool             `json:"observed,omitempty"`
 	More       int              `json:"more,omitempty"`
 	Members    []DungeonMember  `json:"members"`

@@ -150,6 +150,7 @@ func TestRaidsBoundLink(t *testing.T) {
 	p := commandersPayload(9, c.now.Unix(), "Hypeer")
 	p.Commanders[0].Group = 7
 	p.Commanders[0].Run = &model.CommanderRun{Plan: "mc", State: "running"}
+	p.Commanders[0].Layout = &model.CommanderLayout{MainTank: "Tank"}
 	if !s.ApplyCommanders(p) {
 		t.Fatal("COMMANDERS payload refused")
 	}
@@ -163,6 +164,9 @@ func TestRaidsBoundLink(t *testing.T) {
 	}
 	if g.Run == nil || g.Run.Plan != "mc" {
 		t.Fatalf("binding run not copied: %+v", g.Run)
+	}
+	if g.Layout == nil || g.Layout.MainTank != "Tank" {
+		t.Fatalf("binding layout not copied: %+v", g.Layout)
 	}
 }
 
