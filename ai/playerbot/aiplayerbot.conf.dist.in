@@ -1064,9 +1064,10 @@ AiPlayerbot.DungeonRunMaxMinutes = 180
 
 # The run leader's pull aggro estimate. Before each pack pull it works out how many
 # other creatures the pull would bring (the pack, creatures in aggro range of the
-# party, one ring of family assistance) and, when that is more than the ceiling
-# below, rests the party to its end lines once before it pulls (status note
-# "N joiners expected"). It adds no movement and never skips a pull.
+# party, one ring of family assistance from every member of the pulled pack, at
+# least 20 yd wide) and, when that is more than the ceiling below, rests the party
+# to its end lines once before it pulls (status note "N joiners expected"). It adds
+# no movement and never skips a pull.
 # 0 - off, the run leader pulls as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunAggroEstimate = 0
@@ -1181,6 +1182,21 @@ AiPlayerbot.DungeonRunStandClearance = 0
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunStandPullPreCc = 0
+
+# The plan's stand is the only stand a pull row uses. With this key the run leader
+# never searches a closer firing stand when the plan's authored approach cannot see
+# the pulled unit: it walks the tank back to that approach and holds there for up to
+# 20 s per unit (status note "no LOS from the authored stand; holding"), then searches a
+# firing stand as with 0 (note "no LOS from the authored stand after 20 s; searching a
+# firing stand"). It needs no AiPlayerbot.DungeonRunPullStand. Before the row fires it also
+# waits for every living tank and melee to stand at that approach (within 5 yd) or
+# clear of the next pull's pack (farther than its radius plus the core's 20 yd aggro
+# ring from its point): up to 10 s, then the row fires and its note names those still
+# out of place. A hop pull and a walk-back pull never wait.
+# 0 - off, a stand the path offers is searched as before and the row fires as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandDiscipline = 0
 
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",

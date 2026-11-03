@@ -32,12 +32,14 @@
 //      widened by `spreadYd` for players drifting during the fight. A creature
 //      with no line of sight between it and the engage point (`partySees`), or
 //      flagged "no aggro", does not wake this way.
-//   3. One family-assistance hop (Creature::CallAssistance): each creature that
-//      woke by being attacked (the target and the proximity wakers, NOT the
-//      pack members dragged in by rule 1) calls creatures of the SAME faction
-//      template within CreatureFamilyAssistanceRadius (10 yd by default) that
-//      are not in a fight, not "no assist" and not "no aggro". The assisted do
-//      not call in turn.
+//   3. One family-assistance hop (Creature::CallAssistance): every member of
+//      the pull's pack (the target, its pack, and each proximity waker's pack;
+//      NOT the creatures an assist drags in) calls creatures of the SAME
+//      faction template within the family-assist ring that are not in a fight,
+//      not "no assist" and not "no aggro". The ring is the server's
+//      CreatureFamilyAssistanceRadius, never under kAggroFamilyAssistMinYd
+//      (20 yd: the observed cross-pack wakes). The assisted do not call in
+//      turn.
 //   4. Pack closure once more: an assisted creature that belongs to a pack
 //      drags its pack in (it does not start another assist hop).
 //
@@ -82,6 +84,10 @@ namespace ai
 {
     // CreatureFamilyAssistanceRadius in the core's mangosd.conf (default 10).
     inline constexpr float kAggroFamilyAssistYd = 10.0f;
+    // The ring the estimate never goes under. The cross-pack wakes on the Zul'Gurub terrace are spawn pairs 11.0-19.5
+    // yd apart, and the pack they took woke from its own spawn edge, not from the pulled creature: the server's 10 yd
+    // assistance radius underestimates what the 20 yd aggro ring takes.
+    inline constexpr float kAggroFamilyAssistMinYd = 20.0f;
     // Creature::m_detectionDistance default when the template has none.
     inline constexpr float kAggroDetectionYd = 20.0f;
     // MAX_LEVEL_DIFF_FOR_AGGRO_RANGE.
@@ -335,8 +341,6 @@ namespace ai
             // 1. Proximity wakers: the callers of the assist hop, with the target.
             //    A member of the target's pack that stands in reach wakes by
             //    itself too, and calls.
-            std::vector<char> caller(n, 0);
-            caller[target] = 1;
             for (std::size_t i = 0; i < n; ++i)
             {
                 if (absent(i) || !mobs[i].partySees)
@@ -344,12 +348,14 @@ namespace ai
                 float const reach = AggroRadius(mobs[i], p.lowestPartyLevel, p.aggroRate);
                 if (reach > 0.0f &&
                     Dist3(mobs[i].x, mobs[i].y, mobs[i].z, p.engageX, p.engageY, p.engageZ) <= reach + p.spreadYd)
-                {
                     in[i] = 1;
-                    caller[i] = 1;
-                }
             }
+            // 1b. The pull's pack (the target's and each waker's) is known before the assist hop: every member of it
+            //     calls for help, not only the pulled creature. The creatures the call takes do not call in turn.
+            PackClosure(mobs, links, in);
+            std::vector<char> const caller = in;
             // 2. One assist hop from the callers only (the assisted do not call).
+            float const assistYd = std::max(p.familyAssistYd, kAggroFamilyAssistMinYd);
             for (std::size_t j = 0; j < n; ++j)
             {
                 if (in[j] || absent(j) || !mobs[j].seen || mobs[j].noAssist || mobs[j].noAggro)
@@ -358,8 +364,7 @@ namespace ai
                 {
                     if (!caller[i] || mobs[i].faction != mobs[j].faction)
                         continue;
-                    float const radius = p.familyAssistYd;
-                    if (Dist3(mobs[i].x, mobs[i].y, mobs[i].z, mobs[j].x, mobs[j].y, mobs[j].z) <= radius)
+                    if (Dist3(mobs[i].x, mobs[i].y, mobs[i].z, mobs[j].x, mobs[j].y, mobs[j].z) <= assistYd)
                     {
                         in[j] = 1;
                         break;

@@ -16648,6 +16648,185 @@ static void TestAuthoredStandRuleSkipsHopPulls()
     }
 }
 
+// AiPlayerbot.DungeonRunStandDiscipline: a pull row whose authored approach cannot see its unit holds there. It does
+// not search a closer firing stand (ZG walk 28 step 315: the 8.7 yd stand stood 24 yd nearer the middle packs than
+// the authored approach and woke them through the open ring).
+static void TestStandDisciplineHoldsAtTheAuthoredStand()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)}; // in range, no line of sight from the authored stand
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+        CHECK(r.shotStandFor == 0); // no closer stand searched
+        CHECK(r.shotStandTries[11] == 0);
+    }
+    // Key off: the old stand search runs.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.shotStandFor == 11);
+        CHECK(Has(r.note, "reading a firing stand"));
+    }
+    // Key on, the unit in sight: the pull goes out from the authored stand as before.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.units = {Seen(11, 4851, 24.0f, true)};
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline alone (the stand-pull key off): the pull row still fires from the authored
+// stand only. A tank that cannot see its unit from there holds; a tank that can fires as before.
+static void TestStandDisciplineAloneEnforcesTheAuthoredStand()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.pullStand = false;
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)};
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+        CHECK(r.shotStandFor == 0);
+    }
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.units = {Seen(11, 4851, 24.0f, true)};
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+    // Both keys off: no stand rule, the pull goes out at once.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+    }
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: the no-LOS hold at the plan's stand lasts kStandLosWaitMs (20 s) for one unit.
+// The 20th second's tick says the firing-stand search takes over; the next read finds no stand, so the pull goes out
+// from where the tank stands, and the walk back to the plan's stand is not resumed for that unit.
+static void TestStandDisciplineLosHoldEndsAfterTwentySeconds()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, -5.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    plan.steps = {stand, pull};
+    Facts f = StandParty();
+    f.leadX = -5.0f;
+    f.standDiscipline = true;
+    f.units = {Seen(11, 4851, 24.0f, false)};
+    Run r = Start(&plan, 1);
+    std::string order;
+    for (int s = 1; s <= 19; ++s) // 1 s to 19 s: held at the authored stand
+    {
+        order.clear();
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(r.note == "no LOS from the authored stand; holding");
+    }
+    CHECK(r.shotStandFor == 0);
+    order.clear();
+    PullUnit(r, f, f.units[0], order); // 20 s: the firing-stand search takes over
+    CHECK(order.empty());
+    CHECK(r.note == "no LOS from the authored stand after 20 s; searching a firing stand");
+    CHECK(r.shotStandFor == 11);
+    f.shotStandGuid = 11; // the glue's read: no firing stand on the path
+    order.clear();
+    PullUnit(r, f, f.units[0], order);
+    CHECK(order == "pullback 11");
+    CHECK(Has(r.note, "no firing stand found"));
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: every living tank and melee is at the plan's stand (within 5 yd) or clear of
+// the next pull's radius plus the 20 yd ring before the pull row fires. The row waits up to 10 s, then fires with a
+// note naming who was out of place (ZG walk 28 step 323: the OT stood 3 yd from the next pack while the MT pulled).
+static void TestStandDisciplineWaitsForTanksAndMelee()
+{
+    DungeonPlan plan;
+    PlanStep stand = Step(PlanStepKind::Move, 0.0f, 0.0f, 0.0f);
+    PlanStep pull = PullStep(0.0f, {4851});
+    PlanStep next = PullStep(18.0f, {4852});
+    next.radius = 5.0f;
+    plan.steps = {stand, pull, next};
+    Facts f = Party(0);
+    f.standDiscipline = true;
+    f.leadShotYd = 29.5f;
+    f.units = {Seen(11, 4851, 20.0f)};
+    f.members = {Mem("Tanky", 0.0f), Mem("Offy", 15.0f), Mem("Roguey", 2.0f)};
+    MemberFact healer = Mem("Healy", 19.0f);
+    healer.ranged = true;
+    f.members.push_back(healer);
+    f.maxMemberYd = 19.0f;
+    {
+        Run r = Start(&plan, 1);
+        std::string order;
+        PullUnit(r, f, f.units[0], order);
+        CHECK(order.empty());
+        CHECK(Has(r.note, "waiting") && Has(r.note, "Offy"));
+        CHECK(!Has(r.note, "Healy") && !Has(r.note, "Roguey"));
+        for (int i = 0; i < 8; ++i) // 9 s waited: still holding
+        {
+            order.clear();
+            PullUnit(r, f, f.units[0], order);
+            CHECK(order.empty());
+        }
+        order.clear();
+        PullUnit(r, f, f.units[0], order); // 10 s: the row fires with the note
+        CHECK(order == "pullback 11");
+        CHECK(Has(r.note, "out of place") && Has(r.note, "Offy"));
+    }
+    // Key off: no wait, the pull goes out at once.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.standDiscipline = false;
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+        CHECK(!Has(r.note, "out of place"));
+    }
+    // The OT at the stand: no wait.
+    {
+        Run r = Start(&plan, 1);
+        Facts g = f;
+        g.members[1] = Mem("Offy", 2.0f);
+        std::string order;
+        PullUnit(r, g, g.units[0], order);
+        CHECK(order == "pullback 11");
+        CHECK(!Has(r.note, "out of place"));
+    }
+}
+
 // AiPlayerbot.DungeonRunStandPullPreCc: the Mar'li shape. The approach row's point is 16.4 yd from the hold point the
 // glue reads, the pull row's pack is one entry (the three mages polymorph three of its units), the tank's shot 28.5 yd.
 static DungeonPlan StandPullPreCcPlan()
@@ -30632,6 +30811,10 @@ int main()
     TestStandClearanceKeepsOffOtherPacksOnly();
     TestStandClearanceCoversTheAuthoredStandPull();
     TestAuthoredStandRuleSkipsHopPulls();
+    TestStandDisciplineHoldsAtTheAuthoredStand();
+    TestStandDisciplineAloneEnforcesTheAuthoredStand();
+    TestStandDisciplineLosHoldEndsAfterTwentySeconds();
+    TestStandDisciplineWaitsForTanksAndMelee();
     TestStandApproachHoldsOutsideThePackReach();
     TestStandApproachHoldsAtThePlanPointWhenItIsClear();
     TestStandApproachUnreadableWalksThePlanPoint();

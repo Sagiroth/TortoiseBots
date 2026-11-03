@@ -618,6 +618,10 @@ public:
     // The approach row before a stand-pull step holds outside the pulled pack's wake reach and the pull's crowd
     // control goes out there, before the walk in wakes the pack (DungeonRunPolicy.h NextStandPull; default off).
     bool dungeonRunStandPullPreCc;
+    // A pull row fires from the plan's authored approach only (no closer firing stand), and every tank and melee is
+    // waited for at that stand or clear of the next pull's pack before the row fires (DungeonRunPolicy.h
+    // HoldForShot, StandDisciplineOutOfPlace; default off).
+    bool dungeonRunStandDiscipline;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;
