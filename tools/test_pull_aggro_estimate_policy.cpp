@@ -388,11 +388,11 @@ int main()
         mobs[0].guid = 0x1100;
         mobs[1].guid = 0x1200;
         mobs[2].guid = 0x2200;
-        // Today's estimator: the target's pack and no call from the member 15
-        // yd away (the target is 23 yd off, over 10).
+        // The pack's own calls: the member 15 yd from pack A's second body is
+        // inside the 20 yd ring, so the plain estimator takes all three too.
         AggroEstimateParams old = Params();
         old.engageY = 1000.0f;
-        CHECK(EstimateAggro(mobs, 0, old).bodies == 2);
+        CHECK(EstimateAggro(mobs, 0, old).bodies == 3);
         AggroEstimate const e = EstimateAggroRing(mobs, 0, farGeometry(), Params());
         CHECK(e.bodies == 3 && e.joiners == 2);
         CHECK(e.members.size() == 3);
