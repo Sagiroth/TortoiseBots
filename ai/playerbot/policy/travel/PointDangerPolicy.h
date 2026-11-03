@@ -56,4 +56,30 @@ namespace ai
         int const threshold = (int)botLevel + (int)PullGrindLevelCap(botLevel, false) + 1;
         return highestHostileLevelMax >= (threshold < 4 ? 4 : threshold);
     }
+
+    // Elite camps: a rank-1 Turtle custom at the bot's own level deals
+    // 2.5-4x a vanilla normal's DPS (fair-fight losses: 31% of fair deaths
+    // by rank-1 killers at median 68% killer HP), so the level margin alone
+    // never bars the camp. A same-band-or-above elite spawn within the
+    // danger radius bars the point the way an over-cap normal does. Groups
+    // and bots with a real player master keep today's behaviour (their
+    // players decide); the callers pass masterlessRandom and in-group down.
+    // inGroup covers hired-companion groups: the pool's can-fight-elite
+    // value is group-gated the same way.
+    inline bool EliteCampDangerApplies(bool masterlessRandom, bool hasRealPlayerMaster, bool inGroup, std::uint32_t botLevel)
+    {
+        // Floor at level 4 like the normal gate: start-zone points near an
+        // elite spawn would otherwise lose every destination for a level-1
+        // bot the way pre-floor #418 did.
+        return masterlessRandom && !hasRealPlayerMaster && !inGroup && botLevel >= 4;
+    }
+
+    // A roaming elite (patrol or wander) that comes this close makes a solo
+    // pool bot step away, and no mob this close to it is picked to grind.
+    constexpr float ROAMING_ELITE_AVOID_YD = 30.0f;
+
+    inline bool EliteCampDangerous(bool eliteSpawnNear, int eliteLevelMax, std::uint32_t botLevel)
+    {
+        return eliteSpawnNear && eliteLevelMax >= (int)botLevel - 2;
+    }
 }

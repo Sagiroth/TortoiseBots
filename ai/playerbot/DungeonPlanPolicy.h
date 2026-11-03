@@ -150,15 +150,34 @@ namespace ai
     // otherwise deferred when nothing later in the plan needs it gone (runtime/DungeonRunPolicy.h PullMayBeDeferred,
     // DeferUnreachablePack); with this flag it pauses the run as before. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagNoDefer = 1024;
-    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss only).
+    // open_proof only: the proof entry is a creature (alive). The next free bit: 65536 (8192 is kPlanFlagStandPull, a boss or a
+    // pull; 16384 is kPlanFlagResetToGossip and 32768 kPlanFlagDeadGossipOk, both a units hold).
     constexpr std::uint32_t kPlanFlagProofCreature = 2048;
     // boss only: the boss may stand out of the party's reach by design (Stormwrought Ruins' Eldermaw 62661 swims a
     // pool whose bed is the only navmesh, cut off from the shore; specs/sw-eldermaw.md). Where the step would pause on
     // him ALIVE (the instance search finds him away from his spot, or he stands by his spot and the pulls drew no
     // fight), it ends "not cleared" with a note instead. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagSkipUnreachable = 4096;
-    // boss only: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search; specs/sw-eldermaw.md Spec B.
+    // boss or pull: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search;
+    // specs/sw-eldermaw.md Spec B. On a pull row (a patrolling pack) also only while no other patrol stands within
+    // `param` yd of the lead bot (0: the run leader's default, at most kPlanMaxStandPullClear), and its patrollers are
+    // seen farther out (runtime/DungeonRunPolicy.h PatrolStandPullGate).
     constexpr std::uint32_t kPlanFlagStandPull = 8192;
+    // hold only, a units hold (no done flag): the script can reset the event, and the hold then goes back to the
+    // gossip step that started it (runtime/DungeonRunPolicy.h UnitsHoldResetSeen) instead of waiting out its timeout.
+    // Only a hold whose event the script resets on a wipe or an evade sets it (Zul'Farrak's Farraki Arena). Without
+    // it a hold never reads a reset, so a crew that turns friendly again (Bly's, the Sunken Temple and Stratholme
+    // holds, whose first entry counts while still friendly) is not mistaken for one. Any other kind, and a hold with
+    // a done flag, is refused (BadParam).
+    constexpr std::uint32_t kPlanFlagResetToGossip = 16384;
+    // hold only, a units hold (no done flag, not kPlanFlagResetToGossip): the gossip row before it counted its starting NPC as
+    // DEAD (kPlanFlagDeadNpcIsDone on that row), so the script's own update that turns the hold's units hostile can never run
+    // and they cannot be pulled. The run leader then ends the hold as soon as no unit of it is hostile: at once when all lie
+    // dead, with a note when only friendly survivors are left (Zul'Farrak's Bly, whose crew dies in the pyramid event's troll
+    // waves in some runs). Only the run's own tick of that gossip sets the latch (DungeonRunPolicy.h GossipDeadIsDone,
+    // Run::startNpcDeadStep); a run resumed at the hold itself waits for a hostile unit as before. Any other kind, a hold with
+    // a done flag, and a hold with kPlanFlagResetToGossip are refused (BadParam).
+    constexpr std::uint32_t kPlanFlagDeadGossipOk = 32768;
     constexpr std::uint32_t kPlanEncounterNotStarted = 0;
     constexpr std::uint32_t kPlanEncounterFail = 2;
     constexpr std::uint32_t kPlanEncounterMax = 4;
@@ -173,11 +192,30 @@ namespace ai
     constexpr std::uint32_t kPlanDefaultTimeoutS = 60;
     constexpr std::uint32_t kPlanMaxTimeoutS = 600;
     constexpr std::size_t kPlanMaxEntries = 16;
+    // A stand-pull pull row's clearance (`param` in yd): past this the row is refused (BadParam).
+    constexpr std::uint32_t kPlanMaxStandPullClear = 60;
+    // A pull row's `item` column is the aggro estimate's bodies ceiling (the plan export's
+    // max_bodies, the target included: AiPlayerbot.DungeonRunAggroWalkRing). Past this a row
+    // is refused (BadParam); a row without one keeps the config ceiling.
+    constexpr std::uint32_t kPlanMaxPullBodies = 80;
+    // A step row's comment as the dashboard shows it: the row's `comment`, clipped at this many bytes.
+    constexpr std::size_t kPlanMaxLabel = 80;
     // gossip: `param` is the option the way `.bot cmd gossip` takes it, counted from 1 at the top of the NPC's
     // menu (runtime/GossipOrderPolicy.h kMaxIndex: a 1.12 menu holds 15 options). The NPC is searched within
     // kGossipSearchYd of x,y,z (GossipOrder::kSearchYards).
     constexpr std::uint32_t kPlanMaxGossipOption = 15;
     constexpr float kGossipSearchYd = 40.0f;
+
+    // A row's `comment` as a step label: a UTF-8-safe clip at kPlanMaxLabel (never cut inside a multi-byte sequence).
+    inline std::string PlanStepLabel(const std::string& comment)
+    {
+        if (comment.size() <= kPlanMaxLabel)
+            return comment;
+        std::size_t cut = kPlanMaxLabel;
+        while (cut > 0 && (static_cast<unsigned char>(comment[cut]) & 0xC0) == 0x80)
+            --cut;
+        return comment.substr(0, cut);
+    }
 
     struct PlanStep
     {
@@ -197,6 +235,8 @@ namespace ai
         bool exactLaunch = false;
         // The row's kind was "open_proof" (kPlanKindOpenProof): an Open done by its proof (radius, the one `entries` entry).
         bool openProof = false;
+        // The row's `comment`, clipped to kPlanMaxLabel bytes: the dashboard's short name of the step.
+        std::string label;
         // boss only, filled at load (DungeonPlanTable::JoinBossTactics): the creatures the `ai_boss_tactic` rows of the
         // plan's map keyed on the step's boss (or one of its entries) are about (TacticSubjectEntry: kill_first targets,
         // interrupt casters, the boss itself), so the run leader never leaves such a creature alive in an earlier pack
@@ -388,6 +428,8 @@ namespace ai
                           // flag without the data flag or a state above 4, an object state above 2;
                           // the exact flag on a step that is not a move; gossip with an option
                           // outside 1-15 or with any flag; use_on with any flag or param;
+                          // a stand_pull pull with param above kPlanMaxStandPullClear;
+                          // a pull row whose item (the bodies ceiling) is above kPlanMaxPullBodies;
                           // an open_proof whose proof equals its entry (no 2048), with param, a flag but 2048,
                           // or 2048 on any row that is not open_proof
         BadPoint,         // not a finite point; a use_on or an open_proof without a point (0,0,0)
@@ -436,7 +478,16 @@ namespace ai
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagSkipUnreachable) && step.kind != PlanStepKind::Boss)
             return PlanStepRefusal::BadParam;
-        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss)
+        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Pull)
+            return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagStandPull) && step.kind == PlanStepKind::Pull && step.param > kPlanMaxStandPullClear)
+            return PlanStepRefusal::BadParam;
+        // A pull row's `item` is the estimate's bodies ceiling (max_bodies), not a use_item item.
+        if (step.kind == PlanStepKind::Pull && step.item > kPlanMaxPullBodies)
+            return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagResetToGossip) && step.kind != PlanStepKind::Hold)
+            return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagDeadGossipOk) && step.kind != PlanStepKind::Hold)
             return PlanStepRefusal::BadParam;
         if (step.exactLaunch && step.kind != PlanStepKind::MoveDirect)
             return PlanStepRefusal::BadParam;
@@ -511,7 +562,13 @@ namespace ai
                 bool const byData = (step.flags & kPlanFlagDoneData) != 0;
                 bool const byObject = (step.flags & kPlanFlagDoneObject) != 0;
                 bool const encounter = (step.flags & kPlanFlagEncounter) != 0;
+                bool const resetToGossip = (step.flags & kPlanFlagResetToGossip) != 0;
+                bool const deadGossipOk = (step.flags & kPlanFlagDeadGossipOk) != 0;
                 if ((byData && byObject) || (encounter && !byData))
+                    return PlanStepRefusal::BadParam;
+                if (resetToGossip && (byData || byObject))
+                    return PlanStepRefusal::BadParam;
+                if (deadGossipOk && (byData || byObject || resetToGossip))
                     return PlanStepRefusal::BadParam;
                 if (encounter && step.param > kPlanEncounterMax)
                     return PlanStepRefusal::BadParam;
@@ -536,6 +593,7 @@ namespace ai
             step.param = kPlanDefaultRitualBots;
         if (step.timeoutS == 0)
             step.timeoutS = kPlanDefaultTimeoutS;
+        step.label = PlanStepLabel(step.label);
         return PlanStepRefusal::None;
     }
 
@@ -815,6 +873,17 @@ namespace ai
         return teams == 0 || team == 0 || (teams & team) != 0;
     }
 
+    // Whether a pull, boss or hold step owns a unit of `entry` standing at x,y,z: the step lists the entry (a hold's
+    // `entry` is its done condition, instance data or object, not a unit) and the point lies in its radius.
+    inline bool StepOwnsUnit(const PlanStep& step, std::uint32_t entry, float x, float y, float z)
+    {
+        if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
+            return false;
+        bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
+            std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
+        return listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius;
+    }
+
     // Whether a unit of `entry` standing at x,y,z belongs to a pull, boss or
     // hold step AFTER step index `from` (the run leader never pulls what a later
     // step owns: the plan's order says when it is fought; a hold owns its
@@ -825,14 +894,27 @@ namespace ai
         for (std::size_t i = from + 1; i < plan.steps.size(); ++i)
         {
             const PlanStep& step = plan.steps[i];
-            if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
-                continue;
             if (!StepForTeam(step, team))
                 continue;
-            // A hold's `entry` is its done condition (instance data, object), not a unit.
-            bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
-                std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
-            if (listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius)
+            if (StepOwnsUnit(step, entry, x, y, z))
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a unit of `entry` standing at x,y,z belongs to any pull, boss or hold step of the plan other than step
+    // index `self`, earlier or later (the pack-cleared gate leaves a residue unit where another step fights it).
+    inline bool OwnedByOtherStep(const DungeonPlan& plan, std::size_t self, std::uint32_t entry,
+        float x, float y, float z, std::uint32_t team = 0)
+    {
+        for (std::size_t i = 0; i < plan.steps.size(); ++i)
+        {
+            if (i == self)
+                continue;
+            const PlanStep& step = plan.steps[i];
+            if (!StepForTeam(step, team))
+                continue;
+            if (StepOwnsUnit(step, entry, x, y, z))
                 return true;
         }
         return false;

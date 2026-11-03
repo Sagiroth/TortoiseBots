@@ -39,4 +39,39 @@ inline bool TradeSpellJustifiesTrip(uint32_t spellSkillId, bool botHasSkill,
     return isFirstRankPrimary && botHasFreePrimarySlot;
 }
 
+// A trainer row's taught spells, resolved by the caller from the teaching
+// spell's SPELL_EFFECT_LEARN_SPELL effects (core Player::GetTrainerSpellState
+// loops the taught spells because a teaching spell like 2581 Apprentice Miner
+// is not itself the rank-1 profession spell 2575 Mining). At most 3 effects
+// per SpellEntry; count says how many trigger ids follow.
+struct TaughtSpellIds
+{
+    uint32_t ids[3] = { 0, 0, 0 };
+    uint32_t count = 0;
+};
+
+// True when the row teaches a first-rank primary: the row spell itself (some
+// rows teach directly) or any taught spell, each tested by the caller-side
+// predicate (core sSpellMgr.IsPrimaryProfessionFirstRankSpell). Pure scan
+// shape over plain ids, unit-tested on its own.
+template <typename IsFirstRank>
+inline bool TrainerRowTeachesFirstRankPrimary(uint32_t rowSpellId, TaughtSpellIds const& taught, IsFirstRank isFirstRank)
+{
+    if (rowSpellId && isFirstRank(rowSpellId))
+        return true;
+    for (uint32_t i = 0; i < taught.count && i < 3; ++i)
+        if (taught.ids[i] && isFirstRank(taught.ids[i]))
+            return true;
+    return false;
+}
+
+// A visit must never add a 3rd primary profession: a first-rank primary row
+// teaches only when the bot holds fewer than two primaries (counted from
+// held skills upstream, so a legacy bare-skill pair without rank spells
+// still blocks). Ranks and recipes for held professions are unaffected.
+inline bool FirstRankPrimaryTeachableNow(bool rowTeachesFirstRank, uint32_t heldPrimaries)
+{
+    return !rowTeachesFirstRank || heldPrimaries < 2;
+}
+
 } // namespace ai

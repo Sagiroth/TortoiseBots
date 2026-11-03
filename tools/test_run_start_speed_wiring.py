@@ -19,19 +19,19 @@ def body(text, start, end):
 
 class RunStartSpeedWiringTest(unittest.TestCase):
     def test_speed_comes_out_before_the_player_led_words(self):
-        run = body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("TortoiseBots::PlayerLed::TakeStart(speedArgs.rest)", run)
         self.assertNotIn("TakeStart(rawArg)", run)
         self.assertLess(run.index("TakeSpeed(rawArg)"), run.index("TakeStart(speedArgs.rest)"))
         self.assertEqual(run.count("TakeSpeed("), 1)
 
     def test_the_ordered_refusal_lives_in_the_policy(self):
-        run = body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
-        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", run)
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", run)
         self.assertNotIn('"forbidden", "Only a GameMaster may start a test-speed run', run)
 
     def test_player_led_start_keeps_its_own_words(self):
-        run = body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("if (!playerLedStart.playerLed)\n            arg = LowerCopy(speedArgs.rest);", run)
 
 

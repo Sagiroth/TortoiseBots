@@ -54,7 +54,8 @@ namespace ai
         GatherHerbalism = 1 << 16,
         GatherFishing = 1 << 17,
         Explore = 1 << 18,
-        MaxFlag = 1 << 19
+        SpellFocus = 1 << 19,
+        MaxFlag = 1 << 20
     };
 
     const std::unordered_map<TravelDestinationPurpose, std::string> TravelDestinationPurposeName =
@@ -79,6 +80,7 @@ namespace ai
         {TravelDestinationPurpose::GatherHerbalism, "GatherHerbalism"},
         {TravelDestinationPurpose::GatherFishing, "GatherFishing"},
         {TravelDestinationPurpose::Explore, "Explore"},
+        {TravelDestinationPurpose::SpellFocus, "SpellFocus"},
         {TravelDestinationPurpose::MaxFlag, "MaxFlag"}
     };
 

@@ -41,6 +41,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | Handle wipe recovery and run back to the instance | [Wipe recovery](play/dungeons-and-raids.md#wipe-recovery--instance-navigation) |
 | Level my companion alts automatically with my character | [Sync alt level](server/settings/party.md#aiplayerbotsyncaltleveltomaster) |
 | Fill missing tank or healer roles in dungeon finder queues | [LFT autofill](world/queues.md#looking-for-turtles-lft-dungeon-autofill) |
+| Send a guild bot to farm, buy or craft items for the guild bank | [Guild orders](play/guild-orders.md) |
 | Enable bot trading and purchasing on the Auction House | [Living AH](world/economy.md#living-auction-house) |
 | Blacklist or override an item price on the Auction House | [Admin commands](server/admin-commands.md#autonomous-auction-house-administration-bot-ah--ahbot) |
 | Summon lost or stuck companion bots | [Summon alts](play/commands/roster-and-hiring.md#bot-summon) |
@@ -59,6 +60,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Command directory](play/commands/README.md) | Overview of all bot commands, permission levels, and channel syntax. |
 | [Tactical party actions](play/commands/party-actions.md) | Direct combat intents (`attack`, `pullback`, `interrupt`, `cc`, formations). |
 | [Remote commander](play/commands/commander.md) | Directing bot-only parties from anywhere in the world. |
+| [Guild orders](play/guild-orders.md) | Sending guild bots to fetch items, order states, and bank delivery. |
 | [Roster and hiring](play/commands/roster-and-hiring.md) | Adding alts, hiring mercenaries, recruiter buffs, and gear progression. |
 | [Bot panel and inspection](play/commands/bot-panel.md) | Equipment and inventory management, behavior toggles, and diagnostic views. |
 | [Whisper commands](play/commands/whispers.md) | Quick one-to-one bot orders grouped by combat, rest, trade, and town. |
@@ -106,9 +108,9 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Combat settings](server/settings/combat.md) | Health and mana percentage thresholds, ranges, global cooldown (GCD) delays, and pull pacing. |
 | [World population settings](server/settings/world-population.md) | Bot population limits, level ladder rotation, wandering, greetings, and trading. |
 | [Economy settings](server/settings/economy.md) | Auction house market pacing, synthetic supply, and vendor batch sizes. |
+| [Guild order settings](server/settings/guild-orders.md) | Guild bank material withdrawals, guild bank gold, and sub-orders between guild bots. |
 | [Queue settings](server/settings/queues.md) | Dungeon finder backfill intervals and battleground queue parameters. |
 | [Performance settings](server/settings/performance.md) | AI tick time budgets, activity throttling, and core server optimizations. |
-| [Chat settings](server/settings/chat.md) | Automated public broadcasts, frequency throttles, and masterless say chat. |
 | [Logging settings](server/settings/logging.md) | Module verbosity, structured CSV logs, action traces, and UDP telemetry. |
 | [Hire gear sets](reference/hire-gear.md) | Static level-60 hire equipment sets per class and tier. |
 
@@ -118,6 +120,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | :--- | :--- |
 | [Developer index](developers/README.md) | Contributor workflows, coding standards, tools, and testing commands. |
 | [Architecture invariants](developers/architecture.md) | Decoupled C++ modularity, headless session lifecycle, and zero core coupling. |
+| [Guild supply chain](developers/guild-supply.md) | Supply ladder, guild bank withdrawals, and waiting for missing materials. |
 | [Strategy engine](developers/strategy-engine.md) | AI update loop, action baskets, triggers, multipliers, and failure backoffs. |
 | [Bot mechanics and quirks](developers/bot-mechanics.md) | Targeting and interrupt logic, movement physics, gear evaluation, and technical quirks. |
 | [Donor hierarchy](developers/donor-hierarchy.md) | Provenance precedence across shyalya, mod-playerbots, and upstream core. |

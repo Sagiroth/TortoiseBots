@@ -3,6 +3,8 @@
 #include "CheckMailAction.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
+#include "Guild/GuildMgr.h"
+#include "Guild/Guild.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 using namespace ai;
@@ -30,7 +32,13 @@ bool CheckMailAction::Execute(Event& event)
         if (!mail || mail->state == MAIL_STATE_DELETED)
             continue;
 
-        Player* owner = GetProcessableOwner(mail);
+        if (IsGuildMail(mail, bot))
+        {
+            TakeGuildMail(mail);
+            continue;
+        }
+
+        Player* owner = GetProcessableOwner(mail, bot);
         if (!owner)
             continue;
 
@@ -60,14 +68,16 @@ bool CheckMailAction::isUseful()
     // offline-sender mail is never removed and would otherwise re-trigger this action forever.
     for (PlayerMails::iterator i = master->GetMailBegin(); i != master->GetMailEnd(); ++i)
     {
-        if (GetProcessableOwner(*i))
+        if (GetProcessableOwner(*i, bot))
+            return true;
+        if (IsGuildMail(*i, bot) && CanTakeGuildMail(*i, master))
             return true;
     }
 
     return false;
 }
 
-Player* CheckMailAction::GetProcessableOwner(Mail* mail)
+Player* CheckMailAction::GetProcessableOwner(Mail* mail, Player* bot)
 {
     if (!mail || mail->state == MAIL_STATE_DELETED)
         return nullptr;
@@ -84,7 +94,78 @@ Player* CheckMailAction::GetProcessableOwner(Mail* mail)
     if (sPlayerbotAIConfig.IsInRandomAccountList(account))
         return nullptr;
 
+    if (IsGuildMail(mail, bot))
+        return nullptr;
+
     return owner;
+}
+
+// Guild members mail reagents, recipes and supplies to guild bots: the bot
+// keeps them (recipes are learned from the bags), whether the sender is
+// online or not.
+bool CheckMailAction::IsGuildMail(Mail* mail, Player* bot)
+{
+    if (!mail || mail->state == MAIL_STATE_DELETED || !bot->GetGuildId() ||
+        mail->messageType != MAIL_NORMAL || mail->stationery == MAIL_STATIONERY_AUCTION)
+        return false;
+    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+    return guild && guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER, mail->sender)) != nullptr;
+}
+
+// Takes a guild mail's items into the bags without a mailbox trip, as the
+// core's take-item handler does; cash-on-delivery mail stays untouched.
+// Something to take right now: the money, or the first item when it fits
+// the bags. A unique item the bot already holds, or full bags, leave the mail
+// alone instead of retrying it every tick.
+bool CheckMailAction::CanTakeGuildMail(Mail* mail, MasterPlayer* master)
+{
+    if (mail->COD || mail->deliver_time > time(nullptr))
+        return false;
+    if (mail->money)
+        return true;
+    if (mail->items.empty())
+        return false;
+    Item* item = master->GetMItem(mail->items[0].item_guid);
+    ItemPosCountVec dest;
+    return item && bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) == EQUIP_ERR_OK;
+}
+
+void CheckMailAction::TakeGuildMail(Mail* mail)
+{
+    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+    if (!master || !CanTakeGuildMail(mail, master))
+        return;
+    bool taken = false;
+    if (mail->money)
+    {
+        bot->ModifyMoney(int32(mail->money));
+        mail->money = 0;
+        taken = true;
+    }
+    while (!mail->items.empty())
+    {
+        uint32 itemGuid = mail->items[0].item_guid;
+        Item* item = master->GetMItem(itemGuid);
+        if (!item)
+            break;
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        mail->RemoveItem(itemGuid);
+        mail->removedItems.push_back(itemGuid);
+        master->RemoveMItem(itemGuid);
+        item->SetState(ITEM_UNCHANGED);
+        bot->MoveItemToInventory(dest, item, true);
+        taken = true;
+    }
+    if (!taken)
+        return;
+    mail->state = MAIL_STATE_CHANGED;
+    master->MarkMailsUpdated();
+    CharacterDatabase.BeginTransaction(bot->GetGUIDLow());
+    bot->SaveInventoryAndGoldToDB();
+    master->SaveMails();
+    CharacterDatabase.CommitTransaction();
 }
 
 

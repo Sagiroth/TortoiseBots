@@ -10,7 +10,7 @@ using namespace ai;
 bool QueryItemUsageAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner();
-    if (!GetMaster() && !sPlayerbotAIConfig.randomBotSayWithoutMaster && !requester)
+    if (!GetMaster() && !requester)
         return false;
 
     WorldPacket& data = event.GetPacket();

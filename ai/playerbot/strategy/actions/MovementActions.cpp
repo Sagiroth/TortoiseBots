@@ -20,10 +20,12 @@
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/TravelRouteCachePolicy.h"
 #include "playerbot/AvoidAoePolicy.h"
+#include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/PoolFleePolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/JumpPolicy.h"
+#include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
@@ -33,6 +35,7 @@
 #include "vmap/VMapFactory.h"
 #include "playerbot/BotActionLog.h"
 #include "Database/DBCStores.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 
 using namespace ai;
 
@@ -175,6 +178,9 @@ void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float 
     //    delay *= 0.25;
 
     Creature* wpCreature = wpOwner->SummonCreature(entry, x, y, z - 1, o, TEMPSPAWN_TIMED_DESPAWN, delay);
+    if (!wpCreature)
+        return;
+
     ai->AddAura(wpCreature, 246);
 
     if (!important)
@@ -285,7 +291,9 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
 
     bool goTaxi = ai::BotTaxiRouteAllowed({ tEntry->from, tEntry->to }) && bot->ActivateTaxiPathTo({tEntry->from, tEntry->to}, unit, 1);
 
-    if (!goTaxi)
+    if (goTaxi)
+        ai::BotInstantFlightFinish(bot, {tEntry->from, tEntry->to});
+    else
         bot->SetMoney(botMoney);
 
     return goTaxi;
@@ -354,6 +362,8 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
         for (auto& p : path)
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
 
             transport->AddPassenger(wpCreature);
 
@@ -942,7 +952,14 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     mm.Clear();
 
-    ForcedMovement moveMode = masterWalking ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
+    // A walk flag an action has just set (MoveToRpgTargetAction) must ride this
+    // same dispatch, and a walking bot is never flipped to run here: the core
+    // sends a launch's walk/run change with the pre-launch mode restored last,
+    // so a run spline launched on walk flags leaves watching clients walking
+    // until they reload. Leftover flags are cleared before the next tick's
+    // moves are dispatched (PlayerbotAI::DoNextAction); the master's walking is
+    // mimicked only through the walkDistance gate above.
+    ForcedMovement moveMode = ai::WalkModePolicy::DispatchWalks(masterWalking, bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
 
     std::vector<WorldPosition> path = movePath.GetPointPath();
 
@@ -1595,7 +1612,12 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
             case SwimHandoffResult::Refused: return false;
             case SwimHandoffResult::NotTaken: break;
         }
-        return true; // Path collapsed — will rebuild next tick.
+        // No route and no swim: the caller counts the failure instead of
+        // decaying its budget on a phantom success. Stamped shortcut-empty
+        // (the reason made for this site), not empty-path: the route existed
+        // until makeShortCut cleared it.
+        lastMove.moveFailReason = MOVE_FAIL_SHORTCUT_EMPTY;
+        return false;
     }
 
 
@@ -1639,6 +1661,8 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
         for (auto& p : movePath.GetPath())
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.point.getX(), p.point.getY(), p.point.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
             ai->AddAura(wpCreature, 246);
             if (p.point == movePath.GetBack())
                 ai->AddAura(wpCreature, 1130);
@@ -2846,15 +2870,47 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
 
     WorldPosition const botPos(bot);
     float const startDistance = sServerFacade.getDistance2d(bot, target);
-    float const away = target->GetAngle(bot);
+    // R3 (fair-fight losses): flee from the attackers' pack, not from one
+    // mob. A bot between two attackers that ran from the current target
+    // alone could step toward the second one (median 0 yd gained, Oct 2026
+    // poll). The centroid of the live attackers is the pack's middle; the
+    // single-target heading stays when there is no pack (solo target).
+    float away;
+    {
+        // Fixed stack scratch: attacker counts are tiny and this runs every
+        // flee tick, so no heap vector. Total live attackers is counted
+        // separately because the centroid only sees the capped prefix.
+        Unit* liveAttackers[kPoolFleeMaxPackAttackers];
+        int liveCount = 0;
+        int totalLive = 0;
+        for (Unit* attacker : bot->GetAttackers())
+        {
+            if (!attacker || !sServerFacade.IsAlive(attacker) || attacker->GetMapId() != bot->GetMapId())
+                continue;
+            ++totalLive;
+            if (liveCount < kPoolFleeMaxPackAttackers)
+                liveAttackers[liveCount++] = attacker;
+        }
+        ai::FleePackPoint pack = ai::PoolFleePackCentroid(
+            ai::FleeAttackerPrefix<Unit*>{ liveAttackers, liveCount },
+            [](Unit* unit, float& x, float& y) { x = unit->GetPositionX(); y = unit->GetPositionY(); return true; });
+        if (pack.valid && totalLive > 1)
+            away = std::atan2(bot->GetPositionY() - pack.y, bot->GetPositionX() - pack.x);
+        else
+            away = target->GetAngle(bot);
+    }
 
     // Unpulled hostile mobs one step could wake: one cached "possible
-    // targets" read, filtered once, not a scan per candidate.
+    // targets" read, filtered once, not a scan per candidate. Fixed stack
+    // scratch like the pack above: this runs every flee tick.
     struct Sleeper { Unit* unit; float radius; float toBot; };
-    std::vector<Sleeper> sleepers;
+    Sleeper sleepers[kPoolFleeMaxPackAttackers];
+    int sleeperCount = 0;
     std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     for (ObjectGuid const& guid : possibleTargets)
     {
+        if (sleeperCount >= kPoolFleeMaxPackAttackers)
+            break;
         Unit* unit = ai->GetUnit(guid);
         if (!unit || unit == target || !sServerFacade.IsAlive(unit) || unit->IsInCombat())
             continue;
@@ -2865,7 +2921,7 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
         float const toBot = sServerFacade.getDistance2d(unit, bot);
         if (radius <= 0.0f || !PoolFleeMobInReach(toBot, radius, distance))
             continue;
-        sleepers.push_back({ unit, radius, toBot });
+        sleepers[sleeperCount++] = { unit, radius, toBot };
     }
 
     float offsets[kPoolFleeHeadingCount];
@@ -2884,8 +2940,9 @@ bool MovementAction::FleeStepAway(Unit* target, float distance)
             continue;
 
         bool wakesMob = false;
-        for (Sleeper const& sleeper : sleepers)
+        for (int s = 0; s < sleeperCount; ++s)
         {
+            Sleeper const& sleeper = sleepers[s];
             if (PoolFleeLandingWakesMob(sServerFacade.getDistance2d(sleeper.unit, cand.getX(), cand.getY()),
                 sleeper.toBot, sleeper.radius))
             {
@@ -3249,6 +3306,30 @@ bool FleeAction::Execute(Event& event)
     return Flee(AI_VALUE(Unit*, "current target"));
 }
 
+bool FleeFromAreaAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    // The step-out (avoid aoe) owns a hostile ground cloud over the bot: a
+    // plain flee runs in one straight line and ignores the landing filter, so
+    // it can carry the bot into the next cloud. Creature-cast clouds only, the
+    // same sensor the step-out uses.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
+    for (AoeHazardCircle const& cloud : clouds)
+    {
+        if (InsideAoeHazard(cloud, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return false;
+    }
+    // A tank that holds its boss does not run off it: fleeing drops the
+    // threat and drags the fight onto the casters. The step-out (avoid aoe)
+    // is the tank's way out of a ground effect. Only this fallback row skips a
+    // tank; the shared "flee" action (panic, outnumbered, critical health,
+    // range control) keeps its own rules.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !(PlayerbotAI::IsTank(bot) && target && target->GetVictim() == bot);
+}
+
 bool AvoidAoeAction::isUseful()
 {
     if (!MovementAction::isUseful())
@@ -3320,28 +3401,20 @@ void AvoidAoeAction::RecallPetFromHazard(float radius, const WorldPosition& cent
 
 bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter)
 {
-    if (!AI_VALUE2(bool, "has area debuff", "self target"))
-        return false;
-    // The value checks "self target"; re-scan the cached dynobj list for
-    // the aura actually affecting the bot to recover its radius.
-    std::list<ObjectGuid> const& dynobjs = AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los");
-    for (ObjectGuid const& guid : dynobjs)
+    // Proactive: a hostile ground cloud (Poison Cloud, Blizzard, Rain of Fire,
+    // Consecration) whose circle covers the bot starts the step as soon as the
+    // cloud appears, before its first 1 s tick lands. The old "has area debuff"
+    // gate only saw the cloud after the aura was already on the bot.
+    // Creature-cast clouds only: a player's (or a pet's) ground effect is left
+    // to the normal engines, so the open world and PvP stay unchanged.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
+    for (AoeHazardCircle const& circle : clouds)
     {
-        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
-        if (!dyn || !dyn->IsInWorld())
+        if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
             continue;
-        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
-        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
-            continue;
-        if (!dyn->IsAffecting(bot))
-            continue;
-        float radius = dyn->GetRadius();
-        if (!IsAvoidableAoeRadius(radius))
-            continue;
-        if (bot->GetDistance(dyn) > radius)
-            continue;
-        outRadius = radius;
-        outCenter = WorldPosition(dyn->GetMapId(), dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ());
+        outRadius = circle.radius;
+        outCenter = WorldPosition(bot->GetMapId(), circle.x, circle.y, circle.z);
         return true;
     }
     return false;
@@ -3358,12 +3431,13 @@ bool AvoidAoeAction::AvoidDamagingTrap(float& outRadius, WorldPosition& outCente
         GameObjectInfo const* goInfo = go->GetGOInfo();
         if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
             continue;
-        // 1.12 trap GOs carry an activation radius (no diameter field);
-        // same shape as the environmental-trap react radius nearby.
-        float radius = (float)goInfo->trap.radius + go->GetCombatReach();
+        // The trap spell's own circle when it is an AoE at the source, the
+        // GO's activation radius (1.12 traps carry no diameter) otherwise.
+        float radius = DamagingTrapHazardRadius(go);
         if (!IsAvoidableAoeRadius(radius))
             continue;
-        if (bot->GetDistance(go) > radius)
+        AoeHazardCircle const circle{go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), radius};
+        if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
             continue;
         outRadius = radius;
         outCenter = WorldPosition(go->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
@@ -3432,7 +3506,8 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
                 float radius = radiusEntry ? radiusEntry->Radius : 0.0f;
                 if (!IsAvoidableAoeRadius(radius))
                     continue;
-                if (bot->GetDistance(unit) > radius)
+                AoeHazardCircle const circle{unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), radius};
+                if (!InsideAoeHazard(circle, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
                     continue;
                 outRadius = radius;
                 outCenter = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
@@ -3446,7 +3521,6 @@ bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
 bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float radius)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
-    float const step = AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
     // Ordered offsets (policy): strafes off the target first, straight
     // lines after; straight landings must stay in the combat band.
     float offsets[5] = {};
@@ -3456,6 +3530,20 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     if (target && target->GetVictim() == bot &&
         !target->HasAuraType(SPELL_AURA_MOD_ROOT) && !target->HasAuraType(SPELL_AURA_MOD_STUN))
         tanking = true;
+    // A tank whose own target stands inside the circle must drag the boss out,
+    // not only itself: a plain escape step drops the boss at melee reach, i.e.
+    // still inside the old cloud with the melee around it. The drag step clears
+    // the circle plus both reaches.
+    AoeHazardCircle const hazardCircle{hazardCenter.getX(), hazardCenter.getY(), hazardCenter.getZ(), radius};
+    // Only when the drag step can reach past the landing test's need: a cloud
+    // wider than the drag cap would refuse every drag landing, so the tank
+    // falls back to the bot-only escape instead of the cap step.
+    bool const dragTargetOut = tanking && target &&
+        TankDragFitsCap(radius, target->GetCombatReach(), bot->GetCombatReach()) &&
+        InsideAoeHazard(hazardCircle, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+    float const step = dragTargetOut
+        ? TankDragStep(radius, target->GetCombatReach(), bot->GetCombatReach())
+        : AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
     if (!target)
     {
         // Donor shape: with no target a single away-from-hazard candidate.
@@ -3502,9 +3590,31 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             otherKeepouts.push_back({ WorldPosition(unit), row });
         }
     }
-    for (int pass = 0; pass < 2; ++pass)
+    // Damaging circles: every trap the value lists (the one being left
+    // included, so a strafe never stays inside it) and every hostile ground
+    // cloud. A landing in any of them is the next fire; a friendly caster's or
+    // a positive dynamic object is not a hazard.
+    std::vector<AoeHazardCircle> damagingHazards;
+    CollectDamagingTrapHazards(ai, bot, damagingHazards);
+    std::vector<AoeHazardCircle> dynObjHazards;
+    CollectDamagingDynObjHazards(ai, bot, dynObjHazards);
+    damagingHazards.insert(damagingHazards.end(), dynObjHazards.begin(), dynObjHazards.end());
+    // Candidate point for a heading: `stepYd` from the bot, on the ground.
+    auto candidateAt = [&](int i, float stepYd)
     {
-        bool const vetoSecondPass = (pass == 1);
+        bool const hazardAnchored = (i == count - 1) && count > 3;
+        float const heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
+        WorldPosition cand = botPos + WorldPosition(0, stepYd * cos(heading), stepYd * sin(heading), 1.0f);
+        cand.setZ(cand.GetHeight());
+        return cand;
+    };
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        // First pass keeps the failed-heading veto; the retries drop it. The
+        // third pass steps past a fire wider than the flee-distance escape
+        // step, which is what the veto and the circles refused before.
+        bool const relaxed = (pass != 0);
+        float const stepYd = pass == 2 ? kAoeFallbackStepYd : step;
         for (int i = 0; i < count; ++i)
         {
             // Last slot anchors away-from-hazard; the rest anchor the target.
@@ -3512,12 +3622,9 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             // 2, ranged toward/away/hazard slots): strafes and tank-fallback
             // escapes never band-reject, so a tank can always leave a zone
             // wider than the cast band.
-            bool const hazardAnchored = (i == count - 1) && count > 3;
-            float heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
             bool strict = melee ? (i == 2)
-                : (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
-            WorldPosition cand = botPos + WorldPosition(0, step * cos(heading), step * sin(heading), 1.0f);
-            cand.setZ(cand.GetHeight());
+                : (offsets[i] == 0.0f || offsets[i] > 3.14f || (i == count - 1 && count > 3));
+            WorldPosition cand = candidateAt(i, stepYd);
             if (target && strict)
             {
                 // Reach-relative (donor shape: raw target reach, not the
@@ -3535,26 +3642,39 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
                 else if (!RangedAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
                     continue;
             }
-            if (!vetoSecondPass)
+            if (!relaxed)
             {
                 float checkHeading = botPos.GetAngleTo(cand);
                 if (!lastMove.fleeFailures.IsHeadingFree(checkHeading, nowMs))
                     continue;
             }
-            // Keep-out step-out: the landing must clear the keep-out circle
-            // (centre measure), or the next tick steps out again.
-            if (!keepoutSource.IsEmpty() && cand.distance(hazardCenter) <= radius)
+            // The landing must leave the circle being stepped out of (the
+            // same centre-to-centre test the sensor used), or the next tick
+            // steps out again. A tank drag must take the boss's whole body
+            // out too, not only the bot. Traps and dynobjs are also in
+            // damagingHazards below; a spin hazard only lives here.
+            if (dragTargetOut)
+            {
+                if (!TankLandingDragsTargetOut(cand.distance(hazardCenter), radius,
+                        target->GetCombatReach(), bot->GetCombatReach()))
+                    continue;
+            }
+            else if (cand.distance(hazardCenter) <= radius)
                 continue;
             bool inOtherKeepout = false;
             for (OtherKeepout const& other : otherKeepouts)
             {
-                if (cand.distance(other.centre) <= CreatureAuraLandingClearance(*other.row, vetoSecondPass))
+                if (cand.distance(other.centre) <= CreatureAuraLandingClearance(*other.row, relaxed))
                 {
                     inOtherKeepout = true;
                     break;
                 }
             }
             if (inOtherKeepout)
+                continue;
+            // Trap/dynobj circle: a landing inside one is no safer than the
+            // hazard being left (Jeklik's bats drop one fire after another).
+            if (LandingInsideHazard(damagingHazards, cand.getX(), cand.getY(), cand.getZ()))
                 continue;
             WorldPosition out = cand;
             if (!bot->IsWithinLOS(out.getX(), out.getY(), out.getZ() + bot->GetCollisionHeight()))
@@ -3608,6 +3728,45 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             botPos.canPathTo(away, bot) &&
             MoveTo(bot->GetMapId(), away.getX(), away.getY(), away.getZ(), false, IsReaction(), false, true))
             return true;
+    }
+    // Every ordered landing stands in fire: widen the search before giving up.
+    // Sixteen headings all round the bot at three step lengths, nearest first,
+    // then the same pick as before with one rule changed - a landing must clear
+    // every damaging circle, not only the one it leaves. No such point: stay
+    // where the bot is and let the next tick's sensor try again; stepping into
+    // the next fire is worse than standing in this one.
+    {
+        float headings[kAoeFallbackHeadings] = {};
+        AoeFallbackHeadings(headings);
+        std::vector<AoeLanding> landings;
+        float const steps[3] = { step, kAoeFallbackStepYd, kAoeFallbackWideStepYd };
+        for (float stepYd : steps)
+        {
+            for (int i = 0; i < kAoeFallbackHeadings; ++i)
+            {
+                WorldPosition cand = botPos +
+                    WorldPosition(0, stepYd * cos(headings[i]), stepYd * sin(headings[i]), 1.0f);
+                cand.setZ(cand.GetHeight());
+                if (!bot->IsWithinLOS(cand.getX(), cand.getY(), cand.getZ() + bot->GetCollisionHeight()))
+                    continue;
+                if (!botPos.canPathTo(cand, bot))
+                    continue;
+                landings.push_back(AoeLanding{ cand.getX(), cand.getY(), cand.getZ() });
+            }
+        }
+        AoeHazardCircle const current{ hazardCenter.getX(), hazardCenter.getY(), hazardCenter.getZ(), radius };
+        int const pick = ChooseClearAoeLanding(damagingHazards, current, landings.data(), (int)landings.size());
+        if (pick >= 0)
+        {
+            AoeLanding const& out = landings[pick];
+            if (MoveTo(bot->GetMapId(), out.x, out.y, out.z, false, IsReaction(), false, true))
+            {
+                lastMove.fleeFailures.BeginAttempt(target ? target->GetObjectGuid().GetRawValue() : 0,
+                    bot->GetMapId(), botPos.GetAngleTo(WorldPosition(bot->GetMapId(), out.x, out.y, out.z)),
+                    target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+                return true;
+            }
+        }
     }
     return false;
 }
@@ -4284,7 +4443,8 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, jumpPoint.getX(), jumpPoint.getY(), jumpPoint.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-                    PlayerbotAI::AddAura(wpCreature, 246);
+                    if (wpCreature)
+                        PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(jumpPoint);
                     sServerFacade.SetFacingTo(bot, pointAngle, true);
@@ -4306,7 +4466,8 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, possibleLanding.getX(), possibleLanding.getY(), possibleLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-                    PlayerbotAI::AddAura(wpCreature, 246);
+                    if (wpCreature)
+                        PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(possibleLanding);
                     sServerFacade.SetFacingTo(bot, pointAngle, true);
@@ -4361,7 +4522,8 @@ bool JumpAction::Execute(ai::Event &event)
         if (showLanding || ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             Creature* wpCreature = bot->SummonCreature(2334, jumpLanding.getX(), jumpLanding.getY(), jumpLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-            PlayerbotAI::AddAura(wpCreature, 246);
+            if (wpCreature)
+                PlayerbotAI::AddAura(wpCreature, 246);
             if (showLanding)
             {
                 WorldPosition botPos = WorldPosition(bot);
@@ -5057,7 +5219,8 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             Creature* wpCreature = bot->SummonCreature(15631, closest.getX(), closest.getY(), closest.getZ(), closest.getO(), TEMPSPAWN_TIMED_DESPAWN, 2000.0f);
-            wpCreature->SetObjectScale(0.2f);
+            if (wpCreature)
+                wpCreature->SetObjectScale(0.2f);
         }
 
         // recalculate to get landing and angle
@@ -5067,4 +5230,25 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
 
     sLog.outDetail("%s: GetPossibleJumpStartFor Failed to find jump point!", jumper->GetName());
     return WorldPosition();
+}
+
+bool AvoidEliteAction::Execute(Event& event)
+{
+    Unit* elite = AI_VALUE(Unit*, "dangerous elite");
+    if (!elite)
+        return false;
+
+    // Straight away from the elite first, then fanning out to the sides.
+    WorldPosition const from(elite);
+    float const away = from.getAngleTo(WorldPosition(bot));
+    float const stepYd = ai::ROAMING_ELITE_AVOID_YD + 15.0f;
+    for (float turn : { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f })
+    {
+        float const x = from.getX() + stepYd * cos(away + turn);
+        float const y = from.getY() + stepYd * sin(away + turn);
+        float const z = bot->GetMap()->GetHeight(x, y, bot->GetPositionZ() + 5.0f);
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            return true;
+    }
+    return false;
 }

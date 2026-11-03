@@ -9,6 +9,8 @@
 #include "HireLifecycle.h"
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
+#include "DowntimeService.h"
+#include "BotGearService.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -38,6 +40,8 @@
 #include "WorldPacket.h"
 #include "Chat.h"
 #include "Group/Group.h"
+#include "Guild/Guild.h"
+#include "Guild/GuildMgr.h"
 #include "Maps/GridMap.h"
 #include "Map.h"
 #include "../commands/BotCommands.h"
@@ -441,6 +445,42 @@ bool TeleportMisplacedBot(::Player* bot, int32 areaLevel, const std::string& cau
     return true;
 }
 } // namespace
+
+void BotManager::QueuePublicNote(uint64_t botGuidRaw, std::string text)
+{
+    if (botGuidRaw == 0 || text.empty())
+        return;
+    std::lock_guard<std::mutex> lock(m_publicNoteMutex);
+    m_pendingPublicNotes[botGuidRaw] = std::move(text);
+}
+
+void BotManager::DrainPublicNoteQueue()
+{
+    std::unordered_map<uint64_t, std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_publicNoteMutex);
+        pending.swap(m_pendingPublicNotes);
+    }
+    for (auto const& entry : pending)
+    {
+        ::Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(entry.first));
+        if (!bot || !bot->IsInWorld())
+            continue;
+        uint32_t guildId = bot->GetGuildId();
+        if (!guildId)
+            continue;
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild)
+            continue;
+        MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
+        if (!member)
+            continue;
+        // The bot's own public note is a server feature: no rank right
+        // needed. SetPublicNote skips the DB write when unchanged.
+        if (member->PublicNote != entry.second)
+            member->SetPublicNote(entry.second);
+    }
+}
 
 void BotManager::SweepDeadBots(uint32_t diff)
 {
@@ -1028,6 +1068,25 @@ void BotManager::OnPlayerLogin(::Player* player)
     // 15/35 in the armory instead of 15/36. Idempotent and O(spellbook).
     PlayerbotFactory::EnsureTalentSpellsSaved(player);
 
+    // Helmet and cloak display on pool bots (RandomBotShowHelmet/ShowCloak):
+    // the flags live in PLAYER_FLAGS, so re-applying them each login keeps
+    // existing characters in step after a config change. Hired companions and
+    // claimed bots read their visibility settings on the master's login path;
+    // their characters are never touched here.
+    if (record.random && !HireLifecycle::Instance().IsHired(player->GetObjectGuid()) &&
+        !ClaimLifecycle::Instance().IsClaimed(player->GetGUIDLow()))
+    {
+        if (sPlayerbotAIConfig.randomBotShowHelmet)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+
+        if (sPlayerbotAIConfig.randomBotShowCloak)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+    }
+
     // Normalize Goblin and High Elf (and any random bot in custom isolated
     // starting zones lacking navmesh/transport to mainland) to standard faction
     // starting zones: Valley of Trials and Northshire. RandomBotEvenStartZones
@@ -1160,7 +1219,7 @@ void BotManager::OnPlayerLogin(::Player* player)
         TB_LOG_DETAIL("TortoiseBots: seeded starter gear for fresh bot %s.", player->GetName());
     }
 
-    // Skills are separate from gear seeding. With DisableRandomLevels=1 a bot never passes
+    // Skills are separate from gear seeding. A level-1 pool bot never passes
     // through a level pipeline: it would keep weapon
     // skill 1 for good and never get a profession, so grind, craft and gather have
     // nothing to work with. Give such a bot the level-bound skill set once, at any
@@ -1193,6 +1252,11 @@ void BotManager::OnPlayerLogin(::Player* player)
         tools.AddTools();
         if (player->GetLevel() >= 18)
             tools.InitMounts();
+        // A bot that already had its profession never re-enters InitAllSkills
+        // above, so the specialization gate is checked here on every login.
+        tools.EnsureSpecializations();
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            tools.LearnSpecializationRecipes();
         // Issue #401 backstop for the live pool: free bots created before the
         // starter set get it on login, not only at creation. Hired companions
         // and owned alts are never touched: their kit is the player's business
@@ -1232,11 +1296,15 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     if (!session || !session->IsHeadless())
     {
         AltBotService::Instance().OnOwnerLogout(player);
+        TortoiseBots::DowntimeService::OnOwnerLogout(player);
         DetachOwnedBots(player);
     }
     else
+    {
         AltBotService::Instance().OnBotLogout(player);
-
+        BotGearService::Instance().OnBotLogout(player->GetObjectGuid().GetCounter());
+    }
+    TortoiseBots::DowntimeService::OnBotLogout(player);
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())
         return;
@@ -2267,6 +2335,7 @@ void BotManager::UpdateBots(uint32_t diff)
 void BotManager::OnWorldUpdate(uint32_t diff)
 {
     AltBotService::Instance().Update();
+    TortoiseBots::DowntimeService::Instance().Update();
     // Core owns Headless session lifecycle (queue, LoginPlayer dispatch, reclaim).
     // Module only tracks BotRecord and polls adapter state. No pending promotion.
     for (auto it = m_bots.begin(); it != m_bots.end(); )
@@ -2409,11 +2478,13 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     // Mature PlayerbotAI still exposes a donor-shaped population view for
     // perception/social queries. Refresh it from the authoritative native
     // records immediately before any AI update; it never owns sessions.
-    PlayerbotAI::ProcessDelayedPackets();
     sRandomBotFacade.SyncNativePlayers();
     UpdateBots(diff);
     SweepDeadBots(diff);
     SweepStrandedBots(diff);
+    // Guild public notes queued by map threads (package 7): Guild state is
+    // only touched here, on the world thread.
+    DrainPublicNoteQueue();
 
     if (m_autoTestEnabled)
         UpdateAutoTest(diff);

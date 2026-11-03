@@ -9,7 +9,7 @@ namespace ai
     {
         DEATH_COUNT_BEFORE_EVAC = 15,
         DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD = 3,
-        DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER = 8
+        DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER = 3
     };
 
     class GraveyardValue : public GuidPositionCalculatedValue, public Qualified

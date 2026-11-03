@@ -22,7 +22,6 @@ The total bot population is the primary factor influencing server CPU and memory
 | [`AiPlayerbot.DisableActivityPriorities`](#aiplayerbotdisableactivitypriorities) | `1` | Disables bot activity throttling so all bots remain fully reactive. |
 | [`AiPlayerbot.botActiveAlone`](#aiplayerbotbotactivealone) | `10` | Percentage of isolated bots kept active when throttling is enabled. |
 | [`AiPlayerbot.ForceActiveWhenNearPlayer`](#aiplayerbotforceactivewhennearplayer) | `0` | Forces bots within human visibility range to remain fully active. |
-| [`AiPlayerbot.DisableBotOptimizations`](#aiplayerbotdisablebotoptimizations) | `0` | Dead knob (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)). |
 | [`AiPlayerbot.PoolTickBudgetUs`](#aiplayerbotpooltickbudgetus) | `10000` | Microsecond time budget per world tick for processing pool bots. |
 | [`AiPlayerbot.CombatTickBudgetUs`](#aiplayerbotcombattickbudgetus) | `15000` | Microsecond time budget per world tick for processing combat turns. |
 | [`AiPlayerbot.PoolBudgetWhenTickOverMs`](#aiplayerbotpoolbudgetwhentickoverms) | `0` | World tick latency threshold in milliseconds where budgets engage. |
@@ -91,17 +90,6 @@ Forces bots visible to human players to always run at maximum reaction rates.
 <summary>How it works in detail</summary>
 
 When throttling is enabled, setting this to `1` ensures any bot within human visibility range is immediately promoted to full update frequency, preventing visual stutter or delayed reactions.
-
-</details>
-
-### `AiPlayerbot.DisableBotOptimizations`
-Legacy optimization switch retained for configuration file backward compatibility.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-This key is read during configuration loading but currently has no effect on runtime behavior (see [Settings with no effect](../configuration.md#settings-with-no-effect)).
 
 </details>
 

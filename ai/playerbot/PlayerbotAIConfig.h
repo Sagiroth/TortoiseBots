@@ -36,13 +36,6 @@ enum class BotCheatMask : uint32
     maxMask = 1 << 12
 };
 
-enum class BotAutoLogin : uint32
-{
-    DISABLED = 0,
-    LOGIN_ALL_WITH_MASTER = 1,
-    LOGIN_ONLY_ALWAYS_ACTIVE = 2
-};
-
 enum class BotSelfBotLevel : uint32
 {
     DISABLED = 0,
@@ -73,13 +66,6 @@ private:
     Config& m_config;
 };
 
-struct ParsedUrl {
-    std::string hostname;
-    std::string path;
-    int port;
-    bool https;
-};
-
 class PlayerbotAIConfig
 {
 public:
@@ -95,9 +81,13 @@ public:
     // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*), read from the loaded
     // aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
-    // Reads aiplayerbot.conf again and only the run leader's keys from it (the rest of the settings keep their
-    // start values). World thread only (BotHostAdapter::OnUpdate). False when the AI is disabled or the file
-    // could not be read; the keys are then left as they were.
+    // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
+    // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
+    void LoadObservabilityRaids();
+    // Reads aiplayerbot.conf again and only the keys that follow a `.reload config` (the run leader's, the raids
+    // observability flag; the rest of the settings keep their start values). World thread only
+    // (BotHostAdapter::OnUpdate). False when the AI is disabled or the file could not be read; the keys are then
+    // left as they were.
     bool ReloadDungeonRunKeys();
     bool IsInRandomAccountList(uint32 id);
     bool IsFreeAltBot(uint32 guid);
@@ -106,25 +96,21 @@ public:
 	bool IsInPvpProhibitedZone(uint32 id);
 
     bool enabled;
-    bool allowGuildBots;
-    bool allowMultiAccountAltBots;
     uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
-        errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay;
-    float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance, groupMemberLootDistanceWithActiveMaster,
+        rpgDelay, sitDelay, returnDelay, lootDelay;
+    float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance,
         gatheringDistance, groupMemberGatheringDistance, groupMemberGatheringDistanceWithActiveMaster, shootDistance,
         fleeDistance, tooCloseDistance, meleeDistance, followDistance, raidFollowDistance, wanderMinDistance, wanderMaxDistance, whisperDistance, contactDistance,
-        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, healDistanceBg, aggroDistance, proximityDistance, maxFreeMoveDistance, freeMoveDelay, walkDistance;
+        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, healDistanceBg, aggroDistance, proximityDistance, walkDistance;
     uint32 criticalHealth, lowHealth, mediumHealth, almostFullHealth;
     uint32 lowMana, mediumMana;
 
     uint32 openGoSpell;
     bool randomBotAutologin;
-    BotAutoLogin botAutologin;
     std::list<uint32> randomBotQuestItems;
     std::list<uint32> randomBotAccounts;
     std::unordered_set<uint32> nonRandomBotAccounts;
     std::list<uint32> randomBotSpellIds;
-    std::list<uint32> randomBotQuestIds;
     std::list<uint32> immuneSpellIds;
     std::list<std::pair<uint32, uint32>> freeAltBots;
     std::list<std::string> toggleAlwaysOnlineAccounts;
@@ -150,7 +136,6 @@ public:
     float randomGearSeedEpicChance;
     bool randomGearTabards;
     bool randomGearTabardsReplaceGuild;
-    bool randomGearTabardsUnobtainable;
     float randomGearTabardsChance;
     std::list<uint32> randomGearBlacklist;
     std::list<uint32> randomGearWhitelist;
@@ -165,7 +150,7 @@ public:
     float attackEmoteChance;
     uint32 minRandomBots, maxRandomBots;
     uint32 randomBotUpdateInterval;
-    bool randomBotTimedLogout, randomBotTimedOffline;
+    bool randomBotTimedLogout;
     // Level ladder (AiPlayerbot.LevelLadder*): choose the next random bot to log in by the
     // shortfall of its level band instead of round-robin over the whole pool, highest level
     // first inside the band, so the field spreads over the levels and the leaders climb to 60.
@@ -173,17 +158,17 @@ public:
     uint32 levelLadderBandSize = 5;
     uint32 levelLadderMaxLevelSharePct = 10;
     uint32 levelLadderLogMinutes = 5;
-    uint32 minRandomBotInWorldTime, maxRandomBotInWorldTime;
+    uint32 maxRandomBotInWorldTime;
     uint32 randomBotStallRelogMinutes = 45;
     uint32 minRandomBotRandomizeTime, maxRandomBotRandomizeTime;
     uint32 minRandomBotChangeStrategyTime, maxRandomBotChangeStrategyTime;
-    uint32 minRandomBotReviveTime, maxRandomBotReviveTime;
     uint32 randomBotsMaxLoginsPerInterval;
-    uint32 minRandomBotsPriceChangeInterval, maxRandomBotsPriceChangeInterval;
+    uint32 maxRandomBotsPriceChangeInterval;
     //Auction house settings
     bool shouldQueryAHListingsOutsideOfAH;
     std::list<uint32> ahOverVendorItemIds;
     std::list<uint32> vendorOverAHItemIds;
+    std::list<uint32> ahSellBlacklist;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes
@@ -205,6 +190,9 @@ public:
     std::string observabilityHost;
     // Issue #1101: the DUNGEON_MOBS datagram (mobs per dungeon run); only acts while observability is on.
     bool observabilityDungeonMobs = true;
+    // Spec dash-raids-tab: the RAIDS datagram and the observed-raid combat sampler (leader, offline members and the live
+    // fight window of unbound raid groups); only acts while observability is on, off by default.
+    bool observabilityRaids = false;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
     uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)
@@ -216,7 +204,6 @@ public:
     uint32 ahMarketBidMax = 90;             // Max start bid % of buyout
     uint32 ahMarketTimeMin = 8;             // Min auction duration (hours)
     uint32 ahMarketTimeMax = 24;            // Max auction duration (hours)
-    bool ahMarketValueVendor = true;        // Use vendor price multiplier for vendor-sold goods
     //
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
@@ -330,6 +317,12 @@ public:
     // instead (same map, unwatched, once per 10 min). Owned/hired bots and bots
     // with a real master never teleport. Default off.
     bool stuckTravelTeleport = true;
+    // Auction-house visit budget for the guild-order auction leg: an arrived
+    // trip with no auctioneer in interact range moves the leg down the ladder
+    // after this many visits. No config gate by design: it ends no order, it
+    // only moves the leg on after 3 visits like the pick streak does. Tests
+    // pin the constant (see tools/test_guild_order_giveup_policy.cpp).
+    uint32_t guildOrderAuctionVisits = 3;
     // Quest-log upkeep for masterless random bots: drop finished quests that
     // can no longer be rewarded, refuse grey quests unless the reward is an
     // equip upgrade, and prefer turn-in travel once 2 quests are finished.
@@ -426,6 +419,10 @@ public:
     // runtime/HireRaidPolicy.h and equal the shipped template.
     std::string hireRaidSpread;
     std::string hireRaidPresets;
+    // Named gear presets for `.bot gear <target> preset <name>`; parsed at
+    // use, the default lives in runtime/policy/hire/BotGearPolicy.h and
+    // equals the shipped template.
+    std::string botGearPresets;
     // Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7).
     // The master switch gates the static pass; tier 0 always keeps today's
     // random hire gear. A player may hire at any tier from 0 up to the
@@ -496,6 +493,10 @@ public:
     // commander whose feed is on (`.bot commander view on|off`). Clamped to
     // 250..60000; default 1000.
     uint32 remoteCommanderViewMs = 1000;
+    // A bot's failed dungeon entrance condition (Onyxia's lair asks for the Drakefire
+    // Amulet) is waived when its commander is a real player who commands the bot's raid
+    // (a member of it, or the binding's commander) and meets it himself. On by default.
+    bool raidEntryByCommander = true;
     // Run trace (docs/server/run-trace.md): `.bot trace start <run_id>` records
     // the party's bots as bt-trace v1 JSONL. Off by default; with 0 the command
     // answers that the feature is off.
@@ -556,7 +557,6 @@ public:
     std::list<std::string> pinnedBotNames;
 
 	bool RandombotsWalkingRPG;
-	bool RandombotsWalkingRPGInDoors;
     bool boostFollow;
     // Dungeon follow holds short of unpulled packs when the leader is far ahead (audit fix 127).
     bool dungeonFollowHoldBeforePacks;
@@ -573,17 +573,55 @@ public:
     bool dungeonTactics;
     // `.bot run`: the run leader (default on).
     bool dungeonSelfClear;
+    // Raid bindings for the run leader (`.bot commander bind <LeadBot> raid`); read with dungeonSelfClear.
+    bool dungeonRunRaid = false;
+    // A raid binding's boss fight: a 1200 s ceiling, deaths that do not pause it while it loses hp, and the adds
+    // sent to the off-tanks instead of the main tank (default off: the party rules).
+    bool dungeonRunRaidBossRules = false;
+    // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
+    // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
+    bool dungeonRunRaidHealerGuard = false;
+    // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
+    uint32 fankrissSwapStacks = 5;
+    // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).
+    uint32 patchwerkOpeningDelay = 4;
+    // The linked_death boss tactic ("die together"): free DPS bots equalise a group's health, hold every member at or
+    // below the row's param % and burn them together once all are there (BossTacticsPolicy.h; its own key on top of
+    // the tactics gate, default off).
+    bool dungeonRunLinkedDeath = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
     // once before a pull that brings more than the ceiling (opt-in; ceiling default 6 joiners).
     bool dungeonRunAggroEstimate;
     uint32 dungeonRunAggroCeiling;
+    // ... the ring estimate (EstimateAggroRing): the walk to the pull, the stand and the fight point wake a pack, and
+    // every member calls for help within dungeonRunAggroRingYd (only read with dungeonRunAggroEstimate).
+    bool dungeonRunAggroWalkRing;
+    float dungeonRunAggroRingYd;
+    // The run leader's pack-cleared gate: a pull step is done only when no unit of its entries is left within its
+    // radius + this many yards (2D, 10 yd of height), a unit that spawned inside the radius belongs to the step
+    // wherever it walks, and a formation follower of a waypoint leader counts as a patroller. 0 turns it off.
+    float dungeonRunPackClearMarginYd;
+    // ... and how many residue pulls a step may send before it pauses.
+    uint32 dungeonRunPackClearRepulls;
+    // The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the revive after either) within
+    // dungeonRunNearWipeStopMinutes of running time pause the run once the fight is over. 0: off.
+    uint32 dungeonRunNearWipeStop;
+    uint32 dungeonRunNearWipeStopMinutes;
+    // ... and whether a party binding gets it too (a raid binding gets it by default).
+    bool dungeonRunNearWipeStopParty;
     // The run leader's regroup holds for a living resurrector to raise the fallen (RezHoldPolicy.h; default off).
     bool dungeonRunRezHold;
     // The run leader orders `pullback` only when the tank can shoot from where it stands, else it walks the
     // party to a firing stand first (DungeonRunPolicy.h HoldForShot; default off).
     bool dungeonRunPullStand;
+    // A firing stand is refused when another live pack (its patrol loop included) can reach it; none clear: the
+    // plain pull goes out (DungeonRunPolicy.h HoldForShot; default off).
+    bool dungeonRunStandClearance;
+    // The approach row before a stand-pull step holds outside the pulled pack's wake reach and the pull's crowd
+    // control goes out there, before the walk in wakes the pack (DungeonRunPolicy.h NextStandPull; default off).
+    bool dungeonRunStandPullPreCc;
     // 1: the run leader walks the tank back to the guard's stand point after every guarded fight, as before
     // 2026-10-22; 0 (default): not once the step's pack is cleared (DungeonRunPolicy.h GuardWalkBackWanted).
     bool dungeonRunWalkBackAfterWonFight;
@@ -622,6 +660,9 @@ public:
     bool avoidCreatureAuras;
     // Bots may fly the taxi paths a core repair fixes (TaxiPathPolicy.h).
     bool allowRepairedTaxiPaths;
+    // Test shortcut: a bot that boards a taxi arrives at the destination
+    // node at once instead of flying the route (BotInstantFlightPolicy.h).
+    bool botInstantFlight;
     bool turnInRpg;
     bool globalSoundEffects;
     bool shareTargets;
@@ -638,7 +679,6 @@ public:
     bool randomBotGreet;
     bool randomBotShowHelmet;
     bool randomBotShowCloak;
-    bool disableRandomLevels;
     bool gearscorecheck;
     int32 levelCheck;
     // Pool-bot trade safety (issue #469, donor EnableRandomBotTrading 0-3
@@ -648,16 +688,21 @@ public:
     // Addon chatter prefixes that never drive the trade action
     // (donor TradeActionExcludedPrefixes parity, e.g. Questie/DBM lines).
     std::list<std::string> tradeActionExcludedPrefixes;
-	bool randomBotPreQuests;
     float playerbotsXPrate;
-    bool disableBotOptimizations;
     bool disableActivityPriorities;
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
+    bool guildOrderBankWithdraw;
+    bool craftToolsAlways;
+    bool guildOrderBankGold;
+    bool guildOrderSubOrders;
+    uint32_t guildOrderSubOrderDepth;
+    // Guild bank access for guild bots: every bot in a guild with a real
+    // player member holds one shared rank (`.bot order rank` picks it,
+    // defaulting to the rank below the master).
+    bool guildOrderBotRank;
     uint32 botActiveAlone;
-    uint32 diffWithPlayer;
-    uint32 diffEmpty;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the
     // tank is back at the anchor (pullback). Per-command [seconds] overrides
@@ -671,22 +716,16 @@ public:
     // order says `ranged`.
     bool rangedPull;
     float rangedPullMeleeApproach;
-    uint32 randombotStartingLevel;
-    // Level seeding for persistent-level pools (DisableRandomLevels=1). Fresh
-    // pool bots are created at level 1 by CharacterCreation, so the pool
-    // starts at 1 unless this range seeds it. 1/1 keeps the historic
-    // "walk from level 1" behaviour.
+    // Level seeding: fresh pool bots are created at level 1 by
+    // CharacterCreation, so the pool starts at 1 unless this range seeds it.
+    // 1/1 keeps the historic "walk from level 1" behaviour.
     uint32 randomBotStartLevelMin;
     uint32 randomBotStartLevelMax;
-    bool randomBotSayWithoutMaster;
     bool randomBotInvitePlayer;
     bool randomBotGroupNearby;
     bool randomBotRaidNearby;
     bool randomBotGuildNearby;
     bool randomBotFormGuild;
-    bool randomBotRandomPassword;
-    bool inviteChat;
-    bool botsSilent;
     // Opt-in diagnostic logging: when true, [BOT] log lines and per-bot action
     // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
     // off so production servers don't pay disk I/O / branch overhead.
@@ -703,6 +742,7 @@ public:
     // minutes to logs/action_counts.csv. Default off so production servers
     // pay one branch per executed action and nothing else.
     bool actionCountsLog;
+    bool healerDiagnostics = false;
     // Filename (relative to LogsDir) for the bot subsystem log. When set,
     // all sLog calls from bot .cpp files are redirected there instead of
     // writing to the main server log. Default: "bots.log". Empty = disabled.
@@ -713,71 +753,16 @@ public:
 
     uint32 guildMaxBotLimit;
 
-    bool enableBroadcasts;
-    uint32 broadcastChanceMaxValue;
-
-    uint32 broadcastToGuildGlobalChance;
-    uint32 broadcastToWorldGlobalChance;
-    uint32 broadcastToGeneralGlobalChance;
-    uint32 broadcastToTradeGlobalChance;
-    uint32 broadcastToLFGGlobalChance;
-    uint32 broadcastToLocalDefenseGlobalChance;
-    uint32 broadcastToWorldDefenseGlobalChance;
-    uint32 broadcastToGuildRecruitmentGlobalChance;
-    uint32 broadcastToSayGlobalChance;
-    uint32 broadcastToYellGlobalChance;
-
-    uint32 broadcastChanceLootingItemPoor;
-    uint32 broadcastChanceLootingItemNormal;
-    uint32 broadcastChanceLootingItemUncommon;
-    uint32 broadcastChanceLootingItemRare;
-    uint32 broadcastChanceLootingItemEpic;
-    uint32 broadcastChanceLootingItemLegendary;
-    uint32 broadcastChanceLootingItemArtifact;
-
-    uint32 broadcastChanceQuestAccepted;
-    uint32 broadcastChanceQuestUpdateObjectiveCompleted;
-    uint32 broadcastChanceQuestUpdateObjectiveProgress;
-    uint32 broadcastChanceQuestUpdateFailedTimer;
-    uint32 broadcastChanceQuestUpdateComplete;
-    uint32 broadcastChanceQuestTurnedIn;
-
-    uint32 broadcastChanceKillNormal;
-    uint32 broadcastChanceKillElite;
-    uint32 broadcastChanceKillRareelite;
-    uint32 broadcastChanceKillWorldboss;
-    uint32 broadcastChanceKillRare;
-    uint32 broadcastChanceKillUnknown;
-    uint32 broadcastChanceKillPet;
-    uint32 broadcastChanceKillPlayer;
-
-    uint32 broadcastChanceLevelupGeneric;
-    uint32 broadcastChanceLevelupTenX;
-    uint32 broadcastChanceLevelupMaxLevel;
-
-    uint32 broadcastChanceSuggestInstance;
-    uint32 broadcastChanceSuggestQuest;
-    uint32 broadcastChanceSuggestGrindMaterials;
-    uint32 broadcastChanceSuggestGrindReputation;
-    uint32 broadcastChanceSuggestSell;
-    uint32 broadcastChanceSuggestSomething;
-
-    uint32 broadcastChanceSuggestSomethingToxic;
-
-    uint32 broadcastChanceSuggestToxicLinks;
-    std::string toxicLinksPrefix;
-    uint32 toxicLinksRepliesChance;
-
-    uint32 broadcastChanceSuggestThunderfury;
-    uint32 thunderfuryRepliesChance;
-
-    uint32 broadcastChanceGuildManagement;
-
-    uint32 guildRepliesRate;
-
     uint32 botAcceptDuelMinimumLevel;
 
     bool talentsInPublicNote;
+    bool professionsGrowWithLevel;
+    // Profession specializations (runtime/ProfessionSpecializationPolicy.h):
+    // 0 off, 1 one branch per bot (guid parity, fixed forever), 2 all
+    // branches of each qualified profession. Default 2: the core enforces
+    // no exclusivity between branches (no chain req, no unlearn, no
+    // trainer/skill gating), so both known together is safe.
+    int botProfessionSpecializations = 2;
     bool nonGmFreeSummon;
 
     BotSelfBotLevel selfBotLevel;
@@ -833,10 +818,6 @@ public:
     // points to WorldDatabase. Keep the expensive persistent rebuild opt-in.
     bool generateFishLocations;
     bool syncAltLevelToMaster;
-    uint32 tweakValue; //Debugging config
-    float respawnModNeutral, respawnModHostile;
-    uint32 respawnModThreshold, respawnModMax;
-    bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
     // Autonomous BG queue for WSG/AB/AV. Default on. Bounded cadence and
@@ -879,6 +860,8 @@ public:
     // Hour (unix time / 3600) each live log was opened in.
     std::unordered_map<std::string, time_t> logHour;
 
+    // Per-fight combat numbers of every bound group for the observability dashboard.
+    bool combatMonitor = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;
@@ -909,13 +892,6 @@ public:
     bool perfMonEnabled;
     bool bExplicitDbStoreSave = false;
 
-    //LM BEGIN
-    std::string llmApiEndpoint, llmApiKey, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
-    uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
-    bool llmGlobalContext;
-    ParsedUrl llmEndPointUrl;
-    std::set<uint32> llmBlockedReplyChannels;
-    //LM END
 
     float EatDrinkMinDistance;
     float EatDrinkMaxDistance;
@@ -961,7 +937,6 @@ public:
 
 private:
     void LoadTalentSpecs();
-    void LoadLLMDefaultPrompts(const std::string& fileName);
 
     Config config;
 };

@@ -421,4 +421,179 @@ assert.strictEqual(C.jumpLimitYd(500), 612, "...and at most 30 s, so a long sile
   assert.strictEqual(C.trailEvent({ gap: true }, { map: 1, x: 0, y: 0, t: 1 }), "g");
   stepg(60, 106); assert.strictEqual(tg.trail.Gbmage.pts[3].length, 3, "only that one point");
 }
-console.log("commanders.js ok");
+// ---- A11: the raid card (subgroups, off-tank threat, notes, deaths, controls, waiting)
+const raidBot = (i, sub) => bot({ name: "R" + i, guid: 100 + i, id: String(100 + i), role: i % 5 === 0 ? "tank" : i % 5 === 1 ? "healer" : "dps", sub });
+const raidBind = () => {
+  const bots = [];
+  for (let s = 0; s < 4; s++) for (let i = 0; i < 5; i++) bots.push(raidBot(s * 5 + i, s));
+  bots[0].name = "Lead"; bots[0].lead = true;
+  return { commander: "Gbraid", online: true, view: true, group: 9, lead: "Lead", bots, orders: [] };
+};
+// subgroup blocks: one per subgroup in order, 5 rows each, the lead first in block 0
+let rb = C.raidBlocks(raidBind());
+assert.deepStrictEqual(rb.map((b) => b.subgroup), [0, 1, 2, 3]);
+assert.deepStrictEqual(rb.map((b) => b.label), ["Group 1", "Group 2", "Group 3", "Group 4"]);
+assert.deepStrictEqual(rb.map((b) => b.rows.length), [5, 5, 5, 5]);
+assert.strictEqual(rb[0].rows[0].name, "Lead");
+assert.ok(C.isRaid(raidBind()));
+// a 5-man binding without subgroups is one block and stays a party card
+rb = C.raidBlocks(party());
+assert.strictEqual(rb.length, 1); assert.strictEqual(rb[0].label, "Party");
+assert.deepStrictEqual(rb[0].rows.map((r) => r.name), ["Tankie", "Heals", "Dmg1"]);
+assert.ok(!C.isRaid(party()));
+// threat off the tanks: a mob on a healer for 3 s is reported, a mob on a tank is not
+const threatBind = () => ({
+  commander: "Gbmage", bots: [bot({ name: "Tanky", guid: 1, id: "1", role: "tank" }), bot({ name: "Heals", guid: 2, id: "2", role: "healer" })],
+  mobs: [{ id: "m1", entry: 100, name: "Whelp", hp: 80, x: 1, y: 2, reaction: "h", victim: "2" }],
+});
+let ttr = C.newTracker();
+assert.deepStrictEqual(C.threatOffTanks(threatBind(), ttr, 100), [], "first sighting: held 0 s");
+let off = C.threatOffTanks(threatBind(), ttr, 103);
+assert.strictEqual(off.length, 1);
+assert.strictEqual(off[0].mob.name, "Whelp"); assert.strictEqual(off[0].victim, "Heals");
+assert.strictEqual(off[0].role, "healer"); assert.strictEqual(off[0].seconds, 3);
+const tankBind = threatBind(); tankBind.mobs[0].victim = "1";
+assert.deepStrictEqual(C.threatOffTanks(tankBind, C.newTracker(), 103), [], "on a tank: nothing");
+// notes: the run's status lines newest first
+const notesBind = {
+  commander: "Gbraid",
+  run: {
+    plan: "molten_core", state: "running", step: 5, steps: 20, leg: "garr", kind: "boss", phase: "fight", note: "fighting Garr", changed: 60,
+    notes: [
+      { at: 58, step: 4, leg: "garr", kind: "move", phase: "walk", state: "running", note: "walking in" },
+      { at: 59, step: 5, leg: "garr", kind: "boss", phase: "fight", state: "running", note: "fighting Garr" },
+    ],
+  },
+};
+let nl = C.notesLog(notesBind);
+assert.strictEqual(nl.length, 2);
+assert.deepStrictEqual(nl[0], { at: 59, text: "5 garr boss fight: fighting Garr", state: "running" });
+assert.strictEqual(nl[1].at, 58);
+assert.deepStrictEqual(C.notesLog(party()), [], "no run: no notes");
+// deaths: the last fights' deaths plus the bots now dead
+const deadBind = { commander: "Gbraid", bots: [bot({ name: "Live", guid: 1, id: "1" }), bot({ name: "Dead", guid: 2, id: "2", alive: false, hp: 0, x: 7, y: 8 })] };
+const dfights = [{ id: "7-2", boss_name: "Magmadar", start: 1000, deaths: [{ name: "Healy", t_ms: 9000, x: 1.5, y: 2.5, z: 0, killer: "Magmadar", hits: [] }] }];
+let dt = C.deathsTimeline(dfights, deadBind);
+assert.strictEqual(dt.length, 2);
+assert.deepStrictEqual(dt[0], { t: null, name: "Dead", killer: "", fight: "", x: 7, y: 8 });
+assert.deepStrictEqual(dt[1], { t: 1009, name: "Healy", killer: "Magmadar", fight: "Magmadar", x: 1.5, y: 2.5 });
+assert.deepStrictEqual(C.deathsTimeline([], { commander: "G", bots: [bot({})] }), [], "nobody down, no fights: nothing");
+// controls: the buttons' GM lines for this binding
+const ctlBind = { commander: "Gbmage", bots: [bot({ name: "Live", guid: 1 }), bot({ name: "Deadguy", guid: 2, alive: false, hp: 0 })] };
+let cl = C.controlLines(ctlBind, null);
+assert.strictEqual(cl.pause, ".bot run for Gbmage pause");
+assert.strictEqual(cl.resume, ".bot run for Gbmage resume");
+assert.strictEqual(cl.skip, ".bot run for Gbmage skip");
+assert.strictEqual(cl.stop, ".bot run for Gbmage stop");
+assert.strictEqual(cl.status, ".bot run for Gbmage status");
+assert.strictEqual(cl.startFromLeg(2), ".bot run for Gbmage start from step 2");
+assert.strictEqual(cl.startFromLeg(" 57 "), ".bot run for Gbmage start from step 57");
+assert.strictEqual(cl.startFromLeg("trogg_west"), ".bot run for Gbmage start from leg trogg_west");
+assert.strictEqual(cl.startFromLeg("magmadar", true), ".bot run for Gbmage start from leg magmadar until boss");
+assert.strictEqual(cl.startFromLeg(2, false), ".bot run for Gbmage start from step 2", "no until flag: the line as before");
+assert.strictEqual(cl.startUntilBoss, ".bot run for Gbmage start until boss");
+assert.deepStrictEqual(cl.reviveDead, [".revive Deadguy"]);
+assert.strictEqual(cl.reloadPlans, ".bot run reloadplans");
+assert.strictEqual(cl.gearPreset("zg"), ".bot gear Gbmage preset zg", "a party gears one bot");
+assert.strictEqual(C.controlLines(raidBind(), null).gearPreset("zg"), ".bot gear raid Gbraid preset zg", "a raid gears the raid");
+assert.deepStrictEqual(C.controlLines({ commander: "Gbmage", bots: [bot({})] }, null).reviveDead, [], "nobody down: no revive");
+// waiting: the state, the note and the seconds since it changed; stalled past 120 s, stuck past 300 s
+const waitBind = (ago) => ({ commander: "Gbraid", run: { state: "paused", note: "waiting for mana", changed: 1000 - ago } });
+let ww = C.whyWaiting(waitBind(30), 1000);
+assert.ok(/paused/.test(ww) && /waiting for mana/.test(ww) && !/stalled/.test(ww) && !/stuck/.test(ww), ww);
+assert.ok(/stalled/.test(C.whyWaiting(waitBind(121), 1000)), "stalled at 121 s");
+assert.ok(/stuck/.test(C.whyWaiting(waitBind(301), 1000)), "stuck at 301 s");
+assert.strictEqual(C.whyWaiting(party(), 1000), "", "no run: nothing to wait on");
+// the raid layout (F5): main tank, off-tanks, tank healer pairs and raid healers from the module's TBM:RAID_LAYOUT
+assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: ["Irelanthe", "Brun"], th: [{ h: "Sera", t: "Ragemeister" }], rh: ["Prayer"] } }),
+  "MT Ragemeister · OTs Irelanthe, Brun · tank healers Sera -> Ragemeister · raid healers Prayer");
+assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: [], th: [], rh: [] } }), "MT Ragemeister", "the parts it has");
+assert.strictEqual(C.layoutText(party()), null, "no layout reported: no row");
+assert.strictEqual(C.layoutText({ layout: { mt: "", ot: [], th: [], rh: [] } }), null, "an empty layout says nothing");
+// ---- threat lines: a victim that is not a tank (the raid layout's MT and OTs count as tanks)
+{
+  const tmobs = [
+    { id: "21", x: 0, y: 0, reaction: "h", victim: "700" },
+    { id: "22", x: 0, y: 0, reaction: "h", victim: "701" },
+    { id: "23", x: 0, y: 0, reaction: "h", victim: "702" },
+    { id: "24", x: 0, y: 0, reaction: "h", victim: "703" },
+    { id: "25", x: 0, y: 0, reaction: "h", victim: "704" },
+  ];
+  const tb = [
+    { id: "700", name: "Heals", role: "healer" },
+    { id: "701", name: "Ireni", role: "dps" },
+    { id: "702", name: "Shieldy", role: "tank" },
+    { id: "703", name: "Mage", role: "dps" },
+    { id: "704", name: "Ragemeister", role: "dps" },
+  ];
+  const tl = C.threatLines(tmobs, tb, { mt: "Ragemeister", ot: ["Ireni"] });
+  assert.deepStrictEqual(tl.map((l) => [l.mob.id, l.bot.name, l.nonTank]), [
+    ["21", "Heals", true], ["22", "Ireni", false], ["23", "Shieldy", false], ["24", "Mage", true], ["25", "Ragemeister", false],
+  ], "a healer or a damage dealer off the tanks; the layout's MT and an OT count as tanks");
+  assert.deepStrictEqual(C.threatLines(tmobs, tb).map((l) => l.nonTank), [true, true, false, true, true], "no layout: the role alone");
+  assert.deepStrictEqual(C.threatLines(tmobs, tb, { mt: "Ragemeister" }).map((l) => l.nonTank), [true, true, false, true, false],
+    "a layout without an OT list");
+  assert.deepStrictEqual(C.threatLines([{ id: "1", x: 0, y: 0, reaction: "h", victim: "999" }], tb, { mt: "Ragemeister", ot: ["Ireni"] }), [],
+    "a victim that is not a listed bot");
+}
+// ---- the boss overlay (fight debugger phase 2): where a boss looks, the area of its spell and the cast clock
+// the plane puts north up: a unit facing 0 (game +x) looks up (-y in the plane), a quarter turn looks west (-x)
+assert.deepStrictEqual(C.facingVec(0), { x: 0, y: -1 });
+const fv = C.facingVec(Math.PI / 2);
+assert.ok(Math.abs(fv.x + 1) < 1e-9 && Math.abs(fv.y) < 1e-9, JSON.stringify(fv));
+// a 120 degree cone of 20 yd ends 10 yd up and 17.32 yd to either side of the unit
+const cone = C.shapePath(0, 0, 0, { k: "cone", a: 120, l: 20 });
+assert.ok(cone.indexOf("17.32,-10.00") >= 0 && cone.indexOf("-17.32,-10.00") >= 0, cone);
+assert.ok(/^M0\.00,0\.00L/.test(cone) && /A20\.00 20\.00 0 0 1/.test(cone) && /Z$/.test(cone), cone);
+const back = C.shapePath(0, 0, 0, { k: "back-cone", a: 120, l: 20 });
+assert.ok(back.indexOf("17.32,10.00") >= 0 && back.indexOf("-17.32,10.00") >= 0, back);
+const wide = C.shapePath(0, 0, 0, { k: "cone", a: 240, l: 20 });
+assert.ok(/A20\.00 20\.00 0 1 1/.test(wide), "a cone past a half turn takes the large arc: " + wide);
+const band = C.shapePath(0, 0, 0, { k: "line", l: 60, w: 20 });
+["-10.00,0.00", "10.00,0.00", "-10.00,-60.00", "10.00,-60.00"].forEach((pt) => assert.ok(band.includes(pt), pt + " in " + band));
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "cone", a: 120 }), "", "a cone without reach is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "cone", a: 0, l: 20 }), "", "a cone without an arc is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "wibble", l: 20, w: 10 }), "", "an unknown area is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, null), "");
+const nw = C.facingVec(Math.PI / 4);
+assert.ok(Math.abs(nw.x + Math.SQRT1_2) < 1e-9 && Math.abs(nw.y + Math.SQRT1_2) < 1e-9, "a diagonal faces north-west");
+// the cast clock between two reports, never below zero
+assert.strictEqual(C.castLeft({ cleft: 2000 }, 1000, 2500), 500);
+assert.strictEqual(C.castLeft({ cleft: 2000 }, 1000, 4000), 0);
+assert.strictEqual(C.castLeft({ cleft: 0 }, 0, 0), 0);
+assert.strictEqual(C.castLeft({}, 0, 100), 0);
+assert.strictEqual(C.castLeft({ cleft: 1000 }, undefined, 500), 1000, "no arrival time: nothing is counted");
+assert.strictEqual(C.castFrac({ ctot: 2000 }, 500), 0.75);
+assert.strictEqual(C.castFrac({ ctot: 2000 }, 2500), 0, "clamped");
+assert.strictEqual(C.castFrac({ ctot: 0 }, 0), 0);
+assert.strictEqual(C.castFrac({}, 0), 0);
+// the shorter arc across the seam, never through zero
+const seam = C.angleLerp(3.1, -3.1, 0.5);
+assert.ok(Math.abs(Math.abs(seam) - Math.PI) < 0.05, String(seam));
+assert.strictEqual(C.angleLerp(0, Math.PI / 2, 0.5), Math.PI / 4);
+assert.ok(Math.abs(C.angleLerp(0, 0, 0.5)) < 1e-12);
+
+// ---- the labels a tight group can show: the lead's first, a colliding neighbour gives way, the hover box keeps the name ----
+const LABELS = [
+  { id: "b:lead", name: "Raidlead", x: 0, y: 0 },
+  { id: "b:tank3", name: "Raidtank3", x: 4, y: 2 },      // a tight group: its box lands on the lead's
+  { id: "b:mage2", name: "Raidmage2", x: 75, y: 0 },     // far enough away
+  { id: "b:lock1", name: "Raidlock1", x: 77, y: 2 },     // runs into Raidmage2's box
+  { id: "b:lock0", name: "Raidlock0", x: 77, y: 40 },    // its own line
+];
+assert.deepStrictEqual(C.labelFit(LABELS, 1), ["b:lead", "b:mage2", "b:lock0"],
+  "a label that would overlap one already drawn is left out, in draw order");
+const COLLIDE = [{ id: "x", name: "Raidleader", x: 0, y: 0 }, { id: "y", name: "Raidmage2", x: 20, y: 1 }];
+assert.deepStrictEqual(C.labelFit(COLLIDE, 1), ["x"], "the first of two colliding labels is the one kept");
+assert.deepStrictEqual(C.labelFit(COLLIDE.slice().reverse(), 1), ["y"],
+  "the caller's order is the priority (the call site puts the lead first)");
+assert.deepStrictEqual(C.labelFit([], 1), []);
+assert.deepStrictEqual(C.labelFit(null, 1), []);
+// Zoomed out, the same names fit on a smaller box; zoomed in they need more room.
+assert.deepStrictEqual(C.labelFit([{ id: "a", name: "AAAAAAAAAA", x: 0, y: 0 }, { id: "b", name: "BBBBBBBBBB", x: 40, y: 0 }], 0.25),
+  ["a", "b"], "at a quarter scale the two fit");
+assert.deepStrictEqual(C.labelFit([{ id: "a", name: "AAAAAAAAAA", x: 0, y: 0 }, { id: "b", name: "BBBBBBBBBB", x: 40, y: 0 }], 2),
+  ["a"], "at twice the scale they collide");
+assert.deepStrictEqual(C.labelFit([{ name: "no id" }, { id: "x", name: "X", x: 0, y: 0 }], 1), ["x"], "an entry without an id is skipped");
+
+ console.log("commanders.js ok");

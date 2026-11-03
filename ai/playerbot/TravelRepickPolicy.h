@@ -192,7 +192,32 @@ namespace ai
         constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
         return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
     }
-    // A grind destination whose walk keeps failing is given up like a wedged
+    // Short-hop TRAVEL floor (pattern-4 churn follow-up, live 2026-11-01):
+    // the TRAVEL clock is 2x run time + 3 s, so a trip picked a few yards
+    // out budgets ~4 s - one move visit. When every visit fails dispatch
+    // (a complete navmesh path the spline still refuses: standing inside
+    // the arrival radius with a clipped route tail), the 6-fail drop never
+    // fires first and the trip times out ~8 s after the pick, then re-picks
+    // at once. The floor gives the drop budget time to engage instead; far
+    // trips keep their computed clock. Caller passes whole milliseconds.
+    constexpr std::int64_t TRAVEL_SHORT_HOP_FLOOR_MS = 30000;
+    inline std::int64_t TravelStatusTravelMsFloor(std::int64_t computedMs,
+        std::int64_t floorMs = TRAVEL_SHORT_HOP_FLOOR_MS)
+    {
+        return computedMs >= floorMs ? computedMs : floorMs;
+    }
+
+    // destination point with no walkable navmesh polygon nearby can never be
+    // walked to, so the pick only fails six walks and is re-picked. Every
+    // purpose with a walkable point takes the sieve; fishing stays out (its
+    // spots are water by design - the probe keeps water too, this only says
+    // the pick gate must not refuse them). The caller passes the numeric
+    // purpose ids so this stays core-free.
+    inline bool TravelMeshSieveApplies(uint32_t purposeId, uint32_t fishingPurposeId)
+    {
+        return purposeId != fishingPurposeId;
+    }
+
     // combat target (ReachTargetActions.h): the creature kind goes on the
     // same "unreachable entries" blacklist, so the grind gate
     // (GrindTravelDestination::IsActive) stops offering it for a while and
@@ -232,6 +257,15 @@ namespace ai
     inline bool TravelCooldownParksPurpose(bool masterlessRandom, bool wasTraveling)
     {
         return masterlessRandom && wasTraveling;
+    }
+
+    // Park key for a never-arrived cooldown: the request gate reads the order
+    // leg back under "guild order", not the numeric grind id, so an order
+    // target parks its purpose key - otherwise the cooldown never holds the
+    // order leg back and it re-picks the same dead zone at once.
+    inline std::string TravelCooldownParkKey(bool orderTarget, uint32_t purposeId)
+    {
+        return orderTarget ? "guild order" : std::to_string(purposeId);
     }
 
 

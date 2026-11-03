@@ -1,0 +1,254 @@
+{
+  "cases": [
+    {
+      "name": "America/Santiago 2024-09-08 00:15 -04:00",
+      "epoch": 1725765300,
+      "want": "2024-09-07"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 00:30 -04:00",
+      "epoch": 1725766200,
+      "want": "2024-09-07"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 01:00 -03:00",
+      "epoch": 1725768000,
+      "want": "2024-09-07"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 05:30 -03:00",
+      "epoch": 1725784200,
+      "want": "2024-09-07"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 05:59 -03:00",
+      "epoch": 1725785940,
+      "want": "2024-09-07"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 06:00 -03:00",
+      "epoch": 1725786000,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 06:30 -03:00",
+      "epoch": 1725787800,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 12:00 -03:00",
+      "epoch": 1725807600,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 22:00 -03:00",
+      "epoch": 1725843600,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-08 23:30 -03:00",
+      "epoch": 1725849000,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 00:15 -03:00",
+      "epoch": 1725851700,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 00:30 -03:00",
+      "epoch": 1725852600,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 01:00 -03:00",
+      "epoch": 1725854400,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 05:30 -03:00",
+      "epoch": 1725870600,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 05:59 -03:00",
+      "epoch": 1725872340,
+      "want": "2024-09-08"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 06:00 -03:00",
+      "epoch": 1725872400,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 06:30 -03:00",
+      "epoch": 1725874200,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 12:00 -03:00",
+      "epoch": 1725894000,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 22:00 -03:00",
+      "epoch": 1725930000,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-09 23:30 -03:00",
+      "epoch": 1725935400,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 00:15 -03:00",
+      "epoch": 1725938100,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 00:30 -03:00",
+      "epoch": 1725939000,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 01:00 -03:00",
+      "epoch": 1725940800,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 05:30 -03:00",
+      "epoch": 1725957000,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 05:59 -03:00",
+      "epoch": 1725958740,
+      "want": "2024-09-09"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 06:00 -03:00",
+      "epoch": 1725958800,
+      "want": "2024-09-10"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 06:30 -03:00",
+      "epoch": 1725960600,
+      "want": "2024-09-10"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 12:00 -03:00",
+      "epoch": 1725980400,
+      "want": "2024-09-10"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 22:00 -03:00",
+      "epoch": 1726016400,
+      "want": "2024-09-10"
+    },
+    {
+      "name": "America/Santiago 2024-09-10 23:30 -03:00",
+      "epoch": 1726021800,
+      "want": "2024-09-10"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 00:15 -04:00",
+      "epoch": 1693710900,
+      "want": "2023-09-02"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 00:30 -04:00",
+      "epoch": 1693711800,
+      "want": "2023-09-02"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 01:00 -03:00",
+      "epoch": 1693713600,
+      "want": "2023-09-02"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 05:30 -03:00",
+      "epoch": 1693729800,
+      "want": "2023-09-02"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 05:59 -03:00",
+      "epoch": 1693731540,
+      "want": "2023-09-02"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 06:00 -03:00",
+      "epoch": 1693731600,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 06:30 -03:00",
+      "epoch": 1693733400,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 12:00 -03:00",
+      "epoch": 1693753200,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 22:00 -03:00",
+      "epoch": 1693789200,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-03 23:30 -03:00",
+      "epoch": 1693794600,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 00:15 -03:00",
+      "epoch": 1693797300,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 00:30 -03:00",
+      "epoch": 1693798200,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 01:00 -03:00",
+      "epoch": 1693800000,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 05:30 -03:00",
+      "epoch": 1693816200,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 05:59 -03:00",
+      "epoch": 1693817940,
+      "want": "2023-09-03"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 06:00 -03:00",
+      "epoch": 1693818000,
+      "want": "2023-09-04"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 06:30 -03:00",
+      "epoch": 1693819800,
+      "want": "2023-09-04"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 12:00 -03:00",
+      "epoch": 1693839600,
+      "want": "2023-09-04"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 22:00 -03:00",
+      "epoch": 1693875600,
+      "want": "2023-09-04"
+    },
+    {
+      "name": "America/Santiago 2023-09-04 23:30 -03:00",
+      "epoch": 1693881000,
+      "want": "2023-09-04"
+    }
+  ]
+}

@@ -7,6 +7,8 @@
 
 namespace ai
 {
+    bool IsOrderFishing(PlayerbotAI* ai);
+
     /*                uint32 zone, subzone;
     gameObject->getZoneAndAreaId(zone, subzone);
     // if subzone loot exist use it

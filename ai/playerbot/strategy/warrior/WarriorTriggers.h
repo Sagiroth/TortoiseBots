@@ -39,7 +39,15 @@ namespace ai
         }
     };
     DEBUFF_TRIGGER(DemoralizingShoutDebuffTrigger, "demoralizing shout");
-    DEBUFF_TRIGGER(MortalStrikeDebuffTrigger, "mortal strike");
+    // The debuff lasts 10 s and the cooldown is 6 s, and any caster's
+    // debuff blocks a DebuffTrigger: that capped Mortal Strike at one cast
+    // per 10 s and let another warrior's debuff silence it. Core CanCastSpell
+    // already enforces rage and cooldown, so fire it on cooldown.
+    class MortalStrikeTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        MortalStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "mortal strike") {}
+    };
     DEBUFF_ENEMY_TRIGGER(RendDebuffOnAttackerTrigger, "rend");
     CAN_CAST_TRIGGER(RevengeAvailableTrigger, "revenge");
     CAN_CAST_TRIGGER(OverpowerAvailableTrigger, "overpower");
@@ -50,6 +58,12 @@ namespace ai
     // shares the "Improved Shield Slam" name and would keep a name trigger
     // active forever. Proc aura is 1 charge (procCharges=1), so firing slam
     // immediately consumes the bonus before it expires.
+    class PatchwerkShieldSlamTrigger : public Trigger
+    {
+    public:
+        PatchwerkShieldSlamTrigger(PlayerbotAI* ai) : Trigger(ai, "patchwerk shield slam") {}
+        bool IsActive() override;
+    };
     class ImprovedShieldSlamProcTrigger : public Trigger
     {
     public:
@@ -78,7 +92,8 @@ namespace ai
             // bot has AFTER the swap, not the pre-swap bar.
             uint32_t rage = AI_VALUE2(uint8, "rage", "self target");
             unsigned tmRank = TacticalMasteryRank(bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_1),
-                bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_2), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_3));
+                bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_2), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_3),
+                bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_4), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_5));
             return ShouldMockingBlow(ai->HasSpell("mocking blow"), LoseAggroTrigger::IsActive(),
                 taunt && sServerFacade.IsSpellReady(bot, taunt), mocking && sServerFacade.IsSpellReady(bot, mocking),
                 target && bot->CanReachWithMeleeAutoAttack(target),

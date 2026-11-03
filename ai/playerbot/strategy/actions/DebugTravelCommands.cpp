@@ -12,7 +12,6 @@
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "Transports/Transport.h"
 #include "Maps/PathFinder.h"
-#include "playerbot/PlayerbotLLMInterface.h"
 
 #include "vmap/VMapFactory.h"
 
@@ -22,7 +21,6 @@
 
 #include <iomanip>
 #include <typeindex>
-#include "SayAction.h"
 #include "Maps/MoveMap.h"
 
 using namespace ai;
@@ -292,6 +290,8 @@ bool DebugAction::HandleShowNode(Event& event, Player* requester, const std::str
             for (auto p : ppath)
             {
                 Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 20000.0f);
+                if (!wpCreature)
+                    continue;
                 //addAura(246, wpCreature);
                 units.push_back(wpCreature->getObjectGuid());
 

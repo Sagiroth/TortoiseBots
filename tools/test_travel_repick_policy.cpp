@@ -26,6 +26,7 @@ using ai::GIVER_REPICK_PARK_AFTER;
 using ai::TRAVEL_STARVED_PARKED_PURPOSES;
 using ai::TravelSearchesStarved;
 using ai::TravelStarvedParkKeys;
+using ai::TravelMeshSieveApplies;
 using ai::HandInTripProgressed;
 using ai::HAND_IN_PROGRESS_STEP_YD;
 
@@ -164,6 +165,11 @@ int main()
     CHECK(!ai::TravelCooldownParksPurpose(false, true));
     CHECK(!ai::TravelCooldownParksPurpose(false, false));
     CHECK(ai::TRAVEL_COOLDOWN_PARK_SECONDS == 5 * 60);
+    // The cooldown park files under the key the request gate reads back: an
+    // order leg's "guild order" purpose, not the numeric grind id (4096).
+    CHECK(ai::TravelCooldownParkKey(true, 4096) == "guild order");
+    CHECK(ai::TravelCooldownParkKey(false, 4096) == "4096");
+    CHECK(ai::TravelCooldownParkKey(false, 64) == "64");
     std::cout << "  [PASS] cooldown parks the purpose only for never-arrived pool trips\n";
 
     // Giver re-pick loop: the 1st and 2nd consecutive same-quest picks ride
@@ -221,6 +227,37 @@ int main()
     }
     std::cout << "  [PASS] hand-in progress resets on a 5 yd new best only\n";
 
+    // Mesh sieve scope: every walkable purpose takes it, fishing stays out
+    // (water by design). Purpose ids mirror TravelDestinationPurpose
+    // (Vendor 512, GatherFishing 131072, Grind 4096, quest giver/taker live
+    // under other bits).
+    {
+        constexpr uint32_t fishing = 131072;
+        CHECK(!TravelMeshSieveApplies(fishing, fishing));
+        CHECK(TravelMeshSieveApplies(512, fishing));
+        CHECK(TravelMeshSieveApplies(4096, fishing));
+        CHECK(TravelMeshSieveApplies(256, fishing));
+        CHECK(TravelMeshSieveApplies(1024, fishing));
+        CHECK(TravelMeshSieveApplies(64, fishing));
+    }
+    std::cout << "  [PASS] mesh sieve covers every purpose but fishing\n";
+
+
+    // Short-hop TRAVEL floor: a close-range trip budgets ~4 s (one move
+    // visit), so failing dispatch times it out before the 6-fail drop can
+    // engage. The floor holds it at 30 s; far trips keep their clock.
+    {
+        using ai::TRAVEL_SHORT_HOP_FLOOR_MS;
+        using ai::TravelStatusTravelMsFloor;
+        CHECK(TRAVEL_SHORT_HOP_FLOOR_MS == 30000);
+        CHECK(TravelStatusTravelMsFloor(4400) == 30000);
+        CHECK(TravelStatusTravelMsFloor(10400) == 30000);
+        CHECK(TravelStatusTravelMsFloor(29999) == 30000);
+        CHECK(TravelStatusTravelMsFloor(30000) == 30000);
+        CHECK(TravelStatusTravelMsFloor(31600) == 31600);
+        CHECK(TravelStatusTravelMsFloor(120000) == 120000);
+    }
+    std::cout << "  [PASS] short-hop TRAVEL clock holds the drop window\n";
     std::cout << "travel repick policy: OK\n";
     return 0;
 }

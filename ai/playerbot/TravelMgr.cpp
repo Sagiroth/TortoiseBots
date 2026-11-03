@@ -1,4 +1,6 @@
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 #include "playerbot/policy/travel/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/policy/pull/PullRegenPolicy.h"
@@ -19,6 +21,7 @@
 #include "TravelNode.h"
 #include "PlayerbotAI.h"
 #include "playerbot/RandomBotFacade.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
 #include "ObjectAccessor.h"
 #include "Formulas.h"
 
@@ -60,6 +63,7 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
     // Snapshot here so destination filtering (async, off-tick) cannot block an
     // owned/hired bot from vendoring or repairing next to its player.
     masterlessRandom = sRandomBotFacade.IsFreeBot(player) && !ai->HasRealPlayerMaster();
+    hasRealPlayerMaster = ai->HasRealPlayerMaster();
     focusList = AI_VALUE(focusQuestTravelList, "focus travel target");
 
     for (auto& [valueName, value] : boolValues)
@@ -70,6 +74,23 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
 
     for (auto& [valueName, value] : uint32Values)
         value = AI_VALUE(uint32, valueName);
+
+    // Order mode: a Working farm order carries its item and planned zone so
+    // destination gates apply the order's own rules to its sources. One
+    // store lookup; unguilded bots never touch the lock.
+    if (player->GetGuildId())
+    {
+        auto [farmItem, farmZone] = ai::GuildOrderFarmItemFor(player);
+        if (farmItem && farmZone)
+            SetOrderMode(farmItem, farmZone);
+        // A mail destination stays reachable while the order's supply item
+        // waits in the mailbox: the outgrown veto in RpgTravelDestination
+        // has no capital exemption for game objects, so it would drop every
+        // mailbox in an outleveled zone. The Gates read this through
+        // IsOrderMailbox, same snapshot discipline as the farm item above.
+        if (ai::GuildOrderMailWaiting(player))
+            SetOrderMailbox();
+    }
 }
 
 std::string EntryTravelDestination::GetShortName() const
@@ -566,12 +587,23 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
 
+        // A guild-order mailbox has no faction to judge, and a camp of
+        // higher-level hostiles around one is a death loop: the errand is
+        // never worth it, so its zone may not sit above the bot's level.
+        if (GetPurpose() == TravelDestinationPurpose::Mail && info.IsOrderMailbox() &&
+            destAreaLevel > (int32)info.GetLevel())
+            return false;
+
         // Outgrown services: skip NPCs in zones the bot outlevels by 10+, unless
         // the destination zone is a capital (class trainers, AH and bank live
-        // there). Autonomous masterless random bots only: an owned/hired bot
+        // there). A guild-order mailbox is exempt: a bought reagent waits in the
+        // mail wherever the auction delivered it, and capitals hold no monopoly
+        // on mailboxes, so the capital carve-out never covers this errand.
+        // Autonomous masterless random bots only: an owned/hired bot
         // with its player must still vendor/repair anywhere. Unknown area ids
         // fail closed (keep the destination).
-        if (info.IsMasterlessRandom() && sPlayerbotAIConfig.leaveOutgrownZones &&
+        bool const orderMailbox = GetPurpose() == TravelDestinationPurpose::Mail && info.IsOrderMailbox();
+        if (!orderMailbox && info.IsMasterlessRandom() && sPlayerbotAIConfig.leaveOutgrownZones &&
             destAreaLevel > 0 && destAreaLevel + 10 < (int32)info.GetLevel())
         {
             uint32 destZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
@@ -733,6 +765,22 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
 
 bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    // Order mode: an order source of the carried item skips the leisure
+    // gates (vendor trip, grind band, prey gold, closest-point level,
+    // outgrown) and applies the order's own gates instead: planner usable
+    // source, level + 3, skill, planned zone. Elite stays.
+    if (TortoiseBots::GuildOrders::OrderModeSkipsGates(info.IsOrderMode(), GetEntry() > 0))
+    {
+        CreatureInfo const* orderInfo = GetCreatureInfo();
+        if (!orderInfo)
+            return false;
+        if (orderInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
+            return false;
+        return ai::GuildOrderEntryUsableFor(info.GetOrderItem(), GetEntry(), info.GetLevel(),
+            uint32_t(info.GetTeam()), info.GetOrderZone(), info.GetCurrentSkill(SKILL_SKINNING),
+            info.GetCurrentSkill(SKILL_SKINNING) > 0);
+    }
+
     // The old veto read the cached "should sell" && "can sell" pair, which a fresh
     // pool bot satisfies with one grey pelt in its bags: the next grind search
     // found nothing, so the stranded beginner kept its empty result and its NPC.
@@ -972,6 +1020,68 @@ std::string BossTravelDestination::GetTitle() const
 
 bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    if (GetPurpose() == TravelDestinationPurpose::SpellFocus)
+    {
+        // Anvils, forges and cooking fires need no skill: the recipe's own
+        // focus id selects the entries, so only the level/distance gates
+        // below apply.
+        GameObjectInfo const* goInfo = GetGoInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_SPELL_FOCUS)
+            return false;
+
+        WorldPosition* focusPoint = GetClosestPoint(info.getPosition());
+        if (focusPoint)
+        {
+            int32 destAreaLevel = focusPoint->GetAreaLevel();
+            if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+                return false;
+
+            if (info.GetLevel() <= 5 && focusPoint->distance(info.getPosition()) > 1500.0f)
+                return false;
+        }
+
+        return true;
+    }
+
+    // Order mode: an order source of the carried item skips the leisure
+    // gates (skill-up cap, grey, closest-point level, outgrown) and
+    // applies the order's own gates instead. Fish sources route to fishing
+    // spots in the planned zone.
+    bool const orderSource = GetEntry() < 0 ||
+        (GetPurpose() == TravelDestinationPurpose::GatherFishing && info.GetOrderItem());
+    if (TortoiseBots::GuildOrders::OrderModeSkipsGates(info.IsOrderMode(), orderSource))
+    {
+        uint32_t skillValue = 0;
+        bool hasSkill = false;
+        // A fishing spot is water, not a locked object: its skill is fishing.
+        if (GetPurpose() == TravelDestinationPurpose::GatherFishing)
+        {
+            skillValue = info.GetCurrentSkill(SKILL_FISHING);
+            hasSkill = skillValue > 0;
+        }
+        else if (GameObjectInfo const* goInfo = GetGoInfo())
+        {
+            if (LockEntry const* lockInfo = sLockStore.LookupEntry(goInfo->GetLockId()))
+            {
+                for (int i = 0; i < 8; ++i)
+                {
+                    if (lockInfo->Type[i] != LOCK_KEY_SKILL)
+                        continue;
+                    if (uint32_t lockSkill = SkillByLockType(LockType(lockInfo->Index[i])))
+                    {
+                        skillValue = info.GetCurrentSkill((SkillType)lockSkill);
+                        hasSkill = skillValue > 0;
+                        break;
+                    }
+                }
+            }
+        }
+        return ai::GuildOrderEntryUsableFor(info.GetOrderItem(), GetEntry(), info.GetLevel(),
+            uint32_t(info.GetTeam()), info.GetOrderZone(), skillValue, hasSkill);
+    }
+    if (info.IsOrderMode())
+        return false;
+
     uint32 skillId = SKILL_NONE;
     uint32 reqSkillValue = 0;
 
@@ -1134,6 +1244,9 @@ std::string GatherTravelDestination::GetTitle() const {
             case TravelDestinationPurpose::GatherHerbalism:
                 out << "gather from ";
                 break;
+            case TravelDestinationPurpose::SpellFocus:
+                out << "craft at ";
+                break;
         }
 
         out << ChatHelper::formatWorldEntry(GetEntry());
@@ -1209,7 +1322,12 @@ void TravelTarget::SetStatus(TravelStatus status) {
         statusTime = HOUR *  1000;
         break;
     case TravelStatus::TRAVEL_STATUS_TRAVEL:
-        statusTime = GetMaxTravelTime() * 2 + sPlayerbotAIConfig.maxWaitForMove;
+        // Short-hop floor (TravelStatusTravelMsFloor): a trip picked a few
+        // yards out used to budget ~4 s - one move visit - so failing
+        // dispatch timed it out before the 6-fail drop could engage. Far
+        // trips keep their computed clock.
+        statusTime = (uint32)ai::TravelStatusTravelMsFloor(
+            (std::int64_t)GetMaxTravelTime() * 2 + sPlayerbotAIConfig.maxWaitForMove);
         break;
     case TravelStatus::TRAVEL_STATUS_WORK:
         statusTime = tDestination->GetExpireDelay();
@@ -1322,6 +1440,10 @@ namespace
     // bot's level band, so the spot can never come back and the bot must walk on. The
     // band test is the same one the destination filter uses - this only asks whether
     // the level window is the reason (see the other gates in IsPossible).
+    // Order mode farms where the source lives, however low the zone: the order
+    // planner vetted the level itself (SourceLevelFits, mob <= bot + 3), and
+    // expiring an order-mode grind on the leisure band would drop every wool
+    // mob a level-40 bot farms for its order.
     bool GrindSpotOutgrown(TravelDestination* destination, Player* bot)
     {
         GrindTravelDestination* grind = dynamic_cast<GrindTravelDestination*>(destination);
@@ -1330,6 +1452,8 @@ namespace
             return false;
 
         PlayerTravelInfo info(bot);
+        if (info.IsOrderMode())
+            return false;
 
         return !GrindLevelFits(GetGrindLevelBand((uint32)info.GetLevel(), info.GetUint8Value("durability"), info.IsMasterlessRandom()),
             (int32)grind->GetCreatureInfo()->level_max);
@@ -1384,6 +1508,14 @@ void TravelTarget::CheckStatus()
             }
 
             ai->TellDebug(ai->GetMaster(), "The target is starting to work because the destination has been reached.", "debug travel");
+            // A new WORK stay starts its own empty-stay clock: the anchor below
+            // belongs to the previous trip. Without a clear here a trip that
+            // arrives while the old stay's anchor is armed inherits an
+            // already-aged clock and the workidle release fires seconds later
+            // (live 2026-11-01: most sub-30 s workidle kills were GenericRpg/AH
+            // trips arriving into a just-vacated stay). Pure key in
+            // WorkIdlePolicy.h; the caller only clears it.
+            ai->GetAiObjectContext()->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Set(time_t(0));
             SetStatus(TravelStatus::TRAVEL_STATUS_WORK);
             return;
         }
@@ -1475,9 +1607,22 @@ void TravelTarget::CheckStatus()
                 ai::TravelCooldownParksPurpose(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
                 GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL))
             {
-                std::string const parkKey = std::to_string(static_cast<uint32>(tDestination->GetPurpose()));
-                context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
-                context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + ai::TRAVEL_COOLDOWN_PARK_SECONDS);
+                bool orderTarget = false;
+                for (std::string const& condition : travelConditions)
+                    if (condition == "has guild travel order" || condition == "has guild order delivery")
+                        orderTarget = true;
+                // An order leg that ended (its conditions flipped) is not a dead
+                // spot: the next leg, often the delivery, shares the order's
+                // purpose and must not wait. A dead order spot parks briefly.
+                if (!orderTarget || destinationInactive)
+                {
+                    std::string const parkKey = ai::TravelCooldownParkKey(orderTarget,
+                        static_cast<uint32>(tDestination->GetPurpose()));
+                    time_t const parkFor = orderTarget ? time_t(TortoiseBots::GuildOrders::kOrderLegParkSeconds) :
+                        ai::TRAVEL_COOLDOWN_PARK_SECONDS;
+                    context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
+                    context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + parkFor);
+                }
             }
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             return;
@@ -1493,11 +1638,20 @@ void TravelTarget::CheckStatus()
     // mod-playerbots shape (GO_GRIND/WANDER_NPC return to IDLE with no
     // target instead of holding). Both signals are already-cached engine
     // reads ("grind target" 2 s, core attacker set + combat flag free), so
-    // no DB hit, world scan or graph rebuild here. Pool upkeep bots only;
-    // owned/hired bots keep the full WORK clock.
-    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+    // no DB hit, world scan or graph rebuild here. Fishing never releases:
+    // its WORK is a cast wait (no prey, no attackers by design), so the
+    // two signals always read empty at a fish spot. Pool upkeep bots only;
+    // owned/hired bots keep the full WORK clock. A guild order trip never
+    // releases here either: its leg has its own deadlines, and parking the
+    // AH purpose would end the order's auction leg on the next empty search.
+    bool orderTrip = false;
+    for (std::string const& condition : travelConditions)
+        if (condition == "has guild travel order" || condition == "has guild order delivery")
+            orderTrip = true;
+    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK && !orderTrip &&
         !IsForced() && !IsGroupCopy() &&
-        sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster())
+        sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
+        (!tDestination || tDestination->GetPurpose() != TravelDestinationPurpose::GatherFishing))
     {
         AiObjectContext* workContext = ai->GetAiObjectContext();
         Unit* grindPrey = workContext->GetValue<Unit*>("grind target")->Get();
@@ -1843,7 +1997,7 @@ void TravelMgr::LoadQuestTravelTable()
         if (guidpMap.find(entry) == guidpMap.end())
             continue;
 
-        for (uint32 purposeFlagNr = 6; purposeFlagNr < 18; purposeFlagNr++)
+        for (uint32 purposeFlagNr = 6; purposeFlagNr < 20; purposeFlagNr++)
         {
             TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << purposeFlagNr);
             if (purpose & (uint32)purposeFlag)
@@ -1860,6 +2014,7 @@ void TravelMgr::LoadQuestTravelTable()
                 case TravelDestinationPurpose::GatherSkinning:
                 case TravelDestinationPurpose::GatherMining:
                 case TravelDestinationPurpose::GatherHerbalism:
+                case TravelDestinationPurpose::SpellFocus:
                     dests.push_back(AddDestination<GatherTravelDestination>(entry, purposeFlag));
                     break;
                 case TravelDestinationPurpose::Grind:
@@ -2624,6 +2779,7 @@ void TravelMgr::LoadFishLocations()
 
     fishPoints.clear();
     fishMap.clear();
+    fishSpotsByZone.clear();
     destinationMap[TravelDestinationPurpose::GatherFishing].clear();
 
     auto result = WorldDatabase.Query("SELECT `name`, `map_id`, `position_x`, `position_y`, `position_z`, `orientation`, `description` FROM `ai_playerbot_named_location` WHERE `name` LIKE 'FISH_LOCATION%'");
@@ -2671,6 +2827,7 @@ void TravelMgr::LoadFishLocations()
 
         dest->AddPoint(point);
         fishMap.AddPoint(point);
+        fishSpotsByZone[zone].emplace_back(mapId, positionX, positionY, positionZ, orientation);
 
     } while (result->NextRow());
 
@@ -2731,6 +2888,36 @@ WorldPosition* TravelMgr::GetFishSpot(WorldPosition start, bool onlyNearestGrid)
         chances = { 0, 0, 0, 100 };
 
     return fishMap.GetNextPoint(start, chances);
+}
+
+bool TravelMgr::FishZoneHasSpots(uint32 zoneId) const
+{
+    return zoneId != 0 && fishSpotsByZone.find(zoneId) != fishSpotsByZone.end();
+}
+
+bool TravelMgr::FishZoneNearestSpot(uint32 zoneId, WorldPosition const& from, WorldPosition& spot, float& distanceSq) const
+{
+    auto zone = fishSpotsByZone.find(zoneId);
+    if (zoneId == 0 || zone == fishSpotsByZone.end())
+        return false;
+
+    bool found = false;
+    for (WorldPosition const& candidate : zone->second)
+    {
+        if (candidate.getMapId() != from.getMapId())
+            continue;
+        float const dx = candidate.getX() - from.getX();
+        float const dy = candidate.getY() - from.getY();
+        float const dz = candidate.getZ() - from.getZ();
+        float const dist = dx * dx + dy * dy + dz * dz;
+        if (!found || dist < distanceSq)
+        {
+            spot = candidate;
+            distanceSq = dist;
+            found = true;
+        }
+    }
+    return found;
 }
 
 DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const
@@ -2972,7 +3159,10 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         // Ordinary Grind passes floor 0 and is unchanged.
         if (grindZoneFloor > grindMinLevel)
             grindMinLevel = grindZoneFloor;
-        if ((int32)areaLevel <= grindMinLevel)
+        // A guild order farms where its source lives, however low the zone:
+        // the order planner already vetted the level (OutgrownFloorApplies).
+        if ((int32)areaLevel <= grindMinLevel &&
+            TortoiseBots::GuildOrders::OutgrownFloorApplies(info.IsOrderMode()))
             return false;
         // Zone migration (ZoneMigratePolicy.h): a leave-errand search must
         // not land back in the zone being left. The point's zone id comes
@@ -2987,6 +3177,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         }
     }
     if ((purposeFlag & outgrownXPPurposes) && !grindZoneFloor &&
+        TortoiseBots::GuildOrders::OutgrownFloorApplies(info.IsOrderMode()) &&
         info.IsMasterlessRandom() && info.GetLevel() > 10)
     {
         uint32 pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;
@@ -3021,6 +3212,16 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         uint32 const highestNear = position.GetHighestHostileLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
         if (highestNear != 0 && ai::PointDangerous((int)highestNear, info.GetLevel()))
             return false;
+        // Elite camps: a same-band-or-above rank-1 spawn within the radius
+        // bars the point for a solo masterless pool bot (fair-fight losses:
+        // 31% of fair deaths by rank-1 killers at 2.5-4x vanilla DPS).
+        // Groups and real-player-mastered bots keep today's behaviour.
+        if (ai::EliteCampDangerApplies(info.IsMasterlessRandom(), info.HasRealPlayerMaster(), info.IsInGroup() || info.IsInRaid(), info.GetLevel()))
+        {
+            uint32 const highestEliteNear = position.GetHighestHostileEliteLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
+            if (highestEliteNear != 0 && ai::EliteCampDangerous(true, (int)highestEliteNear, info.GetLevel()))
+                return false;
+        }
     }
 
     return true;
@@ -3069,7 +3270,7 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         {
             float distance = position->distance(center);
 
-            if (distance > maxDistance)
+            if (maxDistance > 0 && distance > maxDistance)
             {
                 probeRejectDistance++;
                 if (distance > probeFarthest)
@@ -3106,6 +3307,75 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         sLog.outBasic("PARTPROBE: level %u, %u taker destinations, none survived - %u had no partition, %u no usable point; points rejected: %u by level, %u by distance (max allowed %.0f, farthest seen %u)",
             info.GetLevel(), probeTotal, probeNoPartition, probeNoPoint,
             probeRejectLevel, probeRejectDistance, maxDistance, probeFarthest);
+
+    sTravelMgr.GetPartitionsLock(false);
+
+    return pointMap;
+}
+
+PartitionedTravelList TravelMgr::GetOrderZonePartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, uint32 zoneId, bool onlyPossible, float maxDistance) const
+{
+    sTravelMgr.GetPartitionsLock();
+
+    PartitionedTravelList pointMap;
+    if (zoneId == 0 || distancePartitions.empty() || entries.empty())
+    {
+        sTravelMgr.GetPartitionsLock(false);
+        return pointMap;
+    }
+    DestinationList destinations = GetDestinations(info, purposeFlag, entries, onlyPossible, maxDistance);
+
+    unsigned seed = GetStableTravelSelectionSeed(info.GetIdentitySeed(), purposeFlag,
+        center.GetMapId(), center.getX(), center.getY());
+    std::shuffle(destinations.begin(), destinations.end(), std::default_random_engine(seed));
+
+    for (auto& dest : destinations)
+    {
+        std::vector<WorldPosition*> points = dest->GetPoints();
+        unsigned const pointSeed = MixTravelRouteSeed(seed ^ uint32(points.size() + 1));
+        std::shuffle(points.begin(), points.end(), std::default_random_engine(pointSeed));
+
+        // Nearest valid in-zone point per distance band: the band walk (not
+        // just the closest band) is what keeps a planned zone servable when
+        // another zone's spawns of the same entry sit nearer the bot. Cheap
+        // tests first: distance and band are plain math, while the area and
+        // level checks can load terrain, so they only run for a point that
+        // would beat its band's best.
+        std::map<uint32, TravelPoint> bestByBand;
+        for (auto& position : points)
+        {
+            if (!position)
+                continue;
+            float distance = position->distance(center);
+            if (maxDistance > 0 && distance > maxDistance)
+                continue;
+            if (info.GetLevel() <= 5 && distance > 1500.0f)
+                continue;
+            float sqDist = distance * distance;
+            uint32 band = 0;
+            for (uint32 partition : distancePartitions)
+            {
+                uint32 sqPartition = partition * partition;
+                if (partition == distancePartitions.back() || sqDist < float(sqPartition))
+                {
+                    band = sqPartition;
+                    break;
+                }
+            }
+            auto found = bestByBand.find(band);
+            if (found != bestByBand.end() && distance >= std::get<2>(found->second))
+                continue;
+            AreaTableEntry const* area = position->GetArea();
+            uint32 pointZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (pointZoneId != zoneId)
+                continue;
+            if (!IsLocationLevelValid(*position, info, purposeFlag))
+                continue;
+            bestByBand[band] = TravelPoint(dest, position, distance);
+        }
+        for (auto& [band, point] : bestByBand)
+            pointMap[band].push_back(point);
+    }
 
     sTravelMgr.GetPartitionsLock(false);
 

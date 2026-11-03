@@ -7,6 +7,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/strategy/values/PossibleRpgTargetsValue.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "playerbot/strategy/values/FishValues.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -234,6 +235,12 @@ bool MoveToRpgTargetAction::Execute(Event& event)
 
 bool MoveToRpgTargetAction::isUseful()
 {
+    // Order fishing holds its spot: at WORK on a guild fishing leg the rpg
+    // walk and the fish move take turns stepping a few yards each way, and
+    // the cast below never runs (live: Axebane paced a 10 yd box for
+    // minutes between casts). Stand down while the order fishes.
+    if (ai::IsOrderFishing(ai))
+        return false;
     GuidPosition guidP = AI_VALUE(GuidPosition, "rpg target");
     WorldPosition oldPosition = guidP;
 

@@ -2509,10 +2509,6 @@ bool BGTactics::selectObjective(bool reset)
 
         if (isDead && (botSelectedObjectives[botGUID] != nullptr))
         {
-            // Issue #1108: the objective reset is functional, the callout in
-            // /say follows AiPlayerbot.EnableBroadcasts.
-            if (sPlayerbotAIConfig.enableBroadcasts)
-                bot->Say("I'm dead, guess I'll reset my objective.", LANG_UNIVERSAL);
             botSelectedObjectives[botGUID] = nullptr; // Reset objective if we die... maybe more lucky elsewhere -- wait I don't think this is executed on dead bots so it's never triggered? Try something else
             botObjectiveSelectionTime[botGUID] = 0;
         }

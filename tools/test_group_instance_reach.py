@@ -57,6 +57,8 @@ Unit* GetMaster(){return nullptr;}
 const int UNIT_STAT_FLEEING=1, UNIT_STAT_CONFUSED=2;
 struct WorldTimer { static uint32 getMSTime(){return 20000;} };
 bool TargetCannotBeReached(Unit* t){return t->unreachable;}
+// Out of melee and spell reach at 40 yd (ReachTargetAction::IsWithinReach).
+bool IsWithinReach(Unit*){return false;}
 bool timedOut(Unit* bot, Unit* target, uint32 noLosSinceMs, uint32 stoodSinceMs, bool inLos=true) {
  int noLosTarget=42; float noLosStartX=0,noLosStartY=0,noLosBestDist=40;
  float distanceToTarget=40,range=20;

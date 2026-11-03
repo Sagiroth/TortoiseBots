@@ -168,6 +168,25 @@ inline bool AccountUsernameHasPrefix(std::string const& username, std::string co
         loweredUser.compare(0, loweredPrefix.size(), loweredPrefix) == 0;
 }
 
+// What the prefix-match scan should do after its COUNT(*) probe. The core
+// returns a null query result for a SELECT that matched zero rows, exactly as
+// for a failed query (which it logs itself), so the row scan cannot tell an
+// empty account table from a database that did not answer. A COUNT(*) probe is
+// answered with exactly one row on success, so it separates the two.
+enum class AccountScanVerdict
+{
+    Failed,   // probe unanswered: the account list is unknown, report failure
+    Empty,    // probe answered zero: an empty match list is a normal result
+    Populate, // probe answered non-zero: run the row scan
+};
+
+inline AccountScanVerdict VerdictForAccountScanProbe(bool probeAnswered, uint32_t probeCount)
+{
+    if (!probeAnswered)
+        return AccountScanVerdict::Failed;
+    return probeCount ? AccountScanVerdict::Populate : AccountScanVerdict::Empty;
+}
+
 // Short-lived confirmation challenge for `bot pool adopt confirm <challenge>`.
 // Derived from the exact previewed set (account id + stored username), so any
 // change between preview and confirmation invalidates it.

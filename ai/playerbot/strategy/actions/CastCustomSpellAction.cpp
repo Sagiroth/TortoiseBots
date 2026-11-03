@@ -1,4 +1,5 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
 #include "CastCustomSpellAction.h"
 
@@ -661,7 +662,25 @@ bool CraftRandomItemAction::Execute(Event& event)
         if (!AI_VALUE2(bool, "should craft spell", spellId))
             continue;
 
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+        // Generic skilling casts must not eat order stock: the order's own
+        // craft path (guild craft order) owns those reagents.
+        const SpellEntry* pSpellCastInfo = sServerFacade.LookupSpellInfo(spellId);
+        if (bot->GetGuildId() && pSpellCastInfo)
+        {
+            bool eatsOrderStock = false;
+            for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                if (pSpellCastInfo->ReagentCount[i] && pSpellCastInfo->Reagent[i] &&
+                    GuildOrderConsumesItem(bot, uint32(pSpellCastInfo->Reagent[i])))
+                {
+                    eatsOrderStock = true;
+                    break;
+                }
+            if (eatsOrderStock)
+                continue;
+        }
+        const SpellEntry* pSpellInfo = pSpellCastInfo;
+        if (!pSpellInfo)
+            continue;
 
         if (pSpellInfo->RequiresSpellFocus)
         {
@@ -746,6 +765,11 @@ bool DisenchantRandomItemAction::Execute(Event& event)
         {
             continue;
         }
+
+        // Order stock is never disenchanted: the keep set already shields
+        // it from the usage list, this covers the id path.
+        if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item))
+            continue;
 
         ItemQualifier itemQualifier(item);
 

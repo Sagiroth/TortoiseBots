@@ -127,7 +127,7 @@ class PlayerInPartyWiringTest(unittest.TestCase):
 
     def test_run_reads_every_player(self):
         tick = strip_comments(body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n"))
-        read = tick.index("ReadRunFacts(slot, lead, bots, facts);")
+        read = tick.index("ReadRunFacts(slot, lead, bots, facts, binding->raid);")
         players = tick.index("ReadRunPlayers(slot, commanderRaw, lead, group, bots, facts);")
         health = tick.index("TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);")
         order = tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt)")
@@ -145,9 +145,22 @@ class PlayerInPartyWiringTest(unittest.TestCase):
         self.assertIn("p.gm = IsBotAdministrator(member);", fn)
         self.assertIn("if (p.inCombat)\n            fighting.push_back(member);", fn)
         self.assertIn("ReadEngagedUnits(lead, fighting, f);", fn)
-        self.assertIn("if (fresh)\n        ReadGuardFacts(lead, bots, f, hold);", fn)
-        self.assertIn("AddPlayerAttackers(lead, fighting, f, hold);", fn)
+        self.assertIn("bool const raidBoss = TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f);", fn)
+        # This read is the one the tick's own read left undone (no bot in the fight yet), and it carries the same
+        # dead-lead cases: a raid's boss fight, or a raid's trash fight whose off-tanks pick up
+        # (DungeonRun::GuardReadMode, DungeonRun::RaidTrashOffTanks).
+        self.assertIn("bool const raidTrashOffTanks = TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f);", fn)
+        self.assertIn("if (fresh)\n        ReadGuardFacts(lead, bots, f, hold, raidBoss, raidTrashOffTanks);", fn)
+        self.assertIn("AddPlayerAttackers(lead, bots, fighting, f, hold, raidBoss);", fn)
         add = strip_comments(body(COMMANDS, "void AddPlayerAttackers(Player* lead,", "\n}\n"))
+        # A raid boss fight reads a player's attackers as ReadGuardFacts reads a bot's: around the same anchor, within
+        # kRaidBossGuardYd, with the victim's name; else around the lead bot within kGuardYd, as before.
+        self.assertIn("Player* const anchor = raidBoss ? RaidGuardAnchor(lead, bots, f) : lead;", add)
+        self.assertIn("player->GetDistance(anchor) > range", add)
+        self.assertIn("fact.distLead = anchor->GetDistance(attacker);", add)
+        self.assertIn("fact.attackable = GroupCanAttack(anchor, attacker);", add)
+        self.assertIn("fact.victimName = player->GetName();", add)
+        self.assertIn("fact.victimTank = PlayerbotAI::IsTank(player);", add)
         self.assertIn("attacker->GetVictim() != player", add)
         self.assertIn("f.partyAttackers.push_back(fact);", add)
 

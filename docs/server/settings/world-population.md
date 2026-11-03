@@ -21,13 +21,12 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.MinRandomBots` / `MaxRandomBots`](#aiplayerbotminrandombots--maxrandombots) | `500` / `500` | Sets minimum and maximum active random bot population in the world. |
 | [`AiPlayerbot.RandomBotAutologin`](#aiplayerbotrandombotautologin) | `1` | Automatically logs in random pool bots once the service starts. |
 | [`AiPlayerbot.RandomBotLoginWithPlayer`](#aiplayerbotrandombotloginwithplayer) | `0` | Delays pool bot logins until a real human player enters the world. |
-| [`AiPlayerbot.RandomBotLoginAtStartup`](#aiplayerbotrandombotloginatstartup) | `0` | Starts logging in random bots immediately at boot instead of waiting. |
+| [`AiPlayerbot.RandomBotLoginAtStartup`](#aiplayerbotrandombotloginatstartup) | `1` | Starts logging in random bots immediately at boot instead of waiting. |
 | [`AiPlayerbot.RandomBotAutoCreate`](#aiplayerbotrandombotautocreate) | `1` | Automatically generates new bot accounts and characters if below minimum. |
 | [`AiPlayerbot.RandomBotPoolReset`](#aiplayerbotrandombotpoolreset) | `off` | Controls full rebuilding and re-seeding of the managed bot pool. |
 | [`AiPlayerbot.RandomBotAccountPrefix`](#aiplayerbotrandombotaccountprefix) | `RNDBOT` | Prefix string used to name newly created managed bot pool accounts. |
 | [`AiPlayerbot.PinnedBots`](#aiplayerbotpinnedbots) | `(empty)` | Comma-separated bot character names pinned to stay online permanently. |
 | [`AiPlayerbot.RandomBotStartLevelMin` / `RandomBotStartLevelMax`](#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) | `1` / `60` | Sets level range randomly assigned to a newly seeded bot on creation. |
-| [`AiPlayerbot.DisableRandomLevels`](#aiplayerbotdisablerandomlevels) | `0` | Dead knob (read but unused); initial levels follow StartLevelMin/Max. |
 | [`AiPlayerbot.LevelLadder`](#aiplayerbotlevelladder) | `1` | Rotates online pool bots across level bands instead of flat round-robin. |
 | [`AiPlayerbot.LevelLadderBandSize`](#aiplayerbotlevelladderbandsize) | `5` | Number of character levels grouped into each ladder band. |
 | [`AiPlayerbot.LevelLadderMaxLevelShare`](#aiplayerbotlevelladdermaxlevelshare) | `10` | Maximum percentage share of total online bot population at level 60. |
@@ -42,13 +41,15 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotGroupNearby`](#aiplayerbotrandombotgroupnearby) | `0` | Allows masterless pool bots to form spontaneous questing groups together. |
 | [`AiPlayerbot.RandomBotRaidNearby`](#aiplayerbotrandombotraidnearby) | `1` | Allows masterless pool bots to form and invite nearby bots into raid groups. |
 | [`AiPlayerbot.RandomBotGuildNearby`](#aiplayerbotrandombotguildnearby) | `1` | Allows masterless pool bots to invite nearby unguilded bots into their guild. |
-| [`AiPlayerbot.InviteChat`](#aiplayerbotinvitechat) | `1` | Broadcasts group and raid invitation announcements in say or guild chat. |
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
+| [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
+| [`AiPlayerbot.ProfessionsGrowWithLevel`](#aiplayerbotprofessionsgrowwithlevel) | `1` | Pool bots get profession skill and recipes with their level. |
+| [`AiPlayerbot.BotProfessionSpecializations`](#aiplayerbotbotprofessionspecializations) | `2` | Pool bots earn profession specialization spells at the skill gate. |
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
-| [`AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`](#aiplayerbotrandombotshowhelmet--randombotshowcloak) | `1` / `1` | Dead knobs (read but unused); managed per bot with the `flag` chat command. |
+| [`AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`](#aiplayerbotrandombotshowhelmet--randombotshowcloak) | `1` / `1` | Helmet/cloak visibility for pool bots; `0` hides them on the bots' next login. |
 | [`AiPlayerbot.PoolBotTradeMode`](#aiplayerbotpoolbottrademode) | `0` | Governs whether masterless pool bots accept trade requests from players. |
 | [`AiPlayerbot.TradeActionExcludedPrefixes`](#aiplayerbottradeactionexcludedprefixes) | `RPLL_H_,DBMv4` | Chat prefixes ignored by bots so addons do not trigger trade windows. |
 | [`AiPlayerbot.TurtleMountAtLevel`](#aiplayerbotturtlemountatlevel) | `18` | Level where bots learn the custom Swift Riding Turtle slow mount. |
@@ -61,6 +62,8 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
 | [`AiPlayerbot.BotQuestLogUpkeep`](#aiplayerbotbotquestlogupkeep) | `1` | Enables autonomous quest log pruning, turn-in prioritization, and cleanup. |
+| [`AiPlayerbot.AutoDoQuests`](#aiplayerbotautodoquests) | `1` | Pool bots quest and travel on their own; off also disables guild orders. |
+| [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
 | [`AiPlayerbot.LeaveOutgrownZones`](#aiplayerbotleaveoutgrownzones) | `1` | Forces bots to travel to level-appropriate zones when outleveling an area. |
 | [`AiPlayerbot.AllowIsolatedCustomStartingZones`](#aiplayerbotallowisolatedcustomstartingzones) | `0` | Normalizes bots created in isolated custom islands to mainland start zones. |
 | [`AiPlayerbot.EnableRandomTeleports`](#aiplayerbotenablerandomteleports) | `1` | Scatters newly seeded bots to level-appropriate overworld destinations. |
@@ -70,12 +73,13 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotNamesFile`](#aiplayerbotrandombotnamesfile) | `(empty)` | Optional external text file defining custom names and name patterns. |
 | [`AiPlayerbot.RandomBotStartZoneWeights`](#aiplayerbotrandombotstartzoneweights) | `(empty)` | Custom weighting per starting zone for newly generated characters. |
 | [`AiPlayerbot.AllowRepairedTaxiPaths`](#aiplayerbotallowrepairedtaxipaths) | `0` | Disables broken client flight paths (paths 274 and 355) unless core repairs. |
+| [`AiPlayerbot.BotInstantFlight`](#aiplayerbotbotinstantflight) | `0` | Lands a bot that boards a taxi at the destination node at once (testing shortcut). |
 | [`AiPlayerbot.AmmoStacksNonHunter`](#aiplayerbotammostacksnonhunter) | `2` | Number of ammo stacks stocked for ranged warriors and rogues. |
 | [`AiPlayerbot.UseWanderAsDefaultFollowStrategy`](#aiplayerbotusewanderasdefaultfollowstrategy) | `1` | Sets masterless bots to wander freely instead of tightly following. |
 | [`AiPlayerbot.WanderMinDistance`](#aiplayerbotwandermindistance) | `5.0` (built in) | Minimum yard radius bots roam from anchor while running wander strategy. |
 | [`AiPlayerbot.WanderMaxDistance`](#aiplayerbotwandermaxdistance) | `50.0` (built in) | Maximum yard radius bots roam from anchor while running wander strategy. |
 | [`AiPlayerbot.AutoLearnQuestSpells`](#aiplayerbotautolearnquestspells) | `1` | Automatically teaches spells rewarded by completed class quests. |
-| [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `0` | Grants free trainer spell sweeps on level-up for random pool bots. |
+| [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `1` | Grants free trainer spell sweeps on level-up for random pool bots. |
 | [`AiPlayerbot.AutoLearnDroppedSpells`](#aiplayerbotautolearndroppedspells) | `0` | Grants free dungeon and raid book spells to random pool bots at level 60. |
 | [`AiPlayerbot.RandomGearUpgradeEnabled`](#aiplayerbotrandomgearupgradeenabled) | `1` (built in) | Seeds newly created pool bots with level-appropriate starter equipment. |
 | [`AiPlayerbot.RandomGearWhitelist`](#aiplayerbotrandomgearwhitelist) | `(empty)` (built in) | Comma-separated whitelist of item IDs pool bots are allowed to equip. |
@@ -143,7 +147,7 @@ When set to `0`, the pool logs in independently according to `RandomBotAutologin
 
 ### `AiPlayerbot.RandomBotLoginAtStartup`
 Starts logging in the configured random bot pool immediately on server startup instead of waiting for player activity.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -220,17 +224,6 @@ Defines the level range randomly assigned to a newly created pool bot on its ver
 Newly generated random bots receive a random level between `RandomBotStartLevelMin` and `RandomBotStartLevelMax` on their initial login, before starter skills, professions, and starter equipment kits are initialized. This ensures a fresh pool populates every level bracket immediately across the game world.
 
 To test specific level brackets, you can narrow this range (for example `10` / `15`). To start all bots at level 1 and have them level naturally, set both keys to `1`.
-
-</details>
-
-### `AiPlayerbot.DisableRandomLevels`
-Historical switch intended to force all new bots to level 1.
-**Default:** `0` · **Values:** `0` off, `1` on (dead knob) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Currently has no effect in the bot engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)). Initial bot levels are seeded strictly by `RandomBotStartLevelMin` and `RandomBotStartLevelMax`.
 
 </details>
 
@@ -314,7 +307,7 @@ Maximum duration in seconds a random bot remains logged into the world before se
 
 Configures the upper session duration limit (default 6 hours) an autonomous pool bot may stay online before being cycled out for another character from the offline pool.
 
-Requires `AiPlayerbot.RandomBotTimedLogout = 1`. Note that `MinRandomBotInWorldTime` has no effect in the engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)).
+Requires `AiPlayerbot.RandomBotTimedLogout = 1`.
 
 </details>
 
@@ -416,19 +409,6 @@ When enabled, bot guild members will periodically invite nearby guildless bots i
 
 </details>
 
-### `AiPlayerbot.InviteChat`
-Announces group and raid invitations in say or guild chat.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-When enabled, bots announce their group and raid invitations with chat lines. Guild invites use this channel directly; the spoken join line additionally requires EnableBroadcasts = 1.
-
-Announcements only trigger when inviting a real human player. Bot-to-bot invitations suppress chat announcements to prevent starting zones from being flooded with chatter during pool population.
-
-</details>
-
 ### `AiPlayerbot.RandomBotFormGuild`
 Allows autonomous random bots to buy guild charters, collect signatures from other bots, and found guilds.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -452,6 +432,45 @@ Maximum membership limit of bot members allowed in a single autonomous bot guild
 Caps the total number of bots that can join a single autonomous bot guild.
 
 If a guild exceeds this membership cap, bots will begin leaving the guild autonomously to maintain reasonable guild sizes and distribute bots across multiple guilds.
+
+</details>
+
+### `AiPlayerbot.TalentsInPublicNote`
+Bots write their spec, talents and both primary professions with skill into their guild public note.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+A guilded bot shows a line like `Arms 31/20/0 Mi245 BS230`: a short spec label, spent talent points per tree, then each primary profession as a two-letter abbreviation plus skill value (Al, BS, En, Eg, Hb, LW, Mi, Sk, Ta). Short labels keep spec, talents and both professions inside the 31-character guild note cap for every spec.
+
+The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Writing the bot's own public note is a server feature: no guild rank right is needed, and bots never read or write officer notes.
+
+</details>
+
+### `AiPlayerbot.ProfessionsGrowWithLevel`
+Pool bots get profession skill of level x 5 and every trainer recipe they qualify for.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this on, a pool bot's profession pair keeps pace with its level: skill around level x 5 and all qualifying trainer recipes granted automatically.
+
+With this off, bots still get their profession pair at level 5, but only as the real rank-1 Apprentice of each profession (skill 1, no automatic recipes). Further ranks and recipes come only from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
+
+Use at your own risk: bots levelling a profession from 1 to 300 on their own has not been tested.
+
+</details>
+
+### `AiPlayerbot.BotProfessionSpecializations`
+Pool bots with a profession at the specialization gate earn its specialization spells directly (Engineering Goblin/Gnomish at skill 200, Blacksmithing Armorsmith/Weaponsmith plus Axe/Hammer/Swordsmith at 200, Leatherworking Dragonscale/Elemental/Tribal at 225, Turtle Jewelcrafting Gemology/Goldsmith at 225): the quest chains players use are exclusive per branch, but bots never run them, and the core enforces nothing between branches, so knowing all of them together is safe. Spec-gated recipes land the same way, gated by the matching spec spell. Only pool bots; real players are never touched. No tailoring, alchemy or enchanting specialization spells exist in this core's data, so those professions get nothing.
+**Default:** `2` · **Values:** `0` off, `1` one branch per bot (even/odd guid, never flips), `2` all branches · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The grant runs on every profession skill pass (seed, level-up, login), so a bot that skills up to the gate earns the spells without visiting the quest chain. With `ProfessionsGrowWithLevel` on, the spec-gated schematics, patterns and plans land too; organic bots (`ProfessionsGrowWithLevel` off) earn them from the world instead.
 
 </details>
 
@@ -493,13 +512,13 @@ Set to `1` to allow all masterless open-world pool bots to greet players.
 </details>
 
 ### `AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`
-Historical switches intended to toggle visual display of helmets and cloaks.
-**Default:** `1` / `1` · **Values:** `0` hide, `1` show (dead knobs) · **Restart:** needed
+Controls whether pool bots wear their helmet and cloak.
+**Default:** `1` / `1` · **Values:** `0` hide, `1` show · **Restart:** needed (takes effect on the bots' next login after restart; no database reset required)
 
 <details>
 <summary>How it works in detail</summary>
 
-Currently has no effect in the bot engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)). Bot character display flags for head and cloak are managed per bot with the `flag helm|cloak on|off|toggle` chat command.
+Set to `0` and pool bots (the masterless bots of the shared pool) hide their helmet and/or cloak on their next login. The setting does not touch other characters: hired companions and a player's own bots keep the display flags of the character, which individual players manage per character with the `flag helm|cloak on|off|toggle` chat command. The setting lives in the character's flags, so it survives restarts and follows the bot.
 
 </details>
 
@@ -666,6 +685,26 @@ When enabled, masterless pool bots actively manage their quest logs:
 
 Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
 
+### `AiPlayerbot.AutoDoQuests`
+Pool bots pick up quests on their own and try to complete them.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this off, pool bots get no quest travel data and never pick the travel, fishing-trip or RPG strategies, so they stop questing and roaming on their own. Guild orders need the same travel data: with this off the order source index stays empty and `.bot order` answers `disabled`. See [Guild Orders](../../play/guild-orders.md).
+
+</details>
+
+### `AiPlayerbot.GuildOrderBotRank`
+Whether bots share one guild rank for guild bank access.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When on, every bot in a guild with a real player member holds the guild's bot rank (by default the rank below the guild master, or the rank picked with `.bot order rank`), so the guild master can open bank tabs to one rank for all bots. New bots join at that rank at once and bots already in the guild are moved there once when the server starts; all-bot guilds keep their own ranks. When off, ranks stay as they are and `.bot order access` answers `TBM:ORDER_ACCESS|-|-|-|-|0|0` (the addon shows that the server does not manage bot ranks). Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
+
 </details>
 
 ### `AiPlayerbot.LeaveOutgrownZones`
@@ -787,6 +826,17 @@ Leaving this at `0` prevents bots from taking these routes while leaving all sta
 
 </details>
 
+### `AiPlayerbot.BotInstantFlight`
+Testing shortcut: a bot that boards a taxi lands on the destination flight-master node at once instead of flying the route.
+**Default:** `0` · **Values:** `0` fly the route, `1` land at once · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The bot still boards normally (fare paid, `TaxiFlight` logged as today), then skips the flight and appears at the destination node, continuing its errand from there. Real players always fly. Leave at `0` outside testing.
+
+</details>
+
 ### `AiPlayerbot.AmmoStacksNonHunter`
 Number of 200-round ammunition stacks stocked by warriors and rogues using ranged weapons.
 **Default:** `2` · **Values:** integers 1..10 · **Restart:** needed
@@ -846,7 +896,7 @@ Automatically teaches abilities rewarded by completed class quests (such as pala
 
 ### `AiPlayerbot.AutoLearnTrainerSpells`
 Grants random pool bots free class trainer spells immediately upon leveling up.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

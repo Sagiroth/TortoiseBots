@@ -14,12 +14,16 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/policy/pull/PullFiringPolicy.h"
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
+#include "playerbot/policy/combat/EvadeChasePolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/BossTacticsStand.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
 namespace ai
 {
+    bool PatchwerkDpsOpeningHold(PlayerbotAI* ai);
+
     class ReachTargetAction : public MovementAction, public Qualified
     {
     public:
@@ -96,8 +100,11 @@ namespace ai
         }
 
         virtual bool Execute(Event& event) override
-		{
+        {
             Unit* target = GetTarget();
+            // Patchwerk: DPS do not walk in during the opening hold.
+            if (target && target->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai))
+                return false;
             if (target)
             {
                 UpdateMovementState();
@@ -134,7 +141,44 @@ namespace ai
                         stoodDist = distanceToTarget;
                         stoodTarget = target->getObjectGuid();
                     }
+                    // Allow the scheduled movement delay before declaring a gap:
+                    // WaitForReach can deliberately sleep longer than two seconds.
+                    // Time spent fighting/casting between attempts is not headway.
+                    bool const reachIdleGap = lastExecuteMs == 0 ||
+                        uint64(nowMs - lastExecuteMs) > uint64(GetDuration()) + kStandResetMs;
+                    if (reachIdleGap || held)
+                        noLosTarget = ObjectGuid();
                     lastExecuteMs = nowMs;
+                }
+
+                // R2 (fair-fight losses): never take the first step after a
+                // mob that is evading — it is walking home invulnerable, and
+                // following drags the fight back into its camp (EvadeProbe
+                // homedist p90 99 yd). The stand-still clock above already
+                // ran, so the 10 s no-move backstop keeps ticking; the 15 s
+                // no-headway give-up below stays the wedge backstop. A mob
+                // the core merely flags unreachable is still damaging, so it
+                // keeps the order and falls through to the movement and the
+                // give-up: dropping it left the bot standing in combat
+                // without a swing while "has attackers" held it there.
+                if (target->IsCreature())
+                {
+                    Creature* creature = static_cast<Creature*>(target);
+                    if (ai::ShouldNotChaseEvader(creature->IsInEvadeMode()))
+                    {
+                        float homeX, homeY, homeZ, homeO;
+                        creature->GetRespawnCoord(homeX, homeY, homeZ, &homeO);
+                        float combatStartX, combatStartY, combatStartZ;
+                        creature->GetCombatStartPosition(combatStartX, combatStartY, combatStartZ);
+                        ai::EvadeChaseState state;
+                        state.evading = true;
+                        state.unreachable = creature->IsEvadeBecauseTargetNotReachable();
+                        state.homeDistanceYd = creature->GetDistance2d(homeX, homeY);
+                        state.combatStartDistanceYd = creature->GetDistance2d(combatStartX, combatStartY);
+                        if (ai::ShouldDropDraggedTarget(state))
+                            DropAttackTarget();
+                        return false;
+                    }
                 }
 
                 if (range > 0.0f)
@@ -218,7 +262,8 @@ namespace ai
                     Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
                     bool const hitsOurSide = victim == bot || (target->IsCreature() && victimPlayer &&
                         (bot->IsInSameRaidWith(victimPlayer) || victimPlayer == GetMaster()));
-                    bool const noHeadway = !runner && nowMs - noLosSinceMs >= kNoHeadwayMs &&
+                    bool const needsReach = cannotBeReached || !inLos || !IsWithinReach(target);
+                    bool const noHeadway = needsReach && !runner && nowMs - noLosSinceMs >= kNoHeadwayMs &&
                         (!hitsOurSide || !inLos || cannotBeReached);
                     bool const outOfReach = range > 0.0f
                         ? distanceToTarget > range * 1.4f
@@ -461,6 +506,33 @@ namespace ai
         // distance on friendly targets (e.g. Hand of Protection/Freedom).
         virtual bool RequiresAttackableTarget() const { return false; }
 
+        bool IsWithinReach(Unit* target)
+        {
+            // GetSpellRange's combat-index result is only the caster's reach.
+            // Match the core melee spell envelope, including the target's reach
+            // and range modifiers (Spell::CheckRange), instead of chasing into it.
+            if (!spellName.empty())
+            {
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(
+                    AI_VALUE2(uint32, "spell id", spellName));
+                if (spell && spell->rangeIndex == SPELL_RANGE_IDX_COMBAT)
+                {
+                    float modifier = 1.0f;
+                    if (Player* owner = bot->GetSpellModOwner())
+                    {
+                        float base = ATTACK_DISTANCE;
+                        modifier += owner->ApplySpellMod(spell->Id, SPELLMOD_RANGE, base);
+                    }
+                    modifier += bot->GetTotalAuraRangeModifier(SPELL_AURA_MOD_ATTACK_AND_SPELL_RANGE) /
+                        1000.0f / ATTACK_DISTANCE;
+                    return bot->CanReachWithMeleeSpellAttack(target, modifier);
+                }
+            }
+            if (range <= 0.0f && RequiresAttackableTarget())
+                return bot->CanReachWithMeleeAutoAttack(target);
+            return bot->GetDistance(target) <= range;
+        }
+
         virtual bool isUseful() override
 		{
             // Do not move if stay strategy is set
@@ -498,7 +570,7 @@ namespace ai
                         if (bot->IsWithinLOSInMap(target, true))
                         {
                             // Check if the bot is already on the range required
-                            return bot->GetDistance(target) > range;
+                            return !IsWithinReach(target);
                         }
 
                         return true;
@@ -511,6 +583,15 @@ namespace ai
 
         virtual std::string GetTargetName() override { return "current target"; }
         std::string GetSpellName() const { return spellName; }
+
+        // The distance from the target at which the walk stops: Execute's own
+        // chase distance (75% of the range less the contact distance; 0 for
+        // melee, where the combat reaches are the stop). The trap hold judges
+        // the move at that point, not at the target's centre.
+        float GetStopRange() const
+        {
+            return range > 0.0f ? std::max(range * 0.75f - sPlayerbotAIConfig.contactDistance, 0.0f) : 0.0f;
+        }
 
         virtual Unit* GetTarget() override
         {
@@ -599,6 +680,16 @@ namespace ai
 	{
     public:
         ReachSpellAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach spell", ai->GetRange("spell")) {}
+
+        // A stand set that seats this bot (ai_boss_stand) wins over the walk into range: the bot is on its way to
+        // its seat (the stand action, a higher row) or standing on it, and a walk back to the target would undo the
+        // seat. The reach does nothing until the row stops applying.
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            if (FindBossStand(ai, bot).valid)
+                return false;
+            return ReachTargetAction::MoveIntoRange(target, distance);
+        }
     };
 
     // Reach for a crowd-control cast: the spell's range minus
@@ -736,6 +827,15 @@ namespace ai
     public:
         ReachPartyMemberToHealAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach party member to heal", ai->GetRange("heal")) {}
         virtual std::string GetTargetName() override { return "party member to heal"; }
+
+        // A stand set that seats this healer (ai_boss_stand) wins over the walk to its patient, as it does over the
+        // caster reach: otherwise the heal walk and the stand walk pull the bot back and forth across the lane.
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            if (FindBossStand(ai, bot).valid)
+                return false;
+            return ReachTargetAction::MoveIntoRange(target, distance);
+        }
 
         // Every heal on "party member to heal" queues this action as its walk-up
         // prerequisite, so the trigger alone does not stop the walk. In combat

@@ -845,7 +845,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else
             {
-                combatEngine->addStrategies("balance", "dps assist", "flee", "ranged", NULL);
+                combatEngine->addStrategies("balance", "dps assist", "flee", "ranged", "oom melee", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offheal");
             }
@@ -938,7 +938,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
             if (player->GetClass() == CLASS_DRUID && tab == 2)
             {
-                combatEngine->addStrategies("balance", "ranged", NULL);
+                combatEngine->addStrategies("balance", "ranged", "oom melee", NULL);
                 combatEngine->removeStrategy("close");
             }
 
@@ -1468,9 +1468,6 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     // zone-ins never swap into raid tactics.
     // Mob avoidance remains disabled until the core supplies a real path
     // filter; see SetAvoidAreaAction and the audit's core follow-up.
-
-    if(sPlayerbotAIConfig.llmEnabled == 2)
-        nonCombatEngine->addStrategy("ai chat");
 
     // A hire follows its master and never talks to quest NPCs on its own:
     // the DefaultQuestStrategy gossip-hello triggers stay off the hire

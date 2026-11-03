@@ -47,9 +47,14 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         fight = body(RULES, "    if (f.anyInCombat && !objectDone)\n    {", "\n    }\n")
         watch = fight.index("FightProgress const progress = FightProgressTick(r, f, dt);")
         # Before any return of the fight block's ceiling: the 1-hp watch's pause and the ceiling's own.
-        self.assertLess(watch, fight.index("if (r.fightMs > cap && autoRegroup)"))
+        self.assertLess(watch, fight.index("if (r.fightMs > stopCap && autoRegroup)"))
         self.assertLess(watch, fight.index("if (pastCeiling && (!progressHolds || hardCapped))"))
-        self.assertIn("s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f) ? kBossFightCapMs : kFightCapMs;", fight)
+        self.assertIn(
+            "bool const bossStep = s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f) || r.raidBossFight;", fight)
+        # A raid's boss fight gets kRaidBossFightCapMs only with AiPlayerbot.DungeonRunRaidBossRules.
+        self.assertIn(": !bossStep ? kFightCapMs", fight)
+        self.assertIn(": RaidBossRulesFight(r, f) ? kRaidBossFightCapMs", fight)
+        self.assertIn(": kBossFightCapMs;", fight)
         tick = body(RULES, "inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt")
         self.assertIn("ClearFightProgress(r);", tick)
         reset = body(RULES, "inline void ResetStep(Run& r)")

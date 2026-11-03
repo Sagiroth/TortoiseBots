@@ -51,6 +51,23 @@ namespace ai
     CURE_PARTY_ACTION(CastDispelMagicOnPartyAction, "dispel magic", DISPEL_MAGIC);
     SPELL_ACTION(CastDispelMagicOnTargetAction, "dispel magic");
     CC_ACTION(CastShackleUndeadAction, "shackle undead");
+    // Pre-shield an engaged Patchwerk soaker; in range only, never a detour
+    // away from a heal patient.
+    class ShieldPatchwerkSoakerAction : public CastBuffSpellAction
+    {
+    public:
+        ShieldPatchwerkSoakerAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "power word: shield") {}
+        std::string getName() override { return "shield patchwerk soaker"; }
+        std::string GetTargetName() override { return "patchwerk soaker to shield"; }
+        std::string GetReachActionName() override { return ""; }
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            return target && !ai->HasAura(6788, target) && !ai->HasAura("power word: shield", target) &&
+                CastBuffSpellAction::isUseful();
+        }
+    };
     SPELL_ACTION_U(CastManaBurnAction, "mana burn", AI_VALUE2(uint8, "mana", "self target") < 50 && AI_VALUE2(uint8, "mana", "current target") >= 20);
     BUFF_ACTION(CastLevitateAction, "levitate");
     BUFF_ACTION(CastDivineSpiritAction, "divine spirit");

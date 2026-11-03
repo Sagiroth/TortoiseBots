@@ -48,16 +48,20 @@ namespace ai
     inline constexpr int SERVICE_TRIP_RESCUE_COOLDOWN_SEC = 30 * 60;
 
     // Numeric purpose id ("1024") or named purpose ("city", "trainer class",
-    // "trainer trade", "trainer mount", "trainer pet", "mount", "reagent
-    // vendor"). The named trainer/vendor requests carry a real need of their
-    // own (trainable spells, mount, reagents), so they count as service.
-    // Anything else with a letter in it (pvp, guild meeting, guild order,
-    // tabard, petition) walks a route the owner must see on foot: out of
-    // scope for the rescue.
+    // "trainer trade", "trainer mount", "trainer pet", "mount", "order focus",
+    // "order vendor", "guild order"). The named trainer/vendor requests carry
+    // a real need of their own (trainable spells, mount), so they count as
+    // service; the order legs carry the order's own need the same way. A
+    // workshop or banker the walk cannot quite reach still counts as arrived
+    // from the room, and a dropped one still gets the teleport rescue.
+    // Anything else with a letter in it (pvp, guild meeting, tabard,
+    // petition) walks a route the owner must see on foot: out of scope for
+    // the rescue.
     inline bool ServiceTripIsServicePurpose(std::string const& purpose)
     {
         if (purpose == "city" || purpose.compare(0, 7, "trainer") == 0 ||
-            purpose == "mount" || purpose == "reagent vendor")
+            purpose == "mount" || purpose == "order focus" || purpose == "order vendor" ||
+            purpose == "guild order")
             return true;
         if (purpose.empty())
             return false;
@@ -101,6 +105,24 @@ namespace ai
         float mod = 0.5f + (float)((h / 1000) % 1000) / 2000.0f;
         dx = std::cos(angle) * radius * mod;
         dy = std::sin(angle) * radius * mod;
+    }
+
+    // A teleport rescue refused for a watching player still leaves the plain
+    // walk: stepping toward the destination (with its own move log row)
+    // instead of returning silently, so a watched bot progresses instead of
+    // freezing. Never for a forced trip: the forced target's own guards own it.
+    inline bool WatchedRescueMayStep(bool watched, bool forced)
+    {
+        return watched && !forced;
+    }
+
+    // An "order vendor" trip is picked forced, but the forced pin must not
+    // veto the rescue: the drop below unforces anyway, and every re-pick
+    // re-forces, so exempting the pin only lets this trip teleport like any
+    // other unwatched service trip. Every other forced trip keeps the veto.
+    inline bool ServiceTripRescueIgnoresForced(std::string const& purpose)
+    {
+        return purpose == "order vendor";
     }
 
     // Rescue gate: every clause must hold. `busy` folds combat / taxi /

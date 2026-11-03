@@ -29,11 +29,14 @@ using uint32 = uint32_t;
 struct { bool enabled = false; unsigned reloads = 0; bool ReloadDungeonRunKeys() { ++reloads; return enabled; } } sPlayerbotAIConfig;
 namespace TortoiseBots {
 std::atomic<bool> s_dungeonRunKeysDue{false};
+// The dashboard's live stream keys use the same reload path.
+std::atomic<bool> s_realtimeKeysDue{false};
 std::vector<unsigned> calls;
 template<unsigned Id> struct Service {
     static Service& Instance() { static Service service; return service; }
     void Update(uint32 diff) { assert(diff == 50); calls.push_back(Id); }
     void OnWorldUpdate(uint32 diff) { Update(diff); }
+    void ReloadRealtimeKeys() {}
     static uint64_t DrainQueuedCommands() { calls.push_back(Id); return 7; }
     static void DrainDeferredPackets(uint64_t limit, bool endOfTick) { assert(limit == 7 && endOfTick); calls.push_back(Id); }
     static void MarkWorldThread() {}
@@ -51,8 +54,10 @@ using BotChatAdapter = Service<10>;
 using BotPacketAdapter = Service<11>;
 // The opt-in run trace: one atomic load per tick while no run is active.
 using RunTraceService = Service<13>;
+// Guild orders: the per-tick order update (give-up clock, progress, group gate).
+namespace GuildOrders { inline void Update(uint32 diff) { assert(diff == 50); calls.push_back(15); } }
 // Issue #884: the remote commander's binding sweep.
-namespace BotCommands { inline void UpdateRemoteCommanders(uint32 diff) { assert(diff == 50); calls.push_back(12); } inline void CleanupRunGivenItemsTick() { calls.push_back(14); } }
+namespace BotCommands { inline void UpdateRemoteCommanders(uint32 diff) { assert(diff == 50); calls.push_back(12); } inline void UpdateObservedRaids(uint32 diff) { assert(diff == 50); calls.push_back(16); } inline void CleanupRunGivenItemsTick() { calls.push_back(14); } }
 struct BotHostAdapter { uint32 m_ticks = 0; void OnUpdate(uint32 diff); };
 '''
         fixture += hook + r'''
@@ -74,13 +79,13 @@ int main() {
     // Enabled: lease expiry, then the commands (#846: they run the deferred
     // bot items queued ahead of each), then the rest of the deferred items
     // up to the bound the command drain returned, then the services (the
-    // remote commander sweep, 12, right after the bot update; the run trace, 13, last).
+    // remote commander sweep, 12, right after the bot update; the observed-raid sampler, 16, after it; the run trace, 13, last).
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,7,8,9,14,13}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13}));
     assert(adapter.m_ticks == 1);
     sPlayerbotAIConfig.enabled = false;
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,3,4,5,6,7,8,9,14,13,10,13}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,10,13}));
     assert(adapter.m_ticks == 1);
     // A config reload: the run leader's keys are read again once, on the next tick, enabled or not.
     assert(sPlayerbotAIConfig.reloads == 0);

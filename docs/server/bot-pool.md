@@ -79,7 +79,7 @@ Follow these steps to rebuild the bot pool on an active realm:
 
 When a reset executes, the following pool bot data is permanently removed:
 - Character levels, equipment, inventory, bank storage, quests, and profession progression for pool bots (via core character deletion).
-- Characters and module rows for pool accounts: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, character transmogs, and guild claims. Guild-adopted (claimed) bots are excluded from the deletion snapshot and survive. Pinned bots on managed accounts are deleted with the pool; pinned resolution only looks names up, so a deleted pinned name does not come back by itself (auto-create generates new randomly-named characters).
+- Characters and module rows for pool accounts: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, character transmogs, guild claims, and guild orders. Guild-adopted (claimed) bots are excluded from the deletion snapshot and survive. Pinned bots on managed accounts are deleted with the pool; pinned resolution only looks names up, so a deleted pinned name does not come back by itself (auto-create generates new randomly-named characters).
 - Hired mercenaries riding pool accounts (their in-memory hire state is forgotten and their ledger rows deleted with the character).
 - Guilds composed exclusively of pool bots (deleted as a side effect of core character deletion once every member is gone).
 - Active auction listings posted by pool bots. Active bidders receive full mail refunds prior to listing deletion (hardcore characters excepted). If any bidder cannot be resolved, the reset stops before the listing is deleted.

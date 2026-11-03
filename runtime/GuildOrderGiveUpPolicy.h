@@ -1,0 +1,235 @@
+#pragma once
+
+// Farm-time rules for guild orders: deaths never end an order, they move the
+// bot to the next zone of its plan, and so does an hour worked without a new
+// item. The order itself ends once its chosen farm time runs out - or, capped
+// or not, after 3 worked hours without gaining a single item. Header-only
+// and free of core/database types on purpose: the thresholds are exercised
+// standalone in tools/test_guild_order_giveup_policy.cpp. The order store
+// feeds this function plain counters it already keeps per order.
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include "GuildOrderContract.h"
+
+namespace TortoiseBots
+{
+namespace GuildOrders
+{
+
+// An hour of worked time without a new item, or three deaths in the current
+// farm zone, moves the bot to the next zone of the plan (wrapping around to
+// the first when the list is exhausted). Only time the bot actually works
+// counts: not while it waits in a group, not while delivering, not while
+// offline.
+inline constexpr uint32_t kZoneMoveWorkedSeconds = 3600;
+inline constexpr uint32_t kZoneMoveDeaths = 3;
+
+// Player-chosen farm time on `.bot order ... [hours|inf]`: whole hours 1-24,
+// or 0 for no time limit (the hours slot carries `inf` on the wire). No
+// hours given means no time limit.
+inline constexpr uint32_t kMinOrderHours = 1;
+inline constexpr uint32_t kMaxOrderHours = 24;
+inline constexpr uint32_t kUnlimitedOrderHours = 0;
+inline constexpr uint32_t kDefaultOrderHours = kUnlimitedOrderHours;
+
+enum class ZoneMoveTrigger : uint8_t
+{
+    None,
+    NoProgress, // an hour worked in this zone without a new item
+    Deaths,     // three deaths in this zone: the zone is too dangerous
+};
+
+inline ZoneMoveTrigger ClassifyZoneMove(uint32_t workedSinceNewItemSec, uint32_t deathsInZone)
+{
+    if (deathsInZone >= kZoneMoveDeaths)
+        return ZoneMoveTrigger::Deaths;
+    if (workedSinceNewItemSec >= kZoneMoveWorkedSeconds)
+        return ZoneMoveTrigger::NoProgress;
+    return ZoneMoveTrigger::None;
+}
+
+// Next zone of the plan after a move, re-plan or outgrown zone: the zone
+// after the listed one, or the stored index when the current zone is cleared
+// (a farm-rule move bumps the stored index first) or no longer planned.
+// Wraps around to the first when the list is exhausted; the caller treats
+// an empty plan as no source.
+inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, size_t zoneCount)
+{
+    if (zoneCount == 0)
+        return 0;
+    size_t start = listed ? listedIndex + 1 : zoneIndex;
+    return start % zoneCount;
+}
+
+// Consecutive rejected or empty order-leg searches in the planned zone move
+// the bot on: a zone whose spots never come active costs a few short parks,
+// not the hour the death/no-progress rules would take to notice.
+inline constexpr uint32_t kSearchFailZoneMove = 3;
+inline constexpr uint32_t kOrderLegParkSeconds = 15;
+
+// Failed searches moved the farm leg through this many zones without one
+// landed pick: the leg cannot reach its spots, so the ladder moves on
+// (sub-order or need list). The whole plan, capped: a 30-zone plan would
+// otherwise cost ~1.5 h of empty searches before giving up.
+inline constexpr uint32_t kSearchZoneMovesExhaustPlan = 8;
+
+inline bool SearchZoneMovesExhaustPlan(uint32_t zoneMoves, size_t planZones)
+{
+    size_t const limit = std::min<size_t>(planZones > 0 ? planZones : 1, kSearchZoneMovesExhaustPlan);
+    return zoneMoves > 0 && zoneMoves >= limit;
+}
+
+// Whether the failed-search count moves the zone. Counts only consecutive
+// failures in one zone: a landed search resets it.
+inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
+{
+    return searchFailsInZone >= kSearchFailZoneMove;
+}
+
+// Auction-house visits that never reach an auctioneer. The search layer
+// keeps offering the next city while the bot stands where it landed, so the
+// count lives on the leg, not the pick streak: after this many arrived visits
+// the leg moves down the ladder by itself, whether or not the pick streak
+// survived the re-picks in between. The live value rides
+// `AiPlayerbot.GuildOrderAuctionVisits` (0 disables the exit); this constant
+// is its default and the unit-test pin.
+inline constexpr uint32_t kAuctionVisitsWithoutAuctioneer = 3;
+
+// Whether the arrived-visit count ends the auction leg at the configured
+// limit. Zero disables the exit.
+inline bool AuctionVisitsMoveLadder(uint32_t arrivedVisits, uint32_t limit)
+{
+    return limit > 0 && arrivedVisits >= limit;
+}
+
+// One arrived trip on the auction leg, decided before touching the counter.
+// An auctioneer in reach hands the leg to the buy action, so the streak
+// clears; any other arrival counts, and the leg exits once the count would
+// reach the configured limit. Real arrivals only: a stuck drop is not one.
+enum class AuctionArrival : uint8_t { Reset, Count, CountAndExit };
+
+inline AuctionArrival ClassifyAuctionArrival(bool auctioneerInReach, uint32_t arrivedSoFar, uint32_t limit)
+{
+    if (auctioneerInReach)
+        return AuctionArrival::Reset;
+    return AuctionVisitsMoveLadder(arrivedSoFar + 1, limit) ? AuctionArrival::CountAndExit : AuctionArrival::Count;
+}
+
+// The order ends once the bot has worked its chosen hours in total without
+// reaching the amount. An unlimited order (hours 0) never times out; the
+// other out-of-range hours fall back to the default (no limit).
+inline bool IsOrderTimeout(uint32_t workedTotalSec, uint32_t hours)
+{
+    if (hours != kUnlimitedOrderHours && (hours < kMinOrderHours || hours > kMaxOrderHours))
+        hours = kDefaultOrderHours;
+    if (hours == kUnlimitedOrderHours)
+        return false;
+    return workedTotalSec >= hours * 3600;
+}
+
+// Progress watchdog: worked hours without gaining a single order item (or
+// craft-leg reagent) that end the order, capped or not. Only worked time
+// counts, like the zone-move clock; any new item resets it, a zone move
+// does not.
+inline constexpr uint32_t kNoGainWorkedSeconds = 3 * 3600;
+
+inline bool IsOrderNoProgress(uint32_t workedNoGainSec)
+{
+    return workedNoGainSec >= kNoGainWorkedSeconds;
+}
+
+// A craft order farming a reagent hands it down the ladder (sub-order, then
+// the need list) after this long worked without one: the whole-order
+// watchdog above would otherwise end the order before the farm zones are
+// exhausted. The hand-off below always exists (a sub-order attempt, then the
+// need list), so the short limit is the live one; the full hour only runs
+// when the caller passes no hand-off.
+inline constexpr uint32_t kSupplyFarmNoGainSeconds = 3600;
+inline constexpr uint32_t kSupplyFarmNoGainWithFallbackSeconds = 20 * 60;
+
+inline bool SupplyFarmGivesUp(bool craftFarmLeg, uint32_t workedNoGainSec, bool hasHandOff = true)
+{
+    if (!craftFarmLeg)
+        return false;
+    uint32_t limit = hasHandOff ? kSupplyFarmNoGainWithFallbackSeconds : kSupplyFarmNoGainSeconds;
+    return workedNoGainSec >= limit;
+}
+
+// A delivering order whose stock is gone (sold, listed or lost after full
+// bags sent it to deliver) has nothing to hand in: it goes back to work
+// instead of waiting forever for a delivery that never starts. Only plain
+// and bags-full deliveries; a timeout or no-progress hand-off ends on its own.
+inline bool DeliveryLostItsStock(OrderState state, OrderReason reason, uint32_t delivered, uint32_t amount,
+    uint32_t heldInBagsAndMail)
+{
+    return state == OrderState::Delivering &&
+        (reason == OrderReason::None || reason == OrderReason::BagsFull) &&
+        delivered < amount && heldInBagsAndMail == 0;
+}
+
+// The row's have count is what reached the guild (bank deposit or the mail
+// hand-over), never what the bot still carries: progress never drops, so a
+// row keeps max(delivered, last reported). Bags and mail are reported apart
+// (ReportedCarry) so a working row cannot read 2/2 with nothing deposited.
+inline uint32_t ReportedHave(uint32_t delivered, uint32_t reportedHave)
+{
+    return delivered > reportedHave ? delivered : reportedHave;
+}
+
+// What the bot carries and has not delivered yet: the live bag and mailbox
+// count on a scan, the last figure on off-cadence passes and while offline.
+// Unlike ReportedHave this legitimately drops: a deposit empties the bags.
+inline uint32_t ReportedCarry(bool scanned, bool botOnline, uint32_t bagCount, uint32_t mailboxCount,
+    uint32_t reportedCarry)
+{
+    return scanned && botOnline ? bagCount + mailboxCount : reportedCarry;
+}
+
+// The have count a pass reports: a stocked row shows the bank stock the last
+// look saw (owned counting means nothing there), every other row shows what
+// reached the guild. Read off the row on every pass, not only off a scan, so
+// the line after a deposit reports it even when no scan runs.
+inline uint32_t ReportedHaveThisPass(bool stocked, bool bankChecked, uint32_t bankCount,
+    uint32_t stockTarget, uint32_t delivered, uint32_t reportedHave)
+{
+    if (!stocked)
+        return ReportedHave(delivered, reportedHave);
+    if (!bankChecked)
+        return reportedHave;
+    return bankCount > stockTarget ? stockTarget : bankCount;
+}
+
+// The carry a pass reports: what the bot still holds for the order. Only a
+// successful hand-off (done after the bank deposit, mailed) empties it - the
+// stack left the bags for the guild. Every other row, a cant one with the
+// stack still in the bags included, keeps the last scanned figure, so the
+// final line and the row write agree with the list.
+inline uint32_t ReportedCarryThisPass(OrderState state, bool scanned, bool botOnline, uint32_t bagCount,
+    uint32_t mailboxCount, uint32_t reportedCarry)
+{
+    if (HandOffSucceeded(state))
+        return 0;
+    return ReportedCarry(scanned, botOnline, bagCount, mailboxCount, reportedCarry);
+}
+
+// The carry a list reply shows: a terminal row's stored figure, online or
+// not - the row is over, so its last scan is the answer and reading the live
+// bags would count items that are no longer for it. A row that still runs
+// reads its bags and mailbox; otherwise the last carry Tick put on the row,
+// because an offline bot's bags cannot be read and zero would claim it
+// carries nothing.
+inline uint32_t ListedCarry(bool terminal, bool botOnline, uint32_t liveCarry, uint32_t reportedCarry)
+{
+    return terminal || !botOnline ? reportedCarry : liveCarry;
+}
+
+// A real rise in bag count seen while online on consecutive updates resets
+// the zone-move clock. A login after an offline gap never counts as new items.
+inline bool IsNewItemRise(bool botOnline, bool sawOnline, uint32_t bagCount, uint32_t lastBagCount)
+{
+    return botOnline && sawOnline && bagCount > lastBagCount;
+}
+
+} // namespace GuildOrders
+} // namespace TortoiseBots

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -111,11 +112,8 @@ func (s *Service) Authenticate(username, password string) (*SessionData, error) 
 		}
 	}
 
-	minLevel := s.cfg.MinGMLevel
-	if minLevel <= 0 {
-		minLevel = 2
-	}
-	if int(rank) < minLevel {
+	minLevel := s.minLevel()
+	if rank < minLevel {
 		// Same error text as a wrong credential: a wrong password and a
 		// right password with too low a rank are indistinguishable.
 		return nil, fmt.Errorf("invalid username or password")
@@ -127,6 +125,35 @@ func (s *Service) Authenticate(username, password string) (*SessionData, error) 
 		Rank:      rank,
 		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
 	}, nil
+}
+
+// minLevel is the configured minimum GM rank (2, game master, when unset).
+func (s *Service) minLevel() uint32 {
+	if s.cfg.MinGMLevel <= 0 {
+		return 2
+	}
+	return uint32(s.cfg.MinGMLevel)
+}
+
+// RecheckAccount re-reads an account's current rank and reports whether it
+// still meets the minimum. A long-lived stream calls it periodically: a
+// revoked account (its row gone) or a downgraded one must stop receiving data
+// without waiting for the signed token to expire. A database error also fails
+// the check, so the stream is closed rather than fed without revalidation;
+// the client reconnects and the login path decides again.
+func (s *Service) RecheckAccount(accountID uint32) error {
+	var rank uint32
+	if err := s.db.QueryRow(`SELECT rank FROM account WHERE id = ? LIMIT 1`, accountID).Scan(&rank); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("rank check: %w", err)
+	}
+	var accessRank uint32
+	if err := s.db.QueryRow(`SELECT gmlevel FROM account_access WHERE id = ? ORDER BY gmlevel DESC LIMIT 1`, accountID).Scan(&accessRank); err == nil && accessRank > rank {
+		rank = accessRank
+	}
+	if rank < s.minLevel() {
+		return fmt.Errorf("account %d no longer meets the minimum GM rank", accountID)
+	}
+	return nil
 }
 
 // CreateSessionToken generates an HMAC-signed token.

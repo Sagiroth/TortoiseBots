@@ -1,6 +1,8 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/policy/combat/BandageSafetyPolicy.h"
+#include "playerbot/policy/combat/HealerItemPolicy.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "GenericActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
@@ -354,7 +356,7 @@ namespace ai
     {
     public:
         UseGoblinSapperChargeAction(PlayerbotAI* ai) : UseItemIdAction(ai, "goblin sapper") {}
-        virtual bool isUseful() override { return UseItemIdAction::isUseful() && bot->GetSkillValue(202) >= 205 && bot->GetHealth() > 1000; }
+        virtual bool isUseful() override { return DamageItemAllowed(ai->IsHeal(bot)) && UseItemIdAction::isUseful() && bot->GetSkillValue(202) >= 205 && bot->GetHealth() > 1000; }
 
         virtual uint32 GetItemId() override
         {
@@ -369,6 +371,8 @@ namespace ai
         UseOilOfImmolationAction(PlayerbotAI* ai) : UseItemIdAction(ai, "oil of immolation") {}
         virtual bool isUseful() override
         {
+            if (!DamageItemAllowed(ai->IsHeal(bot)))
+                return false;
             if (!UseItemIdAction::isUseful() || bot->GetLevel() < 31 || ai->HasAura(11350, bot))
                 return false;
             // The oil burns every mob near the user for its whole duration:
@@ -392,6 +396,19 @@ namespace ai
         }
 
         virtual uint32 GetItemId() override { return 13455; }
+    };
+
+    // Thistle Tea: a rogue's energy refill, only at the level cap.
+    class UseThistleTeaAction : public UseItemIdAction
+    {
+    public:
+        UseThistleTeaAction(PlayerbotAI* ai) : UseItemIdAction(ai, "thistle tea") {}
+        virtual bool isUseful() override
+        {
+            return UseItemIdAction::isUseful() && bot->GetClass() == CLASS_ROGUE && bot->GetLevel() >= 60;
+        }
+
+        virtual uint32 GetItemId() override { return 7676; }
     };
 
     class UseBgBannerAction : public UseItemIdAction
@@ -542,6 +559,7 @@ namespace ai
 
         virtual bool isUseful() override
         {
+            if (!DamageItemAllowed(ai->IsHeal(bot))) return false;
 
             Unit* target = GetTarget();
             if (!target)
@@ -593,7 +611,8 @@ namespace ai
                         return false;
             }
 
-            return bot->GetHealth() > 1000;
+            // Endgame drop (Scholomance, Stratholme) with no level requirement.
+            return bot->GetLevel() >= 50 && bot->GetHealth() > 1000;
         }
 
         virtual uint32 GetItemId() override { return 20520; }
@@ -657,12 +676,17 @@ namespace ai
     // meal, so the bot missed the pull and any CC order. "has attackers" is
     // the cached value the combat-start trigger reads anyway; the member
     // check catches the first seconds of a pull before that cache refreshes,
-    // and it is the same test that wakes an eating bot (PlayerbotAI::UpdateAI),
-    // so a woken bot does not sit straight back down.
+    // and the run's own mark holds the gate through the ticks between kills
+    // and far from the fight, where the member test sees nobody. The wake
+    // check reads the same two terms (PlayerbotAI::UpdateAI), so a woken bot
+    // does not sit straight back down.
     inline bool GroupIsFighting(PlayerbotAI* ai)
     {
-        return ai->GetAiObjectContext()->GetValue<bool>("has attackers")->Get() ||
-            ai->IsGroupMemberNearInCombat();
+        return MealBlocked(
+            ai->GetAiObjectContext()->GetValue<bool>("has attackers")->Get(),
+            ai->IsGroupMemberNearInCombat(),
+            (uint32)ai->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Get(),
+            WorldTimer::getMSTime());
     }
 
     class DrinkAction : public UseAction

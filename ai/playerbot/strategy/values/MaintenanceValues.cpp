@@ -6,7 +6,7 @@
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
-#include "playerbot/strategy/values/GuildValues.h"
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
@@ -430,6 +430,54 @@ static bool VendorWithinNearbyServiceRange(PlayerbotAI* ai)
 //cheat no longer hides what the bot eats). The ten-minute park after a fruitless
 //errand is read here too: the old request ignored it and re-armed on the very
 //next tick.
+
+//Slot counts the BagSpaceValue way (StatsValues.cpp): backpack 16 slots plus
+//each equipped plain container bag. Used by the order-stock valve below to
+//decide whether a vendor sale actually relieves the bags.
+static void CountBagSlots(Player* bot, uint32& used, uint32& total)
+{
+    used = 0;
+    total = 16;
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; slot++)
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            used++;
+    }
+
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag const* pBag = (Bag const*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (pBag)
+        {
+            ItemPrototype const* pBagProto = pBag->GetProto();
+            if (pBagProto && pBagProto->Class == ITEM_CLASS_CONTAINER && pBagProto->SubClass == ITEM_SUBCLASS_CONTAINER)
+            {
+                total += pBag->GetBagSize();
+                uint32 const free = pBag->GetFreeSlots();
+                used += pBag->GetBagSize() > free ? pBag->GetBagSize() - free : 0;
+            }
+        }
+    }
+}
+
+//One sellable stock slot per held vendor-usage item a vendor actually buys
+//(the same test as CanSellValue above): a stack is one slot, not its count.
+static uint32 SellableVendorSlots(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 sellable = 0;
+
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    {
+        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+
+        if (proto && proto->SellPrice > 0)
+            sellable++;
+    }
+
+    return sellable;
+}
+
 bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -449,6 +497,18 @@ bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
 
     if (!AI_VALUE(bool, "can sell"))
         return false;
+
+    // Bags held full by a running guild order: walk only for a sale that
+    // relieves them, or every looted grey sends the bot to town again.
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (order && !order->cancelled && !TortoiseBots::GuildOrders::IsFinished(order->state))
+    {
+        uint32 used = 0, total = 0;
+        CountBagSlots(bot, used, total);
+        if (!BagPressureSaleRelievesBags(used, total, SellableVendorSlots(ai), NEARBY_SERVICE_BAG_PRESSURE))
+            return false;
+    }
 
     return !VendorWithinNearbyServiceRange(ai);
 }
@@ -532,8 +592,20 @@ bool ai::VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier)
 
     AiObjectContext* context = ai->GetAiObjectContext();
 
+    // The errand is already underway: re-requesting re-picks the same vendor
+    // and restarts the walk (travel churn). The walk needs engine visits,
+    // not new picks.
+    TravelTarget* held = AI_VALUE(TravelTarget*, "travel target");
+    TravelDestination* heldDest = held ? held->GetDestination() : nullptr;
+    if (VendorTripAlreadyUnderway(heldDest != nullptr,
+        heldDest ? (uint32)heldDest->GetPurpose() : 0))
+        return false;
+
     return !JourneyInFlightOwnsBot((int)AI_VALUE(TravelTarget*, "travel target")->GetStatus());
 }
+
+static_assert((uint32)TravelDestinationPurpose::Vendor == ai::VENDOR_TRIP_PURPOSE_ID,
+    "VendorTripPolicy mirrors the Vendor purpose id");
 
 void ai::ParkVendorErrand(PlayerbotAI* ai, uint32 minutes)
 {
@@ -701,7 +773,19 @@ bool ShouldGetMailValue::Calculate() {
     if (!master)
         return false;
 
-    bool hasGuildShareList = !AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list").empty();
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    bool hasBuyOrder = stored && stored->type == TortoiseBots::GuildOrders::OrderType::Buy &&
+        !TortoiseBots::GuildOrders::IsFinished(stored->state);
+    // A relist still on the auction house collects its sale gold or returned
+    // stack by mail: that mail is guild-funded value, so it never waits out
+    // the normal mailbox hibernation below. A claimed row also wakes the
+    // read: its mail may already be gone, and the read settles it.
+    std::vector<TortoiseBots::GuildOrders::RelistLedgerEntry> relistRows =
+        TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow());
+    bool hasRelistLedger = !relistRows.empty();
+    if (TortoiseBots::GuildOrders::RelistClaimPending(relistRows))
+        return true;
 
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
@@ -710,17 +794,23 @@ bool ShouldGetMailValue::Calculate() {
 
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
-        if (!hasGuildShareList && waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
+        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION)
+        {
+            return true;
+        }
+
+        if (hasRelistLedger && (*itr)->stationery == MAIL_STATIONERY_AUCTION &&
+            ((*itr)->has_items || (*itr)->money))
+        {
+            return true;
+        }
+
+        if (waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
         {
             return false;
         }
 
         if ((*itr)->has_items && waitingInBoxTime > HOUR * 4) //Items are allowed to sit in the mail for max 4 hours.
-        {
-            return true;
-        }
-
-        if (hasGuildShareList && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has guild share list and mail is from AH, take mail immediately.
         {
             return true;
         }

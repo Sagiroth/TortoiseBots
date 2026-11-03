@@ -6,7 +6,9 @@
 
 #include "../runtime/CommandedGroupQuery.h" // IsInCommandedGroup
 #include "../runtime/CommanderTelemetry.h"
+#include "../runtime/CombatMonitorPolicy.h" // CombatMonitor::MemberInfo
 #include "../runtime/DungeonMobTelemetry.h"
+#include "../runtime/RaidTelemetry.h"
 
 class ChatHandler;
 class Player;
@@ -34,6 +36,15 @@ void ClearRemoteCommanders();
 // commander, lead bot, bound bots and the commander's last orders. World
 // thread; read-only (nothing is settled or released); empty while none stands.
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out);
+// The live positions of every bound group for the dashboard's map (task S3): the bots and the enemies its lead's last full
+// report listed, sent every 500 ms while the group fights. Field and guid reads only, no grid or world scan. `wantCombat`
+// selects the groups that fight, `wantIdle` the ones that do not (the emitter asks each on its own period, and both on a
+// tick where both are due).
+void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle);
+// The elite and boss cast starts of the bound groups, once per 250 ms on
+// the world thread from the emitter (only while a fight runs). Reads the mobs
+// of each binding's last full report; a guid lookup per unit, no world scan.
+void PollEnemyCasts();
 // The dashboard's boss spawn cache (every known boss of each dungeon and raid map, from one pass over the core's creature spawn data):
 // built once, from BotHostAdapter::OnStartup right after sPlayerbotAIConfig.Initialize() sealed the dungeon plans, never inside a
 // commander snapshot; logs how long it took. Does nothing before the seal or a second time.
@@ -43,6 +54,25 @@ void BuildBossSpawnCache();
 // bots' cached "attackers" and the sight readers' cached "possible targets"), each guid resolved at most once per run, no grid
 // or world scan. World thread, once per 2 s snapshot cycle, outside the map update.
 void CollectDungeonMobs(std::vector<DungeonMobTelemetry::RunRef>& runs);
+// The Raids tab (spec dash-raids-tab): the raid map copies a bot stands in, without a commander binding, for the RAIDS
+// datagram. Walks only the bots and players the emitter's cycle already holds, reads each member's group slots; fills
+// `out` sorted by (map, instance, group id) and records the same set for the sampler (ObservedRaidSet). World thread, once
+// per 2 s snapshot cycle.
+void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players,
+                          std::vector<RaidTelemetry::GroupInfo>& out);
+// The observed raid groups' combat books, 1 Hz on the world thread: one Refresh per group, a boss pick while it fights, and
+// a released or vanished group's open fight closed after the lead-gone grace. A bound group is skipped (its book is the
+// bound path's). Reads RaidsEnabled() only while nothing is observed; nothing while AiPlayerbot.ObservabilityRaids is 0.
+void UpdateObservedRaids(uint32_t diff);
+bool IsObservedRaidGroup(uint32_t groupId);
+void ClearObservedRaids();
+// Commander.cpp exports the observed-raid sampler shares with the bound path: a group's members in the combat monitor's
+// shape, the bound commander's display name on a group ("" when none), whether a binding stands on it, and the fight's boss
+// pick from the engaged creatures.
+std::vector<CombatMonitor::MemberInfo> CombatMonitorMembersOf(std::vector<Player*> const& bots);
+std::string BoundCommanderNameOfGroup(uint32_t groupId);
+bool GroupIsBound(uint32_t groupId);
+void NoteFightBoss(uint32_t groupId, Player* anchor);
 // Any order a player gives the party pauses its run (`.bot run`); the run's own orders never pause it. Does nothing without a run.
 void PauseDungeonRunForPlayer(uint64_t commanderRaw, std::string const& order);
 // Another real player of a run-bound party: the run's commander (players in the party, 2026-10-23), else 0.

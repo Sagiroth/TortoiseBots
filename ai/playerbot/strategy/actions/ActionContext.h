@@ -1,5 +1,9 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 #include "GenericActions.h"
 #include "EmoteAction.h"
@@ -11,7 +15,6 @@
 #include "FollowActions.h"
 #include "ChangeStrategyAction.h"
 #include "ChooseTargetActions.h"
-#include "SuggestWhatToDoAction.h"
 #include "PositionAction.h"
 #include "AttackAction.h"
 #include "CheckMailAction.h"
@@ -28,7 +31,6 @@
 #include "MoveToTravelTargetAction.h"
 #include "OutfitAction.h"
 #include "RevealGatheringItemAction.h"
-#include "SayAction.h"
 #include "ServiceNearbyNpcAction.h"
 #include "OutfitAction.h"
 #include "RandomBotUpdateAction.h"
@@ -55,9 +57,9 @@
 #include "GuildCreateActions.h"
 #include "GuildManagementActions.h"
 #include "GuildAcceptAction.h"
-#include "GuildAcceptQuestOrderAction.h"
-#include "GuildShareItemAction.h"
-#include "GuildShareAhBuyAction.h"
+#include "GuildOrderBuyAction.h"
+#include "GuildOrderVendorAction.h"
+#include "GuildBankAction.h"
 #include "RpgSubActions.h"
 #include "UseTrinketAction.h"
 #include "BotStateActions.h"
@@ -93,6 +95,7 @@
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
 #include "RuinsOfAhnqirajDungeonActions.h"
+#include "ViscidusActions.h"
 
 namespace ai
 {
@@ -101,6 +104,14 @@ namespace ai
     public:
         ActionContext()
         {
+            creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
+            creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
+            creators["fankriss spawn engage"] = [](PlayerbotAI* ai) { return new FankrissSpawnEngageAction(ai); };
+            creators["fankriss spawn pickup"] = [](PlayerbotAI* ai) { return new FankrissSpawnPickupAction(ai); };
+            creators["fankriss rear stack"] = [](PlayerbotAI* ai) { return new FankrissStackAction(ai); };
+            creators["fankriss control spawn"] = [](PlayerbotAI* ai) { return new FankrissControlAction(ai); };
+            creators["fankriss focus spawn"] = [](PlayerbotAI* ai) { return new FankrissFocusAction(ai); };
+            creators["patchwerk melee retreat"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeRetreatAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgAction(ai); };
@@ -132,8 +143,10 @@ namespace ai
             creators["reach party member to resurrect"] = [](PlayerbotAI* ai) { return new ReachPartyMemberToResurrectAction(ai); };
             creators["reach party member for totem"] = [](PlayerbotAI* ai) { return new ReachPartyMemberForTotemAction(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeAction(ai); };
+            creators["flee from area"] = [](PlayerbotAI* ai) { return new FleeFromAreaAction(ai); };
             creators["flee with pet"] = [](PlayerbotAI* ai) { return new FleeWithPetAction(ai); };
             creators["avoid aoe"] = [](PlayerbotAI* ai) { return new AvoidAoeAction(ai); };
+            creators["avoid elite"] = [](PlayerbotAI* ai) { return new AvoidEliteAction(ai); };
             creators["wait for attack keep safe distance"] = [](PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); };
             creators["shoot"] = [](PlayerbotAI* ai) { return new CastShootAction(ai); };
             creators["whipper root tuber"] = [](PlayerbotAI* ai) { return new UseWhipperRootTuberAction(ai); };
@@ -178,8 +191,6 @@ namespace ai
             creators["emote"] = [](PlayerbotAI* ai) { return new EmoteAction(ai); };
             creators["talk"] = [](PlayerbotAI* ai) { return new TalkAction(ai); };
             creators["mount anim"] = [](PlayerbotAI* ai) { return new MountAnimAction(ai); };
-            creators["suggest what to do"] = [](PlayerbotAI* ai) { return new SuggestWhatToDoAction(ai); };
-            creators["suggest trade"] = [](PlayerbotAI* ai) { return new SuggestTradeAction(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnAction(ai); };
             creators["move to loot"] = [](PlayerbotAI* ai) { return new MoveToLootAction(ai); };
             creators["open loot"] = [](PlayerbotAI* ai) { return new OpenLootAction(ai); };
@@ -193,7 +204,6 @@ namespace ai
             creators["attack duel opponent"] = [](PlayerbotAI* ai) { return new AttackDuelOpponentAction(ai); };
             creators["select new target"] = [](PlayerbotAI* ai) { return new SelectNewTargetAction(ai); };
             creators["check mail"] = [](PlayerbotAI* ai) { return new CheckMailAction(ai); };
-            creators["say"] = [](PlayerbotAI* ai) { return new SayAction(ai); };
             creators["reveal gathering item"] = [](PlayerbotAI* ai) { return new RevealGatheringItemAction(ai); };
             creators["outfit"] = [](PlayerbotAI* ai) { return new OutfitAction(ai); };
             creators["random bot update"] = [](PlayerbotAI* ai) { return new RandomBotUpdateAction(ai); };
@@ -247,9 +257,10 @@ namespace ai
             creators["turn in petition"] = [](PlayerbotAI* ai) { return new PetitionTurnInAction(ai); };
             creators["buy tabard"] = [](PlayerbotAI* ai) { return new BuyTabardAction(ai); };
             creators["guild manage nearby"] = [](PlayerbotAI* ai) { return new GuildManageNearbyAction(ai); };
-            creators["guild share item"] = [](PlayerbotAI* ai) { return new GuildShareItemAction(ai); };
-            creators["guild ah buy"] = [](PlayerbotAI* ai) { return new GuildShareAhBuyAction(ai); };
-            creators["guild accept quest order"] = [](PlayerbotAI* ai) { return new GuildAcceptQuestOrderAction(ai); };
+            creators["guild order buy"] = [](PlayerbotAI* ai) { return new GuildOrderBuyAction(ai); };
+            creators["guild order take mail"] = [](PlayerbotAI* ai) { return new GuildOrderTakeMailAction(ai); };
+            creators["guild order vendor"] = [](PlayerbotAI* ai) { return new GuildOrderVendorAction(ai); };
+            creators["guild order deliver"] = [](PlayerbotAI* ai) { return new GuildBankAction(ai); };
             creators["use trinket"] = [](PlayerbotAI* ai) { return new UseTrinketAction(ai); };
             creators["unstuck"] = [](PlayerbotAI* ai) { return new UnstuckAction(ai); };
             creators["reset"] = [](PlayerbotAI* ai) { return new ResetAction(ai); };
@@ -263,6 +274,7 @@ namespace ai
             creators["goblin sapper"] = [](PlayerbotAI* ai) { return new UseGoblinSapperChargeAction(ai); };
             creators["oil of immolation"] = [](PlayerbotAI* ai) { return new UseOilOfImmolationAction(ai); };
             creators["stoneshield potion"] = [](PlayerbotAI* ai) { return new UseStoneshieldPotionAction(ai); };
+            creators["thistle tea"] = [](PlayerbotAI* ai) { return new UseThistleTeaAction(ai); };
             creators["dark rune"] = [](PlayerbotAI* ai) { return new UseDarkRuneAction(ai); };
             creators["throw grenade"] = [](PlayerbotAI* ai) { return new ThrowGrenadeAction(ai); };
             creators["bg banner"] = [](PlayerbotAI* ai) { return new UseBgBannerAction(ai); };
@@ -313,7 +325,6 @@ namespace ai
             creators["rpg queue bg"] = [](PlayerbotAI* ai) { return new RpgQueueBgAction(ai); };
             creators["rpg buy petition"] = [](PlayerbotAI* ai) { return new RpgBuyPetitionAction(ai); };
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseAction(ai); };
-            creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatAction(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellAction(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftAction(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulAction(ai); };
@@ -355,7 +366,11 @@ namespace ai
             creators["disable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsDisableStrategyAction(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
+            creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };
+            creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathAction(ai); };
             creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
+            creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastAction(ai); };
+            creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
             creators["enable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreEnableDungeonStrategyAction(ai); };
@@ -406,6 +421,9 @@ namespace ai
             creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
+            creators["viscidus combat"] = [](PlayerbotAI* ai) { return new ViscidusCombatAction(ai); };
+            creators["viscidus keep distance"] = [](PlayerbotAI* ai) { return new ViscidusDistanceAction(ai); };
+            creators["viscidus toxin escape"] = [](PlayerbotAI* ai) { return new ViscidusToxinEscapeAction(ai); };
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
             creators["four horsemen rotate"] = [](PlayerbotAI* ai) { return new FourHorsemenRotateAction(ai); };

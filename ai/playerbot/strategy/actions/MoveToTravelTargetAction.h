@@ -46,11 +46,12 @@ namespace ai
         bool CheckServiceArrival(TravelTarget* target, std::string const& purpose);
 
         // Rescue for a service trip at the failure threshold: unwatched,
-        // same-map, random masterless pool bot, once per 30 min. Teleports
-        // to the exact destination point and logs ServiceTripTeleport.
-        // Returns true when the rescue fired (the drop below is skipped).
+        // same-map, random masterless pool bot, once per 30 min. The
+        // order-vendor leg is picked forced and exempt from that pin.
+        // Teleports to the exact destination point and logs
+        // ServiceTripTeleport. Returns true when the rescue fired (the drop
+        // below is skipped).
         bool TryRescueServiceTrip(TravelTarget* target, std::string const& purpose);
-
         // On by default (AiPlayerbot.StuckTravelTeleport; 0 disables): a masterless
         // pool bot's trip of any purpose at the failure threshold teleports to
         // its destination (mesh landing, else the nearest route node near it)

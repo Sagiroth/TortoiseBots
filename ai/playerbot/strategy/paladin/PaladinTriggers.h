@@ -72,6 +72,13 @@ namespace ai
 		bool IsActive() override;
 	};
 
+	class SealInMeleeTrigger : public SealTrigger
+	{
+	public:
+		SealInMeleeTrigger(PlayerbotAI* ai) : SealTrigger(ai) {}
+		bool IsActive() override;
+	};
+
     // Opt-in Judgement upkeep (AiPlayerbot.PaladinJudgementUpkeep): the
     // owner of Judgement of Wisdom / Light on the group's boss or elite
     // swaps to the matching Seal and judges as the debuff runs out. One

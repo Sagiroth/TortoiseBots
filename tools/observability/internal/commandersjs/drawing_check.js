@@ -24,7 +24,7 @@ const ctx = { console };
 vm.createContext(ctx);
 ["commanders.js", "maplayers.js", "unitinfo.js", "paths.js", "demo.js"].forEach((f) => vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f }));
 vm.runInContext(
-  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdTrailSvg"),
+  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdClock"), grab("cmdTrailSvg"),
     grab("cmdMemberTrailsSvg"), grab("cmdRunStepsSvg"), grab("cmdStallsSvg"), grab("cmdObjectsSvg"), grab("cmdLineSvg"), grab("cmdCombatLinesSvg"), grab("cmdMapFacts")].join("\n") +
   "\nvar cmdLayers = MapLayers.defaults(); var cmdTrails = CmdPaths.newTrails();" +
   "\nvar cmdTracker = CmdView.newTracker(); var cmdEvents = UnitInfo.newEvents(); var cmdStalls = CmdPaths.newStalls();" +
@@ -188,4 +188,12 @@ assert.ok(/if \(!Array\.isArray\(cmdPics\.get\(mapId\)\)\) cmdPics\.set\(mapId, 
   const plain = vm.runInContext('cmdTrailSvg(dc, "leadpath", "trail", tpts, 1, 3)', ctx);
   assert.ok(!/ic-swirl|ic-skull/.test(plain), "no marks on a plain walk");
 }
+// ---- the bot names a tight group can show: drawn through CmdView.labelFit, the hover box keeps every name --------------
+const draw = src.slice(src.indexOf("  function drawCmdMap("), src.indexOf("\n  }\n", src.indexOf("  function drawCmdMap(")));
+assert.ok(/CmdView\.labelFit\(labelCand\.map\(c => c\.item\), k\)/.test(draw), "drawCmdMap asks labelFit which names fit");
+assert.ok(/const named = !!labelIds\[uid\];/.test(draw), "a bot's label is drawn only when its box was kept");
+assert.ok(/units\[uid\] = \{ kind: 'b', obj: b \};/.test(draw), "every bot keeps its hover entry, named or not");
+assert.ok(/const rank = isLead \|\| isFd \? 0 : CmdView\.roleKey\(b\) === 'tank' \? 1 : 2;/.test(draw),
+  "the lead and the debugger's bot first, then the tanks, then the rest: a tight group keeps their names");
+
 console.log("drawing ok");

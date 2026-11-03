@@ -25,7 +25,7 @@ private:
 
     ACTION_NODE_A(death_wish, "death wish", "bloodrage");
 
-    ACTION_NODE_A(piercing_howl, "piercing howl", "mocking blow");
+    ACTION_NODE_A(piercing_howl, "piercing howl", "hamstring");
 
     ACTION_NODE_A(mocking_blow, "mocking blow", "hamstring");
     ACTION_NODE_A(heroic_strike, "heroic strike", "melee");
@@ -34,7 +34,7 @@ private:
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
-    ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance");
+    ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance for whirlwind");
 
     ACTION_NODE_P(sweeping_strikes, "sweeping strikes", "battle stance");
 };
@@ -433,6 +433,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -468,6 +469,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -503,6 +505,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||

@@ -24,7 +24,7 @@ const ctx = { console };
 vm.createContext(ctx);
 ["commanders.js", "maplayers.js", "unitinfo.js", "paths.js", "demo.js"].forEach((f) => vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f }));
 vm.runInContext(
-  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdTrailSvg"),
+  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdClock"), grab("cmdTrailSvg"),
     grab("cmdMemberTrailsSvg"), grab("cmdRunStepsSvg"), grab("cmdStallsSvg"), grab("cmdObjectsSvg"), grab("cmdLineSvg"), grab("cmdNotePaths")].join("\n") +
   "\nvar cmdLayers = MapLayers.defaults(); var cmdTrails = CmdPaths.newTrails(); var cmdStalls = CmdPaths.newStalls(); var cmdTracker = CmdView.newTracker(); var cmdEvents = UnitInfo.newEvents();" +
   "\ncmdLayers.trailLen = 240;", ctx);
@@ -81,6 +81,8 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
   mark("aggro", V.aggroMobs(mobs.filter((m) => V.mobClass(m) === "hostile")).length);
   mark("hostilenames", mobs.filter((m) => V.mobClass(m) === "hostile" && m.name).length);
   mark("bossmark", mobs.filter((m) => m.rank === "b").length);
+  mark("facing", mobs.filter((m) => typeof m.o === "number").length);
+  mark("mobcast", mobs.filter((m) => m.cid).length);
   mark("threatcolors", Object.keys(marks.tank).length > 0 && Object.keys(marks.pull).length > 0 ? 1 : 0);
   mark("threat", V.threatLines(mobs, onMap).length); mark("bottarget", V.botTargetLines(onMap, mobs).length);
   mark("healline", P.healLines(onMap).length); mark("ccline", P.ccLines(onMap, mobs).length);
@@ -110,8 +112,11 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
 
 // the layers that need the daemon (the real picture, the zone outlines) are the only ones the demo cannot feed itself
 const EXTERNAL = new Set(["zone", "zonelabels"]);
+// The raid layers read data the simulated group does not carry: a plan, the fight selected in the debugger, the raid layout, the
+// reported subgroups and deaths. The page feeds them from its own data (the plan endpoint, the fight record, the binding).
+const DEMO_UNFED = new Set(["planroute", "planstands", "planrings", "patrols", "subgroups", "healtank", "deaths"]);
 L.DEFS.forEach((d) => {
-  if (d.parts.every((p) => EXTERNAL.has(p))) return;
+  if (d.parts.every((p) => EXTERNAL.has(p) || DEMO_UNFED.has(p))) return;
   assert.ok(d.parts.some((p) => seen[p] > 0), `layer "${d.key}" has nothing to show in the demo`);
 });
 assert.ok(seen.bg, "the demo card has a picture slot to draw");
@@ -123,4 +128,11 @@ assert.ok(seen.bg, "the demo card has a picture slot to draw");
 ["death", "boss", "wipe", "open", "loot"].forEach((k) => assert.ok(events.has(k), `no ${k} event in the demo`));
 ["dr", "da", "br", "ba", "cr", "cu", "gr", "ga"].forEach((k) => assert.ok(ctx.objStates.has(k), `no object ${k}`));
 assert.ok(new Set(D.frame(1040, 1000).mobs.map((m) => m.reaction)).size === 3, "hostile, neutral and friendly units");
+// ---- the demo walks between its 2 s steps through the same glide as a live report ------------------------------------
+const tick = src.slice(src.indexOf("  function cmdDemoTick("), src.indexOf("\n  }\n", src.indexOf("  function cmdDemoTick(")));
+assert.ok(/LiveView\.noteReport\(cmdGlide, \[bind, raidBind\], performance\.now\(\)\)/.test(tick),
+  "cmdDemoTick feeds both demo bindings to the glide, so the dots interpolate at the screen's rate");
+assert.ok(/const bind = CmdDemo\.frame\(now, cmdDemo\.start\), raidBind = CmdDemo\.raidFrame\(now, cmdDemo\.start\);/.test(tick),
+  "the same two bindings the card draws");
+
 console.log("demo ok", Object.keys(seen).length, "things seen");

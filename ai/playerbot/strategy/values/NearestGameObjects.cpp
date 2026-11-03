@@ -6,6 +6,7 @@
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
+#include "Database/DBCStores.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -26,17 +27,17 @@ bool GameObjectsInObjectRangeCheck::operator()(GameObject* u)
     return false;
 }
 
-class AnyDynamicObjectInObjectRangeCheck
+// Dynamic objects within `range` of a unit. WorldObjectListSearcher calls the
+// check for every container type (player, creature, corpse, game object,
+// dynamic object), so it takes a WorldObject* and filters by type id.
+class DynamicObjectsInRangeCheck
 {
 public:
-    AnyDynamicObjectInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
+    DynamicObjectsInRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
     WorldObject const& GetFocusObject() const { return *i_obj; }
-    bool operator()(DynamicObject* u)
+    bool operator()(WorldObject* u)
     {
-        if (u && i_obj->IsWithinDistInMap(u, i_range))
-            return true;
-
-        return false;
+        return u && u->GetTypeId() == TYPEID_DYNAMICOBJECT && u->IsInWorld() && i_obj->IsWithinDistInMap(u, i_range);
     }
 
 private:
@@ -91,17 +92,17 @@ std::list<ObjectGuid> NearestGameObjects::Calculate()
 
 std::list<ObjectGuid> NearestDynamicObjects::Calculate()
 {
-    std::list<DynamicObject*> targets;
-
-    // Penqle has no DynamicObjectListSearcher grid template — dynamic objects
-    // are not iterated via grid searchers in this codebase. Leave the list
-    // empty; the bot strategy degrades gracefully (returns empty list) until
-    // a host hook lands.
+    std::list<WorldObject*> targets;
+    DynamicObjectsInRangeCheck u_check(bot, range);
+    WorldObjectListSearcher<DynamicObjectsInRangeCheck> searcher(targets, u_check);
+    // A dynamic object lives only in the grid container; the world containers
+    // (players, creatures, corpses) never hold one, so visit the grid only.
+    Cell::VisitGridObjects((const WorldObject*)bot, searcher, range);
 
     std::list<ObjectGuid> result;
-    for (std::list<DynamicObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
+    for (std::list<WorldObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
     {
-        DynamicObject* go = *tIter;
+        DynamicObject* go = static_cast<DynamicObject*>(*tIter);
 
         switch (lineOfSight)
         {
@@ -125,50 +126,269 @@ std::list<ObjectGuid> NearestDynamicObjects::Calculate()
     return result;
 }
 
+float ai::DamagingTrapHazardRadius(GameObject* go)
+{
+    if (!go)
+        return 0.0f;
+    GameObjectInfo const* goInfo = go->GetGOInfo();
+    if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
+        return 0.0f;
+    float const trapRadius = (float)goInfo->trap.radius + go->GetCombatReach();
+    SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(goInfo->trap.spellId);
+    if (!spellProto)
+        return trapRadius;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        bool const damaging = spellProto->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE ||
+            (spellProto->Effect[i] == SPELL_EFFECT_APPLY_AURA &&
+                spellProto->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE);
+        if (!damaging || spellProto->EffectImplicitTargetA[i] != kAoeAtSourceTargetA ||
+            spellProto->EffectImplicitTargetB[i] != kAoeAtSourceTargetB)
+            continue;
+        SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(spellProto->EffectRadiusIndex[i]);
+        float const spellRadius = radiusEntry ? radiusEntry->Radius : 0.0f;
+        if (spellRadius > 0.0f)
+            return TrapHazardRadius(spellRadius, trapRadius);
+    }
+    return trapRadius;
+}
+
+namespace
+{
+// A trap GO that hurts: a non-positive spell with a school-damage or
+// periodic-damage effect, not a hunter/snare trap owned by a friend of the bot.
+bool IsDamagingTrap(GameObject* go, Player* bot)
+{
+    if (!go)
+        return false;
+    GameObjectInfo const* goInfo = go->GetGOInfo();
+    if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
+        return false;
+    // Hunter/snare traps owned by a friendly stay; only ownerless (or
+    // hostile-owned) damage traps mark a zone.
+    if (!go->GetOwnerGuid().IsEmpty())
+    {
+        Unit* owner = go->GetOwner();
+        if (owner && sServerFacade.IsFriendlyTo(owner, bot))
+            return false;
+    }
+    uint32 const spellId = goInfo->trap.spellId;
+    if (!spellId)
+        return false;
+    SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(spellId);
+    if (!spellProto || spellProto->IsPositiveEffect(EFFECT_INDEX_0))
+        return false;
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (spellProto->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
+            return true;
+        if (spellProto->Effect[i] == SPELL_EFFECT_APPLY_AURA &&
+            spellProto->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
+            return true;
+    }
+    return false;
+}
+
+// Trap GOs within `range` of a map point (one bounded visit; the grid is
+// never loaded for it).
+class TrapsNearPointCheck
+{
+public:
+    TrapsNearPointCheck(uint32 mapId, float x, float y, float z, float range)
+        : mapId(mapId), x(x), y(y), z(z), range(range) {}
+    bool operator()(GameObject* u)
+    {
+        if (!u || u->GetMapId() != mapId || !sServerFacade.isSpawned(u) || !u->GetGOInfo())
+            return false;
+        float const dx = u->GetPositionX() - x;
+        float const dy = u->GetPositionY() - y;
+        float const dz = u->GetPositionZ() - z;
+        return dx * dx + dy * dy + dz * dz <= range * range;
+    }
+
+private:
+    uint32 mapId;
+    float x, y, z, range;
+};
+
+// A dynamic object that marks a hazard (non-positive effect, within the dodge
+// cap, caster not a friend when it is player-controlled): appended to `out` as
+// a centre/radius circle. With `creatureCastersOnly`, a player-controlled
+// caster's cloud (a player, its pet or its charm) is skipped: the proactive
+// step-out and the melee hold serve PvE ground effects, the open world and PvP
+// against players are unchanged.
+void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out, bool creatureCastersOnly)
+{
+    if (!dyn || !dyn->IsInWorld())
+        return;
+    SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
+    if (!spellProto)
+        return;
+    bool const positive = spellProto->IsPositiveEffect(dyn->GetEffIndex());
+    WorldObject* caster = dyn->GetCaster();
+    Unit* casterUnit = caster ? caster->ToUnit() : nullptr;
+    bool const casterPlayerControlled = casterUnit && casterUnit->GetCharmerOrOwnerPlayerOrPlayerItself() != nullptr;
+    if (creatureCastersOnly && casterPlayerControlled)
+        return;
+    bool const casterFriendly = caster && sServerFacade.IsFriendlyTo(caster, bot);
+    float const radius = dyn->GetRadius();
+    if (!DynObjIsHostileHazard(positive, casterPlayerControlled, casterFriendly, radius))
+        return;
+    AoeHazardCircle hazard;
+    hazard.x = dyn->GetPositionX();
+    hazard.y = dyn->GetPositionY();
+    hazard.z = dyn->GetPositionZ();
+    hazard.radius = radius;
+    out.push_back(hazard);
+}
+
+// Dynamic objects within `range` of a map point (one bounded visit; the grid
+// is never loaded per bot tick).
+class DynObjsNearPointCheck
+{
+public:
+    DynObjsNearPointCheck(uint32 mapId, float x, float y, float z, float range)
+        : mapId(mapId), x(x), y(y), z(z), range(range) {}
+    bool operator()(WorldObject* u)
+    {
+        if (!u || u->GetTypeId() != TYPEID_DYNAMICOBJECT || u->GetMapId() != mapId || !u->IsInWorld())
+            return false;
+        float const dx = u->GetPositionX() - x;
+        float const dy = u->GetPositionY() - y;
+        float const dz = u->GetPositionZ() - z;
+        return dx * dx + dy * dy + dz * dz <= range * range;
+    }
+
+private:
+    uint32 mapId;
+    float x, y, z, range;
+};
+}
+
+void ai::CollectDamagingTrapHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps"))
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !go->IsInWorld())
+            continue;
+        float const radius = DamagingTrapHazardRadius(go);
+        if (radius <= 0.0f)
+            continue;
+        AoeHazardCircle hazard;
+        hazard.x = go->GetPositionX();
+        hazard.y = go->GetPositionY();
+        hazard.z = go->GetPositionZ();
+        hazard.radius = radius;
+        out.push_back(hazard);
+    }
+}
+
+// The largest hazard reach a destination check allows for past the cached list's edge.
+static constexpr float kTrapDestMarginYd = 15.0f;
+
+void ai::CollectDamagingTrapHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
+    std::vector<AoeHazardCircle>& out)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    float const dx = bot->GetPositionX() - x;
+    float const dy = bot->GetPositionY() - y;
+    float const dz = bot->GetPositionZ() - z;
+    // The cached list spans every fire that can reach a point only while the
+    // point is a hazard's reach inside the list's edge (a 7 yd fire 31 yd from
+    // the bot can cover a point 25 yd away); farther points get their own query.
+    float const cachedYd = kTrapScanRangeYd - kTrapDestMarginYd;
+    if (dx * dx + dy * dy + dz * dz <= cachedYd * cachedYd)
+    {
+        CollectDamagingTrapHazards(ai, bot, out);
+        return;
+    }
+    // A held destination beyond the list gets its own query: a fire beside it
+    // is not in the bot's list, and walking to it would be walking into fire.
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+    std::list<GameObject*> targets;
+    TrapsNearPointCheck u_check(bot->GetMapId(), x, y, z, kTrapScanRangeYd);
+    GameObjectListSearcher<TrapsNearPointCheck> searcher(targets, u_check);
+    Cell::VisitAllObjects(x, y, map, searcher, kTrapScanRangeYd, true);
+    for (GameObject* go : targets)
+    {
+        if (!go->IsInWorld() || !IsDamagingTrap(go, bot))
+            continue;
+        float const radius = DamagingTrapHazardRadius(go);
+        if (radius <= 0.0f)
+            continue;
+        AoeHazardCircle hazard;
+        hazard.x = go->GetPositionX();
+        hazard.y = go->GetPositionY();
+        hazard.z = go->GetPositionZ();
+        hazard.radius = radius;
+        out.push_back(hazard);
+    }
+}
+
+void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out,
+    bool creatureCastersOnly)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
+        PushDynObjHazard(bot, map->GetDynamicObject(guid), out, creatureCastersOnly);
+}
+
+void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
+    std::vector<AoeHazardCircle>& out, bool creatureCastersOnly)
+{
+    out.clear();
+    if (!ai || !bot)
+        return;
+    float const dx = bot->GetPositionX() - x;
+    float const dy = bot->GetPositionY() - y;
+    float const dz = bot->GetPositionZ() - z;
+    // Same rule as the trap search: the cached list covers a point in the
+    // bot's neighbourhood, a farther destination gets its own bounded query.
+    float const cachedYd = kTrapScanRangeYd - kTrapDestMarginYd;
+    if (dx * dx + dy * dy + dz * dz <= cachedYd * cachedYd)
+    {
+        CollectDamagingDynObjHazards(ai, bot, out, creatureCastersOnly);
+        return;
+    }
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+    std::list<WorldObject*> targets;
+    DynObjsNearPointCheck u_check(bot->GetMapId(), x, y, z, kTrapScanRangeYd);
+    WorldObjectListSearcher<DynObjsNearPointCheck> searcher(targets, u_check);
+    Cell::VisitGridObjects(x, y, map, searcher, kTrapScanRangeYd, true);
+    for (WorldObject* wo : targets)
+        PushDynObjHazard(bot, static_cast<DynamicObject*>(wo), out, creatureCastersOnly);
+}
+
 std::list<ObjectGuid> NearestDamagingTrapsValue::Calculate()
 {
     std::list<GameObject*> targets;
-    AnyGameObjectInObjectRangeCheck u_check(bot, kMaxAoeAvoidRadiusYd);
+    AnyGameObjectInObjectRangeCheck u_check(bot, kTrapScanRangeYd);
     GameObjectListSearcher<AnyGameObjectInObjectRangeCheck> searcher(targets, u_check);
-    Cell::VisitAllObjects((const WorldObject*)bot, searcher, kMaxAoeAvoidRadiusYd);
+    Cell::VisitAllObjects((const WorldObject*)bot, searcher, kTrapScanRangeYd);
 
     std::list<ObjectGuid> result;
     for (std::list<GameObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)
     {
         GameObject* go = *tIter;
-        if (!go)
-            continue;
-        GameObjectInfo const* goInfo = go->GetGOInfo();
-        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
-            continue;
-        // Hunter/snare traps owned by a friendly stay; only ownerless (or
-        // hostile-owned) damage traps mark a zone.
-        if (!go->GetOwnerGuid().IsEmpty())
-        {
-            Unit* owner = go->GetOwner();
-            if (owner && sServerFacade.IsFriendlyTo(owner, bot))
-                continue;
-        }
-        uint32 spellId = goInfo->trap.spellId;
-        if (!spellId)
-            continue;
-        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(spellId);
-        if (!spellProto || spellProto->IsPositiveEffect(EFFECT_INDEX_0))
-            continue;
-        for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
-        {
-            if (spellProto->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
-            {
-                result.push_back(go->getObjectGuid());
-                break;
-            }
-            if (spellProto->Effect[i] == SPELL_EFFECT_APPLY_AURA &&
-                spellProto->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
-            {
-                result.push_back(go->getObjectGuid());
-                break;
-            }
-        }
+        if (IsDamagingTrap(go, bot))
+            result.push_back(go->getObjectGuid());
     }
 
     return result;

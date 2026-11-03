@@ -59,12 +59,13 @@ void FireMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "fire spells locked",
         NextAction::array(0, new NextAction("frostbolt", ACTION_NORMAL), NULL)));
 
-    // The filler has no "shoot" fallback (a GCD or threat-veto refusal
-    // must not start the wand); wand only while its mana cost is out of
-    // reach, below every spell row (NukeUnaffordable, WandPolicy.h).
+    // Frostbolt before the wand, same as the arcane row: Fireball costs
+    // 190-265 against Frostbolt's 130-195, and the "fire spells locked"
+    // row above already treats Frostbolt as the backup nuke.
     triggers.push_back(new TriggerNode(
         "fireball unaffordable",
-        NextAction::array(0, new NextAction("shoot", ACTION_DEFAULT), NULL)));
+        NextAction::array(0, new NextAction("frostbolt", ACTION_DEFAULT),
+                             new NextAction("shoot", ACTION_DEFAULT), NULL)));
 }
 
 void FireMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

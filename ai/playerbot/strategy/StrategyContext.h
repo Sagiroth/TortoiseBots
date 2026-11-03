@@ -1,6 +1,11 @@
 #pragma once
+#include "generic/TempleOfAhnQirajStrategies.h"
 
 #include "CustomStrategy.h"
+#include "generic/FankrissStrategy.h"
+#include "generic/PatchwerkStrategy.h"
+#include "actions/FankrissTankActions.h"
+#include "actions/FankrissRaidActions.h"
 #include "generic/NonCombatStrategy.h"
 #include "generic/RacialsStrategy.h"
 #include "generic/ChatCommandHandlerStrategy.h"
@@ -152,7 +157,6 @@ namespace ai
             creators["debug grind"] = [](PlayerbotAI* ai) { return new DebugGrindStrategy(ai); };
             creators["debug loot"] = [](PlayerbotAI* ai) { return new DebugLootStrategy(ai); };
             creators["debug log"] = [](PlayerbotAI* ai) { return new DebugLogStrategy(ai); };
-            creators["debug llm"] = [](PlayerbotAI* ai) { return new DebugLLMStrategy(ai); };
             creators["debug stuck"] = [](PlayerbotAI* ai) { return new DebugStuckStrategy(ai); };
             creators["debug xp"] = [](PlayerbotAI* ai) { return new DebugXpStrategy(ai); };
             creators["debug equip"] = [](PlayerbotAI* ai) { return new DebugEquipStrategy(ai); };
@@ -173,9 +177,16 @@ namespace ai
             // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
-            creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
+            creators["fankriss tank"] = [](PlayerbotAI* ai) { return new FankrissTankStrategy(ai); };
+            creators["fankriss spawn tank"] = [](PlayerbotAI* ai) { return new FankrissSpawnTankStrategy(ai); };
+            creators["fankriss stack"] = [](PlayerbotAI* ai) { return new FankrissStackStrategy(ai); };
+            creators["fankriss healing"] = [](PlayerbotAI* ai) { return new FankrissHealingStrategy(ai); };
+            creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk main"); };
+            creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk soak"); };
+            creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk melee safety"); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsStrategy(ai); };
@@ -207,6 +218,7 @@ namespace ai
             creators["gluth"] = [](PlayerbotAI* ai) { return new GluthFightStrategy(ai); };
             creators["thaddius"] = [](PlayerbotAI* ai) { return new ThaddiusFightStrategy(ai); };
             creators["kel'thuzad"] = [](PlayerbotAI* ai) { return new KelthuzadFightStrategy(ai); };
+            creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["grobbulus"] = [](PlayerbotAI* ai) { return new GrobbulusFightStrategy(ai); };
             creators["loatheb"] = [](PlayerbotAI* ai) { return new LoathebFightStrategy(ai); };
             creators["razuvious"] = [](PlayerbotAI* ai) { return new RazuviousFightStrategy(ai); };

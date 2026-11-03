@@ -58,7 +58,7 @@ class BotLfgConfigWiringTest(unittest.TestCase):
         tline = TEMPLATE.index("AiPlayerbot.BotLfgChat = 1")
         self.assertGreater(tline, tanchor)
         block = TEMPLATE[tanchor:tline]
-        for word in ("LookingForGroup", "EnableBroadcasts", "Only read while",
+        for word in ("LookingForGroup", "Only read while",
                      "AiPlayerbot.BotLfgGroups = 1"):
             self.assertIn(word, block)
 

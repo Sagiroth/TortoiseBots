@@ -77,7 +77,6 @@ class BossPairWiringTest(unittest.TestCase):
         # The step's own spawn (the row nearest to the step's point) lying dead is boss down whatever another row does.
         self.assertIn("f.bossSearchNoSpawn = spawns.empty();", search)
         self.assertIn("if (low == own)\n            f.bossSearchOwnDead = true;", search)
-        self.assertIn("ai::PlanDistance(data->position.x, data->position.y, data->position.z, step.x, step.y, step.z)", search)
         spawns = body(CODE, "std::vector<uint32> const& BossSpawnLowGuids(uint32 mapId, uint32 entry)")
         self.assertIn("std::lock_guard<std::mutex> guard(lock);", spawns)
         self.assertIn("if (it != cache.end())\n        return it->second;", spawns)

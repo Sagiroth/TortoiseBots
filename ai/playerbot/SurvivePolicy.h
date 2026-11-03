@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstddef>
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -212,6 +212,32 @@ namespace ai
         bool hasMana, std::uint32_t manaPct, std::uint32_t lowManaPct)
     {
         return isHybridSelfHealer && !inGroup && hasMana && manaPct >= lowManaPct;
+    }
+
+    // Hopeless single fight (outnumbered escape): a lone attacker far above
+    // the bot is as unwinnable as two fair ones - a +6 mob versus the bot's
+    // own level hits the damage-vs-health curve past the point where the
+    // pool's fair-fight win rate holds (2026-11-01 window: +6-or-more PvE
+    // was 12.6 % of all deaths while fair fights were lost at killer 69 %
+    // HP). The count gate below stays, but a single attacker this far above
+    // counts as outnumbered. PvP attackers keep the old rule: players kite,
+    // lose interest and can be answered by guards, so a lone player never
+    // forces a flee on level gap alone.
+    inline bool IsHopelessSingleAttacker(bool attackerIsPlayer, int attackerLevel, int botLevel)
+    {
+        return !attackerIsPlayer && attackerLevel >= botLevel + 6;
+    }
+
+    // Outnumbered flee line (OutNumberedTrigger, R3 fair-fight losses):
+    // cloth (mage/priest/warlock) starts weighing the disengage at 85%
+    // instead of the 70% medium line — the second attacker's burst lands
+    // on cloth mitigation, so waiting for 70% leaves nothing to spend on
+    // the way out. Everyone else keeps the configured medium line.
+    inline std::uint32_t OutnumberedFleeHealthLine(bool isClothCaster, std::uint32_t mediumHealth)
+    {
+        // Clamp at the cloth line: a custom medium above 85 would otherwise
+        // make cloth flee later than everyone else (inverted).
+        return isClothCaster ? std::max(mediumHealth, 85u) : mediumHealth;
     }
 
     // Death telemetry: the deaths.csv 'adds' loop used to count victim-

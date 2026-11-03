@@ -158,27 +158,39 @@ func sortRunMembers(members []model.DungeonMember) {
 	})
 }
 
-// Dungeons builds the view behind GET /api/v1/dungeons: the current runs
-// with their members and first-seen ages.
-func (s *Store) Dungeons() model.DungeonsView {
-	// Copy the fresh mob entries first: the mobs mutex is never taken while
-	// the roster lock is held.
-	mobs := s.freshDungeonMobs()
+// instanceRun is one roster-derived run before the raid/dungeon split: IsRaidRun decides the tab.
+type instanceRun struct {
+	run  model.DungeonRun
+	raid bool
+}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// IsRaidRun reports whether a run is a raid run (D7): any member's roster
+// row carries the raid flag, or its matched DUNGEON_MOBS entry does. Neither
+// source means dungeon, so an unknown copy stays where it was (old modules
+// keep today's behaviour). Never a size threshold, never raids.csv.
+func IsRaidRun(members []model.BotSnapshot, mobsRaid bool) bool {
+	for _, m := range members {
+		if m.Raid {
+			return true
+		}
+	}
+	return mobsRaid
+}
 
-	now := s.now()
-	staleModule := false
+// instanceRunsLocked builds the roster-derived runs with their mob join and
+// first-seen ages, without the raid/dungeon split. Called with the roster
+// lock held; the fresh mob entries are passed in (never take the mobs mutex
+// under the roster lock).
+func (s *Store) instanceRunsLocked(bots map[uint32]*botEntry, mobs map[string]dungeonMobsEntry, now time.Time, stale *bool) ([]instanceRun, []string) {
 	keys := make([]string, 0)
-	grouped := make(map[string][]model.BotSnapshot, len(s.bots))
-	for _, entry := range s.bots {
+	grouped := make(map[string][]model.BotSnapshot, len(bots))
+	for _, entry := range bots {
 		key := dungeonRunKey(entry.snap)
 		if key == "" {
 			continue
 		}
 		if entry.snap.Instance == nil {
-			staleModule = true
+			*stale = true
 		}
 		if _, seen := grouped[key]; !seen {
 			keys = append(keys, key)
@@ -187,7 +199,7 @@ func (s *Store) Dungeons() model.DungeonsView {
 	}
 	sort.Strings(keys)
 
-	runs := make([]model.DungeonRun, 0, len(keys))
+	mobRuns := make([]model.DungeonRun, 0, len(keys))
 	for _, key := range keys {
 		members := grouped[key]
 		run := model.DungeonRun{Key: key, Members: make([]model.DungeonMember, 0, len(members))}
@@ -217,15 +229,57 @@ func (s *Store) Dungeons() model.DungeonsView {
 			run.SeenSec = now.Sub(first).Seconds()
 		}
 		sortRunMembers(run.Members)
-		runs = append(runs, run)
+		mobRuns = append(mobRuns, run)
 	}
 
 	// Match the mob entries onto the runs only now that every run is known:
 	// the roster may report no instance (a module base without #895), where
 	// the match needs the members, and ambiguity is judged per entry.
-	for i, e := range matchDungeonMobs(runs, mobs) {
-		joinDungeonMobs(&runs[i], e)
+	matched := matchDungeonMobs(mobRuns, mobs)
+	raid := make([]bool, len(mobRuns))
+	for i, e := range matched {
+		joinDungeonMobs(&mobRuns[i], e)
+		raid[i] = e.run.Raid
+	}
+	out := make([]instanceRun, 0, len(mobRuns))
+	for i, r := range mobRuns {
+		// The raid flag may ride the roster rows instead of (or as well as)
+		// the mob entry: either source marks a raid run.
+		if !raid[i] {
+			for _, m := range grouped[r.Key] {
+				if m.Raid {
+					raid[i] = true
+					break
+				}
+			}
+		}
+		out = append(out, instanceRun{run: r, raid: raid[i]})
+	}
+	return out, keys
+}
+
+// Dungeons builds the view behind GET /api/v1/dungeons: the current
+// non-raid runs with their members and first-seen ages. Raid copies leave
+// for /api/v1/raids (the Raids tab).
+func (s *Store) Dungeons() model.DungeonsView {
+	// Copy the fresh mob entries first: the mobs mutex is never taken while
+	// the roster lock is held.
+	mobs := s.freshDungeonMobs()
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := s.now()
+	staleModule := false
+	runs, _ := s.instanceRunsLocked(s.bots, mobs, now, &staleModule)
+
+	out := make([]model.DungeonRun, 0, len(runs))
+	for _, r := range runs {
+		if r.raid {
+			continue
+		}
+		out = append(out, r.run)
 	}
 
-	return model.DungeonsView{Runs: runs, GeneratedAt: now.Unix(), StaleModule: staleModule}
+	return model.DungeonsView{Runs: out, GeneratedAt: now.Unix(), StaleModule: staleModule}
 }

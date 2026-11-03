@@ -3,308 +3,938 @@
 #include "GuildValues.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
-#include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/GuildOrderBuyAction.h"
+#include "playerbot/GuildOrderSources.h"
+#include "playerbot/GuildOrderCraft.h"
+#include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderNeedPolicy.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderReagentTree.h"
+#include "runtime/GuildOrderSubOrderPolicy.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
+#include "runtime/GuildOrderRefundPolicy.h"
+#include "runtime/AltBotService.h"
 #include "Guild/GuildMgr.h"
+#include "Mail/Mail.h"
+#include "MapNodes/MasterPlayer.h"
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 using namespace ai;
 
-std::string GuildOrderValue::TrimWhitespace(const std::string& str)
+namespace
 {
-    std::string result = str;
-    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) { return !std::isspace(ch); }));
-    result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), result.end());
-    return result;
+
+using TortoiseBots::GuildOrders::NeedItem;
+using TortoiseBots::GuildOrders::ReagentTotals;
+using TortoiseBots::GuildOrders::BankLegSkipped;
+using TortoiseBots::GuildOrders::OrderRecord;
+using TortoiseBots::GuildOrders::OrderReason;
+using TortoiseBots::GuildOrders::OrderType;
+using TortoiseBots::GuildOrders::SupplyOptions;
+using TortoiseBots::GuildOrders::SupplyStep;
+using TortoiseBots::GuildOrders::MailLegSkipped;
+using TortoiseBots::GuildOrders::SupplyFarmItemFor;
+using TortoiseBots::GuildOrders::SupplyMailItemId;
+using TortoiseBots::GuildOrders::MaterialFold;
+using TortoiseBots::GuildOrders::MaterialOutcome;
+using TortoiseBots::GuildOrders::FoldMaterials;
+using TortoiseBots::GuildOrders::NeedListHas;
+using TortoiseBots::GuildOrders::PruneNeedItems;
+using TortoiseBots::GuildOrders::NeedItemsEqual;
+using TortoiseBots::GuildOrders::PartialNeedVerdict;
+using TortoiseBots::GuildOrders::PartialNeedVerdictFor;
+
+struct SupplyCandidate
+{
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+    bool craft = false;
+    bool takeMail = false;
+    bool blocked = false; // the ladder stopped at an item only the player can bring
+};
+// Latest supply refresh per order bot: at most one ladder run per tick, so
+// the values that read above it in one tick share a single pass. Memory
+// only (no behaviour change across restarts); entries prune themselves
+// when a bot refreshes less often than the window.
+inline constexpr uint32_t kSupplyRefreshCoalesceMs = 1500;
+inline std::unordered_map<uint32_t, uint32_t>& SupplyRefreshMsByBot()
+{
+    static std::unordered_map<uint32_t, uint32_t> refreshedMs;
+    return refreshedMs;
+}
+inline bool SupplyRefreshDue(uint32_t botGuidLow, uint32_t nowMs)
+{
+    auto& refreshed = SupplyRefreshMsByBot();
+    auto found = refreshed.find(botGuidLow);
+    if (found == refreshed.end())
+        return true;
+    uint32_t last = found->second;
+    bool stillFresh = last <= nowMs ? nowMs - last < kSupplyRefreshCoalesceMs :
+        last - nowMs > UINT32_MAX - kSupplyRefreshCoalesceMs;
+    if (stillFresh)
+        return false;
+    refreshed.erase(found);
+    return true;
+}
+inline void NoteSupplyRefreshed(uint32_t botGuidLow, uint32_t nowMs)
+{
+    SupplyRefreshMsByBot()[botGuidLow] = nowMs;
+}
+// One Refresh's view of the bot's bags, mailbox and recipes: bag counts and
+// the mailbox are scanned once per ladder pass instead of once per level of
+// the recipe walk. The mailbox scan walks every mail; the bag count walks
+// the inventory slots; the spell walk below feeds both missing-reagent
+// paths, so sharing one snapshot cuts the per-Refresh scans to one each.
+struct SupplySnapshot
+{
+    std::unordered_map<uint32_t, uint32_t> bags;
+    std::unordered_map<uint32_t, uint32_t> mail;
+    std::unordered_map<uint32_t, uint32_t> craftSpell;
+    bool mailTaken = false;
+    bool spellsTaken = false;
+    uint32_t nowMs = 0;
+};
+
+inline uint32_t SnapshotBags(PlayerbotAI* ai, SupplySnapshot& snapshot, uint32_t itemId)
+{
+    if (!itemId)
+        return 0;
+    auto found = snapshot.bags.find(itemId);
+    if (found != snapshot.bags.end())
+        return found->second;
+    uint32_t count = ai->GetInventoryItemsCountWithId(itemId);
+    snapshot.bags.emplace(itemId, count);
+    return count;
 }
 
-bool GuildOrderValue::ParseOrderPrefix(const std::string& note, const std::string& prefix, std::string& outBody)
+// The whole mailbox in one walk: bought items arrive by mail, so the first
+// mail question of the pass counts every waiting item and later ones read
+// the map. Matches OrderMailboxItems per item (undelivered and deleted mail
+// never counts).
+inline void TakeMailboxSnapshot(Player* bot, SupplySnapshot& snapshot)
 {
-    auto pos = note.find(prefix);
-    if (pos == std::string::npos)
-        return false;
+    snapshot.mailTaken = true;
+    if (!bot || !bot->GetSession())
+        return;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+        {
+            Item* mailItem = master->GetMItem(itemItr->item_guid);
+            snapshot.mail[itemItr->item_template] += mailItem ? mailItem->GetCount() : 1;
+        }
+    }
+}
 
-    std::string body = TrimWhitespace(note.substr(pos + prefix.size()));
-    if (body.empty())
-        return false;
+inline uint32_t SnapshotMail(Player* bot, SupplySnapshot& snapshot, uint32_t itemId)
+{
+    if (!itemId)
+        return 0;
+    if (!snapshot.mailTaken)
+        TakeMailboxSnapshot(bot, snapshot);
+    auto found = snapshot.mail.find(itemId);
+    return found == snapshot.mail.end() ? 0 : found->second;
+}
 
-    outBody = body;
+inline uint32_t SnapshotCraftSpell(Player* bot, SupplySnapshot& snapshot, uint32_t itemId)
+{
+    if (!itemId)
+        return 0;
+    if (!snapshot.spellsTaken)
+    {
+        snapshot.spellsTaken = true;
+        for (auto& [spellId, spellState] : bot->GetSpellMap())
+        {
+            if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
+                continue;
+            const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+            if (!pSpellInfo)
+                continue;
+            for (int i = 0; i < 3; ++i)
+            {
+                if (pSpellInfo->Effect[i] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->EffectItemType[i] &&
+                    !snapshot.craftSpell.count(pSpellInfo->EffectItemType[i]))
+                    snapshot.craftSpell.emplace(pSpellInfo->EffectItemType[i], spellId);
+            }
+        }
+    }
+    auto found = snapshot.craftSpell.find(itemId);
+    return found == snapshot.craftSpell.end() ? 0 : found->second;
+}
+
+bool IsUnlimitedVendorItem(uint32_t itemId)
+{
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    return proto && ItemUsageValue::IsItemSoldByAnyVendor(proto) &&
+        !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto);
+}
+
+// Recipe view of the bot's known recipes for the whole-tree walk: the spell
+// map snapshot names the craft spell, its create-item effect carries the
+// guaranteed yield, and a vendor-unlimited item stays a leaf (bought, never
+// made), exactly as the ladder treats it.
+struct SnapshotRecipes
+{
+    Player* bot;
+    SupplySnapshot* snap;
+
+    bool operator()(uint32_t itemId, TortoiseBots::GuildOrders::Recipe& out) const
+    {
+        uint32_t spellId = SnapshotCraftSpell(bot, *snap, itemId);
+        if (!spellId || IsUnlimitedVendorItem(itemId))
+            return false;
+        SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+        if (!spell)
+            return false;
+        uint32_t effect = ai::FindCraftEffectFor(spellId, itemId);
+        out.yieldPerCast = TortoiseBots::CraftOrderPolicy::MinYieldPerCast(spell->EffectBasePoints[effect],
+            spell->EffectBaseDice[effect], spell->EffectDieSides[effect]);
+        for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        {
+            if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+                continue;
+            out.reagents.push_back({ uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]) });
+        }
+        if (!sPlayerbotAIConfig.craftToolsAlways)
+            for (uint32_t totem : spell->Totem)
+                if (totem)
+                    out.tools.push_back(totem);
+        return true;
+    }
+};
+
+// Whole-tree totals behind one snapshot: base reagents summed over every
+// branch, each id once, with bags and mail spent once across the walk.
+std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
+    uint32_t itemId, uint32_t count)
+{
+    SnapshotRecipes recipes{ bot, &snap };
+    auto held = [ai, bot, &snap](uint32_t heldId)
+    {
+        return SnapshotBags(ai, snap, heldId) + SnapshotMail(bot, snap, heldId);
+    };
+    std::vector<NeedItem> needs;
+    for (TortoiseBots::GuildOrders::ReagentNeed const& need :
+        TortoiseBots::GuildOrders::CollectBaseReagents(itemId, count, recipes, held))
+        needs.push_back(NeedItem{ need.itemId, need.count });
+    return needs;
+}
+
+// Whole-tree aggregates behind one snapshot: the three counts the ladder
+// needs, one row per base reagent. A mailbox leg the ladder skips is dead
+// stock here too, or the totals answer a need the ladder will not take mail
+// for and the order parks asking for zero.
+std::vector<ReagentTotals> ReagentTotalsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
+    uint32_t itemId, uint32_t count, OrderRecord const* order)
+{
+    SnapshotRecipes recipes{ bot, &snap };
+    auto bags = [ai, &snap](uint32_t bagsId)
+    {
+        return SnapshotBags(ai, snap, bagsId);
+    };
+    auto mail = [bot, &snap, order](uint32_t mailId)
+    {
+        bool skipped = order &&
+            MailLegSkipped(mailId, order->mailEmptyItemId, snap.nowMs, order->mailEmptyMs);
+        return TortoiseBots::GuildOrders::SpentMail(SnapshotMail(bot, snap, mailId), skipped);
+    };
+    return TortoiseBots::GuildOrders::CollectReagentTotals(itemId, count, recipes, bags, mail);
+}
+
+// Which whole-tree count a ladder step asks for. The mailbox leg fills in what
+// the bags leave short, so it must not see the smaller external need; a bank,
+// auction or farm leg sources only what neither bags nor mail hold.
+enum class ReagentAggregate
+{
+    BagShort,
+    ExtShort
+};
+
+// A leaf candidate asks for the whole order's need for that reagent, not the
+// share of the branch the walk happened to reach first: a sub-order, a bank
+// withdrawal or an auction buy then covers the tree instead of half of it.
+// The branch's own count stays the floor: three walks over shared stock can
+// leave the tree total below the branch it is standing on.
+uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals, uint32_t depth,
+    uint32_t itemId, uint32_t fallback, ReagentAggregate aggregate)
+{
+    if (!depth)
+        return fallback;
+    auto found = totals.find(itemId);
+    if (found == totals.end())
+        return fallback;
+    uint32_t treeCount = aggregate == ReagentAggregate::BagShort ? found->second.bagShort
+                                                                 : found->second.extShort;
+    return TortoiseBots::GuildOrders::WholeTreeCount(treeCount, fallback);
+}
+
+// Every reagent the bot still needs for `count` casts of the output, one
+// entry per reagent: the need list and its whisper name them all at once
+// instead of asking the player again after each delivery.
+void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
+    std::vector<NeedItem>& out, SupplySnapshot* snapshot = nullptr)
+{
+    if (!ai || !bot || !itemId || !count)
+        return;
+    SupplySnapshot local;
+    SupplySnapshot& snap = snapshot ? *snapshot : local;
+    if (!snap.nowMs)
+        snap.nowMs = WorldTimer::getMSTime();
+    uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
+    // A farm or buy order's item has no recipe: bags and mailbox are the
+    // whole stock, as before.
+    if (!spellId || IsUnlimitedVendorItem(itemId))
+    {
+        uint32_t owned = SnapshotBags(ai, snap, itemId) + SnapshotMail(bot, snap, itemId);
+        if (owned < count)
+            out.push_back(NeedItem{ itemId, count - owned });
+        return;
+    }
+    // The whole tree, not one level of siblings: a base reagent shared by
+    // two intermediates, or sitting three recipes down, is one row with the
+    // summed need, and an intermediate in the bags shrinks its subtree.
+    for (NeedItem const& need : MissingReagentsFromTree(ai, bot, snap, itemId, count))
+        out.push_back(need);
+}
+
+bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
+    std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out, OrderRecord const* order = nullptr,
+    SupplySnapshot* snapshot = nullptr, std::unordered_map<uint32_t, ReagentTotals> const* totals = nullptr)
+{
+    if (!ai || !bot || !itemId || !count)
+        return false;
+    SupplySnapshot local;
+    SupplySnapshot& snap = snapshot ? *snapshot : local;
+    if (!snap.nowMs)
+        snap.nowMs = WorldTimer::getMSTime();
+    // One whole-tree aggregate per ladder pass: every leaf candidate below
+    // asks for the order's full need, not the first branch's share, and the
+    // mailbox leg asks for the larger bag shortfall.
+    std::unordered_map<uint32_t, ReagentTotals> treeTotals;
+    if (!totals)
+    {
+        for (ReagentTotals const& row : ReagentTotalsFromTree(ai, bot, snap, itemId, count, order))
+            treeTotals[row.itemId] = row;
+        totals = &treeTotals;
+    }
+    if (depth >= TortoiseBots::GuildOrders::kReagentTreeMaxDepth ||
+        std::find(path.begin(), path.end(), itemId) != path.end())
+    {
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+        return true;
+    }
+
+    uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
+    if (!spellId || IsUnlimitedVendorItem(itemId))
+    {
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+        return true;
+    }
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell)
+    {
+        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+        return true;
+    }
+
+    path.push_back(itemId);
+    uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    std::vector<MaterialOutcome> outcomes;
+    std::vector<SupplyCandidate> results;
+    // Recipe tools are minted at the craft (CraftToolsAlways); with it off a
+    // missing tool goes down the ladder like a reagent, one each.
+    std::vector<NeedItem> materials;
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        if (spell->ReagentCount[i] && spell->Reagent[i] > 0)
+            materials.push_back(NeedItem{ uint32_t(spell->Reagent[i]), spell->ReagentCount[i] * casts });
+    if (!sPlayerbotAIConfig.craftToolsAlways)
+        for (uint32_t totem : spell->Totem)
+            if (totem)
+                materials.push_back(NeedItem{ totem, 1 });
+    outcomes.reserve(materials.size());
+    results.reserve(materials.size());
+    for (NeedItem const& material : materials)
+    {
+        uint32_t reagentId = material.itemId;
+        uint32_t required = material.count;
+        uint32_t inBags = SnapshotBags(ai, snap, reagentId);
+        // A mailbox no search could reach is not a source: the ladder treats
+        // the reagent as bag-only and moves down instead of queueing mail.
+        uint32_t inMail = SnapshotMail(bot, snap, reagentId);
+        if (order && MailLegSkipped(reagentId, order->mailEmptyItemId, snap.nowMs, order->mailEmptyMs))
+            inMail = 0;
+        if (inMail && inBags < required)
+        {
+            path.pop_back();
+            // The mailbox leg brings in what the bags do not cover; how much
+            // it can move is bounded by the mail, not by its target.
+            out = { reagentId,
+                TreeTotalFor(*totals, depth + 1, reagentId, required - inBags, ReagentAggregate::BagShort),
+                false, true };
+            return true;
+        }
+        uint32_t owned = inBags + inMail;
+        if (owned >= required)
+        {
+            outcomes.push_back(MaterialOutcome::Owned);
+            results.push_back(SupplyCandidate{ reagentId, 0, false });
+            continue;
+        }
+        SupplyCandidate nested;
+        if (!FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap,
+                totals))
+        {
+            outcomes.push_back(MaterialOutcome::Owned);
+            results.push_back(SupplyCandidate{ reagentId, required - owned, false });
+            continue;
+        }
+        results.push_back(nested);
+        // An item the player already owes for this order is a dead end for
+        // the ladder: it cannot be sourced again, and the walk must move on.
+        if (nested.blocked ||
+            (!nested.craft && order && order->type == OrderType::Craft && NeedListHas(order->needItems, nested.itemId)))
+            outcomes.push_back(MaterialOutcome::Blocked);
+        else if (!nested.craft)
+            outcomes.push_back(MaterialOutcome::Missing);
+        else
+            outcomes.push_back(MaterialOutcome::Craftable);
+    }
+    path.pop_back();
+    MaterialFold fold = FoldMaterials(outcomes.data(), outcomes.size());
+    if (fold.outcome == MaterialOutcome::Missing)
+    {
+        out = results[fold.index];
+        return true;
+    }
+    // A component the bags can already make comes first: the item itself
+    // cannot be cast until it exists (Copper Tube before the Blunderbuss).
+    if (fold.outcome == MaterialOutcome::Craftable)
+    {
+        out = results[fold.index];
+        return true;
+    }
+    if (fold.outcome == MaterialOutcome::Blocked)
+    {
+        out = { itemId, count, false, false, true };
+        return true;
+    }
+    out = { itemId, count, true };
     return true;
 }
 
-char* strstri(const char* haystack, const char* needle);
-
-uint32 GuildOrderValue::FindItemByName(const std::string& name)
+// Farmable verdict for one ladder pass, planned lazily: the ladder calls
+// CanFarm only for steps that farm, so most same-item ticks never plan.
+class FarmableVerdict
 {
-    static std::unordered_map<std::string, uint32> s_cache;
-
-    std::string lowerName = name;
-    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    auto it = s_cache.find(lowerName);
-    if (it != s_cache.end())
-        return it->second;
-
-    uint32 substringMatch = 0;
-
-    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+public:
+    FarmableVerdict(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate)
+        : bot_(bot), order_(order), candidate_(candidate) {}
+    bool CanFarm()
     {
-        ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
-        if (!proto)
-            continue;
-
-        if (proto->Class == ITEM_CLASS_RECIPE ||
-            proto->Class == ITEM_CLASS_WEAPON ||
-            proto->Class == ITEM_CLASS_ARMOR)
-            continue;
-
-        if (name.size() == proto->Name1.size() && strstri(proto->Name1, name.c_str()))
+        if (planned_)
+            return canFarm_;
+        planned_ = true;
+        if (IsUnlimitedVendorItem(candidate_.itemId))
+            canFarm_ = order_.reason != OrderReason::NoSource;
+        // The farm leg gave up on this item (no zone of the plan yielded a
+        // spot): the plan still lists zones, so the recorded verdict alone
+        // stops a retry without planning again.
+        else if (order_.supplyItemId == candidate_.itemId &&
+            order_.supplyStep == SupplyStep::Farm && order_.reason == OrderReason::NoSource)
+            canFarm_ = false;
+        else
         {
-            s_cache[lowerName] = itemId;
-            return itemId;
+            TortoiseBots::GuildOrders::SourcePlan farm =
+                ai::PlanGuildOrderSources(bot_, candidate_.itemId, OrderType::Farm);
+            canFarm_ = farm.verdict == OrderReason::None && !farm.zones.empty();
         }
+        return canFarm_;
+    }
+private:
+    Player* bot_ = nullptr;
+    OrderRecord const& order_;
+    SupplyCandidate const& candidate_;
+    bool planned_ = false;
+    bool canFarm_ = false;
+};
 
-        if (!substringMatch && strstri(proto->Name1, name.c_str()))
-            substringMatch = itemId;
+SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable)
+{
+    if (candidate.craft)
+        return SupplyStep::Craft;
+    SupplySnapshot local;
+    SupplySnapshot& snap = snapshot ? *snapshot : local;
+    if (!snap.nowMs)
+        snap.nowMs = WorldTimer::getMSTime();
+    // A banker visit that found none of this item skips the bank leg until
+    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId, snap.nowMs, order.bankEmptyMs);
+    bool sameItem = order.supplyItemId == candidate.itemId;
+    SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
+    FarmableVerdict localVerdict(bot, order, candidate);
+    FarmableVerdict& verdict = farmable ? *farmable : localVerdict;
+    // No gold of its own and none it may take from the guild: the auction
+    // house leg could only walk to a city and back.
+    bool const auctionUnaffordable = bot->GetMoney() == 0 &&
+        TortoiseBots::GuildOrders::BranchGoldCapRemaining(order.botGuidLow) == 0;
+    // A reagent any vendor sells without limit is bought there, never
+    // farmed and never delegated: the bank and auction legs never travel
+    // for it (SupplyFarmItemFor maps it to 0), so routing it through them
+    // parked the order for good. The farm verdict stays out of it: it
+    // rates wild sources, while the vendor leg buys from a vendor.
+    if (IsUnlimitedVendorItem(candidate.itemId))
+    {
+        // The vendor leg itself gave up (no vendor in reach, or the buy
+        // never moved): the player gets the need list, never a sub-order.
+        if (sameItem && current == SupplyStep::Farm && order.reason == OrderReason::NoSource)
+            return SupplyStep::Need;
+        return SupplyStep::Farm;
+    }
+    if (sameItem)
+    {
+        // A delivered sub-order put the item in the guild bank: fetch it
+        // there instead of asking for it again.
+        if (current == SupplyStep::Sub && !bankSkipped && sPlayerbotAIConfig.guildOrderBankWithdraw &&
+            TortoiseBots::GuildOrders::SubOrderDelivered(order.botGuidLow, candidate.itemId))
+            return SupplyStep::Bank;
+        // The choice below never parks on a Sub row for another item: the
+        // candidate here is already the next uncovered one, so a parked row
+        // for a delegated component yields to supplying (or delegating) this
+        // one.
+        if (current == SupplyStep::Sub)
+            current = SupplyStep::None;
+        if (current == SupplyStep::Craft && candidate.craft)
+            return current;
+        if (current == SupplyStep::Bags && SnapshotMail(bot, snap, candidate.itemId) > 0)
+            return current;
+        if (current == SupplyStep::Bags && order.supplyReturnStep != SupplyStep::None)
+            return order.supplyReturnStep;
+        if (current == SupplyStep::Bank && sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped)
+            return current;
+        // A kept farm leg plans only when the ladder reaches it: steady-state
+        // ticks for a working farm step never touch the planner.
+        if (current == SupplyStep::Farm && verdict.CanFarm())
+            return current;
+        SupplyOptions options;
+        options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped;
+        options.bankAttempted = bankSkipped || current == SupplyStep::AuctionHouse ||
+            current == SupplyStep::Farm || current == SupplyStep::Craft ||
+            current == SupplyStep::Sub || current == SupplyStep::Need;
+        // A reagent whose counter was already searched does not bounce back
+        // to it: the ladder must reach its need stage first, and then the
+        // cycle allows exactly one retry. The live auction leg itself is
+        // never marked attempted, so it keeps its turn while it runs.
+        bool const auctionReentry = TortoiseBots::GuildOrders::AuctionReentryAllowed(
+            order.botGuidLow, candidate.itemId);
+        options.auctionHouseAttempted = auctionUnaffordable ||
+            (!auctionReentry && current != SupplyStep::AuctionHouse);
+        options.selfCanCraft = candidate.craft;
+        options.selfCanFarm = verdict.CanFarm();
+        options.subAttempted = current == SupplyStep::Need;
+        return TortoiseBots::GuildOrders::NextSupplyStep(options);
+    }
+    SupplyOptions options;
+    options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped;
+    options.bankAttempted = bankSkipped;
+    options.auctionHouseAttempted = auctionUnaffordable ||
+        !TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId);
+    options.selfCanCraft = candidate.craft;
+    options.selfCanFarm = verdict.CanFarm();
+    options.subAttempted = false;
+    return TortoiseBots::GuildOrders::NextSupplyStep(options);
+}
+
+SupplyStep MailReturnStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable)
+{
+    if (order.supplyItemId == candidate.itemId)
+    {
+        if (order.supplyStep == SupplyStep::Bags)
+            return order.supplyReturnStep == SupplyStep::None ? SupplyStep::Bank : order.supplyReturnStep;
+        if (order.supplyStep == SupplyStep::Bank || order.supplyStep == SupplyStep::AuctionHouse ||
+            order.supplyStep == SupplyStep::Farm || order.supplyStep == SupplyStep::Craft ||
+            order.supplyStep == SupplyStep::Sub)
+            return order.supplyStep;
+    }
+    return ChooseSourceStep(bot, order, candidate, snapshot, farmable);
+}
+
+// One craft need entry: the whole-tree shortage, not the count of the ladder
+// branch that named this reagent (siblings sharing a base reagent each carry
+// their own shortfall), so the player is asked once for the total.
+void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot)
+{
+    // The walk counts the output the bot still owes, the same shortage the
+    // prune uses: delivered plus what is already in bags or mail, not the raw
+    // order amount less delivered (which double-counts what is already held).
+    SupplySnapshot local;
+    SupplySnapshot& snap = snapshot ? *snapshot : local;
+    uint32_t outputHave = order.delivered + SnapshotBags(ai, snap, order.itemId) +
+        SnapshotMail(bot, snap, order.itemId);
+    uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
+    uint32_t count = candidate.count;
+    std::vector<NeedItem> missing;
+    CollectMissingReagents(ai, bot, order.itemId, outputMissing, missing, &snap);
+    for (NeedItem const& need : missing)
+        if (need.itemId == candidate.itemId && need.count > count)
+            count = need.count;
+    TortoiseBots::GuildOrders::AddNeedItem(order.botGuidLow, candidate.itemId, count,
+        order.reason == OrderReason::BankDenied);
+}
+
+void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplyStep step, SupplyStep returnStep = SupplyStep::None, SupplySnapshot* snapshot = nullptr)
+{
+    if (step == SupplyStep::Sub)
+    {
+        if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count))
+        {
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Sub,
+                candidate.itemId, candidate.count, SupplyStep::None, order.reason);
+            return;
+        }
+        // A craft order has more components to try: the item the sub-order
+        // could not cover joins the need list and the ladder moves on
+        // instead of parking the whole order.
+        if (order.type == OrderType::Craft)
+        {
+            AddCraftNeedItem(ai, bot, order, candidate, snapshot);
+            return;
+        }
+        std::vector<NeedItem> missing;
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        if (missing.empty())
+            missing.push_back(NeedItem{ candidate.itemId, candidate.count });
+        TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
+            missing, order.reason == OrderReason::BankDenied);
+        return;
+    }
+    if (step == SupplyStep::Need)
+    {
+        if (order.type == OrderType::Craft)
+        {
+            AddCraftNeedItem(ai, bot, order, candidate, snapshot);
+            return;
+        }
+        std::vector<NeedItem> missing;
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        if (missing.empty())
+            missing.push_back(NeedItem{ candidate.itemId, candidate.count });
+        TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
+            missing, order.reason == OrderReason::BankDenied);
+        return;
+    }
+    (void)ai;
+    (void)bot;
+    (void)snapshot;
+    TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, step, candidate.itemId,
+        candidate.count, returnStep, order.reason);
+}
+
+void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
+{
+    if (!ai || !bot || order.state != TortoiseBots::GuildOrders::OrderState::Working)
+        return;
+    // The set turns over with the order or supply item, on this map thread
+    // (the spell map is safe to read here). Runs at most once per tick: the
+    // store no-ops when the keys already match.
+    TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
+    uint32_t nowMs = WorldTimer::getMSTime();
+    // A leg that cannot reach an auctioneer hands off after two minutes in
+    // the city, or after twenty minutes of walking. The reach clock starts on
+    // arrival, not on entering the leg, and both clocks clear on an
+    // auctioneer the bot can actually interact with.
+    if (order.supplyStep == SupplyStep::AuctionHouse)
+    {
+        if (ai::GuildOrderAuctioneerInReach(ai, bot))
+            TortoiseBots::GuildOrders::NoteAuctioneerInReach(order.botGuidLow);
+        else if (ai::GuildOrderAuctioneerWithin(ai, bot, ai::kGuildOrderAuctioneerCityYd))
+            TortoiseBots::GuildOrders::NoteAuctionZoneArrival(order.botGuidLow, nowMs);
+        else if (TortoiseBots::GuildOrders::AuctionLegUnreachable(order.botGuidLow, nowMs))
+        {
+            AdvanceGuildOrderAfterAuction(ai, bot, order, OrderReason::NoAuctioneer);
+            return;
+        }
+    }
+    if (!SupplyRefreshDue(order.botGuidLow, nowMs))
+        return;
+    NoteSupplyRefreshed(order.botGuidLow, nowMs);
+    SupplySnapshot snapshot;
+    snapshot.nowMs = nowMs;
+    // A stale auction row with nothing left missing never walks back to the
+    // counter with a zero count: hand back to the ladder through the empty
+    // step, and the pass below routes to delivery or the next source.
+    if (order.supplyStep == SupplyStep::AuctionHouse && order.supplyItemId &&
+        order.supplyCount == 0)
+    {
+        TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
+        return;
+    }
+    uint32_t carried = SnapshotBags(ai, snapshot, order.itemId);
+    uint32_t mailed = SnapshotMail(bot, snapshot, order.itemId);
+    // The bought oversized stack is in the bags: the auction leg runs again,
+    // this time only to relist the surplus. Buying more waits until it is
+    // posted (or the relist gives up and the delivery leftover path takes it).
+    uint32_t relistItemId = 0, relistCount = 0, relistUnitPrice = 0;
+    if (TortoiseBots::GuildOrders::PendingRelist(order.botGuidLow, relistItemId, relistCount,
+            relistUnitPrice) && relistItemId && relistCount)
+    {
+        if (SnapshotBags(ai, snapshot, relistItemId) >= relistCount)
+        {
+            if (order.supplyStep != SupplyStep::AuctionHouse || order.supplyItemId != relistItemId ||
+                order.supplyCount != relistCount)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::AuctionHouse,
+                    relistItemId, relistCount, SupplyStep::None, order.reason);
+            return;
+        }
+        // The bought stack is still in the mailbox: collect it first, even
+        // on a craft order whose tree already counts the mail as owned.
+        if (OrderMailboxItems(bot, relistItemId) > 0)
+        {
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != relistItemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    relistItemId, relistCount, SupplyStep::AuctionHouse, order.reason);
+            return;
+        }
+    }
+    if (order.type != OrderType::Craft)
+    {
+        uint32_t have = order.delivered + carried + mailed;
+        uint32_t missing = have >= order.amount ? 0 : order.amount - have;
+        if (mailed && order.delivered + carried < order.amount &&
+            !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+        {
+            SupplyCandidate candidate{ order.itemId, missing, false, true };
+            FarmableVerdict mailVerdict(bot, order, candidate);
+            SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    order.itemId, missing, afterMail, order.reason);
+            return;
+        }
+        if (!missing)
+        {
+            if (carried + order.delivered >= order.amount)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
+                    order.itemId, 0, SupplyStep::None, order.reason);
+            return;
+        }
+        SupplyCandidate candidate{ order.itemId, missing, false };
+        if (mailed && !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+        {
+            FarmableVerdict mailVerdict(bot, order, candidate);
+            SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    order.itemId, missing, afterMail, order.reason);
+            return;
+        }
+        // Farm and buy orders never take their own order item from the bank:
+        // the bank holds reagents, and withdrawing the finished item would
+        // just deposit it back on delivery. Craft reagents below still use
+        // the bank first.
+        FarmableVerdict farmable(bot, order, candidate);
+        SupplyStep step = ChooseSourceStep(bot, order, candidate, &snapshot, &farmable);
+        // A farm or buy order never walks its own item to the bank; that
+        // leg is the auction one. A counter that was already searched for
+        // this item falls through to the rest of the ladder instead.
+        if (step == SupplyStep::Bank)
+            step = TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId) ?
+                SupplyStep::AuctionHouse :
+                TortoiseBots::GuildOrders::NextSupplyStep(
+                    SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
+        SupplyStep fallback = SupplyStep::None;
+        if (step == SupplyStep::AuctionHouse)
+            fallback = TortoiseBots::GuildOrders::NextSupplyStep(
+                SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
+        SetSupplyStage(ai, bot, order, candidate, step, fallback, &snapshot);
+        return;
     }
 
-    s_cache[lowerName] = substringMatch;
-    return substringMatch;
-}
-
-std::vector<std::pair<uint32, int8>> ai::FindRepeatableQuestsRewardingItem(uint32 itemId)
-{
-    static std::unordered_map<uint32, std::vector<std::pair<uint32, int8>>> s_cache;
-
-    auto cacheIt = s_cache.find(itemId);
-    if (cacheIt != s_cache.end())
-        return cacheIt->second;
-
-    std::vector<std::pair<uint32, int8>> result;
-
-    ObjectMgr::QuestMap const& questMap = sObjectMgr.GetQuestTemplates();
-    for (auto& [questId, questPtr] : questMap)
+    uint32_t outputHave = order.delivered + carried + mailed;
+    uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
+    if (mailed && order.delivered + carried < order.amount &&
+        !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
     {
-        Quest* quest = questPtr.get();
-        if (!quest || !quest->IsActive())
-            continue;
+        SupplyCandidate candidate{ order.itemId, outputMissing, false, true };
+        FarmableVerdict mailVerdict(bot, order, candidate);
+        SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
+        if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                order.itemId, outputMissing, afterMail, order.reason);
+        return;
+    }
+    if (!outputMissing)
+    {
+        if (mailed && order.delivered + carried < order.amount &&
+            !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                order.itemId, 0, SupplyStep::None, order.reason);
+        else if (order.delivered + carried >= order.amount)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
+                order.itemId, 0, SupplyStep::None, order.reason);
+        return;
+    }
 
-        if (!quest->IsRepeatable())
-            continue;
-
-        for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
+    // The player's items are the ones the whole-tree walk still names: a
+    // traded, mailed or otherwise gained item leaves the list, and one the
+    // walk still names carries its live shortage. Everything the ladder does
+    // below works off this list, not the one the row was loaded with.
+    OrderRecord current = order;
+    if (!current.needItems.empty())
+    {
+        std::vector<NeedItem> stillMissing;
+        CollectMissingReagents(ai, bot, order.itemId, outputMissing, stillMissing, &snapshot);
+        std::vector<NeedItem> pruned = current.needItems;
+        PruneNeedItems(pruned, stillMissing);
+        if (!NeedItemsEqual(pruned, current.needItems))
         {
-            if (quest->RewChoiceItemId[i] == itemId)
-            {
-                result.push_back({ questId, (int8)i });
-                break;
-            }
-        }
-
-        for (uint8 i = 0; i < quest->GetRewItemsCount(); ++i)
-        {
-            if (quest->RewItemId[i] == itemId)
-            {
-                result.push_back({ questId, -1 });
-                break;
-            }
+            // The store only takes the prune while its list still equals the
+            // copy the prune started from: a merge or a clear in between wins
+            // and the write does not land. Then the working copy is stale, so
+            // re-read the live list and let the next refresh re-prune it.
+            if (TortoiseBots::GuildOrders::ReplaceNeedItems(order.botGuidLow, current.needItems, pruned))
+                current.needItems = pruned;
+            else if (std::optional<OrderRecord> live = TortoiseBots::GuildOrders::Find(order.botGuidLow))
+                current.needItems = live->needItems;
         }
     }
 
-    s_cache[itemId] = result;
-    return result;
-}
-
-uint32 ai::CountGuildFinishedItemDeficit(Player* bot, uint32 itemId, const std::vector<GuildShareItemEntry>& shareList)
-{
-    if (!bot->GetGuildId())
-        return 0;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return 0;
-
-    struct CountOnlineMembers
+    // The first missing component the recipe walk names, then the first one
+    // still needing work: delivered sub-orders are collected first (their
+    // items sit in the guild bank), running or queued ones are covered (a
+    // sibling sub-order fetches each), so the parent supplies or delegates
+    // the rest instead of re-requesting the same item. Two cheap store
+    // reads per refresh while a sub-order could be running; the pure pick
+    // itself plans nothing.
+    SupplyCandidate firstMissing;
+    std::vector<uint32_t> path;
+    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, firstMissing, &current, &snapshot))
     {
-        uint32 itemId;
-        const std::vector<GuildShareItemEntry>& shareList;
-        uint32 deficit;
-
-        CountOnlineMembers(uint32 id, const std::vector<GuildShareItemEntry>& list)
-            : itemId(id), shareList(list), deficit(0) {
-        }
-
-        void operator()(Player* player)
-        {
-            if (!player)
-                return;
-
-            for (const auto& entry : shareList)
-            {
-                if (entry.itemId != itemId)
-                    continue;
-
-                if (!entry.MatchesPlayer(player))
-                    continue;
-
-                uint32 has = 0;
-                if (PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(player))
-                    has = memberAi->GetInventoryItemsCountWithId(itemId);
-                else
-                    has = player->GetItemCount(itemId, true);
-
-                if (has < entry.amount)
-                    deficit += entry.amount - has;
-
-                break;
-            }
-        }
-    };
-
-    CountOnlineMembers worker(itemId, shareList);
-    guild->BroadcastWorker(worker);
-
-    return worker.deficit;
-}
-
-static std::unordered_map<uint32, uint32> CountGuildFinishedItemDeficits(
-    Player* bot,
-    const std::set<uint32>& itemIds,
-    const std::vector<GuildShareItemEntry>& shareList)
-{
-    std::unordered_map<uint32, uint32> deficits;
-
-    if (!bot->GetGuildId())
-        return deficits;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return deficits;
-
-    struct CountAllDeficits
+        TortoiseBots::GuildOrders::SetState(order.botGuidLow,
+            TortoiseBots::GuildOrders::OrderState::Cant, OrderReason::NoRecipe);
+        return;
+    }
+    if (firstMissing.blocked)
     {
-        const std::set<uint32>& itemIds;
-        const std::vector<GuildShareItemEntry>& shareList;
-        std::unordered_map<uint32, uint32>& deficits;
-
-        CountAllDeficits(const std::set<uint32>& ids, const std::vector<GuildShareItemEntry>& list,
-            std::unordered_map<uint32, uint32>& out)
-            : itemIds(ids), shareList(list), deficits(out) {
-        }
-
-        void operator()(Player* player)
-        {
-            if (!player)
-                return;
-
-            for (const auto& entry : shareList)
-            {
-                if (itemIds.find(entry.itemId) == itemIds.end())
-                    continue;
-
-                if (!entry.MatchesPlayer(player))
-                    continue;
-
-                uint32 has = 0;
-                PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(player);
-                if (memberAi)
-                    has = memberAi->GetInventoryItemsCountWithId(entry.itemId);
-                else
-                    has = player->GetItemCount(entry.itemId, true);
-
-                if (has < entry.amount)
-                    deficits[entry.itemId] += entry.amount - has;
-            }
-        }
-    };
-
-    CountAllDeficits worker(itemIds, shareList, deficits);
-    guild->BroadcastWorker(worker);
-
-    return deficits;
-}
-
-static std::unordered_map<uint32, uint32> BuildCraftSpellMap(Player* bot, const std::set<uint32>& itemIds)
-{
-    std::unordered_map<uint32, uint32> craftMap;
-    std::set<uint32> remaining = itemIds;
-
-    for (auto& [spellId, spellState] : bot->GetSpellMap())
+        // Nothing supplyable is left and the item the walk stopped at is the
+        // player's: wait on the sub-orders still running (a running sub-order
+        // is not a player item), else park on the list itself.
+        std::vector<uint32_t> covered = TortoiseBots::GuildOrders::CoveredSubOrderItems(order.botGuidLow);
+        if (PartialNeedVerdictFor(false, !covered.empty(), !current.needItems.empty()) ==
+            PartialNeedVerdict::Park)
+            TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow, current.needItems,
+                order.reason == OrderReason::BankDenied);
+        return;
+    }
+    SupplyCandidate candidate = firstMissing;
+    if (!firstMissing.craft)
     {
-        if (remaining.empty())
-            break;
-
-        if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
-            continue;
-
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-        if (!pSpellInfo)
-            continue;
-
-        for (int i = 0; i < 3; ++i)
+        // Only while a need item or a sub-order is in play: two cheap store
+        // reads, no planner. The reagent walk below repeats the walk above,
+        // so it runs only when there is something to skip or collect.
+        std::vector<uint32_t> collectable =
+            TortoiseBots::GuildOrders::CollectableSubOrderItems(order.botGuidLow);
+        std::vector<uint32_t> covered =
+            TortoiseBots::GuildOrders::CoveredSubOrderItems(order.botGuidLow);
+        if (!collectable.empty() || !covered.empty() || !current.needItems.empty())
         {
-            if (pSpellInfo->Effect[i] == SPELL_EFFECT_CREATE_ITEM)
+            std::vector<NeedItem> missingNow;
+            CollectMissingReagents(ai, bot, order.itemId, outputMissing, missingNow, &snapshot);
+            if (!missingNow.empty())
             {
-                uint32 createdItem = pSpellInfo->EffectItemType[i];
-                if (remaining.count(createdItem))
+                std::vector<uint32_t> missingIds;
+                missingIds.reserve(missingNow.size());
+                for (NeedItem const& need : missingNow)
+                    missingIds.push_back(need.itemId);
+                // Delivered siblings first: a finished sub-order's items sit
+                // in the guild bank, so the parent fetches those through the
+                // bank leg before supplying or delegating the rest.
+                bool collected = false;
+                if (!collectable.empty())
+                    for (NeedItem const& need : missingNow)
+                    {
+                        for (uint32_t ready : collectable)
+                            if (ready && ready == need.itemId)
+                            {
+                                candidate = { need.itemId, need.count, false };
+                                collected = true;
+                                break;
+                            }
+                        if (collected)
+                            break;
+                    }
+                if (!collected)
                 {
-                    craftMap[createdItem] = spellId;
-                    remaining.erase(createdItem);
+                    // A need item is skipped like a covered one: the player
+                    // brings it, the ladder works around it.
+                    std::vector<uint32_t> skip = covered;
+                    for (NeedItem const& need : current.needItems)
+                        if (need.itemId)
+                            skip.push_back(need.itemId);
+                    size_t next = TortoiseBots::GuildOrders::NextUncoveredSubOrderItem(missingIds.data(),
+                        missingIds.size(), skip.data(), skip.size());
+                    // Every component covered or owed by the player: keep the
+                    // row and wait for the deliveries instead of farming a
+                    // delegated item twice, else park on the player's items.
+                    // The collectable path above fetches each one as it lands.
+                    if (next >= missingNow.size())
+                    {
+                        if (PartialNeedVerdictFor(false, !covered.empty(), !current.needItems.empty()) ==
+                            PartialNeedVerdict::Park)
+                            TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow, current.needItems,
+                                order.reason == OrderReason::BankDenied);
+                        return;
+                    }
+                    candidate = { missingNow[next].itemId, missingNow[next].count, false };
                 }
             }
         }
     }
-
-    return craftMap;
-}
-
-static std::unordered_map<uint32, uint32> ComputeRemainingNeeds(
-    PlayerbotAI* ai,
-    const std::set<uint32>& itemIds,
-    const std::unordered_map<uint32, uint32>& deficits)
-{
-    std::unordered_map<uint32, uint32> remaining;
-    for (uint32 itemId : itemIds)
+    if (candidate.craft)
     {
-        auto deficitIt = deficits.find(itemId);
-        uint32 guildDeficit = (deficitIt != deficits.end()) ? deficitIt->second : 0;
-        if (guildDeficit == 0)
-            continue;
-
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
-        if (currentCount >= guildDeficit)
-            continue;
-
-        remaining[itemId] = guildDeficit - currentCount;
+        SetSupplyStage(ai, bot, current, candidate, SupplyStep::Craft, SupplyStep::None, &snapshot);
+        return;
     }
-    return remaining;
+    if (SnapshotMail(bot, snapshot, candidate.itemId) > 0 &&
+        !MailLegSkipped(candidate.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+    {
+        FarmableVerdict mailVerdict(bot, current, candidate);
+        SupplyStep afterMail = MailReturnStep(bot, current, candidate, &snapshot, &mailVerdict);
+        if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != candidate.itemId)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                candidate.itemId, candidate.count, afterMail, order.reason);
+        return;
+    }
+    FarmableVerdict farmable(bot, current, candidate);
+    SupplyStep step = ChooseSourceStep(bot, current, candidate, &snapshot, &farmable);
+    SupplyOptions fallbackOptions;
+    fallbackOptions.bankEnabled = false;
+    fallbackOptions.bankAttempted = true;
+    fallbackOptions.auctionHouseAttempted = false;
+    fallbackOptions.selfCanCraft = candidate.craft;
+    // The ladder already planned this item above: reuse the verdict instead
+    // of planning it again for the auction fallback.
+    fallbackOptions.selfCanFarm = farmable.CanFarm();
+    SupplyStep fallback = TortoiseBots::GuildOrders::NextSupplyStep(fallbackOptions);
+    SetSupplyStage(ai, bot, current, candidate, step, fallback, &snapshot);
 }
 
-static bool HasSkipOrderNote(Player* bot)
-{
-    if (!bot->GetGuildId())
-        return false;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return false;
-
-    MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
-    if (!member)
-        return false;
-
-    std::string note = member->OfficerNote;
-    if (note.empty())
-        return false;
-
-    std::string lower = note;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    lower.erase(lower.begin(), std::find_if(lower.begin(), lower.end(), [](unsigned char ch) { return !std::isspace(ch); }));
-    lower.erase(std::find_if(lower.rbegin(), lower.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), lower.end());
-
-    return lower == "skip order";
-}
+} // namespace
 
 GuildOrder GuildOrderValue::Calculate()
 {
@@ -313,951 +943,331 @@ GuildOrder GuildOrderValue::Calculate()
     if (!bot->GetGuildId())
         return order;
 
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
+    // The store is the only order source; bots never read officer notes.
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!stored || stored->guildId != bot->GetGuildId() ||
+        TortoiseBots::GuildOrders::IsFinished(stored->state))
         return order;
 
-    MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
-    if (!member)
-        return order;
-
-    std::string note = member->OfficerNote;
-
-    if (!note.empty())
+    switch (stored->type)
     {
-        std::string lower = note;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-        std::string trimmed = TrimWhitespace(lower);
-        if (trimmed == "skip order")
-            return order;
-    }
-
-    if (note.empty())
-    {
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
-        GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
-        if (questRewardOrder.IsValid())
-            return questRewardOrder;
-
-        return AI_VALUE(GuildOrder, "guild share farm order");
-    }
-
-    std::string body;
-
-    if (ParseOrderPrefix(note, "Craft:", body))
-    {
-        order.type = GuildOrderType::Craft;
-
-        // Parse optional amount for craft orders:
-        // Craft: <item> <amount>
-        auto lastSpace = body.rfind(' ');
-        if (lastSpace != std::string::npos)
-        {
-            std::string lastToken = body.substr(lastSpace + 1);
-            bool isNumber = !lastToken.empty() && std::all_of(lastToken.begin(), lastToken.end(), ::isdigit);
-
-            if (isNumber)
-            {
-                order.amount = std::stoul(lastToken);
-                order.target = TrimWhitespace(body.substr(0, lastSpace));
-                return order;
-            }
-        }
-
-        order.target = body;
-        order.amount = 1;
-    }
-    else if (ParseOrderPrefix(note, "Farm:", body))
-    {
-        order.type = GuildOrderType::Farm;
-
-        // Parse optional amount for farm orders:
-        // Farm: <item> <amount>
-        auto lastSpace = body.rfind(' ');
-        if (lastSpace != std::string::npos)
-        {
-            std::string lastToken = body.substr(lastSpace + 1);
-            bool isNumber = !lastToken.empty() && std::all_of(lastToken.begin(), lastToken.end(), ::isdigit);
-
-            if (isNumber)
-            {
-                order.amount = std::stoul(lastToken);
-                order.target = TrimWhitespace(body.substr(0, lastSpace));
-                return order;
-            }
-        }
-
-        order.target = body;
-    }
-    else if (ParseOrderPrefix(note, "Kill:", body))
-    {
-        order.type = GuildOrderType::Kill;
-        order.target = body;
-    }
-    else if (ParseOrderPrefix(note, "Explore:", body))
-    {
-        order.type = GuildOrderType::Explore;
-        order.target = body;
-    }
-
-    if (!order.IsValid())
-    {
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
-        GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
-        if (questRewardOrder.IsValid())
-            return questRewardOrder;
-
-        return AI_VALUE(GuildOrder, "guild share farm order");
-    }
-
-    return order;
-}
-
-static std::string TrimWS(const std::string& str)
-{
-    std::string result = str;
-    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) { return !std::isspace(ch); }));
-    result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), result.end());
-    return result;
-}
-
-uint8 GuildShareListValue::ParseClassName(const std::string& name)
-{
-    std::string lower = name;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    if (lower == "warrior")  return CLASS_WARRIOR;
-    if (lower == "paladin")  return CLASS_PALADIN;
-    if (lower == "hunter")   return CLASS_HUNTER;
-    if (lower == "rogue")    return CLASS_ROGUE;
-    if (lower == "priest")   return CLASS_PRIEST;
-    if (lower == "shaman")   return CLASS_SHAMAN;
-    if (lower == "mage")     return CLASS_MAGE;
-    if (lower == "warlock")  return CLASS_WARLOCK;
-    if (lower == "druid")    return CLASS_DRUID;
-    return 0;
-}
-
-GuildShareFilter GuildShareListValue::ParseRoleFilter(const std::string& name)
-{
-    std::string lower = name;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    if (lower == "all")    return GuildShareFilter::FILTER_ALL;
-    if (lower == "melee")  return GuildShareFilter::FILTER_MELEE;
-    if (lower == "ranged") return GuildShareFilter::FILTER_RANGED;
-    if (lower == "tank")   return GuildShareFilter::FILTER_TANK;
-    if (lower == "dps")    return GuildShareFilter::FILTER_DPS;
-    if (lower == "heal")   return GuildShareFilter::FILTER_HEAL;
-
-    return GuildShareFilter::FILTER_CLASS;
-}
-
-bool GuildShareItemEntry::MatchesPlayer(Player* player) const
-{
-    if (!player)
-        return false;
-
-    switch (filter)
-    {
-    case GuildShareFilter::FILTER_CLASS:
-        return player->GetClass() == playerClass;
-
-    case GuildShareFilter::FILTER_ALL:
-        return true;
-
-    case GuildShareFilter::FILTER_MELEE:
-    {
-        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!ai)
-            return true;
-        return !ai->IsRanged(player, false);
-    }
-
-    case GuildShareFilter::FILTER_RANGED:
-    {
-        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!ai)
-            return true;
-        return ai->IsRanged(player, false);
-    }
-
-    case GuildShareFilter::FILTER_TANK:
-    {
-        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!ai)
-            return true;
-        return ai->IsTank(player, false);
-    }
-
-    case GuildShareFilter::FILTER_DPS:
-    {
-        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!ai)
-            return true;
-        return !ai->IsTank(player, false) && !ai->IsHeal(player, false);
-    }
-
-    case GuildShareFilter::FILTER_HEAL:
-    {
-        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!ai)
-            return true;
-        return ai->IsHeal(player, false);
-    }
-
-    default:
-        return false;
-    }
-}
-
-// Parse the guild info tab "Share: <class/role> <item1> <amount>, <item2> <amount>, ..."
-std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
-{
-    std::vector<GuildShareItemEntry> result;
-
-    if (!bot->GetGuildId())
-        return result;
-
-    if (HasSkipOrderNote(bot))
-        return result;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return result;
-
-    std::string ginfo = guild->GetInfo();
-    if (ginfo.empty())
-        return result;
-
-    auto sharePos = ginfo.find("Share:");
-    if (sharePos == std::string::npos)
-        return result;
-
-    std::string shareSection = ginfo.substr(sharePos + 6);
-
-    std::istringstream stream(shareSection);
-    std::string line;
-
-    while (std::getline(stream, line))
-    {
-        line = TrimWS(line);
-        if (line.empty())
-            continue;
-
-        auto firstSpace = line.find(' ');
-        if (firstSpace == std::string::npos)
-            continue;
-
-        std::string filterName = TrimWS(line.substr(0, firstSpace));
-
-        if (!filterName.empty() && filterName.back() == ':')
-            filterName.pop_back();
-
-        // Try role filter first (All, Melee, Ranged, Tank, DPS, Heal)
-        GuildShareFilter roleFilter = ParseRoleFilter(filterName);
-        uint8 playerClass = 0;
-
-        if (roleFilter == GuildShareFilter::FILTER_CLASS)
-        {
-            playerClass = ParseClassName(filterName);
-            if (!playerClass)
-                break;
-        }
-
-        std::string itemsSection = TrimWS(line.substr(firstSpace + 1));
-        if (itemsSection.empty())
-            continue;
-
-        std::istringstream itemStream(itemsSection);
-        std::string itemEntry;
-
-        while (std::getline(itemStream, itemEntry, ','))
-        {
-            itemEntry = TrimWS(itemEntry);
-            if (itemEntry.empty())
-                continue;
-
-            auto lastSpace = itemEntry.rfind(' ');
-            if (lastSpace == std::string::npos)
-                continue;
-
-            std::string amountStr = TrimWS(itemEntry.substr(lastSpace + 1));
-            bool isNumber = !amountStr.empty() && std::all_of(amountStr.begin(), amountStr.end(), ::isdigit);
-            if (!isNumber)
-                continue;
-
-            uint32 amount = std::stoul(amountStr);
-            std::string itemName = TrimWS(itemEntry.substr(0, lastSpace));
-            if (itemName.empty() || !amount)
-                continue;
-
-            uint32 itemId = GuildOrderValue::FindItemByName(itemName);
-            if (!itemId)
-            {
-                sLog.outDetail("GuildShareList: item not found: '%s'", itemName.c_str());
-                continue;
-            }
-
-            GuildShareItemEntry entry;
-            entry.filter = roleFilter;
-            entry.playerClass = playerClass;
-            entry.itemId = itemId;
-            entry.amount = amount;
-            result.push_back(entry);
-        }
-    }
-
-    return result;
-}
-
-GuildOrder GuildShareCraftOrderValue::Calculate()
-{
-    GuildOrder order;
-
-    if (!bot->GetGuildId())
-        return order;
-
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
-        return order;
-
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
-
-    std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, finishedItemIds);
-    if (craftSpells.empty())
-        return order;
-
-    std::set<uint32> craftableIds;
-    for (const auto& [itemId, spellId] : craftSpells)
-        craftableIds.insert(itemId);
-
-    std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, craftableIds, shareList);
-    std::unordered_map<uint32, uint32> remaining = ComputeRemainingNeeds(ai, craftableIds, deficits);
-
-    struct CraftCandidate
-    {
-        uint32 itemId;
-        uint32 needed;
-        std::string name;
-    };
-
-    std::vector<CraftCandidate> candidates;
-
-    for (const auto& [itemId, needed] : remaining)
-    {
-        auto craftIt = craftSpells.find(itemId);
-        if (craftIt == craftSpells.end())
-            continue;
-
-        uint32 craftSpellId = craftIt->second;
-
-        if (!ai->HasCheat(BotCheatMask::item) && !AI_VALUE2(bool, "can craft spell", craftSpellId))
-            continue;
-
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-        if (!proto)
-            continue;
-
-        candidates.push_back({ itemId, needed, proto->Name1 });
-    }
-
-    if (candidates.empty())
-        return order;
-
-    const CraftCandidate& chosen = candidates[urand(0, candidates.size() - 1)];
-
-    order.type = GuildOrderType::Craft;
-    order.target = chosen.name;
-    order.amount = chosen.needed;
-    return order;
-}
-
-GuildOrder GuildShareFarmOrderValue::Calculate()
-{
-    GuildOrder order;
-
-    if (!bot->GetGuildId())
-        return order;
-
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
-        return order;
-
-    bool hasHerbalism = ai->HasSkill(SKILL_HERBALISM);
-    bool hasMining = ai->HasSkill(SKILL_MINING);
-    bool hasSkinning = ai->HasSkill(SKILL_SKINNING);
-    bool hasAlchemy = ai->HasSkill(SKILL_ALCHEMY);
-    bool hasBlacksmithing = ai->HasSkill(SKILL_BLACKSMITHING);
-    bool hasEngineering = ai->HasSkill(SKILL_ENGINEERING);
-    bool hasLeatherworking = ai->HasSkill(SKILL_LEATHERWORKING);
-    bool hasTailoring = ai->HasSkill(SKILL_TAILORING);
-    bool hasEnchanting = ai->HasSkill(SKILL_ENCHANTING);
-    bool hasCooking = ai->HasSkill(SKILL_COOKING);
-    bool hasFirstAid = ai->HasSkill(SKILL_FIRST_AID);
-    bool hasAnyGathering = hasHerbalism || hasMining || hasSkinning;
-
-    bool hasAnyGatherOrCraft = hasAnyGathering ||
-        hasAlchemy || hasBlacksmithing || hasEngineering || hasLeatherworking ||
-        hasTailoring || hasEnchanting || hasCooking || hasFirstAid;
-
-    if (!hasAnyGatherOrCraft)
-        return order;
-
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
-
-    std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, finishedItemIds, shareList);
-    std::unordered_map<uint32, uint32> itemRemaining = ComputeRemainingNeeds(ai, finishedItemIds, deficits);
-
-    std::map<uint32, uint32> reagentNeeds;
-
-    for (const auto& [itemId, remaining] : itemRemaining)
-    {
-        ItemPrototype const* shareProto = sObjectMgr.GetItemPrototype(itemId);
-        if (!shareProto)
-            continue;
-
-        std::vector<std::pair<uint32, uint32>> reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(shareProto);
-
-        if (reagents.empty())
-        {
-            reagentNeeds[itemId] += remaining;
-            continue;
-        }
-
-        for (const auto& [reagentId, reagentCount] : reagents)
-        {
-            reagentNeeds[reagentId] += reagentCount * remaining;
-        }
-    }
-
-    if (reagentNeeds.empty())
-        return order;
-
-    // 20% chance to move to auctioneer instead of farming
-    if (urand(1, 100) <= 20 && bot->GetMoney() >= 100)
-    {
-        std::vector<uint32> neededItemIds;
-        for (const auto& [reagentId, totalNeeded] : reagentNeeds)
-        {
-            uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
-            if (currentCount < totalNeeded)
-                neededItemIds.push_back(reagentId);
-        }
-
-        if (!neededItemIds.empty())
-        {
-            uint32 chosenId = neededItemIds[urand(0, neededItemIds.size() - 1)];
-            ItemPrototype const* chosenProto = sObjectMgr.GetItemPrototype(chosenId);
-            if (chosenProto)
-            {
-                order.type = GuildOrderType::AuctionHouse;
-                order.target = chosenProto->Name1;
-                order.amount = reagentNeeds[chosenId] - ai->GetInventoryItemsCountWithId(chosenId);
-                return order;
-            }
-        }
-    }
-
-    struct FarmCandidate
-    {
-        uint32 itemId;
-        uint32 needed;
-        uint32 priority;
-    };
-
-    std::vector<FarmCandidate> candidates;
-    uint32 bestPriority = 4;
-
-    for (const auto& [reagentId, totalNeeded] : reagentNeeds)
-    {
-        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-        if (!reagentProto)
-            continue;
-
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
-        if (currentCount >= totalNeeded)
-            continue;
-
-        uint32 remaining = totalNeeded - currentCount;
-
-        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", reagentId);
-
-        bool dropsFromGatherNode = false;
-        bool dropsFromMob = false;
-        for (int32 entry : dropEntries)
-        {
-            if (entry < 0)
-                dropsFromGatherNode = true;
-            else
-                dropsFromMob = true;
-
-            if (dropsFromGatherNode && dropsFromMob)
-                break;
-        }
-
-        uint32 priority = 4;
-
-        if (dropsFromGatherNode && hasAnyGathering)
-        {
-            priority = 0;
-        }
-        else if (dropsFromMob)
-        {
-            bool hasRelevantCraftSkill = false;
-            if (hasAlchemy && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_ALCHEMY))
-                hasRelevantCraftSkill = true;
-            else if (hasBlacksmithing && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_BLACKSMITHING))
-                hasRelevantCraftSkill = true;
-            else if (hasEngineering && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_ENGINEERING))
-                hasRelevantCraftSkill = true;
-            else if (hasLeatherworking && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_LEATHERWORKING))
-                hasRelevantCraftSkill = true;
-            else if (hasTailoring && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_TAILORING))
-                hasRelevantCraftSkill = true;
-            else if (hasEnchanting && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_ENCHANTING))
-                hasRelevantCraftSkill = true;
-            else if (hasCooking && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_COOKING))
-                hasRelevantCraftSkill = true;
-            else if (hasFirstAid && ItemUsageValue::IsItemUsedBySkill(reagentProto, SKILL_FIRST_AID))
-                hasRelevantCraftSkill = true;
-
-            if (dropsFromGatherNode)
-            {
-                priority = hasRelevantCraftSkill ? 1 : 2;
-            }
-            else
-            {
-                priority = hasRelevantCraftSkill ? 2 : 3;
-            }
-        }
-        else if (dropsFromGatherNode && !hasAnyGathering)
-        {
-            priority = 3;
-        }
-
-        if (priority > 3)
-            continue;
-
-        if (priority < bestPriority)
-            bestPriority = priority;
-
-        candidates.push_back({ reagentId, remaining, priority });
-    }
-
-    if (candidates.empty())
-        return order;
-
-    std::vector<FarmCandidate> bestCandidates;
-    for (const auto& c : candidates)
-    {
-        if (c.priority == bestPriority)
-            bestCandidates.push_back(c);
-    }
-
-    const FarmCandidate& chosen = bestCandidates[urand(0, bestCandidates.size() - 1)];
-    ItemPrototype const* bestProto = sObjectMgr.GetItemPrototype(chosen.itemId);
-    if (!bestProto)
-        return order;
-
-    order.type = GuildOrderType::Farm;
-    order.target = bestProto->Name1;
-    order.amount = chosen.needed;
-
-    return order;
-}
-
-GuildOrder GuildShareQuestRewardOrderValue::Calculate()
-{
-    GuildOrder order;
-
-    if (!bot->GetGuildId())
-        return order;
-
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
-        return order;
-
-    struct QuestRewardCandidate
-    {
-        uint32 itemId;
-        uint32 questId;
-        int8 rewardChoiceIndex;
-        uint32 needed;
-        std::string questTitle;
-    };
-
-    std::vector<QuestRewardCandidate> candidates;
-
-    for (const auto& entry : shareList)
-    {
-        if (!entry.MatchesPlayer(bot))
-            continue;
-
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
-        if (currentCount >= entry.amount)
-            continue;
-
-        uint32 needed = entry.amount - currentCount;
-
-        auto questRewards = FindRepeatableQuestsRewardingItem(entry.itemId);
-        if (questRewards.empty())
-            continue;
-
-        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", entry.itemId);
-        if (!dropEntries.empty())
-            continue;
-
-        std::set<uint32> singleItemSet = { entry.itemId };
-        std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, singleItemSet);
-        if (!craftSpells.empty())
-            continue;
-
-        for (const auto& [questId, rewardIdx] : questRewards)
-        {
-            Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-            if (!quest)
-                continue;
-
-            if (!bot->CanTakeQuest(quest, false) &&
-                bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE &&
-                bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
-                continue;
-
-            candidates.push_back({ entry.itemId, questId, rewardIdx, needed, quest->GetTitle() });
-        }
-    }
-
-    if (candidates.empty())
-        return order;
-
-    const QuestRewardCandidate& chosen = candidates[urand(0, candidates.size() - 1)];
-
-    order.type = GuildOrderType::QuestReward;
-    order.target = chosen.questTitle;
-    order.amount = chosen.needed;
-    order.questId = chosen.questId;
-    order.rewardItemId = chosen.itemId;
-
-    return order;
-}
-
-uint32 GuildShareQuestRewardItemValue::Calculate()
-{
-    if (!bot->GetGuildId())
-        return 0;
-
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
-        return 0;
-
-    std::unordered_map<uint32, uint32> neededItems;
-    for (const auto& entry : shareList)
-    {
-        if (!entry.MatchesPlayer(bot))
-            continue;
-
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
-        if (currentCount < entry.amount)
-            neededItems[entry.itemId] = entry.amount - currentCount;
-    }
-
-    if (neededItems.empty())
-        return 0;
-
-    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-    {
-        uint32 questId = GetQuestSlotIdCompat(bot, slot);
-        if (!questId)
-            continue;
-
-        QuestStatus status = bot->GetQuestStatus(questId);
-        if (status != QUEST_STATUS_COMPLETE)
-            continue;
-
-        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-        if (!quest)
-            continue;
-
-        for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
-        {
-            uint32 rewItemId = quest->RewChoiceItemId[i];
-            if (neededItems.find(rewItemId) != neededItems.end())
-                return rewItemId;
-        }
-
-        for (uint8 i = 0; i < quest->GetRewItemsCount(); ++i)
-        {
-            uint32 rewItemId = quest->RewItemId[i];
-            if (neededItems.find(rewItemId) != neededItems.end())
-                return rewItemId;
-        }
-    }
-
-    return 0;
-}
-
-GuildShareTarget GuildShareTargetValue::Calculate()
-{
-    GuildShareTarget result;
-
-    if (!bot->GetGuildId())
-        return result;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return result;
-
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
-        return result;
-
-    std::unordered_set<uint32> shareItemIds;
-    for (const auto& entry : shareList)
-        shareItemIds.insert(entry.itemId);
-
-    bool hasAnyShareItem = false;
-    for (uint32 itemId : shareItemIds)
-    {
-        if (ai->GetInventoryItemsCountWithId(itemId) > 0)
-        {
-            hasAnyShareItem = true;
+        case TortoiseBots::GuildOrders::OrderType::Farm:
+            order.type = GuildOrderType::Farm;
             break;
-        }
+        case TortoiseBots::GuildOrders::OrderType::Buy:
+            order.type = stored->farmRest ? GuildOrderType::Farm : GuildOrderType::AuctionHouse;
+            break;
+        case TortoiseBots::GuildOrders::OrderType::Craft:
+            order.type = GuildOrderType::Craft;
+            break;
     }
-
-    if (!hasAnyShareItem)
-        return result;
-
-    std::list<ObjectGuid> nearGuids = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest friendly players")->Get();
-
-    for (auto& guid : nearGuids)
-    {
-        Player* player = sObjectMgr.GetPlayer(guid);
-        if (!player || player == bot)
-            continue;
-
-        if (player->GetGuildId() != bot->GetGuildId())
-            continue;
-
-        PlayerbotAI* targetAi = PlayerbotAIStorage::Instance().GetAI(player);
-        if (!targetAi)
-            continue;
-
-        if (sServerFacade.getDistance2d(bot, player) > INTERACTION_DISTANCE)
-            continue;
-
-        for (const auto& entry : shareList)
-        {
-            if (!entry.MatchesPlayer(player))
-                continue;
-
-            uint32 botCount = ai->GetInventoryItemsCountWithId(entry.itemId);
-            if (botCount == 0)
-                continue;
-
-            uint32 targetCount = targetAi->GetInventoryItemsCountWithId(entry.itemId);
-            if (targetCount >= entry.amount)
-                continue;
-
-            bool botMatchesEntry = entry.MatchesPlayer(bot);
-            if (botMatchesEntry)
-            {
-                if (botCount <= targetCount + 1)
-                    continue;
-            }
-
-            uint32 needed = entry.amount - targetCount;
-
-            if (botMatchesEntry)
-            {
-                uint32 evenShare = (botCount + targetCount) / 2;
-                uint32 canGive = (botCount > evenShare) ? botCount - evenShare : 0;
-
-                if (canGive == 0)
-                    continue;
-
-                if (needed > canGive)
-                    needed = canGive;
-            }
-
-            result.receiver = player;
-            result.itemId = entry.itemId;
-            result.amount = needed;
-            return result;
-        }
-    }
-
-    return result;
+    order.itemId = stored->itemId;
+    order.amount = stored->amount;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
+    order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
+    return order;
 }
 
-std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI* ai)
+uint32 ai::OrderMailboxItems(Player* bot, uint32 itemId)
 {
-    std::vector<uint32> missing;
-    Player* bot = ai->GetBot();
-
-    std::vector<GuildShareItemEntry> shareList = ai->GetAiObjectContext()->GetValue<std::vector<GuildShareItemEntry>>("guild share list")->Get();
-    if (shareList.empty())
-        return missing;
-
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
-
-    std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, finishedItemIds);
-    if (craftSpells.empty())
-        return missing;
-
-    std::set<uint32> craftableItemIds;
-    for (const auto& [itemId, spellId] : craftSpells)
-        craftableItemIds.insert(itemId);
-
-    if (craftableItemIds.empty())
-        return missing;
-
-    std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, craftableItemIds, shareList);
-    std::unordered_map<uint32, uint32> remainingMap = ComputeRemainingNeeds(ai, craftableItemIds, deficits);
-
-    if (remainingMap.empty())
-        return missing;
-
-    GuildOrder order = ai->GetAiObjectContext()->GetValue<GuildOrder>("guild order")->Get();
-    std::set<uint32> itemsToCheck;
-
-    if (order.IsValid())
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32 count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
-        uint32 orderItemId = GuildOrderValue::FindItemByName(order.target);
-
-        if (order.IsCraftOrder())
-        {
-            if (orderItemId && remainingMap.count(orderItemId) && craftSpells.count(orderItemId))
-                itemsToCheck.insert(orderItemId);
-        }
-        else if (order.IsTravelOrder())
-        {
-            if (orderItemId)
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+            if (itemItr->item_template == itemId)
             {
-                for (const auto& [itemId, needed] : remainingMap)
-                {
-                    auto craftIt = craftSpells.find(itemId);
-                    if (craftIt == craftSpells.end())
-                        continue;
-
-                    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftIt->second);
-                    if (!pSpellInfo)
-                        continue;
-
-                    bool usesFarmedItem = false;
-                    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; i++)
-                    {
-                        if (pSpellInfo->Reagent[i] == static_cast<int32>(orderItemId))
-                        {
-                            usesFarmedItem = true;
-                            break;
-                        }
-                    }
-
-                    if (!usesFarmedItem)
-                    {
-                        ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(itemId);
-                        if (craftProto)
-                        {
-                            auto reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(craftProto);
-                            for (const auto& [reagentId, count] : reagents)
-                            {
-                                if (reagentId == orderItemId)
-                                {
-                                    usesFarmedItem = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (usesFarmedItem)
-                        itemsToCheck.insert(itemId);
-                }
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
             }
-        }
     }
-
-    if (itemsToCheck.empty())
-    {
-        for (const auto& [itemId, needed] : remainingMap)
-        {
-            if (craftSpells.count(itemId))
-                itemsToCheck.insert(itemId);
-        }
-    }
-
-    std::unordered_set<uint32> seen;
-    for (uint32 itemId : itemsToCheck)
-    {
-        auto craftIt = craftSpells.find(itemId);
-        if (craftIt == craftSpells.end())
-            continue;
-
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftIt->second);
-        if (!pSpellInfo)
-            continue;
-
-        for (uint8 i = 0; i < MAX_SPELL_REAGENTS; i++)
-        {
-            if (!pSpellInfo->ReagentCount[i] || !pSpellInfo->Reagent[i])
-                continue;
-
-            uint32 reagentId = pSpellInfo->Reagent[i];
-
-            if (!seen.insert(reagentId).second)
-                continue;
-
-            const ItemPrototype* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-            if (!reagentProto)
-                continue;
-
-            if (!ItemUsageValue::IsItemSoldByAnyVendor(reagentProto))
-                continue;
-
-            if (ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
-                continue;
-
-            uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
-            if (currentCount > 0)
-                continue;
-
-            missing.push_back(reagentId);
-        }
-    }
-
-    return missing;
+    return count;
 }
 
-bool NeedsProfessionReagentsValue::Calculate()
+bool ai::OrderBotMayTravel(PlayerbotAI* ai, Player* bot)
 {
-    bool hasAnyCraftingSkill =
-        ai->HasSkill(SKILL_ALCHEMY) || ai->HasSkill(SKILL_BLACKSMITHING) ||
-        ai->HasSkill(SKILL_ENGINEERING) || ai->HasSkill(SKILL_LEATHERWORKING) ||
-        ai->HasSkill(SKILL_TAILORING) || ai->HasSkill(SKILL_ENCHANTING) ||
-        ai->HasSkill(SKILL_COOKING) || ai->HasSkill(SKILL_FIRST_AID);
+    if (!ai || !bot)
+        return false;
+    // An autonomous alt travels like a pool bot even though it stays an
+    // owned bot. Checked first: the master test below would keep it out
+    // while its owner is online.
+    if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
+        return true;
+    if (ai->HasRealPlayerMaster())
+        return false;
+    return sRandomBotFacade.IsFreeBot(bot);
+}
 
-    if (!hasAnyCraftingSkill)
+bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
+{
+    if (!bot || !order.itemId || !order.amount)
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!stored || stored->itemId != order.itemId)
+        return false;
+    if (stored->state == TortoiseBots::GuildOrders::OrderState::Waiting ||
+        stored->state == TortoiseBots::GuildOrders::OrderState::Delivering)
+        return false;
+    return stored->delivered + bot->GetItemCount(order.itemId) +
+        OrderMailboxItems(bot, order.itemId) < order.amount;
+}
+
+bool HasGuildTravelOrderValue::Calculate()
+{
+    // No order work while grouped with a player, for any order type. An
+    // autonomous alt still travels: it plays on its own like a pool bot.
+    if (!OrderBotMayTravel(ai, bot))
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsValid())
+    if (std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+        RefreshGuildOrderSupply(ai, bot, *stored);
+    std::optional<OrderRecord> current = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!current || current->state != TortoiseBots::GuildOrders::OrderState::Working ||
+        (current->supplyStep != SupplyStep::Bank && current->supplyStep != SupplyStep::AuctionHouse &&
+         current->supplyStep != SupplyStep::Farm && current->supplyStep != SupplyStep::Bags))
+        return false;
+    // A craft order short on a farmable reagent travels like a farm order.
+    // The refreshed record already names the supply item, so the check below
+    // never re-reads the farm-item value (and its second ladder refresh).
+    // The targeted take fits only the order item, so a full bag never parks
+    // this leg at the vendor: nothing sellable still lifts the order item.
+    if (order.IsCraftOrder())
+        return SupplyFarmItemFor(current->supplyStep, current->supplyItemId, current->type, current->reason,
+            current->supplyItemId != 0 && IsUnlimitedVendorItem(current->supplyItemId)) != 0;
+    if (!order.IsTravelOrder())
         return false;
 
-    return !GetMissingReagents(ai).empty();
+    // No order work while delivering or done with the amount (delivered
+    // plus bags plus mailbox). Mail waiting never blocks the leg: the
+    // travel code walks to a mailbox and collects it before farming, buying
+    // or delivering, since bought items arrive by mail. The targeted take
+    // fits only the order item, so a full bag never parks this leg either.
+    bool const mailLeg = current->supplyStep == SupplyStep::Bags && ai::OrderMailboxItems(bot,
+        TortoiseBots::GuildOrders::SupplyMailItemId(current->supplyStep,
+            current->supplyItemId, current->itemId)) > 0;
+    // The mailbox counts toward the amount, but delivery needs the items in
+    // the bags: a farm or buy order whose last items wait in the mail still
+    // walks to the mailbox (live: a sub-order sat 90 min on 4/2 in the mail).
+    if (!mailLeg && !OrderStillNeedsWork(bot, order))
+        return false;
+    return true;
+}
+
+uint32 GuildOrderVendorReagentValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    // Craft reagents and farm-order items alike: anything a vendor sells
+    // without limit is bought, never farmed.
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
+        return 0;
+
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return 0;
+    if (!record)
+        return 0;
+    RefreshGuildOrderSupply(ai, bot, *record);
+    record = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!record || record->supplyStep != SupplyStep::Farm || !record->supplyItemId ||
+        record->reason == OrderReason::NoSource || !IsUnlimitedVendorItem(record->supplyItemId))
+        return 0;
+    // A farm order buys its own item; a craft order buys the supply reagent.
+    if (order.type == GuildOrderType::Farm && record->supplyItemId != record->itemId)
+        return 0;
+    return record->supplyItemId;
+}
+
+bool GuildOrderNeedsFocusValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (!order.IsCraftOrder())
+        return false;
+
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return false;
+
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
+    if (!itemId || !orderAmount)
+        return false;
+
+    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
+    if (currentCount >= orderAmount)
+        return false;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return false;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo || !pSpellInfo->RequiresSpellFocus)
+        return false;
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        if (TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]) == 0)
+            return false;
+    }
+
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
+    for (ObjectGuid guid : objects)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !sServerFacade.isSpawned(go))
+            continue;
+
+        GameObjectInfo const* info = sObjectMgr.GetGameObjectInfo(go->GetEntry());
+        if (!info || info->type != GAMEOBJECT_TYPE_SPELL_FOCUS ||
+            info->spellFocus.focusId != pSpellInfo->RequiresSpellFocus)
+            continue;
+
+        if (bot->GetDistance(go) <= sPlayerbotAIConfig.sightDistance)
+            return false;
+    }
+
+    return true;
+}
+
+uint32 ai::GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+    uint32 delivered)
+{
+    if (!ai || !bot || !itemId || !amount)
+        return 0;
+
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + std::min(delivered, amount);
+    if (currentCount >= amount)
+        return 0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return 0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, amount - currentCount);
+
+    uint32 affordable = ai::CraftAffordableCasts(pSpellInfo, casts,
+        [&](uint32 reagentId) { return ai->GetInventoryItemsCountWithId(reagentId); });
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return ai::FirstFarmableReagentFor(pSpellInfo, casts, affordable,
+        [&](uint32 reagentId) { return ai->GetInventoryItemsCountWithId(reagentId); },
+        [&](uint32 reagentId)
+        {
+            auto* space = context->GetValue<uint32>("stack space for item", std::to_string(reagentId));
+            return space ? space->Get() : 0;
+        },
+        [&](uint32 reagentId)
+        {
+            ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+            return reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
+                !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto);
+        },
+        [&](uint32 reagentId)
+        {
+            return ai::PlanGuildOrderSources(bot, reagentId,
+                TortoiseBots::GuildOrders::OrderType::Farm).verdict == TortoiseBots::GuildOrders::OrderReason::None;
+        });
+}
+
+double ai::GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+    uint32 delivered)
+{
+    if (!ai || !bot || !itemId || !amount)
+        return -1.0;
+
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + std::min(delivered, amount);
+    if (currentCount >= amount)
+        return -1.0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return -1.0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return -1.0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, amount - currentCount);
+    double hardest = -1.0;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+        uint32 reagentId = pSpellInfo->Reagent[i];
+        uint32 need = pSpellInfo->ReagentCount[i] * casts;
+        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
+        if (have >= need)
+            continue;
+        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
+            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
+            continue;
+        TortoiseBots::GuildOrders::SourcePlan plan =
+            ai::PlanGuildOrderSources(bot, reagentId, TortoiseBots::GuildOrders::OrderType::Farm);
+        if (plan.verdict != TortoiseBots::GuildOrders::OrderReason::None || plan.zones.empty())
+            continue;
+        hardest = std::max(hardest,
+            TortoiseBots::GuildOrders::ExpectedKills(need - have, plan.bestChance));
+    }
+    return hardest;
+}
+
+uint32 GuildOrderFarmItemValue::Calculate()
+{
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!record || record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return 0;
+    RefreshGuildOrderSupply(ai, bot, *record);
+    record = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!record)
+        return 0;
+    return SupplyFarmItemFor(record->supplyStep, record->supplyItemId, record->type, record->reason,
+        record->supplyItemId != 0 && IsUnlimitedVendorItem(record->supplyItemId));
+}
+
+bool ai::OrderNeedsDelivery(Player* bot)
+{
+    if (!bot || !bot->GetGuildId())
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!stored || stored->guildId != bot->GetGuildId())
+        return false;
+    if (stored->state != TortoiseBots::GuildOrders::OrderState::Delivering || !stored->itemId)
+        return false;
+    return bot->GetItemCount(stored->itemId) > 0;
+}
+
+bool HasGuildOrderDeliveryValue::Calculate()
+{
+    if (!OrderBotMayTravel(ai, bot))
+        return false;
+    return OrderNeedsDelivery(bot);
 }
 
 uint8 PetitionSignsValue::Calculate()

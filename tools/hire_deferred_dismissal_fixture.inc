@@ -98,7 +98,7 @@ struct BotManager {
  }
 };
 bool HireLifecycle::LedgerRow(ObjectGuid, uint32_t& id) const { id = 1; return true; }
-void HireLifecycle::QueueDeletion(uint32_t, uint32_t, char const*) {}
+bool HireLifecycle::QueueDeletion(uint32_t, uint32_t, char const*) { return true; }
 // PRODUCTION_METHODS
 }
 void drain() {

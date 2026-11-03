@@ -39,22 +39,6 @@ bool HonorGainAction::Execute(Event& event)
             }
         }
 
-        Creature* creature = ai->GetCreature(guid);
-        Player* player = sObjectMgr.GetPlayer(guid);
-
-        if (player)
-        {
-            if (!bot->InBattleGround()
-                )
-            {
-                BroadcastHelper::BroadcastPlayerKill(ai, bot, player);
-            }
-        }
-        else if (creature)
-        {
-            //TODO broadcast honorable NPC kills
-        }
-
         return false;
     }
 

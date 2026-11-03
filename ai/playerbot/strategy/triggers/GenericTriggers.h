@@ -12,6 +12,12 @@
 
 namespace ai
 {
+    // True while an out-of-combat buff trigger must stay quiet on a mounted
+    // travelling bot (GenericTriggers.cpp). Central gate for BuffTrigger and
+    // its subclasses: the trigger never queues a cast the CheckCanCastSpell
+    // mounted-travel gate would refuse with SPELL_FAILED_NOT_MOUNTED.
+    bool BuffTriggerMountGated(Player* bot, PlayerbotAI* ai);
+
 	class StatAvailable : public Trigger
 	{
 	public:
@@ -508,6 +514,13 @@ namespace ai
     {
     public:
         NoTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "no target") {}
+        virtual bool IsActive() override;
+    };
+    // A roaming elite the bot must not fight is coming close (out of combat).
+    class DangerousEliteNearTrigger : public Trigger
+    {
+    public:
+        DangerousEliteNearTrigger(PlayerbotAI* ai) : Trigger(ai, "dangerous elite near") {}
         virtual bool IsActive() override;
     };
     class MasterTargetActiveTrigger : public Trigger
@@ -1425,6 +1438,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            if (ai::BuffTriggerMountGated(bot, ai))
+                return false;
             uint32 disMask = GetDispellMask(DISPEL_DISEASE);
             uint32 poisMask = GetDispellMask(DISPEL_POISON);
             uint32 bleedType = 1 << (MECHANIC_BLEED - 1);

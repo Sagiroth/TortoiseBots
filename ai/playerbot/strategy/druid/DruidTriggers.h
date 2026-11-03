@@ -118,6 +118,28 @@ namespace ai
         FaerieFireTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "faerie fire") {}
     };
 
+    // Raid boss duty: Faerie Fire only on a world-boss current target, only
+    // with mana to spare for heals. Mirrors DebuffOnBossTrigger's world-boss
+    // gate (no IsDungeonBoss on this core); the mana floor keeps the debuff
+    // from eating healer casts on a dry bar.
+    class FaerieFireRaidTrigger : public FaerieFireTrigger
+    {
+    public:
+        FaerieFireRaidTrigger(PlayerbotAI* ai) : FaerieFireTrigger(ai) {}
+        std::string getName() override { return "faerie fire on boss"; }
+        bool IsActive() override;
+    };
+
+    // Idle HoT blanket: some member under almost-full health lacks this
+    // druid's Rejuvenation. True when the spread action finds a target, so
+    // trigger and action agree without a second scan.
+    class RejuvenationSpreadTrigger : public Trigger
+    {
+    public:
+        RejuvenationSpreadTrigger(PlayerbotAI* ai) : Trigger(ai, "rejuvenation spread") {}
+        bool IsActive() override;
+    };
+
     class FaerieFireFeralTrigger : public DebuffTrigger
     {
     public:

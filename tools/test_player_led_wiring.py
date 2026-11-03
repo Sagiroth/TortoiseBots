@@ -56,7 +56,7 @@ class PlayerLedBindWiringTest(unittest.TestCase):
         self.assertIn("hires.ConfirmCommand(", bind)
 
     def test_run_start_player_word(self):
-        run = strip_comments(body(COMMANDS, "bool HandleDungeonRun(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         self.assertIn("TortoiseBots::PlayerLed::TakeStart(speedArgs.rest)", run)
         self.assertIn("BindPlayerLed(handler, commander, playerLedStart.tank, intent)", run)
         self.assertIn("arg = playerLedStart.rest;", run)
@@ -68,12 +68,20 @@ class PlayerLedBindWiringTest(unittest.TestCase):
         self.assertIn("ReleaseBinding(commanderRaw, RemoteCommander::ReleaseReason::Unbound, false);", guard)
         # The player stands in the plan's dungeon.
         self.assertIn("playerLedStart.playerLed && plan->map != commander->GetMapId()", run)
-        # `.bot run mode`.
-        self.assertIn('verb != "mode"', run)
+        # `.bot run list/mode/here` reach RunVerbAs: the dispatcher filters
+        # unknown verbs and the `for` path is ParseRunFor-limited, so
+        # RunVerbAs itself holds no early whitelist return.
+        dispatch = body(COMMANDS, "bool HandleDungeonRun(", "\n}\n")
+        self.assertIn('verb != "mode"', dispatch)
+        self.assertIn('if (verb == "mode")', run)
+        self.assertIn('if (verb == "list")', run)
+        self.assertIn('if (verb == "here")', run)
+        head = run[:run.index('if (verb == "here")')]
+        self.assertNotIn('verb != "start"', head)
         self.assertIn("TortoiseBots::PlayerLed::ModeText(", run)
 
     def test_player_led_binding_ends_with_the_run(self):
-        run = strip_comments(body(COMMANDS, "bool HandleDungeonRun(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         stop = run[run.index('if (verb == "stop")'):]
         stop = stop[:stop.index("return true;")]
         self.assertIn("if (playerLed)", stop)
@@ -113,7 +121,7 @@ class PlayerLedGlueWiringTest(unittest.TestCase):
     def test_tick_picks_before_the_facts(self):
         tick = strip_comments(body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)\n{", "\n}\n"))
         pick = tick.index("TortoiseBots::PlayerLed::Pick(slot.run, slot.playerLed, anchor, ReadPlayerLedEngaged(commander, bots), pathOk);")
-        self.assertLess(pick, tick.index("ReadRunFacts(slot, lead, bots, facts);"))
+        self.assertLess(pick, tick.index("ReadRunFacts(slot, lead, bots, facts, binding->raid);"))
         self.assertIn("slot.playerLed.pullYd = sPlayerbotAIConfig.dungeonRunPlayerLedPullYd;", tick)
         self.assertIn("anchor = ReadPlayerLedAnchor(commander, bots, slot.run.plan->map, slot.playerLed);", tick)
         self.assertIn("? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)", tick)
@@ -161,7 +169,7 @@ class PlayerLedGlueWiringTest(unittest.TestCase):
         self.assertNotIn('"stay', player)
 
     def test_skip_with_nothing_picked(self):
-        run = strip_comments(body(COMMANDS, "bool HandleDungeonRun(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         self.assertIn("slot.playerLed.on && slot.playerLed.picked == TortoiseBots::PlayerLed::kNone", run)
         self.assertIn("TortoiseBots::PlayerLed::SkipNearest(slot.run, slot.playerLed, here)", run)
 

@@ -1,6 +1,7 @@
 #include "AhMarketService.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
 #include "runtime/policy/ah/AhSellerTeleportPolicy.h"
+#include "runtime/policy/ah/AhSellPolicy.h"
 #include "runtime/policy/ah/AhSyntheticMarketPolicy.h"
 #include "BotActivityLease.h"
 #include "runtime/policy/ah/TradingLeasePolicy.h"
@@ -12,7 +13,7 @@
 #include "../ai/playerbot/RandomItemMgr.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "PlayerbotAIStorage.h"
-#include "../ai/playerbot/strategy/values/ItemUsageValue.h"
+#include "../ai/playerbot/strategy/ItemVisitors.h"
 #include "../ai/playerbot/strategy/values/BudgetValues.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/GuidPosition.h"
@@ -384,12 +385,10 @@ AhMarketService::PostResult AhMarketService::TryPostForBot(Player* bot, bool all
 
         ItemPrototype const* proto = item->GetProto();
 
-        // Re-verify usage via actual weight/pricing API (not just cached list).
-        std::string qualifier = ai::ItemQualifier(item).GetQualifier();
-        // Reset cached usage to ensure fresh weight/equip check.
-        ai->GetAiObjectContext()->GetValue<ai::ItemUsage>("item usage", qualifier)->Reset();
-        ai::ItemUsage usage = ai->GetAiObjectContext()->GetValue<ai::ItemUsage>("item usage", qualifier)->Get();
-        if (usage != ai::ItemUsage::ITEM_USAGE_AH)
+        // The order keep set bypasses usage lists: never hand over the order
+        // item, the supply item or a known-recipe reagent.
+        if (bot->GetGuildId() &&
+            ai::GuildOrderConsumesItem(bot, proto ? proto->ItemId : 0))
             continue;
 
         // Verify actual pricing API says AH is better than vendor.
@@ -484,6 +483,8 @@ bool AhMarketService::IsSyntheticItem(uint32_t itemGuidLow) const
 
 bool AhMarketService::IsItemBlacklisted(uint32_t itemId) const
 {
+    if (ai::AhItemSellBlacklisted(itemId, sPlayerbotAIConfig.ahSellBlacklist))
+        return true;
     auto it = m_overrides.find(itemId);
     if (it != m_overrides.end())
         return ai::AhItemBlacklisted(it->second.value, it->second.add_chance);
@@ -715,7 +716,8 @@ bool AhMarketService::IsItemEligible(ItemPrototype const* proto, bool forced) co
         uint32_t(proto->Quality), sPlayerbotAIConfig.ahMarketMaxQuality,
         proto->RequiredLevel, m_maxRequiredLevel,
         proto->ItemLevel, m_maxItemLevel,
-        uint32_t(proto->Bonding), proto->Flags);
+        uint32_t(proto->Bonding), proto->Flags,
+        ai::ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(proto));
 }
 
 uint32_t AhMarketService::CalculatePrice(ItemPrototype const* proto) const

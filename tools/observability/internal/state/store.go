@@ -68,17 +68,17 @@ type xpSample struct {
 // xpTrack holds the sliding XP observations plus the last positive-gain time
 // behind one bot's XpPerHour / XpGainAgeSec fields.
 type xpTrack struct {
-	samples []xpSample
+	samples  []xpSample
 	lastGain time.Time
 	hasGain  bool
 }
 
 type pendingCycle struct {
-	seq        uint64
-	startedAt  time.Time
-	total      int
-	seen       int
-	batches    map[int][]model.BotSnapshot
+	seq       uint64
+	startedAt time.Time
+	total     int
+	seen      int
+	batches   map[int][]model.BotSnapshot
 }
 
 // Store holds live server status and the authoritative bot roster.
@@ -92,7 +92,7 @@ type Store struct {
 
 	// session identifies the game-server process. A restart resets its seq,
 	// so a session change resets all sequence and roster state.
-	session            uint64
+	session uint64
 	// sessionSince is when the current game-server session was first seen:
 	// the window every activity counter covers, surfaced in the activity API
 	// so the dashboard can label counters instead of implying lifetime totals.
@@ -140,6 +140,11 @@ type Store struct {
 	// draw. Its own lock, like commanders; cleared with the session.
 	dungeonMobs dungeonMobsState
 
+	// raids is the latest RAIDS payload (raids.go): the raid-map groups
+	// behind the Raids tab. Its own lock, like commanders; cleared with the
+	// session.
+	raids raidsState
+
 	// Activity rollup fed by the BOT_EVENTS datagrams: per-bot counters plus
 	// the pool-wide loot/quest/level feeds. Cleared with the roster.
 	activity  map[uint32]*botActivityState
@@ -182,18 +187,18 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 		anomalies = ringbuf.New(1000)
 	}
 	return &Store{
-		cfg:       cfg,
-		now:       time.Now,
-		bots:      make(map[uint32]*botEntry),
-		pending:   make(map[uint64]*pendingCycle),
-		anomalies: anomalies,
-		issues:    newIssueTracker(cfg.IssueMinAge),
+		cfg:          cfg,
+		now:          time.Now,
+		bots:         make(map[uint32]*botEntry),
+		pending:      make(map[uint64]*pendingCycle),
+		anomalies:    anomalies,
+		issues:       newIssueTracker(cfg.IssueMinAge),
 		anomByType:   make(map[string]uint64),
 		anomByAction: make(map[string]map[string]uint64),
-		xpTracks:  make(map[uint32]*xpTrack),
-		activity:  make(map[uint32]*botActivityState),
-		gear:      make(map[uint32]model.BotGear),
-		dungeonMobs: dungeonMobsState{runs: make(map[string]dungeonMobsEntry)},
+		xpTracks:     make(map[uint32]*xpTrack),
+		activity:     make(map[uint32]*botActivityState),
+		gear:         make(map[uint32]model.BotGear),
+		dungeonMobs:  dungeonMobsState{runs: make(map[string]dungeonMobsEntry)},
 	}
 }
 

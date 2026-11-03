@@ -239,9 +239,9 @@ namespace ai
                 }
             }
 
-            RESET_AI_VALUE(Unit*, "old target");
-            RESET_AI_VALUE(Unit*, "current target");
-            RESET_AI_VALUE(Unit*, "pull target");
+            SET_AI_VALUE(Unit*, "old target", nullptr);
+            SET_AI_VALUE(Unit*, "current target", nullptr);
+            SET_AI_VALUE(Unit*, "pull target", nullptr);
             RESET_AI_VALUE(bool, "combat::self target");
             RESET_AI_VALUE(WorldPosition, "current position");
 

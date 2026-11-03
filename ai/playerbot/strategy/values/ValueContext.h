@@ -1,5 +1,8 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 #include "ActiveSpellValue.h"
@@ -39,6 +42,7 @@
 #include "IsFacingValue.h"
 #include "ItemCountValue.h"
 #include "SpellIdValue.h"
+#include "HoldKillBlockersValue.h"
 #include "ItemForSpellValue.h"
 #include "SpellCastUsefulValue.h"
 #include "LastSpellCastValue.h"
@@ -117,6 +121,13 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["fankriss active boss"] = [](PlayerbotAI* ai) { return new FankrissActiveBossValue(ai); };
+            creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };
+            creators["patchwerk soaker to shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldValue(ai); };
+            creators["patchwerk soak boss"] = [](PlayerbotAI* ai) { return new PatchwerkSoakBossValue(ai); };
+            creators["patchwerk soak puller"] = [](PlayerbotAI* ai) { return new PatchwerkSoakPullerValue(ai); };
+            creators["patchwerk opening window"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningWindowValue(ai); };
+            creators["patchwerk opening owner"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningOwnerValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };
@@ -125,7 +136,7 @@ namespace ai
             creators["nearest game objects no los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
             creators["nearest damaging traps"] = [](PlayerbotAI* ai) { return new NearestDamagingTrapsValue(ai); };
             creators["nearest dynamic objects"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai); };
-            creators["nearest dynamic objects no los"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
+            creators["nearest dynamic objects no los"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai, kTrapScanRangeYd, LOS_IGNORE); };
             creators["closest game objects static los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, INTERACTION_DISTANCE, LOS_STATIC); };
             creators["nearest npcs"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai); };
             creators["nearest npcs no los"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai, sPlayerbotAIConfig.sightDistance, true); };
@@ -170,6 +181,7 @@ namespace ai
             creators["pet target"] = [](PlayerbotAI* ai) { return new PetTargetValue(ai); };
             creators["old target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
             creators["grind target"] = [](PlayerbotAI* ai) { return new GrindTargetValue(ai); };
+            creators["dangerous elite"] = [](PlayerbotAI* ai) { return new DangerousEliteValue(ai); };
             creators["rti target"] = [](PlayerbotAI* ai) { return new RtiTargetValue(ai); };
             creators["rti cc target"] = [](PlayerbotAI* ai) { return new RtiCcTargetValue(ai); };
             creators["duel target"] = [](PlayerbotAI* ai) { return new DuelTargetValue(ai); };
@@ -225,6 +237,8 @@ namespace ai
             creators["trinkets on use"] = [](PlayerbotAI* ai) { return new EquipedUsableTrinketValue(ai); };
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
+            creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };
+            creators["sole kill candidates"] = [](PlayerbotAI* ai) { return new SoleKillCandidatesValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };
             creators["spell cast useful"] = [](PlayerbotAI* ai) { return new SpellCastUsefulValue(ai); };
             creators["spell ready"] = [](PlayerbotAI* ai) { return new SpellReadyValue(ai); };
@@ -418,17 +432,12 @@ namespace ai
             creators["can hand in petition"] = [](PlayerbotAI* ai) { return new CanHandInPetitionValue(ai); };
             creators["can buy tabard"] = [](PlayerbotAI* ai) { return new CanBuyTabard(ai); };
             creators["guild order"] = [](PlayerbotAI* ai) { return new GuildOrderValue(ai); };
+            creators["guild order farm item"] = [](PlayerbotAI* ai) { return new GuildOrderFarmItemValue(ai); };
+            creators["guild order vendor reagent"] = [](PlayerbotAI* ai) { return new GuildOrderVendorReagentValue(ai); };
+            creators["guild order needs focus"] = [](PlayerbotAI* ai) { return new GuildOrderNeedsFocusValue(ai); };
             creators["has guild travel order"] = [](PlayerbotAI* ai) { return new HasGuildTravelOrderValue(ai); };
             creators["has guild craft order"] = [](PlayerbotAI* ai) { return new HasGuildCraftOrderValue(ai); };
-            creators["guild share target"] = [](PlayerbotAI* ai) { return new GuildShareTargetValue(ai); };
-            creators["has guild share target"] = [](PlayerbotAI* ai) { return new HasGuildShareTargetValue(ai); };
-            creators["guild share list"] = [](PlayerbotAI* ai) { return new GuildShareListValue(ai); };
-            creators["guild share craft order"] = [](PlayerbotAI* ai) { return new GuildShareCraftOrderValue(ai); };
-            creators["guild share farm order"] = [](PlayerbotAI* ai) { return new GuildShareFarmOrderValue(ai); };
-            creators["guild share quest reward order"] = [](PlayerbotAI* ai) { return new GuildShareQuestRewardOrderValue(ai); };
-            creators["guild share quest reward item"] = [](PlayerbotAI* ai) { return new GuildShareQuestRewardItemValue(ai); };
-            creators["needs guild quest order accept"] = [](PlayerbotAI* ai) { return new NeedsGuildQuestOrderAcceptValue(ai); };
-            creators["needs profession reagents"] = [](PlayerbotAI* ai) { return new NeedsProfessionReagentsValue(ai); };
+            creators["has guild order delivery"] = [](PlayerbotAI* ai) { return new HasGuildOrderDeliveryValue(ai); };
 
             creators["experience"] = [](PlayerbotAI* ai) { return new ExperienceValue(ai); };
             creators["honor"] = [](PlayerbotAI* ai) { return new HonorValue(ai); };

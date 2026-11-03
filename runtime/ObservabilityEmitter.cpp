@@ -42,6 +42,7 @@
 #include "Battlegrounds/BattleGround.h"
 #include "Battlegrounds/BattleGroundMgr.h"
 #include "Group/Group.h"
+#include "Guild/GuildMgr.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -144,6 +145,8 @@ bool IsActivityEvent(std::string const& event)
         // vendor / trainer / repair / auction
         "SellAction", "BuyAction", "RepairAllAction", "TrainerAction", "NearbyService",
         "AhAction", "AhBidAction",
+        // guild orders: auction buys and relists for the guild, mail taken
+        "GuildAhBuy", "GuildAhRelist", "GuildAhRelistFailed", "MailAction",
         // deaths, revives (ghost time) and give-ups
         "BotDeath", "ReviveFromCorpseAction", "ReviveFromSpiritHealerAction", "RepopAction",
         "LongStuckFallback", "ReachGiveUp",
@@ -437,6 +440,10 @@ void FillLiveUnitSnapshot(Player* unit, BotTelemetrySnapshot& snap)
         snap.maxPower /= 10;
     }
     snap.powerType = GetPowerTypeName(unit->GetPowerType());
+    // Guild name from the in-memory manager: a member read plus a locked
+    // map lookup, no DB, safe on this thread.
+    if (uint32 guildId = unit->GetGuildId())
+        snap.guild = sGuildMgr.GetGuildNameById(guildId);
     snap.mapId = unit->GetMapId();
     snap.zoneId = unit->GetCachedZoneId();
     snap.x = unit->GetPositionX();
@@ -454,6 +461,7 @@ void FillLiveUnitSnapshot(Player* unit, BotTelemetrySnapshot& snap)
     snap.groupId = group ? group->GetId() : 0;
     snap.subgroupId = unit->GetSubGroup();
     snap.instanceId = unit->GetMap() ? unit->GetMap()->GetInstanceId() : 0;
+    snap.raidMap = unit->GetMap() && unit->GetMap()->IsRaid();
     if (unit->InBattleGround())
     {
         snap.pvp = "bg";
@@ -568,6 +576,28 @@ void ObservabilityEmitter::Initialize()
     m_dungeonRunOffset = 0;
     m_dungeonMobsTiming = DungeonMobsTiming();
 
+    // Spec dash-raids-tab: off by default (a new feature); both config files must allow it, a 0 in either turns it off.
+    // Gates the RAIDS datagram and the observed-raid combat sampler.
+    m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+    m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
+
+    // The live fight stream and the cast poller; a `.reload config` re-reads them.
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_eventTimerMs = 0;
+    m_castPollMs = 0;
+    // The position feed's periods: 500 ms in combat, and an idle period of 2000 that keeps the 2 s report the only idle source.
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
+    m_realtimeTiming = RealtimeTiming();
+    m_realtimeLogMs = 0;
+
     m_port = sPlayerbotAIConfig.observabilityPort;
     if (m_port == 0)
         m_port = 9195;
@@ -654,6 +684,10 @@ void ObservabilityEmitter::Shutdown()
     }
 
     m_enabled = false;
+    m_raids = ObservabilityFlag::Feed();
+    m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
@@ -681,9 +715,61 @@ void ObservabilityEmitter::SetCommanderProvider(std::function<void(std::vector<C
     m_commanderProvider = std::move(provider);
 }
 
+int ObservabilityEmitter::ProtocolVersion() const { return kProtocolVersion; }
+uint64_t ObservabilityEmitter::SessionId() const { return m_sessionId; }
+uint64_t ObservabilityEmitter::NextSeq() { return ++m_snapshotSeq; }
+int64_t ObservabilityEmitter::NowUnix() const { return static_cast<int64_t>(time(nullptr)); }
+int64_t ObservabilityEmitter::NowUnixMs() const
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+void ObservabilityEmitter::SetCombatProvider(std::function<void(std::vector<std::string>&)> provider)
+{
+    m_combatProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t)> provider)
+{
+    m_combatEventProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetEnemyCastPoller(std::function<void()> poller)
+{
+    m_enemyCastPoller = std::move(poller);
+}
+
+void ObservabilityEmitter::SetPositionProvider(
+    std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantCombat, bool wantIdle)> provider)
+{
+    m_positionProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::ReloadRealtimeKeys()
+{
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
+    // Spec dash-raids-tab: the RAIDS feed and the observed-raid sampler follow `.reload config`. PlayerbotAIConfig read
+    // the aiplayerbot.conf half again in ReloadDungeonRunKeys, which runs before this on the same world tick.
+    m_raids.Read(sPlayerbotAIConfig.observabilityRaids,
+        sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false));
+}
+
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
 {
     m_dungeonMobProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetRaidProvider(std::function<void(std::vector<Player*> const&, std::vector<Player*> const&,
+                                                                 std::vector<RaidTelemetry::GroupInfo>&)> provider)
+{
+    m_raidProvider = std::move(provider);
 }
 
 void ObservabilityEmitter::SendDatagram(std::string const& payload)
@@ -1188,6 +1274,79 @@ void ObservabilityEmitter::Update(uint32 diff)
         EmitServerInfo();
     }
 
+    // The live fight stream runs on its own cadence (100 ms drain, 250 ms
+    // cast poll), not inside the 2 s snapshot gate, so events reach the page as
+    // they happen. The per-group EventGapMs still limits datagrams.
+    auto const realtimeStart = std::chrono::steady_clock::now();
+    if (m_realtimeOn && m_realtimeEvents)
+    {
+        m_eventTimerMs += diff;
+        if (m_eventTimerMs >= 100)
+        {
+            m_eventTimerMs = 0;
+            if (m_enemyCastPoller && (m_castPollMs += 100) >= 250)
+            {
+                m_castPollMs = 0;
+                m_enemyCastPoller();
+            }
+            if (m_combatEventProvider)
+            {
+                m_eventPayloads.clear();
+                m_combatEventProvider(m_eventPayloads, nowMs);
+                for (std::string const& payload : m_eventPayloads)
+                {
+                    SendDatagram(payload);
+                    ++m_realtimeTiming.evDatagrams;
+                    m_realtimeTiming.evBytes += payload.size();
+                }
+            }
+        }
+    }
+
+    // The position feed (COMMANDER_POS): both periods advance on every world
+    // tick, each on its own, so the faster one never starves the other; the
+    // provider runs once when either is due, before the 2 s gate, and reports
+    // each period's own groups. The idle period asks for the groups that do not
+    // fight only when it is under 2000 ms; at 2000 the 2 s report is the idle
+    // source. The master switch and the provider gate it first.
+    if (m_realtimeOn && m_positionProvider)
+    {
+        RealtimeCadence::Due const due = m_posClock.Advance(diff);
+        if (due.Any())
+        {
+            m_positionRefs.clear();
+            m_positionProvider(m_positionRefs, due.combat, due.idle);
+            for (CommanderTelemetry::PosRef const& ref : m_positionRefs)
+            {
+                std::string const payload = CommanderTelemetry::BuildPosPayload(kProtocolVersion, m_sessionId, NextSeq(),
+                    NowUnix(), NowUnixMs(), ref);
+                SendDatagram(payload);
+                ++m_realtimeTiming.posDatagrams;
+                m_realtimeTiming.posBytes += payload.size();
+            }
+        }
+    }
+    if (m_realtimeOn)
+    {
+        RealtimeTiming& t = m_realtimeTiming;
+        uint64 const us = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - realtimeStart).count());
+        ++t.cycles;
+        t.sumUs += us;
+        t.maxUs = std::max(t.maxUs, us);
+        m_realtimeLogMs += diff;
+        if (m_realtimeLogMs >= 60000)
+        {
+            m_realtimeLogMs = 0;
+            if (t.cycles)
+                TB_LOG_DEBUG("TortoiseBots: realtime 60s: pos %u dg %llu B, events %u dg %llu B, avg %llu us max %llu us per tick",
+                    t.posDatagrams, static_cast<unsigned long long>(t.posBytes), t.evDatagrams,
+                    static_cast<unsigned long long>(t.evBytes), static_cast<unsigned long long>(t.sumUs / t.cycles),
+                    static_cast<unsigned long long>(t.maxUs));
+            t = RealtimeTiming();
+        }
+    }
+
     m_snapshotTimerMs += diff;
     if (m_snapshotTimerMs < kSnapshotIntervalMs)
         return;
@@ -1209,6 +1368,15 @@ void ObservabilityEmitter::Update(uint32 diff)
     CollectOnlinePlayers(onlinePlayers);
     EmitSnapshotCycle(activeBots, onlinePlayers, diff);
     EmitCommanders();
+    // Raids tab (spec dash-raids-tab): after the roster batches and the commanders of this cycle's seq.
+    EmitRaids(activeBots, onlinePlayers);
+    if (m_combatProvider)
+    {
+        m_combatPayloads.clear();
+        m_combatProvider(m_combatPayloads);
+        for (std::string const& payload : m_combatPayloads)
+            SendDatagram(payload);
+    }
 
     // Issue #872: real players' online characters get their exact-stats row
     // too (same round-robin rate limit as bots, a few per snapshot, never per
@@ -1458,10 +1626,14 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"power\":" << b.power
                 << ",\"max_power\":" << b.maxPower
                 << ",\"power_type\":\"" << EscapeJson(b.powerType) << "\""
+                << ",\"guild\":\"" << EscapeJson(b.guild) << "\""
                 << ",\"map\":" << b.mapId
                 << ",\"zone\":" << b.zoneId
-                << ",\"instance\":" << b.instanceId
-                << ",\"subgroup\":" << b.subgroupId
+                << ",\"instance\":" << b.instanceId;
+            // Additive (spec dash-raids-tab D7): only a raid map carries the key at all.
+            if (b.raidMap)
+                bss << ",\"raid\":true";
+            bss << ",\"subgroup\":" << b.subgroupId
                 << ",\"x\":" << std::fixed << std::setprecision(1) << b.x
                 << ",\"y\":" << b.y
                 << ",\"z\":" << b.z
@@ -1631,6 +1803,64 @@ void ObservabilityEmitter::EmitDungeonMobs(std::vector<Player*> const& bots, std
     }
 }
 
+void ObservabilityEmitter::EmitRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players)
+{
+    using namespace RaidTelemetry;
+    // One empty list after the last group ends (the DUNGEON_MOBS / COMMANDERS convention), then nothing.
+    if (!m_raids.enabled)
+    {
+        if (m_raidsSent)
+            SendDatagram(BuildRaidsPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), NowUnixMs(), {}));
+        m_raidsSent = false;
+        m_raidOffset = 0;
+        return;
+    }
+    if (!m_raidProvider)
+        return;
+    m_raidProvider(bots, players, m_raidGroups);
+    if (m_raidGroups.empty())
+    {
+        if (m_raidsSent)
+            SendDatagram(BuildRaidsPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), NowUnixMs(), {}));
+        m_raidsSent = false;
+        m_raidOffset = 0;
+        return;
+    }
+
+    std::vector<size_t> const window = RotationWindow(m_raidGroups.size(), m_raidOffset);
+    if (m_raidGroups.size() > kMaxRaidGroupsPerCycle)
+        m_raidOffset = (m_raidOffset + kMaxRaidGroupsPerCycle) % m_raidGroups.size();
+    else
+        m_raidOffset = 0;
+    // Whole groups only, in rotation order; a cycle that sends every group needs no copy.
+    std::vector<GroupInfo> rotated;
+    std::vector<GroupInfo> const* listed = &m_raidGroups;
+    if (window.size() != m_raidGroups.size())
+    {
+        rotated.reserve(window.size());
+        for (size_t const index : window)
+            rotated.push_back(m_raidGroups[index]);
+        listed = &rotated;
+    }
+
+    std::vector<TrimEvent> trims;
+    time_t const now = time(nullptr);
+    std::vector<std::string> const parts = BuildRaidsParts(kProtocolVersion, m_sessionId, m_snapshotSeq, now,
+        NowUnixMs(), *listed, &trims);
+    for (std::string const& payload : parts)
+        SendDatagram(payload);
+    for (TrimEvent const& trim : trims)
+    {
+        int64_t& loggedAt = m_raidTrimLoggedAt[trim.groupId];
+        if (loggedAt && now - loggedAt < 60)
+            continue;
+        loggedAt = now;
+        TB_LOG_BASIC("TortoiseBots: RAIDS group %u ('%s') did not fit one datagram; its %s were left out",
+            trim.groupId, trim.key.c_str(), TrimSectionName(trim.level));
+    }
+    m_raidsSent = true;
+}
+
 void ObservabilityEmitter::EmitCommanders()
 {
     if (!m_commanderProvider)
@@ -1664,12 +1894,14 @@ void ObservabilityEmitter::EmitCommanders()
         info.bossesReported = ref.bossesReported;
         info.bossesMap = ref.bossesMap;
         info.bosses = ref.bosses; // at most kMaxBossesPerBinding, copied once per 2 s
+        info.combatJson = ref.combatJson; // the live window, written raw; copied once per 2 s
         // Since when the binding has stood (first seen here), for the dashboard's run timer; forgotten with the binding.
         int64_t& since = m_commanderSince[ref.commanderGuid];
         if (!since)
             since = static_cast<int64_t>(time(nullptr));
         info.boundAt = since;
         info.run = ref.run;
+        info.layout = ref.layout;
         for (Player* bot : ref.bots)
         {
             if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
@@ -1691,6 +1923,7 @@ void ObservabilityEmitter::EmitCommanders()
                 b.maxPower /= 10;
             }
             b.powerType = GetPowerTypeName(bot->GetPowerType());
+            b.subgroup = bot->GetGroup() && bot->GetGroup()->isRaidGroup() ? static_cast<int>(bot->GetSubGroup()) : -1;
             b.lead = ref.lead && bot == ref.lead;
             b.mapId = bot->GetMapId();
             b.zoneId = bot->GetCachedZoneId();
@@ -1698,6 +1931,7 @@ void ObservabilityEmitter::EmitCommanders()
             b.y = bot->GetPositionY();
             b.z = bot->GetPositionZ();
             b.id = bot->GetObjectGuid().GetRawValue();
+            b.away = ref.awayBots.count(bot->GetObjectGuid().GetRawValue()) != 0;
             // What it has selected, else what it fights: two field reads.
             ::ObjectGuid target = bot->GetTargetGuid();
             if (target.IsEmpty())
@@ -1723,8 +1957,32 @@ void ObservabilityEmitter::EmitCommanders()
             standing = standing || ref.commanderGuid == it->first;
         it = standing ? std::next(it) : m_commanderSince.erase(it);
     }
+    for (auto it = m_commanderTrimLoggedAt.begin(); it != m_commanderTrimLoggedAt.end();)
+    {
+        bool standing = false;
+        for (CommanderTelemetry::BindingRef const& ref : m_commanderRefs)
+            standing = standing || ref.commanderGuid == it->first;
+        it = standing ? std::next(it) : m_commanderTrimLoggedAt.erase(it);
+    }
     m_commandersSent = !infos.empty();
-    SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos));
+    // Twenty commanders are more bindings than one datagram holds: the partition keeps each part within the datagram
+    // caps (eight bindings, 64 bots, 64 mobs, kPartByteCap serialized bytes) and every part goes out with this cycle's
+    // seq and ts. A binding that alone cannot fit gives up its optional sections; the log says so once a minute.
+    std::vector<CommanderTelemetry::TrimEvent> trims;
+    time_t const now = time(nullptr);
+    std::vector<std::string> const parts = CommanderTelemetry::BuildPayloadParts(kProtocolVersion, m_sessionId,
+        m_snapshotSeq, now, infos, NowUnixMs(), &trims);
+    for (std::string const& payload : parts)
+        SendDatagram(payload);
+    for (CommanderTelemetry::TrimEvent const& trim : trims)
+    {
+        int64_t& loggedAt = m_commanderTrimLoggedAt[trim.commanderGuid];
+        if (loggedAt && now - loggedAt < 60)
+            continue;
+        loggedAt = now;
+        TB_LOG_BASIC("TortoiseBots: COMMANDERS binding '%s' (commander %u) did not fit one datagram; its %s were left out",
+            trim.commander.c_str(), trim.commanderGuid, CommanderTelemetry::TrimSectionName(trim.level));
+    }
 }
 
 // Effective running settings for the dashboard Server panel. Reads live core
@@ -1773,7 +2031,6 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"raid_nearby\":\"" << flag(sPlayerbotAIConfig.randomBotRaidNearby) << "\""
        << ",\"invite_player\":\"" << flag(sPlayerbotAIConfig.randomBotInvitePlayer) << "\""
        << ",\"timed_logout\":\"" << flag(sPlayerbotAIConfig.randomBotTimedLogout) << "\""
-       << ",\"disable_random_levels\":\"" << flag(sPlayerbotAIConfig.disableRandomLevels) << "\""
        << ",\"level_ladder\":\"" << flag(sPlayerbotAIConfig.levelLadder) << "\""
        << ",\"auto_do_quests\":\"" << flag(sPlayerbotAIConfig.autoDoQuests) << "\""
        << ",\"disable_activity\":\"" << flag(sPlayerbotAIConfig.disableActivityPriorities) << "\""

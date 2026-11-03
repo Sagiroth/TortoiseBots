@@ -143,6 +143,20 @@ namespace ai
     // is trained and the cooldown spent.
     CD_TRIGGER(FadeReadyTrigger, "fade");
     CC_TRIGGER(ShackleUndeadTrigger, "shackle undead");
+    class PatchwerkSoakerShieldTrigger : public Trigger
+    {
+    public:
+        PatchwerkSoakerShieldTrigger(PlayerbotAI* ai) : Trigger(ai, "patchwerk soaker needs shield") {}
+        bool IsActive() override
+        {
+            // The map check keeps every other fight from paying for the value.
+            if (bot->GetMapId() != 533)
+                return false;
+            uint32 spell = AI_VALUE2(uint32, "spell id", "power word: shield");
+            return spell && sServerFacade.IsSpellReady(bot, spell) &&
+                AI_VALUE(Unit*, "patchwerk soaker to shield");
+        }
+    };
     INTERRUPT_TRIGGER(SilenceTrigger, "silence");
     INTERRUPT_HEALER_TRIGGER(SilenceEnemyHealerTrigger, "silence");
 

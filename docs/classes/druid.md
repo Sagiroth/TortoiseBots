@@ -40,9 +40,12 @@ Druids fulfill Tank, Healer, Melee DPS, or Ranged Caster roles using flexible sh
 - Fires *Ferocious Bite* early on targets below 25% health with 1 or more combo points (against targets under 4000 health; bosses keep Rip), avoiding clipping active *Rip* bleeds.
 - Out of combat or in battlegrounds, prowling cats maintain normal objective movement and routines.
 - A prowling druid still ends a pull's join window on time.
+- Off-heals wounded allies (*Regrowth*, *Healing Touch* by wound band) per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Restoration (Healer)
 - Maintains *Rejuvenation* and *Regrowth* HoTs (Heal-over-Time spells) on injured allies.
+- Between 20% and 70% health, casts *Regrowth* first and falls through to *Healing Touch* while Regrowth's heal-over-time is still running on the target, or when the druid has not learned Regrowth yet (below level 12).
+- While that target still needs no direct heal, keeps *Rejuvenation* on it; idles by blanketing *Rejuvenation* on hurt allies missing it instead of throwing grenades, and saves raid *Faerie Fire* for bosses while holding 80% mana.
 - Casts direct heals (*Healing Touch*) downranked to match target wounds per [shared downranking rules](overview.md#spell-downranking).
 - Chains *Nature's Swiftness* into an instant *Healing Touch* when allies suffer critical damage (held for that emergency, never popped on a quiet tick). Rotation reference: stevemcqueenz/turtle-knowledge-base- (Turtle WoW class guides).
 - Channels *Tranquility* only when the group is hurt together (never on two scratches). Rotation reference: stevemcqueenz/turtle-knowledge-base- (Turtle WoW class guides).
@@ -52,7 +55,9 @@ Druids fulfill Tank, Healer, Melee DPS, or Ranged Caster roles using flexible sh
 ### Balance (Ranged DPS)
 - Maintains *Moonkin Form* and attacks from range with *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
 - Casts *Hurricane* against packs of 3 or more clustered enemies.
+- When mana falls to 5% or less, walks into melee and auto-attacks in caster or Moonkin form (no Bear or Cat Form needed), saving regenerated mana; returns to ranged casting at 30% mana. A cast in progress finishes first. Turn it off with `co -oom melee` (`co +oom melee` to turn it back on).
 - Honors [party threat back-off](overview.md#party-threat-back-off), pausing AoE spells if holding 50% or more of tank threat.
+- Off-heals wounded allies (*Regrowth*, *Healing Touch* by wound band) per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Leveling (Below Level 10)
 - Fights in melee using auto-attacks, keeping *Moonfire* applied and healing self with *Healing Touch* and *Rejuvenation*.

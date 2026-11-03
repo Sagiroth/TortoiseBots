@@ -5,6 +5,12 @@
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/Helpers.h"
+#include "runtime/GuildOrderRelistPolicy.h"
+#include "runtime/GuildOrderStore.h"
+#include "host/ModuleLog.h"
+
+#include <algorithm>
+#include <cstdlib>
 
 using namespace ai;
 
@@ -13,6 +19,72 @@ namespace
 MasterPlayer* GetMailOwner(Player* bot)
 {
     return bot && bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+}
+
+// The core's auction notification subject is "<item>:<random>:<state>"
+// (Mail.h AuctionMailState). Anything else is not an auction notification.
+bool ParseAuctionSubject(std::string const& subject, uint32_t& itemId, uint32_t& state)
+{
+    std::vector<std::string> parts = split(subject, ':');
+    if (parts.size() != 3 || parts[0].empty() || parts[2].empty())
+        return false;
+    char* end = nullptr;
+    unsigned long const item = std::strtoul(parts[0].c_str(), &end, 10);
+    if (!end || *end)
+        return false;
+    unsigned long const sentinel = std::strtoul(parts[2].c_str(), &end, 10);
+    if (!end || *end)
+        return false;
+    itemId = uint32_t(item);
+    state = uint32_t(sentinel);
+    return true;
+}
+
+// A sale notification body is "<bidder>:<bid>:<buyout>:<deposit>:<cut>"
+// (AuctionHouseMgr::SendAuctionSuccessfulMail); these are the listing terms
+// the ledger row was posted with, so they identify the auction that settled.
+void ParseAuctionSaleBody(std::string const& text, TortoiseBots::GuildOrders::RelistMail& view)
+{
+    std::vector<std::string> parts = split(text, ':');
+    if (parts.size() != 5)
+        return;
+    uint32_t values[3] = {};
+    for (size_t i = 0; i < 3; ++i)
+    {
+        if (parts[i + 1].empty())
+            return;
+        char* end = nullptr;
+        unsigned long const value = std::strtoul(parts[i + 1].c_str(), &end, 10);
+        if (!end || *end)
+            return;
+        values[i] = uint32_t(value);
+    }
+    view.bodyParsed = true;
+    view.bodyBid = values[0];
+    view.bodyBuyout = values[1];
+    view.bodyDeposit = values[2];
+}
+
+TortoiseBots::GuildOrders::RelistMail MakeRelistMailView(Mail* mail, MasterPlayer* owner)
+{
+    TortoiseBots::GuildOrders::RelistMail view;
+    view.auction = mail->stationery == MAIL_STATIONERY_AUCTION;
+    view.hasItems = mail->has_items && !mail->items.empty();
+    view.money = mail->money;
+    ParseAuctionSubject(mail->subject, view.subjectItemId, view.subjectState);
+    if (view.auction && view.subjectState == TortoiseBots::GuildOrders::kRelistMailSuccessful &&
+        mail->itemTextId)
+        ParseAuctionSaleBody(sObjectMgr.GetItemText(mail->itemTextId), view);
+    if (view.hasItems)
+    {
+        Item* item = owner->GetMItem(mail->items.front().item_guid);
+        if (item)
+        {
+            view.itemId = item->GetEntry();
+            view.count = item->GetCount();
+        }
+    }
+    return view;
 }
 }
 
@@ -240,6 +312,241 @@ private:
     std::vector<std::string> items;
 };
 
+// Takes one order item id from waiting mail: fits that single item through
+// the core's per-item check (stack merge included) instead of demanding free
+// slots for the whole mailbox. A bot whose bags hold nothing sellable still
+// lifts its order item this way; the broad take above needs two free slots
+// and would refuse forever. Stops at the first item that no longer fits so
+// the leg can park instead of looping past unrelated mail.
+uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
+{
+    if (!ai || !itemId)
+        return 0;
+    Player* bot = ai->GetBot();
+    MasterPlayer* owner = GetMailOwner(bot);
+    if (!bot || !owner)
+        return 0;
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
+    if (mailbox.IsEmpty())
+        return 0;
+    uint32_t taken = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = owner->GetMailBegin(); itr != owner->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        uint32_t wantedGuid = 0;
+        for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
+            if (it->item_template == itemId)
+            {
+                wantedGuid = it->item_guid;
+                break;
+            }
+        if (!wantedGuid)
+            continue;
+        Item* item = owner->GetMItem(wantedGuid);
+        if (!item)
+            continue;
+        uint32_t count = item->GetCount();
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        WorldPacket packet;
+        packet << mailbox;
+        packet << mail->messageID;
+        bot->GetSession()->HandleMailTakeItem(packet);
+        taken += count;
+        Mail* current = owner->GetMail(mail->messageID);
+        if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
+        {
+            WorldPacket delPacket;
+            delPacket << mailbox;
+            delPacket << mail->messageID;
+            bot->GetSession()->HandleMailDelete(delPacket);
+        }
+    }
+    return taken;
+}
+
+namespace
+{
+// Takes the value one settlement mail carries into the bot's hands: the sale
+// gold or the returned stack. False when the mail gave nothing, so the caller
+// leaves the row as it was.
+bool TakeRelistValue(PlayerbotAI* ai, Player* bot, ObjectGuid mailbox, Mail* mail, uint32_t itemId,
+    TortoiseBots::GuildOrders::RelistMailKind kind, uint32_t& gold, uint32_t& items)
+{
+    if (kind == TortoiseBots::GuildOrders::RelistMailKind::Sold)
+    {
+        uint32_t before = bot->GetMoney();
+        WorldPacket packet;
+        packet << mailbox;
+        packet << mail->messageID;
+        bot->GetSession()->HandleMailTakeMoney(packet);
+        uint32_t after = bot->GetMoney();
+        if (after <= before)
+            return false;
+        gold = after - before;
+        return true;
+    }
+    if (kind != TortoiseBots::GuildOrders::RelistMailKind::Expired)
+        return false;
+    uint32_t itemGuid = 0;
+    for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
+    {
+        if (it->item_template == itemId)
+        {
+            itemGuid = it->item_guid;
+            break;
+        }
+    }
+    if (!itemGuid)
+        return false;
+    uint32_t before = ai->GetInventoryItemsCountWithId(itemId);
+    WorldPacket packet;
+    packet << mailbox;
+    packet << mail->messageID;
+    bot->GetSession()->HandleMailTakeItem(packet);
+    uint32_t after = ai->GetInventoryItemsCountWithId(itemId);
+    if (after <= before)
+        return false;
+    items = after - before;
+    return true;
+}
+
+void DeleteEmptyRelistMail(PlayerbotAI* ai, MasterPlayer* owner, ObjectGuid mailbox,
+    uint32_t messageId)
+{
+    Mail* current = owner->GetMail(messageId);
+    if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
+    {
+        WorldPacket delPacket;
+        delPacket << mailbox;
+        delPacket << messageId;
+        ai->GetBot()->GetSession()->HandleMailDelete(delPacket);
+    }
+}
+} // namespace
+
+// Settles the guild relist ledger against the waiting auction mail. A sale
+// mail pays its gold into the bot's hands, an expired listing returns the
+// stack; the ledger row then waits for the bank trip the relist drain makes.
+// Runs at any order state, or with no order row at all: the guild-funded
+// value outlives the order that posted it. Returns the rows this read matched.
+uint32_t ai::TakeRelistMail(PlayerbotAI* ai)
+{
+    if (!ai)
+        return 0;
+    Player* bot = ai->GetBot();
+    MasterPlayer* owner = GetMailOwner(bot);
+    if (!bot || !owner || !bot->GetGuildId())
+        return 0;
+    std::vector<TortoiseBots::GuildOrders::RelistLedgerEntry> entries =
+        TortoiseBots::GuildOrders::RelistEntries(bot->GetGUIDLow());
+    if (entries.empty())
+        return 0;
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
+    if (mailbox.IsEmpty())
+        return 0;
+
+    using namespace TortoiseBots::GuildOrders;
+    uint32_t settled = 0;
+    time_t curTime = time(nullptr);
+
+    // A claimed row names the mail it is taking. A mail that is gone or that
+    // no longer carries the row's value means the take landed: the value is in
+    // the bot, so the row is received and the bank drain settles it. A mail
+    // that still carries the value is taken again. A claimed row is never
+    // matched by its terms a second time.
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        RelistLedgerEntry& entry = entries[i];
+        if (entry.state != RelistState::Claimed)
+            continue;
+        Mail* mail = owner->GetMail(entry.claimMailId);
+        RelistMail view;
+        if (mail && mail->state != MAIL_STATE_DELETED)
+            view = MakeRelistMailView(mail, owner);
+        if (!RelistClaimMailHoldsValue(entry, view))
+        {
+            if (TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq,
+                    entry.heldGold, entry.heldCount))
+            {
+                RelistNoteClaimSettled(entry);
+                ++settled;
+            }
+            continue;
+        }
+        RelistMailKind const kind = view.money ? RelistMailKind::Sold : RelistMailKind::Expired;
+        uint32_t gold = 0;
+        uint32_t items = 0;
+        if (!TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items))
+            continue;
+        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq, gold, items))
+            continue;
+        RelistNoteMailReceived(entry, kind, gold, items);
+        ++settled;
+        DeleteEmptyRelistMail(ai, owner, mailbox, mail->messageID);
+    }
+
+    for (PlayerMails::iterator itr = owner->GetMailBegin(); itr != owner->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->money && !mail->has_items)
+            continue;
+        // A claimed row already owns this mail: its retry pass takes it.
+        size_t claimed = 0;
+        if (RelistClaimedIndex(entries, mail->messageID, claimed))
+            continue;
+        RelistMail view = MakeRelistMailView(mail, owner);
+        if (!view.auction)
+            continue;
+        // A mail settles a row only when its item, listing terms and timing
+        // identify a posted row. Look-alike rows of one guild settle as the
+        // oldest: that guild is credited either way. Rows of different guilds
+        // leave the mail to normal mail handling, because the ledger never
+        // pays one guild another auction's value.
+        size_t matched = 0;
+        size_t const matches = RelistMatchCount(entries, view, uint64_t(curTime), matched);
+        if (!matches || !RelistSettleIndex(entries, view, uint64_t(curTime), matched))
+        {
+            if (matches > 1)
+                TB_LOG_BASIC("TortoiseBots: relist mail ambiguous for bot %u (item %u): %zu ledger "
+                    "rows match across guilds; leaving it to normal mail handling.", bot->GetGUIDLow(),
+                    view.subjectItemId, matches);
+            continue;
+        }
+        RelistLedgerEntry& entry = entries[matched];
+        RelistMailKind const kind = RelistMailMatch(entry, view, uint64_t(curTime));
+
+        // Claim before the take: the row names the mail and the value it
+        // promises, so a take whose received write fails is still known. A
+        // failed claim write leaves the mail untouched for the next read.
+        RelistLedgerEntry claim = entry;
+        RelistNoteMailClaimed(claim, mail->messageID, view, kind);
+        if (!TortoiseBots::GuildOrders::NoteRelistClaimed(bot->GetGUIDLow(), entry.seq,
+                claim.claimMailId, claim.heldGold, claim.heldCount))
+            continue;
+        entry = claim;
+
+        uint32_t gold = 0;
+        uint32_t items = 0;
+        if (!TakeRelistValue(ai, bot, mailbox, mail, entry.itemId, kind, gold, items))
+            continue;
+        if (!TortoiseBots::GuildOrders::NoteRelistReceived(bot->GetGUIDLow(), entry.seq, gold, items))
+            continue;
+        RelistNoteMailReceived(entry, kind, gold, items);
+        ++settled;
+        DeleteEmptyRelistMail(ai, owner, mailbox, mail->messageID);
+    }
+    return settled;
+}
+
 class DeleteMailProcessor : public MailProcessor
 {
 public:
@@ -316,6 +623,11 @@ bool MailAction::Execute(Event& event)
         ai->TellPlayer(requester, out.str());
         return false;
     }
+
+    // A mail read also settles the guild relist ledger, whatever the bot's
+    // order state: the guild-funded value arrives long after the posting.
+    if (action == "take")
+        ai::TakeRelistMail(ai);
 
     if (!processor->Before(requester, ai))
         return false;

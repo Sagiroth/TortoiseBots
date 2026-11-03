@@ -9,7 +9,9 @@
 #include "QuestValues.h"
 #include "SharedValueContext.h"
 #include "runtime/AltBotService.h"
+#include "runtime/GuildOrderStore.h"
 #include "BudgetValues.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
 #include "GuildValues.h"
 #include "Guild/GuildMgr.h"
 
@@ -201,6 +203,9 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
                 break;
             }
         }
+
+        if (gInfo->type == GAMEOBJECT_TYPE_SPELL_FOCUS)
+            purpose |= (uint32)TravelDestinationPurpose::SpellFocus;
 
         if (uint32 skillId = GameObjectLockSkill(gInfo))
         {
@@ -475,14 +480,62 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "guild order")
     {
+        bool delivering = AI_VALUE(bool, "has guild order delivery");
+        // The legs pin their targets to different conditions; the target of
+        // the leg that just ended would sit in cooldown (still active, so it
+        // blocks the next order request), so expire it here and let the
+        // request pick the new leg's destination.
+        TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+        if (target && target->IsActive())
+        {
+            bool wantDelivery = false, wantWork = false;
+            for (std::string const& condition : target->GetConditions())
+            {
+                if (condition == "has guild order delivery")
+                    wantDelivery = true;
+                if (condition == "has guild travel order")
+                    wantWork = true;
+            }
+            if ((wantDelivery && !delivering) || (wantWork && delivering))
+            {
+                target->SetForced(false);
+                target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+            }
+            else if (wantWork && !delivering && target->GetDestination() &&
+                target->GetDestination()->GetPurpose() == TravelDestinationPurpose::Mail)
+            {
+                // The mailbox leg walks for the supply item, not the order
+                // item: a bought reagent waits in the mail while the order
+                // item does not, and reading the order item here expired the
+                // trip on every check so the bot re-picked between mailboxes
+                // instead of walking to one and taking the mail.
+                GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+                std::optional<TortoiseBots::GuildOrders::OrderRecord> mailRecord =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                uint32_t mailItemId = mailRecord ?
+                    TortoiseBots::GuildOrders::SupplyMailItemId(mailRecord->supplyStep,
+                        mailRecord->supplyItemId, order.itemId) : order.itemId;
+                if (mailItemId && OrderMailboxItems(bot, mailItemId) == 0)
+                {
+                    target->SetForced(false);
+                    target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                }
+            }
+        }
+        if (delivering)
+            return true;
         return AI_VALUE(bool, "has guild travel order");
     }
-    else if (name == "reagent vendor")
+    else if (name == "order focus")
+    {
+        return AI_VALUE(bool, "guild order needs focus");
+    }
+    else if (name == "order vendor")
     {
         // Issue #872 (B11): autonomous alts never travel to buy reagents.
         if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
             return false;
-        return AI_VALUE(bool, "needs profession reagents");
+        return AI_VALUE(uint32, "guild order vendor reagent") != 0;
     }
     else if (name == "mount")
     {
@@ -496,6 +549,11 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name.find("trainer") == 0)
     {
+        // A guild order owns the bot's travel while it still needs work: a
+        // trainer trip started during an order leg's 15 s park would win the
+        // race and keep the bot busy, since the parked order never competes.
+        if (AI_VALUE(bool, "has guild travel order") || AI_VALUE(bool, "has guild order delivery"))
+            return false;
         // Issue #872 (B11): autonomous alts train class spells only.
         if (name != "trainer class" &&
             TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
@@ -670,6 +728,12 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
 
     if (bot->GetLevel() < 10)
         return false;
+
+    // A guild order owns the bot's travel: its legs pick their own zones.
+    if (std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+        if (!TortoiseBots::GuildOrders::IsFinished(order->state))
+            return false;
 
     // Targetless leave (ZoneMigratePolicy.h): two minutes of back-to-back
     // `reset travel target` mean no errand below is going to start, so the

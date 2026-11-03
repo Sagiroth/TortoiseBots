@@ -32,6 +32,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
   - Casts *Shield Slam* on cooldown (or procced by Improved Shield Slam).
   - Uses *Thunder Clap* (usable in Defensive Stance on Turtle) against 2 or more melee attackers.
   - Opens with *Shield Slam* when it is ready and treats *Sunder Armor* as the filler while the stack builds (rotation reference: stevemcqueenz/turtle-knowledge-base-, Turtle WoW class guides).
+  - On an opt-in Patchwerk tank role (`patchwerk main` or `patchwerk soak`, see [Patchwerk roles](../play/dungeons-and-raids.md#patchwerk-opt-in-roles)) it casts *Shield Slam* whenever it can and keeps using *Sunder Armor* past five stacks while Shield Slam and Revenge are unavailable, to hold a threat lead.
 - **Mitigation & Taunts:**
   - Activates *Shield Wall* early at low health (20-50%) and holds *Last Stand* for critical health emergencies (<20%).
   - Taunts with *Taunt* immediately if any attacker peels onto non-tank party members.
@@ -47,6 +48,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
 - **Fury:**
   - Fights dual-wielding in Berserker Stance, centering rage spend on *Bloodthirst* and *Whirlwind*.
   - Activates *Death Wish*, *Recklessness*, and *Retaliation* during encounter burn phases.
+  - Rests in Berserker Stance between fights, so there is no Battle/Berserker swap per pull.
+- **Snaring:** *Piercing Howl* only lands on a mob inside its own 10 yd radius (in a raid, only a runner beside the warrior); a refused Howl falls back to *Hamstring* in a dungeon, and both dps specs skip it in a raid.
 - **Execute Phase:** When targets drop below 20% health, *Execute* becomes top priority, consuming all available rage.
 - **Finishing Runners:** Warriors in Berserker Stance with *Intercept* off cooldown charge after fleeing enemies within 25 yards per [shared runner rules](overview.md#finishing-runners).
 

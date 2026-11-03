@@ -5,6 +5,8 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderAccess.h"
+#include "../runtime/GuildOrderStore.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireGearCache.h"
 #include "../runtime/RandomBotService.h"
@@ -12,6 +14,7 @@
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/BotLfgService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/CombatMonitorService.h"
 #include "../runtime/RunTrace.h"
 #include "BotChatAdapter.h"
 #include "BotPacketAdapter.h"
@@ -20,6 +23,7 @@
 #include "../commands/BotCommands.h"
 #include "../commands/BotCommandHandlers.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/BotActionLog.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
 #include "Log.h"
@@ -85,12 +89,17 @@ BotHostAdapter::BotHostAdapter()
 // command); the next world tick reads the run leader's keys again (OnUpdate),
 // on the thread that reads them.
 static std::atomic<bool> s_dungeonRunKeysDue{false};
+// The same for the dashboard's live stream keys: read on the world thread.
+static std::atomic<bool> s_realtimeKeysDue{false};
 
 void BotHostAdapter::OnAfterConfigLoad(bool reload)
 {
     ModuleLog::Instance().ApplyConfig();
     if (reload)
+    {
         s_dungeonRunKeysDue.store(true);
+        s_realtimeKeysDue.store(true);
+    }
 }
 
 void BotHostAdapter::OnStartup()
@@ -112,6 +121,8 @@ void BotHostAdapter::OnStartup()
     RandomBotService::Instance().Initialize();
     BattlegroundQueueService::Instance().Initialize();
     ClaimLifecycle::Instance().Initialize();
+    GuildOrders::Initialize();
+    GuildOrders::ApplyBotRanksAtStartup();
     // Run trace: mark the summaries of runs the last server never finalised.
     RunTraceService::Instance().Initialize();
 
@@ -155,9 +166,38 @@ void BotHostAdapter::OnStartup()
     // The dashboard's Commanders tab: the standing remote-commander bindings.
     ObservabilityEmitter::Instance().SetCommanderProvider(
         [](std::vector<CommanderTelemetry::BindingRef>& out) { BotCommands::CollectCommanderTelemetry(out); });
+    // Finished combat fights: the monitor's TakePayloads fills the payloads, the emitter sends each one.
+    // The monitor's flag follows its config key and the emitter only: ungated here, retaken on the 1 Hz tick below.
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
+    ObservabilityEmitter::Instance().SetCombatProvider(
+        [](std::vector<std::string>& out) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            CombatMonitorService::Instance().TakePayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix());
+        });
+    // The live fight stream (COMBAT_EVENTS) on its own 100 ms cadence, and the
+    // elite/boss cast poller every 250 ms while a fight runs.
+    ObservabilityEmitter::Instance().SetCombatEventProvider(
+        [](std::vector<std::string>& out, uint32_t nowMs) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            CombatMonitorService::Instance().TakeEventPayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix(),
+                emitter.NowUnixMs(), nowMs, emitter.EventGapMs());
+        });
+    ObservabilityEmitter::Instance().SetEnemyCastPoller([]() { BotCommands::PollEnemyCasts(); });
+    // The live positions (COMMANDER_POS, task S3): the bound groups' bots and the lead's last-reported enemies.
+    ObservabilityEmitter::Instance().SetPositionProvider(
+        [](std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle) {
+            BotCommands::CollectCommanderPositions(out, wantCombat, wantIdle);
+        });
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(
         [](std::vector<DungeonMobTelemetry::RunRef>& runs) { BotCommands::CollectDungeonMobs(runs); });
+    // The Raids tab (spec dash-raids-tab): the raid groups of every raid map copy, bound or not.
+    ObservabilityEmitter::Instance().SetRaidProvider(
+        [](std::vector<Player*> const& bots, std::vector<Player*> const& players,
+           std::vector<RaidTelemetry::GroupInfo>& groups) { BotCommands::CollectObservedRaids(bots, players, groups); });
 }
 void BotHostAdapter::OnUpdate(uint32 diff)
 {
@@ -170,6 +210,9 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // AiPlayerbot.DungeonRun*) are read again from aiplayerbot.conf, only those.
     if (s_dungeonRunKeysDue.exchange(false))
         sPlayerbotAIConfig.ReloadDungeonRunKeys();
+    // The dashboard's live stream keys: read on this thread, live on `.reload config`.
+    if (s_realtimeKeysDue.exchange(false))
+        ObservabilityEmitter::Instance().ReloadRealtimeKeys();
 
     // Initialization stops before service configuration when AI is disabled.
     // Do not tick those services against an uninitialized registry/config.
@@ -205,11 +248,15 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // Issue #884: release remote-commander bindings whose commander logged
     // out or whose group broke up (nothing runs while none is bound).
     BotCommands::UpdateRemoteCommanders(diff);
+    // The Raids tab: the unbound raid groups' combat books. Outside the binding sweep, which returns early while nothing is
+    // bound. One bool read per tick while AiPlayerbot.ObservabilityRaids is 0.
+    BotCommands::UpdateObservedRaids(diff);
     PlayerConvenience::Instance().Update(diff);
     RandomBotService::Instance().Update(diff);
     // Issue #192: complete queued hire provisions, then sweep grace timers.
     HireProvisionService::Instance().Update(diff);
     HireLifecycle::Instance().Update(diff);
+    GuildOrders::Update(diff);
     AhMarketService::Instance().Update(diff);
     BattlegroundQueueService::Instance().Update(diff);
     ObservabilityEmitter::Instance().Update(diff);
@@ -228,9 +275,13 @@ void BotHostAdapter::OnShutdown()
     BattlegroundQueueService::Instance().Shutdown();
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
+    BotCommands::ClearObservedRaids();
     BotPacketAdapter::ClearDeferredPackets();
+    // After the bots are gone: aura-strip/cast hooks during session teardown
+    // reopen nothing once nothing is left to log.
     BotManager::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
+    ai::botdiag::BotActionLog::CloseAll();
     BotActivityLeaseManager::Instance().Clear();
     TB_LOG_BASIC("TortoiseBots: native module shutting down after %u world ticks", m_ticks);
 }

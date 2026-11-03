@@ -3,16 +3,17 @@
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
 #include "playerbot/policy/gear/EquipThresholdPolicy.h"
+#include "playerbot/policy/loot/QuestSourceItemPolicy.h"
 #include "MountValues.h"
 #include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "BudgetValues.h"
-#include "GuildValues.h"
-
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/quest/QuestLogPolicy.h"
 #include "../../../../runtime/policy/provision/ClassConsumablePolicy.h"
 #include "../../../../runtime/policy/ah/AhReadModelPolicy.h"
+#include "../../../../runtime/policy/ah/AhSellPolicy.h"
 
 using namespace ai;
 
@@ -63,6 +64,7 @@ std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> ItemUsageValu
 
 std::unordered_set<uint32> ItemUsageValue::m_allItemIdsSoldByAnyVendors;
 std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
+std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithoutLimit;
 
 ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), randomPropertyId(0), proto(nullptr) {
     std::vector<std::string> numbers = Qualified::getMultiQualifiers(qualifier, ":");
@@ -83,6 +85,25 @@ ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), r
 
 }
 
+bool ItemUsageValue::IsCraftingTool(uint32 itemId)
+{
+    static std::unordered_set<uint32> const tools = []()
+    {
+        std::unordered_set<uint32> ids;
+        for (uint32 spellId = 1; spellId < sSpellMgr.GetMaxSpellId(); ++spellId)
+        {
+            SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
+            if (!spell || (!spell->HasEffect(SPELL_EFFECT_CREATE_ITEM) && !spell->HasEffect(SPELL_EFFECT_ENCHANT_ITEM)))
+                continue;
+            for (uint32 totem : spell->Totem)
+                if (totem)
+                    ids.insert(totem);
+        }
+        return ids;
+    }();
+    return tools.count(itemId) != 0;
+}
+
 ItemUsage ItemUsageValue::Calculate()
 {
     ItemQualifier itemQualifier(qualifier);
@@ -93,6 +114,26 @@ ItemUsage ItemUsageValue::Calculate()
     const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)
         return ItemUsage::ITEM_USAGE_NONE;
+
+    // `.bot order` first: the bot keeps the order item, the current supply
+    // item, and (craft orders) the whole reagent tree through recipes it
+    // knows - it must not sell, auction or use them while the order runs.
+    // Above FORCE so an explicit keep/equip order cannot re-route them. The
+    // set lives in the store keyed by order + supply item: this map-thread
+    // gate recomputes it (its spell map is safe to read here) when the
+    // keys changed, and every consumer below only does a set lookup.
+    if (bot->GetGuildId())
+    {
+        TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
+        if (TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId))
+            return ItemUsage::ITEM_USAGE_GUILD_TASK;
+    }
+
+    // A tool a recipe requires (Arclight Spanner, Gyromatic Micro-Adjustor,
+    // Blacksmith Hammer) stays in the bags: selling or posting it leaves the
+    // bot unable to craft that recipe.
+    if (sPlayerbotAIConfig.craftToolsAlways && IsCraftingTool(itemId))
+        return ItemUsage::ITEM_USAGE_KEEP;
 
     //FORCE
     ForceItemUsage forceUsage = AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", proto->ItemId, ForceItemUsage::FORCE_USAGE_NONE);
@@ -123,30 +164,6 @@ ItemUsage ItemUsageValue::Calculate()
 
     if (forceUsage == ForceItemUsage::FORCE_USAGE_BAG)
         return ItemUsage::ITEM_USAGE_KEEP;
-
-    if (bot->GetGuildId())
-    {
-        std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-        if (!shareList.empty())
-        {
-            for (const auto& entry : shareList)
-            {
-                if (entry.itemId == itemId)
-                    return ItemUsage::ITEM_USAGE_KEEP;
-
-                ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(entry.itemId);
-                if (craftProto)
-                {
-                    std::vector<std::pair<uint32, uint32>> reagents = GetAllReagentItemIdsForCraftingItem(craftProto);
-                    for (const auto& [reagentId, reagentCount] : reagents)
-                    {
-                        if (reagentId == itemId)
-                            return ItemUsage::ITEM_USAGE_KEEP;
-                    }
-                }
-            }
-        }
-    }
 
     // Keep the Tortoise hearthstone.
     if (proto->ItemId == 6948)
@@ -1304,6 +1321,23 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
 
             return true;
         }
+
+        for (int j = 0; j < QUEST_SOURCE_ITEM_IDS_COUNT; ++j)
+        {
+            if (quest->ReqSourceId[j] != itemId)
+                continue;
+
+            if (ignoreInventory)
+                return true;
+
+            ItemPrototype const* sourceProto = sObjectMgr.GetItemPrototype(itemId);
+            if (!sourceProto)
+                continue;
+
+            if (ai::QuestSourceItemStillNeeded(player->GetItemCount(itemId, true), sourceProto->MaxCount,
+                                              quest->ReqSourceCount[j], sourceProto->Stackable))
+                return true;
+        }
     }
 
     return false;
@@ -1795,7 +1829,7 @@ void ItemUsageValue::PopulateReagentItemIdsForCraftableItemIds()
 
 void ItemUsageValue::PopulateSoldByVendorItemIds()
 {
-    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor"))
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor UNION SELECT distinct item FROM npc_vendor_template"))
     {
         BarGoLink bar(result->GetRowCount());
         do
@@ -1813,7 +1847,7 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
         } while (result->NextRow());
     }
 
-    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount > 0"))
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount > 0 UNION SELECT distinct item FROM npc_vendor_template WHERE maxcount > 0"))
     {
         BarGoLink bar(result->GetRowCount());
         do
@@ -1828,6 +1862,24 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
                 continue;
 
             m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.insert(fields[0].GetUInt32());
+        } while (result->NextRow());
+    }
+
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount = 0 UNION SELECT distinct item FROM npc_vendor_template WHERE maxcount = 0"))
+    {
+        BarGoLink bar(result->GetRowCount());
+        do
+        {
+            bar.step();
+            Field* fields = result->Fetch();
+            uint32 entry = fields[0].GetUInt32();
+            if (!entry)
+                continue;
+
+            if (!sObjectMgr.GetItemPrototype(entry))
+                continue;
+
+            m_itemIdsSoldByAnyVendorsWithoutLimit.insert(fields[0].GetUInt32());
         } while (result->NextRow());
     }
 }
@@ -1855,6 +1907,11 @@ bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
 bool ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(ItemPrototype const* proto)
 {
     return m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.count(proto->ItemId) > 0;
+}
+
+bool ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(ItemPrototype const* proto)
+{
+    return m_itemIdsSoldByAnyVendorsWithoutLimit.count(proto->ItemId) > 0;
 }
 
 bool ItemUsageValue::IsItemUsedBySkill(ItemPrototype const* proto, SkillType skillType)
@@ -1926,7 +1983,7 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         return false;
     }
 
-    if (AreCurrentAHListingsTooCheap(proto))
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
     {
         return false;
     }
@@ -1945,6 +2002,16 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         {
             return false;
         }
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
+    if (AreCurrentAHListingsTooCheap(proto))
+    {
+        return false;
     }
 
     //exceptions
@@ -2047,6 +2114,21 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
         return false;
     }
 
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
+    {
+        return false;
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
+    if (!isLimitedSupply)
+    {
+        return false;
+    }
+
     if (AreCurrentAHListingsTooCheap(proto))
     {
         return false;
@@ -2086,7 +2168,7 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
         return true;
     }
 
-    if (isLimitedSupply && !(proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE && proto->SubClass == ItemSubclassConsumable::ITEM_SUBCLASS_SCROLL))
+    if (!(proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE && proto->SubClass == ItemSubclassConsumable::ITEM_SUBCLASS_SCROLL))
     {
         return true;
     }
@@ -2135,6 +2217,16 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
 
 bool ItemUsageValue::IsWorthBuyingFromAhToResellAtAH(ItemPrototype const* proto, uint32 totalCost, uint32 itemCount)
 {
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
+    {
+        return false;
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
     uint32 pricePerItem = totalCost / itemCount;
 
     //bottom half is probably always worth buying? That should reduce oversupply

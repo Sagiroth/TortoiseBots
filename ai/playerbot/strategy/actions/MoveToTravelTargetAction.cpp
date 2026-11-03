@@ -14,9 +14,14 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/policy/travel/FlightErrandPolicy.h"
+#include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/policy/travel/UndercityLiftPolicy.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "GuildOrderBuyAction.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderStore.h"
 #include "runtime/HireLifecycle.h"
 #include "runtime/AltBotService.h"
 #include <cstdlib>
@@ -302,16 +307,18 @@ static bool FindRescueLanding(Player* bot, WorldPosition const& location, WorldP
 // the exact destination point instead of dropping + parking. Same
 // unwatched-either-end rule as the passive walk hop in MoveTo2, same map
 // only (a walk hop stands in for a walk; cross-map never does), random
-// masterless pool bot only, once per 30 min, never forced. The rescue
-// clears the move budget like a fresh pick so the next tick walks the last
-// yards instead of dropping at once; the event makes it measurable.
+// masterless pool bot only, once per 30 min. The order-vendor leg is picked
+// forced, so its pin is exempt here: the drop below unforces anyway and
+// every re-pick re-forces. The rescue clears the move budget like a fresh
+// pick so the next tick walks the last yards instead of dropping at once;
+// the event makes it measurable.
 bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::string const& purpose)
 {
     if (!ServiceTripIsServicePurpose(purpose))
         return false;
     if (!target->IsMaxRetry(true))
         return false;
-    if (target->IsForced())
+    if (target->IsForced() && !ai::ServiceTripRescueIgnoresForced(purpose))
         return false;
 
     WorldPosition location = *target->getPosition();
@@ -380,9 +387,22 @@ bool MoveToTravelTargetAction::TryRescueStuckTravel(TravelTarget* target, std::s
          (ai->IsOwnedBot() || !sRandomBotFacade.IsRandomBot(bot))) ||
         TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
         return false;
-
     WorldPosition const botPos(bot);
-    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance))
+    bool const watched = ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) ||
+        ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance);
+    if (ai::WatchedRescueMayStep(watched, target->IsForced()))
+    {
+        // A watched rescue refuses the teleport but the walk is unwatched:
+        // stepping toward the target instead of returning silently keeps
+        // the bot progressing (and logging) instead of freezing in place.
+        if (TryStepTowardTarget(location))
+        {
+            target->SetRetry(true, 1);
+            return true;
+        }
+        return false;
+    }
+    if (watched)
         return false;
 
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -706,6 +726,7 @@ static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* t
         ClearFlightPlan(ai);
         return false;
     }
+    ai::BotInstantFlightFinish(bot, { fromNode, toNode });
 
     sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", fromEntry->name[LOCALE_enUS], toEntry->name[LOCALE_enUS]);
     ClearFlightPlan(ai);
@@ -821,6 +842,32 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
     return true;
 }
 
+
+// One arrived guild-order trip on the auction leg: an auctioneer in reach
+// hands the leg to the buy action (the streak clears), any other arrival
+// counts, and the leg moves down the ladder at the visit limit.
+static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
+{
+    using namespace TortoiseBots::GuildOrders;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::AuctionHouse)
+        return;
+    switch (ClassifyAuctionArrival(GuildOrderAuctioneerNear(ai, bot) != nullptr, record->arrivedAuctionVisits,
+        sPlayerbotAIConfig.guildOrderAuctionVisits))
+    {
+        case AuctionArrival::Reset:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), true);
+            break;
+        case AuctionArrival::Count:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            break;
+        case AuctionArrival::CountAndExit:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            AdvanceGuildOrderAfterAuction(ai, bot, *record, OrderReason::NoAuctioneer);
+            break;
+    }
+}
+
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
@@ -831,7 +878,16 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
     }
 
+    TravelStatus const statusBeforeCheck = target->GetStatus();
     target->CheckStatus();
+    // A guild-order trip the walk itself finished (the destination radius
+    // beat the NPC lookup: the auctioneer is out of arrival range,
+    // despawned or behind geometry) still counts as an arrival. Once per
+    // trip: only the tick that flips it to WORK counts.
+    if (statusBeforeCheck == TravelStatus::TRAVEL_STATUS_TRAVEL &&
+        target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+        AI_VALUE2(std::string, "manual string", "future travel purpose") == "guild order")
+        CountGuildOrderAuctionArrival(ai, bot);
 
     if (target->GetStatus() != TravelStatus::TRAVEL_STATUS_TRAVEL)
         return true;
@@ -979,9 +1035,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     // A service NPC already in reach counts as arrived, even when the walk
     // point below sits inside geometry. Runs before the jitter so the
-    // arrival verdict never depends on the re-rolled point.
+    // arrival verdict never depends on the re-rolled point. A guild-order
+    // arrival counts on the auction leg unless an auctioneer is in reach:
+    // reaching the point is not reaching the auctioneer.
     if (!hasFlightPlan && CheckServiceArrival(target, purpose))
+    {
+        if (purpose == "guild order")
+            CountGuildOrderAuctionArrival(ai, bot);
         return true;
+    }
 
     // With a flight plan the bot walks to the master (x/y/z/mapId staged
     // above), so the arrival jitter below must not re-aim at the final
@@ -1098,6 +1160,18 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
                 pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
             }
+            // A guild-order farm trip the mesh cannot reach says so about that
+            // target point: the planner leaves the zone out once another point
+            // in it failed too, so one hole does not cost the zone's other
+            // farm spots.
+            if (purpose == "guild order" && TortoiseBots::GuildOrders::TravelPathUnreachable(pathTag))
+            {
+                AreaTableEntry const* area = location.GetArea();
+                uint32_t const zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+                if (zoneId)
+                    TortoiseBots::GuildOrders::NoteFarmZoneTargetFailed(bot->GetGUIDLow(), zoneId,
+                        location.GetMapId(), location.getX(), location.getY(), location.getZ());
+            }
             bool const noPath = pathTag == "nopath";
             failDetail += pathTag;
             failDetail += ":";
@@ -1179,6 +1253,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // active target would instead freeze ALL travel (IsActive stays
             // true, requests gate on it) for the whole window.
             sPlayerbotAIConfig.logEvent(ai, "TravelTargetDropped", purpose, std::to_string(target->GetRetryCount(true)));
+            // A workshop leg remembers its own point: the purpose park below
+            // only delays the re-pick, which then offers the same forge
+            // again. Inside smelt range the bot crafts from where it stands,
+            // so only a still-distant drop writes the point off.
+            bool const orderLeg = purpose == "order focus" || purpose == "order vendor";
+            bool const orderFocusTrip = purpose == "order focus";
+            if (ai::FocusDropMarksSpot(orderFocusTrip, botLocation.distance(location)))
+                ai->MarkUnreachableFocusSpot(location.GetMapId(), location.getX(), location.getY(),
+                    WorldTimer::getMSTime());
             target->SetForced(false);
             sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
@@ -1189,9 +1272,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // an empty purpose parks the quest errand instead of nothing.
             // The park survives picks of other purposes (no blanket
             // ClearValues on the pick path); only this purpose stands down.
+            // A dropped workshop leg re-picks after a minute: the order makes
+            // no progress while parked, so the next forge must come soon.
+            // A stuck drop is not an arrival: the bot never reached the
+            // destination, so the auction-leg visit count stays untouched.
+            // Real arrivals count (and exit) in CountGuildOrderAuctionArrival.
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
-            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey, time(0) + 5 * MINUTE);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,
+                time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : orderLeg ? TortoiseBots::GuildOrders::kOrderLegParkSeconds : 5 * MINUTE));
         }
     }
     else
@@ -1251,12 +1340,17 @@ bool MoveToTravelTargetAction::isUseful()
 
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
-    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
+    // Follow bots stay with their master instead of walking order legs, but a
+    // masterless bot's wander is free movement, not a leash: it must walk them.
+    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || (ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT) && ai->HasRealPlayerMaster()))
     {
         auto conditions = travelTarget->GetConditions();
         for (auto& cond : conditions)
         {
-            if (cond == "should travel named::guild order")
+            if (cond == "has guild travel order" ||
+                cond == "has guild order delivery" ||
+                cond == "should travel named::order focus" ||
+                cond == "should travel named::order vendor")
                 return false;
         }
     }

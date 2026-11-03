@@ -52,9 +52,9 @@ namespace ai
 	};
 
     // Proactive AoE sensor (donor NearestTrapWithDamageValue shape):
-    // ownerless GAMEOBJECT_TYPE_TRAP GOs within 15yd whose trap spell is
-    // non-positive and deals periodic or school damage. LoS ignored — the
-    // trap sits inside the zone it marks.
+    // ownerless GAMEOBJECT_TYPE_TRAP GOs within kTrapScanRangeYd (30 yd) whose
+    // trap spell is non-positive and deals periodic or school damage. LoS
+    // ignored — the trap sits inside the zone it marks.
     class NearestDamagingTrapsValue : public ObjectGuidListCalculatedValue
 	{
 	public:
@@ -64,6 +64,38 @@ namespace ai
     protected:
         virtual std::list<ObjectGuid> Calculate() override;
 	};
+
+    // The circle a listed trap actually hits: its spell's radius when the spell
+    // is an AoE at the source (SpellRadius lookup, + the policy margin), the GO's
+    // data2 trap radius when it is not (or has no radius).
+    float DamagingTrapHazardRadius(GameObject* go);
+
+    // Every listed damaging trap around the bot as a hazard circle (the
+    // "nearest damaging traps" value), for a step-out landing and the trap hold.
+    void CollectDamagingTrapHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out);
+
+    // The damaging traps that can reach a destination point: the cached list
+    // for a point in the bot's neighbourhood, one bounded query around the
+    // point itself for a destination beyond it (a held walk can end there).
+    void CollectDamagingTrapHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
+        std::vector<AoeHazardCircle>& out);
+
+    // Every listed hostile ground cloud around the bot as a hazard circle: a
+    // persistent-area-aura dynamic object (Poison Cloud, Blizzard, Rain of
+    // Fire, Consecration). A positive effect's circle is skipped, and so is a
+    // player-controlled caster's friendly circle (a group mage's Blizzard),
+    // while a creature's damaging cloud stays a hazard whatever its faction.
+    // With `creatureCastersOnly` a player-controlled caster is skipped
+    // altogether: the step-out and the hold leave the open world and PvP
+    // against players unchanged.
+    void CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<AoeHazardCircle>& out,
+        bool creatureCastersOnly = false);
+
+    // The hostile dynamic objects that can reach a destination point: the
+    // cached list for a point in the bot's neighbourhood, one bounded query
+    // around the point itself for a destination beyond it.
+    void CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
+        std::vector<AoeHazardCircle>& out, bool creatureCastersOnly = false);
 
     class NearestDynamicObjects : public ObjectGuidListCalculatedValue
     {

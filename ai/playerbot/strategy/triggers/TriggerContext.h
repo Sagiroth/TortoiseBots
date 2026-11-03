@@ -1,6 +1,10 @@
 #pragma once
 
 #include "HealthTriggers.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
 #include "GenericTriggers.h"
@@ -13,6 +17,7 @@
 #include "BotStateTriggers.h"
 #include "PullTriggers.h"
 #include "DungeonTriggers.h"
+#include "playerbot/strategy/generic/TempleOfAhnQirajStrategies.h"
 #include "OnyxiasLairDungeonTriggers.h"
 #include "BossTacticsTriggers.h"
 #include "MoltenCoreDungeonTriggers.h"
@@ -40,6 +45,14 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
+            creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
+            creators["fankriss spawn engage needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnEngageTrigger(ai); };
+            creators["fankriss spawn pickup needed"] = [](PlayerbotAI* ai) { return new FankrissSpawnPickupTrigger(ai); };
+            creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
+            creators["fankriss control needed"] = [](PlayerbotAI* ai) { return new FankrissControlTrigger(ai); };
+            creators["fankriss focus needed"] = [](PlayerbotAI* ai) { return new FankrissFocusTrigger(ai); };
+            creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
             creators["return to stay position"] = [](PlayerbotAI* ai) { return new ReturnToStayPositionTrigger(ai); };
@@ -91,6 +104,7 @@ namespace ai
             creators["loot available"] = [](PlayerbotAI* ai) { return new LootAvailableTrigger(ai); };
             creators["no attackers"] = [](PlayerbotAI* ai) { return new NoAttackersTrigger(ai); };
             creators["no target"] = [](PlayerbotAI* ai) { return new NoTargetTrigger(ai); };
+            creators["dangerous elite near"] = [](PlayerbotAI* ai) { return new DangerousEliteNearTrigger(ai); };
             creators["target in sight"] = [](PlayerbotAI* ai) { return new TargetInSightTrigger(ai); };
             creators["not dps target active"] = [](PlayerbotAI* ai) { return new NotDpsTargetActiveTrigger(ai); };
             creators["not dps aoe target active"] = [](PlayerbotAI* ai) { return new NotDpsAoeTargetActiveTrigger(ai); };
@@ -292,7 +306,6 @@ namespace ai
             creators["rpg buy petition"] = [](PlayerbotAI* ai) { return new RpgBuyPetitionTrigger(ai); };
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseTrigger(ai); };
             creators["rpg quest use"] = [](PlayerbotAI* ai) { return new RpgQuestUseTrigger(ai); };
-            creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatTrigger(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellTrigger(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftTrigger(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulTrigger(ai); };
@@ -323,7 +336,11 @@ namespace ai
             creators["leave boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsLeaveTrigger(ai); };
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptTrigger(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstTrigger(ai); };
+            creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };
+            creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathTrigger(ai); };
             creators["boss tactics front"] = [](PlayerbotAI* ai) { return new BossTacticsFrontTrigger(ai); };
+            creators["boss tactics avoid cast"] = [](PlayerbotAI* ai) { return new BossTacticsAvoidCastTrigger(ai); };
+            creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandTrigger(ai); };
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };
@@ -415,6 +432,9 @@ namespace ai
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["start ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianStartFightTrigger(ai); };
             creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
+            creators["viscidus combat needed"] = [](PlayerbotAI* ai) { return new ViscidusCombatTrigger(ai); };
+            creators["viscidus melee danger"] = [](PlayerbotAI* ai) { return new ViscidusDistanceTrigger(ai); };
+            creators["viscidus toxin nearby"] = [](PlayerbotAI* ai) { return new ViscidusToxinTrigger(ai); };
             creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
             creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };

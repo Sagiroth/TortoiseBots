@@ -15,7 +15,7 @@ skipped. Template keys nothing reads are not checked (the reverse direction).
 Comparison semantics:
 - an active template line is the shipped value: the code fallback must equal it;
 - if only commented examples exist, at least one must equal the code fallback
-  (keys documented with several example payloads, e.g. LLMApiJson, match any);
+  (keys documented with several example payloads match any);
 - booleans compare as 0/1, numbers compare numerically (`0.5` == `0.50`),
   strings compare after C escape decoding and whitespace collapsing;
 - simple arithmetic defaults (`6 * 3600`) are evaluated;
@@ -49,6 +49,10 @@ ALLOWLIST = {
         "default is the constant TortoiseBots::kHireRaidPresetsDefault "
         "(runtime/HireRaidPolicy.h); asserted equal to the template value by "
         "tools/test_verify_config_defaults.py",
+    "AiPlayerbot.BotGearPresets":
+        "default is the constant TortoiseBots::BotGear::kPresetsDefault "
+        "(runtime/policy/hire/BotGearPolicy.h); asserted equal to the template value by "
+        "tools/test_bot_gear_wiring.py",
     "AiPlayerbot.HireRaidSpread":
         "default is the constant TortoiseBots::kHireRaidSpreadDefault "
         "(runtime/HireRaidPolicy.h); asserted equal to the template value by "
@@ -60,10 +64,6 @@ ALLOWLIST = {
         "default delegates to AiPlayerbot.MaxRandomRandomizeTime (PlayerbotAIConfig "
         "LoadUpdates), which itself defaults to 86400; the template documents both "
         "keys",
-    "AiPlayerbot.LLMApiJson":
-        "the template's first example differs from the code default only in "
-        "insignificant JSON whitespace, and its second example documents the "
-        "OpenAI-style chat-completions payload for a different LLMApiEndpoint",
     "AiPlayerbot.RemoteCommanderViewMs":
         "default is the constant TortoiseBots::RemoteCommander::View::"
         "kDefaultIntervalMs = 1000 (runtime/RemoteCommanderView.h), equal to the "

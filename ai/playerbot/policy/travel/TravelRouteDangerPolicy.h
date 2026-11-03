@@ -45,9 +45,58 @@ namespace ai
     // spawn 6+ levels above a level-30 bot), so a creature-level rule would
     // refuse most overland travel instead of routing around the camps that
     // actually kill. Sub-areas are what mark those camps (Dragonmaw Gates 25,
-    // Gallows' Corner 36, Refuge Pointe 30), and they are the same data the
     // waypoint rule already trusts.
     constexpr int TRAVEL_ROUTE_LEVEL_MARGIN = 5;
+
+    // Already-there waypoint: same zone as the start (0 never matches).
+    // Leaving the zone re-arms the rule.
+    inline bool TravelRouteWaypointSharesStartZone(std::uint32_t waypointZoneId,
+        std::uint32_t startZoneId)
+    {
+        return startZoneId != 0 && waypointZoneId == startZoneId;
+    }
+
+    // Walk-out range for the town rule (guard scan radius x5).
+    constexpr float TRAVEL_ROUTE_TOWN_WALKOUT_YD = TRAVEL_ROUTE_SAMPLE_RADIUS_YD * 5.0f;
+
+    inline bool TravelRouteWaypointInWalkout(float distanceYd)
+    {
+        return distanceYd >= 0.0f && distanceYd <= TRAVEL_ROUTE_TOWN_WALKOUT_YD;
+    }
+
+    // Stranded-bot walk-out: while the route stays inside the bot's start
+    // ground, each rule is skipped; the first endpoint outside ends that
+    // rule's exemption for the rest of the route (no re-entry).
+    class RouteStartGround
+    {
+    public:
+        RouteStartGround(bool startTooHigh, bool startInTown)
+            : levelOpen(startTooHigh), townOpen(startInTown) {}
+
+        bool LevelExempt(std::uint32_t zoneId, std::uint32_t startZoneId)
+        {
+            if (!levelOpen)
+                return false;
+            if (TravelRouteWaypointSharesStartZone(zoneId, startZoneId))
+                return true;
+            levelOpen = false;
+            return false;
+        }
+
+        bool TownExempt(float distanceFromStartYd)
+        {
+            if (!townOpen)
+                return false;
+            if (TravelRouteWaypointInWalkout(distanceFromStartYd))
+                return true;
+            townOpen = false;
+            return false;
+        }
+
+    private:
+        bool levelOpen;
+        bool townOpen;
+    };
 
     // Whether an area rating bars the route for a bot of this level. Unknown
     // areas (GetAreaLevel's 0/unresolved) never bar it, exactly like the

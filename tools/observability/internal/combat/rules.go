@@ -1,0 +1,293 @@
+// The v1 combat rules (raid recon L13): what the dashboard flags on a fight.
+// More rows later, not code: a rule with an unknown condition fails LoadRules
+// so a typo in rules.json cannot silently judge with the wrong test.
+package combat
+
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+)
+
+//go:embed rules.json
+var defaultRules []byte
+
+func DefaultRules() []byte { return defaultRules }
+
+// alwaysListedSpells mirrors runtime/CombatMonitorPolicy.h AlwaysListed: the
+// module's SpellList puts every one of these first, so a full row of them
+// still proves the rest went uncast.
+var alwaysListedSpells = map[string]bool{
+	"Sunder Armor":   true,
+	"Maul":           true,
+	"Swipe":          true,
+	"Taunt":          true,
+	"Revenge":        true,
+	"Shield Block":   true,
+	"Righteous Fury": true,
+	"Auto Shot":      true,
+	"Hunter's Mark":  true,
+}
+
+// LoadRules parses the rule table. Unknown conditions fail: a rule whose
+// test the daemon cannot run must not load as judging nothing.
+func LoadRules(b []byte) ([]Rule, error) {
+	var rules []Rule
+	if err := json.Unmarshal(b, &rules); err != nil {
+		return nil, err
+	}
+	for _, r := range rules {
+		if _, err := parseCondition(r.Condition); err != nil {
+			return nil, fmt.Errorf("rule %q: %w", r.ID, err)
+		}
+		if r.ID == "" || r.Level == "" {
+			return nil, fmt.Errorf("rule %q: id and level are required", r.ID)
+		}
+	}
+	return rules, nil
+}
+
+type conditionKind int
+
+const (
+	condSpellCountZero conditionKind = iota
+	condSpellsCountZero
+	condNoHealing
+	condNoDamage
+)
+
+type condition struct {
+	kind   conditionKind
+	spells []string
+}
+
+func parseCondition(s string) (condition, error) {
+	if name, ok := strings.CutPrefix(s, "spell_count_zero:"); ok {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return condition{}, fmt.Errorf("bad condition %q", s)
+		}
+		return condition{kind: condSpellCountZero, spells: []string{name}}, nil
+	}
+	if names, ok := strings.CutPrefix(s, "spells_count_zero:"); ok {
+		parts := strings.Split(names, ",")
+		var spells []string
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				spells = append(spells, p)
+			}
+		}
+		if len(spells) == 0 {
+			return condition{}, fmt.Errorf("bad condition %q", s)
+		}
+		return condition{kind: condSpellsCountZero, spells: spells}, nil
+	}
+	switch s {
+	case "no_healing":
+		return condition{kind: condNoHealing}, nil
+	case "no_damage":
+		return condition{kind: condNoDamage}, nil
+	}
+	return condition{}, fmt.Errorf("unknown condition %q", s)
+}
+
+// degradedSpellList reports whether the fight arrived on a degraded build
+// whose per-bot spell list was cut: casts past the cap are dropped, so the
+// row cannot prove a spell went uncast. 0 (full build, or an old emitter
+// without the marker) judges like a full build; the 0-spell rung is told
+// apart by Truncated, which the emitter only sets on the bounded short form.
+// On the 3-spell rung the cap cuts the rest-by-count tail first, so a full
+// row ending in an always-listed spell may still hide casts past it; a row
+// ending in anything else (or short of the cap) proves the absence.
+func degradedSpellList(f Fight, b FightBot) bool {
+	if f.Truncated || (f.SpellsCut > 0 && f.SpellsCut != 3) {
+		return true
+	}
+	if f.SpellsCut == 3 {
+		if len(b.Spells) < 3 {
+			return false
+		}
+		return alwaysListedSpells[b.Spells[len(b.Spells)-1].N]
+	}
+	return false
+}
+
+// spellCasts counts casts of one spell on a bot (the module lists every cast
+// spell on the bot line, so quiet means zero).
+func spellCasts(b FightBot, name string) uint32 {
+	for _, sp := range b.Spells {
+		if sp.N == name {
+			return sp.C
+		}
+	}
+	return 0
+}
+
+func (c condition) violatedBy(b FightBot) bool {
+	switch c.kind {
+	case condSpellCountZero:
+		return spellCasts(b, c.spells[0]) == 0
+	case condSpellsCountZero:
+		for _, name := range c.spells {
+			if spellCasts(b, name) > 0 {
+				return false
+			}
+		}
+		return true
+	case condNoHealing:
+		return b.HealCasts == 0 && b.Heal == 0
+	case condNoDamage:
+		return b.Dmg == 0
+	}
+	return false
+}
+
+// diedEarly skips a bot whose first death came before half the fight: losing
+// half the fight is not idleness. The < 5 s skip stays for every rule.
+func diedEarly(b FightBot, deaths []FightDeath, durMS uint32) bool {
+	if b.Deaths == 0 {
+		return false
+	}
+	for _, d := range deaths {
+		if d.Name == b.Name && uint64(d.TMs) < uint64(durMS)/2 {
+			return true
+		}
+	}
+	return false
+}
+
+// deathUnknown reports whether the bot died but no death row names it: the
+// last degraded build keeps each bot's deaths count and drops the death rows,
+// so when it died is unknown and no idle or no-output verdict can stand.
+func deathUnknown(b FightBot, deaths []FightDeath) bool {
+	if b.Deaths == 0 {
+		return false
+	}
+	for _, d := range deaths {
+		if d.Name == b.Name {
+			return false
+		}
+	}
+	return true
+}
+
+// deadWholeFight skips a bot that died before it could act (a death at
+// t_ms < 5000): the rules judge what it did, not that it died.
+func deadWholeFight(b FightBot, deaths []FightDeath) bool {
+	if b.Deaths == 0 {
+		return false
+	}
+	for _, d := range deaths {
+		if d.Name == b.Name && d.TMs < 5000 {
+			return true
+		}
+	}
+	return false
+}
+
+// rolePeerMedian is the median of the role peers' output (dmg for no_damage,
+// heal for no_healing), the bot itself excluded. Ok is false with no peers:
+// a lone role has no floor to clear.
+func rolePeerMedian(f Fight, b FightBot, kind conditionKind) (uint64, bool) {
+	var vals []uint64
+	for _, p := range f.Bots {
+		if p.Name == b.Name || p.Role != b.Role {
+			continue
+		}
+		if kind == condNoDamage {
+			vals = append(vals, p.Dmg)
+		} else {
+			vals = append(vals, p.Heal)
+		}
+	}
+	if len(vals) == 0 {
+		return 0, false
+	}
+	sort.Slice(vals, func(i, j int) bool { return vals[i] < vals[j] })
+	if len(vals)%2 == 1 {
+		return vals[len(vals)/2], true
+	}
+	return (vals[len(vals)/2-1] + vals[len(vals)/2]) / 2, true
+}
+
+// loneHealerIdle fires healer_no_heals for a healer with no role peers (one
+// healer in a 5-man has no median to clear): a long fight where it healed
+// nothing while the group took real damage, and it was alive for the first
+// half.
+func loneHealerIdle(f Fight, b FightBot, r Rule, cond condition) bool {
+	if r.ID != "healer_no_heals" || cond.kind != condNoHealing {
+		return false
+	}
+	if b.Heal != 0 || f.DurMS < 60000 {
+		return false
+	}
+	if deadWholeFight(b, f.Deaths) || diedEarly(b, f.Deaths, f.DurMS) || deathUnknown(b, f.Deaths) {
+		return false
+	}
+	var taken uint64
+	for _, p := range f.Bots {
+		taken += p.Taken
+	}
+	return taken > 3000
+}
+
+// Judge runs the rule table over one fight. Duration is seconds (dur_ms /
+// 1000): a short fight warns nothing. Class "" matches any class.
+func Judge(f Fight, rules []Rule) []Warning {
+	var out []Warning
+	durS := float64(f.DurMS) / 1000
+	for _, r := range rules {
+		cond, err := parseCondition(r.Condition)
+		if err != nil {
+			continue
+		}
+		if durS < float64(r.MinFightS) {
+			continue
+		}
+		for _, b := range f.Bots {
+			if r.Role != "" && b.Role != r.Role {
+				continue
+			}
+			if r.Class != "" && !strings.EqualFold(b.Class, r.Class) {
+				continue
+			}
+			if deadWholeFight(b, f.Deaths) {
+				continue
+			}
+			if (cond.kind == condNoDamage || cond.kind == condNoHealing) && diedEarly(b, f.Deaths, f.DurMS) {
+				continue
+			}
+			if (cond.kind == condNoDamage || cond.kind == condNoHealing) && deathUnknown(b, f.Deaths) {
+				continue
+			}
+			if (cond.kind == condSpellCountZero || cond.kind == condSpellsCountZero) && degradedSpellList(f, b) {
+				continue
+			}
+			peerGated := r.MinRoleMedian > 0 && (cond.kind == condNoDamage || cond.kind == condNoHealing)
+			peerOK := true
+			if peerGated {
+				med, ok := rolePeerMedian(f, b, cond.kind)
+				if !ok {
+					peerOK = loneHealerIdle(f, b, r, cond)
+				} else {
+					peerOK = med >= uint64(r.MinRoleMedian)
+				}
+			}
+			if !peerOK {
+				continue
+			}
+			if cond.violatedBy(b) {
+				out = append(out, Warning{
+					Rule:  r.ID,
+					Level: r.Level,
+					Bot:   b.Name,
+					Role:  b.Role,
+					Text:  strings.ReplaceAll(r.Text, "{bot}", b.Name),
+				})
+			}
+		}
+	}
+	return out
+}

@@ -458,6 +458,10 @@ namespace ai
             bool hostileToAlliance = false;
             bool hostileToHorde = false;
             uint32 levelMax = 0;
+            // Rank-1+ (elite) template: fair-fight losses show same-level
+            // Turtle elites deal 2.5-4x vanilla DPS, so the elite-camp gate
+            // (EliteCampDangerous) bars points near them by rank, not level.
+            bool elite = false;
         };
         struct PointDangerCellKey
         {
@@ -483,6 +487,12 @@ namespace ai
     public:
         uint32 getHighestHostileLevelNear(float radius, Team botTeam) const;
         uint32 GetHighestHostileLevelNear(float radius, Team botTeam) const { return getHighestHostileLevelNear(radius, botTeam); }
+        // Highest level_max among indexed rank-1+ elite spawns hostile to the
+        // bot within radius (same hostility filter as above). 0 when no
+        // elite camp is near. Lets the elite-camp gate bar points by rank
+        // without rewalking the spawn table per query.
+        uint32 getHighestHostileEliteLevelNear(float radius, Team botTeam) const;
+        uint32 GetHighestHostileEliteLevelNear(float radius, Team botTeam) const { return getHighestHostileEliteLevelNear(radius, botTeam); }
     private:
         static constexpr float PointDangerCellSize() { return 32.0f; }
         static int32 PointDangerCellCoord(float c) { return (int32)floorf(c / PointDangerCellSize()); }

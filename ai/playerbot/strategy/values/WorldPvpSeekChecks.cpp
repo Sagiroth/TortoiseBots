@@ -19,6 +19,16 @@ static bool IsChallengeModeTarget(Player* target)
         target->HasChallenge(CHALLENGE_HEROIC);
 }
 
+// Standing at the spirit healer the player revives at. Both factions often
+// share a graveyard, and a fight started there turned into an endless
+// revive-and-kill loop (Raven Hill Cemetery).
+static bool NearOwnGraveyard(Player* player)
+{
+    WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(
+        player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), player->GetTeam());
+    return grave && grave->map_id == player->GetMapId() && player->GetDistance2d(grave->x, grave->y) < 40.0f;
+}
+
 bool WorldPvpSeekChecks::IsSeeking(PlayerbotAI* ai, Player* bot)
 {
     if (!ai || !bot)
@@ -65,6 +75,8 @@ bool WorldPvpSeekChecks::IsSeekTarget(PlayerbotAI* ai, Player* bot, Player* targ
     if (!bot->IsWithinDist(target, aggroDistance))
         return false;
     if (fabs(bot->GetPositionZ() - target->GetPositionZ()) >= 30.0f)
+        return false;
+    if (NearOwnGraveyard(bot) || NearOwnGraveyard(target))
         return false;
     if (!bot->IsWithinLOSInMap(target, true))
         return false;

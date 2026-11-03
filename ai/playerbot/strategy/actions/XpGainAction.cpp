@@ -75,12 +75,6 @@ bool XpGainAction::Execute(Event& event)
     if (type == 0 && guid)
         sObservabilityEmitter.EmitBotActivity("Kill", creature ? creature->GetName() : "", std::to_string(xpgain), bot);
 
-    //if (creature && ((creature->IsElite() && !creature->GetMap()->IsDungeon()) || creature->IsWorldBoss() || creature->GetLevel() > DEFAULT_MAX_LEVEL + 1 || creature->GetLevel() > bot->GetLevel() + 4))
-    if (creature && !creature->GetMap()->IsDungeon())
-    {
-        BroadcastHelper::BroadcastCreatureKill(ai, bot, creature);
-    }
-
     // Issue #872 E31: an autonomous alt levels at the server rate, not the
     // pool's raised bot rate. It is IsFreeBot, so exclude it explicitly.
     if (!sRandomBotFacade.IsFreeBot(bot) || sPlayerbotAIConfig.playerbotsXPrate == 1 ||

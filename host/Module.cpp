@@ -10,9 +10,11 @@
 #include "LftFillAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotLfgAdapter.h"
+#include "BotGearAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotPacketAdapter.h"
 #include "RaidBossDiagnostics.h"
+#include "ViscidusDiagnostics.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotPlayerAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -31,6 +33,8 @@
 #include "WorldBuffRaidAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "HireUnlockKillAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "CombatMonitorAdapter.h"
 
 namespace TortoiseBots {
 
@@ -40,7 +44,9 @@ void RegisterScripts()
     new LftFillAdapter();
     new BotLfgAdapter();
     new BotPacketAdapter();
+    new BotGearAdapter();
     new RaidBossDiagnostics();
+    new ViscidusDiagnostics();
     new BotPlayerAdapter();
     new BotUnitAdapter();
     new BotChatAdapter();
@@ -60,6 +66,8 @@ void RegisterScripts()
     new WorldBuffRaidAdapter();
     // Issue #490 PR 2: hire-unlock boss kills, counters and contracts page.
     new HireUnlockKillAdapter();
+    new CombatMonitorUnitAdapter();
+    new CombatMonitorCastAdapter();
 }
 
 } // namespace TortoiseBots

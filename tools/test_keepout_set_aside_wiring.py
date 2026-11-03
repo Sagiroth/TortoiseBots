@@ -29,7 +29,14 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
         src = (VALUES / "DpsTargetValue.cpp").read_text()
         for start in ("Unit* DpsTargetValue::Calculate()", "Unit* DpsAoeTargetValue::Calculate()"):
             fn = body(src, start, "\n}\n")
-            self.assertRegex(fn, r"if \(rti && !AttackersValue::IsKeepoutSetAside\(rti, bot\)\) return rti;", start)
+            # The mark is refused when the keep-out set it aside (this book) and when a hold_kill or one_at_a_time
+            # row holds it (HeldDpsTarget): both drop it to the next pick. The dps target's condition spans a second
+            # line as well (a mark on a held linked_death member drops too), so the two checks are pinned by name.
+            self.assertIn("rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)", fn)
+            branch = fn[fn.index("Unit* rti = RtiTargetValue::Calculate();"):]
+            branch = branch[:branch.index("return rti;")]
+            self.assertIn("IsKeepoutSetAside(rti, bot)", branch)
+            self.assertIn("HeldDpsTarget(ai, bot, rti)", branch)
         tank = body((VALUES / "TankTargetValue.cpp").read_text(), "Unit* TankTargetValue::Calculate()", "\n}\n")
         self.assertIn("AttackersValue::IsKeepoutSetAside(rti, bot)", tank)
 

@@ -20,7 +20,7 @@ public:
 private:
     ACTION_NODE_A(charge, "charge", "intercept");
 
-    ACTION_NODE_A(pummel, "pummel", "intercept");
+    ACTION_NODE_A(pummel, "pummel", "berserker stance for pummel");
 
     ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
@@ -252,7 +252,13 @@ void FuryWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 
 void FuryWarriorBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    WarriorBuffStrategy::InitNonCombatTriggers(triggers);
+    BuffStrategy::InitNonCombatTriggers(triggers);
+
+    WarriorBuffStrategy::InitNonCombatSharedTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "berserker stance",
+        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL), NULL)));
 }
 
 void FuryWarriorBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

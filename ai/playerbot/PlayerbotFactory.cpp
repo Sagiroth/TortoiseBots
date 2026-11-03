@@ -8,9 +8,10 @@
 #include "playerbot/AmmoStackPolicy.h"
 #include "../../runtime/BotNameService.h"
 #include "../../runtime/HunterPetPolicy.h"
-#include "../../runtime/policy/pet/PetSpellRankPolicy.h"
 #include "../../runtime/policy/provision/StarterKitPolicy.h"
 #include "../../runtime/ProfessionGrantPolicy.h"
+#include "../../runtime/policy/pet/PetSpellRankPolicy.h"
+#include "../../runtime/ProfessionSpecializationPolicy.h"
 #include "../../runtime/OwnedBotQolPolicy.h"
 #include "../../runtime/policy/class/ShamanTankKitPolicy.h"
 #include "../../runtime/GearItemLevelCapPolicy.h"
@@ -2538,12 +2539,30 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
 
     // Below the gate (or when a primary is already held) the ids stay 0:
     // skip the grant explicitly; Player::SetSkill(0, ...) is a core-side
-    // no-op, but never call it with 0 here.
+    // no-op, but never call it with 0 here. With ProfessionsGrowWithLevel off
+    // the pair still lands at level 5 but only as the real rank-1 Apprentice
+    // spell of each profession: that consumes the free primary points, grants
+    // skill 1/75 and the starter abilities (Find Herbs/Minerals, Smelting,
+    // Disenchant), and chains into Journeyman at a trainer. Bare SetSkill
+    // would leave 2 free points, letting the next trainer visit add a 3rd
+    // and 4th primary. Nothing here ever tops up an existing skill.
     if (firstSkill)
-        SetRandomSkill(firstSkill);
+    {
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            SetRandomSkill(firstSkill);
+        else
+            LearnApprenticeProfession(firstSkill);
+    }
     if (secondSkill)
-        SetRandomSkill(secondSkill);
+    {
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            SetRandomSkill(secondSkill);
+        else
+            LearnApprenticeProfession(secondSkill);
+    }
 
+    if (!sPlayerbotAIConfig.professionsGrowWithLevel)
+        return;
 
     // learn recipies
     for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
@@ -2629,6 +2648,22 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
                 ai->CastSpell(tSpell->spell, bot);
         }
     }
+
+    // Specialization sweep: direct grant of the quest-chain specialization
+    // spells (plus their trainer recipes below) once skill qualifies. Runs
+    // on every skill pass (seed, ding, login) so a bot that skills up to the
+    // gate earns it without visiting the quest chain it never runs.
+    EnsureSpecializations();
+
+    // Spec-gated recipes come from specialist vendors/trainers the bot never
+    // visits, never from the general-trainer sweep above (no npc_trainer rows
+    // teach them). Teach them directly here, gated on the matching spec spell
+    // the same way item required_spell gates their use (recipe 10644 needs
+    // none of the spec spells, only Alchemy 210; schematics 18653/18654 need
+    // 20222/20219). Same free-learn rule as the sweep above: only with
+    // ProfessionsGrowWithLevel, organic bots earn them from the world.
+    if (sPlayerbotAIConfig.professionsGrowWithLevel)
+        LearnSpecializationRecipes();
 }
 
 void PlayerbotFactory::InitTradeSkills()
@@ -2649,6 +2684,94 @@ bool PlayerbotFactory::HasAnyPrimaryProfession() const
         if (bot->HasSkill(id))
             return true;
     return false;
+}
+
+// Profession specialization grants: the quest chains (Engineering Pledge of
+// Secrecy / Show Your Work, Blacksmithing Art vs Way, Leatherworking
+// branches) are mutually exclusive per branch for PLAYERS via ExclusiveGroup,
+// but bots never run them, so the grant is direct and idempotent. Core
+// enforces nothing between branches (no spell_chain req, no unlearn, no
+// trainer rows, skill_line_ability learn_on_get 0), so mode 2 grants all
+// branches; mode 1 picks one by guid parity and never flips.
+void PlayerbotFactory::EnsureSpecializations()
+{
+    if (!bot || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    int const mode = sPlayerbotAIConfig.botProfessionSpecializations;
+    if (mode != int(TortoiseBots::SpecializationMode::OnePerBot) &&
+        mode != int(TortoiseBots::SpecializationMode::All))
+        return;
+    uint32 const guidLow = bot->GetGUIDLow();
+    for (uint32 g = 0; g < TortoiseBots::kSpecializationGroupCount; ++g)
+    {
+        TortoiseBots::SpecializationGroup const& group = TortoiseBots::kSpecializationGroups[g];
+        if (!group.spellCount || !bot->HasSkill(uint16(group.skillId)))
+            continue;
+        if (!TortoiseBots::QualifiesForSpecialization(bot->GetSkillValuePure(uint16(group.skillId)), group.requiredValue))
+            continue;
+        if (group.requiresSpell && !bot->HasSpell(group.requiresSpell))
+            continue;
+        if (mode == int(TortoiseBots::SpecializationMode::OnePerBot))
+        {
+            uint32 const pick = TortoiseBots::PickSpecializationIndex(guidLow, group.spellCount);
+            uint32 const spell = group.spells[pick];
+            if (spell && !bot->HasSpell(spell))
+                bot->LearnSpell(spell, false);
+            continue;
+        }
+        for (uint32 s = 0; s < group.spellCount; ++s)
+            if (group.spells[s] && !bot->HasSpell(group.spells[s]))
+                bot->LearnSpell(group.spells[s], false);
+    }
+}
+
+void PlayerbotFactory::LearnSpecializationRecipes()
+{
+    if (!bot || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    static std::vector<std::pair<uint32, uint32>> const s_specRecipes = []()
+    {
+        std::vector<std::pair<uint32, uint32>> rows;
+        for (uint32 id = 0; id < sItemStorage.GetMaxEntry(); ++id)
+        {
+            ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(id);
+            if (!proto || proto->Class != ITEM_CLASS_RECIPE)
+                continue;
+            uint32 const reqSpell = proto->RequiredSpell;
+            if (!reqSpell)
+                continue;
+            bool gated = false;
+            for (uint32 g = 0; g < TortoiseBots::kSpecializationGroupCount && !gated; ++g)
+            {
+                TortoiseBots::SpecializationGroup const& group = TortoiseBots::kSpecializationGroups[g];
+                for (uint32 s = 0; s < group.spellCount; ++s)
+                    if (group.spells[s] && group.spells[s] == reqSpell)
+                    {
+                        gated = true;
+                        break;
+                    }
+            }
+            if (!gated || !proto->Spells[0].SpellId || proto->RequiredSkill == 0)
+                continue;
+            rows.push_back({ reqSpell, uint32(proto->Spells[0].SpellId) });
+        }
+        return rows;
+    }();
+    for (auto const& row : s_specRecipes)
+    {
+        // Gated by the matching spec spell, mirroring item RequiredSpell.
+        if (!bot->HasSpell(row.first))
+            continue;
+        SpellEntry const* useSpell = sServerFacade.LookupSpellInfo(row.second);
+        if (!useSpell)
+            continue;
+        for (int j = 0; j < 3; ++j)
+        {
+            if (useSpell->Effect[j] == SPELL_EFFECT_LEARN_SPELL && useSpell->EffectTriggerSpell[j] &&
+                !bot->HasSpell(useSpell->EffectTriggerSpell[j]))
+                bot->LearnSpell(useSpell->EffectTriggerSpell[j], false);
+        }
+    }
 }
 
 void PlayerbotFactory::InitSkills()
@@ -3062,6 +3185,63 @@ void PlayerbotFactory::SetRandomSkill(uint16 id)
     uint32 curValue = bot->GetSkillValue(id);
     if (!bot->HasSkill(id) || value > curValue)
         bot->SetSkill(id, value, maxValue);
+}
+
+void PlayerbotFactory::LearnApprenticeProfession(uint16 skillId)
+{
+    if (!skillId || bot->HasSkill(skillId))
+        return;
+    // The rank-1 teaching spell is resolved from the trainer lists, not
+    // hardcoded: the SKILL_STEP row for this skill whose taught spell is a
+    // primary-profession rank 1. Magic static: thread-safe one-time init
+    // (map threads ding here concurrently); the trainer tables are loaded
+    // once at startup and read-only afterwards.
+    static std::map<uint16, uint32> const s_apprenticeTeachingSpell = []()
+    {
+        std::map<uint16, uint32> table;
+        for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+        {
+            CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
+            if (!co || co->trainer_type != TRAINER_TYPE_TRADESKILLS)
+                continue;
+            uint32 trainerId = co->trainer_id;
+            if (!trainerId)
+                trainerId = co->entry;
+            TrainerSpellData const* trainerSpells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
+            if (!trainerSpells)
+                trainerSpells = sObjectMgr.GetNpcTrainerSpells(trainerId);
+            if (!trainerSpells)
+                continue;
+            for (auto const& entry : trainerSpells->spellList)
+            {
+                TrainerSpell const* tSpell = &entry.second;
+                if (!tSpell)
+                    continue;
+                SpellEntry const* teaching = sServerFacade.LookupSpellInfo(tSpell->spell);
+                if (!teaching || teaching->Effect[EFFECT_INDEX_1] != SPELL_EFFECT_SKILL_STEP)
+                    continue;
+                uint32 skill = teaching->EffectMiscValue[EFFECT_INDEX_1];
+                if (!skill || table.count(uint16(skill)))
+                    continue;
+                bool isFirstRank = false;
+                for (int j = 0; j < 3 && !isFirstRank; ++j)
+                    if (teaching->Effect[j] == SPELL_EFFECT_LEARN_SPELL && teaching->EffectTriggerSpell[j] &&
+                        sSpellMgr.IsPrimaryProfessionFirstRankSpell(teaching->EffectTriggerSpell[j]))
+                        isFirstRank = true;
+                if (isFirstRank)
+                    table[uint16(skill)] = tSpell->spell;
+            }
+        }
+        return table;
+    }();
+    auto it = s_apprenticeTeachingSpell.find(skillId);
+    if (it == s_apprenticeTeachingSpell.end())
+        return;
+    // Cast, as a trainer visit does: LearnSpell on a SKILL_STEP teaching
+    // spell refuses to store it (core Player::LearnSpell returns false for
+    // SKILL_STEP), while the cast learns the taught Apprentice rank, which
+    // consumes the free point and grants skill 1/75 plus starter abilities.
+    bot->CastSpell(bot, it->second, true);
 }
 
 void PlayerbotFactory::InitClassLevelSpells()

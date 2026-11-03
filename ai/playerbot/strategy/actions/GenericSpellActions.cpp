@@ -1,15 +1,23 @@
 
 #include "playerbot/playerbot.h"
+#include "FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/WandPolicy.h"
 #include "../../../../runtime/TotemSpellPolicy.h"
+#include "../../../../runtime/SpellSchoolImmunePolicy.h"
+    // Follow-first (owner report 2026-11-01): cast-time upkeep buffs stand
+    // down while the bot should be catching up to its moving master.
+#include "playerbot/FollowUrgencyPolicy.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/strategy/values/MountValues.h"
+#include "playerbot/MountDismountPolicy.h"
 #include "Database/DBCStores.h"
 #include "BotActionLog.h"
 
@@ -228,6 +236,10 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 
 bool CastSpellAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool executed = false;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
     if (spellName == "conjure food" || spellName == "conjure water")
@@ -289,6 +301,7 @@ bool CastSpellAction::Execute(Event& event)
         }
         else
             executed = ai->CastSpell(spellName, target, nullptr, false, &spellDuration);
+        ai->GetHealerDiagnostics().CastAttempt(ai, target, spellIdOverride ? spellIdOverride : spellId, executed);
     }
 
     if (executed)
@@ -319,7 +332,10 @@ bool CastSpellAction::isPossible()
 
     Unit* spellTarget = GetTarget();
     if (!spellTarget)
+    {
+        ai->GetHealerDiagnostics().CheckFailed(ai, nullptr, spellId, SPELL_FAILED_BAD_TARGETS);
         return false;
+    }
 
     bool canReach = false;
     if (spellTarget == bot)
@@ -357,6 +373,7 @@ bool CastSpellAction::isPossible()
     if(!canReach)
     {
         botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s reason=out-of-reach", spellName.c_str());
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, SPELL_FAILED_OUT_OF_RANGE);
         return false;
     }
 
@@ -367,6 +384,7 @@ bool CastSpellAction::isPossible()
     {
         // NOT_READY (GCD / cast in flight) is every tick's normal answer
         // between casts; logging it would bury the real refusals.
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, result);
         if (result != SPELL_FAILED_NOT_READY)
             botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s result=%u", spellName.c_str(), (uint32)result);
         return false;
@@ -376,6 +394,36 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    if (FankrissBlocksAoe(ai, spellId))
+        return false;
+    // A Patchwerk healer spends no cast on damage filler while a Patchwerk tank is hurt.
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
+        return false;
+
+    // A mounted travelling bot must not start an out-of-combat cast the core
+    // would strip its mount for: without this every trigger family that does
+    // not route through BuffTrigger (class armor rows, cure/dispel rows,
+    // weapon-imbue upkeep, conjure/create rows, racials, sprint) queues a
+    // doomed attempt every tick and CheckCanCastSpell refuses each one with
+    // SPELL_FAILED_NOT_MOUNTED. Combat casts are untouched (the combat
+    // engine owns that decision); mount spells and ride-safe spells pass at
+    // cast time. Cheapest gate first: two O(1) flags and one bool value.
+    if (bot && !bot->IsInCombat() && (bot->IsMounted() || bot->GetMountID()))
+    {
+        AiObjectContext* mountContext = ai ? ai->GetAiObjectContext() : nullptr;
+        if (mountContext && !ai::MountedTravelCastAllowed(false, mountContext->GetValue<bool>("travel target traveling")->Get()))
+        {
+            if (SpellEntry const* mountInfo = sServerFacade.LookupSpellInfo(spellId))
+            {
+                if (!(mountInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_MOUNTED) && !MountValue::IsMountSpell(spellId))
+                    return false;
+            }
+            else if (spellId)
+                return false;
+        }
+    }
+
     if(!AI_VALUE2(bool, "spell cast useful", spellName))
         return false;
 
@@ -399,6 +447,23 @@ bool CastSpellAction::isUseful()
             if (!TortoiseBots::SpellWorksOnTotem(info->Effect, info->EffectApplyAuraName,
                     info->EffectImplicitTargetA, MAX_EFFECT_INDEX, info->IsPositiveSpell()))
                 return false;
+    }
+
+    // A creature's template can be immune to a whole spell school
+    // (school_immune_mask), not just to mechanics. A non-positive spell of
+    // that school takes nothing from it, so the rotation skips it and falls
+    // through to a school the target takes (the core's
+    // Creature::IsImmuneToSpell; runtime/SpellSchoolImmunePolicy.h).
+    if (spellTarget != bot && spellTarget->IsCreature())
+    {
+        if (SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId))
+        {
+            CreatureInfo const* creatureInfo = static_cast<Creature*>(spellTarget)->GetCreatureInfo();
+            if (creatureInfo && !info->IsPositiveSpell() &&
+                TortoiseBots::SpellSchoolImmune(static_cast<uint32>(info->GetSpellSchoolMask()),
+                    creatureInfo->school_immune_mask))
+                return false;
+        }
     }
 
     // Never splash crowd control: an enemy-area spell whose blast would reach
@@ -583,6 +648,23 @@ bool CastBuffSpellAction::isUseful()
 
         if (!HasManaForBuff())
             return false;
+
+        // Follow-first: a cast-time upkeep buff stops the bot, so while the
+        // bot should be catching up to its moving master the buff stands
+        // down and the follow row owns the tick. Instant buffs still fire
+        // (cast on the run, movement untouched); combat rows are untouched.
+        Player* master = ai->GetMaster();
+        if (master && master->IsMoving() && bot->GetGroup() &&
+            (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+        {
+            SpellEntry const* buffInfo = sServerFacade.LookupSpellInfo(GetSpellID());
+            bool const needsStandStill = !buffInfo || GetSpellCastTime(buffInfo, bot) > 0 ||
+                (IsChanneledSpell(buffInfo) && GetSpellDuration(buffInfo) > 0);
+            if (needsStandStill &&
+                ai::FollowOverridesDowntime(sServerFacade.getDistance2d(bot, master), ai->GetRange("follow")))
+                return false;
+        }
     }
 
     return CastAuraSpellAction::isUseful();
@@ -981,6 +1063,9 @@ bool CastShootAction::isUseful()
 
 bool CastShootAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool succeeded = false;
 
     UpdateWeaponInfo();

@@ -1,5 +1,8 @@
 
+#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/playerbot.h"
+#include "FankrissFocusActions.h"
+#include "PatchwerkSoakerActions.h"
 #include "UseItemAction.h"
 #include "UseItemNamePolicy.h"
 #include "playerbot/DoorLockPolicy.h"
@@ -255,6 +258,36 @@ bool RequiresItemToUse(const ItemPrototype* itemProto, PlayerbotAI* ai, Player* 
 
 
     return false;
+}
+
+// A use with no item in the bags (item cheat) only gets the spell's own
+// cooldown from the core, which is often far shorter than the item's
+// (Major Healing Potion: 10 s instead of 2 min). Keep the item's cooldowns
+// ourselves, per item and per shared category, as a player would get them.
+static std::string CheatItemCooldownKey(bool category, uint32 id)
+{
+    return std::string(category ? "cheat item category cd " : "cheat item cd ") + std::to_string(id);
+}
+
+static bool CheatItemCooldownRunning(AiObjectContext* context, bool category, uint32 id)
+{
+    uint32 const readyMs = (uint32)context->GetValue<int32>("manual int", CheatItemCooldownKey(category, id))->Get();
+    return readyMs && int32(readyMs - WorldTimer::getMSTime()) > 0;
+}
+
+static void StartCheatItemCooldowns(AiObjectContext* context, ItemPrototype const* proto)
+{
+    uint32 const now = WorldTimer::getMSTime();
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+    {
+        _ItemSpell const& spell = proto->Spells[i];
+        if (!spell.SpellId)
+            continue;
+        if (spell.SpellCooldown > 0)
+            context->GetValue<int32>("manual int", CheatItemCooldownKey(false, proto->ItemId))->Set(int32(now + spell.SpellCooldown));
+        if (spell.SpellCategory && spell.SpellCategoryCooldown > 0)
+            context->GetValue<int32>("manual int", CheatItemCooldownKey(true, spell.SpellCategory))->Set(int32(now + spell.SpellCategoryCooldown));
+    }
 }
 
 bool UseAction::Execute(Event& event)
@@ -570,6 +603,9 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             continue;
         }
 
+        if (FankrissBlocksAoe(ai, spellInfo->Id) || PatchwerkOpeningBlocksSpell(ai, spellInfo->Id, nullptr))
+            continue;
+
         if (IsNonCombatSpell(spellInfo) && bot->IsInCombat())
         {
             continue;
@@ -739,6 +775,9 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 // prepare() only queues it, and the re-validation in cast()
                 // then saw our own cooldown (NOT_READY) and cancelled the cast
                 // it had just started (e.g. every healthstone use failed).
+                // Our own record (HasItemCooldown) is not read by the core.
+                if (!itemUsed && successCasts == 0)
+                    StartCheatItemCooldowns(context, proto);
 
                 if (IsFood(proto) || IsDrink(proto))
                 {
@@ -1072,6 +1111,15 @@ bool UseAction::HasItemCooldown(uint32 itemId) const
     const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
     if (proto)
     {
+        if (CheatItemCooldownRunning(context, false, itemId))
+            return true;
+        for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        {
+            if (proto->Spells[i].SpellId && proto->Spells[i].SpellCategory &&
+                CheatItemCooldownRunning(context, true, proto->Spells[i].SpellCategory))
+                return true;
+        }
+
         uint32 spellId = 0;
         for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
         {
@@ -1089,6 +1137,13 @@ bool UseAction::HasItemCooldown(uint32 itemId) const
                     return true;
 
                 if (!sServerFacade.IsSpellReady(bot, proto->Spells[i].SpellId, itemId))
+                    return true;
+
+                // The core also gates the cast on the spell's own category
+                // (healthstone, mana gem and Dark Rune share one), which an
+                // item-free use starts instead of the item's.
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(proto->Spells[i].SpellId);
+                if (spellInfo && spellInfo->Category && bot->HasSpellCategoryCooldown(spellInfo->Category))
                     return true;
             }
         }
@@ -1166,6 +1221,12 @@ bool UseItemIdAction::isPossible()
         if (!ai->HasCheat(BotCheatMask::item) && !bot->HasItemCount(itemId, 1))
         return false;
 
+    // Level and skill (engineering, first aid) as for a player. Checked here,
+    // not only at use: a reaction that is possible but then fails cut the
+    // bot's cast on every tick.
+    if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
+        return false;
+
 
     uint32 spellCount = 0;
 
@@ -1195,6 +1256,10 @@ bool UseItemIdAction::isPossible()
 
 bool UseItemIdAction::isUseful()
 {
+    // Never use order stock: the order item, the supply item, or any reagent
+    // of a craft order's known-recipe tree (e.g. rocket boots used as boots).
+    if (bot->GetGuildId() && GuildOrderConsumesItem(bot, GetItemId()))
+        return false;
     if (!getQualifier().empty() && (getMultiQualifierStr(getQualifier(), 0, ",").find_first_not_of("0123456789") != std::string::npos))
     {
         sLog.outError("UseItemIdAction::isUseful with qualifier %s, should be number.", getQualifier().c_str());

@@ -51,9 +51,13 @@
     // Remote-commander bindings reported by the module (COMMANDERS datagrams).
     commanders: { list: [], fresh: false, updatedAt: 0, freshAt: 0, reportedAt: 0, lost: false, externalUrl: '' },
     // Live dungeon runs (issue #895) from /api/v1/dungeons: one per instance copy
-    // of a dungeon or raid with bots in it. byMember maps guid -> the run it is in
+    // of a dungeon with bots in it. byMember maps guid -> the run it is in
     // (profile links); binds are the run cards in the shape the Commanders map draws.
     dungeons: { runs: [], binds: [], byMember: new Map(), staleModule: false, at: 0, openKey: null },
+    // Live raid runs from /api/v1/raids: one per raid instance copy with bots in it.
+    // binds are the group cards in the shape the Commanders map draws; byMember maps
+    // guid -> the run it is in (profile links).
+    raids: { runs: [], binds: [], byMember: new Map(), live: false, staleModule: false, at: 0, eventAt: 0, openKey: null, openGroup: null },
     // turtle-agent run maps from --agent-maps-dir (issue #1102): a read-only list of SVG maps and single-file HTML replays. The
     // daemon answers 404 while the folder is unset, which is how the page learns to keep the tab hidden.
     agentMaps: { probed: false, enabled: false, error: false, files: [], open: '', at: 0 },
@@ -87,6 +91,7 @@
     botsSpec: 'all',
     botsIssueOnly: false,
     botsPvpOnly: false,
+    botsGuild: '',
     botsSort: { key: null, dir: 1 }, // null = online first, then by name
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
@@ -738,11 +743,25 @@
     return t;
   }
   // XP bar: next_xp == 0 means "no data" (old emitter, max level) — render
-  // nothing rather than a fake 0% or 100% bar.
+  // nothing rather than a fake 0% or 100% bar. A missing xp is no data too: the
+  // profile's lines are left out instead of printing "undefined".
   function xpPct(b) {
-    if (!b || !b.next_xp) return null;
-    const pct = Math.round((b.xp || 0) / b.next_xp * 100);
+    if (!b || b.xp == null) return null;
+    const xp = Number(b.xp), next = Number(b.next_xp);
+    if (!isFinite(xp) || !isFinite(next) || next <= 0) return null;
+    const pct = Math.round(xp / next * 100);
     return Math.min(100, Math.max(0, pct));
+  }
+
+  // The profile's XP bar line. At the level cap the bar has no fraction, so it
+  // says the level in words; below it, xp and next xp as the module sent them.
+  function xpView(live, level, maxLevel) {
+    const lv = Number(level), max = Number(maxLevel);
+    if (isFinite(lv) && isFinite(max) && max > 0 && lv >= max) return { text: `Level ${lv} (max)`, pct: null };
+    const pct = live ? xpPct(live) : null;
+    if (pct === null) return null;
+    const rate = fmtXpRate(live.xp_per_hour);
+    return { text: `${live.xp} / ${live.next_xp} XP (${pct}%)${rate !== '–' ? ` · ${rate}` : ''}`, pct };
   }
 
   function fmtXpRate(v) {
@@ -792,11 +811,14 @@
     roster: { hash: 'bots', title: 'Bots' },
     map: { hash: 'map', title: 'Map' },
     dungeons: { hash: 'dungeons', title: 'Dungeons' },
+    raids: { hash: 'raids', title: 'Raids' },
     agentmaps: { hash: 'agent-maps', title: 'Agent maps' },
     commanders: { hash: 'commanders', title: 'Commanders' },
     'dungeon-runs': { hash: 'dungeon-runs', title: 'Dungeon runs' },
+    coverage: { hash: 'coverage', title: 'Raid coverage' },
     progress: { hash: 'progress', title: 'Progress' },
     activity: { hash: 'activity', title: 'Activity' },
+    guildorders: { hash: 'guild-orders', title: 'Guild orders' },
     auctions: { hash: 'auctions', title: 'Auction House' },
     issues: { hash: 'issues', title: 'Issues' },
     server: { hash: 'server', title: 'Server' }
@@ -820,29 +842,82 @@
 
   function parseRoute() {
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
+    const segs = path.split('/');
+    while (segs.length && segs[segs.length - 1] === '') segs.pop();
+    const tab0 = HASH_TO_TAB[segs[0]] || null;
+    const dec = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+    // #/commanders/<name> opens that commander's tab, #/commanders/<name>/fight[/<fightId>] its Fight debugger with that
+    // fight picked, #/fight[/<fightId>] All raids in the Fight debugger; #/commanders is All raids. One segment after
+    // #/commanders is always the commander tab, so a commander named "fight" keeps its own route (the All-raids debugger
+    // cannot live there).
+    let tab = tab0, cmd = null, cmdMode = null, cmdFight = null;
+    if (segs[0] === 'fight') {
+      tab = 'commanders';
+      cmdMode = 'debug';
+      if (segs[1]) cmdFight = dec(segs[1]);
+    } else if (tab === 'commanders' && segs.length > 1) {
+      const rest = segs.slice(1);
+      if (rest.length === 1) {
+        cmd = dec(rest[0]);
+      } else {
+        const at = rest.lastIndexOf('fight');
+        if (at === rest.length - 1) {
+          cmd = dec(rest.slice(0, at).join('/'));
+          cmdMode = 'debug';
+        } else if (at === rest.length - 2) {
+          cmd = dec(rest.slice(0, at).join('/'));
+          cmdMode = 'debug';
+          cmdFight = dec(rest[rest.length - 1]);
+        } else {
+          cmd = dec(rest.join('/')); // a legacy commander name that carries a literal slash
+        }
+      }
+    }
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
     const map = parseInt(q.get('map'), 10);
-    return { tab: HASH_TO_TAB[path] || null, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null };
+    // #/coverage[/<raid>][?missing=1][&boss=<entry>] is parsed by coverage.js, the one owner of the coverage route.
+    const cov = tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.parseHash
+      ? Coverage.parseHash(window.location.hash) : null;
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov, group: q.get('group') };
   }
 
   function routeHash(r) {
+    // The coverage route has its own query (missing, boss), owned by coverage.js.
+    if (r.tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.hash) return Coverage.hash(r.cov || {});
     const q = new URLSearchParams();
     if (r.bot !== null && r.bot !== undefined) {
       q.set('bot', r.bot);
       if (r.ptab && r.ptab !== 'overview') q.set('p', r.ptab);
     }
     if (r.run) q.set('run', r.run);
+    if (r.tab === 'raids' && r.group) q.set('group', r.group);
+    if (r.demo && r.tab === 'commanders') q.set('demo', '1');
     const qs = q.toString();
-    return `#/${TABS[r.tab].hash}${qs ? `?${qs}` : ''}`;
+    let hash = `#/${TABS[r.tab].hash}`;
+    if (r.tab === 'commanders') {
+      const debug = r.cmdMode === 'debug';
+      if (!r.cmd && debug) hash = '#/fight'; // All raids in the debugger has its own route, clear of a commander named "fight"
+      else if (r.cmd) hash += '/' + encodeURIComponent(r.cmd) + (debug ? '/fight' : '');
+      if (debug && r.cmdFight) hash += '/' + encodeURIComponent(r.cmdFight);
+    }
+    return `${hash}${qs ? `?${qs}` : ''}`;
   }
 
   // Change the route: switching tab closes the profile unless a bot is given;
-  // switching only the profile tab replaces the history entry.
+  // switching only the profile tab replaces the history entry. A change that stays on the Commanders tab
+  // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey }, partial);
+    const cur = parseRoute();
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.activeTab === 'raids' ? state.raids.openKey : state.dungeons.openKey, group: state.raids.openGroup, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
+    if (partial.tab && partial.tab !== 'coverage' && !('cov' in partial)) next.cov = null;
+    if (partial.tab && partial.tab !== state.activeTab && !('cmd' in partial)) {
+      next.cmd = null;
+      next.cmdMode = null;
+      next.cmdFight = null;
+    }
     const hash = routeHash(next);
     if (opts && opts.replace) {
       history.replaceState(null, '', hash);
@@ -858,12 +933,23 @@
   function applyRoute() {
     const r = parseRoute();
     const tab = r.tab || state.activeTab;
+    // The demo group comes on before the first render: a hash naming a demo commander then finds its tab instead of flashing
+    // "DEMO (simulated) is gone" for a second.
+    if (r.demo && tab === 'commanders') setCmdDemo(true, true);
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
+    const prevRaidRun = state.raids.openKey, prevRaidGroup = state.raids.openGroup;
+    state.raids.openKey = tab === 'raids' && r.run ? r.run : null;
+    state.raids.openGroup = tab === 'raids' && r.group ? r.group : null;
+    // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
+    const prevCmd = fdPage.open, prevFight = fdPage.fight;
+    if (tab === 'commanders') cmdRouteTab(r);
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
+    else if (tab === 'raids' && (state.raids.openKey !== prevRaidRun || state.raids.openGroup !== prevRaidGroup)) renderRaids();
+    else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
+    else if (tab === 'coverage') renderCoverage();
     routeApplied = true;
-    if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
     if (r.bot !== null) {
       state.profileTab = PROFILE_TABS.includes(r.ptab) ? r.ptab : 'overview';
@@ -888,11 +974,14 @@
     else if (tab === 'map') renderMap();
     else if (tab === 'commanders') renderCommanders();
     else if (tab === 'dungeons') renderDungeons();
+    else if (tab === 'raids') renderRaids();
     else if (tab === 'dungeon-runs') renderDgRuns();
+    else if (tab === 'coverage') renderCoverage();
     else if (tab === 'agentmaps') renderAgentMaps();
     else if (tab === 'roster') renderBotsTab();
     else if (tab === 'progress') renderProgress();
     else if (tab === 'activity') renderActivityTab();
+    else if (tab === 'guildorders') renderGuildOrders();
     else if (tab === 'auctions') renderAuctions();
     else if (tab === 'issues') { renderIssues(); renderAnomalies(); }
     else if (tab === 'server') renderServerPanel();
@@ -919,11 +1008,15 @@
     if (tab === 'roster' && Date.now() - state.rosterAt > 15000) fetchRoster();
     if (tab === 'activity') fetchFeed();
     if (tab === 'auctions') fetchAuctions();
+    if (tab === 'guildorders') goFetch();
     if (tab === 'issues') fetchAnomalyTotals();
     if (tab === 'commanders') fetchCommanders();
     if (tab === 'dungeons') fetchDungeons();
+    if (tab === 'raids') fetchRaids();
     if (tab === 'dungeon-runs') fetchDgRuns();
+    if (tab === 'coverage' || tab === 'commanders') { if (typeof covLoad === 'function') covLoad(); }
     if (tab === 'agentmaps') fetchAgentMaps();
+    cmdLiveSync(); // the stream serves the Commanders tab: it closes when it is left and reopens when it is shown
   }
 
   el.menuItems.forEach(item => item.addEventListener('click', closeNavDrawer));
@@ -1188,14 +1281,23 @@
     }
   }
 
+  // The zone's client art, asked for only while the Map tab shows that zone: the element starts with no source, so a load on
+  // any other tab (a Commanders reload) asks the daemon for no picture at all.
+  function paintZoneArt() {
+    const zone = ZONE_CONFIG[state.currentZoneId];
+    const art = zone && zone.file;
+    if (!el.mapImg) return;
+    if (art && state.activeTab === 'map' && state.mapView === 'zone') {
+      if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
+      el.mapImg.style.display = 'block';
+    }
+  }
+
   function loadZoneMap(zoneId) {
     const zone = ZONE_CONFIG[zoneId];
     const art = zone && zone.file;
     if (el.mapImg) {
-      if (art) {
-        if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
-        el.mapImg.style.display = 'block';
-      } else {
+      if (!art) {
         el.mapImg.removeAttribute('src');
         el.mapImg.style.display = 'none';
         resetZoneArt();
@@ -1337,7 +1439,8 @@
       .then(cfg => {
         if (cfg && Object.keys(cfg).length > 0) {
           ZONE_BOUNDS = cfg;
-          if (state.mapView === 'world') renderMap();
+          // Only the Map tab draws the continents; any other tab asks for no map art on a data load.
+          if (state.mapView === 'world' && state.activeTab === 'map') renderMap();
           if (state.activeTab === 'commanders') renderCommanders();
         }
       })
@@ -1401,21 +1504,29 @@
     });
   }
 
+  // The client's continent pictures. The page requests one only when the world view draws it (the element starts with no
+  // source), so loading any other tab asks for no map file.
+  function worldArtFile(mapId) {
+    return mapId === 1 ? '/maps/kalimdor.webp' : '/maps/azeroth.webp';
+  }
+
   function setWorldTab(mapId) {
     state.worldMapId = mapId;
-    const files = { 0: '/maps/azeroth.webp', 1: '/maps/kalimdor.webp' };
-    if (el.worldImg && el.worldImg.getAttribute('src') !== files[mapId]) el.worldImg.src = files[mapId];
+    const file = worldArtFile(mapId);
+    if (el.worldImg && el.worldImg.getAttribute('src') !== file) el.worldImg.src = file;
     setMapView('world');
   }
 
 
   function renderWorld() {
     const mapId = state.worldMapId || 0;
+    const file = worldArtFile(mapId);
+    if (el.worldImg && el.worldImg.getAttribute('src') !== file) el.worldImg.src = file;
     const bots = renderWorldPanel(mapId);
     const off = state.bots.filter(b => b.map !== 0 && b.map !== 1);
     if (el.worldOffmap) {
       el.worldOffmap.innerHTML = off.length
-        ? `${off.length} in instances or other maps — the live ones on the <a href="#/dungeons">Dungeons</a> tab, the rest in the <a href="#/bots">Bots</a> list.`
+        ? `${off.length} in instances or other maps — the live ones on the <a href="#/dungeons">Dungeons</a> and <a href="#/raids">Raids</a> tabs, the rest in the <a href="#/bots">Bots</a> list.`
         : '';
       el.worldOffmap.classList.toggle('offmap-note', off.length > 0);
     }
@@ -1868,7 +1979,6 @@
     'AiPlayerbot.LeaveOutgrownZones': 'Bots that are 5+ levels above their zone travel (on foot, flight or boat) to a zone that fits their level.',
     'AiPlayerbot.RandomBotLftEnabled': 'Bots fill missing roles when a real player is waiting in the dungeon finder (LFT).',
     'AiPlayerbot.RandomBotBgEnabled': 'Bots join battlegrounds when a real player is queued, filling both sides so the match starts.',
-    'AiPlayerbot.DisableRandomLevels': 'Not about spawn levels (that is RandomBotStartLevelMin/Max). On = bots below randombotStartingLevel are raised to it. Off = bots keep their seed level and level up by playing.',
     'AiPlayerbot.LevelLadder': 'Chooses which bots log in by level band, so every level range has bots and level 60 is capped.',
     'AiPlayerbot.DisableActivityPriorities': 'On = every bot always thinks at full speed (bots always alive). Off = bots with no player nearby are throttled to botActiveAlone percent.',
     'AiPlayerbot.PerfMonEnabled': 'Built-in performance monitor for bot actions (debugging; costs some CPU).',
@@ -1949,7 +2059,6 @@
           ['LFT', flagBadge(bots.lft), cfg('RandomBotLftEnabled')],
           ['Battlegrounds', flagBadge(bots.bg), cfg('RandomBotBgEnabled')],
           ['AH buyer', flagBadge(bots.ah_buyer), cfg('AhMarketBuyer')],
-          ['Random levels off', flagBadge(bots.disable_random_levels), cfg('DisableRandomLevels')],
           ['Level ladder', flagBadge(bots.level_ladder), cfg('LevelLadder')],
           ['Activity priorities off', flagBadge(bots.disable_activity), cfg('DisableActivityPriorities')]
         ])}
@@ -1992,7 +2101,7 @@
       '# TortoiseBots diagnostic report',
       `- module: ${info.module_version || '?'} / core: ${info.core_revision || '?'} (${info.core_date || '?'}) / max level: ${info.max_level || '?'}`,
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
-      `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
+      `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
       `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
@@ -2000,7 +2109,7 @@
       `- gear: ${gearDiagLine()}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
-      `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=since ${sm.since_str || '?'} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
+      `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=${counterWindow()} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
     ].join('\n');
   }
 
@@ -2264,6 +2373,7 @@
       : ((ZONE_CONFIG[state.currentZoneId] || {}).map ?? state.worldMapId ?? 0);
     renderWorldZones(chipMap);
     if (state.mapView === 'world') { renderWorld(); return; }
+    paintZoneArt();
     if (!el.mapOverlay) return;
     el.mapOverlay.innerHTML = '';
 
@@ -2371,6 +2481,7 @@
       spec: db ? (db.spec || '') : '',
       money: db ? (parseInt(db.money, 10) || 0) : 0,
       online: !!live || !!(db && db.online),
+      guild: (live && live.guild) || (db && db.guild) || '',
       live,
       db
     };
@@ -2489,6 +2600,12 @@
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
       cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
     },
+    guild: {
+      label: 'Guild',
+      title: 'Guild the bot is in (dash when guildless)',
+      sort: r => (r.guild || '').toLowerCase(),
+      cell: r => (r.guild ? `<span class="mono">${esc(r.guild)}</span>` : DASH)
+    },
     xp: {
       label: 'XP',
       title: 'Progress into the current level, XP per hour and the age of the last gain (live bots)',
@@ -2545,7 +2662,7 @@
   };
 
   const BOT_VIEWS = {
-    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone'],
+    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone', 'guild'],
     progress: ['name', 'class', 'level', 'xp', 'gear', 'gold'],
     activity: ['name', 'class', 'level', 'quests', 'loot', 'notable', 'kills', 'deaths', 'money', 'vendors', 'repairs', 'giveups', 'gather', 'ah']
   };
@@ -2635,6 +2752,19 @@
     };
   }
 
+  // Guild filter: every guild any listed character is in, with its size.
+  function paintGuildFilter(rows) {
+    const sel = document.getElementById('bots-guild');
+    if (!sel) return;
+    const counts = {};
+    rows.forEach(r => { if (r.guild) counts[r.guild] = (counts[r.guild] || 0) + 1; });
+    const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+    const html = '<option value="">Any guild</option><option value="-">No guild</option>' +
+      names.map(n => `<option value="${esc(n)}">${esc(n)} (${counts[n]})</option>`).join('');
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    sel.value = state.botsGuild || '';
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     paintSeg(el.presenceSeg, state.botsPresence);
@@ -2653,14 +2783,16 @@
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
     const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w));
+      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;
     const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
     const pvpOk = r => !state.botsPvpOnly || !!(r.live && r.live.pvp) || inWorldPvp(r.live);
+    const guildOk = r => !state.botsGuild || (state.botsGuild === '-' ? !r.guild : r.guild === state.botsGuild);
+    paintGuildFilter(rows);
 
-    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r));
+    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r) && guildOk(r));
     renderBotChips(base, issues, stateOk, classOk);
     renderKindChips(base);
     const list = base.filter(r => kindOk(r) && stateOk(r) && classOk(r) && specOk(r) && issueOk(r) && pvpOk(r));
@@ -2730,6 +2862,273 @@
         rosterInflight = false;
         if (state.activeTab === 'roster') renderRoster();
       });
+  }
+
+  // ---- Guild orders ------------------------------------------------------------
+  // One simple block per order: what, who, state, progress and one sentence on
+  // what the bot does now; the sub-orders it handed out sit right under it.
+  // A click opens the details: where the bot is and heads, the steps so far
+  // and what it looted or bought. Polled every 5 s while the tab is open.
+  const gord = { data: null, error: null, search: '', guild: '', show: 'active', open: {}, seq: 0, fetchedAt: 0 };
+  const GO_FINISHED = { done: 1, mailed: 1, cant: 1, noskill: 1, stocked: 1 };
+  const GO_STATE = {
+    working: ['Working', 'go-s-work'], waiting: ['Waiting', 'go-s-wait'], delivering: ['Delivering', 'go-s-work'],
+    done: ['Done', 'go-s-done'], mailed: ['Mailed', 'go-s-done'], stocked: ['Stocked', 'go-s-done'],
+    cant: ['Failed', 'go-s-fail'], noskill: ['Failed', 'go-s-fail']
+  };
+  const GO_REASON = {
+    grouped: 'paused while in a group', noskill: 'does not have the profession', lowskill: 'profession skill too low',
+    lowlevel: 'too low level for the farm zones', norange: 'no farm zone in reach', nosource: 'found no way to get it',
+    norecipe: 'does not know the recipe', stuck: 'got stuck', bagsfull: 'bags are full', nobank: 'no guild bank access',
+    elite: 'only drops from elites', timeout: 'farm time ran out', noprogress: '3 hours without a single item',
+    needitems: 'needs items from you', bankdenied: 'the guild bank refused', nobanker: 'cannot reach a guild banker',
+    noauctioneer: 'cannot reach an auctioneer', nolisting: 'nothing fitting on the auction house'
+  };
+  const GO_HOW = {
+    bags: 'Looked in its bags and mail for', bank: 'Took from the guild bank:', ah: 'Bought on the auction house:',
+    farm: 'Farmed', craft: 'Crafted', sub: 'Asked another bot for', need: 'Asked you for', deliver: 'Took it to the guild bank'
+  };
+
+  function goFetch() {
+    gord.fetchedAt = Date.now();
+    const seq = ++gord.seq;
+    fetch('/api/v1/guild-orders')
+      .then(jsonOrThrow)
+      .then(d => { if (seq === gord.seq) { gord.data = d; gord.error = null; } })
+      .catch(err => { if (seq === gord.seq) gord.error = err.message || 'request failed'; })
+      .finally(() => { if (seq === gord.seq) { goBadge(); if (state.activeTab === 'guildorders') renderGuildOrders(); } });
+  }
+
+  function goBadge() {
+    const n = ((gord.data && gord.data.orders) || []).filter(o => !o.cancelled && !o.parent_guid && !GO_FINISHED[o.state]).length;
+    const b = document.getElementById('go-count');
+    if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
+  }
+
+  function goAgo(ts) {
+    if (!ts) return '';
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min ago`;
+    return `${Math.floor(s / 86400)} d ago`;
+  }
+  function goClock(ts) {
+    return ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  }
+  function goDur(sec) {
+    sec = sec || 0;
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return h ? `${h} h ${m} min` : `${m} min`;
+  }
+  // Travel targets can carry WoW link markup: keep the readable name only.
+  function goPlain(s) {
+    s = String(s || '');
+    const link = s.match(/\[([^\]]+)\]/);
+    if (link) s = s.replace(/\|c[0-9a-fA-F]{8}\|H[^|]*\|h\[[^\]]*\]\|h\|r/, link[1]);
+    return s.replace(/\|c[0-9a-fA-F]{8}|\|r/g, '').trim();
+  }
+  const goB = s => `<strong>${esc(s)}</strong>`;
+
+  // One plain sentence: what the bot does right now.
+  function goNow(o, kids) {
+    const item = o.supply_name || o.item_name;
+    const n = o.supply_count ? `${o.supply_count}× ` : '';
+    if (o.state === 'done') return `Delivered ${goB(o.amount + '× ' + o.item_name)} to the guild bank.`;
+    if (o.state === 'mailed') return `Mailed ${goB(o.item_name)} to the guild master.`;
+    if (o.state === 'stocked') return 'The guild bank holds the amount; refills when it drops.';
+    if (o.state === 'cant' || o.state === 'noskill') return `Gave up: ${esc(GO_REASON[o.reason] || o.reason)}.`;
+    if ((o.need || []).length) return `Waiting for you: bring ${o.need.map(x => goB(x.count + '× ' + (x.name || x.item_id))).join(', ')} (trade, mail or guild bank).`;
+    if (o.reason === 'grouped') return 'Paused while in a group.';
+    switch (o.step) {
+      case 'bags': return `Checking its bags and mail for ${goB(n + item)}.`;
+      case 'bank': return `Getting ${goB(n + item)} from the guild bank.`;
+      case 'ah': return `Buying ${goB(n + item)} on the auction house.`;
+      case 'farm': return o.supply_vendor ? `Buying ${goB(n + item)} from a vendor.`
+        : `Farming ${goB(n + item)}${o.farm_zone ? ` in ${goB(getZoneName(o.farm_zone))}` : ''}.`;
+      case 'craft': return `Crafting ${goB(n + item)}.`;
+      case 'sub': {
+        const k = kids.find(c => c.item_id === o.supply_item && !GO_FINISHED[c.state]);
+        return k ? `Waiting for ${goB(k.bot)} to bring ${goB(n + item)}.` : `Looking for a guild bot to make ${goB(n + item)}.`;
+      }
+      case 'deliver': return o.reason === 'bagsfull' ? 'Wants to deliver, but its bags are full.' : 'Taking it to the guild bank.';
+    }
+    if (o.type === 'farm' && o.farm_zone) return `Farming ${goB(o.item_name)} in ${goB(getZoneName(o.farm_zone))}.`;
+    return 'Just started.';
+  }
+
+  function goBar(o) {
+    const want = Math.max(1, o.amount || 1);
+    const done = Math.min(100, (o.delivered / want) * 100);
+    return `<span class="go-bar" title="${esc(o.delivered)} of ${esc(o.amount)} in the guild bank"><span style="width:${done}%"></span></span><span class="go-count mono">${esc(o.delivered)}/${esc(o.amount)}</span>`;
+  }
+
+  function goPill(o) {
+    const [label, cls] = GO_STATE[o.state] || [o.state, 'go-s-work'];
+    return `<span class="go-pill ${cls}">${esc(label)}</span>`;
+  }
+
+  // History, folded: consecutive polls of the same step and item are one line.
+  function goHistory(o) {
+    const out = [];
+    (o.steps || []).forEach(s => {
+      const key = `${s.step}|${s.item_name}|${s.state}`;
+      const last = out[out.length - 1];
+      if (last && last.key === key) { last.to = s.at; last.end = s; return; }
+      out.push({ key, from: s.at, to: s.at, start: s, end: s });
+    });
+    if (!out.length) return '<p class="go-muted">Nothing yet.</p>';
+    return `<ul class="go-hist">${out.reverse().map(g => {
+      const s = g.end;
+      const what = s.state === 'done' ? 'Delivered to the guild bank'
+        : s.state === 'mailed' ? 'Mailed to the guild master'
+        : s.step && s.step !== '-' ? `${esc(GO_HOW[s.step] || s.step)}${s.item_name && s.step !== 'deliver' ? ` ${goB(s.item_name)}` : ''}${s.step === 'farm' && s.farm_zone ? ` in ${esc(getZoneName(s.farm_zone))}` : ''}`
+        : s.state === 'waiting' ? `Waiting${s.reason && s.reason !== '-' ? ` (${esc(GO_REASON[s.reason] || s.reason)})` : ''}` : 'Started';
+      const notes = [];
+      if (s.delivered > g.start.delivered) notes.push(`+${s.delivered - g.start.delivered} delivered`);
+      if (s.deaths_in_zone > g.start.deaths_in_zone) notes.push(`died ${s.deaths_in_zone - g.start.deaths_in_zone}×`);
+      const time = g.from === g.to ? goClock(g.from) : `${goClock(g.from)}–${goClock(g.to)}`;
+      return `<li><span class="go-time">${esc(time)}</span><span>${what}${notes.length ? ` <span class="go-muted">· ${esc(notes.join(' · '))}</span>` : ''}</span></li>`;
+    }).join('')}</ul>`;
+  }
+
+  function goLoot(o) {
+    const trail = ((gord.data.trails || {})[o.bot_guid]) || [];
+    const rows = trail.filter(t => t.at >= (o.created_at || 0) - 60 && t.kind !== 'died').slice(0, 10);
+    if (!rows.length) return '<p class="go-muted">Nothing yet.</p>';
+    return `<ul class="go-hist">${rows.map(t => `<li><span class="go-time">${esc(goClock(t.at))}</span>
+      <span>${esc(t.kind)}${t.item ? ` <span class="quality-text-${esc(t.quality || 1)}">${esc(t.item)}</span>` : ''}</span></li>`).join('')}</ul>`;
+  }
+
+  function goWhere(o) {
+    const b = state.bots.find(x => x.guid === o.bot_guid);
+    if (!b) return o.online ? 'Online' : 'Offline';
+    let s = `In ${goB(getZoneName(b.zone, b.map))}`;
+    if (b.state === 'dead') s += ', dead (running back)';
+    else if (b.state === 'combat') s += `, fighting${b.target ? ` ${esc(b.target)}` : ''}`;
+    if (b.travel_to) s += `, heading to ${goB(goPlain(b.travel_to))}${b.travel_dist > 0 ? ` (${esc(b.travel_dist)} yd)` : ''}`;
+    return s + '.';
+  }
+
+  // The fixed order a bot tries for each material; the current one is lit, so
+  // it is plain what comes next when this way fails.
+  const GO_LADDER = [['bags', 'bags & mail'], ['bank', 'guild bank'], ['ah', 'auction house'],
+    ['farm', 'farm / craft'], ['sub', 'another guild bot'], ['need', 'ask you'], ['deliver', 'deliver']];
+  function goPlan(o) {
+    if (GO_FINISHED[o.state]) return '';
+    const cur = o.step === 'craft' ? 'farm' : o.step;
+    const at = GO_LADDER.findIndex(([k]) => k === cur);
+    const what = o.supply_name && o.step !== 'deliver' ? ` for ${goB(o.supply_name)}` : '';
+    return `<div class="go-plan"><span class="go-muted">Plan${what}:</span> ${GO_LADDER.map(([k, label], i) =>
+      `<span class="${i === at ? 'go-plan-now' : i < at ? 'go-plan-past' : ''}">${esc(label)}</span>`).join(' <span class="go-muted">→</span> ')}</div>`;
+  }
+
+  function goDetails(o) {
+    const facts = [
+      `Given by ${goB(o.parent || o.giver || '?')}${o.parent ? ' (sub-order)' : ''} ${esc(goAgo(o.created_at))}`,
+      `worked ${esc(goDur(o.worked_sec))}`,
+      o.hours ? `time limit ${esc(o.hours)} h` : 'no time limit'
+    ];
+    return `<div class="go-details">
+      <div class="go-facts">${goWhere(o)}<br><span class="go-muted">${facts.join(' · ')}</span></div>
+      ${goPlan(o)}
+      <div class="go-cols"><div><h4>Steps</h4>${goHistory(o)}</div><div><h4>Looted and bought</h4>${goLoot(o)}</div></div>
+    </div>`;
+  }
+
+  function goRow(o, kids, depth) {
+    const key = `${o.bot_guid}:${o.created_at}`;
+    const open = !!gord.open[key];
+    const finished = GO_FINISHED[o.state];
+    const cls = classNameById(o.class);
+    const slow = !finished && o.nogain_sec > 1800 ? ` <span class="go-flag" title="No new item for ${esc(goDur(o.nogain_sec))}">slow</span>` : '';
+    return `<div class="go-row${depth ? ' go-child' : ''}${finished ? ' go-fin' : ''}${open ? ' go-open' : ''}">
+      <div class="go-line" data-key="${esc(key)}">
+        <span class="go-chev">${open ? '▾' : '▸'}</span>
+        <span class="go-what">${depth ? '↳ ' : ''}<span class="quality-text-${esc(o.quality == null ? 1 : o.quality)}">${esc(o.item_name)}</span> ×${esc(o.amount)}</span>
+        <span class="go-who" style="color:${classColor(cls)}">${esc(o.bot)}</span>
+        ${goPill(o)}${slow}
+        <span class="go-prog">${goBar(o)}</span>
+      </div>
+      <div class="go-sentence">${goNow(o, kids)}</div>
+      ${open ? goDetails(o) : ''}
+    </div>`;
+  }
+
+  function renderGuildOrders() {
+    const list = document.getElementById('go-list');
+    if (!list) return;
+    if (gord.error && !gord.data) { list.innerHTML = `<div class="card"><div class="table-empty">Could not load guild orders: ${esc(gord.error)}</div></div>`; return; }
+    const d = gord.data;
+    if (!d) { list.innerHTML = '<div class="card"><div class="table-empty">Loading guild orders…</div></div>'; return; }
+    if (d.error) { list.innerHTML = `<div class="card"><div class="table-empty">Could not read the orders: ${esc(d.error)}</div></div>`; return; }
+
+    const all = (d.orders || []).filter(o => !o.cancelled);
+    const guilds = [...new Set(all.map(o => o.guild).filter(Boolean))].sort();
+    const seg = document.getElementById('go-guild');
+    const segHtml = ['<button class="seg-btn" data-v="">All guilds</button>'].concat(guilds.map(g => `<button class="seg-btn" data-v="${esc(g)}">${esc(g)}</button>`)).join('');
+    if (seg.dataset.html !== segHtml) { seg.innerHTML = segHtml; seg.dataset.html = segHtml; }
+    seg.querySelectorAll('.seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.v === gord.guild));
+    seg.style.display = guilds.length > 1 ? '' : 'none';
+
+    const byGuid = new Map(all.map(o => [o.bot_guid, o]));
+    const kids = new Map();
+    all.forEach(o => { if (o.parent_guid && byGuid.has(o.parent_guid)) { if (!kids.has(o.parent_guid)) kids.set(o.parent_guid, []); kids.get(o.parent_guid).push(o); } });
+    const roots = all.filter(o => !(o.parent_guid && byGuid.has(o.parent_guid)));
+    const treeRunning = o => !GO_FINISHED[o.state] || (kids.get(o.bot_guid) || []).some(treeRunning);
+    const running = roots.filter(treeRunning);
+    const waitingYou = all.filter(o => !GO_FINISHED[o.state] && (o.need || []).length).length;
+    const doneToday = roots.filter(o => (o.state === 'done' || o.state === 'mailed') && Date.now() / 1000 - o.updated_at < 86400).length;
+    const kpi = (label, value, cls) => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
+    document.getElementById('go-summary').innerHTML =
+      kpi('Orders in progress', running.length) +
+      kpi('Waiting for you', waitingYou, waitingYou ? 'go-kpi-warn' : '') +
+      kpi('Finished today', doneToday);
+    document.getElementById('go-polled').textContent = d.polled ? `Updated ${goAgo(d.polled)}` : '';
+
+    const q = gord.search.toLowerCase();
+    const matches = o => (!q || (o.bot || '').toLowerCase().includes(q) || (o.item_name || '').toLowerCase().includes(q)) || (kids.get(o.bot_guid) || []).some(matches);
+    const shown = roots.filter(o => (!gord.guild || o.guild === gord.guild) && matches(o) && (gord.show === 'all' || treeRunning(o)));
+    const tree = (o, depth) => {
+      const ch = (kids.get(o.bot_guid) || []).slice().sort((a, b) => a.created_at - b.created_at);
+      return goRow(o, ch, depth) + ch.map(c => tree(c, depth + 1)).join('');
+    };
+    list.innerHTML = shown.length ? shown.map(o => `<div class="card go-order">${tree(o, 0)}</div>`).join('')
+      : `<div class="card"><div class="table-empty">${all.length ? 'No orders here. Pick "All" to see finished ones.' : 'No guild orders yet.'}</div></div>`;
+
+    const rel = d.relists || [];
+    document.getElementById('go-relist-card').style.display = rel.length ? '' : 'none';
+    document.getElementById('go-relist-body').innerHTML = rel.map(r => `<tr><td>${esc(r.bot)}</td><td>${esc(r.item_name)}</td><td class="mono">${esc(r.count)}</td>
+      <td class="mono">${formatMoney(r.buyout)}</td><td>${esc(goAgo(r.posted_at))}</td>
+      <td>${r.state === 2 ? 'Collected, goes to the guild bank next visit' : r.state === 1 ? 'Sale or return mail being collected' : 'On the auction house'}</td></tr>`).join('');
+  }
+
+  function initGuildOrders() {
+    let typing = null;
+    document.getElementById('go-search').addEventListener('input', e => {
+      clearTimeout(typing);
+      typing = setTimeout(() => { gord.search = e.target.value.trim(); renderGuildOrders(); }, 200);
+    });
+    document.getElementById('go-guild').addEventListener('click', e => {
+      const btn = e.target.closest('.seg-btn');
+      if (btn) { gord.guild = btn.dataset.v; renderGuildOrders(); }
+    });
+    bindSeg(document.getElementById('go-show'), v => { gord.show = v; renderGuildOrders(); });
+    document.getElementById('go-list').addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      const line = e.target.closest('.go-line');
+      if (!line) return;
+      gord.open[line.dataset.key] = !gord.open[line.dataset.key];
+      renderGuildOrders();
+    });
+    goFetch();
+  }
+
+  // Polled from the roster snapshot (it follows the refresh rate and pauses
+  // with it): every 5 s while the tab is open, every minute for the badge.
+  function goTick() {
+    const every = state.activeTab === 'guildorders' ? 5000 : 60000;
+    if (Date.now() - gord.fetchedAt >= every) goFetch();
   }
 
   // ---- Auction house (read-only) ---------------------------------------------
@@ -2869,6 +3268,8 @@
     if (el.botSearch) el.botSearch.addEventListener('input', renderRoster);
     bindSeg(el.presenceSeg, v => { state.botsPresence = v; renderRoster(); });
     bindSeg(el.kindSeg, v => { state.botsKind = v; renderRoster(); });
+    const guildSel = document.getElementById('bots-guild');
+    if (guildSel) guildSel.addEventListener('change', () => { state.botsGuild = guildSel.value; renderRoster(); });
     bindSeg(el.viewSeg, v => {
       state.botsView = v;
       try { localStorage.setItem(BOTS_VIEW_STORAGE_KEY, v); } catch (e) {}
@@ -2952,29 +3353,18 @@
     return new Date(ts * 1000).toLocaleTimeString();
   }
 
-  // The daemon's wall clock, derived from the counter window it reports as
-  // both an epoch (since) and its own rendering (since_str): re-parsing that
-  // string locally and offsetting by the epoch difference cancels both zones.
-  // Payload fields that carry only an epoch still display the server's hour,
-  // never the viewer's.
-  function daemonClock(ts) {
-    const s = state.activity && state.activity.summary;
-    if (s && s.since && s.since_str) {
-      const parsed = Date.parse(s.since_str.replace(' ', 'T'));
-      if (Number.isFinite(parsed)) {
-        return new Date(ts * 1000 + (parsed - s.since * 1000)).toLocaleTimeString();
-      }
-    }
-    return fmtClock(ts);
+  // A clock time as HH:MM in the viewer's own zone, from a unix epoch: every clock time the dashboard shows is local.
+  function fmtHM(ts) {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
-  // Feed rows carry the daemon's own rendered timestamp (time_str), so every
-  // table on the dashboard shares one time base. Formatting the epoch in the
-  // viewer's zone (the fallback) would make the feeds disagree with the
-  // incident table whenever the browser is not on the server's clock.
+  // Feed rows carry the row's own unix epoch (at): the page formats it in the viewer's zone, so a loot at 21:35 UTC reads
+  // 22:35 in Oslo. The daemon's own rendering (time_str) stays in the payload for older pages, but the page never reads it.
   function feedClock(item) {
-    if (item && item.time_str) return item.time_str.slice(11, 19);
-    return daemonClock(item ? item.at : 0);
+    return fmtClock(item ? item.at : 0);
   }
 
   // Activity counters are session-scoped: they count the current game-server
@@ -2982,12 +3372,12 @@
   // them repeats this window so "19 loot" cannot read as a lifetime total.
   function counterWindow() {
     const s = state.activity && state.activity.summary;
-    return (s && s.since_str) ? `since ${s.since_str.slice(11, 16)}` : 'this session';
+    return (s && s.since) ? `since ${fmtHM(s.since)}` : 'this session';
   }
 
   function counterWindowTitle() {
     const s = state.activity && state.activity.summary;
-    const start = (s && s.since_str) ? ` since ${s.since_str}` : '';
+    const start = (s && s.since) ? ` since ${fmtHM(s.since)}` : '';
     return `Counters cover the current game-server session${start}. They are kept across a dashboard restart and reset when the game server restarts.`;
   }
 
@@ -3336,8 +3726,8 @@
       </div>
       <div class="armory-stat-card" title="${esc(counterWindowTitle())}">
         <div class="stat-card-title">This session (${esc(counterWindow())})</div>
-        ${progressRow('First seen', esc(daemonClock(a.first_seen)))}
-        ${progressRow('Last event', esc(daemonClock(a.last_event)))}
+        ${progressRow('First seen', esc(fmtClock(a.first_seen)))}
+        ${progressRow('Last event', esc(fmtClock(a.last_event)))}
       </div>`;
     }
     const feed = (state.activity && Array.isArray(state.activity.level_feed) ? state.activity.level_feed : [])
@@ -3493,6 +3883,10 @@
       .catch(e => {
         if (state.profileGuid !== guid) return;
         const msg = String((e && e.message) || 'fetch failed');
+        if (el.armoryError) el.armoryError.style.display = 'none';
+        // The armory is the main-realm database; a hired raid bot lives in the game server and has no row there. The drawer then
+        // shows what the telemetry knows and one quiet line, not an HTTP error.
+        if (/^HTTP 404/.test(msg)) { renderArmoryMissing(); return; }
         if (el.armoryError) {
           el.armoryError.style.display = 'block';
           el.armoryError.innerHTML = msg.includes('401')
@@ -3571,15 +3965,18 @@
       }
     }
 
-    // XP bar: live telemetry only (the database has no per-level XP row).
+    // XP bar: live telemetry only (the database has no per-level XP row). At the level cap there is no
+    // fraction to draw: the line says the level and the bar stays hidden.
     if (el.armoryXpWrap) {
-      const pct = live ? xpPct(live) : null;
-      el.armoryXpWrap.style.display = pct === null ? 'none' : '';
-      if (pct !== null) {
-        const rate = fmtXpRate(live.xp_per_hour);
-        if (el.armoryXpBar) el.armoryXpBar.style.width = `${pct}%`;
-        if (el.armoryXpText) el.armoryXpText.textContent = `${live.xp} / ${live.next_xp} XP (${pct}%)${rate !== '–' ? ` · ${rate}` : ''}`;
+      const level = live && live.level != null ? live.level : (p && p.summary ? p.summary.level : null);
+      const cap = state.serverInfo && state.serverInfo.max_level ? state.serverInfo.max_level : 60;
+      const v = xpView(live, level, cap);
+      el.armoryXpWrap.style.display = v ? '' : 'none';
+      if (el.armoryXpBar) {
+        el.armoryXpBar.style.display = v && v.pct !== null ? '' : 'none';
+        if (v && v.pct !== null) el.armoryXpBar.style.width = `${v.pct}%`;
       }
+      if (v && el.armoryXpText) el.armoryXpText.textContent = v.text;
     }
   }
 
@@ -3644,6 +4041,15 @@
   const kv = (label, value) => `<div class="kv-row"><span>${esc(label)}</span><span>${value}</span></div>`;
   const kvMono = (value) => `<span class="mono">${esc(value || '-')}</span>`;
 
+  // The character's raid run, when it is in one: a link to the group's live view on the Raids tab.
+  function raidRunLink(guid) {
+    const hit = state.raids.byMember.get(guid);
+    if (!hit) return '';
+    const label = dgnRunName(hit.run) + (hit.group ? ` · ${hit.group.key}` : '');
+    const qs = hit.group ? `run=${encodeURIComponent(hit.run.key)}&group=${encodeURIComponent(String(hit.group.group))}` : `run=${encodeURIComponent(hit.run.key)}`;
+    return kv('Raid', `<a class="card-link" href="#/raids?${qs}" title="Open the raid group's live view">${esc(label)}</a>`);
+  }
+
   // The character's dungeon run, when it is in one: a link to the run's live view on the Dungeons tab (issue #895).
   function dgnRunLink(guid) {
     const run = state.dungeons.byMember.get(guid);
@@ -3656,6 +4062,8 @@
   function renderProfileOverview() {
     const host = document.getElementById('armory-content-overview');
     if (!host || state.profileTab !== 'overview' || state.profileGuid === null) return;
+    // A character without an armory row keeps the quiet note on every snapshot refresh, not the live overview.
+    if (state.profile && state.profile.missing) { host.innerHTML = armoryMissingHtml(); return; }
     const guid = state.profileGuid;
     const live = liveBot(guid);
     const mine = state.issues.active.filter(i => i.guid === guid);
@@ -3670,12 +4078,14 @@
           ${kv('Status', stateTag(live.state))}
           ${live.kind || live.player || live.alt ? kv('Kind', kindBadge((live.kind || (live.player ? 'player' : (live.alt ? 'alt' : 'pool'))))) : ''}
           ${kv('Target', live.target ? `<strong class="target-cell">${esc(displayTarget(live))}</strong>${live.target_level ? ` <span class="cell-muted">L${esc(live.target_level)}</span>` : ''}` : DASH)}
+          ${live.guild ? kv('Guild', `<span class="mono">${esc(live.guild)}</span>`) : ''}
           ${live.travel_purpose ? kv('Travel', `<strong>${esc(live.travel_purpose)}</strong><span class="cell-muted"> → ${esc(live.travel_to || '')}</span>`) : ''}
           ${live.player ? '' : kv('Last action', kvMono(live.last_action))}
           ${live.player ? '' : kv('Trigger', kvMono(live.last_trigger))}
           ${live.player ? '' : kv('Strategy', kvMono(live.strategy || 'default'))}
           ${(live.pvp || inWorldPvp(live)) ? kv('PvP', pvpBadge(live) || worldPvpBadge(live)) : ''}
           ${dgnRunLink(guid)}
+          ${raidRunLink(guid)}
           ${live.player ? '' : kv('Combat role', `<span class="badge badge-info" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(live))}</span>`)}
         </div>
         <div class="kv-card">
@@ -3729,6 +4139,30 @@
     renderArmoryPanel(p, state.profileTab);
   }
 
+  // What the drawer shows for a character the armory does not know (a hired raid bot): its telemetry (class, level, gear tier the
+  // roster carries) and one quiet line. The gear paperdoll is cleared so a bot opened before this one never stays behind it.
+  function armoryMissingHtml() {
+    const live = liveBot(state.profileGuid);
+    const rows = [];
+    if (live) {
+      rows.push(kv('Class', esc(capClass(live.class) || '')));
+      if (live.level !== undefined && live.level !== null && live.level !== '') rows.push(kv('Level', esc(String(live.level))));
+      const g = live.gear;
+      if (g && numOr0(g.item_level) > 0) rows.push(kv('Gear', `item level ${esc(String(g.item_level))} · ${esc(String(numOr0(g.pieces)))} pieces`));
+      if (live.spec) rows.push(kv('Spec', esc(String(live.spec))));
+    }
+    return '<div class="profile-grid profile-section"><div class="kv-card"><div class="section-label">What the game server reports</div>'
+      + (rows.join('') || '<div class="empty-hint">No telemetry for this character yet.</div>')
+      + '</div></div><p class="empty-hint armory-missing">No armory record (hired bot): this character lives in the game server, not in the main-realm database.</p>';
+  }
+
+  function renderArmoryMissing() {
+    state.profile = { missing: true };
+    ['gearLeft', 'gearRight', 'gearWeapons', 'gearSummary'].forEach(k => { if (el[k]) el[k].innerHTML = ''; });
+    renderProfileHeader();
+    renderArmoryPanel(state.profile, state.profileTab);
+  }
+
   // Cheap per-snapshot refresh: bars and the live overview, nothing heavier.
   function renderProfileLive() {
     if (state.profileGuid === null) return;
@@ -3760,6 +4194,13 @@
       const panel = document.getElementById(`armory-content-${t}`);
       if (panel) panel.style.display = t === tab ? 'block' : 'none';
     });
+    if (p && p.missing) {
+      const html = armoryMissingHtml();
+      if (tab === 'gear') { if (el.gearSummary) el.gearSummary.innerHTML = html; return; }
+      const host = document.getElementById(`armory-content-${tab}`);
+      if (host) host.innerHTML = html;
+      return;
+    }
     if (tab === 'overview') { renderProfileOverview(); return; }
     if (!p) {
       const host = document.getElementById(`armory-content-${tab}`);
@@ -4581,7 +5022,7 @@
     for (const k of Object.keys(t.totals || {})) {
       if (order.indexOf(k) === -1) parts.push(`${k} ${t.totals[k]}`);
     }
-    const since = t.since_str ? ` since ${t.since_str.slice(0, 16)}` : '';
+    const since = t.since ? ` since ${fmtHM(t.since)}` : '';
     const loops = topAction(t, 'ACTION_LOOP');
     const unreach = topAction(t, 'UNREACHABLE_TARGET');
     const extra = [loops, unreach].filter(Boolean).join(' · ');
@@ -4624,7 +5065,7 @@
     const ordered = filtered.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
     el.anomaliesTable.innerHTML = ordered.map(a => {
-      const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
+      const timeStr = a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-';
       const sev = (a.severity || 'info').toLowerCase();
       const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
       return `<tr>
@@ -4802,6 +5243,7 @@
       refreshGate.submit('snapshot', () => {
         const prevCount = state.bots.length;
         state.bots = Array.isArray(data.bots) ? data.bots : [];
+        goTick();
         if (data.grinding) state.grinding = data.grinding;
         if (data.info) { state.serverInfo = data.info; renderServerPanel(); applyCommanderTabFlag(); }
         applyIssues(data.issues);
@@ -4809,14 +5251,17 @@
 
         renderLive();
 
-        // The Dungeons view is a rollup of the roster; refresh it with each
-        // snapshot (the profile's run link and the world map's link read it too).
-        fetchDungeons();
+        // The Dungeons view is a rollup of the roster: refresh it with each snapshot only while it is on screen, else once
+        // every 30 s (the profile's run link and the world map's link read it too, and a snapshot is every 2 s).
+        if (dgnPollDue(dgnOnScreen(), state.dungeons.at, Date.now())) fetchDungeons();
+        if (raidsPollDue(raidsOnScreen(), state.raids.at, state.raids.eventAt, Date.now())) fetchRaids();
 
         if (state.bots.length !== prevCount) {
           appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
         }
       });
+    } else if (msg.event === 'raids') {
+      applyRaidsEvent(msg.data);
     } else if (msg.event === 'heartbeat') {
       const d = msg.data;
       if (!d) return;
@@ -5010,7 +5455,504 @@
   const cmdPicAsk = new Map(); // map id -> when the daemon was last asked for its picture slots (unix ms)
   const cmdTrails = CmdPaths.newTrails(); // every bot's path (the lead's is in cmdTracker.trail), kept from the 2 s reports
   const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
+  const cmdPlans = {};        // plan name -> {plan: the daemon's /api/v1/plans answer | null, err, at (unix ms of the answer), loading}
+  // commander -> mob id -> performance.now() of the report that carried the mob's cast (the module reports the time left at
+  // read time; the map counts it down from the report's arrival). A position frame carries no cast, so it never restarts it.
+  const cmdMobSeenAt = {};
   let cmdTrailsLoading = false;
+
+  // ---- The live stream (GET /api/v1/live) ----
+  // Positions and fight events arrive as they happen instead of on the 2 s report: the dots are drawn in the server's past and
+  // interpolated between samples (glide.js), and a running fight shows while it runs. One glide state per card, one ring of
+  // the newest events per commander, and one scheduler that draws a marked map once per animation frame.
+  const CMD_LIVE_EVENT_MAX = 12;
+  const cmdGlide = {};        // commander -> Glide state
+  const cmdLiveEvents = {};   // commander -> the newest fight events of the live stream, oldest first
+  const cmdLiveErrors = [];   // when the stream last failed (LiveView.fallback)
+  let cmdLiveOff = false;     // the stream does not work here: poll instead, retry after a minute
+  let cmdLivePoll = null;     // the 2 s poll that stands in while the stream and the WebSocket are both down
+  const cmdSched = LiveView.scheduler(
+    typeof requestAnimationFrame === 'function' ? (fn) => requestAnimationFrame(fn) : null,
+    () => performance.now(),
+    key => drawCmdMap(key));
+
+  // A map off screen is not redrawn: the scheduler skips it and draws it once when it is back. The observer watches each
+  // card's stage (its map), so scrolling the Live stack past a card stops its redraws.
+  const cmdStageObs = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        const key = e.target.dataset.cmdKey;
+        if (key) cmdSched.visible(key, e.isIntersecting);
+      });
+    }, { rootMargin: '100px' })
+    : null;
+
+  function cmdWatchStage(card, key) {
+    const stage = card && card.querySelector('.cmd-stage');
+    if (!stage || !cmdStageObs) return;
+    stage.dataset.cmdKey = key;
+    cmdSched.visible(key, true); // a card re-made for a key whose map was off screen is on the page again
+    cmdStageObs.observe(stage);
+  }
+
+  function cmdUnwatchStage(card) {
+    const stage = card && card.querySelector('.cmd-stage');
+    if (!stage || !cmdStageObs) return;
+    cmdSched.visible(stage.dataset.cmdKey, false); // nothing to draw for a card that is gone
+    cmdStageObs.unobserve(stage);
+  }
+
+  // The one map the viewer is looking at glides at the screen's rate: the open Fight debugger tab, or the only card on the
+  // Live page. Every other visible map glides at the grid rate.
+  function cmdGlideFocus() {
+    if (state.activeTab !== 'commanders') return null;
+    if (cmdPageMode() === 'debug') return fdPage.open || null;
+    const keys = Array.from(cmdCards.keys()).filter(k => k.indexOf('dgn:') !== 0 && k.indexOf('raid:') !== 0);
+    return keys.length === 1 ? keys[0] : null;
+  }
+
+  // ---- Fight debugger mode: one tab per raid, All raids first ------------------------------
+  // The Commanders page has two views, kept per browser: Live keeps today's stacked cards, the Fight debugger shows the tab
+  // strip and renders the one open commander's card (or the All raids grid). The open tab is in the URL hash, so a reload,
+  // Back and Forward land on the same card. The strip reads only the /api/v1/commanders report; fight summaries are the one
+  // extra request (one per commander, at most every 10 s), and fight details/track/plan belong to the open tab alone.
+  const fdPageStore = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+  const fdPage = {
+    mode: null, explicit: false, loaded: false,          // live | debug, and whether the browser chose
+    open: null,                                          // null = All raids, else the commander name
+    fight: null,                                         // the picked fight the hash names, so a repaint knows what changed
+    gone: {}, known: {}, last: {}, openedAt: {},         // tabs of commanders that disappeared (5 min) and the seen clock
+    gridQueued: false,
+  };
+  const fdPageSeen = FdTabs.loadSeen(fdPageStore);
+  // The commanders with saved fights (GET /api/v1/combat/history/commanders): the debugger's list while no raid is bound, and
+  // how an unbound commander's tab knows it has a history to show. Asked once per minute; a failure keeps the last list.
+  const fdHistCmd = { list: null, at: 0, pending: false };
+  const FD_HISTCMD_MS = 60000;
+  const fdHistNamed = name => !!(fdHistCmd.list && fdHistCmd.list.some(r => r && r.commander === name));
+
+  function cmdPageMode() {
+    if (!fdPage.loaded) {
+      fdPage.loaded = true;
+      try {
+        const v = fdPageStore && fdPageStore.getItem(FdTabs.PAGE_KEY);
+        if (v === 'live' || v === 'debug') { fdPage.mode = v; fdPage.explicit = true; }
+      } catch (e) { /* a storage that throws leaves the default */ }
+    }
+    if (fdPage.explicit) return fdPage.mode || 'live';
+    // Nothing saved: a raid opens the debugger (as a raid card did), a party or an empty page stays Live.
+    return state.commanders.list.some(b => !b.demo && CmdView.isRaid(b)) ? 'debug' : 'live';
+  }
+
+  function cmdPageSetMode(mode, opts) {
+    const next = mode === 'live' ? 'live' : 'debug';
+    const same = fdPage.loaded && cmdPageMode() === next;
+    fdPage.mode = next;
+    fdPage.explicit = true;
+    fdPage.loaded = true;
+    try { if (fdPageStore) fdPageStore.setItem(FdTabs.PAGE_KEY, fdPage.mode); } catch (e) { /* nothing to remember */ }
+    if (opts && opts.quiet) return;
+    if (same) { cmdPageHash(fdPage.open, next, fdPage.fight, true); cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
+    const open = fdPage.open;
+    // Live keeps the commander in the route: #/commanders/<name> is that commander's Live card, not All raids.
+    if (next === 'live' && open) { fdStopCard(open); fdPage.fight = null; cmdPageHash(open, 'live', null, true); renderCommanders(); return; }
+    const cur = parseRoute();
+    const named = cur.cmdMode === 'debug' || !!cur.cmd;
+    fdStopCard(open);
+    fdPage.open = null;
+    fdPage.fight = null;
+    // With nothing bound the debugger is a view of this page (the saved-fights list), not a route of its own: clicking the
+    // button keeps the hash instead of jumping to a bare #/fight.
+    if (!(next === 'debug' && !named)) cmdPageHash(null, next, null, true);
+    renderCommanders();
+  }
+
+  function cmdPaintPageMode(mode) {
+    const el = document.getElementById('cmd-page-mode');
+    if (!el) return;
+    const m = mode || cmdPageMode();
+    el.querySelectorAll('[data-page-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pageMode === m ? 'true' : 'false'));
+  }
+
+  // The hash decides the open tab and the Fight debugger mode: #/commanders/<name> (the old form) still opens the debugger,
+  // #/commanders/<name>/fight[/<fightId>] names the picked fight too, #/fight is All raids in the debugger.
+  function cmdRouteTab(r) {
+    const debug = r.cmdMode === 'debug' || !!r.cmd;
+    if (debug) {
+      cmdPageSetMode('debug', { quiet: true });
+      if (fdPage.open !== r.cmd) {
+        fdStopCard(fdPage.open);
+        fdPage.open = r.cmd;
+        if (r.cmd) fdSeenWhenOpen(r.cmd);
+      }
+      // A fight id needs its commander's tab; All raids has no fight to pick.
+      const fight = r.cmd ? (r.cmdFight || null) : null;
+      if (fdPage.fight !== fight) {
+        fdPage.fight = fight;
+        if (fight) fdRoutePick(r.cmd, fight);
+      }
+      return;
+    }
+    if (fdPage.open !== null) { fdStopCard(fdPage.open); fdPage.open = null; }
+    fdPage.fight = null;
+  }
+
+  // The fight the hash names: the tab picks it as if the user had clicked it, so the detail is fetched by its key even when
+  // it is older than the fetched list. A selection made by a click already stands.
+  function fdRoutePick(name, key) {
+    const fd = fdState(name);
+    if (fd.sel === key && fd.userSel) return;
+    fd.sel = key;
+    fd.userSel = true;
+    fd.death = null;
+    fdRunStopAll(fd);
+  }
+
+  // The Commanders route's hash, with the debugger's fight segment when it is on: a reload, Back and Forward land on the same
+  // tab, view and fight. The query (a profile's ?bot=, the demo flag) is kept.
+  function cmdPageHash(name, mode, fightKey, replace) {
+    const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+    const qs = q.toString();
+    const hash = routeHash({ tab: 'commanders', cmd: name || null, cmdMode: mode === 'debug' ? 'debug' : null, cmdFight: mode === 'debug' ? (fightKey || null) : null })
+      + (qs ? '?' + qs : '');
+    if (window.location.hash === hash) return;
+    try { (replace ? history.replaceState : history.pushState).call(history, null, '', hash); } catch (e) { window.location.hash = hash; }
+  }
+
+  function fdTabHash(name, replace, fightKey) {
+    cmdPageHash(name, 'debug', fightKey, replace);
+  }
+
+  // The picked fight goes into the hash of the open tab; a pick the page made itself replaces the entry instead of adding one.
+  function fdFightHash(fd, replace) {
+    if (cmdPageMode() !== 'debug' || !fdPage.open) return;
+    const key = fd.sel && fd.sel !== 'live' ? fd.sel : null;
+    fdPage.fight = key;
+    cmdPageHash(fdPage.open, 'debug', key, replace);
+  }
+
+  function fdSeenWhenOpen(name) {
+    const nowSec = Date.now() / 1000;
+    fdPage.openedAt[name] = nowSec;
+    const rows = (cmdFightsCache[name] && cmdFightsCache[name].list) || (cmdFd[name] && cmdFd[name].list) || [];
+    const seen = rows.filter(r => FdTabs.rowEnd(r) <= nowSec);
+    if (seen.length) { FdTabs.markSeen(fdPageSeen, seen); FdTabs.saveSeen(fdPageStore, fdPageSeen); }
+  }
+
+  // A fight that ended before the tab was opened is seen; one that ends while the card is open is not (the rule is "opened
+  // after that fight ended"). The list can arrive after the open, hence the clock the open recorded.
+  function fdTabListSeen(name, list) {
+    if (fdPage.open !== name || !fdPage.openedAt[name]) return;
+    const seen = (list || []).filter(r => FdTabs.rowEnd(r) <= fdPage.openedAt[name]);
+    if (seen.length) { FdTabs.markSeen(fdPageSeen, seen); FdTabs.saveSeen(fdPageStore, fdPageSeen); }
+  }
+
+  function fdTabOpen(name) {
+    name = name || null;
+    if (cmdPageMode() !== 'debug') cmdPageSetMode('debug', { quiet: true });
+    if (name === fdPage.open) { fdTabHash(name, true, fdPage.fight); return; }
+    fdStopCard(fdPage.open);
+    fdPage.open = name;
+    // A tab already picked a fight earlier in this visit keeps it; the hash is written before the card renders, so the pick
+    // the render makes itself (the worst fight) replaces this entry instead of fighting with it.
+    const fd = name != null ? cmdFd[name] : null;
+    const fight = fd && fd.sel && fd.sel !== 'live' ? fd.sel : null;
+    fdPage.fight = fight;
+    if (name) fdSeenWhenOpen(name);
+    fdTabHash(name, false, fight);
+    renderCommanders();
+  }
+
+  function fdStopCard(key) {
+    const fd = key != null ? cmdFd[key] : null;
+    const card = key != null ? cmdCards.get(key) : null;
+    if (card) card.classList.remove('fd-on');
+    if (!fd) return;
+    if (fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
+    if (fd.run) { clearTimeout(fd.run.timer); fd.run.playing = false; fd.run.on = false; }
+    fd.loading = false;
+  }
+
+  // A commander that was on the page and is not in the report any more keeps its last plan and place for the gone tab.
+  function fdTabsSync(all) {
+    const real = (all || []).filter(b => !b.demo);
+    const keys = {};
+    real.forEach(b => {
+      keys[b.commander] = true;
+      delete fdPage.gone[b.commander];
+      fdPage.known[b.commander] = true;
+      fdPage.last[b.commander] = {
+        plan: (b.run && b.run.plan) || '',
+        place: cmdPlace(b),
+        state: FdTabs.stateOf(b, CmdView.stateWord(b, CmdView.context(cmdTracker, b, cmdNowFor(b)))),
+      };
+    });
+    // A hash naming a commander the first report does not carry is a gone tab too; a later report revives it.
+    if (state.commanders.fresh && fdPage.open && !keys[fdPage.open] && !fdPage.gone[fdPage.open]) {
+      fdPage.gone[fdPage.open] = { since: Date.now() };
+    }
+    Object.keys(fdPage.known).forEach(k => {
+      if (keys[k]) return;
+      if (!fdPage.gone[k]) fdPage.gone[k] = { since: Date.now() };
+    });
+    Object.keys(fdPage.gone).forEach(k => {
+      if (keys[k]) { delete fdPage.gone[k]; return; }
+      if (Date.now() - fdPage.gone[k].since <= FdTabs.GONE_MS) return;
+      delete fdPage.gone[k];
+      delete fdPage.known[k];
+      delete fdPage.last[k];
+      delete fdPage.openedAt[k];
+      if (fdPage.open === k && !fdHistNamed(k)) { fdStopCard(k); fdPage.open = null; fdTabHash(null, true); }
+    });
+  }
+
+  const fdTabGone = key => key != null && !!fdPage.gone[key];
+
+  function fdTabsModel(all) {
+    const rows = FdTabs.sortBinds(all || []).map(b => {
+      const nowSec = cmdNowFor(b);
+      return {
+        key: b.commander, name: b.commander, place: cmdPlace(b), plan: (b.run && b.run.plan) || '',
+        state: FdTabs.stateOf(b, CmdView.stateWord(b, CmdView.context(cmdTracker, b, nowSec))),
+        dead: FdTabs.deadCount(b), gone: false, demo: !!b.demo,
+      };
+    });
+    const gone = Object.keys(fdPage.gone).filter(k => !rows.some(r => r.key === k)).sort().map(k => {
+      const m = fdPage.last[k] || {};
+      return { key: k, name: k, place: m.place || '', plan: m.plan || '', state: m.state || 'idle', dead: 0, gone: true };
+    });
+    return FdTabs.model(rows.concat(gone), { fights: cmdFightsCache, seen: fdPageSeen });
+  }
+
+  // The strip: All raids (N) first, then one tab per commander. Rebuilding it keeps the keyboard on the same tab.
+  function fdTabPaint(tabs, mode) {
+    const el = document.getElementById('cmd-tabs');
+    if (!el) return;
+    const show = mode === 'debug' && (tabs || []).length > 0;
+    el.hidden = !show;
+    if (!show) { setHtml(el, ''); return; }
+    const act = document.activeElement;
+    let focusKey = null;
+    if (act && el.contains(act) && act.dataset) focusKey = act.dataset.fdtabAll != null ? 'all' : (act.dataset.fdtab || null);
+    setHtml(el, fdTabsHtml(tabs, fdPage.open));
+    if (focusKey == null) return;
+    const back = Array.from(el.querySelectorAll('[role="tab"]')).find(b => (focusKey === 'all' ? b.dataset.fdtabAll != null : b.dataset.fdtab === focusKey));
+    if (back) back.focus({ preventScroll: true }); // as in fdSet: the repaint must not scroll the page
+  }
+
+  // The All raids grid's fight summaries: one request per commander, cached 10 s by the shared feed.
+  function fdGridPaintSoon() {
+    if (fdPage.gridQueued) return;
+    fdPage.gridQueued = true;
+    Promise.resolve().then(() => { fdPage.gridQueued = false; fdGridPaint(); });
+  }
+
+  function fdGridPaint() {
+    if (cmdPageMode() !== 'debug' || fdPage.open) return;
+    const all = cmdDebugBinds();
+    const tabs = fdTabsModel(all);
+    fdTabPaint(tabs, 'debug');
+    const grid = document.getElementById('cmd-overview');
+    if (grid && !grid.hidden) setHtml(grid, fdOverviewHtml(all, tabs));
+  }
+
+  function fdGridPoll(all) {
+    (all || []).forEach(bind => {
+      if (bind.demo) return;
+      cmdRaidFights(bind, () => fdGridPaintSoon());
+    });
+  }
+
+  // ---- the commanders with saved fights (no raid bound) ------------------------------------------------------------
+  // GET /api/v1/combat/history/commanders: who has fights on disk, newest first. The Fight debugger lists them when nothing is
+  // bound (the moment a run is usually analysed), and a tab that names one of them opens its history read-only.
+  function fdHistCmdLoad(cb) {
+    const now = Date.now();
+    if (fdHistCmd.list && now - fdHistCmd.at < FD_HISTCMD_MS) { if (cb) cb(); return; }
+    if (fdHistCmd.pending) { if (cb) fdHistCmd.waiting.push(cb); return; }
+    fdHistCmd.pending = true;
+    fdHistCmd.waiting = cb ? [cb] : [];
+    const done = list => {
+      if (Array.isArray(list)) { fdHistCmd.list = list; fdHistCmd.at = Date.now(); }
+      else if (!fdHistCmd.list) fdHistCmd.list = [];
+      fdHistCmd.pending = false;
+      const wait = fdHistCmd.waiting || [];
+      fdHistCmd.waiting = [];
+      wait.forEach(f => { try { f(); } catch (e) { /* a drawing error must not strand the queue */ } });
+    };
+    fetch('/api/v1/combat/history/commanders').then(jsonOrThrow)
+      .then(v => done(v && Array.isArray(v.commanders) ? v.commanders : []))
+      .catch(() => done(null));
+  }
+
+  const fdHistRow = name => (fdHistCmd.list || []).find(r => r && r.commander === name) || null;
+
+  // A synthetic binding for a commander that has left the world: its history is read-only, with no live party, map or run.
+  function cmdHistoryBind(name) {
+    const row = fdHistRow(name) || {};
+    return {
+      commander: name, bots: [], online: false, view: false, group: '', layout: null, run: null,
+      history: true, histFights: numOr0(row.fights), histDays: numOr0(row.days),
+    };
+  }
+
+  function fdHistoryListHtml() {
+    const rows = Array.isArray(fdHistCmd.list) ? fdHistCmd.list : [];
+    if (!rows.length) return '';
+    const items = rows.map(r => {
+      const n = numOr0(r.fights);
+      const when = typeof FightHistory !== 'undefined' && r.last > 0 ? FightHistory.whenLabel(r.last) : '';
+      return `<li><button type="button" class="fd-histcmd" data-fdtab="${esc(encodeURIComponent(r.commander))}" title="Open ${esc(r.commander)}'s saved fights">`
+        + `<b>${esc(r.commander)}</b>`
+        + `<span>${n} fight${n === 1 ? '' : 's'} · ${numOr0(r.days)} night${numOr0(r.days) === 1 ? '' : 's'}${when ? ' · last ' + esc(when) : ''}</span></button></li>`;
+    }).join('');
+    return `<section class="fd-histlist" aria-label="Commanders with saved fights"><h3 class="cmd-h">Saved fights</h3>`
+      + `<p class="empty-hint">Read-only: pick a commander to open its fights of any night, whether or not it is bound now.</p>`
+      + `<ul>${items}</ul></section>`;
+  }
+
+  // The grid's content: the bound raids, or (nothing bound) the one-line note and the commanders that still have saved fights.
+  function fdOverviewHtml(all, tabs) {
+    if (all.length) return fdGridHtml(FdTabs.sortBinds(all), tabs);
+    const note = `<p class="fd-nofight">${esc(FD_EMPTY.noRaid)}</p>`;
+    if (fdHistCmd.list === null) return note + '<p class="empty-hint">Loading the saved fights…</p>';
+    const list = fdHistoryListHtml();
+    return note + (list || '<p class="empty-hint">No fight has been saved yet.</p>');
+  }
+
+  // A small, static map for an All raids card: the picture and the party's dots, no layers, trails or replay.
+  function fdMiniMapSvg(bind) {
+    const lead = CmdView.leadBot(bind) || (bind.bots || [])[0];
+    if (!lead || !Number.isFinite(lead.x) || !Number.isFinite(lead.y)) return '<span class="cmd-mini-empty">no position</span>';
+    const onMap = (bind.bots || []).filter(b => b && b.map === lead.map && Number.isFinite(b.x) && Number.isFinite(b.y));
+    const pl = bind.demo ? (state.commanders.realMaps ? CmdView.pictureSlots(CmdDemo.pictures(lead.map)) : []) : ensureCmdPics(lead.map);
+    const slots = Array.isArray(pl) ? pl : [];
+    const pick = CmdView.pictureChoice(slots, '').slot;
+    const W = 260, H = 132, pad = 26;
+    const pts = onMap.map(b => CmdView.project(b.x, b.y));
+    const v = CmdView.followView(pts, W, H, pad, 40, null);
+    const box = CmdView.viewBox(v, W, H);
+    const k = 1 / v.scale, f = n => n.toFixed(2);
+    let g = pick ? `<image class="bg" href="${esc(pick.url)}" x="${pick.x}" y="${pick.y}" width="${pick.w}" height="${pick.h}" preserveAspectRatio="none"/>` : '';
+    onMap.forEach(b => {
+      const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b);
+      const sg = typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
+      g += `<g class="bot ${role}${sg}"><circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/></g>`;
+    });
+    return `<svg class="cmd-map cmd-minimap" viewBox="${box.map(f).join(' ')}" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+  }
+
+  function renderFdPage(all, tabs, listEl) {
+    const grid = document.getElementById('cmd-overview');
+    const open = fdPage.open;
+    if (!open) {
+      fdLeaveCard();
+      if (listEl) { listEl.hidden = true; listEl.innerHTML = ''; }
+      if (grid) {
+        grid.hidden = false;
+        setHtml(grid, fdOverviewHtml(all, tabs));
+      }
+      if (!all.length) fdHistCmdLoad(() => { if (state.activeTab === 'commanders' && !fdPage.open) fdGridPaint(); });
+      fdGridPoll(all);
+      return;
+    }
+    if (grid) { grid.hidden = true; setHtml(grid, ''); }
+    if (listEl) listEl.hidden = false;
+    const liveBind = cmdFindBind(open);
+    // Nothing bound: a commander the history knows opens read-only (a run ends, then it is analysed). The history list is a
+    // request of its own, so the first visit shows the loading line until it answers.
+    if (!liveBind) {
+      if (fdHistCmd.list === null) {
+        fdLeaveCard();
+        if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)}</h2><p class="empty-hint">Loading the saved fights…</p></div>`;
+        fdHistCmdLoad(() => { if (state.activeTab === 'commanders') renderCommanders(); });
+        return;
+      }
+      if (fdHistNamed(open)) {
+        const card = fdOpenCard(open, listEl);
+        cmdRenderCard(card, cmdHistoryBind(open), true);
+        return;
+      }
+    }
+    if (fdTabGone(open)) {
+      fdLeaveCard();
+      if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)} is gone</h2><p class="empty-hint">The commander unbound or logged out. Its tab stays greyed for five minutes, then drops and this page goes back to All raids.</p></div>`;
+      return;
+    }
+    if (!liveBind) {
+      fdLeaveCard();
+      if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)}</h2><p class="empty-hint">Waiting for this commander in the next report from the game server.</p></div>`;
+      return;
+    }
+    const card = fdOpenCard(open, listEl);
+    cmdRenderCard(card, liveBind, true);
+  }
+
+  // The one card of an open tab: every other card leaves, this one is created and placed first in the list.
+  function fdOpenCard(open, listEl) {
+    cmdCards.forEach((card, key) => {
+      if (key === open) return;
+      fdStopCard(key);
+      cmdRescueLayers();
+      cmdUnwatchStage(card);
+      card.remove();
+      cmdCards.delete(key);
+    });
+    let card = cmdCards.get(open);
+    if (!card) { card = newCmdCard(open); cmdCards.set(open, card); }
+    Array.from(listEl.children).forEach(el => { if (el !== card) el.remove(); });
+    if (listEl.firstChild !== card) listEl.insertBefore(card, listEl.firstChild || null);
+    return card;
+  }
+
+  function fdLeaveCard() {
+    cmdCards.forEach((card, key) => {
+      fdStopCard(key);
+      cmdRescueLayers();
+      cmdUnwatchStage(card);
+      card.remove();
+      cmdCards.delete(key);
+    });
+  }
+
+  function renderLivePage(all, listEl) {
+    const grid = document.getElementById('cmd-overview');
+    if (grid) { grid.hidden = true; setHtml(grid, ''); }
+    if (listEl) listEl.hidden = false;
+    if (listEl) listEl.querySelectorAll(':scope > .cmd-gone').forEach(el => el.remove());
+    const keys = all.map(b => b.commander);
+    cmdCards.forEach((card, key) => {
+      if (!keys.includes(key)) { cmdForgetCard(key); return; }
+      if (card.classList.contains('fd-on')) { fdStopCard(key); cmdRescueLayers(); cmdUnwatchStage(card); card.remove(); cmdCards.delete(key); }
+    });
+    all.forEach((bind, i) => {
+      let card = cmdCards.get(bind.commander);
+      if (!card) { card = newCmdCard(bind.commander); cmdCards.set(bind.commander, card); }
+      if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
+      cmdRenderCard(card, bind, false);
+    });
+  }
+
+
+  // A departed commander's card and everything keyed by it: the maps, the layers, the debugger's picks and detail cache and the
+  // fights list (a list fetch still in flight drops its callbacks).
+  function cmdForgetCard(key) {
+    const card = cmdCards.get(key);
+    if (card) {
+      cmdRescueLayers();
+      cmdUnwatchStage(card);
+      card.remove();
+    }
+    cmdCards.delete(key);
+    delete cmdMaps[key];
+    delete cmdAvail[key];
+    const fd = cmdFd[key];
+    if (fd && fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
+    if (fd && fd.run) { clearTimeout(fd.run.timer); fd.run.playing = false; fd.run.on = false; }
+    delete cmdFd[key];
+    delete cmdFightsCache[key];
+    delete cmdFightsPending[key];
+  }
 
   // Seconds since the game server last reported, by this browser's clock (-1: never).
   function cmdAgeSec() {
@@ -5025,27 +5967,40 @@
 
   // The Demo map: a simulated group (demo.js) on its own card, off by default. It goes through the same note / draw functions as a real
   // report; it is never put in state.commanders.list, so the counts, the badge and the real cards never see it.
-  const cmdDemo = { on: false, timer: null, start: 0, bind: null };
+  const cmdDemo = { on: false, timer: null, start: 0, bind: null, raidBind: null };
   const CMD_DEMO_MS = 2000; // the demo is stepped at the refresh rate when that is slower (see cmdDemoMs)
   const cmdDemoMs = () => Math.max(CMD_DEMO_MS, refreshGate.interval() * 1000);
   // A binding the page remembers: commanders (and the demo) plus, for the Dungeons tab (issue #895), one pseudo-binding per live
   // dungeon run — the same card DOM and the same map renderer draw it (drawCmdMap reads cmdFindBind), only the header and the party
-  // rows are the Dungeons tab's own.
+  // rows are the Dungeons tab's own. Raid groups keep bind.commander as the fight key and carry the card key in
+  // bind.cardKey ('raid:' + run key + ':' + group key), so card lookups resolve through cmdBindForCard.
   const cmdAllBinds = () => {
-    const commanders = cmdDemo.on && cmdDemo.bind ? state.commanders.list.concat([cmdDemo.bind]) : state.commanders.list;
-    return commanders.concat(state.dungeons.binds);
+    let commanders = state.commanders.list;
+    if (cmdDemo.on) {
+      if (cmdDemo.bind) commanders = commanders.concat([cmdDemo.bind]);
+      if (cmdDemo.raidBind) commanders = commanders.concat([cmdDemo.raidBind]);
+    }
+    return commanders.concat(state.dungeons.binds, state.raids.binds);
   };
   const cmdFindBind = key => cmdAllBinds().find(b => b.commander === key);
+  const cmdBindForCard = key => key && key.indexOf('raid:') === 0
+    ? cmdAllBinds().find(b => b.cardKey === key) : cmdFindBind(key);
   const cmdNowFor = bind => (bind && bind.demo ? Date.now() / 1000 : cmdServerNow());
 
   function cmdDemoTick() {
     if (!cmdDemo.on) return;
-    const now = Date.now() / 1000, bind = CmdDemo.frame(now, cmdDemo.start);
-    cmdDemo.bind = bind;
-    cmdTrails.seeded[bind.commander] = true; // the daemon has no history of it
-    CmdView.note(cmdTracker, bind, now);
-    UnitInfo.noteEvents(cmdEvents, bind, now);
-    cmdNotePaths(bind, now);
+    const now = Date.now() / 1000;
+    const bind = CmdDemo.frame(now, cmdDemo.start), raidBind = CmdDemo.raidFrame(now, cmdDemo.start);
+    cmdDemo.bind = bind; cmdDemo.raidBind = raidBind;
+    // The demo goes through the same glide as a live report, so its dots walk between the 2 s steps instead of jumping.
+    if (typeof LiveView !== 'undefined' && LiveView.noteReport) LiveView.noteReport(cmdGlide, [bind, raidBind], performance.now());
+    [bind, raidBind].forEach(b => {
+      cmdTrails.seeded[b.commander] = true; // the daemon has no history of it
+      CmdView.note(cmdTracker, b, now);
+      UnitInfo.noteEvents(cmdEvents, b, now);
+      cmdNotePaths(b, now);
+      cmdNoteMobTimes(b, performance.now());
+    });
     cmdPruneAll();
     if (state.activeTab === 'commanders') renderCommanders();
   }
@@ -5057,6 +6012,9 @@
     UnitInfo.pruneEvents(cmdEvents, keys);
     CmdPaths.pruneTrails(cmdTrails, all);
     CmdPaths.pruneStalls(cmdStalls, keys);
+    Object.keys(cmdGlide).forEach(k => { if (!keys.includes(k)) delete cmdGlide[k]; });
+    Object.keys(cmdLiveEvents).forEach(k => { if (!keys.includes(k)) delete cmdLiveEvents[k]; });
+    Object.keys(cmdMobSeenAt).forEach(k => { if (!keys.includes(k)) delete cmdMobSeenAt[k]; });
   }
 
   function setCmdDemo(on, quiet) {
@@ -5073,16 +6031,20 @@
       cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); // the simulated group freezes with the rest
       cmdDemoTick();
     } else {
-      cmdDemo.bind = null;
+      cmdDemo.bind = null; cmdDemo.raidBind = null;
       cmdPruneAll();
       delete cmdTrails.seeded[CmdDemo.COMMANDER];
+      delete cmdTrails.seeded[CmdDemo.RAID_COMMANDER];
       if (state.activeTab === 'commanders') renderCommanders();
     }
     if (!quiet) {
+      // The demo flag changes, not the view: the debugger mode stays in the hash; a demo tab that just vanished falls back
+      // to All raids.
       const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
       if (on) q.set('demo', '1'); else q.delete('demo');
       const qs = q.toString();
-      try { history.replaceState(null, '', '#/commanders' + (qs ? '?' + qs : '')); } catch (e) {}
+      const hash = routeHash({ tab: 'commanders', cmd: null, cmdMode: cmdPageMode() === 'debug' ? 'debug' : null }) + (qs ? '?' + qs : '');
+      try { history.replaceState(null, '', hash); } catch (e) { window.location.hash = hash; }
     }
   }
   function initCmdDemo() {
@@ -5096,6 +6058,42 @@
     });
   }
 
+  // The strip, the All raids grid and the Live / Fight debugger switch. A tab or a card opens that commander; the arrow keys
+  // walk the strip (the tabs keep Enter and Space, being buttons).
+  function initCmdTabs() {
+    const el = document.getElementById('cmd-tabs');
+    if (el) {
+      el.addEventListener('click', e => {
+        const t = e.target.closest && e.target.closest('[role="tab"]');
+        if (!t || !el.contains(t)) return;
+        fdTabOpen(t.dataset.fdtabAll != null ? null : fdDecodeKey(t.dataset.fdtab));
+      });
+      el.addEventListener('keydown', e => {
+        const k = e.key;
+        if (k !== 'ArrowLeft' && k !== 'ArrowRight' && k !== 'Home' && k !== 'End') return;
+        const tabs = Array.from(el.querySelectorAll('[role="tab"]'));
+        let i = tabs.indexOf(document.activeElement);
+        if (i < 0) i = tabs.findIndex(b => b.getAttribute('aria-selected') === 'true');
+        if (i < 0) return;
+        const j = k === 'Home' ? 0 : k === 'End' ? tabs.length - 1 : (i + (k === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+        if (!tabs[j]) return;
+        e.preventDefault();
+        tabs[j].focus();
+        fdTabOpen(tabs[j].dataset.fdtabAll != null ? null : fdDecodeKey(tabs[j].dataset.fdtab));
+      });
+    }
+    const overview = document.getElementById('cmd-overview');
+    if (overview) overview.addEventListener('click', e => {
+      const t = e.target.closest && e.target.closest('[data-fdtab]');
+      if (t) fdTabOpen(fdDecodeKey(t.dataset.fdtab));
+    });
+    const mode = document.getElementById('cmd-page-mode');
+    if (mode) mode.addEventListener('click', e => {
+      const b = e.target.closest && e.target.closest('[data-page-mode]');
+      if (b) cmdPageSetMode(b.dataset.pageMode);
+    });
+  }
+
   function applyCommanders(view) {
     if (!view || typeof view !== 'object') return;
     const c = state.commanders;
@@ -5105,11 +6103,16 @@
     if (view.fresh) {
       const list = Array.isArray(view.commanders) ? view.commanders : [];
       const updatedAt = view.updated_at || Math.round(Date.now() / 1000), receivedAt = Date.now();
+      // The cast clock starts when the report arrives, not when the refresh gate lets it on screen: the module read "time left"
+      // before the report was sent.
+      const nowMs = performance.now();
+      list.forEach(bind => { cmdApplyBossRanks(bind); cmdNoteMobTimes(bind, nowMs); });
       // What the page remembers (paths, hp changes, events) keeps every report, so a slow refresh rate loses no part of a path; while
       // paused it is held too, so nothing on the map moves, and it is replayed in order on resume.
       refreshGate.note(() => list.forEach(bind => { CmdView.note(cmdTracker, bind, updatedAt); UnitInfo.noteEvents(cmdEvents, bind, updatedAt); cmdNotePaths(bind, updatedAt); }));
       refreshGate.submit('commanders', () => {
         c.list = list;
+        LiveView.noteReport(cmdGlide, list, performance.now());
         c.fresh = true;
         c.updatedAt = updatedAt;
         c.freshAt = receivedAt;
@@ -5137,6 +6140,14 @@
     CmdPaths.noteStalls(cmdStalls, bind, nowSec, leadPts, lead ? { x: lead.x, y: lead.y } : null, CmdPaths.runSteps(bind.run), lead ? lead.map : null);
   }
 
+  // When a report's mob arrived, so the map can count its cast down between the 2 s reports. A report replaces the mobs it
+  // knows; a mob it no longer carries loses its stamp.
+  function cmdNoteMobTimes(bind, atMs) {
+    if (!bind || typeof bind.commander !== 'string') return;
+    const seen = cmdMobSeenAt[bind.commander] = {};
+    (Array.isArray(bind.mobs) ? bind.mobs : []).forEach(m => { if (m && m.id != null) seen[m.id] = atMs; });
+  }
+
   // A binding the page has not asked the daemon about yet gets its short stored history once: the paths then start with what happened
   // before this page was opened. One request at a time; a failure only means the paths start now.
   function seedCmdTrails(list) {
@@ -5156,6 +6167,195 @@
 
   function fetchCommanders() {
     fetch('/api/v1/commanders').then(jsonOrThrow).then(applyCommanders).catch(() => {});
+  }
+
+  // ---- The live stream (GET /api/v1/live): the commanders of the open tab's cards and what each frame changes ----
+
+  // The commanders the visible cards draw: the Commanders tab's cards (all of them on the Live page, the one open tab in the
+  // debugger). No demo or dungeon bindings: the daemon knows nothing of them.
+  function cmdLiveNames() {
+    if (state.activeTab !== 'commanders') return [];
+    let list = state.commanders.list || [];
+    if (cmdPageMode() === 'debug' && fdPage.open) list = list.filter(b => b.commander === fdPage.open);
+    return list.map(b => b.commander);
+  }
+
+  function cmdLiveSync() {
+    cmdSched.focus(cmdGlideFocus());
+    if (cmdLiveOff) return;
+    const names = cmdLiveNames();
+    LiveView.connect(names, cmdLiveHandlers());
+    if (names.length && cmdLivePoll) { clearInterval(cmdLivePoll); cmdLivePoll = null; }
+  }
+
+  function cmdLiveHandlers() {
+    return {
+      // The stream's own snapshot: the same merge as a commander frame while the WebSocket is down.
+      snapshot: d => {
+        if (!d) return;
+        (d.commanders || []).forEach(b => { if (!state.wsConnected) cmdLiveMergeBinding(b); });
+      },
+      // Only while the WebSocket is down: otherwise the 2 s report is the one path into the list (no double render).
+      commander: d => { if (!state.wsConnected && d) cmdLiveMergeBinding(d); },
+      pos: d => {
+        if (!d || !LiveView.posAllowed(refreshGate.interval())) return;
+        const list = LiveView.applyPos(state.commanders.list, d);
+        if (list === state.commanders.list) return;
+        state.commanders.list = list;
+        const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
+        const now = performance.now(), map = cmdFindBind(d.commander), ts = d.ts_ms;
+        Glide.sampled(st, now, ts, d.session, true); // the gap the dots are drawn behind is the pos frame gap, not the 2 s report gap
+        // A position frame's sample is marked as one: for 3 s the 2 s report no longer moves these units (Glide.note).
+        (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now, ts, undefined, true); });
+        (d.mobs || []).forEach(m => {
+          if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now, ts, typeof m.o === 'number' ? m.o : undefined, true);
+        });
+        cmdSched.mark(d.commander, true);
+      },
+      events: d => {
+        if (!d || !d.commander) return;
+        const start = d.fight && typeof d.fight.start === 'number' ? d.fight.start : 0;
+        const ring = cmdLiveEvents[d.commander] || (cmdLiveEvents[d.commander] = []);
+        (Array.isArray(d.events) ? d.events : []).forEach(ev => {
+          if (!ev || typeof ev !== 'object') return;
+          ring.push({ ev: ev, at: start && typeof ev.t === 'number' ? start + Math.floor(ev.t / 1000) : 0 });
+        });
+        if (ring.length > CMD_LIVE_EVENT_MAX) ring.splice(0, ring.length - CMD_LIVE_EVENT_MAX);
+        cmdLivePaintEvents(d.commander);
+        cmdSched.mark(d.commander);
+      },
+      fight_live: d => { if (d) cmdLiveFightChanged(d.commander, d); },
+      fight: s => { if (s) cmdLiveFightChanged(cmdLiveKeyCommander(s.key), s); },
+      // Frames were lost: re-read the report and forget the fight lists that may have changed meanwhile.
+      resync: () => {
+        fetchCommanders();
+        Object.keys(cmdFightsCache).forEach(k => { delete cmdFightsCache[k]; });
+      },
+      error: () => cmdLiveError(),
+    };
+  }
+
+  // The FightSummary's key is "commander\x00session\x00id" (internal/combat.Key).
+  function cmdLiveKeyCommander(key) {
+    const s = String(key || ''), i = s.indexOf('\u0000');
+    return i > 0 ? s.slice(0, i) : '';
+  }
+
+  // A binding of the stream merged by name, through the same gate path as a report (the WebSocket is down, so this is new).
+  // Its ts_ms stays: LiveView.noteReport hands it to Glide as the server time of these positions.
+  function cmdLiveMergeBinding(d) {
+    if (!d || typeof d.commander !== 'string') return;
+    const bind = Object.assign({}, d);
+    const list = (state.commanders.list || []).filter(b => b.commander !== d.commander);
+    list.push(bind);
+    applyCommanders({ commanders: list, fresh: true, updated_at: Math.round(Date.now() / 1000) });
+  }
+
+  // A live fight opened, ended or finished: the fights list changed. Its own gate key, so it never replaces a pending report.
+  // A fight key also resets the raid card showing that fight (its card key rides bind.cardKey).
+  function cmdLiveFightChanged(commander, summary) {
+    if (!commander) return;
+    delete cmdFightsCache[commander];
+    const card = cmdCards.get(commander);
+    if (card) card.dataset.fightState = '';
+    cmdAllBinds().forEach(b => {
+      if (b && b.commander === commander && b.cardKey) {
+        const raidCard = cmdCards.get(b.cardKey);
+        if (raidCard) raidCard.dataset.fightState = '';
+      }
+    });
+    refreshGate.submit('cmd-fights', renderCommanders);
+  }
+
+  // The words of one live event, without its time.
+  function cmdLiveEventText(e) {
+    const ev = (e && e.ev) || {};
+    switch (ev.k) {
+      case 'start': return 'fight start';
+      case 'engage': return 'pull ' + (ev.n || 'unit') + (ev.c ? ' ×' + ev.c : '');
+      case 'death': return 'death ' + (ev.n || 'bot') + (ev.by ? ' by ' + ev.by : '');
+      case 'taunt': return 'taunt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'interrupt': return 'interrupt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'cast': return 'cast ' + (ev.n || 'unit') + (ev.s ? ': ' + ev.s : '');
+      case 'end': return 'fight ' + (ev.o || 'end') + (ev.dur ? ' after ' + Math.round(ev.dur / 1000) + ' s' : '');
+      default: return ev.k || 'event';
+    }
+  }
+
+  // The colour class of one live event, from the event's own fields: k (the kind), o (an end's outcome: wipe) and r (a cast's
+  // rank: 'b' = a boss's cast). Death and a wipe are red, a boss cast yellow, a pull and a taunt the page colour, the rest muted.
+  function cmdLiveEventClass(e) {
+    const ev = (e && e.ev) || {};
+    if (ev.k === 'death') return 'lv-death';
+    if (ev.k === 'end' && ev.o === 'wipe') return 'lv-wipe';
+    if (ev.k === 'cast' && ev.r === 'b') return 'lv-boss';
+    if (ev.k === 'engage') return 'lv-pull';
+    if (ev.k === 'taunt') return 'lv-taunt';
+    if (ev.k === 'start') return 'lv-start';
+    return 'lv-other';
+  }
+
+  function cmdLiveRowHtml(e) {
+    return `<div class="cmd-live-row ${cmdLiveEventClass(e)}"><b>${e && e.at ? esc(cmdClock(e.at)) : ''}</b><span>${esc(cmdLiveEventText(e))}</span></div>`;
+  }
+
+  // The card's "Live events" strip: the newest 12 events, newest first.
+  function cmdLivePaintEvents(commander) {
+    const card = cmdCards.get(commander);
+    if (!card) return;
+    const ring = cmdLiveEvents[commander] || [];
+    const box = card.querySelector('.cmd-live-events');
+    if (box) {
+      // Newest first: a new row pushes the older ones down (and the 12-event cap drops the oldest, so the box's total height can
+      // stay the same while every row moves). A reader who scrolled down keeps the row they were on: remember the topmost visible
+      // row and its offset, repaint, and scroll by however far that same event moved. At the top the box keeps showing the newest.
+      const list = ring.slice().reverse();
+      let anchor = null;
+      if (box.scrollTop > 0 && box._rows && box.children) {
+        const br = box.getBoundingClientRect();
+        for (let i = 0; i < box.children.length && !anchor; i++) {
+          const r = box.children[i].getBoundingClientRect();
+          if (r.bottom > br.top + 1) anchor = { ev: box._rows[i], off: r.top - br.top };
+        }
+      }
+      setHtml(box, list.map(cmdLiveRowHtml).join(''));
+      box._rows = list;
+      const j = anchor ? list.indexOf(anchor.ev) : -1;
+      if (j >= 0) {
+        const delta = (box.children[j].getBoundingClientRect().top - box.getBoundingClientRect().top) - anchor.off;
+        if (delta) box.scrollTop += delta;
+      }
+    }
+    const wrap = card.querySelector('.cmd-live');
+    if (wrap) wrap.hidden = !ring.length;
+  }
+
+  // The stream failed. Three errors in a minute, or an old daemon (404) or a lost session (401), send the page back to polling
+  // for a minute; the WebSocket is still the primary feed while it is up.
+  function cmdLiveError() {
+    const now = Date.now();
+    cmdLiveErrors.push(now);
+    if (cmdLiveErrors.length > 20) cmdLiveErrors.splice(0, cmdLiveErrors.length - 20);
+    if (LiveView.fallback(cmdLiveErrors, now)) { cmdLiveFallback(); return; }
+    fetch('/api/v1/live', { method: 'HEAD', credentials: 'same-origin' }).then(r => {
+      if (r.status === 401 || r.status === 404) cmdLiveFallback();
+    }).catch(() => {});
+  }
+
+  function cmdLiveFallback() {
+    if (cmdLiveOff) return;
+    cmdLiveOff = true;
+    LiveView.close();
+    if (!cmdLivePoll) cmdLivePoll = setInterval(refreshGate.guard(() => { if (!state.wsConnected) fetchCommanders(); }), 2000);
+    setTimeout(() => { cmdLiveOff = false; if (state.activeTab === 'commanders') cmdLiveSync(); }, 60000);
+  }
+
+  // Once per animation frame: ask the scheduler for the maps whose dots still glide (a hidden tab's rAF pauses by itself).
+  // The scheduler draws them in its own frame, at each map's rate and within the per-frame budget.
+  function cmdLiveFrame() {
+    const now = performance.now();
+    Object.keys(cmdGlide).forEach(key => { if (cmdCards.has(key) && Glide.active(cmdGlide[key], now)) cmdSched.mark(key, true); });
+    requestAnimationFrame(cmdLiveFrame);
   }
 
   // Runs every few seconds: ages the warnings and drops a list nobody has reported for a long time.
@@ -5195,6 +6395,49 @@
   };
   function cmdIcon(role, title) {
     return `<span class="cmd-role ${role}" title="${esc(title)}"><svg viewBox="0 0 16 16" aria-hidden="true">${CMD_ICONS[role] || CMD_ICONS.other}</svg></span>`;
+  }
+
+  // ---- Fight debugger mode: the tab strip and the All raids grid --------------------------
+  // The strip is a tablist: All raids first, then one tab per commander (in combat first, then by name). Every name, plan,
+  // place and state is escaped; the state class is a fixed word, never a name. aria-selected and tabindex follow the open tab.
+  function fdTabsHtml(tabs, open) {
+    const rows = Array.isArray(tabs) ? tabs : [];
+    const n = rows.filter(t => !t.gone && !t.demo).length;
+    const tab = (sel, attrs, body, gone) =>
+      `<button type="button" role="tab" class="cmd-tab${sel ? ' on' : ''}${gone ? ' gone' : ''}" ${attrs} aria-selected="${sel ? 'true' : 'false'}" tabindex="${sel ? '0' : '-1'}">${body}</button>`;
+    let html = tab(open == null, 'data-fdtab-all="1"', `<span class="cmd-tab-label">All raids (${n})</span>`, false);
+    rows.forEach(t => {
+      const sel = open != null && t.key === open;
+      const state = t.state || 'idle';
+      html += tab(sel, `data-fdtab="${esc(encodeURIComponent(t.key))}"`,
+        `<span class="cmd-tab-name">${esc(t.name || t.key)}</span>`
+        + (t.plan || t.place ? `<span class="cmd-tab-sep" aria-hidden="true">&middot;</span><span class="cmd-tab-place">${esc(t.plan || t.place)}</span>` : '')
+        + `<span class="cmd-chip s-${esc(state)}">${esc(state)}</span>`
+        + (numOr0(t.dead) > 0 ? `<span class="cmd-tab-dead">${numOr0(t.dead)} dead</span>` : '')
+        + (t.dot ? '<span class="cmd-tab-dot" title="A new fight needs a look" aria-label="A new fight needs a look"></span>' : '')
+        + (t.gone ? '<span class="cmd-tab-gone">gone</span>' : ''), !!t.gone);
+    });
+    return html;
+  }
+
+  // One small card per commander on the All raids tab: name, plan and step, state, dead count, the newest fight's verdict and
+  // a static mini map. The whole card opens the commander's tab.
+  function fdGridHtml(binds, tabs) {
+    const rows = Array.isArray(tabs) ? tabs : [];
+    return (Array.isArray(binds) ? binds : []).map(bind => {
+      const t = rows.find(r => r.key === bind.commander) || {};
+      const run = bind.run || {};
+      const step = numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
+      const verdict = t.last ? t.verdict : '';
+      return `<button type="button" class="cmd-mini${t.gone ? ' gone' : ''}" data-fdtab="${esc(encodeURIComponent(bind.commander))}" title="Open ${esc(bind.commander)}">`
+        + `<span class="cmd-mini-head"><b class="cmd-mini-name">${esc(bind.commander)}</b><span class="cmd-chip s-${esc(t.state || 'idle')}">${esc(t.state || 'idle')}</span>${bind.observed ? ' <span class="cmd-chip">raid &middot; observed</span>' : ''}</span>`
+        + `<span class="cmd-mini-sub">${esc(t.plan || t.place || 'no plan')}${step ? ' &middot; ' + esc(step) : ''}</span>`
+        + `<span class="cmd-mini-map">${fdMiniMapSvg(bind)}</span>`
+        + `<span class="cmd-mini-foot">`
+        + (numOr0(t.dead) > 0 ? `<span class="cmd-mini-dead">${numOr0(t.dead)} dead</span>` : '')
+        + (verdict ? `<span class="cmd-mini-verdict v-${esc(verdict)}">last fight: ${esc(verdict)}</span>` : '<span class="cmd-mini-verdict v-none">no fight yet</span>')
+        + '</span></button>';
+    }).join('');
   }
 
   function cmdPlace(bind) {
@@ -5246,6 +6489,191 @@
         ${bars}<span class="cmd-dist">${dist}</span></div>`;
     }).join('');
   }
+  // A raid binding as subgroup blocks (8 x 5 at most). One row reads like a party row (role icon, hp and mana bars,
+  // alive/dead, act+res, cast, target name, distance to the lead, away badge); the header also counts roles.
+  // cmdPartyHtml stays untouched (its helpers are pinned by partyrows_check.js), so the row is built here.
+  function cmdRaidHtml(bind) {
+    const layout = CmdView.layoutText(bind);
+    const layoutRow = layout
+      ? `<div class="cmd-layout" title="The raid layout the module applied: main tank, off-tanks, tank healers (healer -> tank) and raid healers">Layout: ${esc(layout)}</div>`
+      : '';
+    return layoutRow + CmdView.raidBlocks(bind).map(b => {
+      const head = b.label === 'Party' ? '' : `<h4 class="cmd-subgroup">${esc(b.label)} &middot; ${b.rows.filter(r => r.alive).length}/${b.rows.length} up</h4>`;
+      return head + b.rows.map(r => cmdRaidRowHtml(bind, r)).join('');
+    }).join('');
+  }
+
+  function cmdRaidRowHtml(bind, r) {
+    const b = (bind.bots || []).find(x => x.guid === r.guid) || {};
+    const dist = r.lead ? '<span class="muted">lead</span>'
+      : r.otherMap ? '<span class="cmd-flag">other map</span>'
+      : r.dist == null ? '' : `<span class="${r.far ? 'cmd-flag' : ''}">${r.dist} yd</span>`;
+    const bars = r.alive
+      ? `<span class="cmd-meter">${cmdBarHtml(r.hp, r.hp < CmdView.LOW_HP_PCT ? 'low' : 'hp', 'Health ' + r.hpText)}</span>
+         <span class="cmd-meter">${r.hasPower ? cmdBarHtml(r.power, r.powerKind, r.powerKind + ' ' + r.powerText) : '<span class="muted">–</span>'}</span>`
+      : '<span class="cmd-meter cmd-deadtxt">Dead</span><span class="cmd-meter"></span>';
+    const away = b.away ? ' <span class="cmd-flag" title="Off the run\u2019s gather rule or the plan\u2019s map">away</span>' : '';
+    const cast = b.cast ? `<span class="muted"> · ${esc(b.cast)}</span>` : '';
+    return `<div class="cmd-row ${r.alive ? '' : 'dead'}">
+      ${cmdIcon(r.role, r.alive ? r.roleLabel : r.roleLabel + ' (dead)')}
+      <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}${b.act ? ' · ' + esc(b.act) + (b.res ? b.res : '') : ''}</span>${cast}${cmdDoingHtml(bind, r.guid)}</span>
+      ${bars}<span class="cmd-dist">${dist}${away}</span></div>`;
+  }
+
+  // The run's status lines newest first, scrollable to 30 lines.
+  function cmdNotesHtml(bind) {
+    const notes = CmdView.notesLog(bind);
+    if (!notes.length) return '<div class="empty-hint">No run notes reported.</div>';
+    return notes.slice(0, 30).map(n =>
+      `<div class="cmd-note" title="${esc(CmdView.ageText(Date.now() / 1000 - n.at) + ' ago · ' + n.state)}">${esc(n.text)}</div>`).join('');
+  }
+
+  // Mobs on a bound bot that is not a tank (red past 5 s). Each row names the mob, its victim and how long it has held.
+  function cmdThreatHtml(bind) {
+    const off = CmdView.threatOffTanks(bind, cmdTracker, cmdServerNow());
+    if (!off.length) return '<div class="empty-hint">Nothing held off the tanks.</div>';
+    return off.map(o =>
+      `<div class="cmd-threat-row${o.seconds >= 5 ? ' hot' : ''}"><b>${esc(o.mob.name || 'unit')}</b> on <b>${esc(o.victim)}</b> (${esc(o.role)}) · ${o.seconds} s</div>`).join('');
+  }
+
+  // Deaths of the last fights plus the bots now dead; a click centres the map on x/y.
+  function cmdDeathsHtml(bind) {
+    const fights = cmdFightsCache[bind.commander] && cmdFightsCache[bind.commander].list;
+    // The daemon's list rows carry a death count, not the deaths: walking one of them as a fight throws before every later card update.
+    const deaths = CmdView.deathsTimeline((fights || []).filter(f => f && Array.isArray(f.deaths)), bind);
+    if (!deaths.length) return '<div class="empty-hint">No deaths reported.</div>';
+    return deaths.map(d =>
+      `<div class="cmd-death" data-x="${d.x}" data-y="${d.y}" title="${d.fight ? 'Fight ' + esc(d.fight) + ' · ' : ''}click to centre the map">${esc(d.name)}${d.killer ? ' · killed by ' + esc(d.killer) : ''}${d.fight ? ' · ' + esc(d.fight) : ''}</div>`).join('');
+  }
+
+  // The run controls: Pause, Resume, Skip, Stop (confirm), Status, Start from leg, Revive dead (sequential), Reload
+  // plans (confirm), Gear preset. Shown only while GET /api/v1/control says enabled. Each button POSTs with
+  // X-TBM-Control: 1 and same-origin credentials; the answer shows under the row for 20 s; the row locks while one runs.
+  const CMD_GEAR_PRESETS = ['lkh', 'zg', 'aq20', 'timbermaw', 'onyxia', 'mc', 'bwl', 'es', 'aq40', 'naxx', 'kara40', 'prebis', 't1', 't2'];
+  const cmdFightsCache = {}; // commander -> {list, at}: the fights behind the Deaths panel (and the Fights panel below)
+  const cmdFightsPending = {}; // commander -> callbacks of the one list fetch in flight
+  // One fights-summary feed for the whole page: the open tab, the Deaths panel and the All raids grid share the answer held
+  // for 10 s, so a busy page never sends one request per card per refresh.
+  let fdFights = null, fdFightsCache = null, fdFightsPending = null;
+  function fdFightsFeed() {
+    if (!fdFights || fdFightsCache !== cmdFightsCache || fdFightsPending !== cmdFightsPending) {
+      fdFightsCache = cmdFightsCache;
+      fdFightsPending = cmdFightsPending;
+      fdFights = FdTabs.newFights({
+        cache: fdFightsCache, pending: fdFightsPending,
+        fetchRows: key => fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(key)).then(jsonOrThrow),
+      });
+    }
+    return fdFights;
+  }
+  let cmdControlOn = null;   // null: not asked yet (or the last ask failed); a confirmed false stays cached
+  let cmdControlAsking = null; // the one control fetch in flight; later paints chain on it
+  let cmdControlRetryAt = 0; // a failed ask waits this long before fetching again
+
+  function cmdControlAsk(cb) {
+    if (cmdControlOn !== null) { cb(cmdControlOn); return; }
+    if (Date.now() < cmdControlRetryAt) { cb(false); return; }
+    if (!cmdControlAsking) {
+      // A failed fetch and a malformed answer both leave the answer unknown and retry after 30 s.
+      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(v => {
+        if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
+        cmdControlOn = !!v.enabled;
+      }).catch(() => { cmdControlRetryAt = Date.now() + 30000; })
+        .then(() => { cmdControlAsking = null; });
+    }
+    cmdControlAsking.then(() => cb(cmdControlOn === true));
+  }
+  function cmdRaidFights(bind, cb) {
+    fdFightsFeed().list(bind.commander, list => {
+      fdTabListSeen(bind.commander, list);
+      if (cb) cb(list);
+    });
+  }
+
+
+  function cmdControlsHtml(bind) {
+    const dead = (bind.bots || []).filter(b => b.alive === false);
+    const leg = bind.run && bind.run.leg;
+    const legField = leg
+      ? `<select data-cl="leg" title="Plan leg to start from">${`<option value="${esc(leg)}">${esc(leg)}</option>`}</select>`
+      : `<input data-cl="leg" type="number" min="1" max="9999" placeholder="leg" title="Step number to start from">`;
+    return `<div class="cmd-controls-row">
+      <button type="button" class="btn" data-cl="pause">Pause</button>
+      <button type="button" class="btn" data-cl="resume">Resume</button>
+      <button type="button" class="btn" data-cl="skip">Skip</button>
+      <button type="button" class="btn" data-cl="stop">Stop</button>
+      <button type="button" class="btn" data-cl="status">Status</button>
+      ${legField}<button type="button" class="btn" data-cl="start">Start from leg</button>
+      <label class="cmd-until" title="End the run before the plan's next boss step: the party stays on its stand"><input type="checkbox" data-cl="until">stop before the boss</label>
+      <button type="button" class="btn" data-cl="revive"${dead.length ? '' : ' disabled'}>Revive dead (${dead.length})</button>
+      <button type="button" class="btn" data-cl="reload">Reload plans</button>
+      <select data-cl="preset" title="Gear preset">${CMD_GEAR_PRESETS.map(p => `<option value="${p}">${esc(p)}</option>`).join('')}</select><button type="button" class="btn" data-cl="gear">Gear preset</button>
+      </div><div class="cmd-controls-note" aria-live="polite"></div>`;
+  }
+
+  function cmdControlSay(card, text) {
+    const note = card.querySelector('.cmd-controls-note');
+    if (!note) return;
+    note.textContent = text;
+    clearTimeout(note._t);
+    note._t = setTimeout(() => { note.textContent = ''; }, 20000);
+  }
+
+  function cmdControlPost(card, lines) {
+    const row = card.querySelector('.cmd-controls');
+    if (!row || row.dataset.busy) return;
+    row.dataset.busy = '1';
+    row.querySelectorAll('button, select, input').forEach(el => { el.disabled = true; });
+    const seq = Array.isArray(lines) ? lines : [lines];
+    let chain = Promise.resolve(), last = '';
+    seq.forEach(line => {
+      chain = chain.then(() => fetch('/api/v1/control', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-TBM-Control': '1' },
+        body: JSON.stringify({ cmd: line }),
+      }).then(jsonOrThrow).then(v => { last = (v && v.answer) || 'ok'; }).catch(e => { last = String((e && e.message) || e); throw e; }));
+    });
+    chain.then(() => cmdControlSay(card, last)).catch(() => cmdControlSay(card, last)).then(() => {
+      delete row.dataset.busy;
+      row.querySelectorAll('button, select, input').forEach(el => { el.disabled = false; });
+      const dead = (cmdFindBind(card.dataset.commander) || { bots: [] }).bots.filter(b => b.alive === false);
+      const revive = row.querySelector('[data-cl="revive"]');
+      if (revive) { revive.disabled = !dead.length; revive.textContent = `Revive dead (${dead.length})`; }
+    });
+  }
+
+  function cmdControlsBind(card, bind) {
+    const row = card.querySelector('.cmd-controls-row');
+    if (!row) return;
+    row._bind = bind;
+    if (row._bound) return;
+    row._bound = true;
+    row.addEventListener('click', e => {
+      const btn = e.target.closest && e.target.closest('[data-cl]');
+      if (!btn || btn.disabled || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
+      const bind = row._bind;
+      const lines = CmdView.controlLines(bind);
+      const act = btn.dataset.cl;
+      if (act === 'pause') cmdControlPost(card, lines.pause);
+      else if (act === 'resume') cmdControlPost(card, lines.resume);
+      else if (act === 'skip') cmdControlPost(card, lines.skip);
+      else if (act === 'stop' && confirm('Stop the run for ' + bind.commander + '?\n' + lines.stop)) cmdControlPost(card, lines.stop);
+      else if (act === 'status') cmdControlPost(card, lines.status);
+      else if (act === 'start') {
+        const leg = row.querySelector('[data-cl="leg"]');
+        const v = leg ? String(leg.value || '').trim() : '';
+        const until = row.querySelector('[data-cl="until"]');
+        const untilBoss = !!(until && until.checked);
+        if (v) cmdControlPost(card, lines.startFromLeg(v, untilBoss));
+        else if (untilBoss) cmdControlPost(card, lines.startUntilBoss);
+      }
+      else if (act === 'revive' && lines.reviveDead.length) cmdControlPost(card, lines.reviveDead);
+      else if (act === 'reload' && confirm('Reload the run plans on the game server?\n' + lines.reloadPlans)) cmdControlPost(card, lines.reloadPlans);
+      else if (act === 'gear') {
+        const sel = row.querySelector('[data-cl="preset"]');
+        if (sel && sel.value) cmdControlPost(card, lines.gearPreset(sel.value));
+      }
+    });
+  }
 
   function cmdOrdersHtml(bind, serverNow) {
     const orders = (bind.orders || []).slice().reverse();
@@ -5259,7 +6687,7 @@
   }
 
   function cmdTime(sec) {
-    return sec ? new Date(sec * 1000).toLocaleTimeString() : '';
+    return sec ? cmdClock(sec) : '';
   }
 
   // ---- the map of one card ----
@@ -5281,6 +6709,7 @@
     gong: '<circle class="ring" cx="0" cy="0" r="3.7"/><circle cx="0" cy="0" r="1.5"/>',
     swirl: '<path class="ln" d="M0 0.6a1 1 0 1 1 1.3 -1.1a2.3 2.3 0 1 1 -3.5 1.7a3.7 3.7 0 1 1 5.6 -2.3"/>',
     stop: '<path d="M-3.4 -3.4h6.8v6.8h-6.8z"/><path class="ln eyeln" d="M-1 -1.8v3.6M1 -1.8v3.6"/>',
+    eye: '<path class="ln" d="M-4.4 0a4.6 3.4 0 0 0 8.8 0a4.6 3.4 0 0 0 -8.8 0z"/><circle cx="0" cy="0" r="1.5"/>',
   };
   // One icon centred at plane point (x, y); size in drawing units (px * k) on a dark disc so it reads on any picture.
   function cmdMapIcon(name, x, y, size, title) {
@@ -5290,7 +6719,7 @@
     return `<g class="ic ic-${name}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${sc.toFixed(4)})">${title ? `<title>${esc(title)}</title>` : ''}<circle class="bgd" r="6.2"/>${body}</g>`;
   }
 
-  function cmdLegendHtml(on) {
+  function cmdLegendHtml(on, planView) {
     const o = on || {};
     return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>DPS</span>'
       + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span>'
@@ -5298,6 +6727,9 @@
       + (o.membertrails ? '<span><i class="mtrail"></i>Group paths</span>' : '')
       + (o.trail || o.membertrails ? '<span class="lic">teleport / summon <svg viewBox="-6 -6 12 12" class="ic-swirl">' + CMD_MAP_ICONS.swirl + '</svg></span><span class="lic">died <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span>' : '')
       + (o.runsteps ? '<span><i class="route"></i>Run route</span><span><i class="lstep"></i>Pull / boss step</span>' : '')
+      + (o.planroute || o.planstands ? '<span><i class="plan"></i>Plan route, stands and packs</span>' : '')
+      + (o.planrings ? '<span><i class="ring wake"></i>Aggro and wake rings</span>' : '')
+      + (planView && !planView.numbering ? '<span>Plan rows differ from the plan the server loaded</span>' : '')
       + (o.stalls ? '<span class="lic">stalled / refused <svg viewBox="-6 -6 12 12" class="ic-x"><path d="M-3.4 -3.4L3.4 3.4M3.4 -3.4L-3.4 3.4"/></svg></span>' : '')
       + (o.objects ? '<span class="lic">door <svg viewBox="-6 -6 12 12" class="ic-door">' + CMD_MAP_ICONS.door + '</svg></span><span class="lic">chest <svg viewBox="-6 -6 12 12" class="ic-chest">' + CMD_MAP_ICONS.chest + '</svg></span>'
         + '<span class="lic">lever <svg viewBox="-6 -6 12 12" class="ic-lever">' + CMD_MAP_ICONS.lever + '</svg></span><span class="lic">altar / gong <svg viewBox="-6 -6 12 12" class="ic-gong">' + CMD_MAP_ICONS.gong + '</svg></span>' : '')
@@ -5309,10 +6741,15 @@
       + (o.mobneutral ? '<span><i class="mobn"></i>Neutral</span>' : '')
       + (o.mobcritter ? '<span><i class="mobc"></i>Critter</span>' : '')
       + (o.threat ? '<span><i class="lthreat"></i>Mob on</span>' : '')
+      + (o.threat ? '<span><i class="nontank"></i>Mob on a non-tank</span>' : '')
+      + (o.healtank ? '<span><i class="healtank"></i>Healer → tank (layout)</span>' : '')
+      + (o.subgroups ? '<span>Colour = subgroup</span>' : '')
       + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
       + (o.aggro ? '<span><i class="aggro"></i>Aggro range (by level)</span>' : '')
-      + (o.bossmark ? '<span><i class="lboss"></i>Boss (crown, name shown)</span>' : '')
+      + (o.bossmark ? '<span><i class="lboss"></i>Boss: purple, gold ring, crowned, health shown</span><span><i class="lelite"></i>Elite</span>' : '')
+      + (o.facing ? '<span><i class="facing"></i>Facing arrow: where a boss or elite looks</span>' : '')
+      + (o.mobcast ? '<span><i class="larea"></i>Red area: the spell being cast (cone, back cone or line)</span>' : '')
       + (o.hpbars ? '<span><i class="lhp"></i>Health bar</span>' : '')
       + (o.threatcolors ? '<span><i class="tc-tank"></i>On the tank</span><span><i class="tc-other"></i>On someone else</span><span><i class="tc-target"></i>Tank\'s target</span><span><i class="tc-pull"></i>Pull target</span>' : '')
       + (o.statusicons ? '<span class="lic">dead <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span><span class="lic">casting <svg viewBox="-6 -6 12 12" class="ic-spark">' + CMD_MAP_ICONS.spark + '</svg></span>'
@@ -5329,6 +6766,201 @@
     // loc_left/right are game y (west positive), loc_top/bottom game x (north positive)
     const a = CmdView.project(zb.loc_top, zb.loc_left), b = CmdView.project(zb.loc_bottom, zb.loc_right);
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y), name: displayZoneName(zb.name) };
+  }
+
+  // ---- raid coverage (web/static/js/coverage.js) ----
+  // The boss table plus the world DB's tactic rows, read once when the table is loaded and on the view's Reload button (never
+  // polled). rows === undefined means "not asked yet"; null means the read failed, and the view shows the unknown-statuses
+  // banner. The table is the raw document because coverage needs maps[] and codeAnswers[].
+  let covRows;
+  let covResult = null;
+  function covTable() {
+    return typeof BossPanel !== 'undefined' && BossPanel.raw ? BossPanel.raw() : null;
+  }
+  function covCompute() {
+    const table = covTable();
+    if (!table || typeof Coverage === 'undefined' || !Coverage.compute) return null;
+    covResult = Coverage.compute(table, covRows === undefined ? null : covRows);
+    return covResult;
+  }
+  function covFetch(force) {
+    if (!force && covRows !== undefined) { covCompute(); return Promise.resolve(covRows); }
+    return fetch('/api/v1/boss/tactics' + (force ? '?refresh=1' : ''), { credentials: 'same-origin' })
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(d => { covRows = d || null; covCompute(); return covRows; })
+      .catch(() => { covRows = null; covCompute(); return null; });
+  }
+  function covLoad() {
+    return covFetch(false).then(() => {
+      if (state.activeTab === 'coverage') renderCoverage();
+      else if (state.activeTab === 'commanders') renderCommanders();
+    });
+  }
+  function covForBoss(entry) {
+    if (covRows === undefined) return undefined;
+    if (!covResult) covCompute();
+    return covResult && typeof Coverage !== 'undefined' && Coverage.forBoss ? Coverage.forBoss(covResult, entry) : undefined;
+  }
+  function covBind(root, covState) {
+    const box = root.querySelector('#cov-missing');
+    if (box) box.addEventListener('change', () => { window.location.hash = Coverage.hash(Object.assign({}, covState, { missing: box.checked })); });
+    const reload = root.querySelector('#cov-reload');
+    if (reload) reload.addEventListener('click', () => { reload.disabled = true; covFetch(true).then(() => renderCoverage()); });
+  }
+  function renderCoverage() {
+    const root = document.getElementById('cov-root');
+    if (!root) return;
+    if (typeof Coverage === 'undefined' || !Coverage.renderRaid) { root.innerHTML = '<p class="cov-empty">The coverage script did not load.</p>'; return; }
+    const table = covTable();
+    if (!table) { root.innerHTML = '<p class="cov-empty">The boss table is not loaded.</p>'; return; }
+    if (!covResult) covCompute();
+    const covState = parseRoute().cov || { raid: null, missing: false, boss: null };
+    root.innerHTML = Coverage.renderRaid(covResult, covState, { esc: esc });
+    covBind(root, covState);
+    if (covState.boss) {
+      const card = root.querySelector('.cov-boss[data-entry="' + Number(covState.boss) + '"]');
+      if (card) card.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  // ---- boss abilities (web/static/js/bosspanel.js) ----
+  // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
+  // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
+  const cmdBossPhase = {};
+  // phaseKey -> {start: the live fight's start ms, times: {phase name: ms since it when first seen}}
+  const cmdBossPhaseAt = {};
+  const cmdBossSeen = {}; // commander -> entry -> {name, seenAt}: a boss the fight had and the reports now leave out
+  function cmdBossTable() {
+    return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
+  }
+  // A rank-3 add the table lists as an add (Thaurissan's Image, Gnarlmoon's owls) is drawn as an elite (BossPanel.rankFor).
+  function cmdApplyBossRanks(bind) {
+    const table = cmdBossTable();
+    if (!table || !bind || !Array.isArray(bind.mobs) || typeof BossPanel === 'undefined' || !BossPanel.rankFor) return;
+    bind.mobs.forEach(m => { if (m && m.rank === 'b') m.rank = BossPanel.rankFor(table, bind.mobs_map, m); });
+  }
+  // The table is one slow static file and the first report can land before it: rank what the page already holds, then paint, so
+  // that report is drawn with the table's ranks and not the rank the report carried.
+  function cmdBossTableLoaded() {
+    (state.commanders.list || []).forEach(bind => cmdApplyBossRanks(bind));
+    covCompute();
+    if (state.activeTab === 'commanders') renderCommanders();
+    else if (state.activeTab === 'coverage') renderCoverage();
+  }
+  function cmdBossPanels(bind, fight, mobs, events, startMs, nowMs) {
+    const panel = typeof BossPanel !== 'undefined' ? BossPanel : null, table = cmdBossTable();
+    if (!panel || !table || !bind) return [];
+    let rows = [];
+    if (fight) {
+      const seen = {};
+      if (fight.boss) seen[fight.boss] = { name: fight.boss_name || ('creature ' + fight.boss), c: 1 };
+      (fight.engaged || []).forEach(e => {
+        if (!e || !e.e) return;
+        const have = seen[e.e], c = Number(e.c) > 0 ? Number(e.c) : 1;
+        if (!have) { seen[e.e] = { name: e.n || ('creature ' + e.e), c: c }; return; }
+        if (!have.name || have.name === 'creature ' + e.e) have.name = e.n || have.name;
+        if (c > have.c) have.c = c;
+      });
+      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e].name, hp: null, au: [], uf: '', c: seen[e].c }));
+    } else {
+      if (!bind.combat || !FightDebug.liveEngaged(bind)) return [];
+      rows = (mobs || []).filter(m => m && (m.rank === 'b' || m.ghost));
+    }
+    const out = [];
+    panel.bossRows(table, rows).forEach(({ boss: b, row: m, copies }) => {
+      const live = !fight;
+      const adds = live ? (mobs || []).filter(x => x && x !== m && panel.bossFor(table, x.entry) !== b && ((x.sum && String(x.sum) === String(m.id))
+        || b.adds.some(a => a.entry === x.entry))) : [];
+      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + b.entry;
+      const kept = fight ? null : cmdBossPhaseAt[phaseKey];
+      // A kept phase-start map belongs to the fight that recorded it: a new pull starts more than 5 s from it.
+      const phaseAt = fight ? null : kept && Math.abs(kept.start - startMs) > 5000 ? {} : (kept && kept.times) || {};
+      const model = panel.model(table, Object.assign({}, m, { adds: adds, copies: copies }), events || [], startMs, nowMs,
+        { priorPhase: cmdBossPhase[phaseKey] || null, phaseAt: phaseAt });
+      if (!model) return;
+      if (model.phase) cmdBossPhase[phaseKey] = model.phase;
+      if (!fight) cmdBossPhaseAt[phaseKey] = { start: startMs, times: model.phaseAt || {} };
+      out.push(model);
+    });
+    return out.sort((a, b) => (a.boss.order - b.boss.order) || (a.boss.entry - b.boss.entry));
+  }
+  function cmdBossPanelsHtml(panels) {
+    if (typeof BossPanel === 'undefined' || !BossPanel.render) return '';
+    const table = cmdBossTable();
+    return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc, coverage: covForBoss(p.boss.entry) })).join('');
+  }
+  // The debugger shows the panels in its rail, the Live card under the map; one panel, painted where the view puts it.
+  // A card with no panel takes the fallback instead (the Live card's trash list), decided here so the one box is
+  // written once per report: two paints would empty and refill it and lose the hover.
+  function cmdPaintBosses(card, panels, fallbackHtml) {
+    if (!card) return;
+    const debug = card.classList.contains('fd-on');
+    const section = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosses');
+    const list = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosslist');
+    if (!section || !list) return;
+    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : (fallbackHtml || '');
+    section.hidden = !html;
+    if (list._k !== html) { list._k = html; setHtml(list, html); }
+  }
+  // The "Dangerous here" list the Live card shows in the boss section's place when no engaged boss owns it: the trash the
+  // bind's live mob rows hold, one line each. The boss panel wins whenever there is one.
+  function cmdTrashBlockHtml(bind) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.block) return '';
+    const rows = TrashInfo.block(bind && bind.mobs);
+    if (!rows || !rows.length) return '';
+    return '<h3 class="cmd-h">Dangerous here</h3><ol class="fd-trashlist">'
+      + rows.map((r) => '<li>' + esc(r.text) + '</li>').join('') + '</ol>';
+  }
+  function cmdLiveBossPanels(bind) {
+    const now = Date.now();
+    if (!bind || !bind.combat) {
+      if (bind) {
+        delete cmdBossSeen[bind.commander];
+        const prefix = bind.commander + '|live|';
+        Object.keys(cmdBossPhaseAt).forEach(k => { if (k.indexOf(prefix) === 0) delete cmdBossPhaseAt[k]; });
+      }
+      return [];
+    }
+    const mobs = bind.mobs || [];
+    const mem = cmdBossSeen[bind.commander] || (cmdBossSeen[bind.commander] = {});
+    const present = {};
+    const panel = typeof BossPanel !== 'undefined' ? BossPanel : null;
+    mobs.forEach(m => {
+      if (!m || m.rank !== 'b' || m.entry == null) return;
+      const b = panel && panel.bossFor ? panel.bossFor(cmdBossTable(), m.entry) : null;
+      const key = b ? b.entry : m.entry;
+      present[key] = true;
+      mem[key] = { name: (b && b.name) || m.name || ('creature ' + m.entry), seenAt: now };
+    });
+    // A boss the fight had and the module no longer reports (Arlokk vanished) is shown as not visible after two 2 s reports.
+    const vanished = Object.keys(mem).filter(e => !present[e] && now - mem[e].seenAt >= 4000)
+      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v', ghost: true }));
+    const byId = {};
+    (bind.bots || []).forEach(b => { if (b && (b.id != null || b.guid != null)) byId[String(b.id != null ? b.id : b.guid)] = b.name; });
+    const named = mobs.map(m => (m && m.ctg && byId[String(m.ctg)] ? Object.assign({}, m, { ctargetName: byId[String(m.ctg)] }) : m));
+    const start = bind.combat.fight_ms > 0 ? now - bind.combat.fight_ms * 1000 : now;
+    const evs = ((typeof cmdLiveEvents !== 'undefined' && cmdLiveEvents[bind.commander]) || []).map(x => x.ev).filter(Boolean);
+    return cmdBossPanels(bind, null, named.concat(vanished), evs, start, now);
+  }
+  function cmdFightBossPanels(bind, fight) {
+    if (!fight) return [];
+    const start = (fight.start || 0) * 1000;
+    return cmdBossPanels(bind, fight, [], fight.log || [], start, start + (fight.dur_ms || 0));
+  }
+  // The phase a boss row shows on the map; the label is data + hp/aura/flag, never a script variable.
+  function cmdBossMobView(bind, m) {
+    const table = cmdBossTable(), panel = typeof BossPanel !== 'undefined' ? BossPanel : null;
+    if (!table || !panel || !m || m.rank !== 'b') return m;
+    const b = panel.bossFor(table, m.entry);
+    if (!b) return m;
+    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + b.entry;
+    const ph = panel.phaseOf(b, m, cmdBossPhase[key] || null);
+    // One latch per boss: only the row the panel follows (the lowest guid) may move it, or an image's own hp would rewrite
+    // the phase the original is in.
+    const kept = panel.bossRows(table, (bind.mobs || []).filter(x => x && (x.rank === 'b' || x.ghost))).find(r => r.boss.entry === b.entry);
+    const mine = kept && (kept.row === m || (kept.row.id != null && m.id != null && String(kept.row.id) === String(m.id)));
+    if (ph.phase && mine) cmdBossPhase[key] = ph.phase;
+    return Object.assign({}, m, { phase: ph.phase });
   }
 
   // The picture slots of a map id, from the daemon's folder (TBDASH_MAP_DIR): undefined = no folder, 'loading' = the first answer is on
@@ -5391,15 +7023,17 @@
       zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
       commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
+      facing: mobs.some(m => typeof m.o === 'number'), mobcast: mobs.some(m => !!m.cid),
       activity: onMap.some(b => b.st != null) || mobs.some(m => m.cast || m.cc),
       events: UnitInfo.eventsOf(cmdEvents, bind.commander).length > 0,
     };
     return { lead, first, onMap, slots, trail, heading, zr, ctx, mobs, mobsTotal, commanderAt, steps, stalls, objs };
   }
 
-  // A clock time for a label on the path: the game server's seconds in the browser's locale.
+  // A clock time for a label on the path: the game server's seconds in the browser's zone, 24 h like the pack table (the
+  // debugger has one time format).
   function cmdClock(sec) {
-    return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
   }
 
   // ---- the drawing layers of a card's map: paths, run steps, stall spots, objects, combat lines ----
@@ -5430,16 +7064,16 @@
     });
     CmdView.trailMarks(pts).forEach(m => {
       const def = CMD_TRAIL_MARKS[m.kind], p = CmdView.project(m.x, m.y);
-      const when = typeof m.t === 'number' && m.t > 0 ? ' (' + new Date(m.t * 1000).toLocaleTimeString() + ')' : '';
+      const when = typeof m.t === 'number' && m.t > 0 ? ' (' + cmdClock(m.t) + ')' : '';
       if (def) g += '<g class="trailmark">' + cmdMapIcon(def.icon, p.x, p.y, (basePx > 2.5 ? 12 : 9) * c.k, def.text + when) + '</g>';
     });
     return g;
   }
 
-  function cmdMemberTrailsSvg(c, bind, mapId) {
+  function cmdMemberTrailsSvg(c, bind, mapId, nowSec) {
     let g = '';
     CmdPaths.memberTrails(cmdTrails, bind, mapId, cmdLayers.trailLen).forEach(m => {
-      g += cmdTrailSvg(c, 'memberpaths', `mtrail ${CmdView.roleKey(m.bot)}`, m.pts, 0.75, 2);
+      g += cmdTrailSvg(c, 'memberpaths', `mtrail ${CmdView.roleKey(m.bot)}`, CmdPaths.cutByAge(m.pts, nowSec, cmdLayers.trailSec), 0.75, 2);
     });
     return g;
   }
@@ -5527,19 +7161,380 @@
     return g;
   }
 
+  // The word the page writes before an elite's cast when the trash table knows the spell: KICK when the core can kick it, AoE
+  // when it is an area effect. Bosses are the boss table's business, so only elites are asked. "" with no table or no row.
+  function cmdTrashWord(m) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.castWord || !m || m.rank !== 'e') return '';
+    const word = TrashInfo.castWord(m.entry, m.cid);
+    if (!word) return '';
+    return { word: word, cls: word === 'KICK' ? 'kick' : 'aoe' };
+  }
+
+  // The boss overlay of one mob row: the area of the spell it casts (under its dot, so the dot stays readable), then where it
+  // looks, the cast's progress ring and its label. Bosses and elites only, each part under its own layer. nowLeftMs is the time
+  // left at this moment: the report's own time counted down for a live map, the frame's time for a replay. A cast whose time has
+  // run out draws nothing (the report may be older than the cast). The caller draws `under` before the mob's dot, `over` after.
+  function cmdMobOverlaySvg(c, m, on, nowLeftMs, botsById) {
+    const o = on || {}, k = c.k, f = c.f, none = { under: '', over: '' };
+    if (!m || (m.rank !== 'b' && m.rank !== 'e')) return none;
+    const p = CmdView.project(m.x, m.y), facing = typeof m.o === 'number', casting = !!m.cid && nowLeftMs > 0;
+    // A lane pinned to its two map ends stands on its own: it is drawn wherever the unit is and however it faces.
+    const pinned = !!(m.shape && CmdView.shapeSeg(m.shape.seg));
+    let under = '', over = '';
+    if (o.mobcast && casting && (facing || pinned) && m.shape) {
+      const d = CmdView.shapePath(p.x, p.y, m.o, m.shape);
+      if (d) under += `<path class="mobshape s-${esc(m.shape.k)}" d="${d}"/>`;
+    }
+    if (o.facing && facing) {
+      const v = CmdView.facingVec(m.o), len = 18 * k, base = (len * 16) / 34, half = (len * 7) / 34, nx = -v.y, ny = v.x;
+      const pt = (a, b) => `${f(a)},${f(b)}`;
+      over += `<polygon class="facing" points="${pt(p.x + v.x * len, p.y + v.y * len)} `
+        + `${pt(p.x + v.x * base + nx * half, p.y + v.y * base + ny * half)} `
+        + `${pt(p.x + v.x * base - nx * half, p.y + v.y * base - ny * half)}"/>`;
+    }
+    if (o.mobcast && casting) {
+      const r = (m.rank === 'b' ? 14 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
+      const target = m.ctg && botsById && botsById[m.ctg] ? botsById[m.ctg].name : '';
+      const tw = cmdTrashWord(m);
+      const label = (tw ? tw.word + ' ' : '') + (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
+      over += `<circle class="castring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${f(p.x)} ${f(p.y)})"/>`
+        + `<text class="mobcast${tw ? ' ' + tw.cls : ''}" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
+    }
+    return { under, over };
+  }
+
+  // How much room an enemy takes and whether it is the one to spot: a boss's body has a 14 screen px radius at any zoom (k is
+  // one screen px in drawing units), an elite takes a step up and an ordinary unit keeps its size. The caller multiplies by k.
+  function cmdMobLook(m, bossmark) {
+    const rank = m && m.rank, cls = CmdView.mobClass(m);
+    const boss = !!bossmark && rank === 'b', elite = !!bossmark && rank === 'e';
+    const danger = elite && typeof TrashInfo !== 'undefined' && TrashInfo.danger && TrashInfo.danger(m.entry) === 3 ? 3 : 0;
+    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5, danger: danger };
+  }
+
+  // One enemy as a map group: the threat rings, its body (a boss in its own colour with a pulsing gold ring, the crown above
+  // the body and its health after the name), then the overlays. d carries what the draw around it knows: the layers, the marks,
+  // the bots' names, the cast's time left and overlay(), which builds the health bar and the status icons.
+  function cmdMobSvg(c, m, d) {
+    const k = c.k, f = c.f, on = d.on || {}, p = CmdView.project(m.x, m.y);
+    const cls = CmdView.mobClass(m), look = cmdMobLook(m, on.bossmark), r = look.r * k, uid = 'm:' + m.id;
+    const ov = cmdMobOverlaySvg(c, m, on, d.leftMs, d.botsById);
+    // A boss nothing can target, hit or that is off the floor (Thekal's fake death, Onyxia in the air, Solnius asleep) is drawn hollow.
+    const ghost = look.boss && typeof m.uf === 'string' && /[nhi]/.test(m.uf);
+    c.units[uid] = { kind: 'm', obj: m };
+    let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}${ghost ? ' ghost' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
+    if (on.threatcolors && d.marks) {
+      const tc = UnitInfo.threatClass(m, d.onMap || []);
+      if (d.marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
+      if (d.marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
+      if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
+    }
+    // the gold ring pulses just outside the body; with reduced motion it is a static double ring
+    if (look.boss) {
+      g += `<circle class="bossring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 6 * k)}"/>`
+        + `<circle class="bossring2" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 10 * k)}"/>`;
+    }
+    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
+    // A danger-3 trash mob gets one glyph in the empty corner of its body, only while the boss-mark layer is on.
+    if (look.danger === 3) g += `<circle class="mobdanger" cx="${f(p.x + r * 0.75)}" cy="${f(p.y - r * 0.75)}" r="${f(2.6 * k)}"/>`;
+    g += ov.over;
+    if (look.boss) g += cmdMapIcon('crown', p.x, p.y - r - 11 * k, 16 * k);
+    // a boss's health bar sits above the crown (r + 16*k), so the crown is not drawn over it
+    g += d.overlay(m, 'mob', p, look.boss ? r + 16 * k : r);
+    if (look.boss || (on.hostilenames && cls === 'hostile')) {
+      // a boss carries its health: "Onyxia 63%", and the phase the table labels ("Venoxis 48% snake")
+      const hp = look.boss && typeof m.hp === 'number' ? ' ' + Math.round(m.hp) + '%' : '';
+      const label = (m.name || (m.entry ? 'creature ' + m.entry : 'unit')) + hp + (look.boss && m.phase ? ' ' + m.phase : '');
+      g += `<text class="mname${look.boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((look.boss ? 13 : 10.5) * k)}px;stroke-width:${f((look.boss ? 4 : 3) * k)}px">${esc(label)}</text>`;
+    }
+    return g + '</g>';
+  }
+
+  // A boss that is on this map but outside the part of it in view: a gold arrow and a crown at the edge, pointing its way, so
+  // a boss is never lost when the view is zoomed or panned away. The marker carries the boss's place; a click centres on it.
+  function cmdBossPoint(c, m, box) {
+    const p = CmdView.project(m.x, m.y), x0 = box[0], y0 = box[1], x1 = x0 + box[2], y1 = y0 + box[3];
+    if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) return '';
+    const pad = 15 * c.k, f = c.f;
+    const x = Math.min(x1 - pad, Math.max(x0 + pad, p.x)), y = Math.min(y1 - pad, Math.max(y0 + pad, p.y));
+    const ang = Math.atan2(p.y - y, p.x - x), cos = Math.cos(ang), sin = Math.sin(ang);
+    const tip = `${f(x + cos * 15 * c.k)},${f(y + sin * 15 * c.k)}`;
+    const b1 = `${f(x + cos * 5 * c.k - sin * 6 * c.k)},${f(y + sin * 5 * c.k + cos * 6 * c.k)}`;
+    const b2 = `${f(x + cos * 5 * c.k + sin * 6 * c.k)},${f(y + sin * 5 * c.k - cos * 6 * c.k)}`;
+    return `<g class="bosspoint" data-bx="${m.x}" data-by="${m.y}"><circle class="hit" cx="${f(x)}" cy="${f(y)}" r="${f(14 * c.k)}"/>`
+      + `<title>${esc((m.name || 'A boss') + ' is off this part of the map: click to centre on it')}</title>`
+      + `<polygon class="bosspoint-arrow" points="${tip} ${b1} ${b2}"/>`
+      + cmdMapIcon('crown', x - cos * 9 * c.k, y - sin * 9 * c.k, 11 * c.k) + '</g>';
+  }
+
+  // ---- the plan layer: the run leader's plan (read from the world database by the daemon) on the map ----
+
+  const CMD_PLAN_RETRY_MS = 60000; // a plan that failed or does not exist is asked for again only after this long
+
+  // The plan a card asks for: in the fight debugger with a finished fight selected, that fight's plan (once its detail is loaded);
+  // otherwise the plan the run is walking.
+  function cmdPlanName(bind) {
+    const fd = cmdFd[bind.commander];
+    const det = fd && fd.mode === 'debug' && fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    if (det && det.fight) return det.fight.plan || '';
+    return bind.run && bind.run.plan ? bind.run.plan : '';
+  }
+
+  // The plan behind a name, kept once fetched: a plan stays for the page's life (the daemon caches it for 10 min), a miss or a
+  // failure is asked for again after a minute. Starts one fetch at a time per name; null while there is nothing to draw yet. A
+  // demo group's plan is made up, so it is never asked of the world database.
+  function cmdPlanGet(name, demo) {
+    const cached = cmdPlans[name] || (cmdPlans[name] = { plan: null, err: '', at: 0, loading: false });
+    if (cached.plan) return cached.plan;
+    if (demo) { cached.err = 'The demo group has no plan in the world database'; return null; }
+    if (cached.loading || (cached.at && cached.err && Date.now() - cached.at < CMD_PLAN_RETRY_MS)) return null;
+    cached.loading = true;
+    fetch('/api/v1/plans/' + encodeURIComponent(name), { credentials: 'same-origin' }).then(r => {
+      if (r.status === 404) { cached.err = 'No plan named ' + name + ' in the world database'; return null; }
+      if (!r.ok) { cached.err = 'The plan is not available (world database)'; return null; }
+      return r.json();
+    }).then(plan => {
+      if (plan) { cached.plan = plan; cached.err = ''; }
+    }).catch(() => { cached.err = 'The plan is not available (world database)'; }).then(() => {
+      cached.loading = false;
+      cached.at = Date.now();
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+    });
+    return null;
+  }
+
+  // The plan a card's pieces read without fetching: the one the run walks (the ready check wants the stand ahead of the run's
+  // step), once the plan layer fetched it, and only while it is for the map the bots stand on. Null when there is nothing to
+  // read yet (the ready check then skips the stand rules).
+  function cmdPlanFor(bind) {
+    const name = (bind && bind.run && bind.run.plan) || cmdPlanName(bind);
+    const plan = name ? (cmdPlans[name] || {}).plan : null;
+    const bots = (bind && bind.bots) || [];
+    const lead = bots.find(b => b && b.lead) || bots[0] || null;
+    return plan && lead && plan.map === lead.map ? plan : null;
+  }
+
+  // The plan's layers: its route and stands, and the rings (part of the aggro layer). With every one of them off nothing of
+  // the plan reaches the map, so its overlay is not rebuilt on each draw.
+  function cmdPlanWanted() {
+    return !!(cmdLayers.planroute || cmdLayers.planstands || cmdLayers.aggro || cmdLayers.patrols);
+  }
+
+  // What a card's map can draw of the plan: its view, or the reason the plan layers are greyed. The current step is the selected
+  // finished fight's step in the debugger, else the run's; the fight's own step marks the pack it fought.
+  function cmdPlanFacts(bind, first) {
+    if (!first) return { view: null, why: 'No bots on a map', ok: false };
+    const name = cmdPlanName(bind);
+    if (!name) return { view: null, why: 'No plan: start a run (.bot run) or pick a fight of a run', ok: false };
+    const plan = cmdPlanGet(name, !!bind.demo);
+    const cached = cmdPlans[name] || {};
+    if (!plan) return { view: null, why: cached.err || 'Loading the plan…', ok: false };
+    if (plan.map !== first.map) return { view: null, why: 'The plan is for another map', ok: false };
+    const zview = { steps: plan.steps, rings: plan.mobs }; // the floor split needs the plan's z levels, not its overlay
+    if (!cmdPlanWanted()) return { view: null, why: '', ok: true, zview }; // the panel can still offer the layers
+    const fd = cmdFd[bind.commander];
+    const det = fd && fd.mode === 'debug' && fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    // a fight of another plan than the one drawn cannot say which step of it the run is on
+    const fight = det && det.fight && det.fight.plan === name ? det.fight : null;
+    const cur = fight && fight.step ? fight.step : (bind.run && bind.run.step) || 0;
+    const fightStep = fight ? fight.step || 0 : 0;
+    return { view: PlanOverlay.view(plan, { mapId: first.map, cur, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run }), why: '', ok: true, zview };
+  }
+
+  // The plan on a card's picture: the aggro and scripted-wake rings, the route (done dimmed, ahead bright) and the steps (the stands,
+  // the pack and boss circles, the mobs' spawn dots, the fight's pack, a stray mark), each part only under its own layer.
+  // c is the drawing context of drawCmdMap (f, k, units); view comes from PlanOverlay.view.
+  function cmdPlanSvg(c, view, on) {
+    if (!view) return '';
+    const k = c.k;
+    const fl = view.floors && typeof view.floors.has === 'function' ? view.floors : null;
+    let g = '';
+    const strayOf = {};
+    view.strays.forEach(s => { if (!strayOf[s.i]) strayOf[s.i] = s; });
+    // The patrol loops sit under everything else: each mob's closed path, a segment only when both ends are on the shown
+    // floor, a direction tick about every 4th point.
+    if (on.patrols) {
+      view.mobs.forEach(m => {
+        const pts = (Array.isArray(m.path) ? m.path : []).filter(p => Array.isArray(p) && p.length >= 3
+          && typeof p[0] === 'number' && isFinite(p[0]) && typeof p[1] === 'number' && isFinite(p[1])
+          && typeof p[2] === 'number' && isFinite(p[2]));
+        const n = pts.length;
+        if (n < 2) return;
+        const proj = pts.map(p => CmdView.project(p[0], p[1]));
+        const keep = [];
+        let gaps = 0;
+        for (let i = 0; i < n; i++) {
+          keep[i] = !fl || (fl.has(pts[i][2]) && fl.has(pts[(i + 1) % n][2]));
+          if (!keep[i]) gaps++;
+        }
+        let d = '';
+        if (!gaps) {
+          d = 'M ' + proj.map(p => `${c.f(p.x)},${c.f(p.y)}`).join(' L ') + ' Z';
+        } else {
+          let run = [];
+          const flush = () => { if (run.length >= 2) d += 'M ' + run.map(j => `${c.f(proj[j].x)},${c.f(proj[j].y)}`).join(' L ') + ' '; run = []; };
+          const start = keep.indexOf(false) + 1;
+          for (let s = 0; s < n; s++) {
+            const i = (start + s) % n;
+            if (!keep[i]) { flush(); continue; }
+            if (!run.length) run.push(i);
+            run.push((i + 1) % n);
+          }
+          flush();
+        }
+        if (!d) return;
+        const period = m.period_s;
+        g += `<path class="patrol-path${m.path_est ? ' est' : ''}" d="${d.trim()}"><title>${esc(m.name || 'unit')}: patrol`
+          + `${period > 0 ? ', about ' + c.f(period) + ' s per round' : ''}${m.path_est ? ', estimated' : ''}</title></path>`;
+        for (let i = 0; i < n; i += 4) {
+          if (!keep[i]) continue;
+          const a = proj[i], b = proj[(i + 1) % n];
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          if (!(len > 0)) continue;
+          const dx = (b.x - a.x) / len, dy = (b.y - a.y) / len, nx = -dy, ny = dx, t = 3.2 * k, w = 1.8 * k;
+          g += `<polygon class="patrol-tick" points="${c.f(a.x + dx * t)},${c.f(a.y + dy * t)} ${c.f(a.x - dx * t + nx * w)},${c.f(a.y - dy * t + ny * w)} ${c.f(a.x - dx * t - nx * w)},${c.f(a.y - dy * t - ny * w)}"/>`;
+        }
+      });
+    }
+    if (on.planrings) {
+      view.rings.forEach(r => {
+        if (fl && !fl.has(r.z)) return;
+        const p = CmdView.project(r.x, r.y);
+        const text = r.wake ? PlanOverlay.wakeText(r.r) : 'aggro about ' + Math.round(r.r) + ' yd';
+        g += `<circle class="plan-ring ${r.wake ? 'wake' : 'aggro'} s-${r.state}${r.patrol ? ' patrol' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(r.r)}">`
+          + `<title>${esc(r.name)} (step ${r.step}): ${text}${r.patrol ? ', patrols (drawn at its spawn)' : ''}</title></circle>`;
+      });
+    }
+    if (on.planroute) {
+      view.route.forEach(seg => {
+        g += `<polyline class="plan-route ${seg.done ? 'done' : 'ahead'}" points="${seg.points.map(p => cmdPt(c, p.x, p.y)).join(' ')}"/>`;
+      });
+    }
+    if (!on.planroute && !on.planstands) return g;
+    if (on.planstands) {
+      view.mobs.forEach(m => {
+        if (fl && !fl.has(m.z)) return;
+        const p = CmdView.project(m.x, m.y);
+        g += `<circle class="plan-mob s-${m.state}${m.patrol ? ' patrol' : ''}${m.boss ? ' boss' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(3.2 * k)}"/>`;
+      });
+    }
+    view.steps.forEach(s => {
+      if (fl && !fl.has(s.z)) return;
+      const p = CmdView.project(s.x, s.y), uid = 'p:' + s.i;
+      let body = '';
+      if (on.planstands && s.pack) {
+        body += `<circle class="plan-pack" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f((s.k === 'boss' ? 11 : 9) * k)}"/>`
+          + `<text class="plan-num" x="${c.f(p.x)}" y="${c.f(p.y + 3.6 * k)}" style="font-size:${c.f((s.i > 99 ? 8.5 : 10) * k)}px">${s.i}</text>`;
+        if (s.k === 'boss') body += cmdMapIcon('crown', p.x, p.y - 17 * k, 12 * k);
+      } else if (on.planstands && s.stand) {
+        const d = 3.5 * k;
+        body += `<rect class="plan-stand" x="${c.f(p.x - d)}" y="${c.f(p.y - d)}" width="${c.f(2 * d)}" height="${c.f(2 * d)}"/>`;
+      } else if (on.planroute) {
+        body += `<circle class="plan-move" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(2.4 * k)}"/>`;
+      }
+      if (!body) return;
+      c.units[uid] = { kind: 's', obj: { i: s.i, k: s.k, x: s.x, y: s.y, r: s.r, n: s.n, state: s.state === 'done' ? 'cleared' : s.state === 'cur' ? 'next' : 'todo' } };
+      let tips = '';
+      const stray = strayOf[s.i];
+      if (stray) tips += `<title>Step ${stray.i} is inside the ring of ${esc(stray.name)} (pack ${stray.pack}): ${stray.dist.toFixed(1)} yd, ring ${Math.round(stray.ring)} yd</title>`;
+      if (on.planstands && s.stand && s.margin) {
+        const m = s.margin;
+        tips += `<title>${m.dist.toFixed(1)} yd from ${esc(m.name)}, ${m.wake ? 'wake' : 'aggro'} ~${Math.round(m.ring)} yd:`
+          + ` ${m.margin >= 0 ? 'outside by' : 'inside by'} ${Math.abs(m.margin).toFixed(1)} yd</title>`;
+      }
+      g += `<g class="plan-step k-${esc(s.k)} s-${s.state}${s.stand ? ' stand' : ''}${s.fight ? ' plan-fight' : ''}${s.stray ? ' plan-stray' : ''}" data-u="${esc(uid)}">`
+        + `<circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(12 * k)}"/>${tips}${body}</g>`;
+    });
+    return g;
+  }
+
+  // What the boss data puts on a bot's map dot: one coloured dot for its first boss debuff, a red ring for mind control and
+  // the "marked" eye for a table ability flagged mark (no spell id is named here).
+  function bossBotMarks(b, p, k) {
+    if (!b) return '';
+    const f = (n) => n.toFixed(2);
+    let g = '';
+    const dt = (typeof BossPanel !== 'undefined' && BossPanel.debuffColor) ? BossPanel.debuffColor(b.db) : '';
+    if (dt) {
+      const calm = { m: 'magic', c: 'curse', p: 'poison', d: 'disease' }[dt] || 'none';
+      g += `<circle class="bdbuff dt-${esc(calm)}" cx="${f(p.x + 7 * k)}" cy="${f(p.y - 10 * k)}" r="${f(2.6 * k)}"><title>${esc('boss debuff' + (calm !== 'none' ? ' (' + calm + ')' : ''))}</title></circle>`;
+    }
+    if (b.mc) g += `<circle class="mcring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(9 * k)}"/>`;
+    const table = cmdBossTable(), mark = table && typeof BossPanel !== 'undefined' && BossPanel.markedBy ? BossPanel.markedBy(table, b) : '';
+    if (mark) g += cmdMapIcon('eye', p.x - 10 * k, p.y - 12 * k, 10 * k, 'marked: ' + mark);
+    return g;
+  }
+
+  // Each plan view is memoized by PlanOverlay.view, so its identity is its inputs: a counter names it in the static key.
+  const cmdViewIds = new WeakMap();
+  let cmdViewSeq = 0;
+  function cmdViewId(view) {
+    if (!view || typeof view !== 'object') return 0;
+    let id = cmdViewIds.get(view);
+    if (!id) { id = ++cmdViewSeq; cmdViewIds.set(view, id); }
+    return id;
+  }
+
+  // What the static group draws from: the view (the box: a zoom or pan, the grid step), the layer switches that own static
+  // marks, the floor, the plan's identity, the zone under the party and the zones data. Equal keys draw the same picture.
+  function cmdStaticKey(o) {
+    const v = o || {};
+    const box = Array.isArray(v.box) ? v.box : [];
+    const on = v.on || {};
+    const first = v.first || null;
+    const zr = v.zr || null;
+    const num = n => (typeof n === "number" && isFinite(n) ? n.toFixed(2) : "");
+    return [box.map(num).join(','), num(v.step), on.grid ? 1 : 0, on.zonelabels ? 1 : 0, on.zone ? 1 : 0,
+      on.planroute ? 1 : 0, on.planstands ? 1 : 0, on.planrings ? 1 : 0, on.patrols ? 1 : 0, v.flKey || '',
+      v.viewId || 0, first ? first.map + ':' + (first.zone || '') + ':' + (v.zones ? 1 : 0) : '',
+      zr ? [num(zr.x), num(zr.y), num(zr.w), num(zr.h), zr.name].join(',') : ''].join('|');
+  }
+
+  // The static group of a card's map: rebuilt only when its key changed. build() gets the units its marks answer hover with;
+  // they are copied into this frame's units either way, so a cached plan still hovers. Returns whether it rebuilt (the check's
+  // counter).
+  function cmdStaticLayer(node, key, build, units) {
+    if (!node) return false;
+    let rebuilt = false;
+    if (node._k !== key) {
+      node._k = key;
+      const own = {};
+      node.innerHTML = build(own) || '';
+      node._units = own;
+      rebuilt = true;
+    }
+    if (units && node._units) Object.assign(units, node._units);
+    return rebuilt;
+  }
+
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
-    const bind = cmdFindBind(key);
+    const liveBind = cmdBindForCard(key); // the card key resolves through cardKey; cmdFindBind keeps the fight key
+    const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
+    // Live: the positions are interpolated between samples (no glide during a fight replay, which has its own track).
+    const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : Glide.apply(liveBind, cmdGlide[key] || (cmdGlide[key] = Glide.create()), performance.now());
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
     const pw = stage.clientWidth, ph = stage.clientHeight;
     if (!pw || !ph) return; // the tab is hidden
     const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
+    const pf = cmdPlanFacts(bind, facts.first);
+    facts.ctx.plan = !!pf.ok;
+    facts.ctx.planWhy = pf.why;
+    const planMobs = pf.view ? pf.view.mobs : (pf.zview ? pf.zview.rings : null);
+    facts.ctx.patrols = !!(planMobs && planMobs.some(m => Array.isArray(m.path) && m.path.length >= 2));
+    // the other data the raid layers draw from: subgroups of this map's party, the layout's healer->tank pairs, the selected fight's deaths
+    const fdCtx = cmdFd[key];
+    const fdFight = fdCtx && fdCtx.mode === 'debug' && fdCtx.sel && fdCtx.sel !== 'live' ? (fdCtx.details[fdCtx.sel] || {}).fight || null : null;
+    facts.ctx.subgroups = facts.onMap.some(b => typeof b.sub === 'number');
+    facts.ctx.layoutHealers = !!(bind.layout && Array.isArray(bind.layout.th) && bind.layout.th.length);
+    facts.ctx.fightDeaths = !!(fdFight && Array.isArray(fdFight.deaths) && fdFight.deaths.length);
     const { lead, first, onMap, slots, trail, heading, zr, mobs, mobsTotal, commanderAt, steps, stalls, objs } = facts;
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
     const on = MapLayers.active(cmdLayers, avail, facts.ctx);
+    if (rp) FD_REPLAY_OFF.forEach(p => { on[p] = false; }); // the layers that only mean anything live; the plan and the enemies stay
     const away = (bind.bots || []).length - onMap.length;
     const pts = onMap.map(b => CmdView.project(b.x, b.y));
     if (ms.follow || !ms.view) ms.view = CmdView.followView(pts, pw, ph, 44, 60, ms.userScale);
@@ -5550,6 +7545,10 @@
     // the picture sits in its own group that is only rebuilt when it changes, so it does not flicker while the rest is redrawn
     const choice = CmdView.pictureChoice(slots, ms.pic);
     const pick = choice.slot;
+    ms.pick = pick;
+    // a multi-floor map's picture shows one floor: the plan and the deaths keep to it (nothing hidden when it has no floors)
+    const fl = cmdFloors(slots, pick, cmdFloorZs(pf.view || pf.zview, fdFight));
+    if (pf.view) pf.view.floors = fl;
     const ui = CmdView.pictureSelect(slots, ms.pic);
     const picKey = on.bg && pick ? `${pick.url}|${pick.x}|${pick.y}|${pick.w}|${pick.h}` : '';
     const picG = svg.querySelector('g.pic');
@@ -5577,35 +7576,47 @@
     const picWhy = card.querySelector('.cmd-picwhy');
     if (picWhy) { picWhy.hidden = !ui.reason; picWhy.textContent = ui.reason || ''; }
 
+    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
+    const units = ms.units = {};
+    const dc = { f, k, units };
+    // The static layers (the grid, the zone marks and the whole plan) sit in a group of their own and are rebuilt only when
+    // something they draw changes: the map, the plan and its step, a layer switch, the zoom/pan or the floor. A glide frame
+    // only redraws the units and overlays in g.dyn; the plan's hover entries are re-registered from the group's last build.
+    const flKey = fl ? Array.from(fl).sort().join(',') : '';
+    const staticKey = cmdStaticKey({ box, step, on, flKey, viewId: cmdViewId(pf.view), first, zones: !!ZONE_BOUNDS, zr });
+    cmdStaticLayer(svg.querySelector('g.static'), staticKey, su => {
+      const sc = { f, k, units: su };
+      let html = '';
+      if (on.grid) {
+        grid.xs.forEach(x => { html += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
+        grid.ys.forEach(y => { html += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
+      }
+      if (on.zonelabels && first) {
+        CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
+          html += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
+            + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
+        });
+      }
+      if (on.zone && zr) {
+        html += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
+          + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
+      }
+      if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) html += cmdPlanSvg(sc, pf.view, on);
+      return html;
+    }, units);
     let g = '';
-    if (on.grid) {
-      grid.xs.forEach(x => { g += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
-      grid.ys.forEach(y => { g += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
-    }
-    if (on.zonelabels && first) {
-      CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
-        g += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
-          + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
-      });
-    }
-    if (on.zone && zr) {
-      g += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
-        + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
-    }
     if (on.healring) {
       onMap.filter(b => b.role === 'healer' && b.alive !== false).forEach(b => {
         const p = CmdView.project(b.x, b.y);
         g += `<circle class="range heal" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.HEAL_RANGE_YD}"><title>${esc(b.name)}: healing range ${CmdView.HEAL_RANGE_YD} yd</title></circle>`;
       });
     }
-    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
-    const units = ms.units = {};
-    const dc = { f, k, units };
     if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
-    if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map);
-    if (on.trail && trail.length >= 2) g += cmdTrailSvg(dc, 'leadpath', 'trail', trail.slice(-cmdLayers.trailLen), 1, 3);
+    const nowSec = cmdNowFor(bind), trailDrawn = CmdPaths.cutByAge(trail, nowSec, cmdLayers.trailSec);
+    if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map, nowSec);
+    if (on.trail && trailDrawn.length >= 2) g += cmdTrailSvg(dc, 'leadpath', 'trail', trailDrawn.slice(-cmdLayers.trailLen), 1, 3);
     if (on.trailtime) {
-      CmdView.trailStamps(trail, v.scale, 70, 8).forEach(s => {
+      CmdView.trailStamps(trailDrawn, v.scale, 70, 8).forEach(s => {
         g += `<g class="stamp"><circle cx="${f(s.x)}" cy="${f(s.y)}" r="${f(3 * k)}"/>`
           + `<text x="${f(s.x + 6 * k)}" y="${f(s.y - 5 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px">${esc(cmdClock(s.t))}</text></g>`;
       });
@@ -5620,6 +7631,14 @@
     const boxCtx = { lead: lead2, bots: onMap, mobs };
     // mobs, their threat and the bots' targets sit under the party's dots
     const shown = mobs.filter(m => on['mob' + CmdView.mobClass(m)]);
+    // The data's adds: a thin dashed line to their boss while both are reported; a kill priority marks the add's ring.
+    const bossTable = cmdBossTable();
+    const bossLinks = on.bossmark && bossTable && typeof BossPanel !== 'undefined' ? BossPanel.addLinks(bossTable, mobs) : [];
+    bossLinks.forEach(l => {
+      const a = CmdView.project(l.from.x, l.from.y), b = CmdView.project(l.to.x, l.to.y);
+      g += `<line class="bossadd" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc((l.from.name || 'add') + ' belongs to ' + (l.to.name || 'the boss'))}</title></line>`;
+      if (l.priority > 0) g += `<circle class="addpri" cx="${f(a.x)}" cy="${f(a.y)}" r="${f(9 * k)}"><title>${esc('kill priority ' + l.priority)}</title></circle>`;
+    });
     if (on.aggro) {
       CmdView.aggroMobs(shown).forEach(m => {
         const p = CmdView.project(m.x, m.y), r = CmdPaths.aggroRadius(m.lvl, lead ? lead.level : 0);
@@ -5627,9 +7646,9 @@
       });
     }
     if (on.threat) {
-      CmdView.threatLines(shown, onMap).forEach(l => {
+      CmdView.threatLines(shown, onMap, bind.layout).forEach(l => {
         const a = CmdView.project(l.mob.x, l.mob.y), b = CmdView.project(l.bot.x, l.bot.y);
-        g += `<line class="threat" style="${cmdLineStyle('threat', 1.5, 0.85)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
+        g += `<line class="threat${l.nonTank ? ' nontank' : ''}" style="${cmdLineStyle('threat', 1.5, 0.85)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
     g += cmdCombatLinesSvg(dc, on, onMap, mobs);
@@ -5649,25 +7668,17 @@
       return o;
     };
     const marks = on.threatcolors ? UnitInfo.targetMarks(mobs, onMap) : { tank: {}, pull: {} };
-    shown.forEach(m => {
-      const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), boss = on.bossmark && m.rank === 'b';
-      const r = (boss ? 9 : cls === 'critter' ? 3 : 5) * k, uid = 'm:' + m.id;
-      units[uid] = { kind: 'm', obj: m };
-      g += `<g class="mob ${cls}${boss ? ' boss' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>`;
-      if (on.threatcolors) {
-        const tc = UnitInfo.threatClass(m, onMap);
-        if (marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
-        if (marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
-        if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
-      }
-      g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
-      if (boss) g += cmdMapIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
-      g += overlay(m, 'mob', p, boss ? r + 8 * k : r);
-      if (boss || (on.hostilenames && cls === 'hostile')) {
-        g += `<text class="mname${boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((boss ? 12.5 : 10.5) * k)}px;stroke-width:${f(3 * k)}px">${esc(m.name || (m.entry ? 'creature ' + m.entry : 'unit'))}</text>`;
-      }
-      g += '</g>';
+    const botsById = {};
+    onMap.forEach(b => { if (b.id) botsById[b.id] = b; });
+    const mobSeen = cmdMobSeenAt[key] || {}, nowMs = performance.now();
+    const drawMob = m => cmdMobSvg(dc, cmdBossMobView(bind, m), {
+      on, marks, botsById, onMap, overlay,
+      // the time left of its cast: the report's own value counted down from its arrival, or the replay's value at the cursor
+      leftMs: rp ? (typeof m.cleft === 'number' ? m.cleft : 0) : CmdView.castLeft(m, mobSeen[m.id], nowMs),
     });
+    // a boss is drawn after the party (below), so no mob or bot dot can cover the one unit to spot
+    const bosses = on.bossmark ? shown.filter(m => m.rank === 'b') : [];
+    shown.filter(m => bosses.indexOf(m) < 0).forEach(m => { g += drawMob(m); });
     if (on.events) {
       UnitInfo.pinsOn(UnitInfo.eventsOf(cmdEvents, bind.commander), first ? first.map : null, 30).forEach(e => {
         const p = CmdView.project(e.x, e.y), uid = 'e:' + e.id, big = e.kind === 'wipe' || e.kind === 'boss';
@@ -5685,17 +7696,62 @@
       g += `<g class="cmdr" data-u="c:"><circle class="hit" cx="${f(c.x)}" cy="${f(c.y)}" r="${f(11 * k)}"/><polygon points="${f(c.x)},${f(c.y - d)} ${f(c.x + d)},${f(c.y)} ${f(c.x)},${f(c.y + d)} ${f(c.x - d)},${f(c.y)}"/>`
         + `<text x="${f(c.x + 11 * k)}" y="${f(c.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${esc(bind.commander)}</text></g>`;
     }
+    // the debugger's selected fight: its deaths on the picture, and the ring on the bot the user picked
+    const fd = cmdFd[key];
+    if (fd && fd.mode === 'debug' && first && typeof FightDebug !== 'undefined') {
+      const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+      if (det && det.fight && det.fight.map === first.map && on.deaths) {
+        // the replay shows only the deaths before its moment, and only those on the floor the picture shows
+        const raw = det.fight.deaths || [];
+        const seen = FightDebug.deathRecaps(det.fight).filter((r, i) => (!rp || r.t_ms <= rp.tMs) && (!fl || fl.has(raw[i] && raw[i].z)));
+        g += cmdFightMarksSvg(dc, seen, fd.death);
+      }
+    }
+    // healer -> tank lines from the raid layout, under the party (an out-of-range or dead pair keeps its own look)
+    if (on.healtank) {
+      CmdPaths.layoutHealLines(bind, onMap).forEach(l => {
+        const a = CmdView.project(l.from.x, l.from.y), b2 = CmdView.project(l.to.x, l.to.y);
+        const tip = `${l.healer} → ${l.tank}: ${l.dist.toFixed(1)} yd${l.far ? ', out of range' : ''}`;
+        g += `<line class="healtank${l.far ? ' far' : ''}${l.dead ? ' dead' : ''}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b2.x)}" y2="${f(b2.y)}"><title>${esc(tip)}</title></line>`;
+      });
+    }
+    const fdSelBot = fd && fd.mode === 'debug' ? fd.bot : null;
+    const layoutNamed = (bind.layout ? [bind.layout.mt].concat(bind.layout.ot || []) : []).filter(Boolean);
+    // Which names fit: the lead and the tanks first, then everyone whose label the layer shows, each one dropped when its box
+    // would run into a label already drawn (the unit's name is still in the hover box).
+    const labelCand = [];
+    onMap.forEach(b => {
+      const isLead = b === lead && on.lead, isFd = fdSelBot && b.name === fdSelBot;
+      if (!(on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0)) return;
+      const p = CmdView.project(b.x, b.y);
+      const rank = isLead || isFd ? 0 : CmdView.roleKey(b) === 'tank' ? 1 : 2;
+      labelCand.push({ b, rank, isLead, item: { id: 'b:' + (b.guid || b.name), name: (isLead ? '★ ' : '') + b.name, x: p.x, y: p.y } });
+    });
+    labelCand.sort((a, b) => a.rank - b.rank);
+    const labelIds = {};
+    CmdView.labelFit(labelCand.map(c => c.item), k).forEach(id => { labelIds[id] = true; });
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
       const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead, uid = 'b:' + (b.guid || b.name);
+      const isFd = fdSelBot && b.name === fdSelBot;
+      const sg = on.subgroups && typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
+      // names off: the lead, the layout's tanks and the debugger's bot keep theirs; a name a neighbour's box took is left to hover
+      const named = !!labelIds[uid];
       units[uid] = { kind: 'b', obj: b };
-      g += `<g class="bot ${role}${b.player ? ' player' : ''}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
+      g += `<g class="bot ${role}${b.player ? ' player' : ''}${isFd ? ' fdsel' : ''}${sg}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
+        + (isFd ? `<circle class="fdring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(14 * k)}"/>` : '')
         + (isLead ? `<circle class="leadring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>` : '')
         + (on.bots ? `<circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/>` : '')
+        + (on.statusicons ? bossBotMarks(b, p, k) : '')
         + (on.bots ? overlay(b, 'bot', p, (isLead ? 11 : 6) * k) : '')
-        + (on.botnames ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
+        + (named ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
         + '</g>';
     });
+    // the bosses last: on top of every enemy and party dot, then the markers of the ones off the part of the map in view
+    bosses.forEach(m => { g += drawMob(m); });
+    bosses.forEach(m => { g += cmdBossPoint(dc, m, box); });
+    ms.bosses = bosses.filter(m => !(typeof m.hp === 'number' && m.hp <= 0)).map(m => ({ x: m.x, y: m.y, name: m.name || '' }));
+    ms.hero = lead2 ? { x: lead2.x, y: lead2.y } : (onMap[0] ? { x: onMap[0].x, y: onMap[0].y } : null);
     svg.setAttribute('viewBox', box.map(f).join(' '));
     svg.querySelector('g.dyn').innerHTML = g;
     const awayNote = away > 0 ? `${away} bot${away === 1 ? ' is' : 's are'} on another map` : '';
@@ -5711,17 +7767,20 @@
       sc.querySelector('i').style.width = sb.px.toFixed(0) + 'px';
       sc.querySelector('span').textContent = sb.yd >= 1000 ? (sb.yd / 1000) + ' km' : sb.yd + ' yd';
     }
-    setHtml(card.querySelector('.cmd-legend'), cmdLegendHtml(on));
+    const fdOn = card.classList.contains('fd-on');
+    setHtml(card.querySelector(fdOn ? '.fd-legend' : '.cmd-legend:not(.fd-legend)'), fdOn ? fdLegendHtml() : cmdLegendHtml(on, pf.view));
     const fb = card.querySelector('[data-act="follow"]');
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
+    const bossBtn = card.querySelector('.cmd-bossbtn');
+    if (bossBtn) bossBtn.hidden = !(ms.bosses && ms.bosses.length);
     card.querySelector('.cmd-resume').hidden = ms.follow;
 
     // the run line and the event feed
     const evs = UnitInfo.eventsOf(cmdEvents, bind.commander), now = cmdNowFor(bind);
-    const run = card.querySelector('.cmd-run');
-    run.hidden = !on.runinfo;
-    if (on.runinfo) run.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
+    const runLine = card.querySelector('.cmd-run');
+    runLine.hidden = !on.runinfo || !cmdHeadView(fdOn).run; // the debugger's run chip carries the clock and the step
+    if (!runLine.hidden) runLine.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
     const start = bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, bind.commander);
     const feed = card.querySelector('.cmd-feed');
     feed.hidden = !(on.feed && evs.length);
@@ -5753,10 +7812,11 @@
     const stage = card.querySelector('.cmd-stage'), tip = card.querySelector('.cmd-tip');
     const u = ms.tip && ms.units ? ms.units[ms.tip.id] : null;
     if (!u) { tip.hidden = true; if (ms.tip) ms.tip = null; return; }
-    const bind = cmdFindBind(key);
+    const bind = cmdBindForCard(key);
     const facts = bind ? cmdMapFacts(bind) : null;
     if (!facts) { tip.hidden = true; return; }
-    const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs };
+    const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs,
+      mobSeenAt: cmdMobSeenAt[key], nowMs: performance.now() };
     const d = u.kind === 'b' ? UnitInfo.describeBot(u.obj, ctx) : u.kind === 'm' ? UnitInfo.describeMob(u.obj, ctx)
       : u.kind === 'c' ? UnitInfo.describeCommander(u.obj.name, u.obj, ctx)
       : u.kind === 'o' ? UnitInfo.describeObject(u.obj, ctx)
@@ -5841,12 +7901,12 @@
       if (tap && tap.id === e.pointerId && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6) {
         const m = ms();
         if (!tap.touch) {
-          if (tap.guid) openProfile(tap.guid); // a click on a bot opens its details; its box is already up from the hover
+          if (tap.guid && !fdPickBot(key, tap.guid)) openProfile(tap.guid); // a click on a bot opens its details; its box is already up from the hover
         } else if (tap.uid && !(m.tip && m.tip.id === tap.uid)) {
           m.tip = { id: tap.uid, x: rel(e).x, y: rel(e).y }; // first tap: the box
           paintCmdTip(key);
         } else if (tap.uid && tap.guid) {
-          openProfile(tap.guid); // second tap on the same bot: its details
+          if (!fdPickBot(key, tap.guid)) openProfile(tap.guid); // second tap on the same bot: its details
         } else {
           hideTip(); // a tap on nothing, or on the same unit that has no details
         }
@@ -5855,6 +7915,18 @@
     };
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);
+    // A click on the edge marker of an off-screen boss centres the map on that boss (a drag is a pan, not a pick).
+    svg.addEventListener('click', e => {
+      const n = e.target.closest && e.target.closest('g.bosspoint');
+      if (!n) return;
+      const bx = Number(n.dataset.bx), by = Number(n.dataset.by);
+      if (!isFinite(bx) || !isFinite(by)) return;
+      const m = ms(), [pw, ph] = size(), p = CmdView.project(bx, by);
+      m.follow = false;
+      m.view = m.view ? { cx: p.x, cy: p.y, scale: m.view.scale } : CmdView.fitView([p], pw, ph, 44, 60);
+      m.userScale = m.view.scale;
+      drawCmdMap(key);
+    });
     svg.addEventListener('wheel', e => {
       const m = ms();
       if (!m.view) return;
@@ -5870,9 +7942,31 @@
     card.querySelector('.cmd-maptools').addEventListener('click', e => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
+      if (btn.dataset.act === 'layers') { openCmdLayers(); return; }
       const m = ms(), [pw, ph] = size();
       if (btn.dataset.act === 'follow') {
         m.follow = !m.follow;
+      } else if (btn.dataset.act === 'whole') {
+        const bind = cmdBindForCard(key), bots = (bind && bind.bots) || [];
+        const pts = m.pick
+          ? [{ x: m.pick.x, y: m.pick.y }, { x: m.pick.x + m.pick.w, y: m.pick.y + m.pick.h }]
+          : bots.map(b => CmdView.project(b.x, b.y));
+        if (pts.length) {
+          m.follow = false;
+          m.userScale = null;
+          m.view = CmdView.fitView(pts, pw, ph, 8, 60);
+        }
+      } else if (btn.dataset.act === 'boss') {
+        const list = m.bosses || [];
+        if (list.length) {
+          const from = m.hero || { x: 0, y: 0 };
+          const near = list.reduce((a, b) => (b.x - from.x) * (b.x - from.x) + (b.y - from.y) * (b.y - from.y)
+            < (a.x - from.x) * (a.x - from.x) + (a.y - from.y) * (a.y - from.y) ? b : a);
+          const p = CmdView.project(near.x, near.y);
+          m.follow = false;
+          m.userScale = m.view ? m.view.scale : null;
+          m.view = m.view ? { cx: p.x, cy: p.y, scale: m.view.scale } : CmdView.fitView([p], pw, ph, 44, 60);
+        }
       } else if (m.view) {
         const factor = btn.dataset.act === 'in' ? 1.5 : 1 / 1.5;
         m.view = m.follow ? CmdView.zoomFollow(m.view, factor) : CmdView.zoomAt(m.view, factor, pw, ph, pw / 2, ph / 2);
@@ -5886,37 +7980,86 @@
     const card = document.createElement('div');
     card.className = 'card cmd-card';
     card.innerHTML = `
-      <div class="cmd-head"><h2 class="cmd-title"></h2><div class="cmd-badges"></div></div>
+      <div class="cmd-head">
+        <div class="cmd-headl">
+          <h2 class="cmd-title"></h2>
+          <div class="fd-headmain" hidden><div class="fd-kicker"></div><h2 class="fd-bigtitle">Fight debugger</h2></div>
+          <div class="fd-crumbs" hidden></div>
+        </div>
+        <div class="cmd-headr">
+          <div class="cmd-badges"></div>
+          <label class="refresh-picker fd-refresh" hidden title="How often the maps and cards show new data. Kept in this browser."><span>Refresh every</span><select data-refresh-select aria-label="Refresh every"></select></label>
+        </div>
+      </div>
       <div class="cmd-sub"></div>
       <div class="cmd-run" hidden></div>
       <div class="cmd-warn" aria-live="polite"></div>
       <div class="cmd-body">
+        <section class="fd-runtl" aria-label="Run timeline" hidden>
+          <div class="fd-rthead">
+            <h3 class="cmd-h">Run timeline <span class="fd-rtsub">where the minutes went; drag to replay the raid on the map</span></h3>
+            <div class="fd-rtlegend" aria-hidden="true"><span><i class="sw sw-walk"></i>walking</span><span><i class="sw sw-fight"></i>trash fight</span><span><i class="sw sw-boss"></i>boss</span><span>✕ death</span></div>
+          </div>
+          <div class="fd-rt" data-fd-rt role="img" aria-label="Run timeline"></div>
+          <div class="fd-rtplay" data-fd-rtplayrow></div>
+        </section>
+        <section class="fd-raid" aria-label="Raid frames" hidden>
+          <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
+          <div class="fd-frames" role="group" aria-label="Raid frames"></div>
+        </section>
+        <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
+        <section class="fd-roles" aria-label="Roles" hidden><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
+        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots</summary><div class="fd-underbody"></div></details></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
           <div class="cmd-orders"></div>
         </div>
-        <div class="cmd-mapbox">
-          <div class="cmd-stage">
-            <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
-            <div class="cmd-maptools">
-              <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
-              <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
-              <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
-              <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
+        <div class="fd-centre">
+          <div class="cmd-mapbox">
+            <div class="cmd-legend fd-legend" role="note"></div>
+            <div class="cmd-stage">
+              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="static"></g><g class="dyn"></g></svg>
+              <div class="cmd-maptools">
+                <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
+                <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>
+                <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
+                <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+                <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
+                <button type="button" data-act="whole" title="Show the whole map picture">Whole map</button>
+                <button type="button" data-act="boss" class="cmd-bossbtn" hidden title="Centre the map on the nearest living boss">Boss</button>
+              </div>
+              <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
+              <div class="cmd-grid-size"></div>
+              <div class="cmd-scale" hidden><i></i><span></span></div>
+              <div class="cmd-mapnote"></div>
+              <div class="cmd-tip" hidden></div>
             </div>
-            <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
-            <div class="cmd-grid-size"></div>
-            <div class="cmd-scale" hidden><i></i><span></span></div>
-            <div class="cmd-mapnote"></div>
-            <div class="cmd-tip" hidden></div>
+            <div class="cmd-picwhy" hidden></div>
+            <div class="cmd-feed" hidden></div>
+            <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
-          <div class="cmd-picwhy" hidden></div>
-          <div class="cmd-feed" hidden></div>
-          <div class="cmd-legend">${cmdLegendHtml()}</div>
+          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
+          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+        </div>
+        <p class="fd-nofight" hidden></p>
+        <section class="fd-bosses" aria-label="Boss abilities" hidden><div class="fd-bosslist"></div></section>
+        <div class="cmd-panels">
+          <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
+          <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
       </div>`;
     bindCmdMap(card, key);
+    // The debugger-only page hides the page-level "Refresh every" row, so the card header carries the same picker (one saved setting).
+    const rsel = card.querySelector('.fd-refresh select');
+    if (rsel) {
+      rsel.innerHTML = RefreshRate.OPTIONS.map(n => `<option value="${n}">${n === 0 ? 'paused' : n + ' s'}</option>`).join('');
+      rsel.value = String(refreshGate.interval());
+      rsel.addEventListener('change', () => setRefresh(rsel.value));
+    }
     // the names in the header, the party table and the lead line: a plain click opens the details in the page (modified clicks keep the link)
     card.addEventListener('click', e => {
       const a = e.target.closest && e.target.closest('a.cmd-botlink');
@@ -5925,7 +8068,219 @@
       if (card.classList.contains('cmd-demo')) return; // the simulated bots have no details
       openProfile(parseInt(a.dataset.guid, 10));
     });
+    // a click on a death centres the card's map on where it happened
+    card.addEventListener('click', e => {
+      const d = e.target.closest && e.target.closest('.cmd-death[data-x][data-y], .fd-death[data-x][data-y]');
+      if (!d) return;
+      const ms = cmdMaps[key] || (cmdMaps[key] = { follow: false, view: null, userScale: null });
+      const p = CmdView.project(parseFloat(d.dataset.x) || 0, parseFloat(d.dataset.y) || 0);
+      ms.follow = false;
+      ms.view = { cx: p.x, cy: p.y, scale: (ms.view && ms.view.scale) || 2 };
+      drawCmdMap(key);
+    });
+    // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
+    // sections and its map (the death marks and the ring follow the pick).
+    card.addEventListener('click', e => {
+      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready], [data-fd-open], [data-fd-fold], [data-fd-older]');
+      if (!t) return;
+      const fd = cmdFd[key];
+      if (!fd) return;
+      if (!card.classList.contains('fd-on')) return;
+      if (t.dataset.fdFold != null) {
+        // A folded run of clean trash opens or closes in place (a fold holding the picked fight starts open).
+        const id = fdDecodeKey(t.dataset.fdFold);
+        fd.foldOpen = fd.foldOpen || {};
+        fd.foldOpen[id] = t.getAttribute('aria-expanded') !== 'true';
+        fdRender(key);
+        return;
+      }
+      if (t.dataset.fdOlder != null) {
+        const bind = cmdFindBind(key);
+        if (bind) { fdOlderLoad(card, bind); fdRender(key); }
+        return;
+      }
+      if (t.dataset.fdOpen != null) {
+        // The pack table's time: that fight, on its own night.
+        fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(t.dataset.fdDay || '', Date.now()) : (t.dataset.fdDay || '');
+        delete fd.hist['night:' + fd.day];
+        fd.sel = fdDecodeKey(t.dataset.fdOpen);
+        fd.userSel = true;
+        fd.death = null;
+        fd.list = [];
+        fdRunStopAll(fd);
+        fdFightHash(fd, false);
+        const bind = cmdFindBind(key);
+        if (bind) fdLoad(card, bind);
+        fdRender(key);
+        return;
+      }
+      if (t.dataset.fdReady != null) {
+        fd.readyOpen = !fd.readyOpen;
+        fdRender(key);
+        return;
+      }
+      if (t.dataset.fdProfile != null) {
+        const guid = parseInt(t.dataset.fdProfile, 10);
+        if (guid > 0) openProfile(guid);
+        return;
+      }
+      if (t.dataset.fdFight != null) {
+        fd.sel = t.dataset.fdFight === 'live' ? 'live' : fdDecodeKey(t.dataset.fdFight);
+        fd.userSel = true;
+        fd.death = null;
+        fdRunStopAll(fd);
+        fdFightHash(fd, false);
+      } else if (t.dataset.fdBot != null) {
+        fd.bot = fd.bot === t.dataset.fdBot ? null : t.dataset.fdBot;
+      } else if (t.dataset.fdDeath != null) {
+        fd.death = parseInt(t.dataset.fdDeath, 10) || 0;
+        const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+        const fought = det && det.fight, tr = fought ? fd.tracks[fd.sel] : null;
+        const death = fought ? (fought.deaths || [])[fd.death] : null;
+        if (death && tr && tr !== 'loading' && FightReplay.window(tr.prep, fought).ok) {
+          fdRunStopAll(fd);
+          fd.rp.t = Math.min(Math.round(fought.dur_ms || 0), death.t_ms || 0);
+          fd.rp.on = true;
+          fdReplayStop(fd);
+        }
+      }
+      fdRender(key);
+    });
+    // Arrow keys walk the fight rail (the cards' own buttons keep Enter and Space).
+    card.addEventListener('keydown', e => {
+      const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : 0;
+      const rail = e.target.closest && e.target.closest('.fd-rail');
+      const btn = rail && e.target.closest('.fd-fight');
+      if (!step || !btn) return;
+      const cards = Array.from(rail.querySelectorAll('.fd-fight')), i = cards.indexOf(btn), j = i + step;
+      if (i < 0 || j < 0 || j >= cards.length) return;
+      e.preventDefault();
+      cards[j].focus();
+    });
+    // The night picker lists that night's stored fights (Tonight is the live list again); the pack table's box widens it to
+    // every commander.
+    card.addEventListener('change', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      if (e.target && e.target.matches && e.target.matches('[data-fd-showall]')) {
+        // "Show all fights": every fight of today as a card (the old rail), or the folded two-hour window. Kept per viewer.
+        fdShowAllSet(!!e.target.checked);
+        const bind = cmdFindBind(key);
+        if (bind) fdLoad(card, bind);
+        fdRender(key);
+        return;
+      }
+      const box = e.target && e.target.matches && e.target.matches('[data-fd-packall]');
+      if (box) {
+        fd.packAll = !!e.target.checked;
+        fd.packs = {};
+        fdRender(key);
+        return;
+      }
+      const day = e.target && e.target.matches && e.target.matches('[data-fd-day]');
+      if (!day) return;
+      fd.day = e.target.value || '';
+      delete fd.hist['night:' + fd.day];
+      fd.sel = null;
+      fd.userSel = false;
+      fd.death = null;
+      fd.list = [];
+      fdRunStopAll(fd);
+      const bind = cmdFindBind(key);
+      if (bind) fdLoad(card, bind);
+      fdRender(key);
+    });
+    // The run strip: a fight block selects that fight; the replay button plays the run from where the scrubber is.
+    card.addEventListener('click', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      const t = e.target.closest && e.target.closest('[data-fd-rtfight], [data-fd-rtplay]');
+      if (!t) return;
+      if (t.dataset.fdRtplay != null) { fdRunPlay(key); return; }
+      fd.sel = fdDecodeKey(t.dataset.fdRtfight || '');
+      fd.userSel = true;
+      fd.death = null;
+      fdRunStopAll(fd);
+      fdFightHash(fd, false);
+      fdReplayStop(fd);
+      fd.rp = { on: false, t: 0, playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
+      fdRender(key);
+    });
+    card.addEventListener('input', e => {
+      if (!e.target.matches || !e.target.matches('[data-fd-rtscrub]')) return;
+      fdRunScrub(key, parseFloat(e.target.value) || 0);
+    });
+    // The replay: play, speed, exit and a click on the timeline or a lane bar to scrub. Every control leaves the row, the cursor
+    // and the map in step with the one state (rp).
+    card.addEventListener('click', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      const hit = e.target.closest && e.target.closest('[data-fd-play], [data-fd-speed], [data-fd-exit]');
+      if (hit) {
+        if (hit.dataset.fdPlay != null) fdReplayPlay(key);
+        else if (hit.dataset.fdSpeed != null) { fd.rp.speed = FightReplay.nextSpeed(fd.rp.speed); fdReplaySync(key); }
+        else if (hit.dataset.fdExit != null) { fdReplayStop(fd); fd.rp.on = false; fdReplaySync(key); }
+        return;
+      }
+      // A boss-cast marker in the timeline scrubs the replay to that cast.
+      const bc = e.target.closest && e.target.closest('[data-fd-bosscast]');
+      if (bc) {
+        fd.rp.t = Math.max(0, parseFloat(bc.dataset.fdBosscast) || 0);
+        fd.rp.on = true;
+        fdRunStopAll(fd);
+        fdReplayStop(fd);
+        fdReplaySync(key);
+        return;
+      }
+      const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');
+      if (!bar || (e.target.closest && e.target.closest('button'))) return; // a death's skull keeps its own click
+      const scrub = card.querySelector('[data-fd-scrub]');
+      const dur = scrub ? parseFloat(scrub.max) || 0 : 0;
+      const rect = bar.getBoundingClientRect();
+      if (!(dur > 0) || !(rect.width > 0)) return;
+      const at = Math.round(((e.clientX - rect.left) / rect.width) * dur / 100) * 100;
+      fd.rp.t = Math.min(dur, Math.max(0, at));
+      fd.rp.on = true;
+      fdRunStopAll(fd);
+      fdRunSync(card, fd);
+      fdReplayStop(fd);
+      fdReplaySync(key);
+    });
+    card.addEventListener('input', e => {
+      if (!e.target.matches || !e.target.matches('.fd-scrub') || e.target.hasAttribute('data-fd-rtscrub')) return;
+      const fd = cmdFd[key];
+      if (!fd) return;
+      fd.rp.t = parseFloat(e.target.value) || 0;
+      fd.rp.on = true;
+      fdRunStopAll(fd);
+      fdRunSync(card, fd);
+      fdReplayStop(fd);
+      fdReplaySync(key);
+    });
+    cmdWatchStage(card, key);
+    // The role tables' "This fight | Total" switch: one seg per card, painted every render. The choice is kept per viewer.
+    bindSeg(card.querySelector('.fd-totalsseg'), v => {
+      fdTotalsSet(v === 'run' ? 'run' : 'fight');
+      fdRender(key);
+    });
     return card;
+  }
+
+  // The Commanders Live page shows commanders only: dungeon and observed-raid
+  // pseudo-bindings never render as Live cards (the debugger strip keeps them).
+  function cmdLiveBinds() {
+    return cmdAllBinds().filter(b => !b.dungeon && !b.observed);
+  }
+  // A bound raid shows once, under its commander binding: skip an observed raid bind whose bound flag is set or whose
+  // fight key is already a COMMANDERS binding.
+  function cmdRaidShownTwice(bind) {
+    if (!bind || !bind.observed) return false;
+    if (bind.bound) return true;
+    return (state.commanders.list || []).some(b => b && b.commander === bind.commander);
+  }
+  // The debugger's list: commanders plus observed raids, minus the bound-raid double.
+  function cmdDebugBinds() {
+    return cmdAllBinds().filter(b => !b.dungeon).filter(b => !cmdRaidShownTwice(b));
   }
 
   function renderCommanders() {
@@ -5933,7 +8288,7 @@
     const listEl = document.getElementById('cmd-list');
     const emptyEl = document.getElementById('cmd-empty');
     if (!listEl || !emptyEl) return;
-    const age = cmdAgeSec(), dim = age * 1000 > CMD_DIM_MS;
+    const age = cmdAgeSec();
     const bots = c.list.reduce((n, b) => n + (b.bots || []).length, 0);
     const down = c.list.reduce((n, b) => n + (b.bots || []).filter(x => x.alive === false).length, 0);
     const set = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
@@ -5941,7 +8296,9 @@
     set('cmd-kpi-bots', bots);
     set('cmd-kpi-dead', down);
     set('cmd-kpi-age', age >= 0 ? CmdView.ageText(age) + ' ago' : '–');
-    emptyEl.style.display = c.list.length ? 'none' : '';
+    const mode = cmdPageMode();
+    // The debugger has its own one-line empty state (the All raids grid says no raid is bound); the Live instructions are Live's.
+    emptyEl.style.display = c.list.length || mode === 'debug' ? 'none' : '';
     const why = document.getElementById('cmd-empty-why');
     if (why) {
       why.textContent = c.lost ? 'The game server has not reported for several minutes, so the last bindings were dropped.'
@@ -5949,43 +8306,1941 @@
         : 'The game server has not reported any commander yet (it sends them only while a binding stands).';
     }
 
-    // Only the commanders' cards live in #cmd-list; the Dungeons tab draws its own (the shared cmdCards map holds both).
-    const all = cmdAllBinds().filter(b => !b.dungeon), keys = all.map(b => b.commander);
-    cmdCards.forEach((card, key) => { if (!keys.includes(key)) { card.remove(); cmdCards.delete(key); delete cmdMaps[key]; delete cmdAvail[key]; } });
-    all.forEach((bind, i) => {
-      const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
-      let card = cmdCards.get(key);
-      if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
-      if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
-      card.classList.toggle('stale', dim && !demo);
-      card.classList.toggle('cmd-demo', demo);
-      const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
-      const place = cmdPlace(bind);
-      const hp = CmdView.headerParts(bind, place, '');
-      setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
-      const rb = UnitInfo.runBrief(bind, nowSec);
-      setHtml(card.querySelector('.cmd-badges'),
-        (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
-        + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
-        + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
-        + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
-      const leadBot = CmdView.leadBot(bind);
-      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
-        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : ''));
-      const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
-      setHtml(card.querySelector('.cmd-warn'), warns.length
-        ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
-        : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
-      setHtml(card.querySelector('.cmd-party'), cmdPartyHtml(bind));
-      setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
-      drawCmdMap(key);
-    });
+    // Only the commanders' cards live in #cmd-list; the Dungeons and Raids tabs draw their own (the shared cmdCards map holds all).
+    // The debugger strip keeps observed raids; the Live list (cmdLiveBinds) does not.
+    // Live draws the commanders; the debugger draws commanders plus observed raids, except a bound raid: it shows once,
+    // under its commander binding, not again as an observed raid copy.
+    const live = cmdLiveBinds();
+    const all = cmdDebugBinds();
+    fdTabsSync(all);
+    cmdPaintPageMode(mode);
+    const tabs = fdTabsModel(mode === 'debug' ? all : live);
+    fdTabPaint(tabs, mode);
+    const page = document.getElementById('tab-commanders');
+    if (page) {
+      page.classList.toggle('cmd-debug', mode === 'debug');
+      page.classList.toggle('cmd-debug-only', mode === 'debug' && !!fdPage.open);
+      page.classList.toggle('cmd-debug-grid', mode === 'debug' && !fdPage.open);
+    }
+    if (mode === 'debug') renderFdPage(all, tabs, listEl);
+    else renderLivePage(live, listEl);
+    // The one layer panel moves into the map only for an open commander tab, where the debugger's Layers button expects it.
+    cmdPlaceLayers(mode === 'debug' && !!fdPage.open && !fdTabGone(fdPage.open));
     paintCmdLayers();
     showCommanderLink();
+    cmdLiveSync();
+  }
+
+  // One card, in the view its page is in: Live draws the party and the map, the debugger draws the fight sections.
+  function cmdRenderCard(card, bind, debug) {
+    const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
+    const age = cmdAgeSec(), dim = age * 1000 > CMD_DIM_MS;
+    card.classList.toggle('stale', dim && !demo);
+    card.classList.toggle('cmd-demo', demo);
+    const fd = fdState(key);
+    fd.mode = debug ? 'debug' : 'live';
+    card.classList.toggle('fd-on', debug);
+    card.classList.toggle('cmd-history', !!bind.history);
+    // Debugger: its own kicker, title and chips in place of the Live title, badges, lead/run line and warnings. Live keeps them.
+    const hv = cmdHeadView(debug);
+    card.querySelector('.cmd-title').hidden = !hv.title;
+    card.querySelector('.cmd-badges').hidden = !hv.badges;
+    card.querySelector('.cmd-sub').hidden = !hv.sub;
+    card.querySelector('.cmd-warn').hidden = !hv.warn;
+    card.querySelector('.fd-headmain').hidden = !hv.crumbs;
+    card.querySelector('.fd-crumbs').hidden = !hv.crumbs;
+    card.querySelector('.fd-refresh').hidden = !hv.refresh;
+    if (bind.history) {
+      const n = numOr0(bind.histFights);
+      setHtml(card.querySelector('.fd-kicker'), 'Saved fights · ' + esc(bind.commander));
+      setHtml(card.querySelector('.fd-crumbs'),
+        '<span class="fd-crumb">Read-only · no raid bound right now</span>'
+        + `<span class="fd-crumb">${n} saved fight${n === 1 ? '' : 's'} · ${numOr0(bind.histDays)} night${numOr0(bind.histDays) === 1 ? '' : 's'}</span>`);
+    } else if (hv.crumbs) {
+      const runText = UnitInfo.clockText(UnitInfo.runInfo(bind, cmdEvents, nowSec).elapsed);
+      setHtml(card.querySelector('.fd-kicker'), 'Commander · ' + esc(bind.commander));
+      setHtml(card.querySelector('.fd-crumbs'),
+        fdHeaderHtml(bind, (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list, fd.details, bind.layout || null, runText));
+    }
+    // The live window is the only sign a fight is running: when it goes, the list must be asked for again at once.
+    if (bind.combat) card.dataset.fdCombat = '1';
+    else if (card.dataset.fdCombat) { card.dataset.fdCombat = ''; delete cmdFightsCache[bind.commander]; }
+    const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
+    const place = cmdPlace(bind);
+    const hp = CmdView.headerParts(bind, place, '');
+    setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+    card.dataset.commander = key;
+    const rb = UnitInfo.runBrief(bind, nowSec);
+    setHtml(card.querySelector('.cmd-badges'),
+      (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
+      + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
+      + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
+      + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
+    const leadBot = CmdView.leadBot(bind);
+    const raidWhy = CmdView.isRaid(bind) ? CmdView.whyWaiting(bind, nowSec) : '';
+    setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : '')
+      + (raidWhy ? ` &middot; <span class="cmd-waiting" title="What the run waits on and for how long">${esc(raidWhy)}</span>` : ''));
+    const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
+    setHtml(card.querySelector('.cmd-warn'), warns.length
+      ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
+      : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
+    const raid = CmdView.isRaid(bind);
+    setHtml(card.querySelector('.cmd-party'), raid ? cmdRaidHtml(bind) : cmdPartyHtml(bind));
+    setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
+    const panels = card.querySelector('.cmd-panels');
+    if (panels) panels.hidden = !raid || debug;
+    if (raid) {
+      setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
+      setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
+      setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
+      if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
+    }
+    // The run controls live in .cmd-panels on the Live page; in the debugger they move to the card body, full width under
+    // the raid frames. The fetch runs once per page load; the place runs here too, so while the answer is unknown the panel
+    // stays where it is and moves when the answer lands, never flashing in the wrong parent.
+    cmdPlaceControls(card, debug && raid && cmdControlOn);
+    const ctlGen = card._ctlGen = (card._ctlGen || 0) + 1;
+    cmdControlAsk(on => {
+      if (card._ctlGen !== ctlGen) return;
+      const ctl = card.querySelector('.cmd-controls');
+      if (ctl) ctl.hidden = !on || !raid;
+      if (on && raid) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+      cmdPlaceControls(card, debug && raid && on);
+    });
+    const left = card.querySelector('.cmd-left');
+    if (left) left.hidden = debug;
+    const fightsEl = card.querySelector('.cmd-fights');
+    if (fightsEl) fightsEl.hidden = debug;
+    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    cmdPlaceLiveStrip(card, debug);
+    cmdLivePaintEvents(key);
+    // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
+    if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
+    if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); }
+    else {
+      mountFightPanel(card, bind);
+      // The engaged bosses, or — with none — the trash the bind's live mobs hold: one paint decides which of the two
+      // the boss section shows.
+      cmdPaintBosses(card, cmdLiveBossPanels(bind), cmdTrashBlockHtml(bind));
+    }
+  }
+
+  // The debugger page moves the one layer panel into its map; take it back to the page before any card that may hold it leaves,
+  // or the panel leaves with the card and the Layers button has nothing to open.
+  function cmdRescueLayers() {
+    const layers = document.getElementById('cmd-layers');
+    if (!layers) return;
+    const page = document.getElementById('tab-commanders'), list = document.getElementById('cmd-list');
+    layers.classList.remove('cmd-layers-map');
+    const sum = layers.querySelector('summary');
+    if (sum && layers.dataset.liveLabel) sum.textContent = layers.dataset.liveLabel;
+    if (page) page.insertBefore(layers, list && list.parentElement === page ? list : null);
+  }
+
+  function cmdPlaceLayers(debugOnly) {
+    const box = document.getElementById('cmd-layers');
+    if (!box) return;
+    const page = document.getElementById('tab-commanders');
+    const card = document.querySelector('.cmd-card.fd-on');
+    const stage = debugOnly && card ? card.querySelector('.cmd-stage') : null;
+    const sum = box.querySelector('summary');
+    if (sum && !box.dataset.liveLabel) box.dataset.liveLabel = sum.textContent;
+    if (stage) {
+      if (box.parentElement !== stage) stage.appendChild(box); // the prototype's "Layers" pill over the map
+      box.classList.add('cmd-layers-map');
+      if (sum) sum.textContent = 'Layers ▾';
+    } else if (box.classList.contains('cmd-layers-map')) {
+      box.classList.remove('cmd-layers-map');
+      if (sum) sum.textContent = box.dataset.liveLabel;
+      const list = document.getElementById('cmd-list');
+      if (page) page.insertBefore(box, list && list.parentElement === page ? list : null);
+    }
+  }
+
+  // ---- Fights panel ("a light Turtle Logs") --------------------------------
+  // One Fights.mount per card (the daemon's /api/v1/combat/*, internal/combat).
+  // A11 replaces this mount with the raid card's panel (Fights.render if
+  // present); until then each Commanders card fetches its own commander.
+  function mountFightPanel(card, bind) {
+    if (typeof Fights === 'undefined' || !Fights || bind.demo) return;
+    // The daemon keeps fights per commander (internal/combat, CombatMonitor
+    // on); a card that fetched, or has a fetch in flight, does not fetch
+    // again on every render, and a card with nothing reported yet keeps one
+    // quiet retry per render instead of rebuilding the panel.
+    const mount = card.querySelector('.cmd-fights') || ensureFightMount(card);
+    if (card.dataset.fightState === 'done' || card.dataset.fightState === 'inflight') return;
+    card.dataset.fightState = 'inflight';
+    fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
+      card.dataset.fightState = (Array.isArray(list) && list.length) ? 'done' : 'idle';
+      Fights.render(mount, bind.commander, list);
+    }).catch(() => { card.dataset.fightState = 'idle'; });
+  }
+
+  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the top of the right column, above
+  // the Tanks table and beside the map), placed just before the roles so the reading order matches; a card first drawn on the Live page
+  // had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into the body. On the Live page it
+  // stays under the fights panel, as before.
+  function cmdPlaceLiveStrip(card, debug) {
+    const live = card.querySelector('.cmd-live'), body = card.querySelector('.cmd-body');
+    if (!live || !body) return;
+    if (debug) {
+      const roles = body.querySelector('.fd-roles');
+      if (roles && roles.parentElement === body) { if (live.parentElement !== body || live.nextElementSibling !== roles) body.insertBefore(live, roles); }
+      else if (live.parentElement !== body) body.appendChild(live);
+    }
+    else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
+  }
+  // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
+  // raid frames); on the Live page they sit back in .cmd-panels with the notes, threat and deaths.
+  function cmdPlaceControls(card, inDebug) {
+    const ctl = card.querySelector('.cmd-controls'), body = card.querySelector('.cmd-body');
+    if (!ctl || !body) return;
+    const home = card.querySelector('.cmd-panels');
+    if (inDebug) { if (ctl.parentElement !== body) body.insertBefore(ctl, card.querySelector('.fd-bosses')); }
+    else if (home && ctl.parentElement !== home) home.appendChild(ctl);
+  }
+
+  function ensureFightMount(card) {
+    let el = card.querySelector('.cmd-fights');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'cmd-fights';
+      card.appendChild(el);
+    }
+    // The live events strip sits under the fights panel, which is appended at the card's end.
+    const live = card.querySelector('.cmd-live');
+    if (live && live.previousElementSibling !== el) card.appendChild(live);
+    return el;
+  }
+
+  // ---- Fight debugger (the Commanders card's second mode) ------------------
+  // FightDebug (web/static/js/fightdebug.js) does the arithmetic; this turns its plain data into the card's markup. The mode
+  // is per commander and remembered per browser; with nothing saved a raid opens on the debugger and a party on Live.
+  // the rail, the run strip, the pick and the pack numbers all work from the list summaries.
+  const FD_DETAIL_CACHE = 120; // finished fights kept per commander (one never changes)
+  const FD_WINDOW_S = 7200;   // Tonight's rail: the current run plus the last 2 hours; "Load older" pages back from there
+  const FD_OLDER_PAGE = 50;   // fights per "Load older" page
+  const FD_SHOWALL_KEY = 'tbdash.fdShowAll'; // the rail's "Show all fights" box, per viewer (this browser)
+  const FD_TOTALS_KEY = 'tbdash.fdTotals'; // the role tables' "This fight | Total" switch, per viewer (this browser)
+  const FD_TOTALS_MS = 10000; // one run's totals, held as long as tonight's lists
+  const FD_TOTALS_CAP = 500;  // fights one run total sums (the daemon's combat.RunTotalsCap); a cut is titled
+  const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
+  const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
+  const FD_PACK_MS = 60000;   // one pack's table, held a minute
+  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.', noSaved: 'No saved fights in this commander\'s history.' };
+  const cmdFd = {};
+
+  // The one line a debugger card shows in place of an empty fight view: no fight in the list and none live. Null once a fight
+  // (or a live one) exists, even while its detail is still loading.
+  function fdEmptyNote(list, fight, selLive, history) {
+    if (selLive || fight || (Array.isArray(list) && list.length)) return '';
+    return history ? FD_EMPTY.noSaved : FD_EMPTY.noFight;
+  }
+
+  function fdState(key) {
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    return cmdFd[key];
+  }
+
+  function fdDecodeKey(v) {
+    try { return decodeURIComponent(v); } catch (e) { return v; }
+  }
+
+  // Replaces one debugger section and puts the keyboard back on the same control: the 2 s re-render must not steal focus.
+  function fdSet(node, html) {
+    if (!node) return;
+    const act = document.activeElement;
+    let attr = '', val = '';
+    if (act && node.contains(act)) {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals'].some(a => {
+        if (!act.hasAttribute || !act.hasAttribute(a)) return false;
+        attr = a;
+        val = act.getAttribute(a);
+        return true;
+      });
+    }
+    setHtml(node, html);
+    if (!attr) return;
+    const back = Array.from(node.querySelectorAll('[' + attr + ']')).find(el => el.getAttribute(attr) === val);
+    // preventScroll: a plain focus() scrolls the control into view, so every 2 s repaint of a section the reader had clicked in would
+    // drag a page scrolled elsewhere back up to that control.
+    if (back) back.focus({ preventScroll: true });
+  }
+
+  function fdRender(key) {
+    const card = cmdCards.get(key), bind = cmdFindBind(key);
+    if (!card || !bind) return;
+    renderFightDebug(card, bind);
+    drawCmdMap(key);
+  }
+
+  // A tap on a bot's dot selects it in the debugger (the details are a link in the bot panel); live mode keeps opening the details.
+  function fdPickBot(key, guid) {
+    const fd = cmdFd[key], bind = cmdFindBind(key);
+    if (!fd || fd.mode !== 'debug' || !bind) return false;
+    const b = (bind.bots || []).find(x => x.guid === guid);
+    if (!b) return false;
+    fd.bot = fd.bot === b.name ? null : b.name;
+    fdRender(key);
+    return true;
+  }
+
+  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) is asked once more at
+  // once; after that second failure its card says "details not available" instead of loading for ever, and the rows after it
+  // still load.
+  const FD_DETAIL_TRIES = 2;
+
+  function fdDetailFailed(fd, key) {
+    const f = fd.failed[key];
+    return !!f && f.n >= FD_DETAIL_TRIES;
+  }
+
+  function fdDetailFail(fd, key) {
+    const f = fd.failed[key] || { n: 0 };
+    f.n += 1;
+    fd.failed[key] = f;
+  }
+
+  // Only the picked fight's detail is fetched (the reader's click, a pack row, the URL, or the debugger's own pick of the worst
+  // summary): no other row is asked for. A live fight has no bot rows (it is drawn from its events until COMBAT_FIGHT arrives).
+  function fdDetailRow(fd) {
+    if (!fd.sel || fd.sel === 'live' || fd.details[fd.sel] || fdDetailFailed(fd, fd.sel)) return null;
+    const row = (fd.list || []).find(r => r && r.key === fd.sel);
+    if (row && row.live) return null;
+    return { key: fd.sel };
+  }
+
+  // The rail's "Show all fights" box, kept per viewer. Off (the default) folds clean trash and lists the current run plus the
+  // last two hours; on lists all of today's fights as cards, as the rail did before.
+  // A blocked storage (a private window, cleared site data) keeps the choice in memory for this page.
+  let fdShowAllMem = null;
+
+  function fdShowAllGet() {
+    if (fdShowAllMem !== null) return fdShowAllMem;
+    try { return !!(window.localStorage && window.localStorage.getItem(FD_SHOWALL_KEY) === '1'); } catch (e) { return false; }
+  }
+
+  function fdShowAllSet(on) {
+    fdShowAllMem = !!on;
+    try { if (window.localStorage) window.localStorage.setItem(FD_SHOWALL_KEY, on ? '1' : '0'); } catch (e) { /* kept in memory only */ }
+  }
+
+  // The role tables' "This fight | Total" switch, kept per viewer like the "Show all fights" box. Total sums the run's
+  // finished fights per bot (the daemon's /api/v1/combat/run-totals), held per commander for the shared fights window.
+  // A blocked storage (a private window, cleared site data) keeps the choice in memory for this page.
+  let fdTotalsMem = null;
+
+  function fdTotalsGet() {
+    if (fdTotalsMem !== null) return fdTotalsMem;
+    try { return (window.localStorage && window.localStorage.getItem(FD_TOTALS_KEY)) === 'run' ? 'run' : 'fight'; } catch (e) { return 'fight'; }
+  }
+
+  function fdTotalsSet(mode) {
+    fdTotalsMem = mode === 'run' ? 'run' : 'fight';
+    try { if (window.localStorage) window.localStorage.setItem(FD_TOTALS_KEY, fdTotalsMem); } catch (e) { /* kept in memory only */ }
+  }
+
+  // The run the totals sum, parsed from the selected fight's key
+  // (commander, session, id: internal/combat.Key): a run is one commander in
+  // one game session. The key is enough for a fight the list does not hold.
+  function fdTotalsSession(key) {
+    const parts = key != null ? String(key).split('\u0000') : [];
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) return Number(parts[1]);
+    return '';
+  }
+
+  // One run's totals, fetched once per commander per session: while a fetch is in flight the tables keep the last answer.
+  // Answers the payload plus whether the daemon cut it at 500 fights (X-More):
+  // the cut fights never reach the browser, so the title says newest-first.
+  function fdTotalsLoad(card, bind, fd, session) {
+    const c = fd.totalsCache;
+    const hit = (c && c.session === String(session)) ? c : null;
+    if (hit && Date.now() - hit.at < FD_TOTALS_MS) return { json: hit.json, more: !!hit.more };
+    if (fd.totalsPending) return { json: hit ? hit.json : null, more: !!(hit && hit.more) };
+    if (session === '' || session == null) return { json: null, more: false };
+    fd.totalsPending = true;
+    fetch('/api/v1/combat/run-totals?commander=' + encodeURIComponent(bind.commander) + '&session=' + encodeURIComponent(session))
+      .then(r => {
+        const more = !!(r && r.headers && r.headers.get && r.headers.get('X-More') === '1');
+        return jsonOrThrow(r).then(json => ({ json: json, more: more }));
+      }).then(got => {
+        fd.totalsCache = { at: Date.now(), session: String(session), json: got.json || null, more: got.more };
+      }).catch(() => {
+        fd.totalsCache = { at: Date.now(), session: String(session), json: null, more: false };
+      }).then(() => {
+        fd.totalsPending = false;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      });
+    return { json: hit ? hit.json : null, more: !!(hit && hit.more) };
+  }
+
+  // The switch above the role tables: "This fight" is the picked fight's own numbers, "Total" the run's sums.
+  function fdTotalsSegHtml(mode) {
+    const m = mode === 'run' ? 'run' : 'fight';
+    return '<div class="seg" role="group" aria-label="Role table range">'
+      + '<button type="button" class="seg-btn' + (m === 'fight' ? ' active' : '') + '" data-v="fight" data-fd-totals="fight">This fight</button>'
+      + '<button type="button" class="seg-btn' + (m === 'run' ? ' active' : '') + '" data-v="run" data-fd-totals="run">Total</button></div>';
+  }
+
+  // The run's start for the Total title: the game-server start (unix seconds)
+  // the session epoch names, in the reader's own time.
+  function fdRunStartText(session) {
+    const s = +session;
+    if (!(s > 0)) return '';
+    return new Date(s * 1000).toLocaleString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  }
+
+  // The Total title: how many fights, since when, and whether the newest 500
+  // are all the server shows (the run-totals X-More cut).
+  function fdTotalTitleHtml(totals, session, more) {
+    const t = totals || { fights: 0 };
+    const n = numOr0(t.fights);
+    const since = fdRunStartText(session);
+    const cut = more ? ' (newest ' + FD_TOTALS_CAP + ' fights)' : '';
+    return 'Total \u00b7 ' + n + ' fight' + (n === 1 ? '' : 's') + (since ? ' since ' + since : '') + cut;
+  }
+
+  // The finished-fight header chips from a run total: the run's summed damage and healing over its summed fight time.
+  function fdTotalChipsHtml(totals) {
+    const t = totals || { bots: [], dur_ms: 0, fights: 0 };
+    const secs = Math.max(1, numOr0(t.dur_ms) / 1000);
+    const dmg = (t.bots || []).reduce((n, b) => n + numOr0(b && b.dmg), 0);
+    const heal = (t.bots || []).reduce((n, b) => n + numOr0(b && b.heal), 0);
+    return `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
+      + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`
+      + `<span class="fd-chip">${numOr0(t.fights)} fights</span>`;
+  }
+
+  // Where Tonight's window starts (game-server unix seconds): the bound run's start or two hours ago, whichever is earlier,
+  // rounded down to the minute so the window's list request repeats the same URL for a minute.
+  function fdWindowStart(bind, nowMs) {
+    let since = Math.floor(numOr0(nowMs) / 1000) - FD_WINDOW_S;
+    const bound = numOr0(bind && bind.bound_at);
+    if (bound > 0 && bound < since) since = bound;
+    return Math.max(1, since - (since % 60));
+  }
+
+  // The night params every night fetch carries: the browser's zone and the 06:00 rollover, so the daemon groups the
+  // days and the fights by the viewer's own local night. Empty when the browser names no zone: the daemon then answers
+  // the old UTC day rows, which dayOptions reads as nights.
+  function fdNightParams() {
+    let tz = "";
+    try {
+      tz = typeof Intl !== 'undefined' ? (Intl.DateTimeFormat().resolvedOptions().timeZone || '') : '';
+    } catch (e) { tz = ''; }
+    if (typeof tz !== 'string' || !tz) return '';
+    const roll = (typeof FightHistory !== 'undefined' && FightHistory.NIGHT_ROLLOVER_H) || 6;
+    return '&tz=' + encodeURIComponent(tz) + '&rollover=' + encodeURIComponent(roll);
+  }
+
+  // The stored nights for the picker: one request per card per 5 min, kept on the card. A chosen night the daemon no longer
+  // lists (aged out) hands the picker back to Tonight.
+  function fdDaysLoad(fd, bind, onLoaded) {
+    const now = Date.now();
+    if (fd.daysAt && now - fd.daysAt < FD_DAYS_MS) return;
+    fd.daysAt = now;
+    fetch('/api/v1/combat/history/days?commander=' + encodeURIComponent(bind.commander) + fdNightParams()).then(jsonOrThrow).then(v => {
+      fd.days = v && Array.isArray(v.nights) ? v.nights : (v && Array.isArray(v.days) ? v.days : []);
+      if (fd.day && !fd.days.some(d => d && (d.night === fd.day || d.day === fd.day))) {
+        fd.day = '';
+        fd.sel = null;
+        fd.userSel = false;
+        fd.list = [];
+      }
+      if (onLoaded) onLoaded();
+    }).catch(() => { /* the picker keeps whatever it showed; Tonight always works */ });
+  }
+
+  // One night's fights from the daemon's night grouping, newest first. A chosen night keeps its list 10 s like a day's
+  // did, under 'night:<night>'.
+  function fdNightFights(fd, bind, night, cb) {
+    // The night is always a real YYYY-MM-DD (the chosen night, or tonight for Tonight). Without a browser zone the
+    // night request would carry no tz and the daemon would 400, so fetch that UTC day instead.
+    if (!night || typeof FightHistory === 'undefined') { if (cb) cb(null); return; }
+    if (!fdNightParams()) { fdDayFights(fd, bind, night, cb); return; }
+    fdHistFetch(fd, bind, 'night:' + night,
+      '&night=' + encodeURIComponent(night) + fdNightParams(), cb);
+  }
+
+  // A chosen past day's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
+  // the 2 s redraw does not ask again. Kept under 'night:<day>' like a night fetch, so one key invalidation covers both.
+  function fdDayFights(fd, bind, day, cb) {
+    // The day is always a real YYYY-MM-DD (the chosen night, or today for Tonight): the daemon answers an empty day with 400.
+    if (!day) { if (cb) cb(null); return; }
+    fdHistFetch(fd, bind, 'night:' + day, '&day=' + encodeURIComponent(day), cb);
+  }
+
+  // Tonight's window: the stored fights since fdWindowStart (the list's since param spans midnight), cached as 'win:<since>'.
+  function fdWinFights(fd, bind, since, cb) {
+    // The window moves every minute: once the new window's list is in, an older window's list is dropped, not kept beside it
+    // (until then the rail keeps drawing the older one, see fdWinList).
+    fdHistFetch(fd, bind, 'win:' + since, '&since=' + encodeURIComponent(since), list => {
+      if (list) Object.keys(fd.hist).forEach(k => { if (k.indexOf('win:') === 0 && k !== 'win:' + since && !fd.histPending[k]) delete fd.hist[k]; });
+      if (cb) cb(list);
+    });
+  }
+
+  // The window's stored list: the current window's, else the newest older window's while the new one is on its way.
+  function fdWinList(fd) {
+    const c = fd.hist['win:' + fd.winSince];
+    if (c) return c.list;
+    let best = null, bestS = -1;
+    Object.keys(fd.hist).forEach(k => {
+      const sv = k.indexOf('win:') === 0 ? Number(k.slice(4)) : -1;
+      if (sv > bestS && fd.hist[k]) { bestS = sv; best = fd.hist[k].list; }
+    });
+    return best;
+  }
+
+  // One stored-fights list per cache key, held for the shared fights window; callers asking while it is in flight share it.
+  function fdHistFetch(fd, bind, ck, qs, cb) {
+    const c = fd.hist[ck];
+    if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
+    if (fd.histPending[ck]) { if (cb) fd.histPending[ck].push(cb); return; }
+    const cbs = fd.histPending[ck] = cb ? [cb] : [];
+    const done = rows => {
+      const list = Array.isArray(rows) ? rows : (c ? c.list : null);
+      fd.hist[ck] = { list, at: Date.now() };
+      delete fd.histPending[ck];
+      cbs.forEach(f => { try { f(list); } catch (e) { /* a drawing error must not strand the queue */ } });
+    };
+    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + qs)
+      .then(jsonOrThrow).then(done).catch(() => done(null));
+  }
+
+  // "Load older": one page of stored fights before the oldest row the rail shows (the list's before cursor: start and key, so a
+  // shared second neither repeats nor drops a row). The page spans days; X-More says whether another page exists.
+  function fdOlderLoad(card, bind) {
+    const fd = fdState(bind.commander);
+    const older = fdOlderState(fd);
+    if (older.loading) return;
+    const rows = (fd.list || []).filter(r => r && r.key && !r.live && numOr0(r.start) > 0);
+    const last = rows.length ? rows.reduce((a, r) => (numOr0(r.start) < numOr0(a.start)
+      || (numOr0(r.start) === numOr0(a.start) && String(r.key) > String(a.key)) ? r : a)) : null;
+    const before = last ? numOr0(last.start) + ',' + last.key : String(fd.winSince || Math.floor(Date.now() / 1000));
+    older.loading = true;
+    older.failed = false;
+    // The window start freezes with the first older page: a window that kept sliding would leave a gap between the older pages and
+    // its new start (fdLoad keeps asking since= this start for the rest of the night).
+    if (!older.since) older.since = fd.winSince || 0;
+    let more = false;
+    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&before=' + encodeURIComponent(before)
+      + '&limit=' + FD_OLDER_PAGE)
+      .then(r => { more = !!(r && r.headers && r.headers.get && r.headers.get('X-More') === '1'); return jsonOrThrow(r); })
+      .then(list => {
+        const got = Array.isArray(list) ? list : [];
+        older.rows = fdMergeRows(older.rows, got);
+        older.more = more && got.length > 0;
+        older.done = !older.more;
+      })
+      .catch(() => { older.failed = true; })
+      .then(() => {
+        older.loading = false;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      });
+  }
+
+  // The older pages belong to the night they were asked on: another night (or Tonight again) starts with none.
+  function fdOlderState(fd) {
+    if (!fd.older || fd.older.day !== fd.day) fd.older = { day: fd.day, rows: [], loading: false, more: true, done: false, failed: false, since: 0 };
+    return fd.older;
+  }
+
+  // One row per fight: the live list first (a fight that just ended keeps its detail and its kept positions), then the day's
+  // stored fights the live list no longer holds (a restart, or a fight older than the daemon's fifty). Newest first.
+  function fdMergeRows(live, hist) {
+    const seen = {};
+    const out = [];
+    (Array.isArray(live) ? live : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    (Array.isArray(hist) ? hist : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    out.sort((a, b) => (numOr0(b.start) - numOr0(a.start)) || (String(a.key) < String(b.key) ? -1 : 1));
+    return out;
+  }
+
+  // The night "Tonight" is: the current local night (06:00 rollover), e.g. 02:17 on 2 Nov is still the night of 1 Nov.
+  function fdTodayDay(nowMs) {
+    return typeof FightHistory !== 'undefined' ? FightHistory.nightOf(nowMs) : '';
+  }
+
+  // Tonight's rail: tonight's stored fights and the live list, one row per fight. The night selector's count is that same
+  // night's stored count, so the two never tell different stories again.
+  // With the window on (fd.winSince set, "Show all fights" off) it is the current run plus the last two hours: the window's
+  // stored list, the live rows inside it, and any older pages the reader loaded.
+  function fdTonightRows(fd, key) {
+    const live = cmdFightsCache[key] && cmdFightsCache[key].list;
+    const older = fd.older && fd.older.day === fd.day ? fd.older.rows : null;
+    if (fd.winSince && !fd.showAll) {
+      const from = (older || []).reduce((m, r) => Math.min(m, numOr0(r && r.start) || m), fd.winSince);
+      const inWin = (Array.isArray(live) ? live : []).filter(r => r && (r.live || numOr0(r.start) >= from));
+      return fdMergeRows(fdMergeRows(inWin, fdWinList(fd)), older);
+    }
+    const night = fdTodayDay(Date.now());
+    const hist = night && fd.hist['night:' + night] ? fd.hist['night:' + night].list : null;
+    return older && older.length ? fdMergeRows(fdMergeRows(live, hist), older) : fdMergeRows(live, hist);
+  }
+
+  // The pack the selected fight belongs to, once per pack per minute; the box widens the table to every commander.
+  function fdPackLoad(card, bind, fd, packKey) {
+    const ck = packKey + (fd.packAll ? '|all' : '');
+    const c = fd.packs[ck];
+    if (c && Date.now() - c.at < FD_PACK_MS) return c.json;
+    if (!fd.packPending[ck]) {
+      fd.packPending[ck] = true;
+      fetch('/api/v1/combat/packs?pack=' + encodeURIComponent(packKey) + '&commander=' + encodeURIComponent(bind.commander)
+        + '&all=' + (fd.packAll ? '1' : '0')).then(jsonOrThrow)
+        .then(json => { fd.packs[ck] = { at: Date.now(), json: json || { pack_key: packKey, rows: [] } }; })
+        .catch(() => { fd.packs[ck] = { at: Date.now(), json: { pack_key: packKey, rows: [] } }; })
+        .then(() => {
+          delete fd.packPending[ck];
+          if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+        });
+    }
+    return c ? c.json : null;
+  }
+
+  // The night picker's options (fixed English labels over UTC) and the chosen night; rebuilt only when the list changes, so an
+  // open dropdown keeps its place.
+  function fdDayPaint(card, fd) {
+    if (typeof FightHistory === 'undefined') return;
+    const sel = card.querySelector('[data-fd-day]');
+    if (!sel) return;
+    const opts = FightHistory.dayOptions({ days: fd.days }, Date.now());
+    const sig = JSON.stringify(opts);
+    if (sel.dataset.fdOpts !== sig) { sel.dataset.fdOpts = sig; setHtml(sel, fdDayOptionsHtml(opts)); }
+    if (sel.value !== fd.day) sel.value = fd.day;
+  }
+
+  // The same pack across runs under the checks: only for a fight the history knows a pack of; the daemon's table, kept a
+  // minute per pack (and per the all-commanders box).
+  function fdPackShow(card, bind, fd, packKey) {
+    const node = card.querySelector('.fd-pack');
+    if (!node) return;
+    if (!packKey || typeof FightHistory === 'undefined') {
+      if (node.dataset.fdKey) { delete node.dataset.fdKey; delete node.dataset.fdHtml; fdSet(node, ''); }
+      node.hidden = true;
+      return;
+    }
+    const json = fdPackLoad(card, bind, fd, packKey);
+    const table = json ? FightHistory.packTable(json, fd.sel) : null;
+    const html = fdPackHtml(table, fd.packAll, packKey);
+    node.hidden = false;
+    if (node.dataset.fdHtml === html) return;
+    node.dataset.fdHtml = html;
+    fdSet(node, html);
+  }
+
+  function fdDayOptionsHtml(opts) {
+    return (Array.isArray(opts) ? opts : []).map(o => `<option value="${esc(o && o.value != null ? o.value : '')}">${esc(o && o.label != null ? o.label : '')}</option>`).join('');
+  }
+
+  // The pack table: Night, Time, Length s, Deaths, Non-tank s and Outcome per run of the same pack, with the best attempt said
+  // in words (text, not colour only). Each time opens that fight on its own night.
+  function fdPackHtml(table, all, packKey) {
+    const head = '<div class="fd-packhead"><h3 class="cmd-h">Same pack across runs</h3>'
+      + `<label class="fd-packall"><input type="checkbox" data-fd-packall${all ? ' checked' : ''}> All commanders</label></div>`;
+    if (!table) return head + '<p class="empty-hint">Loading the pack…</p>';
+    const rows = Array.isArray(table.rows) ? table.rows : [];
+    if (!rows.length) return head + '<p class="empty-hint">No fights recorded in this pack yet.</p>';
+    const med = table.median || { durS: 0, deaths: 0 };
+    const body = rows.map(r => `<tr${r.sel ? ' class="sel" aria-current="true"' : ''}>`
+      + `<td>${esc(r.day || '')}</td>`
+      + `<td><button type="button" class="fd-packopen" data-fd-open="${esc(encodeURIComponent(r.key))}" data-fd-day="${esc(r.day || '')}"`
+      + ` aria-label="${esc('Open ' + (r.commander || 'the fight') + ' on ' + (r.when || '') + ' (' + (r.day || '') + ')')}">${esc(r.when || '')}</button></td>`
+      + `<td class="n">${esc(String(r.durS))}</td><td class="n">${r.deaths}</td><td class="n">${r.ntS == null ? '—' : esc(String(r.ntS))}</td>`
+      + `<td>${esc(r.outcome || '')}${r.best ? ' <span class="fd-best">best</span>' : ''}</td></tr>`).join('');
+    return head
+      + `<table class="data-table fd-table"><caption>${esc(packKey)} · median ${esc(String(med.durS))} s, ${esc(String(med.deaths))} deaths</caption>`
+      + '<thead><tr><th>Night</th><th>Time</th><th class="n">Length s</th><th class="n">Deaths</th><th class="n">Non-tank s</th><th>Outcome</th></tr></thead>'
+      + `<tbody>${body}</tbody></table>`;
+  }
+
+  function fdLoad(card, bind) {
+    const fd = fdState(bind.commander);
+    // "Show all fights" (the viewer's box) lists every fight as a card; a read-only history card has no run of its own and no
+    // "Load older" row, so it always lists the whole day unfolded. The render reads this same flag.
+    fd.showAll = fdShowAllGet() || !!bind.history;
+    // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
+    // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
+    const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
+    const pickDay = () => {
+      const day = fd.days[0].night || fd.days[0].day;
+      fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(day, Date.now()) : day;
+      fd.sel = null;
+      fd.userSel = false;
+      fd.list = [];
+    };
+    fdDaysLoad(fd, bind, () => {
+      if (!wantDay()) return;
+      pickDay();
+      if (!card.classList.contains('fd-on')) return;
+      renderFightDebug(card, bind);
+      fdLoad(card, bind);
+    });
+    if (wantDay()) pickDay();
+    const gotList = list => {
+      if (list) fd.list = list;
+      // The rail paints as soon as the list (or a newly merged row) arrives, not only when the first detail does.
+      const sig = list ? list.length + '|' + list.map(r => (r && r.key) || '').join(',') : '';
+      if (list && sig !== fd.listSig) {
+        fd.listSig = sig;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      }
+      if (fd.loading) return;
+      const row = fdDetailRow(fd);
+      if (!row) return;
+      fd.loading = true;
+      fd.loadingKey = row.key;
+      const failed = () => {
+        fd.loading = false;
+        fd.loadingKey = null;
+        fdDetailFail(fd, row.key);
+        if (!card.classList.contains('fd-on')) return;
+        renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
+        fdLoad(card, bind);
+      };
+      const req = fdFightsFeed().detail(bind.commander, row.key, FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander),
+        k => fetch('/api/v1/combat/fight/' + encodeURIComponent(k)).then(jsonOrThrow));
+      if (!req) { fd.loading = false; return; }
+      req.then(res => {
+        if (!res || !res.fight) { failed(); return; }
+        fd.loading = false;
+        fd.loadingKey = null;
+        delete fd.failed[row.key];
+        fd.details[row.key] = res;
+        const keys = Object.keys(fd.details);
+        if (keys.length > FD_DETAIL_CACHE) keys.slice(0, keys.length - FD_DETAIL_CACHE).forEach(k => { delete fd.details[k]; });
+        if (!card.classList.contains('fd-on')) return;
+        renderFightDebug(card, bind);
+        drawCmdMap(bind.commander); // the newly loaded fight may be the one the debugger now shows
+        fdLoad(card, bind);
+      }).catch(failed);
+    };
+    // A chosen night lists that night's stored fights; Tonight is tonight's stored fights with the live list on top.
+    if (fd.day) { fdNightFights(fd, bind, fd.day, gotList); return; }
+    const tonight = fdTodayDay(Date.now());
+    if (!tonight) { cmdRaidFights(bind, gotList); return; }
+    // "Show all fights" lists the whole night (the old rail); otherwise the window: the current run plus the last two hours.
+    const older = fd.older && fd.older.day === fd.day ? fd.older : null;
+    fd.winSince = fd.showAll ? 0 : older && older.since ? older.since : fdWindowStart(bind, Date.now());
+    let live = null, hist = null, left = 2;
+    // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
+    const both = () => { if (--left) return; gotList(live || hist ? fdTonightRows(fd, bind.commander) : null); };
+    cmdRaidFights(bind, l => { live = l; both(); });
+    if (fd.showAll) fdNightFights(fd, bind, tonight, l => { hist = l; both(); });
+    else fdWinFights(fd, bind, fd.winSince, l => { hist = l; both(); });
+  }
+
+  // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
+  // or the live fight while one runs. A live fight that ended hands the pick back even when the user had chosen it.
+  function fdSyncSel(fd, bind, list, details, layout) {
+    const live = FightDebug.liveSummary(bind); // null for a parked group: the LIVE checks panel belongs to a fight
+    const before = fd.sel;
+    if (fd.sel === 'live' && !live) { fd.sel = null; fd.userSel = false; }
+    if (!fd.userSel) {
+      // The worst fight by its summary (a wipe, then deaths, then fired rules): the details are no longer all loaded.
+      const worst = FightDebug.worstSummaryIndex(list);
+      fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
+    }
+    // A pick the page made itself keeps the URL's fight segment current without adding a history entry per redraw.
+    if (fd.sel !== before) fdFightHash(fd, true);
+  }
+
+  // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and
+  // the one before it. Only a plan on the fight's own map counts; a fight without a plan (a pocket fight) has no ring row.
+  function fdFightExtra(bind, fight, lanesRes) {
+    const extra = { lanes: lanesRes || null, strays: null, packI: 0, prevPackI: 0 };
+    if (!fight) return extra;
+    const name = cmdPlanName(bind);
+    const plan = name ? cmdPlanGet(name, !!bind.demo) : null;
+    if (!plan || plan.map !== fight.map) return extra;
+    const fightStep = fight.step || 0;
+    const view = PlanOverlay.view(plan, {
+      mapId: fight.map, cur: fightStep, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run,
+    });
+    const packI = PlanOverlay.fightPack(plan, fight);
+    extra.strays = (view && view.strays) || [];
+    extra.packI = packI;
+    extra.prevPackI = fdPrevPackI(view, packI);
+    return extra;
+  }
+
+  // The plan's last pack step before packI (0 when there is none).
+  function fdPrevPackI(view, packI) {
+    let prev = 0;
+    ((view && view.steps) || []).forEach(s => { if (s.pack && s.i > prev && s.i < packI) prev = s.i; });
+    return prev;
+  }
+
+  // A selected fight has no kept positions: its night is past, its detail came from the history file (hist: true), or the
+  // fight belongs to another commander's binding (the card's track is not that fight's).
+  function fdFightHist(selRow, det, fight, bind) {
+    return !!(selRow && selRow.hist) || !!(det && det.hist)
+      || !!(fight && fight.commander && fight.commander !== (bind && bind.commander));
+  }
+
+  function renderFightDebug(card, bind) {
+    if (!card || !bind || typeof FightDebug === 'undefined') return;
+    const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
+    // A chosen night lists its own stored fights; Tonight is today's stored fights with the live list on top.
+    const list = fd.day ? (fd.list || []) : (bind.history ? (fd.list || []) : fdTonightRows(fd, key));
+    fd.list = list;
+    const details = list.map(r => fd.details[r.key] || null);
+    fdSyncSel(fd, bind, list, details, layout);
+    if (fd.rp.key !== fd.sel) {
+      fdReplayStop(fd);
+      fd.rp = { on: false, t: 0, playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
+    }
+    const live = FightDebug.liveSummary(bind);
+    const selLive = fd.sel === 'live';
+    const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
+    // positions and no lanes; the pack table carries the stored non-tank seconds instead.
+    const selRow = !selLive && fd.sel ? list.find(r => r && r.key === fd.sel) || null : null;
+    const hist = fdFightHist(selRow, det, fight, bind);
+    if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
+    const recaps = fight ? FightDebug.deathRecaps(fight) : [];
+    // No fight yet: one line where the fight panels would be, and none of their empty boxes (the run strip, checks, timeline
+    // and the role bars wait for a fight).
+    const emptyNote = fdEmptyNote(list, fight, selLive, !!bind.history);
+    const noWin = !!emptyNote;
+    const noWinEl = card.querySelector('.fd-nofight');
+    if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
+    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = noWin; });
+    // A read-only history card has no live party and no run of its own: the raid frames and the run strip would only be empty.
+    if (bind.history) {
+      card.querySelectorAll('.fd-runtl, .fd-raid').forEach(el => { el.hidden = true; });
+    }
+
+    // The lanes and plan facts the checks read: one lanes result feeds the strip and the lane row, the plan's ring strays the
+    // route row. The extra is kept on the detail, so the rail grades the fight the same way.
+    const track = fight ? fd.tracks[fd.sel] : undefined;
+    let lanesRes = null;
+    let lanesUntracked = false;
+    if (fight && track && track !== 'loading') {
+      if (track.raw && track.raw.tracked === false) lanesUntracked = true;
+      else lanesRes = AggroLanes.lanes(track.raw, fight, bind.bots || []);
+    }
+    const extra = fight ? fdFightExtra(bind, fight, lanesRes) : null;
+    if (det) det.extra = extra;
+
+    // The run strip above the raid frames: its blocks, the death marks and the replay scrubber.
+    const run = bind.history ? null : fdRunModel(bind, list, fd.details, cmdNowFor(bind));
+    fd.run.model = run;
+    const runKey = run ? run.t0 + '|' + run.segs.filter(sg => sg.kind !== 'walk').map(sg => sg.key + ':' + sg.fromS + ':' + sg.toS).join(',') : '';
+    if (fd.run.key !== runKey) {
+      fdRunStop(fd);
+      fd.run.key = runKey;
+      fd.run.t = run ? Math.min(fdRunT(fd, run), run.spanMs) : null;
+    }
+    if (!fd.run.on) fd.run.t = null; // at rest the cursor sits at the newest report, so the clock reads the whole run
+    if (fd.run.on && !run) fdRunStopAll(fd);
+    fdSet(card.querySelector('[data-fd-rt]'), run ? fdRunHtml(run, fd.sel, fd) : '');
+    fdRunPlaySync(card, fd, run);
+    if (run) fdRunLoad(card, bind);
+
+    const frames = FightDebug.raidFrames(bind);
+    const ready = typeof ReadyCheck !== 'undefined' ? ReadyCheck.raid(bind, cmdPlanFor(bind)) : null;
+    if (ready) ready.open = !!fd.readyOpen;
+    fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot, ready));
+    fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
+    fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
+    // asked: 0, no row is fetched up front: a card without its detail says what its summary says.
+    const cards = FightDebug.railCards(list, fd.details, layout,
+      { failed: fd.failed, loadingKey: fd.loadingKey, asked: 0, retry: FD_DETAIL_TRIES, sel: fd.sel });
+    const showAll = fd.showAll != null ? !!fd.showAll : fdShowAllGet() || !!bind.history;
+    const older = fdOlderState(fd);
+    fdRailPatch(card.querySelector('.fd-rail'), fdRailParts(cards, live, fd.sel, fd.day, {
+      showAll, open: fd.foldOpen || (fd.foldOpen = {}),
+      // Paging back: Tonight's window, and the history card's chosen night, have older stored fights before them.
+      older: !fd.day && !bind.history ? { more: older.more, loading: older.loading, failed: older.failed, n: older.rows.length } : null,
+    }));
+    const allBox = card.querySelector('[data-fd-showall]');
+    const boxOn = fdShowAllGet();
+    if (allBox && allBox.checked !== boxOn) allBox.checked = boxOn;
+    fdDayPaint(card, fd);
+
+    const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
+    const guids = {};
+    // The switch above the role tables: the live table keeps the rolling 10 s window (no switch there), "This fight" is the
+    // picked fight's own numbers, "Total" the same tables from the run's sums (DPS and HPS over each bot's own fight time).
+    const totalsMode = !selLive && fight ? fdTotalsGet() : 'fight';
+    let totalsJson = null, totalsNote = '', totalsSession = '', totalsMore = false;
+    if (totalsMode === 'run') {
+      totalsSession = fdTotalsSession(fd.sel);
+      const loaded = fdTotalsLoad(card, bind, fd, totalsSession);
+      totalsJson = loaded.json;
+      totalsMore = loaded.more;
+      if (!totalsJson) totalsNote = fd.totalsPending ? 'Loading the total…' : 'The total is not available right now.';
+    }
+    let title = 'Fight';
+    let chips = '';
+    if (selLive) {
+      const s = live || { fightMs: 0, winS: 0, dps: 0, hps: 0, active: 0, alive: 0 };
+      title = 'Live · ' + Math.floor(s.fightMs / 60000) + ':' + ('0' + Math.floor((s.fightMs % 60000) / 1000)).slice(-2);
+      chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(s.dps))} dps</span><span class="fd-chip">${FightDebug.fmtInt(Math.round(s.hps))} hps</span>`
+        + `<span class="fd-chip">${s.alive} alive · ${s.active} acting</span>`;
+    } else if (fight) {
+      const info = cards.find(c => c.key === fd.sel) || {};
+      const secs = Math.max(1, (fight.dur_ms || 0) / 1000);
+      const dmg = (fight.bots || []).reduce((n, b) => n + (b.dmg || 0), 0);
+      const heal = (fight.bots || []).reduce((n, b) => n + (b.heal || 0), 0);
+      const baseTitle = (info.label || fight.boss_name || 'trash') + fdBossPhase(fight.boss_phase, fight.boss_phase_entry);
+      title = baseTitle + ' · ' + secs.toFixed(1) + ' s · step ' + (fight.step || 0);
+      // The switch above the role tables moves the raid dps and hps chips with it: Total shows the run's sums.
+      if (totalsMode === 'run' && totalsJson) {
+        chips = fdTotalChipsHtml(totalsJson);
+        title = fdTotalTitleHtml(totalsJson, totalsSession, totalsMore);
+      } else {
+        chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(dmg / secs))} raid dps</span>`
+          + `<span class="fd-chip">${FightDebug.fmtInt(Math.round(heal / secs))} hps</span>`
+          + `<span class="fd-chip">${esc(fight.outcome || '')}</span>`;
+      }
+    } else if (list.length) {
+      title = 'Loading the fights…';
+    }
+    fdSet(card.querySelector('.fd-title'), esc(title));
+    fdSet(card.querySelector('.fd-chips'), chips);
+    // Below the header the checks and timeline still describe the picked fight,
+    // even in Total mode: the tables above are the run's sums, the verdict below
+    // names which pull they judge.
+    const checkFor = card.querySelector('.fd-checkfor');
+    if (fight && totalsMode === 'run') {
+      const info = cards.find(c => c.key === fd.sel) || {};
+      const picked = info.label || fight.boss_name || 'trash';
+      if (checkFor) checkFor.hidden = false;
+      fdSet(checkFor, esc('Checks for ' + picked));
+    } else {
+      if (checkFor) checkFor.hidden = true;
+      fdSet(checkFor, '');
+    }
+    fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps, guids, fd.bot));
+    fdPackShow(card, bind, fd, selRow ? selRow.pack_key || (det && det.pack_key) || '' : '');
+
+    fdSet(card.querySelector('.fd-tl'), selLive ? '<p class="empty-hint">The timeline and death recap come when the fight ends.</p>'
+      : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
+    fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
+    // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
+    // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
+    if (fight) {
+      if (hist) {
+        fdPlayNote(card, fd.sel, 'No replay for past nights (positions are kept 30 min)');
+        fdSet(card.querySelector('.fd-lanes'), '');
+      } else {
+        if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
+        fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+        const lanes = card.querySelector('.fd-lanes');
+        if (lanesUntracked) {
+          fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
+        } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms));
+        else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
+        fdCursorSync(card, fd);
+      }
+    } else {
+      fdSet(card.querySelector('.fd-play'), '');
+      fdSet(card.querySelector('.fd-lanes'), '');
+    }
+
+    cmdPaintBosses(card, selLive ? cmdLiveBossPanels(bind) : fight ? cmdFightBossPanels(bind, fight) : []);
+
+    let tables = null;
+    if (!selLive && fight) tables = totalsMode === 'run'
+      ? (totalsJson ? FightDebug.runRoleTables(totalsJson, layout) : null)
+      : FightDebug.roleTables(fight, layout);
+    const segNode = card.querySelector('.fd-totalsseg');
+    if (segNode) {
+      fdSet(segNode, !selLive && fight ? fdTotalsSegHtml(totalsMode) : '');
+      const seg = segNode.querySelector('.seg');
+      if (seg) paintSeg(seg, totalsMode);
+    }
+    if (selLive) {
+      fdSet(card.querySelector('.fd-tanks'), fdLiveTableHtml(FightDebug.liveTables(bind), fd.bot, live ? live.winS : 0));
+      fdSet(card.querySelector('.fd-heals'), '');
+      fdSet(card.querySelector('.fd-dps'), '');
+    } else if (tables) {
+      const three = fdRolesHtml(tables, fd.bot, totalsMode);
+      fdSet(card.querySelector('.fd-tanks'), three[0]);
+      fdSet(card.querySelector('.fd-heals'), three[1]);
+      fdSet(card.querySelector('.fd-dps'), three[2]);
+    } else if (totalsNote) {
+      fdSet(card.querySelector('.fd-tanks'), `<p class="empty-hint">${esc(totalsNote)}</p>`);
+      fdSet(card.querySelector('.fd-heals'), '');
+      fdSet(card.querySelector('.fd-dps'), '');
+    } else {
+      fdSet(card.querySelector('.fd-tanks'), '');
+      fdSet(card.querySelector('.fd-heals'), '');
+      fdSet(card.querySelector('.fd-dps'), '');
+    }
+
+    const botEl = card.querySelector('.fd-bot');
+    const panel = fight && fd.bot ? FightDebug.botPanel(fight, fd.bot) : null;
+    if (panel) {
+      const fromBind = (bind.bots || []).find(b => b.name === panel.name);
+      const fromFight = (fight.bots || []).find(b => b.name === panel.name);
+      panel.guid = fromBind ? fromBind.guid : fromFight ? fromFight.guid : null;
+    }
+    botEl.hidden = !panel;
+    fdSet(botEl, fdBotHtml(panel));
+    fdUnderSync(card, bind, fd);
+  }
+
+  // The window an underperf answer covers: the binding, its night (or "" for
+  // Tonight / a live card), live or history, and the live since instant. A
+  // run pick belongs to the window it was made in, so a new window starts
+  // again on the whole window rather than on a run index that may be gone.
+  function fdUnderWin(bind, fd) {
+    const bound = Number(bind && bind.bound_at) > 0 ? String(Math.floor(Number(bind.bound_at))) : "";
+    return [bind && bind.commander, (fd && fd.day) || "", bind && bind.history ? "hist" : "live", bound].join("|");
+  }
+
+  // The underperforming bots section: one request per card per 30 s, or one when the window changes, and only while its
+  // box is open. The <details> lives in the static card template, so the 2 s redraw keeps it open and only its body is
+  // painted here. A fight link and the name button need no code: the card's click delegate already opens fights and
+  // profiles.
+  function fdUnderSync(card, bind, fd) {
+    const box = card.querySelector('.fd-underbox'), body = card.querySelector('.fd-underbody');
+    if (!box || !body || typeof Underperf === 'undefined') return;
+    if (!fd.under) fd.under = { qs: '', at: 0, res: null, err: '', pending: false, drawn: false, win: '' };
+    const st = fd.under;
+    const win = fdUnderWin(bind, fd);
+    if (st.win !== win) {
+      st.win = win;
+      fd.underPick = null;
+      st.err = '';
+      st.drawn = false;
+      st.at = 0;
+    }
+    if (!box.dataset.fdBound) {
+      box.dataset.fdBound = '1';
+      box.addEventListener('toggle', () => {
+        if (!box.open) return;
+        st.drawn = false;
+        fdUnderSync(card, bind, fd);
+      });
+      body.addEventListener('change', e => {
+        const sel = e.target && e.target.closest && e.target.closest('select[data-fd-underrun]');
+        if (!sel) return;
+        fd.underPick = sel.value === '' || sel.value === 'all' ? null : sel.value;
+        st.drawn = false;
+        st.at = 0;
+        fdUnderSync(card, bind, fd);
+      });
+    }
+    if (!box.open) return;
+    const paint = () => fdSet(body, Underperf.html(st, {
+      pick: fd.underPick, bindBots: bind.history ? [] : (bind.bots || []), live: !bind.history,
+    }));
+    const qs = Underperf.query(bind, fd, Date.now(), fd.underPick, fdNightParams());
+    if (st.pending) return;
+    if (st.qs === qs && Date.now() - st.at < Underperf.POLL_MS) {
+      if (!st.drawn) { st.drawn = true; paint(); }
+      return;
+    }
+    st.pending = true;
+    fetch('/api/v1/combat/underperformers?commander=' + encodeURIComponent(bind.commander) + '&' + qs, { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(json => { st.res = json; st.err = ''; })
+      .catch(e => { st.err = (e && e.message) || 'request failed'; })
+      .then(() => {
+        st.pending = false;
+        st.qs = qs;
+        st.at = Date.now();
+        st.drawn = true;
+        const c = cmdCards.get(bind.commander);
+        if (c && c.classList.contains('fd-on')) paint();
+      });
+  }
+
+  // The debugger's own header: the prototype's crumbs. The fight verdict counts the loaded details against the whole list, so the
+  // chip never shrinks while the newest fights are still arriving.
+  function fdHeaderHtml(bind, list, details, layout, runText) {
+    const rows = Array.isArray(list) ? list : [];
+    const frames = FightDebug.raidFrames(bind);
+    const bots = (bind && bind.bots) || [];
+    const cards = FightDebug.railCards(rows, details || {}, layout || null, null);
+    // Counted by the summaries alone (a wipe or a death needs a look), so the number does not change as details are opened.
+    const judged = cards.filter(c => c.sum);
+    const need = judged.filter(c => c.sum === 'fail').length;
+    const run = bind && bind.run;
+    const step = run && numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
+    const ot = layout && Array.isArray(layout.ot) ? layout.ot.filter(Boolean) : [];
+    return [
+      `<span class="fd-crumb">${bots.length} bot${bots.length === 1 ? '' : 's'} · ${frames.length} group${frames.length === 1 ? '' : 's'}</span>`,
+      run && run.plan ? `<span class="fd-crumb">${esc(run.plan)}</span>` : '',
+      runText ? `<span class="fd-crumb">Run ${esc(runText)}${step ? ' · ' + esc(step) : ''}</span>` : '',
+      layout && layout.mt ? `<span class="fd-crumb">Main tank ${esc(layout.mt)}</span>` : '',
+      ot.length ? `<span class="fd-crumb">Off-tanks ${esc(ot.join(', '))}</span>` : '',
+      judged.length ? `<span class="fd-crumb ${need ? 'fail' : 'ok'}">${need} of ${rows.length} fights need a look</span>` : '',
+    ].filter(Boolean).join('');
+  }
+
+  function numOr0(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+
+  // ` · phase N (E)` after a boss name: the module counted N = 1 + the entry changes of the fight's boss unit, and E
+  // is the entry he reads now (a boss a script changed mid-fight, e.g. Thekal 14599 -> 14509). Only when N > 1; a
+  // fight the module never reported the phase for shows the name alone.
+  function fdBossPhase(phase, entry) {
+    const n = numOr0(phase), e = numOr0(entry);
+    return n > 1 && e ? ' · phase ' + n + ' (' + e + ')' : '';
+  }
+
+  // The raid frames header's numbers: the dead, and the living mana users under 30% (a rage or energy bar cannot be low on mana).
+  function fdFrameStats(frames) {
+    const tiles = (frames || []).reduce((a, g) => a.concat((g && g.tiles) || []), []);
+    return {
+      dead: tiles.filter(t => !t.alive || t.role === 'dead').length,
+      lowMana: tiles.filter(t => t.alive && t.role !== 'dead' && t.hasPower && t.powerKind === 'mana' && t.powerPct < 30).length,
+    };
+  }
+
+  function fdReadyHtml(frames) {
+    const s = fdFrameStats(frames);
+    return `<span class="fd-chip ${s.dead ? 'fail' : 'ok'}">${s.dead} dead</span>`
+      + `<span class="fd-chip ${s.lowMana ? 'warn' : 'ok'}">${s.lowMana} under 30% mana</span>`;
+  }
+
+  // The debugger's map legend: the four marks the prototype keeps. The Live page's long legend (casting, crowd controlled,
+  // drinking, the threat colours) stays in `.cmd-legend` for Live mode.
+  function fdLegendHtml() {
+    return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>Damage</span>'
+      + '<span><i class="fdmob"></i>Mob / death</span>';
+  }
+
+  // Which of the card's header pieces a mode shows. The debugger replaces the Live title, the ONLINE/FEED badges, the lead and run
+  // line and the warnings with its own kicker, title and chips, and carries the refresh picker the page row would have offered.
+  function cmdHeadView(debug) {
+    return { title: !debug, badges: !debug, sub: !debug, run: !debug, warn: !debug, crumbs: !!debug, refresh: !!debug };
+  }
+
+  // ---- the run timeline: where the run's minutes went, and a scrubber that replays the raid on the map ----
+  // The blocks come from the fight list (each row's start and length), the deaths from the loaded fight details, and the walking
+  // from the gaps. Times are game-server unix seconds, the same clock the kept positions use.
+  function fdRunModel(bind, list, details, nowSec) {
+    const rows = (Array.isArray(list) ? list : [])
+      .filter(r => r && r.key && numOr0(r.start) > 0)
+      .slice().sort((a, b) => numOr0(a.start) - numOr0(b.start));
+    if (!rows.length) return null;
+    const firstS = numOr0(rows[0].start);
+    const lastRow = rows[rows.length - 1];
+    const lastEnd = numOr0(lastRow.start) + numOr0(lastRow.dur) / 1000;
+    let t0 = numOr0(bind && bind.bound_at);
+    if (!(t0 > 0) || t0 > firstS) t0 = firstS;
+    let t1 = Math.max(numOr0(nowSec), lastEnd);
+    if (!(t1 > t0)) t1 = t0 + 1;
+    const segs = [], deaths = [];
+    let cur = t0;
+    rows.forEach((r, i) => {
+      const s = numOr0(r.start), e = s + numOr0(r.dur) / 1000;
+      if (s > cur && s > t0) segs.push({ kind: 'walk', fromS: cur, toS: s });
+      const det = details && details[r.key];
+      const fight = det && det.fight;
+      const boss = !!(r.boss_name || (fight && fight.boss_name));
+      segs.push({
+        kind: boss ? 'boss' : 'fight', key: r.key, label: 'P' + (i + 1),
+        name: boss ? String(r.boss_name || fight.boss_name) + fdBossPhase(numOr0(r.boss_phase) || numOr0(fight && fight.boss_phase),
+          numOr0(r.boss_phase_entry) || numOr0(fight && fight.boss_phase_entry)) : '',
+        fromS: Math.max(s, t0), toS: Math.max(e, t0),
+      });
+      ((fight && fight.deaths) || []).forEach((d, j) => {
+        if (!d) return;
+        const tS = s + numOr0(d.t_ms) / 1000;
+        if (tS >= t0 && tS <= t1) deaths.push({ key: r.key, i: j, tS, name: d.name || '', killer: d.killer || '' });
+      });
+      // A fight whose detail is not loaded has only its summary's death count: one mark mid-fight carries the count (the
+      // detail, once the fight is opened, puts each death at its own time with its name).
+      if (!fight && numOr0(r.deaths) > 0) {
+        const tS = s + numOr0(r.dur) / 2000;
+        if (tS >= t0 && tS <= t1) deaths.push({ key: r.key, i: -1, tS, name: '', killer: '', n: numOr0(r.deaths) });
+      }
+      if (e > cur) cur = e;
+    });
+    if (t1 > cur) segs.push({ kind: 'walk', fromS: cur, toS: t1 });
+    return { t0, t1, spanMs: Math.max(0, Math.round((t1 - t0) * 1000)), segs, deaths };
+  }
+
+  function fdRunPct(run, tS) {
+    return run && run.spanMs > 0 ? ((tS - run.t0) * 1000 / run.spanMs) * 100 : 0;
+  }
+
+  function fdRunClock(ms) {
+    const s = Math.max(0, Math.round((numOr0(ms)) / 1000));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function fdRunT(fd, run) {
+    const t = fd.run.t == null ? run.spanMs : fd.run.t;
+    return Math.max(0, Math.min(run.spanMs, t));
+  }
+
+  function fdRunHtml(run, sel, fd) {
+    if (!run) return '';
+    const t = fdRunT(fd, run);
+    let html = '';
+    run.segs.forEach(sg => {
+      const from = fdRunPct(run, sg.fromS), w = Math.max(0.5, fdRunPct(run, sg.toS) - from);
+      if (sg.kind === 'walk') {
+        html += `<span class="fd-rtwalk" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" title="walking · ${fdRunClock((sg.toS - sg.fromS) * 1000)}"></span>`;
+        return;
+      }
+      const boss = sg.kind === 'boss', on = sg.key === sel;
+      const text = boss ? sg.name || 'Boss' : sg.label;
+      const len = Math.round((sg.toS - sg.fromS) * 1000);
+      html += `<button type="button" class="fd-rtfight${boss ? ' boss' : ''}${on ? ' on' : ''}" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" data-fd-rtfight="${esc(encodeURIComponent(sg.key))}" title="${esc(sg.label + (boss ? ' · ' + (sg.name || 'boss') : '') + ' · ' + Math.round(len / 1000) + ' s')}" aria-pressed="${on ? 'true' : 'false'}"><span>${esc(text)}</span></button>`;
+    });
+    run.deaths.forEach(d => {
+      const tip = d.n ? d.n + (d.n === 1 ? ' death' : ' deaths') + ' in this fight (open it for who and when)' : d.name + ' died at ' + cmdClock(d.tS);
+      html += `<span class="fd-rtdeath${d.n ? ' sum' : ''}" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(tip)}">✕${d.n > 1 ? `<sub>${d.n}</sub>` : ''}</span>`;
+    });
+    html += `<i class="fd-rtcur" style="left:${fdRunPct(run, run.t0 + t / 1000).toFixed(2)}%"></i>`;
+    return html;
+  }
+
+  // The run's play row: enabled only while the daemon kept at least two reports over the run, so the scrub never promises a replay
+  // the frames cannot show.
+  function fdRunPlayHtml(run, st) {
+    if (!run) return '';
+    const span = run.spanMs, t = fdRunT({ run: st }, run), win = fdRunWindow(run, st.track);
+    const off = win && win.ok ? '' : ' disabled';
+    return `<button type="button" class="fd-playbtn" data-fd-rtplay aria-pressed="${st.playing ? 'true' : 'false'}"${off}>${st.playing ? '❚❚ Pause' : '▶ Replay'}</button>`
+      + `<input type="range" class="fd-scrub" data-fd-rtscrub min="0" max="${span}" step="100" value="${Math.round(t)}" aria-label="Run replay time"${off}>`
+      + `<span class="fd-clock" data-fd-rtclock>${esc(FightReplay.spanClock(t, span))}</span>`
+      + `<span class="fd-cov">${esc(fdRunCoverage(run, win))}</span>`;
+  }
+
+  // The daemon keeps 30 min of reports; a longer run's replay covers only its end.
+  const FD_TRACK_WINDOW_S = 1800;
+
+  function fdRunWindow(run, track) {
+    if (!run) return null;
+    if (!track || track === 'loading') return { ok: false, why: track === 'loading' ? 'Loading the kept positions…' : '' };
+    return FightReplay.window(track.prep, { start: run.t0, dur_ms: run.spanMs });
+  }
+
+  function fdRunCoverage(run, win) {
+    if (!win) return '';
+    if (!win.ok) return win.why || 'No kept positions for this run (the daemon keeps the last 30 min)';
+    let s = 'positions every 2 s · ' + win.frames + ' reports';
+    if (run.t1 - run.t0 > FD_TRACK_WINDOW_S) s += ' · the last 30 min of the run';
+    return s;
+  }
+
+  // Rebuilds the run row only when the run (or its positions) changes; a scrub in progress keeps its thumb and its focus.
+  function fdRunPlaySync(card, fd, run) {
+    const node = card && card.querySelector('[data-fd-rtplayrow]');
+    if (!node || !run) return;
+    const key = run.t0 + '|' + run.spanMs + '|' + (fd.run.track ? 't' : '');
+    if (node.dataset.fdKey !== key) { node.dataset.fdKey = key; node.innerHTML = fdRunPlayHtml(run, fd.run); }
+    fdRunSync(card, fd);
+  }
+
+  // The moving parts of the run strip: the cursor, the scrubber, the clock and the play button.
+  function fdRunSync(card, fd) {
+    const run = fd.run.model, node = card && card.querySelector('.fd-runtl');
+    if (!run || !node) return;
+    const t = fdRunT(fd, run);
+    const cur = node.querySelector('.fd-rtcur');
+    if (cur) cur.style.left = fdRunPct(run, run.t0 + t / 1000).toFixed(2) + '%';
+    const scrub = node.querySelector('[data-fd-rtscrub]');
+    if (scrub && document.activeElement !== scrub) scrub.value = String(Math.round(t));
+    const clock = node.querySelector('[data-fd-rtclock]');
+    if (clock) clock.textContent = FightReplay.spanClock(t, run.spanMs);
+    const play = node.querySelector('[data-fd-rtplay]');
+    if (play) {
+      play.textContent = fd.run.playing ? '❚❚ Pause' : '▶ Replay';
+      play.setAttribute('aria-pressed', fd.run.playing ? 'true' : 'false');
+    }
+  }
+
+  function fdRunLoad(card, bind) {
+    const fd = cmdFd[bind.commander], run = fd && fd.run.model;
+    if (!fd || !run || fd.run.track !== undefined || fd.run.loading) return;
+    if (!FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander)) return;
+    fd.run.loading = true;
+    fd.run.track = 'loading';
+    const to = Math.ceil(run.t1) + 4, from = Math.max(Math.floor(run.t0) - 4, to - FD_TRACK_WINDOW_S);
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => { fd.run.track = json && Array.isArray(json.frames) ? { raw: json, prep: FightReplay.prep(json) } : null; })
+      .catch(() => { fd.run.track = null; })
+      .then(() => {
+        fd.run.loading = false;
+        const c = cmdCards.get(bind.commander);
+        if (c && c.classList.contains('fd-on')) renderFightDebug(c, cmdFindBind(bind.commander));
+      });
+  }
+
+  function fdRunStop(fd) {
+    clearTimeout(fd.run.timer);
+    fd.run.playing = false;
+  }
+
+  function fdRunStopAll(fd) {
+    fdRunStop(fd);
+    fd.run.on = false;
+  }
+
+  // What the map draws while the run scrub is on, or null. The kept positions at that moment stand in for the live ones.
+  function fdRunActive(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.mode !== 'debug' || !fd.run || !fd.run.on || !fd.run.model) return null;
+    const run = fd.run.model, track = fd.run.track;
+    if (!track || track === 'loading' || !FightReplay.window(track.prep, { start: run.t0, dur_ms: run.spanMs }).ok) return null;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const tMs = fdRunT(fd, run);
+    return { tS: run.t0 + tMs / 1000, tMs, track, fight: { start: run.t0, dur_ms: run.spanMs, bots: (det && det.fight && det.fight.bots) || [] } };
+  }
+
+  function fdRunScrub(key, tMs) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!run) return;
+    fdRunStop(fd);
+    fd.run.on = true;
+    fd.run.t = Math.max(0, Math.min(run.spanMs, Math.round(tMs)));
+    fdReplayStop(fd);
+    fd.rp.on = false;
+    fdRunSync(cmdCards.get(key), fd);
+    drawCmdMap(key);
+  }
+
+  // Play/pause the run; Play at the end starts again from the first kept report.
+  function fdRunPlay(key) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!run) return;
+    if (fd.run.playing) { fdRunStop(fd); fdRunSync(cmdCards.get(key), fd); return; }
+    if (!fdRunActive(key) && !(fd.run.track && fd.run.track !== 'loading')) return;
+    if (fdRunT(fd, run) >= run.spanMs) fd.run.t = 0;
+    fd.run.on = true;
+    fdReplayStop(fd);
+    fd.rp.on = false;
+    fd.run.playing = true;
+    fdRunTick(key);
+  }
+
+  function fdRunTick(key) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!fd || !run || !fd.run.playing) { if (fd) fd.run.playing = false; return; }
+    const act = fdRunActive(key);
+    if (!act) { fd.run.playing = false; fdRunSync(cmdCards.get(key), fd); return; }
+    fd.run.t = Math.min(run.spanMs, fdRunT(fd, run) + FightReplay.TICK_MS);
+    if (fdRunT(fd, run) >= run.spanMs) fd.run.playing = false;
+    fdRunSync(cmdCards.get(key), fd);
+    drawCmdMap(key);
+    const card = cmdCards.get(key);
+    if (!fd.run.playing || !card || !card.classList.contains('fd-on')) return;
+    fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
+  }
+
+  // A ready check that has not run: the raid is on the move (every bot is far from the next stand, which is no readiness
+  // verdict), or no row carries one (a neutral "check" row has said nothing). Any ok, warn or fail row at the gather is a real
+  // result, even when every bot is only a warning. The header then says so.
+  function fdReadyNotRun(ready) {
+    if (!ready) return true;
+    if (ready.gathered === false) return true;
+    const bots = ready.bots || [];
+    return !bots.length || bots.every(r => !r || (r.lvl !== 'ok' && r.lvl !== 'warn' && r.lvl !== 'fail'));
+  }
+
+  function fdFramesHtml(frames, selBot, ready) {
+    const readyWord = l => l === 'fail' ? 'NOT READY' : l === 'warn' ? 'CHECK' : 'READY';
+    const readyBy = {};
+    ((ready && ready.bots) || []).forEach(r => { if (r && r.name) readyBy[r.name] = r; });
+    let head = '';
+    if (ready) {
+      const c = ready.counts || { ok: 0, warn: 0, fail: 0 }, lvl = ready.lvl || 'ok';
+      const rows = (ready.bots || []).filter(r => r && r.lvl !== 'ok');
+      if (fdReadyNotRun(ready)) {
+        head = '<div class="fd-readyhead"><span class="fd-chip">Ready check: not run yet</span></div>';
+      } else {
+        head = `<div class="fd-readyhead"><button type="button" class="fd-chip l-${esc(lvl)}" data-fd-ready aria-expanded="${ready.open ? 'true' : 'false'}">Ready ${c.ok}/${(ready.bots || []).length}</button>`
+          + `<span class="fd-readysub">${c.warn} check · ${c.fail} not ready${ready.known ? '' : ', buffs unknown (older module)'}</span></div>`;
+        if (ready.open) {
+          head += '<ol class="fd-readylist">' + rows.map(r => `<li class="l-${esc(r.lvl)}"><span class="fd-readynm">${esc(r.name)}</span> ${esc((r.reasons || []).join(', '))}</li>`).join('') + '</ol>';
+        }
+      }
+    }
+    return head + (frames || []).map(g => {
+      const up = g.tiles.filter(t => t.alive).length;
+      return `<div class="fd-grp"><div class="fd-gl">${esc(g.label)} · ${up}/${g.tiles.length}</div>` + g.tiles.map(t => {
+        const dead = !t.alive || t.role === 'dead';
+        const sel = t.name === selBot;
+        const tag = t.tag === 'MT' ? ', main tank' : t.tag === 'OT' ? ', off-tank' : '';
+        const rdy = readyBy[t.name];
+        const rdyLabel = rdy ? 'Ready: ' + readyWord(rdy.lvl) + (rdy.reasons && rdy.reasons.length ? ', ' + rdy.reasons.join(', ') : '') : '';
+        const DISP = { m: 'magic', c: 'curse', p: 'poison', d: 'disease' };
+        const dbs = (t.debuffs || []).slice(0, 4);
+        const chips = dbs.map(d => {
+          const dt = DISP[d.dt] || 'none';
+          const left = typeof d.l === 'number' && isFinite(d.l) ? ' ' + Math.ceil(d.l / 1000) + 's' : '';
+          return `<span class="fd-db dt-${esc(dt)}" title="${esc(d.n + (dt !== 'none' ? ' (' + dt + ')' : '') + (left ? ', ' + left.trim() + ' left' : ''))}">${esc(d.n)}${d.st > 1 ? ' ×' + d.st : ''}${left}</span>`;
+        }).join('');
+        const dispel = dbs.some(d => !!DISP[d.dt]);
+        const aria = `${t.name}, ${t.cls}, ${t.hpPct}% health${tag}${dead ? ', dead' : ''}${t.mc ? ', mind controlled' : ''}${dbs.length ? ', ' + dbs.map(d => d.n).join(', ') : ''}`;
+        return `<button type="button" class="fd-tile r-${esc(t.role)}${dead ? ' dead' : ''}${sel ? ' sel' : ''}${t.mc ? ' mc' : ''}${dispel ? ' hasdispel' : ''}" data-fd-bot="${esc(t.name)}" aria-pressed="${sel ? 'true' : 'false'}" aria-label="${esc(aria)}">`
+          + `<span class="fd-fill" style="width:${t.hpPct}%"></span><span class="fd-nm">${esc(t.name)}</span>`
+          + (t.tag ? `<span class="fd-tag">${esc(t.tag)}</span>` : '')
+          + (t.mc ? '<span class="fd-mc">MC</span>' : '')
+          + (rdy ? `<span class="fd-rdy l-${esc(rdy.lvl)}" aria-label="${esc(rdyLabel)}"></span>` : '')
+          + (chips ? `<span class="fd-dbs">${chips}</span>` : '')
+          + `<span class="fd-pw p-${esc(t.powerKind)}"><i style="width:${t.powerPct}%"></i></span></button>`;
+      }).join('') + '</div>';
+    }).join('');
+  }
+
+  // The rail as one string (the checks read it); the card paints the same parts through fdRailPatch.
+  function fdRailHtml(cards, live, sel, day, opts) {
+    return fdRailParts(cards, live, sel, day, opts).map(p => p.html).join('');
+  }
+
+  // The rail's parts in reading order, each {k, html} with one root element: the live card, a "Load older" row, then the
+  // fights oldest first (Pack 1 on top). Without opts every fight is a card (the old rail); the debugger passes opts: showAll,
+  // open (the folds the reader opened or closed), older ({more, loading, failed, n} or null for no paging).
+  function fdRailParts(cards, live, sel, day, opts) {
+    const parts = [];
+    // The live card is Tonight's: a past night lists only its stored fights.
+    if (live && !day) {
+      const t = Math.round((live.fightMs || 0) / 1000), on = sel === 'live';
+      parts.push({ k: 'live', html: `<button type="button" class="fd-fight v-live${on ? ' on' : ''}" data-fd-k="live" data-fd-fight="live" aria-pressed="${on ? 'true' : 'false'}">`
+        + `<span class="fd-fl">Live</span>`
+        + `<span class="fd-fs">Now · ${Math.floor(t / 60)}:${('0' + (t % 60)).slice(-2)} · ${FightDebug.fmtInt(Math.round(live.dps || 0))} dps</span>`
+        + `<span class="fd-fd">${live.alive} alive · ${live.active} acting</span></button>` });
+    }
+    const o = opts || null;
+    const older = o && o.older;
+    if (older) {
+      const word = older.loading ? 'Loading older fights…' : older.failed ? 'Older fights did not load: try again'
+        : older.more ? 'Load older fights' : 'No older fights stored';
+      parts.push({ k: 'older', html: `<button type="button" class="fd-older" data-fd-k="older" data-fd-older${older.loading || !older.more ? ' disabled' : ''}>`
+        + `${esc(word)}${older.n ? ` <span class="fd-oldn">${older.n} loaded</span>` : ''}</button>` });
+    }
+    // The daemon lists fights newest first; railItems gives them oldest first, clean trash folded unless showAll.
+    const items = o ? FightDebug.railItems(cards, { showAll: !!o.showAll, open: o.open || {}, sel })
+      : (cards || []).slice().reverse().map(card => ({ kind: 'card', card }));
+    items.forEach(it => {
+      // The keys are percent-encoded, as the data-fd-k attribute holds them (a fight key may carry any byte).
+      if (it.kind === 'card') { parts.push({ k: 'f:' + encodeURIComponent(it.card.key), html: fdRailCardHtml(it.card, sel) }); return; }
+      parts.push({ k: encodeURIComponent(it.id), html: fdRailFoldHtml(it) });
+      if (it.open) it.cards.forEach(c => parts.push({ k: 'f:' + encodeURIComponent(c.key), html: fdRailCardHtml(c, sel, true) }));
+    });
+    return parts;
+  }
+
+  // One folded run of clean trash: "Leg 2 · 12 trash pulls, 0 deaths", opened and closed in place.
+  function fdRailFoldHtml(it) {
+    const mins = Math.round((it.durMs || 0) / 1000);
+    const text = (it.leg ? 'Leg ' + String(it.leg).replace(/_/g, ' ') + ' · ' : '') + it.n + ' trash pulls, 0 deaths';
+    return `<button type="button" class="fd-fold${it.open ? ' open' : ''}" data-fd-k="${esc(encodeURIComponent(it.id))}" data-fd-fold="${esc(encodeURIComponent(it.id))}" aria-expanded="${it.open ? 'true' : 'false'}">`
+      + `<span class="fd-foldt">${esc(text)}</span>`
+      + `<span class="fd-folds">${Math.floor(mins / 60)}:${('0' + (mins % 60)).slice(-2)} fighting · ${it.open ? 'hide' : 'show'}</span></button>`;
+  }
+
+  function fdRailCardHtml(c, sel, inFold) {
+    const v = c.verdict;
+    // No detail: the card says what its summary says (the detail loads when the fight is opened); a detail that failed twice
+    // says so, one being fetched says loading.
+    const sv = !v && c.detail === 'unasked' ? c.sum : null;
+    const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'check' ? 'check: incomplete data' : v === 'ok' ? 'clean'
+      : c.detail === 'failed' ? 'details not available' : c.detail === 'loading' ? 'loading'
+        : sv === 'fail' ? (c.wipe ? 'wipe' : 'deaths') : sv === 'warn' ? 'check' : sv === 'ok' ? 'no deaths' : 'details not loaded';
+    const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
+    const cls = v === 'check' ? 'warn' : v || (sv ? sv + ' v-sum' : 'load');
+    const tip = sv ? ' title="From the fight\'s summary: open it for the full checks"' : '';
+    return `<button type="button" class="fd-fight v-${cls}${inFold ? ' fd-infold' : ''}" data-fd-k="${esc('f:' + encodeURIComponent(c.key))}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
+      + `<span class="fd-fl">${esc(c.label)}</span>`
+      + `<span class="fd-fv"${tip}>${c.live ? 'live' : word}</span>`
+      + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
+      + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
+      + `<span class="fd-fd"><span>step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span>`
+      + (c.dmg != null ? `<span class="fd-fdmg">${FightDebug.fmtInt(c.dmg)} dmg</span>` : '')
+      + '</span></button>';
+  }
+
+  // Paints the rail by key: a part whose html did not change keeps its node (and its focus and hover), a changed one is replaced
+  // alone, new ones are inserted in order and gone ones removed. The 2 s redraw thus touches only the cards whose summary moved.
+  // make(html) builds one node from a part's html (the default parses it with a template).
+  function fdRailPatch(nav, parts, make) {
+    if (!nav) return 0;
+    const build = make || (html => { const t = document.createElement('template'); t.innerHTML = html; return t.content.firstElementChild; });
+    const list = parts || [];
+    const want = {};
+    list.forEach(p => { want[p.k] = true; });
+    // Gone, duplicate and unkeyed nodes leave first, so the ordering pass below moves only the nodes that are out of order (a
+    // removed head must not make every later card, the focused one among them, move up one place).
+    const have = {};
+    let changed = 0;
+    Array.from(nav.children).forEach(n => {
+      const k = n.dataset && n.dataset.fdK;
+      if (k != null && !have[k] && want[k]) { have[k] = n; return; }
+      n.remove();
+      changed++;
+    });
+    const act = document.activeElement;
+    // The next element after n (the fake DOM the checks use has no nextElementSibling).
+    const next = n => (n.nextElementSibling !== undefined ? n.nextElementSibling
+      : Array.from(nav.children)[Array.from(nav.children).indexOf(n) + 1] || null);
+    // moveBefore keeps a moved node's focus and state where the browser has it; insertBefore elsewhere.
+    const move = (n, r) => {
+      if (typeof nav.moveBefore === 'function') { try { nav.moveBefore(n, r); return; } catch (e) { /* fall back below */ } }
+      nav.insertBefore(n, r);
+    };
+    let ref = nav.firstElementChild !== undefined ? nav.firstElementChild : (nav.children[0] || null);
+    list.forEach(p => {
+      let node = have[p.k];
+      if (node && node._fdHtml === p.html) {
+        if (node !== ref) move(node, ref);
+      } else {
+        const fresh = build(p.html);
+        if (!fresh) return;
+        fresh._fdHtml = p.html;
+        changed++;
+        if (node) {
+          // Replaced where it stands: the old node never leaves a hole the next insert would have to aim at.
+          const hadFocus = !!(act && node.contains && node.contains(act));
+          nav.replaceChild(fresh, node);
+          if (ref === node) ref = fresh;
+          if (fresh !== ref) move(fresh, ref);
+          if (hadFocus && fresh.focus) fresh.focus({ preventScroll: true });
+        } else nav.insertBefore(fresh, ref);
+        node = fresh;
+      }
+      ref = next(node);
+    });
+    nav._h = null; // the rail is no longer painted by setHtml
+    return changed;
+  }
+
+
+  // The check's key value, in the prototype's words: the debuff's uptime is said against the fight, the Sunder rate per 10 s,
+  // and the non-tank's share against all damage taken. The value itself is emphasised rather than muted.
+  function fdCheckNum(c) {
+    const id = c && c.id ? c.id : '', n = c ? c.num : '';
+    if (n == null || n === '') return '';
+    if (id.indexOf('debuff:') === 0) return String(n) + ' of the fight';
+    if (id === 'mt_sunder') return String(n).replace('/10 s', ' per 10 s');
+    if (id === 'taken_outside') return String(n) + ' of all damage taken';
+    return String(n);
+  }
+
+  // The title, split where the prototype puts the worked-on bot in bold ("… outside the tanks: Kitetastic (damage)").
+  function fdCheckTitle(c) {
+    const t = c && c.title != null ? String(c.title) : '';
+    const id = c && c.id ? c.id : '';
+    if (id === 'mt_sunder' && t && t.indexOf(':') < 0) return { text: t + ':', hi: '' };
+    if (id === 'taken_outside') {
+      const i = t.indexOf(': ');
+      if (i > 0) return { text: t.slice(0, i + 1), hi: t.slice(i + 2) };
+    }
+    return { text: t, hi: '' };
+  }
+
+  function fdChecksHtml(checks, recaps, guids, selBot) {
+    return (checks || []).map(c => {
+      const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'ok' ? 'PASS' : 'CHECK';
+      const d = typeof c.death === 'number' && c.death >= 0 ? (recaps || [])[c.death] : null;
+      const guid = c.bot && guids ? guids[c.bot] : null;
+      const pressed = c.bot === selBot ? 'true' : 'false';
+      const show = c.bot
+        ? (guid != null
+          ? ` <button type="button" class="fd-link" data-fd-profile="${esc(guid)}" aria-pressed="${pressed}">show</button>`
+          : ` <button type="button" class="fd-link" data-fd-bot="${esc(c.bot)}" aria-pressed="${pressed}">show</button>`)
+        : '';
+      const tt = fdCheckTitle(c), num = fdCheckNum(c);
+      return `<li class="fd-check l-${esc(c.lvl)}"><span class="fd-lvl">${word}</span><div class="fd-why">`
+        + `<span class="fd-ttl">${esc(tt.text)}</span>${tt.hi ? ` <b class="fd-hi">${esc(tt.hi)}</b>${num ? ',' : ''}` : ''}${num ? ` <span class="fd-num">${esc(num)}</span>` : ''}`
+        + show
+        + (d ? ` <button type="button" class="fd-link fd-death" data-fd-death="${c.death}" data-x="${d.x}" data-y="${d.y}">recap</button>` : '')
+        + `<div class="fd-ev">${esc(c.ev)}</div></div></li>`;
+    }).join('');
+  }
+
+  function fdTimelineHtml(tl, recaps, selDeath) {
+    if (!tl) return '';
+    let html = '';
+    (tl.ticks || []).forEach(t => { html += `<span class="fd-tick" style="left:${t.pct.toFixed(2)}%">${esc(t.label)}</span>`; });
+    (tl.hits || []).forEach(h => {
+      const r = (recaps || [])[h.i];
+      const t = tl.durMs > 0 ? (h.pct / 100) * tl.durMs : 0;
+      const spell = h.s ? ' with ' + h.s : '';
+      html += `<i class="fd-hit" style="left:${h.pct.toFixed(2)}%;height:${Math.round(h.h)}px" title="${esc(h.a + ' hit ' + (r ? r.name : '') + ' for ' + h.d + spell + ' at ' + (t / 1000).toFixed(1) + ' s')}"></i>`;
+    });
+    // The Boss lane: one marker per cast from the finished fight's log, coloured by the table's ability order. A click scrubs
+    // the replay to that cast; the marker carries the caster, the spell and its target in words.
+    const bossTable = typeof cmdBossTable === 'function' ? cmdBossTable() : (typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null);
+    (tl.bossCasts || []).forEach(c => {
+      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid, c.e) : null;
+      const ci = slot ? slot.index % 8 : 0;
+      const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
+      html += `<button type="button" class="fd-bosscast bc-${ci}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
+    });
+    if (!(tl.deaths || []).length) return html + '<p class="empty-hint">No deaths this fight.</p>';
+    tl.deaths.forEach(d => {
+      const r = (recaps || [])[d.i] || d;
+      html += `<button type="button" class="fd-skull fd-death${d.i === selDeath ? ' on' : ''}" data-fd-death="${d.i}" data-x="${r.x}" data-y="${r.y}" style="left:${d.pct.toFixed(2)}%" aria-label="${esc(d.name + ' died at ' + (d.t_ms / 1000).toFixed(1) + ' s')}">✕</button>`;
+    });
+    return html;
+  }
+
+  function fdRecapHtml(recaps, selDeath) {
+    const list = recaps || [];
+    const r = list[selDeath] || list[0];
+    if (!r) return '';
+    const spellCell = h => {
+      const name = h.s || h.sp || '';
+      if (!name) return '<td></td>';
+      const likely = !h.s && h.spLikely ? ' <span class="fd-likely" title="the newest cast in the 3 s before this hit aimed at this bot or at nobody">likely</span>' : '';
+      return `<td>${esc(name)}${likely}</td>`;
+    };
+    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}</td>${spellCell(h)}<td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
+    const who = r.guid != null
+      ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}">${esc(r.name)}</button>`
+      : `<b>${esc(r.name)}</b>`;
+    const sp = r.spell
+      ? `'s <b>${esc(r.spell.name)}</b>${r.spell.likely || r.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
+      : '';
+    return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
+      + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
+      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.
+  // In Total mode the Died cell is the summed count; one fight's cell is the single cross.
+  function fdRolesHtml(tables, selBot, mode) {
+    const t = tables || { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 };
+    const total = mode === 'run';
+    const diedCell = d => total ? (numOr0(d) > 0 ? FightDebug.fmtInt(numOr0(d)) : '') : (d ? '\u2715' : '');
+    const row = (on, cells) => `<tr${on ? ' class="sel"' : ''}>${cells.join('')}</tr>`;
+    const nameCell = (r, main) => {
+      const pressed = r.name === selBot ? 'true' : 'false';
+      const name = r.guid != null
+        ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}" aria-pressed="${pressed}">${main ? '★ ' : ''}${esc(r.name)}</button>`
+        : `<button type="button" class="fd-botbtn" data-fd-bot="${esc(r.name)}" aria-pressed="${pressed}">${main ? '★ ' : ''}${esc(r.name)}</button>`;
+      return `<td>${name} <span class="fd-cls">${esc(r.cls)}</span></td>`;
+    };
+    const bar = (pct, kind) => `<span class="fd-bar b-${kind}" style="width:${Math.max(0, Math.min(50, Math.round(pct)))}px"></span>`;
+    const tanks = `<table class="data-table fd-table"><caption>Tanks</caption><thead><tr><th>Tank</th><th class="n">Sunder</th><th class="n">Taunts</th><th class="n">Taken</th><th class="n">Died</th></tr></thead><tbody>`
+      + (t.tanks || []).map(r => row(r.name === selBot, [nameCell(r, r.main), `<td class="n">${r.sunder || '–'}</td>`,
+        `<td class="n">${r.taunts || '–'}</td>`, `<td class="n">${FightDebug.fmtInt(r.taken)}</td>`,
+        `<td class="n">${diedCell(r.died)}</td>`])).join('') + '</tbody></table>';
+    const heals = `<table class="data-table fd-table"><caption>Healers</caption><thead><tr><th>Healer</th><th class="n">HPS</th><th class="n">Over</th><th class="n">Casts</th></tr></thead><tbody>`
+      + (t.healers || []).map(r => row(r.name === selBot, [nameCell(r, false),
+        `<td class="n">${bar(t.maxHps > 0 ? (r.hps / t.maxHps) * 50 : 0, 'heal')}${FightDebug.fmtInt(Math.round(r.hps))}</td>`,
+        `<td class="n">${r.overPct}%</td>`, `<td class="n">${r.casts}</td>`])).join('') + '</tbody></table>';
+    const dps = `<table class="data-table fd-table"><caption>Damage</caption><thead><tr><th>Damage</th><th class="n">DPS</th><th class="n">Taken</th><th class="n">Casts</th></tr></thead><tbody>`
+      + (t.dps || []).map(r => row(r.name === selBot, [nameCell(r, false),
+        `<td class="n">${bar(t.maxDps > 0 ? (r.dps / t.maxDps) * 50 : 0, 'dps')}${FightDebug.fmtInt(Math.round(r.dps))}</td>`,
+        `<td class="n">${FightDebug.fmtInt(r.taken)}</td>`, `<td class="n">${r.casts}</td>`])).join('') + '</tbody></table>';
+    return [tanks, heals, dps];
+  }
+
+  function fdLiveTableHtml(rows, selBot, winS) {
+    const body = (rows || []).map(r => `<tr${r.name === selBot ? ' class="sel"' : ''}>`
+      + `<td><button type="button" class="fd-botbtn" data-fd-bot="${esc(r.name)}">${esc(r.name)}</button></td>`
+      + `<td class="n">${FightDebug.fmtInt(Math.round(r.dps))}</td><td class="n">${FightDebug.fmtInt(Math.round(r.hps))}</td>`
+      + `<td class="n">${r.casts}</td><td>${esc(r.last)}</td></tr>`).join('');
+    return `<table class="data-table fd-table"><caption>Live, last ${winS || 0} s</caption>`
+      + '<thead><tr><th>Bot</th><th class="n">DPS</th><th class="n">HPS</th><th class="n">Casts</th><th>Last spell</th></tr></thead>'
+      + `<tbody>${body}</tbody></table>`;
+  }
+
+  function fdBotHtml(panel) {
+    if (!panel) return '';
+    const grp = typeof panel.sub === 'number' && panel.sub >= 0 ? ' · group ' + (panel.sub + 1) : '';
+    const spells = (panel.spells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
+    const tail = (panel.tailSpells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
+    return `<h4 class="fd-both">${esc(panel.name)} · ${esc(panel.cls)}${grp}</h4>`
+      + `<p class="fd-botl mono">${FightDebug.fmtInt(panel.dmg)} dmg · ${FightDebug.fmtInt(panel.heal)} heal · ${FightDebug.fmtInt(panel.taken)} taken · ${panel.casts} casts</p>`
+      + `<table class="data-table fd-table"><caption>Casts</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
+      + `<tbody>${spells || '<tr><td colspan="2" class="empty-hint">No casts recorded.</td></tr>'}</tbody></table>`
+      + (tail ? `<table class="data-table fd-table"><caption>After combat</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
+        + `<tbody>${tail}</tbody></table>` : '')
+      + (panel.guid != null ? `<p class="fd-open"><button type="button" class="fd-link" data-fd-profile="${esc(panel.guid)}">Gear &amp; profile →</button></p>` : '');
+  }
+
+  // ---- fight replay: the kept positions of a finished fight, played over the card's map ----
+  // The replay row above the timeline (play, speed, scrub, clock, exit) and one row per engaged enemy under it. The arithmetic
+  // is FightReplay's and AggroLanes'; this builds the markup and moves the card's map to the kept positions.
+  const FD_TRACK_MAX = 60;   // finished fights whose positions are kept per commander for the page's life
+  const FD_REPLAY_OFF = ['trail', 'trailtime', 'heading', 'membertrails', 'commander', 'bottarget', 'healline', 'ccline', 'events', 'feed', 'stalls', 'objects'];
+
+  // The play row of one fight. A fight whose window has fewer than two kept reports cannot be played: its three controls are
+  // disabled and the coverage line says why.
+  function fdPlayHtml(win, durMs, rp) {
+    const dur = Math.max(0, Math.round(durMs || 0));
+    const off = win && win.ok ? '' : ' disabled';
+    const speed = rp && rp.speed ? rp.speed : 1;
+    return `<button type="button" class="fd-playbtn" data-fd-play aria-pressed="false"${off}>Play</button>`
+      + `<button type="button" class="fd-speed" data-fd-speed${off}>${speed}×</button>`
+      + `<input type="range" class="fd-scrub" data-fd-scrub min="0" max="${dur}" step="100" value="0" aria-label="Replay time"${off}>`
+      + `<span class="fd-clock">${esc(FightReplay.clock(0, dur))}</span>`
+      + `<button type="button" class="fd-exit" data-fd-exit${rp && rp.on ? '' : ' hidden'}>Live map</button>`
+      + `<span class="fd-cov">${esc(FightReplay.coverageText(win))}</span>`;
+  }
+
+  // A past night kept no positions: the play row says so instead of offering controls that cannot work.
+  function fdPlayNote(card, key, text) {
+    const node = card && card.querySelector('.fd-play');
+    if (!node) return;
+    const sig = key + '|note';
+    if (node.dataset.fdKey === sig) return;
+    node.dataset.fdKey = sig;
+    node.innerHTML = `<p class="empty-hint">${esc(text)}</p>`;
+  }
+
+  // Rebuilds the play row only when the fight (or the arrival of its positions) changes; otherwise it moves the values, so a
+  // scrub the user is dragging keeps its focus and its thumb.
+  function fdPlaySync(card, fd, fight, track) {
+    const node = card && card.querySelector('.fd-play');
+    if (!node) return;
+    const rp = fd.rp, dur = Math.max(0, Math.round((fight && fight.dur_ms) || 0));
+    const win = FightReplay.window(track ? track.prep : null, fight || {});
+    const key = fd.sel + (track ? '|t' : '');
+    if (node.dataset.fdKey !== key) {
+      node.dataset.fdKey = key;
+      node.innerHTML = fdPlayHtml(win, dur, rp);
+    }
+    const scrub = node.querySelector('[data-fd-scrub]');
+    if (scrub && document.activeElement !== scrub) scrub.value = String(Math.min(dur, Math.max(0, Math.round(rp.t))));
+    const clock = node.querySelector('.fd-clock');
+    if (clock) clock.textContent = FightReplay.clock(rp.t, dur);
+    const play = node.querySelector('[data-fd-play]');
+    if (play) { play.textContent = rp.playing ? 'Pause' : 'Play'; play.setAttribute('aria-pressed', rp.playing ? 'true' : 'false'); }
+    const speed = node.querySelector('[data-fd-speed]');
+    if (speed) speed.textContent = rp.speed + '×';
+    const exit = node.querySelector('[data-fd-exit]');
+    if (exit) exit.hidden = !rp.on;
+  }
+
+  // The lanes: one bar per engaged enemy, its parts coloured by whom it faced; the red ones are the healer and the damage
+  // dealers. The summary names the healer time, which is the row this strip exists for.
+  function fdLanesHtml(res, durMs) {
+    const dur = durMs > 0 ? durMs : 0;
+    const pct = (ms) => dur > 0 ? Math.max(0, Math.min(100, (ms / dur) * 100)) : 0;
+    const lanes = (res && res.lanes) || [];
+    let html = '<p class="fd-lanecap">Aggro per mob: blue = on a tank, red = on anyone else. From the 2 s mob targets.</p>';
+    lanes.forEach(l => {
+      const label = l.label || l.name || 'enemy';
+      let bar = '';
+      (l.segs || []).forEach(s => {
+        bar += `<i class="fd-seg k-${esc(s.kind)}${s.bad ? ' bad' : ''}" style="left:${pct(s.fromMs).toFixed(2)}%;width:${pct(s.toMs - s.fromMs).toFixed(2)}%"`
+          + ` title="${esc(label + ' on ' + (s.victim || s.kind) + ' ' + (s.fromMs / 1000).toFixed(1) + '-' + (s.toMs / 1000).toFixed(1) + ' s')}"></i>`;
+      });
+      const bad = l.badMs ? ' · ' + (l.badMs / 1000).toFixed(1) + ' s on ' + esc((l.badNames || []).join(', ')) : '';
+      html += `<div class="fd-lane"><span class="fd-lanel">${esc(label)}</span><span class="fd-lanebar">${bar}</span>`
+        + `<span class="fd-lanesum">${l.onTankPct}% on tanks${bad}</span></div>`;
+    });
+    if (res && res.more > 0) html += `<p class="empty-hint">and ${res.more} more enemies</p>`;
+    if (!lanes.length) html += '<p class="empty-hint">No enemy targeted the raid in the kept reports.</p>';
+    return html;
+  }
+
+  // The card's binding at one moment of a fight: the kept positions replace the live ones, the live binding keeps everything the
+  // map needs (commander, layout, run). A bot of the fight's own record is used when the live report no longer has it.
+  function fdReplayBind(bind, fight, track, tS) {
+    const at = FightReplay.botsAt(track && track.prep, tS);
+    const live = {}, recorded = {};
+    (bind.bots || []).forEach(b => { if (b && b.guid != null) live[b.guid] = b; });
+    ((fight && fight.bots) || []).forEach(b => { if (b && b.guid != null) recorded[b.guid] = b; });
+    const bots = [];
+    Object.keys(at).forEach(id => {
+      const guid = parseInt(id, 10), u = at[id];
+      const base = live[guid] || (recorded[guid]
+        ? { name: recorded[guid].name, guid, class: recorded[guid].class, role: recorded[guid].role, sub: recorded[guid].sub, max_hp: 100, level: 0 }
+        : null);
+      if (!base) return;
+      bots.push(Object.assign({}, base, {
+        x: u.x, y: u.y, map: u.map, alive: u.alive, hp: Math.round(u.hp / 100 * (base.max_hp || 100)),
+        id: String(guid), target: '', st: '', act: '', cast: '', ctgt: '', mv: false,
+      }));
+    });
+    const frames = (track && track.prep && track.prep.frames) || [];
+    let map = 0, cursor = 0, frame = null, nextFrame = null;
+    if (frames.length) {
+      // The cursor itself may sit past the last report (the play head runs to the fight's end); only the frame search is clamped.
+      cursor = typeof tS === 'number' && isFinite(tS) ? tS : frames[frames.length - 1].t;
+      const t = Math.max(frames[0].t, Math.min(frames[frames.length - 1].t, cursor));
+      let i = 0;
+      while (i + 1 < frames.length && frames[i + 1].t <= t) i += 1;
+      map = frames[i].map;
+      frame = frames[i];
+      nextFrame = frames[i + 1] || null;
+    }
+    const mobs = [];
+    const mobAt = FightReplay.mobsAt(track && track.prep, tS);
+    const bossTable = cmdBossTable();
+    Object.keys(mobAt).forEach(id => {
+      const m = mobAt[id];
+      const mob = { id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' };
+      if (bossTable && typeof BossPanel !== 'undefined' && BossPanel.rankFor) mob.rank = BossPanel.rankFor(bossTable, map, mob);
+      // The boss overlay at the cursor: the frame at or before it carries the cast (its absolute end gives the time left there),
+      // and the facing turns the shorter way between two frames that both report it (else the nearest one that does).
+      const a = frame && frame.mobs ? frame.mobs[id] : null;
+      const b = nextFrame && nextFrame.mobs ? nextFrame.mobs[id] : null;
+      const ao = a && typeof a.o === 'number' ? a.o : null, bo = b && typeof b.o === 'number' ? b.o : null;
+      if (ao !== null && bo !== null && frame.map === nextFrame.map && nextFrame.t > frame.t) {
+        mob.o = CmdView.angleLerp(ao, bo, Math.min(1, Math.max(0, (cursor - frame.t) / (nextFrame.t - frame.t))));
+      } else if (ao !== null) mob.o = ao;
+      else if (bo !== null) mob.o = bo;
+      if (a && a.cid) {
+        mob.cid = a.cid;
+        mob.cleft = Math.max(0, a.ce - cursor * 1000);
+        mob.ctot = a.ctot;
+        mob.cast = a.cn || '';
+        mob.ctg = a.ctg || '';
+        mob.ch = a.ch || 0;
+        if (a.sh) mob.shape = a.sh;
+      }
+      mobs.push(mob);
+    });
+    return Object.assign({}, bind, { bots, mobs, mobs_map: map, objects: [], orders: [], commander_pos: null });
+  }
+
+  // What a replaying card draws, or null: the debugger is on, the selected finished fight's positions are kept and interpolate.
+  function fdReplayActive(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.mode !== 'debug' || !fd.rp || !fd.rp.on) return null;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    if (!fight) return null;
+    const track = fd.tracks[fd.sel];
+    if (!track || track === 'loading' || !FightReplay.window(track.prep, fight).ok) return null;
+    const tMs = Math.max(0, Math.min(Math.round(fight.dur_ms || 0), Math.round(fd.rp.t)));
+    return { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
+  }
+
+  // Fetches a fight's kept positions once (the daemon keeps the last 30 min); a failure is asked for again after 30 s.
+  function fdTrackLoad(card, bind, key, fight) {
+    const fd = cmdFd[bind.commander];
+    if (!fd || !fight || !FdTabs.trackDue(fd.tracks[key], fd.trackAt[key], Date.now())) return;
+    if (!FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander)) return;
+    if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
+    fd.tracks[key] = 'loading';
+    const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => {
+        if (json && Array.isArray(json.frames)) { fd.tracks[key] = { raw: json, prep: FightReplay.prep(json) }; return; }
+        fd.tracks[key] = null;
+        fd.trackAt[key] = Date.now();
+      })
+      .catch(() => { fd.tracks[key] = null; fd.trackAt[key] = Date.now(); })
+      .then(() => {
+        const keys = Object.keys(fd.tracks);
+        if (keys.length > FD_TRACK_MAX) keys.slice(0, keys.length - FD_TRACK_MAX).forEach(k => { delete fd.tracks[k]; });
+        renderFightDebug(card, cmdFindBind(bind.commander));
+      });
+  }
+
+  // The cursor over the timeline at the replay's place; a hidden cursor when the fight is not being replayed.
+  function fdCursorSync(card, fd) {
+    const tl = card && card.querySelector('.fd-tl');
+    if (!tl) return;
+    const old = tl.querySelector('.fd-cursor');
+    const scrub = card.querySelector('[data-fd-scrub]');
+    const dur = scrub ? parseFloat(scrub.max) || 0 : 0;
+    if (!fd.rp.on || !(dur > 0)) { if (old) old.remove(); return; }
+    const el = old || document.createElement('i');
+    el.className = 'fd-cursor';
+    el.style.left = (Math.min(1, Math.max(0, fd.rp.t / dur)) * 100).toFixed(2) + '%';
+    if (!old) tl.appendChild(el);
+  }
+
+  // Puts the play row, the cursor and the map in step with the replay state; every control ends here (not a full card render).
+  function fdReplaySync(key) {
+    const fd = cmdFd[key], card = cmdCards.get(key);
+    if (!fd || !card) return;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    const track = fight ? fd.tracks[fd.sel] : null;
+    fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+    fdCursorSync(card, fd);
+    drawCmdMap(key);
+  }
+
+  function fdReplayStop(fd) {
+    clearTimeout(fd.rp.timer);
+    fd.rp.playing = false;
+  }
+
+  // Play/pause at the current place; Play at the end starts the fight again from 0.
+  function fdReplayPlay(key) {
+    const fd = cmdFd[key];
+    if (!fd) return;
+    if (fd.rp.playing) { fdReplayStop(fd); fdReplaySync(key); return; }
+    fdRunStopAll(fd);
+    fdRunSync(cmdCards.get(key), fd);
+    fd.rp.on = true;
+    const act = fdReplayActive(key);
+    if (!act) { fd.rp.on = false; fdReplaySync(key); return; }
+    if (fd.rp.t >= Math.round(act.fight.dur_ms || 0)) fd.rp.t = 0;
+    fd.rp.playing = true;
+    fdReplayTick(key);
+  }
+
+  // One playback step of one card, then the next 250 ms later while it still plays (a setTimeout chain, never an interval).
+  function fdReplayTick(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.rp.key !== fd.sel) { if (fd) fd.rp.playing = false; return; }
+    const act = fdReplayActive(key);
+    if (!act) { fd.rp.playing = false; fdReplaySync(key); return; }
+    const dur = Math.round(act.fight.dur_ms || 0);
+    fd.rp.t = Math.min(dur, fd.rp.t + FightReplay.TICK_MS * fd.rp.speed);
+    if (fd.rp.t >= dur) fd.rp.playing = false;
+    fdReplaySync(key);
+    const card = cmdCards.get(key);
+    if (!fd.rp.playing || !card || !card.classList.contains('fd-on')) return;
+    fd.rp.timer = setTimeout(() => fdReplayTick(key), FightReplay.TICK_MS);
+  }
+
+  // The floor of a multi-floor map picture (AQ40, Naxxramas, Karazhan's tower). The picture slots know their floor ("2f", ...);
+  // the picture JSON carries no z range, so what the card draws is grouped by z (a gap of CMD_FLOOR_GAP_YD is a floor change)
+  // and the map's Nth floor slot, counted from the bottom, takes the Nth group. Another group count is no floor information,
+  // and nothing is hidden then.
+  const CMD_FLOOR_GAP_YD = 15;
+
+  function cmdFloorZs(view, fight) {
+    const out = [];
+    const add = (v) => { if (typeof v === 'number' && isFinite(v)) out.push(v); };
+    ((view && view.steps) || []).forEach(s => add(s.z));
+    ((view && view.rings) || []).forEach(r => { add(r.z); (Array.isArray(r.path) ? r.path : []).forEach(p => add(Array.isArray(p) ? p[2] : p && p.z)); });
+    ((fight && fight.deaths) || []).forEach(d => add(d && d.z));
+    return out;
+  }
+
+  function cmdFloors(slots, pick, zs) {
+    const world = (slots || []).filter(s => s && s.kind === 'worldmap');
+    if (world.length < 2 || !pick || pick.kind !== 'worldmap') return null;
+    const floor = pick.floor ? parseInt(pick.floor, 10) : 1;
+    if (!(floor >= 1 && floor <= world.length)) return null;
+    const vals = (zs || []).filter(v => typeof v === 'number' && isFinite(v)).sort((a, b) => a - b);
+    if (!vals.length) return null;
+    const groups = [[vals[0], vals[0]]];
+    for (let i = 1; i < vals.length; i++) {
+      const g = groups[groups.length - 1];
+      if (vals[i] - g[1] >= CMD_FLOOR_GAP_YD) groups.push([vals[i], vals[i]]);
+      else g[1] = vals[i];
+    }
+    if (groups.length !== world.length) return null;
+    const g = groups[floor - 1];
+    return {
+      floor, count: world.length, lo: g[0], hi: g[1],
+      has: (z) => typeof z !== 'number' || !isFinite(z) || (z >= g[0] - 0.01 && z <= g[1] + 0.01),
+    };
+  }
+
+  // The selected fight's deaths on the card's map, over the events layer and under the bots.
+  function cmdFightMarksSvg(c, recaps, selDeath) {
+    let g = '';
+    (recaps || []).forEach(r => {
+      const p = CmdView.project(r.x, r.y), on = r.i === selDeath;
+      g += `<g class="fdmark${on ? ' on' : ''}">`
+        + cmdMapIcon('skull', p.x, p.y, (on ? 17 : 13) * c.k, r.name + ' died at ' + (r.t_ms / 1000).toFixed(1) + ' s, killed by ' + r.killer)
+        + `<text class="fdlabel" x="${c.f(p.x + 10 * c.k)}" y="${c.f(p.y + 4 * c.k)}" style="font-size:${c.f(11.5 * c.k)}px;stroke-width:${c.f(3 * c.k)}px">${esc(r.name)} ${Math.round(r.t_ms / 1000)} s</text></g>`;
+    });
+    return g;
   }
 
   // ---- Dungeons (issue #895) -----------------------------------------------
-  // A read-only live view of every instance copy (dungeon or raid) that has bots in it, one run per copy (map + instance id), so two
+  // A read-only live view of every dungeon copy that has bots in it, one run per copy (map + instance id), so two
   // copies of the same dungeon are two runs. The daemon does the grouping (/api/v1/dungeons, internal/state/dungeons.go); the tab shows
   // the list of runs, and a run's live view reuses the Commanders card and map renderer. No orders, no buttons that act on bots.
 
@@ -6025,6 +10280,20 @@
     ).join('');
   }
 
+  // The Dungeons rollup is on screen on its own tab and wherever a dungeon card draws (the Commanders page shows the live
+  // runs as cards too). The Commanders tab itself counts as on screen even with no dungeon cached yet, so a new run's first
+  // card is not late. Off screen it is asked once every 30 s, not twice a second.
+  const DGN_POLL_MS = 30000;
+  function dgnOnScreen() {
+    if (state.activeTab === 'dungeons') return true;
+    if (state.activeTab !== 'commanders') return false;
+    return true;
+  }
+  function dgnPollDue(onScreen, at, nowMs) {
+    if (onScreen) return true;
+    return !at || nowMs - at >= DGN_POLL_MS;
+  }
+
   function fetchDungeons() {
     if (dungeonsInflight) return;
     dungeonsInflight = true;
@@ -6050,6 +10319,198 @@
       cmdPruneAll();
       if (state.activeTab === 'dungeons') renderDungeons();
     });
+  }
+
+  // ---- Raids (no binding needed) ------------------------------------------------------------------
+  // The RAIDS rollup is on screen only on the Raids tab; a `raids` event newer than 5 s suppresses the snapshot
+  // fetch (flag-off servers send none, so the tab polls). Off screen it is asked once every 30 s.
+  const RAIDS_POLL_MS = 30000, RAIDS_EVENT_MS = 5000;
+  function raidsOnScreen() {
+    return state.activeTab === 'raids';
+  }
+  function raidsPollDue(onScreen, at, eventAt, nowMs) {
+    if (!onScreen) return !at || nowMs - at >= RAIDS_POLL_MS;
+    if (eventAt && nowMs - eventAt < RAIDS_EVENT_MS) return false;
+    return true;
+  }
+
+  function fetchRaids() {
+    if (raidsInflight) return;
+    raidsInflight = true;
+    fetch('/api/v1/raids')
+      .then(jsonOrThrow)
+      .then(view => { if (view && Array.isArray(view.runs)) applyRaids(view); })
+      .catch(() => {})
+      .finally(() => { raidsInflight = false; });
+  }
+  let raidsInflight = false;
+
+  function applyRaids(view) {
+    // The same refresh-rate gate as every other live view: frozen while paused.
+    const eventFresh = Array.isArray(view.runs) && view.live;
+    refreshGate.submit('raids', () => {
+      state.raids.runs = view.runs;
+      state.raids.live = !!view.live;
+      state.raids.staleModule = !!view.stale_module;
+      state.raids.at = Date.now();
+      if (eventFresh) state.raids.eventAt = Date.now();
+      state.raids.binds = [];
+      state.raids.byMember = new Map();
+      view.runs.forEach(r => {
+        (r.groups || []).forEach(g => {
+          const bind = RaidView.bindOf(r, g);
+          state.raids.binds.push(bind);
+          (g.members || []).forEach(m => {
+            if (!state.raids.byMember.has(m.guid)) state.raids.byMember.set(m.guid, { run: r, group: g });
+          });
+        });
+        (r.ungrouped || []).forEach(m => {
+          if (!state.raids.byMember.has(m.guid)) state.raids.byMember.set(m.guid, { run: r, group: null });
+        });
+      });
+      cmdPruneAll();
+      if (state.activeTab === 'raids') renderRaids();
+    });
+  }
+
+  // The WS `raids` event carries the full view: same path as a fetch answer.
+  function applyRaidsEvent(view) {
+    if (!view || !Array.isArray(view.runs)) return;
+    state.raids.eventAt = Date.now();
+    applyRaids(view);
+  }
+
+  // The tab: a group opened (#/raids?run=<key>&group=<group>) shows its card (map + party + fights), otherwise the list.
+  function renderRaids() {
+    const listEl = document.getElementById('raid-list'), viewEl = document.getElementById('raid-view');
+    if (!listEl || !viewEl) return;
+    const runs = state.raids.runs;
+    const openRun = state.raids.openKey != null ? runs.find(r => r.key === state.raids.openKey) : null;
+    const open = openRun && state.raids.openGroup != null
+      ? (openRun.groups || []).find(g => String(g.group) === String(state.raids.openGroup)) || null
+      : null;
+    listEl.style.display = open ? 'none' : '';
+    viewEl.style.display = open ? '' : 'none';
+
+    const emptyEl = document.getElementById('raid-empty');
+    if (emptyEl) emptyEl.style.display = runs.length || open ? 'none' : '';
+    const staleEl = document.getElementById('raid-stale');
+    if (staleEl) staleEl.style.display = state.raids.staleModule ? '' : 'none';
+
+    const back = document.getElementById('raid-back');
+    if (back) back.onclick = () => go({ tab: 'raids', run: null, group: null });
+
+    if (open && openRun) {
+      raidRenderCard(openRun, open);
+      return;
+    }
+
+    // The list of runs, one row per group (fighting first, then by key).
+    const host = document.getElementById('raid-list');
+    const rows = [];
+    runs.forEach(r => RaidView.listRows(r).forEach(g => rows.push({ run: r, group: g })));
+    host.innerHTML = rows.length
+      ? '<table class="dgn-table"><thead><tr><th>Raid</th><th>Group</th><th>Leader</th><th>Bots</th><th>Down</th><th>State</th><th>Seen</th></tr></thead><tbody>'
+        + rows.map(({ run, group }) => {
+          const word = RaidView.stateWord(group);
+          const members = group.members || [];
+          const bots = members.filter(m => !m.player).length;
+          const players = members.filter(m => m.player).map(m => m.name);
+          const down = members.filter(m => m.dead || m.offline).length;
+          return `<tr class="raid-run-row" data-run="${esc(run.key)}" data-group="${esc(String(group.group))}" title="Open the live view of this group">
+            <td>${esc(dgnRunName(run))}</td>
+            <td>${esc(group.key)}${group.bound && group.commander ? ' <span class="cell-muted">bound</span>' : ''}${group.observed ? '' : ' <span class="cell-muted">roster</span>'}</td>
+            <td>${group.leader ? esc(group.leader) : '<span class="cell-muted">–</span>'}</td>
+            <td>${bots}${players.length ? ' + ' + esc(players.join(', ')) : ''}</td>
+            <td>${down || '–'}</td>
+            <td><span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span></td>
+            <td>${esc(DgnView.seenText(run.seen_sec))}</td>
+          </tr>`;
+        }).join('') + '</tbody></table>' + runs.map(r => raidUngroupedListHtml(r)).join('')
+      : runs.map(r => raidUngroupedListHtml(r)).join('');
+    if (!host._wired) {
+      host._wired = true;
+      host.addEventListener('click', e => {
+        const row = e.target.closest && e.target.closest('.raid-run-row');
+        if (row) go({ tab: 'raids', run: row.dataset.run, group: row.dataset.group });
+      });
+    }
+  }
+
+  // The list's muted block for a run's units with no group.
+  function raidUngroupedListHtml(run) {
+    const solo = (run && run.ungrouped) || [];
+    if (!solo.length) return '';
+    const names = solo.map(m => m && m.name ? esc(m.name) : '').filter(Boolean).join(', ');
+    return `<div class="raid-ungrouped muted">${esc(dgnRunName(run))} &middot; Not in a group &middot; ${solo.length}: ${names}</div>`;
+  }
+
+  // One shared card per group, rebuilt and drawn like a commander's: the header names the instance, leader and
+  // up-count; badges say observed vs roster-only and link the bound commander; the party, map and fights reuse the
+  // Commanders renderers (cmdRaidHtml, drawCmdMap, mountFightPanel) unchanged.
+  function raidRenderCard(run, group) {
+    const bind = RaidView.bindOf(run, group);
+    const name = dgnRunName(run);
+    const up = (group.members || []).filter(m => !m.dead && !m.offline).length;
+    const total = (group.members || []).length;
+    const word = RaidView.stateWord(group);
+    document.getElementById('raid-run-title').innerHTML =
+      `${esc(name)} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`;
+    const wins = group.combat ? RaidView.windowTotals(group.combat) : null;
+    setHtml(document.getElementById('raid-run-sub'),
+      `Group ${esc(group.key)} &middot; led by <b>${esc(group.leader || bind.lead || '?')}</b> &middot; ${up}/${total} up`
+      + ` &middot; seen ${esc(DgnView.seenText(run.seen_sec))}`
+      + (wins ? ` &middot; window ${wins.dps} dps / ${wins.hps} hps` : ''));
+    const key = 'raid:' + run.key + ':' + group.key;
+    cmdCards.forEach((cardEl, k) => {
+      if (k.indexOf('raid:') !== 0 || k === key) return;
+      cardEl.remove(); cmdUnwatchStage(cardEl); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
+    });
+    let card = cmdCards.get(key);
+    if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
+    const host = document.getElementById('raid-card');
+    if (!host.contains(card)) host.appendChild(card);
+    const flagNote = 'the server sends no RAIDS: AiPlayerbot.ObservabilityRaids = 0, so no fight numbers for unbound raids';
+    setHtml(card.querySelector('.cmd-title'), `${esc(name)} &middot; group ${esc(group.key)} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+    setHtml(card.querySelector('.cmd-badges'),
+      (group.observed
+        ? `<span class="badge badge-info" title="A live RAIDS report covers this group">observed</span>`
+        : `<span class="badge badge-warn" title="${esc(flagNote)}">roster only</span>`)
+      + (group.bound && group.commander
+        ? ` <a class="badge badge-info" href="#/commanders/${esc(encodeURIComponent(group.commander))}" title="Open the bound commander's card">bound &middot; ${esc(group.commander)}</a>`
+        : '')
+      + ` <span class="badge badge-info" title="Instance copy ${esc(String(run.instance))} of map ${esc(String(run.map))}">instance ${esc(String(run.instance))}</span>`);
+    const rb = group.run ? UnitInfo.runBrief(bind, cmdServerNow()) : null;
+    setHtml(card.querySelector('.cmd-sub'),
+      `Led by <b>${bind.lead ? cmdBotLink(bind.bots.find(b => b.name === bind.lead)?.guid, bind.lead) : esc(group.leader || '?')}</b> &middot; group ${esc(String(group.group))}`
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}">${esc(rb.text)}</span>` : ''));
+    card.querySelector('.cmd-orders').parentElement.querySelector('.cmd-h').style.display = 'none';
+    setHtml(card.querySelector('.cmd-orders'), '');
+    setHtml(card.querySelector('.cmd-party'), cmdRaidHtml(bind) + raidUngroupedHtml(run));
+    setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
+    setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
+    setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
+    const fightsBtn = `<div class="raid-fights"><a class="btn" href="${esc(raidFightHash(bind.commander, null))}">Fights</a></div>`;
+    const fightsHost = card.querySelector('.cmd-fights');
+    if (fightsHost) setHtml(fightsHost, fightsBtn);
+    mountFightPanel(card, bind);
+    drawCmdMap(key);
+  }
+
+  // The copy's units with no group: one muted block, as the list shows. A copy with only ungrouped bots shows this,
+  // not a blank party.
+  function raidUngroupedHtml(run) {
+    const solo = (run && run.ungrouped) || [];
+    if (!solo.length) return '';
+    const names = solo.map(m => m && m.name ? esc(m.name) : '').filter(Boolean).join(', ');
+    return `<h4 class="cmd-subgroup cmd-ungrouped">Not in a group &middot; ${solo.length} up</h4>`
+      + `<div class="cmd-row cmd-ungrouped-row"><span class="cmd-who muted">${names}</span></div>`;
+  }
+
+  // Fight debugger links for an observed group: the debugger resolves the bind through cmdFindBind.
+  function raidFightHash(groupKey, fightKey) {
+    const h = `#/commanders/${encodeURIComponent(groupKey)}/fight`;
+    return fightKey ? h + '/' + encodeURIComponent(fightKey) : h;
   }
 
   // The tab: a run opened (#/dungeons?run=<key>) shows its card (map + party), otherwise the list of runs.
@@ -6090,7 +10551,7 @@
     const key = 'dgn:' + open.key;
     cmdCards.forEach((cardEl, k) => {
       if (k.indexOf('dgn:') !== 0 || k === key) return;
-      cardEl.remove(); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
+      cardEl.remove(); cmdUnwatchStage(cardEl); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
     });
     let card = cmdCards.get(key);
     if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
@@ -6154,8 +10615,9 @@
       })
       .then(data => {
         state.agentMaps.probed = true;
-        if (!data) {
+        if (!data || data.enabled === false) {
           state.agentMaps.error = false;
+          applyAgentMapsEnabled(false);
           if (state.activeTab === 'agentmaps') renderAgentMaps();
           return;
         }
@@ -6233,10 +10695,42 @@
   const cmdLayerRows = {}; // layer key -> {box, row, why}
   let cmdDimRow = null;    // the dim slider's {row, box, val}
   let cmdTrailRow = null;  // the path-length slider's {row, box, val}
+  let cmdTrailSecRow = null; // the path time cut's {row, box}
+
+  // The map's Layers button: opens the one layer panel (a <details>), brings it into view and puts the keyboard on its presets.
+  function openCmdLayers() {
+    const box = document.getElementById('cmd-layers');
+    if (!box) return;
+    if (box.tagName === 'DETAILS') box.open = true;
+    if (!box.classList.contains('cmd-layers-map') && box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const first = box.querySelector('.cmd-presets button');
+    if (first) first.focus();
+  }
 
   function initCmdLayers() {
     const body = document.getElementById('cmd-layers-body');
     if (!body || body.childElementCount) return;
+    // The raid presets first: one click sets the raid's layers for the job at hand; the chosen one is pressed.
+    const presets = document.createElement('div');
+    presets.className = 'cmd-presets';
+    presets.setAttribute('role', 'group');
+    presets.setAttribute('aria-label', 'Layer presets');
+    MapLayers.PRESETS.forEach((p, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.preset = p.name;
+      btn.textContent = MapLayers.PRESET_LABELS[i] || p.name;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Turn the raid layers to ' + (MapLayers.PRESET_LABELS[i] || p.name) + (typeof p.trailSec === 'number' ? ' (paths cut to the last ' + p.trailSec + ' s)' : '');
+      btn.addEventListener('click', () => {
+        cmdLayers = MapLayers.applyPreset(cmdLayers, p.name);
+        MapLayers.save(cmdLayerStore, cmdLayers);
+        cmdCards.forEach((_, k) => drawCmdMap(k));
+        paintCmdLayers();
+      });
+      presets.appendChild(btn);
+    });
+    body.appendChild(presets);
     const dimRow = document.createElement('label');
     dimRow.className = 'cmd-dim';
     dimRow.innerHTML = '<span>Dim the map picture</span><input type="range" min="0" max="' + MapLayers.DIM_MAX + '" step="5" aria-label="Dim the map picture"><b></b>';
@@ -6261,6 +10755,20 @@
     });
     body.appendChild(lenRow);
     cmdTrailRow = { row: lenRow, box: lenBox, val: lenVal };
+    // The time cut of the paths: the whole path, or only its newest seconds (a long walk keeps the last minutes readable).
+    const secRow = document.createElement('label');
+    secRow.className = 'cmd-dim';
+    secRow.innerHTML = '<span>Path time cut</span><select data-trailsec aria-label="Path time cut">'
+      + '<option value="0">All</option><option value="30">30 s</option><option value="60">60 s</option><option value="120">120 s</option></select>';
+    const secBox = secRow.querySelector('select');
+    secBox.addEventListener('change', () => {
+      cmdLayers = MapLayers.setTrailSec(cmdLayers, secBox.value);
+      MapLayers.save(cmdLayerStore, cmdLayers);
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+      paintCmdLayers();
+    });
+    body.appendChild(secRow);
+    cmdTrailSecRow = { row: secRow, box: secBox };
     MapLayers.groups().forEach(group => {
       const wrap = document.createElement('div');
       wrap.className = 'cmd-lgroup';
@@ -6338,6 +10846,16 @@
       cmdTrailRow.box.disabled = !any;
       cmdTrailRow.row.classList.toggle('off', !any);
     }
+    if (cmdTrailSecRow) {
+      const any = avail.leadpath.ok || avail.memberpaths.ok;
+      cmdTrailSecRow.box.value = String(cmdLayers.trailSec);
+      cmdTrailSecRow.box.disabled = !any;
+      cmdTrailSecRow.row.classList.toggle('off', !any);
+    }
+    const chosen = MapLayers.presetOf(cmdLayers);
+    document.querySelectorAll('#cmd-layers-body [data-preset]').forEach(btn => {
+      btn.setAttribute('aria-pressed', btn.dataset.preset === chosen ? 'true' : 'false');
+    });
     MapLayers.DEFS.forEach(d => {
       const r = cmdLayerRows[d.key];
       if (!r) return;
@@ -6627,6 +11145,7 @@
   initQuickFind();
   initBots();
   initAuctions();
+  initGuildOrders();
   initActivity();
   initProfile();
   initIssues();
@@ -6641,16 +11160,24 @@
   initCommanderLink();
   initCmdLayers();
   initCmdDemo();
+  initCmdTabs();
   initDgRuns();
   initRefreshPicker();
   initAgentMaps();
   refreshGate.onGap(() => { CmdView.markGap(cmdTracker); CmdPaths.markGap(cmdTrails); });
   refreshGate.onChange(() => { seedCmdTrails(state.commanders.list); if (cmdDemo.on) { clearInterval(cmdDemo.timer); cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); } });
   fetchCommanders();
+  // The boss table is one static file (a missing one leaves every panel and map mark away, never an error).
+  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(cmdBossTableLoaded);
+  // The trash table is one static file too (a missing one leaves the block and its map marks away, never an error).
+  if (typeof TrashInfo !== 'undefined' && TrashInfo.load) TrashInfo.load().then(() => {
+    if (state.activeTab === 'commanders') renderCommanders();
+  });
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
   setInterval(refreshGate.guard(fetchRoster), 60000);
   initWebSocket();
+  requestAnimationFrame(cmdLiveFrame);
 
   // First route: the URL hash wins; without one, return to the last tab used.
   if (!parseRoute().tab) {

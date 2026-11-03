@@ -20,11 +20,11 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
-| [`AiPlayerbot.AhMarketEnabled`](#aiplayerbotahmarketenabled) | `0` | Enables bots posting surplus items and bidding from their own bags on the Auction House. |
+| [`AiPlayerbot.AhMarketEnabled`](#aiplayerbotahmarketenabled) | `1` | Enables bots posting surplus items and bidding from their own bags on the Auction House. |
 | [`AiPlayerbot.AhMarketInterval`](#aiplayerbotahmarketinterval) | `120` | Interval in seconds between seller ticks that attempt bot auction postings. |
 | [`AiPlayerbot.AhMarketBatchSize`](#aiplayerbotahmarketbatchsize) | `1` | Maximum bots (one listing each) attempted per seller tick (effective 1..5). |
 | [`AiPlayerbot.AhMarketSyntheticSupply`](#aiplayerbotahmarketsyntheticsupply) | `0` | Injects synthetic profession materials and gear to stock empty auction houses. |
-| [`AiPlayerbot.AhMarketBuyer`](#aiplayerbotahmarketbuyer) | `0` | Enables synthetic bot buyer orders to purchase player auctions. |
+| [`AiPlayerbot.AhMarketBuyer`](#aiplayerbotahmarketbuyer) | `1` | Pool bots standing at an auctioneer bid on and buy auctions with their own gold. |
 | [`AiPlayerbot.AhMarketBudgetUs`](#aiplayerbotahmarketbudgetus) | `2000` | Microsecond time budget ceiling per world tick for the synthetic-market engine. |
 | [`AiPlayerbot.AhMarketMaxOperations`](#aiplayerbotahmarketmaxoperations) | `32` | Maximum synthetic-market engine work steps processed per tick. |
 | [`AiPlayerbot.AhMarketChanceSell`](#aiplayerbotahmarketchancesell) | `10` | Percentage chance per engine cycle to generate a synthetic supply batch. |
@@ -39,6 +39,7 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 | [`AiPlayerbot.AhMarketBidMin` / `AhMarketBidMax`](#aiplayerbotahmarketbidmin--ahmarketbidmax) | `75` / `90` (BidMax built in) | Percentage range of buyout price used for opening auction bids. |
 | [`AiPlayerbot.AhMarketTimeMin` / `AhMarketTimeMax`](#aiplayerbotahmarkettimemin--ahmarkettimemax) | `8` / `24` (TimeMin built in) | Duration range in hours for posted synthetic auction listings. |
 | [`AiPlayerbot.AuctionPriceRefreshInterval`](#aiplayerbotauctionpricerefreshinterval) | `60` (built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) | Seconds between market price evaluation sweeps. |
+| [`AiPlayerbot.AhSellBlacklist`](#aiplayerbotahsellblacklist) | `18256` | Item ids bots never post to the auction house. |
 | [`AiPlayerbot.VendorBatchMinCount` / `VendorBatchMinBagSpace`](#aiplayerbotvendorbatchmincount--vendorbatchminbagspace) | `8` / `60` | Inventory thresholds that trigger vendor selling trips for level 5+ bots. |
 | [`AiPlayerbot.LowLevelVendorBatchMinCount` / `LowLevelVendorBatchMinBagSpace`](#aiplayerbotlowlevelvendorbatchmincount--lowlevelvendorbatchminbagspace) | `3` / `25` | Inventory thresholds that trigger vendor selling trips for sub-level 5 bots. |
 | [`AiPlayerbot.LowLevelVendorMaxDistance`](#aiplayerbotlowlevelvendormaxdistance) | `600` | Maximum yard radius sub-level 5 bots travel to reach camp vendors. |
@@ -49,7 +50,7 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 
 ### `AiPlayerbot.AhMarketEnabled`
 Enables the autonomous Auction House market service for pool bots.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -96,8 +97,8 @@ When enabled, the service periodically generates synthetic listings of crafting 
 </details>
 
 ### `AiPlayerbot.AhMarketBuyer`
-Enables synthetic buyer bids that purchase auctions posted by human players.
-**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+Pool bots standing at an auctioneer bid on and buy auctions with their own gold (not synthetic).
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -259,6 +260,17 @@ Interval in seconds between background auction price and market valuation update
 <summary>How it works in detail</summary>
 
 Controls how frequently the auction price mirror reloads active listings used for market price averages and item valuations.
+
+</details>
+
+### `AiPlayerbot.AhSellBlacklist`
+Item ids bots never post to the auction house.
+**Default:** `18256` (Imbued Vial) · **Values:** comma-separated item ids · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Bots also never post items any vendor sells without a stock limit, even if other vendors limit the same item: any player can buy those at the vendor buy price, so no auction listing can be fair. Vendor-buy-to-flip uses the same rule, refusing the item whenever the visited vendor's own stock is unlimited. The blacklist covers anything else odd the owner finds and also blocks synthetic market supply.
 
 </details>
 

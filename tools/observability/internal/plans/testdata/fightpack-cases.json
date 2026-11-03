@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {"name": "boss entry matches later boss step", "plan": "onyxias_lair", "step": 26, "boss": 10184, "engaged": [], "want": 29},
+    {"name": "boss match at its own step", "plan": "onyxias_lair", "step": 29, "boss": 10184, "engaged": [], "want": 29},
+    {"name": "engaged entry matches the next warder pull", "plan": "onyxias_lair", "step": 20, "boss": 0, "engaged": [12129], "want": 21},
+    {"name": "step only marks the next pack", "plan": "onyxias_lair", "step": 18, "boss": 0, "engaged": [], "want": 21},
+    {"name": "a fight at a pack step marks that pack", "plan": "onyxias_lair", "step": 2, "boss": 0, "engaged": [], "want": 2},
+    {"name": "an entry no later step holds is no pack", "plan": "onyxias_lair", "step": 0, "boss": 0, "engaged": [99999], "want": 0},
+    {"name": "molten core: engaged entry of a later pull", "plan": "molten_core", "step": 3, "boss": 0, "engaged": [11668], "want": 4},
+    {"name": "molten core: multi-leg boss entry", "plan": "molten_core", "step": 30, "boss": 12118, "engaged": [], "want": 38},
+    {"name": "molten core: an entry before the fight's step is not a pack", "plan": "molten_core", "step": 39, "boss": 0, "engaged": [12119], "want": 0},
+    {"name": "molten core: the last boss", "plan": "molten_core", "step": 41, "boss": 11982, "engaged": [11982], "want": 44},
+    {"name": "molten core: step only", "plan": "molten_core", "step": 25, "boss": 0, "engaged": [], "want": 26}
+  ]
+}

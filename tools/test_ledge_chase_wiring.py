@@ -170,7 +170,7 @@ class StrandedLeadTeleportWiringTest(unittest.TestCase):
     def test_the_firing_stand_keeps_the_bots_ledge_height(self):
         f = body(COMMANDS, "void ReadPullStand(")
         guard = at(f, "static_assert(kStandLedgeDropYd == ai::kRunnerLedgeDropYd,")
-        self.assertLess(guard, at(f, "ShotStandOnPath(points, goal, f.leadShotYd - kShotMarginYd, sees);"))
+        self.assertLess(guard, at(f, "ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,"))
 
 
 if __name__ == "__main__":

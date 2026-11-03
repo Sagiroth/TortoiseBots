@@ -2,11 +2,24 @@
 #include "playerbot/ServerFacade.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "values/ItemUsageValue.h"
+#include "../../runtime/GuildOrderStore.h"
 
 char * strstri (const char* str1, const char* str2);
 
 namespace ai
 {
+    // True when the item is reserved for the bot's unfinished guild order and
+    // must never be consumed (eaten, drunk, bandaged, potion): the order item
+    // itself, the current supply item, or a craft-order reagent through the
+    // bot's known recipes. A set lookup in the store, safe on any thread
+    // (the world-thread market service posts through here), and it always
+    // protects the live order and supply items even before the map-thread
+    // refresh recomputed the set. Mirrors the ITEM_USAGE_GUILD_TASK gate in
+    // ItemUsageValue so the eat/drink/potion pickers agree with it.
+    inline bool GuildOrderConsumesItem(Player* bot, uint32 itemId)
+    {
+        return TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId);
+    }
     class IterateItemsVisitor
     {
     public:
@@ -349,8 +362,11 @@ namespace ai
 
                     for (int i = 0 ; i < 3; i++)
                     {
-                        if (spellInfo->Effect[i] == effectId)
-                            return true;
+                        // Only self mana counts as energize (see BuildPotionCache).
+                        if (spellInfo->Effect[i] == effectId &&
+                            (effectId != SPELL_EFFECT_ENERGIZE ||
+                             (spellInfo->EffectMiscValue[i] == POWER_MANA && spellInfo->EffectImplicitTargetA[i] == TARGET_UNIT_CASTER)))
+                            return !GuildOrderConsumesItem(bot, proto->ItemId);
                     }
                 }
             }
@@ -372,10 +388,12 @@ namespace ai
 
         virtual bool Accept(const ItemPrototype* proto) override
         {
-            return proto->Class == ITEM_CLASS_CONSUMABLE &&
-                (proto->SubClass == ITEM_SUBCLASS_CONSUMABLE || proto->SubClass == ITEM_SUBCLASS_FOOD) &&
-                proto->Spells[0].SpellCategory == spellCategory &&
-                (!conjured || proto->IsConjuredConsumable());
+            if (proto->Class != ITEM_CLASS_CONSUMABLE ||
+                (proto->SubClass != ITEM_SUBCLASS_CONSUMABLE && proto->SubClass != ITEM_SUBCLASS_FOOD) ||
+                proto->Spells[0].SpellCategory != spellCategory ||
+                (conjured && !proto->IsConjuredConsumable()))
+                return false;
+            return !GuildOrderConsumesItem(bot, proto->ItemId);
         }
 
     private:

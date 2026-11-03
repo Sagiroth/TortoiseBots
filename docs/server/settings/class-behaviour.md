@@ -20,12 +20,26 @@ These settings configure class-specific artificial intelligence behaviors, abili
 
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
+| [`AiPlayerbot.EnableOffSpecStrategies`](#aiplayerbotenableoffspecstrategies) | `1` | Gives hybrid bots their off-spec kit by default: healers deal damage, DPS specs off-heal. |
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
 
 ## Settings
+
+### `AiPlayerbot.EnableOffSpecStrategies`
+When new bots are created, hybrid-class bots get their off-spec strategy on top of their spec kit: healing specs (Discipline/Holy priests, Restoration shamans and druids, Holy paladins) get `offdps`, and hybrid damage specs (Shadow priests, Elemental/Enhancement shamans, Retribution paladins, Cat/Balance druids) get `offheal`. See [healer off-DPS](../../classes/overview.md#healer-off-dps-offdps) and [off-healing](../../classes/overview.md#dps-off-healing-offheal) for what each kit does.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The toggle only sets the default on newly created bots. Players can still switch either kit on or off per bot at any time (`/w <BotName> co +offheal`, `/w <BotName> co -offdps`, or [`.bot strategy`](../../play/commands/party-actions.md#bot-strategy)), regardless of this setting.
+
+When set to `0`, hybrid bots fight with their spec kit only: healers cast no damage spells, and DPS specs never heal. This does not touch solo priest healers in the open-world pool, which keep `offdps` so they can fight alone.
+
+</details>
 
 ### `AiPlayerbot.HunterViperOnLowMana`
 Allows hunters to switch into Aspect of the Viper during combat when their mana is low. Leave this enabled to keep hunter bots firing steadily in long encounters.

@@ -213,7 +213,6 @@ namespace ai
                 creators["pet not happy"] = [](PlayerbotAI* ai) { return new HunterPetNotHappy(ai); };
                 creators["concussive shot on snare target"] = [](PlayerbotAI* ai) { return new ConsussiveShotSnareTrigger(ai); };
                 creators["scare beast"] = [](PlayerbotAI* ai) { return new ScareBeastTrigger(ai); };
-                creators["low ammo"] = [](PlayerbotAI* ai) { return new HunterLowAmmoTrigger(ai); };
                 creators["volley channel check"] = [](PlayerbotAI* ai) { return new VolleyChannelCheckTrigger(ai); };
                 creators["no ammo"] = [](PlayerbotAI* ai) { return new HunterNoAmmoTrigger(ai); };
                 creators["has ammo"] = [](PlayerbotAI* ai) { return new HunterHasAmmoTrigger(ai); };

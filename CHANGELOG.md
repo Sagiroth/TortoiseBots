@@ -1,5 +1,201 @@
 # Changelog
 
+## Unreleased
+
+### Configuration
+- New `AiPlayerbot.DungeonRunRaidBossRules` (default `0`): a raid's boss fight may run 20 minutes, a death does not stop it while the boss still loses health, and the off-tanks take the adds so the main tank stays on the boss.
+- New `AiPlayerbot.DungeonRunRaidHealerGuard` (default `0`): in a raid boss fight whose main tank holds the boss, an add that attacks a healer goes to the raid's nearest ranged damage dealers within 35 yards of it (up to two per add), and the off-tanks take only such an add when no ranged damage dealer is free — so the off-tank is not spent on a bat while the boss is on the main tank. A dealer only counts once it took the order (a refused one passes to the next), and an order it never takes up (its target is not the add) frees the slot after six seconds and passes over that dealer like a refusal. The guard's orders are two seconds apart and pass over a plan boss, an add the run holds, and an add that already had two orders this fight; dealers busy with a commander task are not picked. The same guard runs in a raid trash fight once the main tank holds its current target (no boss rules needed) and stays on for the rest of that fight, also while the target dies: every add on a healer is checked (a nearer add the dealers cover does not hold a farther one back), an off-tank holding its own add is kept there, and with no ranged dealer and no off-tank free the add waits eight seconds before the main tank takes it as a last resort, and only while its own target is an ordinary trash mob that is neither a plan boss nor the fight's kill_first focus.
+- `RandomBotShowHelmet` / `RandomBotShowCloak` (default `1`) now take effect: `0` makes pool bots show up without their helmet and/or cloak from their next login. Hired companions and a player's own bots keep the display flags the character already has.
+- Removed 32 configuration keys that were read but did nothing (an old `aiplayerbot.conf` that still sets one keeps loading without issue). The config file template now explains up front what a commented `#Key = value` line means, and the documentation no longer lists a "settings with no effect" table. Only helmet and cloak display remained, so nothing changes for existing setups.
+
+### World PvP
+- Pool bots stay PvP flagged everywhere, so players can attack them outside contested zones too. About a quarter of free pool bots actively hunt flagged enemies nearby, join same-faction fights, and give up the chase after a minute. Turn it off with `AiPlayerbot.RandomBotForcePvp = 0` and `AiPlayerbot.WorldPvpSeek = 0`.
+- The dashboard shows who fights whom in the open world: a World PvP feed, a seeker and "fighting" badge on the bot list, recent PvP fights in each bot's profile, and counters for seekers, engagements, kills and deaths.
+
+### Classes & Combat
+- Hunters fire Multi-Shot only when the splash around their target catches a second fighting enemy, and never into a crowd-controlled mob standing beside it, so the shot now scales with the pack instead of firing on cooldown.
+- Hunters use Freezing Trap again as crowd control in dungeon runs without assigned marks: they trap an extra attacker that is not the group's kill target, and only once they know Feign Death.
+- Fixed: bots no longer stand and die in ground fire — they step out of the circle the fire actually burns, never land in a second fire right beside it, and stop walking back into one they just left.
+- Fixed: bots see hostile ground clouds again (a poison cloud, consecration or rain of fire cast on the ground): the sensor behind them was blind and returned nothing. They now step out from under the cloud as it forms, a tank drags the boss out of it instead of running off and losing it, and the melee, the tank included, wait at its edge rather than walking back in. A group mage's Blizzard or a warlock's Rain of Fire is not treated as danger, and clouds cast by players leave open-world and player-versus-player fighting as it was.
+- Fixed: a stealthed rogue no longer stays held after the pull while the rest of the party fights.
+- Fixed: restoration druids fall through to *Rejuvenation* on a hurt ally *Healing Touch* would waste mana on, blanket idle *Rejuvenation* on hurt allies missing it instead of throwing grenades, and save raid *Faerie Fire* for bosses while holding 80% mana.
+- In a run leader's pull, the held DPS open once every mob near the tank is on it (join delay at the earliest, 10 s after the tank is back at the latest), or at once when a mob hits them or the tank drops under 60 %.
+- A fight the run leader did not pull holds the damage dealers for up to 4 s the same way: they open once every mob near the tank or near them is on the tank, or at once when one hits them.
+- Fixed: the fight-start DPS hold now opens in hired dungeon runs (it was gated on the hirer).
+- Damage dealers in a fight-start hold wait about 2-3 s (whole-second clock) before opening on a pack the tank just tagged, and a pull no longer stops halfway when the target's own pack-mates aggro first.
+- Protection warriors open with Shield Slam when it is ready and treat Sunder Armor as the filler while the stack builds, so snap threat lands on every pull.
+- Protection warriors fall back to Mocking Blow (ducking into Battle Stance and back) when Taunt is on cooldown and the mob left the tank, recovering taunt-resist wipes on bosses.
+- Protection warriors save Challenging Shout for real emergencies (3 or more loose mobs on non-tanks) instead of firing it on every pack they already hold.
+- Feral bears keep Maul queued every swing from 15 rage instead of waiting for 40 (the dead Mangle row is gone), so threat no longer stalls on auto-attacks.
+- Feral bears spend excess rage (or a free Clearcasting proc) on Savage Bite from level 58, so high-level threat keeps scaling.
+- Feral bears save Challenging Roar for real emergencies (3 or more loose mobs on non-tanks) instead of firing it on every pack they already hold.
+- Fixed: priests no longer cast Power Word: Shield on a warrior or bear tank fighting above 20 % health, since absorbed hits give no rage and starve the tank's threat; the shield still lands as the save at or below 20 %.
+- Prayer of Healing now fires when 3 or more members of the priest's own party within 30 yards are hurt, instead of counting the whole raid for a spell that only heals the priest's party.
+- Ascendance now fires only when someone actually needs healing (a party member low or the group hurt), instead of on the first quiet combat tick of its 5-minute cooldown.
+- Fixed: restoration druids no longer channel Tranquility for two scratches — it waits for group damage, so the 30-minute channel is there when the group needs it.
+- Fixed: restoration druids heal between 20 % and 70 % health with *Healing Touch* while *Regrowth* is still running on the target (its heal-over-time is not recast), instead of idling until someone drops to critical. Druids below level 12, who have no Regrowth yet, heal with it too.
+- Fixed: restoration druids hold Nature's Swiftness for critical health instead of popping it on the first quiet tick, so the instant Healing Touch lands when a life is on the line.
+- Fixed: resto shaman now hold Spirit Link until the tank drops to half health instead of linking on the pull.
+- Fixed: arms and fury warriors no longer burn rage dancing in and out of Berserker Stance for a Whirlwind or Pummel they cannot fire yet — the swap now waits until the spell is off cooldown and the rage left after the swap (Tactical Mastery retention) still pays for it, and the interrupt still has a live cast.
+- Fixed: in a raid, warriors no longer spend the snare on mobs the tank already holds — Piercing Howl and Hamstring go only on mobs attacking someone who is not a tank (any tank the group identifies, or the raid's flagged Main Tank), including called adds running at the group. Dungeon behaviour is unchanged.
+- Fixed: in a raid, hunters no longer drop combat with Feign Death at medium threat on a mob the tank holds — the feign waits until a mob is on the hunter or threat is near-max. Dungeon behaviour is unchanged.
+- Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
+- Fixed: warriors no longer Piercing Howl a mob out of its 10 yd reach — in a dungeon Arms and Fury snare it with Hamstring instead, and in a raid they skip it rather than walk off the melee target.
+- Fixed: arms warriors cast Mortal Strike on cooldown and pool rage for it.
+- Fixed: warriors in raids no longer dance to Berserker Stance for a single-target Whirlwind.
+- Fixed: dps warriors in raids no longer Mocking Blow the tank's mob or walk off to Hamstring a mob on a healer when Piercing Howl is held back, and Fury warriors stay in Berserker Stance between fights.
+- Holy paladins heal a party member between 50 and 70 % health with Holy Light instead of Flash of Light, so their healing in raids matches a priest's instead of half of it.
+- Holy paladins healing from range no longer recast Seal of Wisdom between Judgements, which saves about 30 global cooldowns and their mana each raid.
+- Healers no longer throw grenades, sapper charges or Oil of Immolation in a fight; damage dealers and tanks still use them.
+- Bots in a dungeon or raid run no longer sit down to eat or drink while any member of the run is still fighting, wherever they stand, and a seated bot stands up when the run's fight starts.
+
+### Commands
+- New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
+- Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
+- `.bot hire raid` accepts `level=<n>` like `.bot hire` (the whole roster arrives at that level), and its `onyxia` preset now hires tier 3 gear to match the `onyxia` gear preset.
+- Fixed: the bots of a raid hire that were still on their way when the raid was bound no longer leave the raid and get deleted.
+- Guild farm orders pick the farm zone nearest to the bot on its own continent among the zones it can walk to, instead of the zone with the most spawns, which could sit a ten-minute walk away. If the terrain gives no path to two different spots in a zone, the bot farms the next nearest planned zone and leaves the first one alone for half an hour, instead of retrying the same unreachable spot or giving up a zone over one bad spot.
+- Guild craft orders keep working while one material waits on you: the item goes on the need list right away, the bot carries on with every other material it can source, and the order waits only when the listed items are all that is missing.
+- Guild craft orders count materials through the whole recipe tree: a base material shared by two branches is one row with the summed need, and an intermediate in the bags shrinks its whole subtree instead of every recipe step being counted on its own.
+- A guild craft order missing several materials asks for all of them at once, each on its own sub-order, and collects each delivery from the guild bank as it arrives instead of waiting for one before asking the next.
+- Guild order status now separates what has actually reached the guild from what the bot still carries, so a half-delivered order no longer reads as done and a finished one reports nothing carried.
+- New `.bot order <BotName> steps` lists an order's last 16 status steps with how long ago each happened; it is read-only and memory only.
+- Guild orders can buy what they still need at the auction house: the bot walks to one city (up to twenty minutes), buys the cheapest way to cover the rest, and anything extra it had to buy goes back onto the auction house, with the sale gold or the returned stack paid to the guild bank on a later banker visit. If no auctioneer can be reached it says `noauctioneer` and moves on to farming, crafting or a sub-order. A counter it does reach is searched once: when nothing listed fits, it says `nolisting` and moves on in the same tick, and it does not walk back to the auction house for that material until it tried the other sources, then at most once more.
+
+### Items & Loot
+- New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.
+- `AiPlayerbot.RandomGearBlacklist` is now a hard ban on every auto-gear path: the empty-slot fallback, shirts and tabards, and the level-60 hire gear sets all skip blocked items. A blocked item also wins over the whitelist, and a pool or hired bot already wearing one gets it replaced or removed on its next gear pass. Real players and owned bots never have their own gear taken off, and found loot is unaffected.
+- Loot history rows in the bot event log now carry the item quality and where the loot came from (source type and name).
+- The companion app can now page through the last day of loot picked up by your party bots, 40 rows at a time.
+- Fixed: bots now pick up quest source items (like the Gnarlpine Necklace that starts Ferocitas the Dream Eater) instead of leaving them on the corpse.
+
+- Fixed: bots now walk to corpses that hold only their own quest item, which can miss the lootable flag the corpse shows you.
+- Fixed: bots no longer walk to a corpse whose quest item the game keeps for the member whose loot turn it is, so they stop opening an empty window and queuing that corpse again.
+- Debug loot now says why a corpse is not the bot's to loot.
+
+### Dungeons & Maps
+- New opt-in strategy `viscidus glob focus` (`.bot strategy +viscidus glob focus @all`, off by default, AQ40 only): mages freeze Viscidus with rank-one Frostbolt and stop frost casts once he is frozen, melee and ranged physical damage keep hitting the frozen boss, all damage dealers switch to the glob nearest to merging after the shatter, tanks retake Viscidus when the globs re-form (a spare taunts if none holds him), ranged and healers back out of his melee reach, and every role steps out of the poison cloud.
+- The run leader follows a boss by his guid's entry: a boss a script changes mid-fight (Zul'Gurub's Thekal turning from 14599 into 14509) is still his step's boss - his own corpse is *boss down* at once with the note *boss down: he died as 14509*, his changed form is pulled and counted as seen alive, the instance search names the form he was found in (*is alive (as 14509) at ...*), and a boss fought on an earlier step whose corpse lies near the lead bot counts as down at his own step. Before, the step waited 60 s at his spot and paused *boss 14599 not found* with the kill already done.
+- New boss tactic kind `avoid_cast`: bots other than the tank the caster is on walk out of a listed self-centred blast while it is cast (first row: Zul'Gurub's Gurubashi Bat Rider, Unstable Concoction), and each walk-out writes a `BossTacticsAvoidCast` row to `bot_events.csv`.
+- Zul'Gurub leg 0 uses patrol-timed stand pulls and kills the Gurubashi Bat Rider first (walks 1-13).
+- Boss tactics `avoid_cast` now also reads a channelled spell, and Zul'Gurub has rows for the Mad Voidwalkers' Consuming Shadows (every bot but the tank leaves the shadow channel that kills a stacked raid) and the Mad Servants' Flamestrike (kickers in range kick a Mad Servant's Flamestrike first, even on a Servant they are not attacking).
+- Fixed: a tank now holds a listed caster only when the caster is on the tank itself, or — for a caster with a `tank_hold` row — when that tank has the caster as its current target or its `tank target` (a channelling caster's blast holds the AttackAction, so "current target" can lag) and a non-tank has it (no walk-out, no cast hold), so a Mad Voidwalker on a healer is picked up instead of shocking the raid, without holding every tank in every avoid_cast blast (the Gurubashi Bat Rider's self-destruct). The loose-add pickup runs only while the bot has `boss tactics` in combat, and the loader rejects a `tank_hold` row with a nonzero `target_entry`.
+- New boss tactic kind `hold_kill`: the damage dealers leave a named boss creature alone while its blocker still lives nearby, so Zul'Gurub's Mad Servants now die one at a time and the pair of Mad Voidwalkers each death leaves behind is cleared before the next Servant falls (the last raid walk killed four Servants inside 16 s, spawned eight Voidwalkers inside the party and lost 7 bots in 2 s). A `focus` order on a creature with a `tank_hold` row is no longer given to the tanks, and a tank_hold pickup now outranks the main tank's habit of staying on its current target, so the main tank can leave its own Servant for a Voidwalker that is on a healer instead of both tanks burning the focus target. The damage dealers' own target choices drop such a held creature by themselves now (they wait the blocker out instead of being pulled back onto it, and the area-effect rows stand down with them), a blocker only counts while it is actually fighting - or can never fight at all, like the unselectable portal - and a raid mark on such a creature yields to a loose Voidwalker that is nearer, so the mark stops pulling a tank off the add.
+- New boss tactic kind `one_at_a_time`: in Zul'Gurub the damage dealers now all fight one Mad Servant at a time (the wounded one first, the rest of its wave wait), and while a Servant is held or waiting, every bot that is not a tank or a healer leaves its area damage, grenades and damage-over-time spells off that Servant, so a pile no longer dies together and leaves four Voidwalkers at once; each hold decision writes one rate-limited `BossTacticsHoldKill` row to `bot_events.csv`.
+- Zul'Gurub leg 1 pulls the Mad Servant packs one at a time from stands out of every other live pack's reach, the patroller from a stand with line of sight to its lane, and kills the Mad Voidwalkers first: the two they summon per dead Servant channel Consuming Shadows into the raid pile, which killed it at the Venoxis room's steps (walks 18-20).
+- Zul'Gurub leg 1's D+A stand pull stands on the approach point before the old D stand: all three arriving raids of walk 21 woke D just by arriving there (25.4 yd from its nearest spawn, inside aggro with wander and spread); the new stand is 43.6 yd out.
+- Zul'Gurub leg 2 (Mar'li): the leg's `to` no longer stands on the patrolling Razzashi Skitterer's spawn; pack 0 is a plain pull from the stand 41.7 yd east of it (its leader's loop never comes within the stand-pull gate's 27.5 yd, so a stand pull would wait 600 s and pause), pack 1 a stand pull 40.4 yd east (walk 25); the mages Polymorph the Razzashi Venombroods before each pull (`cc_priority` 14532). Walk 26b pulls pack 1 first: pack 0's leader 49202 is aggro-together with its pack and, when pack 0 was pulled first, was dragged from its patrol loop through pack 1's 10 yd assistance ring (23 hostiles, 20 dead in 35 s); pack 1 dead first leaves that run nothing to wake.
+- A run leader pull row with the stand_pull flag (8192) now waits at its stand for a patrolling pack to come into the tank's shot while no other patrol is near, and sees the pack's patrol up to 60 yd out instead of calling it cleared.
+- A stand-pull row no longer waits 10 minutes for a pack member that stands still out of the tank's shot: it names the unit and pulls it normally, still holding while another patrol is near the lead bot or the way of any unit the plain pull could still choose (every one of the row's such units is checked, not just the first listed one; the unit is judged from the stand), and a row that left one to the plain pull still reads the other patrols.
+- Fixed the run leader reading a waypoint formation whose leader died as standing still and leaving it out of a pull: the walk of a formation is judged by its original leader, whose path the server's temporary leader keeps walking.
+- The run leader no longer counts a pull as cleared while part of its pack is still alive: a pull step waits for any unit of its mobs left within 10 yards of the pack (on the ground, same floor), for mobs that spawned in the pack wherever their patrol has walked, and for followers of a patrolling leader. Leftover mobs are pulled, three tries at most, then the run pauses and names them. `AiPlayerbot.DungeonRunPackClearMarginYd` (default 10, 0 turns it off) and `AiPlayerbot.DungeonRunPackClearRepulls` (default 3).
+- Raids stop after repeated near wipes instead of walking into the next one: two near wipes or wipes within 10 minutes of running time pause the run once the fight is over, with the steps, the time between them and the run's counts in the status line. `.bot run resume` regroups and starts a fresh count. `AiPlayerbot.DungeonRunNearWipeStop` (default 2), `AiPlayerbot.DungeonRunNearWipeStopMinutes` (default 10), and `AiPlayerbot.DungeonRunNearWipeStopParty` (default 0: parties keep regrouping by themselves).
+- New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a raid whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged, and a five-player dungeon's or a scripted entrance's condition is never waived.
+- Fixed: the raid entry waiver now works for a bound raid, whose commander stands outside the group.
+- New: `.bot run start ... until boss|step N|leg X` ends the run before that step, so a trash walk stops at the boss stand.
+- Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
+- Fixed: a run bot stuck in another copy of the dungeon (same map, other instance) is moved into the lead bot's copy instead of the regroup waiting for it forever.
+- New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
+- Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.
+- The run leader is on by default and no longer needs the remote commander: players start runs in their own party (`inparty` bind or player-led); the remote commander only drives parties from outside.
+- Fixed the run leader pausing after a wipe that brought the bot-only party back in another part of the instance: the lead is now teleported back to the run's way.
+- Fixed the run leader still pausing (and refusing resume) when a bot was a ghost a few seconds longer than the lead in another part of the instance: it waits, then teleports.
+- The run leader no longer leaves the party standing where the lead bot fell: when the lead bot comes back to life away from it, the survivors are summoned to it and the party walks back together.
+- Fixed: a survivor whose summon to the revived lead bot was refused no longer dropped out of the recovery; the bot stays held and is summoned again a few seconds later, and after three refusals it stays held while the party walks back without it.
+- Fixed the run leader walking back before the summoned survivors landed: while a summon is in flight it waits, so the bot arrives at the lead bot instead of being left anchored where it stood; a summon refused as busy is not resent every tick.
+- Fixed the run leader dropping a focus skull with no retry and keeping a stale skull across pauses.
+- Fixed bots in deep water standing still on a swim the server allows: their move now goes to the server's own swim, or up and out onto a shore within 30 yd.
+- Fixed: a long winding walk refused too-far no longer pauses after six legs (up to 16; a leg back at an earlier leg's end still pauses).
+- Fixed: the LFT bot fill knows every dungeon in the Turtle LFT list (Frostmane Hollow, Windhorn Canyon, Dragonmaw Retreat, Stormwrought Castle/Descent) and uses its level ranges (#1286).
+- New: the server can run a dungeon with a bot-only party of world bots by itself (behind `AiPlayerbot.BotLfgGroups`, off by default); GameMasters test it with `.bot run system`.
+- New: with `AiPlayerbot.BotLfgGroups = 1`, world bots form dungeon groups of four that wait for a player, then take a fifth bot; GameMasters watch them with `.bot run lfg list`.
+- New: bot LFG groups post in LookingForGroup and invite a player who whispers "inv" (`AiPlayerbot.BotLfgChat`).
+- Fixed the run leader sending the tank at a mob its own crowd control was about to take, and bots keeping that sheep as their target after it landed: the guard and the engage on arrival leave an ordered-but-unlanded CC mark to its CC bot, and every bot's order on a landed one is dropped.
+- New: bots interrupt the Wailing Caverns lords, Mutanus, Grimlok and Captain Greenskin.
+- Fixed: a hired mercenary in your party now accepts the LFT dungeon offer, so the group forms (#1284).
+- Fixed: Karazhan Crypt's run leader plan clears Corpsemuncher (leg 6, a swim up the shaft).
+- New: Wailing Caverns' plan fights Kresh; a boss row's timeout_s sets the wait for a boss away from his spot.
+- Fixed `cmd move` lifting a point in open water onto a ledge above the surface that no path reaches: the point stays in the water (a pier the bots can walk onto still wins), so the run leader's swim up Karazhan Crypt's shaft no longer pauses.
+- Fixed the test speed's party hold pausing a run when `cmd move` refused the hold on the lead bot's own spot (a swim under a ledge): the walk goes on.
+- New table `ai_boss_stand` (boss stand sets: where bots of a role stand while a boss is at a place, optionally only while it casts a spell), created empty by `20261101075500_world.sql`; Venoxis is its first user.
+- Zul'Gurub: the ranged and the healers spread out around High Priest Venoxis (22-23 yards from the spot he fights from, at least 11 yards apart, checked so he is always 15-30 yards away wherever he stands while they hold position) instead of stacking under him, so his chaining Holy Wrath no longer reaches the casters — the last walk lost nine bots in one second to it — and his Holy Fire joins the interrupt list in place of the useless Renew entry.
+
+### Behind the scenes
+- Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.
+- Fixed: a startup error about listing prefix-matching accounts no longer appears on a server whose login database holds no accounts yet; an empty account list is now treated as normal, and a real database failure is still reported.
+- Raids: in trash fights the run leader now sends a loose mob to an off-tank instead of the main tank, turn by turn; the main tank keeps its stand, and a mob an off-tank already holds is left to it.
+- Fixed: a raid's off-tanks keep taking loose mobs off the healers when the run's lead dies in a trash fight (the pick-ups used to stop with him), and a run whose lead is moved away again after a rescue (a wipe-recovery summon, say) is teleported back again instead of walking off and getting stuck, at most twice a step.
+- Raids: a bot left far behind the lead (for example after a teleport) is now summoned to it after about 8 seconds instead of the run's waits taking turns for a minute and a half, at most twice per step.
+- Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
+- Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
+- Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
+
+### Dashboard
+- The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.
+- The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
+- Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.
+- New: the boss panel and the raid coverage card know the Scarlet Monastery bosses: all four wings of map 189, their abilities, Whitemane's pause and resurrection (her spell list returns after the revive) and the rare elites Ironspine, Azshir and the Fallen Champion.
+- Fixed: Ragnaros, Ouro and Viscidus show "submerged"/"split" on the boss panel while they are invisible instead of their fight phase, and Jin'do's add list no longer shows a Sacrificed Troll he never summons.
+- Fixed: a boss that cannot be attacked or is immune to every school (Solnius asleep, Gnarlmoon's Worgen Dimension, the King's Invulnerability) is drawn hollow on the map instead of looking attackable.
+- Fixed: rank-3 adds such as Thaurissan's Image, the Tremor of Ormanos and Gnarlmoon's owls are drawn as elites on the raid map, no longer with a boss crown and ring.
+- Fixed: Thekal keeps his boss panel and phase after he rises as his second form, his fight replay shows one panel instead of a second copy of it, and an add's link line finds him in either form; Skeram's images stay one panel marked ×N instead of one panel each.
+- Fixed: Emberseer's and Thaddius's ability timers count from the moment the fight phase starts, and Sartura's next Whirlwind counts from the end of the current one, so the boss panel's windows match the scripts.
+- New: the fight report lists casts made in the few seconds after combat ended (eating, drinking, mounting, stance changes) apart from the fight's own casts.
+- Fixed: a priest who dies at the end of Spirit of Redemption is no longer named as his own killer (the enemy that hit him last is), and the Fight debugger's checks now list the deaths within 5 s of a named enemy cast, such as a Bat Rider's Unstable Concoction.
+- Fixed: the raid frames keep one size: a boss debuff no longer makes a tile taller, and its chips no longer cover the bot's name.
+- Changed: in the Fight debugger a raid fight's problem verdict now means a real problem: the main tank's Sunder rate fails only under 0.4 per 10 seconds in a fight of 30 seconds or more (0.4-0.8, or any rate in a shorter fight, is a check), one or two deaths outside the tanks are a check until there are three or the fight ended in a wipe, a per-bot server warning on a pull shorter than 30 seconds is a check marked as a short pull, and a raid without a saved layout names the tank that took the most damage as the main tank instead of the first tank in the list.
+- New: the Fight debugger flags a main tank that barely acted — fewer than 0.15 casts a second over a fight of 20 seconds or more — as a problem, naming the tank and the top three spells it did cast, except in a fight the commander drives by hand.
+- New: the Fight debugger's role tables have a **This fight | Total** switch. Total sums every finished fight since the server started for each bot (damage, healing, overheal, damage taken, casts, deaths, Sunder and taunts), and its header reads "Total · N fights since <server start time>", adding "(newest 500 fights)" when the server holds more; the checks and timeline below still judge the picked fight and say which one.
+- New: the run controls (pause, resume, skip, stop, status, start, revive, gear) also show in the Fight debugger, under the raid frames.
+- Fixed: in the Fight debugger the live events list now sits under the map, the checks and the timeline instead of leaving a tall blank band beside the raid frames and the map.
+- Fixed: the live events list is readable: the time in its own column, the text wrapping instead of being cut off, deaths and wipes red and boss casts yellow, a scroll box that keeps your place when new events arrive.
+- Fixed: while a fight is live the Fight debugger no longer scrolls the page back up by itself after you clicked a raid frame, a fight card or a commander tab.
+- New: the boss panel now has Molten Core's 13 bosses, with their abilities, timers, phases, adds and notes.
+- New: boss data for Blackwing Lair: eight bosses plus Lord Victor Nefarius's first phase, with their timers, phases, adds and spell areas.
+- New: boss data for Naxxramas: fifteen bosses, the Four Horsemen as four entries, with their timers, phases, adds and spell areas.
+- New: boss data for the rest of Temple of Ahn'Qiraj — the Bug Trio (Lord Kri, Princess Yauj, Vem), Viscidus and Ouro — on the boss panel, raid map and coverage tab.
+- New: Lower Karazhan Halls boss data: the five entries' abilities, timers, phases and adds (Brood Queen Araxxna, Lord Blackwald II, Grizikil, Clawlord Howlfang and Moroes).
+- New: the dashboard's boss data now covers Timbermaw Hold (map 819), with its eight bosses, what each one casts or summons, its notes and its adds. The core has no Timbermaw script, so every timer is blank and the notes say where each spell comes from.
+- New: the boss panel knows the ten Blackrock Depths and seven Lower Blackrock Spire bosses: their abilities with cast windows and targets, the cones and areas they hit, every add each one brings, and a note where the fight has a trick the panel cannot show.
+- New: the boss panel now knows Zul'Farrak and Sunken Temple, all 15 bosses with their abilities, timers, adds and notes.
+- New: the boss panel now knows Stormwind Vault, Karazhan Crypt and the Black Morass, with each boss's abilities, timers, phases, adds and notes.
+- New: the boss panel now knows Uldaman and Maraudon: the Lost Dwarves, the four Stone Keepers, Archaedas and his stone minions, and the nine Maraudon bosses shared by both wings, with their abilities, timers, adds and notes.
+- New: boss data for Dire Maul's three wings (map 429, one key): the East, North and West bosses and the event-only units — Pusillin, Ferra, Isalien, Tsu'zee, Pimgib, Lord Hel'nurath, Xorothian Dreadsteed and Revanchion — with their abilities, timers, Alzzin's three forms, every add, and a note where the panel cannot see the mechanic.
+- New: the boss panel now knows Blackfathom Deeps, Razorfen Kraul, Razorfen Downs and Wailing Caverns — 35 boss entries including the summoned and event bosses — with their abilities, timers, phases and adds.
+- New: the boss panel now knows Frostmane Hollow, Crescent Grove, Windhorn Canyon, Dragonmaw Retreat and Gilneas City, with their bosses, abilities, timers, phases, adds and notes.
+- New: the boss panel now knows five early dungeons — Ragefire Chasm, the Deadmines, the Stockade, Shadowfang Keep and Gnomeregan — with 38 boss entries, their abilities, timers, phases, adds and notes.
+- New: the boss panel now knows Upper Blackrock Spire's bosses — Emberseer, Rend, Gyth with his own breaths and knock-away, the Beast, Drakkisath and Lord Valthalak — with their timers, phases and adds.
+- New: the boss panel now knows the bosses of Scholomance and of both wings of Stratholme, with their abilities, timers, phases, adds and the notes for what the panel cannot see.
+- New: the boss panel now knows Hateforge Quarry (five bosses plus Broody and Har'gesh's Faceless Terrors) and Stormwrought Ruins (eleven bosses plus Mergothid and the Remains of the Innocent): their abilities, timers, phases, cones and areas, adds and notes.
+- The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
+- The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
+- Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.
+- Fixed: heal-over-time ticks count as healing and overheal in the fight log and the Fight debugger, so healing from Rejuvenation, Regrowth's heal-over-time, Renew or a healing totem no longer shows as zero.
+- Deaths, pulls, taunts, interrupts, elite and boss casts and kills or wipes reach the dashboard as they happen.
+- The dashboard now reads a dungeon or raid plan straight from the world database — its legs, steps, stands and each pull's pack mobs — so the raid map can show where the run leader means to go and which enemies belong to which pack.
+- The Fight debugger numbers the group's fights Pack 1, 2, 3 from the oldest up and names the mob on each card, a bot's name in the checks, the role tables, a death recap or the member panel opens that character's gear and talents, a fight that ends while watched live falls back to the finish that went worst, and one broken fight no longer holds back the others or the rest of the page.
+- The dashboard's raid card now names the raid's layout in one row: the main tank, the off-tanks, which healer follows which tank, and the raid healers. The run line also names the current step in its own words, from the plan.
+- The Commanders page switches as a whole to a Fight debugger: finished fights in a rail with the worst one opened first, plain-language checks (tank deaths, the main tank's Sunder rate, missed debuffs, overheal, idle bots, off-tank taunts, server rule warnings), a damage timeline with death recaps and skulls on the map, raid frames and per-role tables, plus a live view while the group is fighting.
+- The Live / Fight debugger switch is remembered for the page: Live stays as it was, the debugger opens on the fight that went worst and draws its deaths as skulls on the same map (one click frames a death), and picking a member rings them on the map and opens what they cast.
+- The dashboard now receives a commanders raid's live fight numbers while it fights: each bot's damage, healing, casts and last spell in the last ten seconds, so a fight can be read before it ends.
+- The Fight debugger card view has its own dark layout: raid frames with health and mana, the fight rail, the checks, the map with the fight's death spots, the timeline with the death recap, and the role tables; on a phone it reads as one column.
+- The Fight debugger keeps the last half hour of a raid's positions: where each bot and each enemy near the lead stood, every two seconds, plus who each enemy was attacking, so a fight can be replayed on the map afterwards.
+- A finished fight in the Fight debugger can be replayed on the map: play, speed and scrub controls over the raid's kept positions, sampled every 2 s, with health and the deaths where they happened, and a plain note when no positions were kept for that fight.
+- The Fight debugger now shows, for each enemy in a finished fight, who it targeted over time (sampled every 2 s); the stretches where it was on a healer or a damage dealer are marked red.
+- The new raid map and fight replay read at a glance: a dashed plan route with its stands, packs and aggro rings, layer presets as chips in the existing Layers panel, subgroup colours and healer-to-tank lines on the raid, and a scrub bar with one coloured lane per enemy under the timeline.
+- On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
+- The Fight debugger now opens with a run timeline: the walking stretches, every trash pack and boss as a numbered block, the deaths marked, and a Replay button with a scrubber that plays the raid across the run; each fight card shows the fight's total damage, the checks print the number that matters in bold ("57% of the fight", "2.0 per 10 s"), and the map keeps one Layers panel.
+- The map's layer panel now has raid presets (Pathing, Trash pull, Healing, Boss, All) and the plan's route, stand and aggro/wake rings as separate layers; a boss that wakes by script, like Onyxia, draws its own dashed wake ring from the server's data.
+- A Deep Breath lane on the raid map is drawn where it really lands: a 60-yard-wide red band between the two points the spell strikes, on the live map and in a fight replay, under the boss's cast countdown ring.
+- Onyxia's Deep Breath now shows on the raid map while she breathes: the lane, a casting bar and its 5 s countdown (the breath is cast without a cast bar, so it was not shown before).
+- Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
+- A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
+- New: Ruins of Ahn'Qiraj's bosses reach the boss ability panel: Kurinnaxx, Moam, Buru the Gorger, Ayamiss the Hunter and Ossirian the Unscarred show their timers, the stone form and the two health phases, their adds, and a plain note where a number is not fixed in the script.
+- New: Upper Karazhan Halls boss data for the dashboard — Keeper Gnarlmoon, Ley-Watcher Incantagos, Anomalus, Echo of Medivh, the chess event's King, Bishop, Rook and Knight, Sanv Tas'dal, Rupturan the Broken and Kruul — with their abilities, timers, phases and adds.
+- New: the boss panel covers Emerald Sanctum: Erennius and Solnius with their casts, Solnius's transform and 45 s sleep, and the portal adds the panel can list.
+- Fixed: in a raid fight with many adds (Ayamiss's swarm, Majordomo's guards, Ragnaros's Sons) the boss can no longer drop off the dashboard map because 24 adds took every mob row first.
+- New: the dashboard now knows the trash that wipes runs. On the map an elite's cast says KICK when the group can interrupt it and AoE when it hits an area, the worst enemies carry a small danger badge, and the Live card lists what is dangerous in the pull — one line per kind of enemy, most dangerous first, at most five — whenever no boss panel is open. First data: Zul'Gurub's Mad Servants, Mad Voidwalkers, Bloodseeker Bats and Gurubashi Bat Riders, and Scholomance's caster packs.
+
 ## v1.14.0 (2026-10-28)
 
 ### Classes & Combat
@@ -154,60 +350,6 @@
 - The oversized command-handling file was split up so future changes are easier to make. [#1175](https://github.com/Sagiroth/TortoiseBots/pull/1175)
 
 ---
-
-## Unreleased
-
-### World PvP
-- Pool bots stay PvP flagged everywhere, so players can attack them outside contested zones too. About a quarter of free pool bots actively hunt flagged enemies nearby, join same-faction fights, and give up the chase after a minute. Turn it off with `AiPlayerbot.RandomBotForcePvp = 0` and `AiPlayerbot.WorldPvpSeek = 0`.
-- The dashboard shows who fights whom in the open world: a World PvP feed, a seeker and "fighting" badge on the bot list, recent PvP fights in each bot's profile, and counters for seekers, engagements, kills and deaths.
-
-### Classes & Combat
-- Hunters fire Multi-Shot only when the splash around their target catches a second fighting enemy, and never into a crowd-controlled mob standing beside it, so the shot now scales with the pack instead of firing on cooldown.
-- Hunters use Freezing Trap again as crowd control in dungeon runs without assigned marks: they trap an extra attacker that is not the group's kill target, and only once they know Feign Death.
-- Fixed: a stealthed rogue no longer stays held after the pull while the rest of the party fights.
-- In a run leader's pull, the held DPS open once every mob near the tank is on it (join delay at the earliest, 10 s after the tank is back at the latest), or at once when a mob hits them or the tank drops under 60 %.
-- A fight the run leader did not pull holds the damage dealers for up to 4 s the same way: they open once every mob near the tank or near them is on the tank, or at once when one hits them.
-- Fixed: the fight-start DPS hold now opens in hired dungeon runs (it was gated on the hirer).
-- Protection warriors open with Shield Slam when it is ready and treat Sunder Armor as the filler while the stack builds, so snap threat lands on every pull.
-- Protection warriors fall back to Mocking Blow (ducking into Battle Stance and back) when Taunt is on cooldown and the mob left the tank, recovering taunt-resist wipes on bosses.
-- Protection warriors save Challenging Shout for real emergencies (3 or more loose mobs on non-tanks) instead of firing it on every pack they already hold.
-- Feral bears keep Maul queued every swing from 15 rage instead of waiting for 40 (the dead Mangle row is gone), so threat no longer stalls on auto-attacks.
-- Feral bears spend excess rage (or a free Clearcasting proc) on Savage Bite from level 58, so high-level threat keeps scaling.
-- Feral bears save Challenging Roar for real emergencies (3 or more loose mobs on non-tanks) instead of firing it on every pack they already hold.
-- Fixed: priests no longer cast Power Word: Shield on a warrior or bear tank fighting above 20 % health, since absorbed hits give no rage and starve the tank's threat; the shield still lands as the save at or below 20 %.
-- Prayer of Healing now fires when 3 or more members of the priest's own party within 30 yards are hurt, instead of counting the whole raid for a spell that only heals the priest's party.
-- Ascendance now fires only when someone actually needs healing (a party member low or the group hurt), instead of on the first quiet combat tick of its 5-minute cooldown.
-- Fixed: restoration druids no longer channel Tranquility for two scratches — it waits for group damage, so the 30-minute channel is there when the group needs it.
-- Fixed: restoration druids hold Nature's Swiftness for critical health instead of popping it on the first quiet tick, so the instant Healing Touch lands when a life is on the line.
-- Fixed: resto shaman now hold Spirit Link until the tank drops to half health instead of linking on the pull.
-- Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
-
-### Commands
-- New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
-
-### Items & Loot
-- New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.
-- `AiPlayerbot.RandomGearBlacklist` is now a hard ban on every auto-gear path: the empty-slot fallback, shirts and tabards, and the level-60 hire gear sets all skip blocked items. A blocked item also wins over the whitelist, and a pool or hired bot already wearing one gets it replaced or removed on its next gear pass. Real players and owned bots never have their own gear taken off, and found loot is unaffected.
-- Loot history rows in the bot event log now carry the item quality and where the loot came from (source type and name).
-- The companion app can now page through the last day of loot picked up by your party bots, 40 rows at a time.
-
-### Dungeons & Maps
-- Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
-- New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
-- Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.
-- The run leader is on by default and no longer needs the remote commander: players start runs in their own party (`inparty` bind or player-led); the remote commander only drives parties from outside.
-- Fixed the run leader pausing after a wipe that brought the bot-only party back in another part of the instance: the lead is now teleported back to the run's way.
-- Fixed the run leader still pausing (and refusing resume) when a bot was a ghost a few seconds longer than the lead in another part of the instance: it waits, then teleports.
-- Fixed the run leader dropping a focus skull with no retry and keeping a stale skull across pauses.
-- Fixed bots in deep water standing still on a swim the server allows: their move now goes to the server's own swim, or up and out onto a shore within 30 yd.
-- Fixed: a long winding walk refused too-far no longer pauses after six legs (up to 16; a leg back at an earlier leg's end still pauses).
-- Fixed: the LFT bot fill knows every dungeon in the Turtle LFT list (Frostmane Hollow, Windhorn Canyon, Dragonmaw Retreat, Stormwrought Castle/Descent) and uses its level ranges (#1286).
-- New: the server can run a dungeon with a bot-only party of world bots by itself (behind `AiPlayerbot.BotLfgGroups`, off by default); GameMasters test it with `.bot run system`.
-- New: with `AiPlayerbot.BotLfgGroups = 1`, world bots form dungeon groups of four that wait for a player, then take a fifth bot; GameMasters watch them with `.bot run lfg list`.
-- New: bot LFG groups post in LookingForGroup and invite a player who whispers "inv" (`AiPlayerbot.BotLfgChat`).
-- Fixed the run leader sending the tank at a mob its own crowd control was about to take, and bots keeping that sheep as their target after it landed: the guard and the engage on arrival leave an ordered-but-unlanded CC mark to its CC bot, and every bot's order on a landed one is dropped.
-- New: bots interrupt the Wailing Caverns lords, Mutanus, Grimlok and Captain Greenskin.
-- Fixed: a hired mercenary in your party now accepts the LFT dungeon offer, so the group forms (#1284).
 
 ## v1.8.0 (2026-10-22)
 

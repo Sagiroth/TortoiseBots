@@ -119,6 +119,56 @@ int main()
     }
     std::cout << "  [PASS] Test 5: sample fractions cover 0..1\n";
 
-    std::cout << "\nAll 5 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
+    // -------------------------------------------------------------
+    // Test 6: already-there waypoint exemptions (stranded escape)
+    // -------------------------------------------------------------
+    {
+        // Same zone as start: exempt (a bot in Moonwhisper can route out
+        // through Moonwhisper waypoints); leaving the zone re-arms.
+        CHECK(TravelRouteWaypointSharesStartZone(5642, 5642));
+        CHECK(!TravelRouteWaypointSharesStartZone(148, 5642));
+        // Unresolvable areas never exempt.
+        CHECK(!TravelRouteWaypointSharesStartZone(0, 0));
+        CHECK(!TravelRouteWaypointSharesStartZone(5642, 0));
+        CHECK(!TravelRouteWaypointSharesStartZone(0, 5642));
+        // Walk-out radius: inside it is ground underfoot, outside is a town
+        // the journey crosses.
+        CHECK(TravelRouteWaypointInWalkout(0.0f));
+        CHECK(TravelRouteWaypointInWalkout(TRAVEL_ROUTE_TOWN_WALKOUT_YD));
+        CHECK(!TravelRouteWaypointInWalkout(TRAVEL_ROUTE_TOWN_WALKOUT_YD + 1.0f));
+        CHECK(!TravelRouteWaypointInWalkout(-1.0f));
+    }
+    std::cout << "  [PASS] Test 6: stranded-bot waypoint exemptions\n";
+
+    // -------------------------------------------------------------
+    // Test 7: walk-out state (B1/B2/B4: legs share it, no re-entry)
+    // -------------------------------------------------------------
+    {
+        // Stranded town: waypoints at 100/200 yd exempt, 400 yd ends it.
+        RouteStartGround town(false, true);
+        CHECK(town.TownExempt(100.0f));
+        CHECK(town.TownExempt(200.0f));
+        CHECK(!town.TownExempt(400.0f));
+        CHECK(!town.TownExempt(100.0f));  // closed stays closed
+        CHECK(!town.LevelExempt(5642, 5642));  // level was never open
+        // Stranded zone with 3 waypoints: in, in, out.
+        RouteStartGround zone(true, false);
+        CHECK(zone.LevelExempt(5642, 5642));
+        CHECK(zone.LevelExempt(5642, 5642));
+        CHECK(!zone.LevelExempt(148, 5642));
+        CHECK(!zone.TownExempt(10.0f));  // town was never open
+        // Leave and re-enter: the second stretch of start zone is checked.
+        RouteStartGround reentry(true, false);
+        CHECK(reentry.LevelExempt(5642, 5642));
+        CHECK(!reentry.LevelExempt(148, 5642));
+        CHECK(!reentry.LevelExempt(5642, 5642));
+        // Safe start: nothing ever exempt.
+        RouteStartGround safe(false, false);
+        CHECK(!safe.LevelExempt(5642, 5642));
+        CHECK(!safe.TownExempt(0.0f));
+    }
+    std::cout << "  [PASS] Test 7: walk-out state with no re-entry\n";
+
+    std::cout << "\nAll 7 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
     return 0;
 }

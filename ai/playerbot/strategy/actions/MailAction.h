@@ -18,6 +18,19 @@ namespace ai
         void RemoveMail(Player* bot, uint32 id, ObjectGuid mailbox);
     };
 
+    // Takes one order item id from waiting mail, fitting that single item
+    // instead of demanding free slots for the whole mailbox. Returns how
+    // many items left the mail for the bags. Implemented in MailAction.cpp;
+    // the take-mail order action owns the call.
+    uint32_t TakeOrderMail(PlayerbotAI* ai, uint32_t itemId);
+
+    // Settles the guild relist ledger against the waiting auction mail: a
+    // sale pays its gold into the broker's hands, an expired listing returns
+    // the stack, and the ledger row waits for the bank trip either way.
+    // Reads the mailbox at any order state (or with no order at all).
+    // Returns how many ledger rows this read matched. Implemented in
+    // MailAction.cpp; the mail take path and the order mail action call it.
+    uint32_t TakeRelistMail(PlayerbotAI* ai);
 
     class MailAction : public ChatCommandAction
     {

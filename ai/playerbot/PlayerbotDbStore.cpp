@@ -160,6 +160,12 @@ void PlayerbotDbStore::Save(PlayerbotAI *ai, std::string preset)
         // while bound does not keep the back-off after the binding ends.
         if (state == BotState::BOT_STATE_COMBAT && TortoiseBots::BotCommands::IsCommanderThreat(ai->GetBot()))
             strategies.remove(std::string_view("threat"));
+        // A raid layout's "focus heal targets" is the layout's, not the
+        // bot's (commands/Commander.cpp): never stored, so a save while
+        // bound does not keep it after the binding ends, also when the
+        // healer is offline at the release.
+        if (state == BotState::BOT_STATE_COMBAT && TortoiseBots::BotCommands::IsRaidFocusHealer(ai->GetBot()))
+            strategies.remove(std::string_view("focus heal targets"));
         // The open-world kit a binding holds off the bot is still the bot's
         // own: stored, so a restart or a save while bound does not lose it.
         if (state == BotState::BOT_STATE_NON_COMBAT)

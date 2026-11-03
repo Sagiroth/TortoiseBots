@@ -116,7 +116,7 @@
 namespace TortoiseBots {
 namespace BotCommands {
 
-// Issue #900: `.bot hire raid <preset|composition> [tier]`. The grammar and
+// Issue #900: `.bot hire raid <preset|composition> [tier] [level=<1-60>]`. The grammar and
 // the roster live in runtime/HireRaidPolicy.h, the cap, quote, raid conversion
 // and the job queue in HireProvisionService::HireRaid / StepRaidJobs. This
 // command answers refusals and a "started" line at once; the service sends the
@@ -136,7 +136,7 @@ static bool HandleHireRaid(ChatHandler* handler, Player* requester, std::vector<
     if (!ParseHireRaidSpec(tokens, request, error))
     {
         handler->PSendSysMessage("%s", error.c_str());
-        handler->PSendSysMessage("Usage: .bot hire raid <preset|composition> [tier], for example .bot hire raid 3t 12h 24d t6");
+        handler->PSendSysMessage("Usage: .bot hire raid <preset|composition> [tier] [level=<1-60>], for example .bot hire raid 3t 12h 24d t6");
         handler->PSendSysMessage("TBM:HIRE_RAID|refused|0|0|0|0|0|0|0|%s", ProtocolSafe(error).c_str());
         return true;
     }
@@ -169,7 +169,7 @@ static bool HandleHireRaid(ChatHandler* handler, Player* requester, std::vector<
 // <Mercenary Hire> gossip wizard, but only available when the server sets
 // AiPlayerbot.HireAnywhere; otherwise it points players to a recruiter. Usage:
 //   .bot hire <class> [dps|tank|healer] [race] [male|female] [tier] [level]
-//   .bot hire raid <preset|composition> [tier]   (issue #900, see HandleHireRaid)
+//   .bot hire raid <preset|composition> [tier] [level=<1-60>]   (issue #900, see HandleHireRaid)
 // Tokens after the class may come in any order: "warrior tauren male tank",
 // "mage female frost", and "paladin protection" all parse. Bare spec words
 // (protection/arms/fury/holy/retribution/...) imply their role. The optional

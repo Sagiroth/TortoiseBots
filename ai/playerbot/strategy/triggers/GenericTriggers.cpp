@@ -1,4 +1,7 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
@@ -7,6 +10,7 @@
 #include "playerbot/TankAddPickupPolicy.h"
 #include "playerbot/policy/combat/AoeTauntPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/policy/travel/PointDangerPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
@@ -22,7 +26,9 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/strategy/values/HazardsValue.h"
+#include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/actions/PositionAction.h"
+#include "playerbot/AvoidAoePolicy.h"
 
 #include <regex>
 
@@ -150,6 +156,9 @@ bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
 
 bool HealerShouldAttackTrigger::IsActive()
 {
+    if (bot->GetMapId() == 533 && RaidHealerShouldHoldDamage(ai))
+        return false;
+
     if (!bot->GetGroup())
         return true;
 
@@ -261,12 +270,14 @@ bool WandBlocksCastTrigger::NoManaRowActive()
 
 bool WandBlocksCastTrigger::RaidAggroWand()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     Group* group = bot->GetGroup();
     return RaidAggroWandRow(group && group->isRaidGroup(), AI_VALUE2(bool, "has aggro", "current target"));
 }
 
 bool WandBlocksCastTrigger::ThreatVetoesNuke()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     // Mirrors ThreatMultiplier::GetValue (ThreatStrategy.cpp) for a
     // single-target damage spell.
     if (!ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT))
@@ -304,6 +315,12 @@ bool LoseAggroTrigger::IsActive()
     // effect (donor GenericTriggers.cpp guards the same way).
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->IsPlayer())
+        return false;
+
+    // An assigned Patchwerk soaker never takes the boss back: a soaker taunt
+    // keeps Patchwerk off the main tank.
+    if (target && target->GetEntry() == 16028 &&
+        ai->HasStrategy("patchwerk soak", BotState::BOT_STATE_COMBAT))
         return false;
 
     if(!AI_VALUE2(bool, "has aggro", "current target"))
@@ -384,6 +401,7 @@ bool HasAggroTrigger::IsActive()
 
 bool HasAggroInRaidGroupTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     // Same test as WandBlocksCastTrigger::RaidAggroWand, so the stop never
     // fights this row.
     Group* group = bot->GetGroup();
@@ -481,7 +499,17 @@ bool OutNumberedTrigger::IsActive()
     // there is still enough left to get away. PanicTrigger covers the genuine
     // near-death case separately, and it is deliberately narrower (critical
     // health *and* no mana). Tunable via AiPlayerbot.MediumHealth.
-    if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.mediumHealth)
+    //
+    // R3 (fair-fight losses): cloth (mage/priest/warlock) takes the second
+    // attacker's burst at full cloth mitigation, so a two-on-one that a
+    // plate wearer rides to 70% kills the cloth set first — the fair-fight
+    // death rate is 2-3.6x plate's. Cloth starts weighing the disengage at
+    // 85%: still swinging above it, running with 85% of the bar to spend on
+    // the way out. Everyone else keeps the 70% line.
+    uint8 const outnumberedHealthLine = ai::OutnumberedFleeHealthLine(
+        bot->GetClass() == CLASS_MAGE || bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_WARLOCK,
+        sPlayerbotAIConfig.mediumHealth);
+    if (AI_VALUE2(uint8, "health", "self target") >= outnumberedHealthLine)
         return false;
 
     int32 botLevel = bot->GetLevel();
@@ -495,6 +523,7 @@ bool OutNumberedTrigger::IsActive()
     // 30 s (Oct 2026 roster poll, 571 deaths). bot->GetAttackers() rather than
     // the "attackers" value, which also shares nearby players' targets.
     uint32 attackerCount = 0;
+    bool hopelessSingle = false;
     for (Unit* attacker : bot->GetAttackers())
     {
         Creature* creature = attacker ? attacker->ToCreature() : nullptr;
@@ -513,17 +542,23 @@ bool OutNumberedTrigger::IsActive()
             foePower += std::max(100 + 10 * dLevel, dLevel * 200) * healthMod;
             ++attackerCount;
         }
+        // A lone mob far above the bot is a lost fight however it started
+        // (revenge answers it uncapped): count it as outnumbered so the flee
+        // below fires instead of fighting to the death. Players excluded.
+        if (ai::IsHopelessSingleAttacker(false, creature->GetLevel(), botLevel))
+            hopelessSingle = true;
     }
 
-    // Outnumbered means more than one: a pool bot does not run from a single
-    // mob. Its flee cannot outpace the mob (median 0 yd covered, Oct 2026
-    // poll), so breaking off a one-on-one only stops the swings - the weights
-    // above made any mob two levels up "outnumber" a bot under 70% health.
+    // Outnumbered means more than one, or one hopeless one: a pool bot's flee
+    // cannot outpace a fair mob (median 0 yd covered, Oct 2026 poll), but
+    // against a +6 mob standing still to fight is certain death while running
+    // at least trades on the mob's leash and nearby guards. Breaking off a
+    // fair one-on-one still only stops the swings - the weights above made
+    // any mob two levels up "outnumber" a bot under 70% health.
     // The genuine near-death escape stays with the panic / critical health
     // triggers.
-    if (!foePower || attackerCount < 2)
+    if (!foePower || (attackerCount < 2 && !hopelessSingle))
         return false;
-
     for (auto & helper : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get())
     {
         Unit* player = ai->GetUnit(helper);
@@ -542,6 +577,24 @@ bool OutNumberedTrigger::IsActive()
     return friendPower < foePower;
 }
 
+bool ai::BuffTriggerMountGated(Player* bot, PlayerbotAI* ai)
+{
+    // A mounted bot must not queue an out-of-combat buff the core would
+    // strip its mount for: without this the trigger stays active every
+    // tick while mounted and CheckCanCastSpell refuses each attempt with
+    // SPELL_FAILED_NOT_MOUNTED (~78k refusals / 474 bots on 2026-11-01,
+    // one pair every ~4-5 s for whole trips). Combat casts keep firing
+    // (the combat engine owns that decision); travel forms and the other
+    // ride-safe lines keep theirs (cast gate still decides ride-safety,
+    // this only stops the trigger queueing a doomed attempt).
+    if (!bot || bot->IsInCombat())
+        return false;
+    if (!bot->IsMounted() && !bot->GetMountID())
+        return false;
+    AiObjectContext* context = ai ? ai->GetAiObjectContext() : nullptr;
+    return context && context->GetValue<bool>("travel target traveling")->Get();
+}
+
 bool BuffTrigger::IsActive()
 {
     // Cheap gates first (perf): the old order ran GetTarget (a "self target"
@@ -557,6 +610,9 @@ bool BuffTrigger::IsActive()
     // hawk on level 1-2 bots). No donor equivalent; native hardening for a
     // pool that starts at level 1 (donor bots are max-level, never affected).
     if (!ai->HasSpell(spell))
+        return false;
+
+    if (ai::BuffTriggerMountGated(bot, ai))
         return false;
 
     // Issue #T7: another bot is already casting this spell on the target (or, for
@@ -608,6 +664,8 @@ bool BuffTrigger::IsActive()
 
 bool MyBuffTrigger::IsActive()
 {
+    if (ai::BuffTriggerMountGated(bot, ai))
+        return false;
     Unit* target = GetTarget();
     if (!ai->HasSpell(spell))
         return false;
@@ -697,6 +755,7 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool HighThreatTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     uint8 relativeThreat = AI_VALUE2(uint8, "threat", "current target");
 
     if (relativeThreat >= 80)
@@ -728,6 +787,7 @@ bool HighThreatTrigger::IsActive()
 
 bool MediumThreatTrigger::IsActive()
 {
+    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
     if (AI_VALUE2(uint8, "threat", "current target") >= 60)
         return true;
 
@@ -1574,8 +1634,19 @@ bool AoeThreatNearbyTrigger::IsActive()
             SET_AI_VALUE(Hazard, "add hazard", std::move(hazard));
         }
     }
-    // Any one sensor firing is enough; each read is value-cached (dynobj
-    // aura check, 15yd trap scan, 15yd trigger scan).
+    // Any one sensor firing is enough; each read is value-cached (dynobj scan,
+    // dynobj aura check, 30yd trap scan, 15yd trigger scan).
+    // The cloud's own centre test, ahead of the aura check: the step must fire
+    // as the cloud forms, before its first 1 s tick lands. Creature-cast clouds
+    // only, the same sensor the step-out uses, so the open world and PvP
+    // against players are unchanged.
+    std::vector<AoeHazardCircle> clouds;
+    CollectDamagingDynObjHazards(ai, bot, clouds, true);
+    for (AoeHazardCircle const& cloud : clouds)
+    {
+        if (InsideAoeHazard(cloud, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return true;
+    }
     if (AI_VALUE2(bool, "has area debuff", "self target"))
         return true;
     if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())
@@ -1990,4 +2061,13 @@ bool PetAttackTrigger::IsActive()
         return false;
 
     return true;
+}
+
+bool DangerousEliteNearTrigger::IsActive()
+{
+    // Standing elites are already kept out of grind and travel picks by their
+    // spawn point; only one that walks around comes to the bot.
+    Creature* elite = dynamic_cast<Creature*>(AI_VALUE(Unit*, "dangerous elite"));
+    return elite && elite->GetDefaultMovementType() != IDLE_MOTION_TYPE &&
+        bot->IsWithinDist(elite, ai::ROAMING_ELITE_AVOID_YD);
 }

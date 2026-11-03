@@ -240,4 +240,45 @@ assert.strictEqual(P.hasCastTargets(bots), true); assert.strictEqual(P.hasCastTa
   ts2.seeded.C = true;
   assert.deepStrictEqual(P.seedTargets(ts2, [{ commander: "C" }], false), [], "once");
 }
+// ---- the trail's time cut for the raid pathing preset: only the newest sec seconds
+{
+  const age = [[0, 0, 100], [1, 1, 110], [2, 2, 120], [3, 3, 130], [4, 4, 140]];
+  assert.deepStrictEqual(P.cutByAge(age, 140, 30).map((p) => p[2]), [110, 120, 130, 140], "t >= now - 30");
+  assert.strictEqual(P.cutByAge(age, 140, 0), age, "no cut: the very list");
+  assert.strictEqual(P.cutByAge(age, 140, -5), age, "a negative cut is no cut");
+  assert.deepStrictEqual(P.cutByAge([[1, 2], [3, 4, 100], [5, 6, 500], [7, 8, "x"], null], 500, 30),
+    [[1, 2], [5, 6, 500], [7, 8, "x"]], "a point without a time is kept; junk is not");
+  assert.deepStrictEqual(P.cutByAge(null, 500, 30), []);
+}
+
+// ---- healer -> tank lines from the raid layout (F5), never from subgroups
+{
+  const hb = [
+    { guid: 1, name: "Tank", map: 249, x: 30, y: 0, alive: true, role: "tank" },
+    { guid: 2, name: "Sera", map: 249, x: 0, y: 0, alive: true, role: "healer" },
+    { guid: 3, name: "Far", map: 249, x: 45, y: 0, alive: true },
+    { guid: 4, name: "Down", map: 249, x: 0, y: 0, alive: false },
+    { guid: 5, name: "Edge", map: 249, x: 40, y: 0, alive: true },
+    { guid: 6, name: "Prayer", map: 249, x: 5, y: 5, alive: true },
+    { guid: 7, name: "Elsewhere", map: 70, x: 1, y: 1, alive: true },
+    { guid: 8, name: "NoPos", map: 249, x: "a", y: 0, alive: true },
+  ];
+  const layout = { mt: "Tank", ot: [], rh: ["Prayer"], th: [
+    { h: "Sera", t: "Tank" }, { h: "Sera", t: "Far" }, { h: "Sera", t: "Down" }, { h: "Sera", t: "Edge" },
+    { h: "Sera", t: "Nobody" }, { h: "Sera", t: "Elsewhere" }, { h: "Sera", t: "NoPos" },
+  ] };
+  const lh = P.layoutHealLines({ layout }, hb);
+  assert.deepStrictEqual(lh.map((l) => [l.healer, l.tank, l.dist, l.far, l.dead]), [
+    ["Sera", "Tank", 30, false, false],
+    ["Sera", "Far", 45, true, false],
+    ["Sera", "Down", 0, false, true],
+    ["Sera", "Edge", 40, false, false],
+  ], "2D distance; far past the heal range; a dead tank; exactly at the range is not far");
+  assert.deepStrictEqual(lh[0].from, { x: 0, y: 0 });
+  assert.deepStrictEqual(lh[0].to, { x: 30, y: 0 });
+  assert.deepStrictEqual(P.layoutHealLines({ layout: { rh: ["Prayer"] } }, hb), [], "raid healers get no line");
+  assert.deepStrictEqual(P.layoutHealLines({}, hb), []);
+  assert.deepStrictEqual(P.layoutHealLines(null, hb), []);
+  assert.deepStrictEqual(P.layoutHealLines({ layout }, null), []);
+}
 console.log("paths.js ok");

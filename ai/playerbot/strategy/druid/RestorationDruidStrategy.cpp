@@ -64,9 +64,12 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
                              new NextAction("regrowth on party", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("healing touch on party", ACTION_CRITICAL_HEAL), NULL)));
 
+    // Regrowth is not recast while its own HoT runs; Healing Touch fills
+    // that gap. Below Barkskin in the medium band so the cooldown keeps its slot.
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL),
+                             new NextAction("healing touch", ACTION_MEDIUM_HEAL - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium health",
@@ -74,15 +77,29 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("regrowth on party", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("regrowth on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("healing touch on party", ACTION_MEDIUM_HEAL - 1),
+                             new NextAction("rejuvenation on party", ACTION_LIGHT_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium health",
-        NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL + 1), NULL)));
+        NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL + 1),
+                             new NextAction("healing touch", ACTION_MEDIUM_HEAL - 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("regrowth on party", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("regrowth on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("healing touch on party", ACTION_MEDIUM_HEAL - 1),
+                             new NextAction("rejuvenation on party", ACTION_LIGHT_HEAL), NULL)));
+
+    // HoT spread filler: while the heal bands above find no cast (target
+    // wears Regrowth, Healing Touch vetoed), blanket the lowest reachable
+    // hurt member lacking this druid's Rejuvenation instead of idling into
+    // grenades and Faerie Fire. Below every heal row and every dispel row
+    // (Remove Curse/Abolish Poison outbid it), above the filler.
+    triggers.push_back(new TriggerNode(
+        "rejuvenation spread",
+        NextAction::array(0, new NextAction("rejuvenation spread", ACTION_DISPEL - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "almost full health",
@@ -180,12 +197,11 @@ void RestorationDruidRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     RestorationDruidStrategy::InitCombatTriggers(triggers);
     DruidRaidStrategy::InitCombatTriggers(triggers);
     // Raid debuff duty: keep Faerie Fire on the boss while every heal
-    // outbids it. The trigger skips when anyone already holds the aura and
-    // the action refuses without the spell, so non-resto specs and
-    // low-level druids see no change. Below the offdps nukes in spirit:
-    // armor debuff first, damage only when nobody needs healing.
+    // outbids it, and only with mana to spare for those heals. The trigger
+    // fires on a world-boss current target without the aura at 80%+ mana,
+    // so trash packs and a dry healer never pay the debuff cast.
     triggers.push_back(new TriggerNode(
-        "faerie fire",
+        "faerie fire on boss",
         NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL), NULL)));
 }
 

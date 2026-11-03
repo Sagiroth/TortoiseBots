@@ -24,7 +24,7 @@ These settings configure mercenary companion hiring, party cost scaling, raid pr
 | [`AiPlayerbot.HireMaxLevelAboveHirer`](#aiplayerbothiremaxlevelabovehirer) | `0` | Maximum character levels a hired companion may exceed its employer. |
 | [`AiPlayerbot.HireAnywhere`](#aiplayerbothireanywhere) | `0` | Allows hiring companions from anywhere via chat command. |
 | [`AiPlayerbot.HireAllowPvP`](#aiplayerbothireallowpvp) | `0` | Allows hired companions into battlegrounds (off = PvE-only). |
-| [`AiPlayerbot.HireLoot`](#aiplayerbothireloot) | `1` | Hired companions loot and roll on group loot (off = never loot, always pass). |
+| [`AiPlayerbot.HireLoot`](#aiplayerbothireloot) | `0` | Hired companions loot and roll on group loot (off = never loot, always pass). |
 | [`AiPlayerbot.ShamanTankEnabled`](#aiplayerbotshamantankenabled) | `1` | Offers the experimental 7.3 shaman tank build at recruiters, by `.bot hire`, and to random pool shamans. |
 | [`AiPlayerbot.HireBaseCostCopper`](#aiplayerbothirebasecostcopper) | `15000` | Base copper fee used for level-scaled party companion hiring. |
 | [`AiPlayerbot.HirePartyMult2`](#aiplayerbothirepartymult2) | `1.66` | Cost multiplier applied when hiring a second party companion. |
@@ -34,6 +34,7 @@ These settings configure mercenary companion hiring, party cost scaling, raid pr
 | [`AiPlayerbot.HireDisconnectGracePeriod`](#aiplayerbothiredisconnectgraceperiod) | `300` | Seconds a hired companion keeps guarding after disconnect before the hire ends. |
 | [`AiPlayerbot.HireRaidSpread`](#aiplayerbothireraidspread) | `tank=warrior...;healer=priest...` | Class priority list per raid role for composition auto-fill. |
 | [`AiPlayerbot.HireRaidPresets`](#aiplayerbothireraidpresets) | `zg=2t...;aq20=2t...;onyxia=3t...` | Named composition presets for one-command raid hiring. |
+| [`AiPlayerbot.BotGearPresets`](#aiplayerbotbotgearpresets) | `prebis=t1...;lkh=t2...` | Named `.bot gear` tier and item-level cap presets. |
 | [`AiPlayerbot.HireGearTiersEnabled`](#aiplayerbothiregeartiersenabled) | `1` | Enables pre-enchanted static gear tiers for hired companions. |
 | [`AiPlayerbot.HireGearStartTier`](#aiplayerbothiregearstarttier) | `0` | Baseline gear tier available to all players without completing quests. |
 | [`AiPlayerbot.HireGearUnlockAccountWide`](#aiplayerbothiregearunlockaccountwide) | `0` | Shares gear tier unlock quest completion across all account characters. |
@@ -107,6 +108,8 @@ Limits how many active mercenary companions an individual player can command at 
 
 The default of `4` supports a full five-player dungeon group. For raid environments, increase this value up to `39` to allow assembling full 40-player raid rosters.
 
+The commander of a bound raid (`.bot commander bind <LeadBot> raid`) stands outside the raid group, so his raid holds 40 bots. At `39` he may hire a 40th companion into the bound raid; a lower value caps him too, and players in their own raid keep 39.
+
 </details>
 
 ### `AiPlayerbot.HireMaxLevelAboveHirer`
@@ -150,7 +153,7 @@ When set to `1`, hires may go to battlegrounds as before.
 
 ### `AiPlayerbot.HireLoot`
 Controls whether hired companions loot corpses and roll on group loot.
-**Default:** `1` · **Values:** `1` loots, `0` never loots · **Restart:** needed
+**Default:** `0` · **Values:** `1` loots, `0` never loots · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -263,14 +266,25 @@ Classes unfieldable by your faction are automatically skipped. Repeating a class
 
 ### `AiPlayerbot.HireRaidPresets`
 Defines shorthand raid composition presets available for one-step raid hiring.
-**Default:** `zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6` · **Values:** semicolon-separated preset definitions · **Restart:** needed
+**Default:** `zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t3;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6` · **Values:** semicolon-separated preset definitions · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Allows players to hire complete pre-configured raid teams using `.bot hire raid <preset> [tier]`.
+Allows players to hire complete pre-configured raid teams using `.bot hire raid <preset> [tier] [level=<n>]`.
 
-Each preset specifies role counts and an optional default gear tier. Explicit gear tiers supplied in the command override the preset default. Malformed entries log an error and use the built-in defaults.
+Each preset specifies role counts and an optional default gear tier. Explicit gear tiers supplied in the command override the preset default. An optional `level=` hires the whole roster at that level (clamped like `.bot hire`); without it the companions arrive at your level. Malformed entries log an error and use the built-in defaults.
+
+</details>
+
+### `AiPlayerbot.BotGearPresets`
+Named gear presets for `.bot gear <target> preset <name>`: `name=t<tier> [ilvl=<cap>]`, `;`-separated.
+**Default:** `prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20=t2 ilvl=63;t1=t3 ilvl=66;timbermaw=t3 ilvl=66;onyxia=t3 ilvl=66;mc=t3 ilvl=66;t2=t4 ilvl=76;bwl=t4 ilvl=76;es=t4 ilvl=76;aq40=t5 ilvl=78;naxx=t6 ilvl=83;kara40=t7 ilvl=88` · **Values:** semicolon-separated preset definitions · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Each preset fixes the hire gear tier and the item-level cap `.bot gear` applies: `zg` gears tier 2 with every item at or under item level 63. A malformed value logs an error and uses the built-in default.
 
 </details>
 

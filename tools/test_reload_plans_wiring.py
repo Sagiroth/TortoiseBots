@@ -29,9 +29,10 @@ class ReloadPlansWiring(unittest.TestCase):
         run = body(CMD, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
         hook = 'if (verb == "reloadplans")\n        return HandleReloadPlans(handler, intent);'
         self.assertIn(hook, run)
-        # before the in-game requirement and the DungeonSelfClear/RemoteCommander gate: a console GM may reload too
-        self.assertLess(run.index(hook), run.index("Player* commander = Requester(handler);"))
-        self.assertLess(run.index(hook), run.index("RemoteCommander::RunSurfaceOn("))
+        # the dispatch carries the GM side branches and the in-game path; the run-leader gate lives in RunVerbAs
+        self.assertIn("return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);", run)
+        verb = body(CMD, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
+        self.assertIn("RemoteCommander::RunSurfaceOn(", verb)
         self.assertIn("/ reloadplans (GameMaster)", run)
         # `.bot run` reaches HandleDungeonRun
         self.assertIn('{"run", HandleDungeonRun,', CMD)
@@ -43,7 +44,7 @@ class ReloadPlansWiring(unittest.TestCase):
         self.assertIn('SendActionError(handler, intent, "forbidden", "Only a GameMaster may reload the dungeon plans.");', fn)
         self.assertLess(fn.index(gate), fn.index("ai::ReloadDungeonPlans("))
         self.assertLess(fn.index(gate), fn.index("RebuildBossSpawnCache("))
-        cli = body(CMD, "static bool IsGmCliHandler(")
+        cli = body(CMD, "bool IsGmCliHandler(ChatHandler* handler)")
         self.assertIn("if (!handler || handler->GetSession())\n        return false;", cli)
         self.assertIn("cli && cli->GetAccessLevel() >= SEC_GAMEMASTER", cli)
         # the GM rank: account security >= SEC_GAMEMASTER, which this core has only as the shim's alias of

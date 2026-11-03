@@ -54,6 +54,14 @@ bool SealTrigger::IsActive()
         AI_VALUE2(bool, "combat", "self target");
 }
 
+bool SealInMeleeTrigger::IsActive()
+{
+	if (!SealTrigger::IsActive())
+		return false;
+	Unit* target = AI_VALUE(Unit*, "current target");
+	return target && bot->CanReachWithMeleeAutoAttack(target);
+}
+
 namespace
 {
 // Judgement's range (spell_template rangeIndex 7, the same 10 yd the

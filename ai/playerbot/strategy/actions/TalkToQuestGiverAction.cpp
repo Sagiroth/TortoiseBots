@@ -7,7 +7,6 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/QuestValues.h"
-#include "playerbot/strategy/values/GuildValues.h"
 #include "../../../runtime/policy/hire/HireSourceGuardPolicy.h"
 #include "../../../runtime/HireLifecycle.h"
 #include "../../../runtime/policy/hire/HireQuestPolicy.h"
@@ -149,8 +148,6 @@ void TalkToQuestGiverAction::RewardNoItem(Quest const* quest, WorldObject* quest
         bot->RewardQuest(quest, 0, questGiver, false);
         sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
         out = BOT_TEXT2("quest_status_completed", args);
-
-        BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
     }
     else
     {
@@ -172,8 +169,6 @@ void TalkToQuestGiverAction::RewardSingleItem(Quest const* quest, WorldObject* q
         bot->RewardQuest(quest, index, questGiver, true);
         sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
         out = BOT_TEXT2("quest_status_complete_single_reward", args);
-
-        BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
     }
     else
     {
@@ -195,18 +190,6 @@ ItemIds TalkToQuestGiverAction::BestRewards(Quest const* quest)
     }
     else
     {
-        uint32 guildShareRewardItemId = AI_VALUE(uint32, "guild share quest reward item");
-        if (guildShareRewardItemId)
-        {
-            for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
-            {
-                if (quest->RewChoiceItemId[i] == guildShareRewardItemId)
-                {
-                    return { i };
-                }
-            }
-        }
-
         // Issue #490 (bug part): hired bots skip source-gated choice rewards
         // when another choice exists (pure rule in
         // runtime/HireSourceGuardPolicy.h). A gated pick lands in the bags
@@ -296,8 +279,6 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
         {
             args["%item"] = chat->formatItem(proto);
             out = BOT_TEXT2("quest_status_complete_single_reward", args);
-
-            BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
         }
 
         bot->RewardQuest(quest, rewardIndex, questGiver, true);
@@ -326,8 +307,6 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
             {
                 args["%item"] = chat->formatItem(proto);
                 out = BOT_TEXT2("quest_status_complete_single_reward", args);
-
-                BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
             }
 
             bot->RewardQuest(quest, rewardIndex, questGiver, true);

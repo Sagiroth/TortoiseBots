@@ -279,5 +279,10 @@ bool CastFeignDeathAction::isUseful()
         }
         others.push_back(n);
     }
-    return TortoiseBots::HunterFeignDeathAllowed(others);
+    // Raid groups: medium threat on a tank-held mob is not a feign (it
+    // drops combat while the raid fights). Only a mob on the hunter or
+    // near-max threat feigns; dungeons keep the old rule.
+    Group* group = bot->GetGroup();
+    uint8 threat = AI_VALUE2(uint8, "threat", "current target");
+    return TortoiseBots::HunterFeignDeathRaidAllowed(group && group->isRaidGroup(), others, threat);
 }

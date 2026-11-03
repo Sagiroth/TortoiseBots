@@ -97,18 +97,6 @@ inline bool PoolBotTradeSettleAllowed(PoolBotTradeMode mode, bool isPoolBot,
     return false;
 }
 
-// Trade-channel guard: a pool bot ignores Trade-channel chatter unless the
-// speaker addresses it directly (message mentions the bot's name). Whispers,
-// say, party and yell keep the old behaviour.
-inline bool PoolBotTradeChatAllowed(bool isPoolBot, bool isTradeChannel, bool isMentioned)
-{
-    if (!isPoolBot)
-        return true;
-    if (!isTradeChannel)
-        return true;
-    return isMentioned;
-}
-
 // Excluded-prefix guard (donor TradeAction parity): addon chatter
 // (Questie/DBM/RPLL-style prefixes) never drives the trade action, even
 // when the bot is mentioned. Empty entries never match.

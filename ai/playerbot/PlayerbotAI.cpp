@@ -1,5 +1,12 @@
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include <vector>
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+#include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/CommandedGroupQuery.h"
@@ -20,6 +27,9 @@
 #include "../../runtime/RunTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
+#include "../../runtime/GuildOrderStore.h"
+#include "../../runtime/GuildOrderFishingPolicy.h"
+#include "playerbot/GuildOrderSources.h"
 #include "../../runtime/HireMasterPolicy.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
@@ -34,7 +44,6 @@
 #include "Maps/CellImpl.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/actions/LogLevelAction.h"
-#include "strategy/actions/SayAction.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/TargetValue.h"
@@ -46,6 +55,9 @@
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/MountDismountPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
+    // Follow-first (owner report 2026-11-01): seated bots stand when the
+    // master pulls away, instead of finishing the meal.
+#include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
@@ -64,6 +76,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
+#include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
@@ -82,7 +96,6 @@
 #include "Transports/Transport.h"
 #include "Guild/GuildMgr.h"
 #include "Chat/ChannelMgr.h"
-#include "PlayerbotLLMInterface.h"
 
 #include <string_view>
 
@@ -187,6 +200,13 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
         allowActiveCheckTimer[i] = time(nullptr);
         allowActive[i] = false;
     }
+
+    // Jitter the first public-note refresh across the window, so a mass
+    // login does not recompute every guilded bot's note on the same tick.
+    // A nonzero seed makes the throttle due only after a random share of
+    // the window has passed (unsigned wrap-safe).
+    m_lastPublicNoteMs = WorldTimer::getMSTime() -
+        (TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - (urand(0, TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - 1)));
 
 	accountId = sObjectMgr.GetPlayerAccountIdByGUID(bot->getObjectGuid());
 
@@ -515,14 +535,33 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // only rises once it hits something, so a caster sitting behind the
         // tank kept eating through the pull and its CC order. Cheap checks
         // first: only a bot that is asleep, seated and has a food or drink
-        // aura looks at its group. Standing drops the aura, so this fires
-        // once; the fresh attackers make "combat start" fire on the next tick.
+        // aura looks at its group. The run leader's mark wakes it wherever it
+        // sits, the member test seeing nobody on the ticks between kills and
+        // beyond sight distance. Standing drops the aura, so this fires once;
+        // the fresh attackers make "combat start" fire on the next tick.
         if (aiInternalUpdateDelay > 0 && !isWaiting && bot->IsSittingDown() &&
-            HasSeatedAura(bot) && IsGroupMemberNearInCombat())
+            HasSeatedAura(bot) &&
+            (IsGroupMemberNearInCombat() ||
+                RunFightHolds((uint32)aiObjectContext->GetValue<int32>("manual int", "run fight until ms")->Get(),
+                    WorldTimer::getMSTime())))
         {
             bot->SetStandState(UNIT_STAND_STATE_STAND);
             aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
             aiObjectContext->GetValue<bool>("has attackers")->Reset();
+            ResetAIInternalUpdateDelay();
+        }
+
+        // Follow-first: a seated bot whose master walks out of follow range
+        // stands at once instead of finishing the meal. Same shape as the
+        // combat wake-up above: cheap checks first, fires once (standing
+        // drops the aura), the follow row owns the next tick.
+        if (aiInternalUpdateDelay > 0 && !isWaiting && bot->IsSittingDown() &&
+            HasSeatedAura(bot) && master && master->IsInWorld() && master->IsMoving() &&
+            (HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
+            ai::FollowOverridesDowntime(sServerFacade.getDistance2d(bot, master), GetRange("follow")))
+        {
+            bot->SetStandState(UNIT_STAND_STATE_STAND);
             ResetAIInternalUpdateDelay();
         }
     }
@@ -743,6 +782,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         EnsureAutoToolsKit();
     }
 
+    // Spec/talent/profession line in the guild public note: talent changes
+    // refresh at once (ApplyTalents); this picks up skill-ups, throttled.
+    RefreshPublicNote();
+
     // Alt level sync - level up non-random bots to match master level
     if (sPlayerbotAIConfig.syncAltLevelToMaster && bot->IsAlive() && master && !sRandomBotFacade.IsRandomBot(bot)
         && bot->GetGroup() && master->GetGroup() && IsSafe(master) && bot->GetGroup()->GetLeaderGuid() == master->getObjectGuid())
@@ -797,9 +840,119 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->StopMoving();
     }
 
+    // Viscidus (opt-in "viscidus glob focus", map 531 only): sample the encounter.
+    UpdateViscidus(this);
+
     // Update facing
     SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");
     UpdateFaceTarget(elapsed, minimal);
+
+    // Opt-in Fankriss roles: a healer able to heal from where it stands stops
+    // walking, and the raid's shared Spawn hand-off and the no-AoE rule run
+    // before a long cast or action delay could postpone them.
+    UpdateFankrissHealing(this);
+    UpdateFankrissFocus(this);
+
+    // Opt-in Patchwerk roles (Naxxramas only, so no other map pays for them).
+    if (bot->GetMapId() == 533)
+    {
+        AiObjectContext* context = aiObjectContext;
+        if (UpdatePatchwerkSafety(this))
+            return;
+        // Interrupt only offensive filler, before a long cast or action delay
+        // can postpone reacting to a Patchwerk tank's falling health.
+        if (StopUnsafeRaidHealerFiller(this))
+            SetAIInternalUpdateDelay(0);
+
+        // Keep one shared opening clock on the assigned main, including while
+        // the raid is waiting outside combat. Never restart it for late DPS joins.
+        if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+            aiObjectContext->GetValue<PatchwerkOpeningWindow>("patchwerk opening window")->Get();
+        if (PatchwerkDpsOpeningHold(this))
+        {
+            if (bot->GetVictim() && bot->GetVictim()->GetEntry() == 16028)
+                bot->AttackStop();
+            for (uint32 slot : {uint32(CURRENT_GENERIC_SPELL), uint32(CURRENT_CHANNELED_SPELL), uint32(CURRENT_AUTOREPEAT_SPELL), uint32(CURRENT_MELEE_SPELL)})
+                if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(slot)))
+                    if (PatchwerkOpeningBlocksSpell(this, spell->m_spellInfo->Id,
+                        aiObjectContext->GetValue<Unit*>("current target")->Get()))
+                        bot->InterruptSpell(CurrentSpellTypes(slot));
+            if (Pet* pet = bot->GetPet())
+                if (pet->GetVictim() && pet->GetVictim()->GetEntry() == 16028)
+                    pet->AttackStop();
+        }
+
+        // Do not leave the main on the ordinary pull-end action delay while its
+        // rendezvoused soakers start swinging. The action consumes only a landed,
+        // explicit Patchwerk main pull and never cancels an unlanded shot.
+        if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+        {
+            PatchwerkMainEngageAction opening(this);
+            Event event("patchwerk main opening");
+            opening.Execute(event);
+        }
+
+        // A player-ordered Patchwerk pull stages the soakers beside its main
+        // tank before combat. Never erase stay/follow or let staging arm an attack.
+        bool const soakStaging = GetPatchwerkSoakPuller(this) != nullptr;
+        bool const soakWasStaging = AI_VALUE2(bool, "manual bool", "patchwerk soak staging");
+        SET_AI_VALUE2(bool, "manual bool", "patchwerk soak staging", soakStaging);
+        if (soakWasStaging && !soakStaging)
+        {
+            StopMoving();
+            ResetAIInternalUpdateDelay();
+        }
+        if (soakStaging)
+        {
+            if (!soakWasStaging)
+            {
+                bot->InterruptNonMeleeSpells(false);
+                ResetAIInternalUpdateDelay();
+                if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                    sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakStage", ObjectGuid(), "joining main before pull");
+            }
+            if (CanUpdateAIInternal())
+            {
+                PatchwerkSoakStageAction staging(this);
+                Event event("patchwerk soak staging");
+                staging.Execute(event);
+                if (GetAIInternalUpdateDelay() < 250)
+                    SetAIInternalUpdateDelay(250);
+            }
+            return;
+        }
+
+        // Assigned soakers must not wait for their own combat flag or a
+        // non-combat buff/rest delay. Orders and anchors stay intact: the
+        // exception lasts only while the encounter is active.
+        bool const soakActive = GetPatchwerkSoakBoss(this) != nullptr;
+        bool const soakWasActive = AI_VALUE2(bool, "manual bool", "patchwerk soak active");
+        SET_AI_VALUE2(bool, "manual bool", "patchwerk soak active", soakActive);
+        if (soakActive)
+        {
+            if (!soakWasActive)
+            {
+                WakePatchwerkPullMain(this);
+                bot->InterruptNonMeleeSpells(false);
+                ResetAIInternalUpdateDelay();
+                if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                    sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakEngage", ObjectGuid(), "group engaged; preparing stance and melee");
+            }
+            PatchwerkSoakEngageAction opening(this);
+            if (opening.isUseful())
+            {
+                if (CanUpdateAIInternal() && opening.isPossible())
+                {
+                    Event event("patchwerk soak opening");
+                    opening.Execute(event);
+                    // Respect a stance GCD or movement delay; bound failed retries.
+                    if (GetAIInternalUpdateDelay() < 250)
+                        SetAIInternalUpdateDelay(250);
+                }
+                return;
+            }
+        }
+    }
 
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
 
@@ -1214,7 +1367,10 @@ void PlayerbotAI::OnCombatStarted()
         aiObjectContext->GetValue<time_t>("combat start time")->Set(time(0));
 
         // Update stay position on location when combat starts
-        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
+        // An assigned Patchwerk soaker keeps its saved stay position: it leaves
+        // it only for this encounter and returns to it afterwards.
+        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+            !GetPatchwerkSoakBoss(this))
         {
             aiObjectContext->GetValue<PositionEntry>("pos", "stay")->Set(PositionEntry(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId()));
         }
@@ -1277,7 +1433,7 @@ void PlayerbotAI::StartFightStartHold()
     const char* skip = ai::FightStartHoldSkipReason(facts);
     if (skip == nullptr)
     {
-        StartPullWindow(ai::kFightStartHoldSeconds, true, 0, true);
+        StartPullWindow(ai::kFightStartHoldSeconds, true, ai::kFightStartMinSeconds, true);
         RestampPullWindow(true);
         sLog.outBasic("[BOT] fight-start-hold open %s", bot->GetName());
     }
@@ -1402,7 +1558,7 @@ void PlayerbotAI::RefillPoolRations()
     }
 }
 
-bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
+bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count, bool requireCheat)
 {
     // Generic cheat-gated mint the KIT_TASK brief asks for: #578's sand use
     // (and any future behaviour item) calls this instead of reimplementing
@@ -1412,7 +1568,7 @@ bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
         return false;
     if (bot->HasItemCount(itemId, count))
         return true;
-    if (!HasCheat(BotCheatMask::item))
+    if (requireCheat && !HasCheat(BotCheatMask::item))
         return false;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)
@@ -1478,6 +1634,94 @@ void PlayerbotAI::EnsureAutoToolsKit()
     {
         EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
     }
+    // Guild fishing orders: the plan counts the best pole and lure, so the
+    // bot carries what the plan assumed. Real items, not cheats: the grant
+    // mints the cheapest pole that reaches the planned zone and a stack of
+    // lures, then stops - the fishing action equips and reapplies them.
+    if (bot->GetGuildId() && bot->HasSkill(SKILL_FISHING))
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (order && order->type == TortoiseBots::GuildOrders::OrderType::Farm &&
+            order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+            order->farmZoneId)
+        {
+            bool fishes = false;
+            uint32_t zoneSkill = 0;
+            for (ai::GuildOrderEntrySource const& source : ai::GuildOrderSourcesFor(order->itemId))
+            {
+                if (source.flag != TortoiseBots::GuildOrders::SourceFish)
+                    continue;
+                uint32_t fishZone = uint32_t(-(source.entry + ai::kFishingZoneEntryBias));
+                AreaTableEntry const* fishArea =
+                    AreaEntry::GetById(uint32_t(-(source.entry + ai::kFishingZoneEntryBias)));
+                if (fishArea && fishArea->ZoneId)
+                    fishZone = fishArea->ZoneId;
+                if (fishZone != order->farmZoneId)
+                    continue;
+                fishes = true;
+                zoneSkill = std::max(zoneSkill, source.reqSkill);
+            }
+            if (fishes)
+            {
+                uint32_t fishingSkill = bot->GetSkillValue(SKILL_FISHING);
+                uint32_t pole = TortoiseBots::GuildOrders::FishingPoleFor(int32_t(zoneSkill), fishingSkill);
+                bool needLure = int32_t(zoneSkill) > int32_t(fishingSkill) &&
+                    TortoiseBots::GuildOrders::FishingZoneReachable(int32_t(zoneSkill), fishingSkill);
+                if (pole && !bot->HasItemCount(pole, 1))
+                {
+                    ItemPosCountVec dest;
+                    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, pole, 1) == EQUIP_ERR_OK)
+                        bot->StoreNewItem(dest, pole, true, Item::GenerateItemRandomPropertyId(pole));
+                }
+                if (needLure)
+                    EnsureCheatItem(TortoiseBots::GuildOrders::kBestFishingLureItemId,
+                        TortoiseBots::GuildOrders::kFishingLureGrantCount);
+            }
+        }
+    }
+}
+
+void PlayerbotAI::RefreshPublicNote()
+{
+    if (!sPlayerbotAIConfig.talentsInPublicNote || !bot || !bot->GetGuildId())
+        return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!TortoiseBots::PublicNoteRefreshDue(m_lastPublicNoteMs, nowMs))
+        return;
+    m_lastPublicNoteMs = nowMs;
+    // Cheap change gate before the talent scan: primary skill values only.
+    // Talent changes refresh at once via ApplyTalents; this tick path only
+    // needs to notice skill-ups, so an unchanged skill pair skips the scan.
+    static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                       SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+    uint32_t seen = 0;
+    TortoiseBots::PublicNoteInputs inputs;
+    inputs.classId = bot->GetClass();
+    for (uint16 id : kPrimary)
+    {
+        if (seen >= 2 || !bot->HasSkill(id))
+            continue;
+        if (seen == 0)
+        {
+            inputs.skillId0 = id;
+            inputs.skillValue0 = bot->GetSkillValue(id);
+        }
+        else
+        {
+            inputs.skillId1 = id;
+            inputs.skillValue1 = bot->GetSkillValue(id);
+        }
+        ++seen;
+    }
+    if (m_publicNoteSkillsSeeded && inputs.skillId0 == m_lastPublicNote.skillId0 &&
+        inputs.skillValue0 == m_lastPublicNote.skillValue0 &&
+        inputs.skillId1 == m_lastPublicNote.skillId1 &&
+        inputs.skillValue1 == m_lastPublicNote.skillValue1)
+        return;
+    TalentSpec::SetPublicNote(bot);
+    m_publicNoteSkillsSeeded = true;
+    m_lastPublicNote = inputs;
 }
 
 void PlayerbotAI::NoteDamager(Unit* damager)
@@ -1657,6 +1901,7 @@ void PlayerbotAI::OnDeath()
         if (!HasActivePlayerMaster() && !bot->InBattleGround())
         {
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
+            TortoiseBots::GuildOrders::NoteDeath(bot->GetGUIDLow());
 
             // Two deaths in a row to the same kind of creature within fifteen minutes: the bot
             // leaves that kind alone for half an hour - it is not picked as a target and the
@@ -1971,8 +2216,6 @@ void PlayerbotAI::OnDeath()
         SET_AI_VALUE(ObjectGuid, "explicit attack target", ObjectGuid());
         SET_AI_VALUE(LootObject, "loot target", LootObject());
         SET_AI_VALUE(time_t, "combat start time", 0);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", false);
-        SET_AI_VALUE2(bool, "manual bool", "enemies near graveyard", false);
         // A corpse cannot hold an anchor, and the dead engine is no place to
         // keep one: the tank would come back from the spirit healer still
         // parked on the stay that pull placed it on, instead of following.
@@ -2088,29 +2331,6 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     ExternalEventHelper helper(aiObjectContext);
 
-    // chat replies
-    std::list<ChatQueuedReply> delayedResponses;
-    {
-        std::scoped_lock lock(chatRepliesMutex);
-        while (!chatReplies.empty())
-        {
-            ChatQueuedReply holder = chatReplies.front();
-            time_t checkTime = holder.m_time;
-            if (checkTime && time(0) < checkTime)
-            {
-                delayedResponses.push_back(holder);
-                chatReplies.pop();
-                continue;
-            }
-            ChatReplyAction::ChatReplyDo(bot, holder.m_type, holder.m_guid1, holder.m_guid2, holder.m_msg, holder.m_chanName, holder.m_name);
-            chatReplies.pop();
-        }
-
-        for (std::list<ChatQueuedReply>::iterator i = delayedResponses.begin(); i != delayedResponses.end(); ++i)
-        {
-            chatReplies.push(*i);
-        }
-    }
     // logout if logout timer is ready or if instant logout is possible
     if (bot->GetSession()->isLogingOut())
     {
@@ -2243,11 +2463,11 @@ void PlayerbotAI::Reset(bool full)
     if (strategy)
         strategy->OnPullEnded();
 
-    RESET_AI_VALUE(Unit*,"old target");
-    RESET_AI_VALUE(Unit*,"current target");
-    RESET_AI_VALUE(Unit*,"pull target");
-    RESET_AI_VALUE(ObjectGuid,"attack target");
-    RESET_AI_VALUE(ObjectGuid,"explicit attack target");
+    context->GetValue<Unit*>("old target")->Set(nullptr);
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    context->GetValue<Unit*>("pull target")->Set(nullptr);
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
     RESET_AI_VALUE(GuidPosition,"rpg target");
     RESET_AI_VALUE(LootObject,"loot target");
     RESET_AI_VALUE(time_t,"combat start time");
@@ -2703,29 +2923,24 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
 void PlayerbotAI::PublishChatGate()
 {
-    // Issue #846: the two early exits of the SMSG_MESSAGECHAT case below that
-    // the packet hook can apply before copying a line (runtime/BotChatGate.h).
-    // Same conditions, in the same terms: AllowActivity(), and the #469 Trade
-    // gate for a masterless, unhired pool bot (recording sees Trade lines
-    // before that gate, so a recording bot keeps them). Republished on change,
-    // and every 30 s so a re-registered AI cannot keep the storage default.
+    // What the SMSG_MESSAGECHAT case of HandleBotOutgoingPacket reads, for the
+    // packet hook to apply before copying a line (runtime/BotChatGate.h).
+    // Republished on change, and every 30 s so a re-registered AI cannot keep
+    // the storage default.
     bool const ignoreAll = !AllowActivity();
-    bool const ignoreTrade = !m_recordIncommingMessages && !HasRealPlayerMaster() &&
-        sRandomBotFacade.IsFreeBot(bot) &&
-        !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+    bool const onlyOrders = !m_recordIncommingMessages;
     time_t const now = time(nullptr);
-    if (m_chatGatePublished && ignoreAll == m_chatGateIgnoreAll && ignoreTrade == m_chatGateIgnoreTrade &&
+    if (m_chatGatePublished && ignoreAll == m_chatGateIgnoreAll && onlyOrders == m_chatGateOnlyOrders &&
         now < m_chatGatePublishedAt + 30)
         return;
 
     TortoiseBots::BotChatGate gate;
     gate.ignoreAllChat = ignoreAll;
-    gate.ignoreUnaddressedTrade = ignoreTrade;
-    gate.name = bot->GetName();
+    gate.onlyOrders = onlyOrders;
     PlayerbotAIStorage::Instance().SetBotChatGate(bot, gate);
     m_chatGatePublished = true;
     m_chatGateIgnoreAll = ignoreAll;
-    m_chatGateIgnoreTrade = ignoreTrade;
+    m_chatGateOnlyOrders = onlyOrders;
     m_chatGatePublishedAt = now;
 }
 
@@ -2878,6 +3093,14 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     // 8; the death writer reads it only if fresh (30 s window).
     NoteFightAttackers();
 
+    // A leftover walk flag would both walk this tick's splines and leave the
+    // client's walking view of the bot stuck (the core sends a launch's
+    // walk/run change with the pre-launch mode restored last, so a run spline
+    // launched on walk flags leaves watching clients walking until they
+    // reload). Clear it before any move of the new tick is dispatched.
+    if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE))
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
+
     SC_PHASE("DoNextAction.engineDoNextAction", bot ? bot->GetName() : "(null)");
     currentEngine->DoNextAction(NULL, 0, (minimal || min), bot->IsTaxiFlying());
     SC_PHASE("DoNextAction.afterEngine", bot ? bot->GetName() : "(null)");
@@ -2887,6 +3110,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         explicitActivityOverride = previousActivityOverride;
         return;
     }
+
+    healerDiagnostics.Sample(this);
 
     if (minimal)
     {
@@ -3054,17 +3279,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
                 }
 
-                if (GetMaster() == GetGroupMaster())
-                {
-                    // Issue #1108: the announcement in chat is ambient, the
-                    // whisper below answers the new master and stays.
-                    if (!HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && master && sPlayerbotAIConfig.enableBroadcasts)
-                        bot->TextEmote("is following " + std::string(master->GetName()) + ".");
-                }
-                else
-                {
+                if (GetMaster() != GetGroupMaster())
                     TellPlayer(master, BOT_TEXT("hello"));
-                }
             }
         }
     }
@@ -3076,8 +3292,6 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 
     if (master && master->IsInWorld())
 	{
-		if (master->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE) && sServerFacade.getDistance2d(bot, master) < 20.0f) bot->m_movementInfo.AddMovementFlag(MOVEFLAG_WALK_MODE);
-		else bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
 
         // Mirror the master sitting only out of combat. Live H11 (Patchwerk):
         // the player sat after eating, so every fire mage within 10 yd was
@@ -3114,8 +3328,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName());
         }
 	}
-	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
-    else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
+	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
     if (bot->IsTaxiFlying())
@@ -4801,6 +5014,9 @@ ReputationRank PlayerbotAI::GetFactionReaction(FactionTemplateEntry const* thisT
 
 bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
 {
+    // Debug marker summons fail once the core summon cap is reached.
+    if (!unit)
+        return false;
     // number or [name] Shift-click form |color|Hspell:spell_id|h[name]|h|r or Htalent form
 
     SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);

@@ -1,7 +1,9 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
 using namespace ai;
@@ -68,16 +70,19 @@ void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // which the old "has area debuff" row could see), so the bot steps out
     // BEFORE the debuff lands. The strafe self-gates via isUseful (bot
     // actually inside the hazard radius). Flee is deliberately NOT listed
-    // here: the sensors scan 15yd while radii are often 5-8yd, so mere
+    // here: the sensors scan 15-30yd while radii are often 5-8yd, so mere
     // proximity would full-flee, and a useful-but-unlandable strafe would
     // win the reaction pick every tick and starve the fallback.
     triggers.push_back(new TriggerNode(
         "aoe threat nearby",
         NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5), NULL)));
-    // Reactive fallback: once the debuff actually lands, run out.
+    // Reactive fallback: once the debuff actually lands, run out. Below the
+    // strafe above, so a usable step-out wins the pick; a tank skips it in
+    // FleeFromAreaAction::isUseful (fleeing a live boss drops threat and drags the
+    // fight onto the casters).
     triggers.push_back(new TriggerNode(
         "has area debuff",
-        NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 5), NULL)));
+        NextAction::array(0, new NextAction("flee from area", ACTION_EMERGENCY + 4), NULL)));
 }
 
 void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -88,6 +93,11 @@ void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 void AvoidAoeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new AvoidAoeStrategyMultiplier(ai));
+    // The trap hold belongs to AoE avoidance, not to the boss tactics that first carried it: every bot
+    // has this strategy, so the hold is not gated behind an encounter. Multipliers are per engine, so
+    // the combat engine - which runs the reach, the follow and the stay - carries its own copy on the
+    // always-on dungeon strategy; no engine ever gets both.
+    multipliers.push_back(new TrapHoldMultiplier(ai));
 }
 
 void AvoidAoeStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
@@ -125,6 +135,11 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
     // The run leader's healer is held on its stand for a pull but never kept
     // from healing: the join window gates damage, and it deals none.
     if (ai->RunHealOnly() && PlayerbotAI::IsHeal(ai->GetBot()))
+        return false;
+    // Patchwerk: DPS wait through the opening hold, assigned soakers join at once.
+    if (PatchwerkDpsOpeningHold(ai))
+        return true;
+    if (GetPatchwerkSoakBoss(ai))
         return false;
 
     // Only check if the bot has the strategy enabled
@@ -189,7 +204,8 @@ float WaitForAttackMultiplier::GetValue(Action* action)
         (actionName != "pull start") &&
         (actionName != "pull action") &&
         (actionName != "pull end") &&
-        (actionName != "release pull hold"))
+        (actionName != "release pull hold") &&
+        (actionName != "boss tactics avoid cast"))
     {
         return WaitForAttackStrategy::ShouldWait(ai) ? 0.0f : 1.0f;
     }

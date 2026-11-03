@@ -300,6 +300,21 @@ bool RandomBotAccountRegistry::DiscoverPrefixMatches(std::vector<LegacyAccount>&
     // The prefix is matched in code, not by a SQL LIKE: the configured value is
     // never interpolated into a pattern, and no wildcard in it can widen the
     // result set.
+    std::unique_ptr<QueryResult> probe(LoginDatabase.PQuery("SELECT COUNT(*) FROM `account`"));
+    uint32_t accountTotal = 0;
+    if (probe)
+        accountTotal = probe->Fetch()[0].GetUInt32();
+    switch (VerdictForAccountScanProbe(probe != nullptr, accountTotal))
+    {
+        case AccountScanVerdict::Failed:
+            error = "the login database did not answer the account scan";
+            return false;
+        case AccountScanVerdict::Empty:
+            return true;
+        case AccountScanVerdict::Populate:
+            break;
+    }
+
     std::unique_ptr<QueryResult> rows(LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` ORDER BY `id`"));
     if (!rows)
     {

@@ -132,6 +132,8 @@ void BotPlayerAdapter::OnLogin(Player* player)
         }
     }
     BotManager::Instance().OnPlayerLogin(player);
+    // ta252 round 3: a run rejoin held while this bot was offline is settled before the run can send another.
+    BotCommands::SettleRunRejoinOnLogin(player);
     // Item-leg skip (spec D7): a crash/restart mid-run leaves given items in
     // bags with ledger rows; destroy to count and delete the rows when no live
     // run slot holds them.
@@ -246,6 +248,8 @@ void BotPlayerAdapter::OnBeforeLogout(Player* player)
 
 void BotPlayerAdapter::OnLogout(Player* player)
 {
+    // ta252 round 3: the Player is still valid here; a run rejoin that did not land is undone with it.
+    BotCommands::SettleRunRejoinOnLogout(player);
     BotManager::Instance().OnPlayerLogout(player);
     if (player && player->GetSession() && player->GetSession()->HasNetworkTransport())
         RandomBotService::Instance().OnHumanLogout();

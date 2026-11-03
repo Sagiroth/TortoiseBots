@@ -1,6 +1,8 @@
 #include "RandomBotService.h"
 #include "BotActivityLease.h"
 #include "BotManager.h"
+#include "GuildOrderPoolPolicy.h"
+#include "GuildOrderStore.h"
 #include "PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAI.h"
 #include "GearSeedingGuard.h"
@@ -1131,6 +1133,12 @@ void RandomBotService::ForgetDeliberateLogout(ObjectGuid guid)
 
 void RandomBotService::RemoveExpiredBots(uint32_t diff)
 {
+    std::set<uint32_t> unfinishedOrderBots;
+    if (GuildOrders::IsAvailable())
+        for (GuildOrders::OrderRecord const& order : GuildOrders::All())
+            if (!GuildOrders::IsFinished(order.state))
+                unfinishedOrderBots.insert(order.botGuidLow);
+
     for (size_t i = 0; i < m_candidates.size(); ++i)
     {
         Candidate const& candidate = m_candidates[i];
@@ -1196,8 +1204,13 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
         // A dungeon crew is not logged out under its run.
         if (BotActivityLeaseManager::Instance().GetActivity(candidate.characterGuid.GetCounter()) == BotActivity::Dungeon)
             continue;
-
-        m_ageMs[i] += diff;
+        // An unfinished guild order keeps its bot online: order legs pay no
+        // XP, so the timed logout below would park the order mid-farm.
+        bool const onOrder = unfinishedOrderBots.count(candidate.characterGuid.GetCounter()) != 0;
+        if (onOrder)
+            m_ageMs[i] = 0;
+        else
+            m_ageMs[i] += diff;
 
         // Stall watchdog: about 5% of a fresh pool went idle right after an
         // early ding and stayed online without a single XP point for hours,
@@ -1210,10 +1223,11 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 XpProgress& progress = m_xpProgress[candidate.characterGuid.GetCounter()];
                 uint32_t const level = player->GetLevel();
                 uint32_t const xp = player->GetUInt32Value(PLAYER_XP);
-                // Battlegrounds give no XP and a bot playing with a real
-                // player follows that player: neither is a stall.
+                // Battlegrounds give no XP, a bot playing with a real player
+                // follows that player, and a guild order (long farm or
+                // delivery walks) pays none either: none of them is a stall.
                 ::PlayerbotAI* stallAi = PlayerbotAIStorage::Instance().GetAI(player);
-                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster());
+                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster()) || onOrder;
                 if (busyNoXp || level != progress.level || xp != progress.xp)
                     progress = XpProgress{ level, xp, 0 };
                 else
@@ -1241,6 +1255,9 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 if (masterAi->HasRealPlayerMaster())
                     continue;
         }
+
+        if (onOrder)
+            continue;
 
         if (!sPlayerbotAIConfig.randomBotTimedLogout || !sPlayerbotAIConfig.maxRandomBotInWorldTime)
             continue;
@@ -1431,6 +1448,51 @@ void RandomBotService::LadderLog(uint32_t diff)
     TB_LOG_BASIC("TortoiseBots: level ladder online/target(pool) per band %s | reserve %u, highest level %u", line.c_str(), reserve, maxLevel);
 }
 
+void RandomBotService::QueueOrderBots(uint32_t target, uint32_t perInterval, uint32_t& online, uint32_t& added)
+{
+    if (!GuildOrders::IsAvailable() || m_candidates.empty())
+        return;
+    // One locked snapshot per pass: orders are few, candidates are many.
+    std::set<uint32_t> unfinished;
+    for (GuildOrders::OrderRecord const& order : GuildOrders::All())
+        if (!GuildOrders::IsFinished(order.state))
+            unfinished.insert(order.botGuidLow);
+    if (unfinished.empty())
+        return;
+    GuildOrders::OrderLoginPick pick = GuildOrders::PickOrderBotsFirst(m_candidates.size(),
+        [this, &unfinished](size_t i)
+        {
+            Candidate const& candidate = m_candidates[i];
+            if (BotManager::Instance().IsBot(candidate.characterGuid))
+                return false;
+            return unfinished.count(candidate.characterGuid.GetCounter()) != 0;
+        },
+        online, target, perInterval > added ? perInterval - added : 0);
+    for (size_t index : pick.indexes)
+    {
+        Candidate const& candidate = m_candidates[index];
+        if (Player* player = sObjectAccessor.FindPlayer(candidate.characterGuid))
+        {
+            if (!player->GetSession() || !player->GetSession()->IsHeadless())
+                continue;
+        }
+        if (BotSessionAdapter::GetHeadlessSessionState(candidate.characterGuid) != HeadlessSessionState::NotFound)
+            continue;
+        uint32 guidLow = candidate.characterGuid.GetCounter();
+        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Grinding, 0))
+            continue;
+        if (BotManager::Instance().AddRandomBot(candidate.accountId, candidate.characterGuid))
+        {
+            ++online;
+            ++added;
+            TB_LOG_DETAIL("TortoiseBots: order random bot %s queued on account %u (prioritized)",
+                candidate.characterGuid.GetString().c_str(), candidate.accountId);
+        }
+        else
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Grinding);
+    }
+}
+
 void RandomBotService::MaintainOnlinePool()
 {
     if (!m_started || sWorld.IsShutdowning())
@@ -1464,7 +1526,11 @@ void RandomBotService::MaintainOnlinePool()
 
     uint32 added = 0;
 
-    // Pinned bots are prioritized within the cap, not additive beyond it.
+    // Guild orders first: an offline bot with an unfinished order logs in
+    // before the normal order, within the same pool and queue budget.
+    QueueOrderBots(target, perInterval, online, added);
+
+    // Pinned bots follow the order pass, within the cap, not additive beyond it.
     if (!m_pinnedGuids.empty())
     {
         for (uint32 pinnedGuid : m_pinnedGuids)

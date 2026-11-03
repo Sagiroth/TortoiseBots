@@ -22,6 +22,7 @@ using ai::FishingSpotApplies;
 using ai::FishingStandDry;
 using ai::FishingWaterCacheFresh;
 using ai::FishingWaterDeepEnough;
+using ai::FishingSpotStale;
 using ai::FishingZoneSkillOk;
 
 int main()
@@ -77,17 +78,21 @@ int main()
     }
 
     // -------------------------------------------------------------
-    // (5) Skill gate mirrors the travel fish errand
-    // (GatherTravelDestination::IsPossible): no base skill means no
-    // fishable zone, otherwise the bot gets the same -5 head start.
+    // (5) Skill gate mirrors the core loot roll
+    // (GameObject::getFishLoot): a missing (0) or negative (city -20,
+    // quest zone -70) base skill never blocks the cast - the core rolls
+    // open-water catches regardless. Positive requirements keep the
+    // travel errand's -5 head start.
     // -------------------------------------------------------------
     {
-        CHECK(!FishingZoneSkillOk(0, 100));
+        CHECK(FishingZoneSkillOk(0, 1));
+        CHECK(FishingZoneSkillOk(-70, 1));
+        CHECK(FishingZoneSkillOk(-20, 1));
         CHECK(!FishingZoneSkillOk(5, 4));
         CHECK(FishingZoneSkillOk(5, 5));
         CHECK(!FishingZoneSkillOk(10, 4));
         CHECK(FishingZoneSkillOk(10, 5));
-        std::cout << "  [PASS] zone skill gate matches the travel errand\n";
+        std::cout << "  [PASS] zone skill gate matches the core loot roll\n";
     }
 
     // -------------------------------------------------------------
@@ -152,6 +157,19 @@ int main()
         CHECK(FishingCellKey(0, 1, 2) != FishingCellKey(1, 1, 2));
         CHECK(FishingCellKey(0, 1, 2) == FishingCellKey(0, 1, 2));
         std::cout << "  [PASS] cell keys separate map cells\n";
+    }
+
+    // -------------------------------------------------------------
+    // (10) Stale travel spot: the stored spot outlives its target, so a
+    // spot far from (or off the map of) the current target is re-taken.
+    // -------------------------------------------------------------
+    {
+        CHECK(!FishingSpotStale(0.0f, true));
+        CHECK(!FishingSpotStale(50.0f, true));
+        CHECK(FishingSpotStale(50.1f, true));
+        CHECK(FishingSpotStale(0.0f, false));
+        CHECK(FishingSpotStale(4000.0f, true));
+        std::cout << "  [PASS] stale travel spot re-taken\n";
     }
 
     std::cout << "All fishing-spot policy tests passed.\n";

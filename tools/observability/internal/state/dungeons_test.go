@@ -227,3 +227,45 @@ func TestDungeonMembersCarryPower(t *testing.T) {
 		}
 	}
 }
+// A raid copy (any member's roster `raid` flag) never reaches the Dungeons
+// view; without any flag (an old module) both copies stay dungeons. The
+// dungeon copy holds 10 members and the raid copy 5, so a size threshold
+// would sort them the wrong way round.
+func TestDungeonsExcludesRaidRuns(t *testing.T) {
+	dng := func(guid uint32, mapID, instance uint32) model.BotSnapshot {
+		return du(guid, "Dng", false, mapID, instance)
+	}
+	raid := func(guid uint32) model.BotSnapshot {
+		b := du(guid, "Raid", false, 409, 7)
+		b.Raid = true
+		return b
+	}
+	members := make([]model.BotSnapshot, 0, 15)
+	for g := uint32(1); g <= 10; g++ {
+		members = append(members, dng(g, 36, 102))
+	}
+	for g := uint32(11); g <= 15; g++ {
+		members = append(members, raid(g))
+	}
+	s := newTestStore(newClock())
+	if ok := s.ApplyBatch(batch(1, 0, 1, members...)); !ok {
+		t.Fatal("batch not published")
+	}
+	view := s.Dungeons()
+	if len(view.Runs) != 1 || view.Runs[0].Key != "36:102" {
+		t.Fatalf("only the dungeon copy must list: %+v", view.Runs)
+	}
+
+	// An old module sends no flag: both copies stay dungeons.
+	s2 := newTestStore(newClock())
+	plain := members
+	for i := range plain {
+		plain[i].Raid = false
+	}
+	if ok := s2.ApplyBatch(batch(1, 0, 1, plain...)); !ok {
+		t.Fatal("batch not published")
+	}
+	if view = s2.Dungeons(); len(view.Runs) != 2 {
+		t.Fatalf("old module: both copies stay: %+v", view.Runs)
+	}
+}

@@ -15,6 +15,7 @@ public:
         creators["regrowth on party"] = &regrowth_on_party;
         creators["rejuvenation"] = &rejuvenation;
         creators["rejuvenation on party"] = &rejuvenation_on_party;
+        creators["rejuvenation spread"] = &rejuvenation_spread;
         creators["rebirth"] = &rebirth;
         creators["nature's swiftness"] = &natures_swiftness;
         creators["abolish poison"] = &abolish_poison;
@@ -80,6 +81,8 @@ private:
     ACTION_NODE_P(rejuvenation, "rejuvenation", "caster form");
 
     ACTION_NODE_P(rejuvenation_on_party, "rejuvenation on party", "caster form");
+
+    ACTION_NODE_P(rejuvenation_spread, "rejuvenation spread", "caster form");
 
     ACTION_NODE_P(thorns, "thorns", "caster form");
 

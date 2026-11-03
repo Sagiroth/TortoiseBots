@@ -81,13 +81,16 @@ namespace ai
         return waterLevel > groundLevel && (waterLevel - groundLevel) >= FISH_MIN_WATER_DEPTH;
     }
 
-    // Mirrors GatherTravelDestination::IsPossible for fishing: the zone must be
-    // fishable at all, and the bot's skill must cover the requirement with the
-    // same -5 head start the travel errand grants.
+    // Mirrors GatherTravelDestination::IsPossible for fishing: the core rolls
+    // open-water catches from fishing_loot_template whether or not the zone
+    // has a skill_fishing_base_level row, so a missing (0) or negative
+    // (city -20, quest zone -70) requirement never blocks the cast - the
+    // skill check then runs inside the core's success roll, like a player
+    // casting there. Positive requirements keep the errand's -5 head start.
     inline bool FishingZoneSkillOk(std::int32_t baseSkill, std::uint32_t skillValue)
     {
         if (baseSkill <= 0)
-            return false;
+            return true;
         std::int32_t const req = baseSkill > 5 ? baseSkill - 5 : baseSkill;
         return req <= static_cast<std::int32_t>(skillValue);
     }
@@ -143,6 +146,16 @@ namespace ai
     inline bool FishingWaterCacheFresh(std::uint32_t cachedAtMs, std::uint32_t nowMs)
     {
         return cachedAtMs != 0 && (nowMs - cachedAtMs) < FISH_WATER_CACHE_MS;
+    }
+    // A stored travel fish spot survives its travel target: after a re-pick
+    // the bot stands at WORK at the new point while the spot still names the
+    // old one, and the cast never comes in range. A spot on another map or
+    // further than this from the current target is stale and re-taken.
+    float const FISH_SPOT_STALE_YD = 50.0f;
+
+    inline bool FishingSpotStale(float spotToTargetYd, bool sameMap)
+    {
+        return !sameMap || spotToTargetYd > FISH_SPOT_STALE_YD;
     }
 
     // Shared water-result cache key: one entry per map cell. Cell ids fit in

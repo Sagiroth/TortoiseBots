@@ -1,0 +1,58 @@
+// Standalone test for runtime/GuildOrderContract.h: the TBM order tokens.
+#include "../runtime/GuildOrderContract.h"
+
+#include <cstdio>
+#include <string>
+
+using namespace TortoiseBots::GuildOrders;
+
+static int failures = 0;
+#define CHECK(cond) do { if (!(cond)) { ++failures; std::printf("FAIL line %d: %s\n", __LINE__, #cond); } } while (0)
+
+int main()
+{
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
+    {
+        OrderState back = OrderState::Working;
+        CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
+    }
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoListing); ++i)
+    {
+        OrderReason back = OrderReason::None;
+        CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
+    }
+    CHECK(std::string(ReasonToken(OrderReason::Timeout)) == "timeout");
+    CHECK(StateForReason(OrderReason::Timeout) == OrderState::Cant);
+    CHECK(std::string(ReasonToken(OrderReason::NoProgress)) == "noprogress");
+    CHECK(StateForReason(OrderReason::NoProgress) == OrderState::Cant);
+    CHECK(std::string(ReasonToken(OrderReason::Elite)) == "elite");
+    CHECK(StateForReason(OrderReason::Elite) == OrderState::Cant);
+    CHECK(std::string(ReasonToken(OrderReason::NeedItems)) == "needitems");
+    CHECK(StateForReason(OrderReason::NeedItems) == OrderState::Waiting);
+    CHECK(std::string(ReasonToken(OrderReason::BankDenied)) == "bankdenied");
+    CHECK(StateForReason(OrderReason::BankDenied) == OrderState::Working);
+    CHECK(std::string(ReasonToken(OrderReason::NoAuctioneer)) == "noauctioneer");
+    CHECK(StateForReason(OrderReason::NoAuctioneer) == OrderState::Working);
+    CHECK(std::string(ReasonToken(OrderReason::NoListing)) == "nolisting");
+    CHECK(StateForReason(OrderReason::NoListing) == OrderState::Working);
+
+    for (uint8_t i = 0; i <= uint8_t(SupplyStep::Deliver); ++i)
+    {
+        SupplyStep back = SupplyStep::None;
+        CHECK(ParseSupplyStep(SupplyStepToken(SupplyStep(i)), back) && back == SupplyStep(i));
+    }
+    CHECK(NeedItemsToken({ NeedItem{ 2589, 6 }, NeedItem{ 2318, 2 } }) == "2589:6;2318:2");
+
+    CHECK(std::string(DifficultyToken(OrderDifficulty::None)) == "-");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Easy)) == "easy");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Medium)) == "medium");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Hard)) == "hard");
+
+    CHECK(HoursToken(0) == "inf");
+    CHECK(HoursToken(1) == "1");
+    CHECK(HoursToken(24) == "24");
+
+    if (failures == 0)
+        std::printf("test_guild_order_contract ok\n");
+    return failures ? 1 : 0;
+}

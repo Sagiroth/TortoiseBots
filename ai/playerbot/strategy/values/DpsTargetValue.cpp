@@ -1,6 +1,9 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "FankrissSpawnTarget.h"
+#include "../actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/ViscidusActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -8,6 +11,8 @@
 #include "playerbot/FourHorsemenRotationPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 using namespace ai;
 
@@ -70,6 +75,76 @@ namespace
         return false;
     }
 
+
+    // Whether an explicit attack order on `unit` is a one_at_a_time non-pick: the unit's entry has a one_at_a_time row
+    // and the unit is not the sole pick of the fight. The ordered bot must then fall through to the normal pick, which
+    // sends it to the sole pick (HeldDpsTarget drops the non-pick), so a focus order cannot leave a bot on a Servant
+    // the whole fight is not killing. Only this case: every other explicit order is returned unchanged, tanks and
+    // healers included.
+    bool OrderedOneAtATimeNonPick(PlayerbotAI* ai, Player* bot, Unit* unit)
+    {
+        if (!ai || !bot || !unit)
+            return false;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return false;
+        const BossTacticTable& table = GetBossTactics();
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        bool pacedRow = false;
+        for (const BossTacticRow& row : *rows)
+            pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
+        // Opt-in like HeldDpsTarget: only a bot that runs "boss tactics" in combat is paced, so a bot without it keeps
+        // its explicit order.
+        if (!pacedRow || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
+        return OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue());
+    }
+
+    // Whether a free DPS bot leaves `unit` alone: a hold_kill row of its own entry holds it while the row's blocker lives
+    // (KillHeld), and a one_at_a_time row of its entry holds every unit that is not the pick. Opt-in like the tank pickup
+    // (IsTankHoldPickup): only a bot that runs "boss tactics" in combat holds.
+    // Cheapest check first: the candidate's rows (a map without such rows, which is every map but ZG, returns on the
+    // first lookup), then the strategy, then the role gate the hold-kill action uses (IsFreeDps: a tank or a healer keeps
+    // its own pick, an explicit attack order wins). The blocker count is the "hold kill blockers" value, one grid search
+    // per bot and entry per second, never a search of its own inside a candidate loop.
+    bool HeldDpsTarget(PlayerbotAI* ai, Player* bot, Unit* unit)
+    {
+        if (!unit || !ai || !bot)
+            return false;
+        const BossTacticTable& table = GetBossTactics();
+        if (!table.HasMap(bot->GetMapId()))
+            return false;
+        const std::vector<BossTacticRow>* rows = table.Rows(bot->GetMapId(), unit->GetEntry());
+        if (!rows)
+            return false;
+        ActiveBossRows active;
+        active.reserve(rows->size());
+        bool holdRow = false;
+        bool pacedRow = false;
+        for (const BossTacticRow& row : *rows)
+        {
+            active.push_back(&row);
+            holdRow = holdRow || row.kind == BossTacticKind::HoldKill;
+            pacedRow = pacedRow || row.kind == BossTacticKind::OneAtATime;
+        }
+        if (!holdRow && !pacedRow)
+            return false;
+        if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            return false;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return false;
+        AiObjectContext* context = ai->GetAiObjectContext();
+        const bool ordered = !context->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+        // one_at_a_time: an explicit order does not lift it, so a focus-ordered bot is not the fourth on the same
+        // Servant either. The pick itself stays attackable (it is what everyone is sent to).
+        if (pacedRow && OneAtATimeHolds(SoleKillGuid(ai, unit->GetEntry()), unit->GetObjectGuid().GetRawValue()))
+            return true;
+        if (ordered)
+            return false;
+        const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
+        return DpsLeavesAlone(true, active, unit->GetEntry(), countNear);
+    }
 
     // mod-playerbots DPS target tournament (LD-1/LD-4): lifetime buckets per
     // bot type instead of flat least-HP, CC-moon skip, skull snap. The
@@ -142,7 +217,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -180,7 +255,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -210,7 +285,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                IsWastedDpsTarget(ai, attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -383,7 +458,8 @@ namespace
             mobChaser.hasGapCloser = !chaser.ranged && GapCloserReady(ai, bot, unit);
             if (!ai::ShouldFinishRunner(facts, mobChaser))
                 continue;
-            if (IsWastedDpsTarget(ai, unit) || AttackersValue::IsKeepoutSetAside(unit, bot))
+            if (IsWastedDpsTarget(ai, unit) || HeldDpsTarget(ai, bot, unit) ||
+                AttackersValue::IsKeepoutSetAside(unit, bot))
                 continue;
             if (chaser.ranged && !bot->IsWithinLOSInMap(unit))
                 continue;
@@ -401,19 +477,59 @@ namespace
 
 Unit* DpsTargetValue::Calculate()
 {
-    // Explicit orders and raid marks remain ahead of tank assistance.
+    // An opted-in Fankriss DPS: a raid healer's bug, then the raid's one
+    // shared Spawn inside the formation, win even over an old boss order.
+    // Tanks, healers and DPS without a Fankriss role never get these picks.
+    if (Unit* target = GetFankrissDpsTarget(ai))
+        return target;
+    if (Unit* spawn = GetFankrissSpawnTarget(ai))
+        if (spawn->GetEntry() == 15630)
+            return spawn;
+
+    // Opt-in "viscidus glob focus" encounter selection (map 531): ahead of stale
+    // explicit orders and raid marks, inactive everywhere else.
+    if (Unit* viscidus = GetViscidusCombatTarget(ai)) return viscidus;
+
+    // Explicit orders and raid marks remain ahead of tank assistance. A one_at_a_time non-pick is the one exception:
+    // the ordered bot falls through to the normal pick, which converges on the sole pick with everyone else.
+    // (No recursion: the non-pick falls through to the picks below, which never read the explicit target.)
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return explicitTarget;
+        if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))
+            return explicitTarget;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner
     // (a raid mark on another corner would walk it back into the mark).
     if (Unit* horseman = FourHorsemenRotationTarget(ai, bot))
         return horseman;
 
+    // The die-together group, read once: the raid mark below has to know whether it names a held member, and the
+    // group's pick further down reads the same scan. Only a free DPS bot takes part (never a tank or a healer): for
+    // them the mark stands as it is.
+    bool linked = sPlayerbotAIConfig.dungeonRunLinkedDeath &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) && !PlayerbotAI::IsTank(bot) &&
+        !PlayerbotAI::IsHeal(bot);
+    BossLinkedDeathScan linkedScan;
+    bool linkedHold = false; // the hold: another living member above param %, so the raid equalises
+    if (linked)
+    {
+        linkedScan = ScanBossLinkedDeath(ai, bot);
+        linked = linkedScan.active;
+        // The release latch keeps the burn on after a member died while released, even if a heal or a raise puts a
+        // member back above param % (BossTacticsPolicy's LinkedDeathLatchTick).
+        linkedHold = linked && !linkedScan.released && !linkedScan.latched;
+    }
+
     // A raid mark set aside in a creature aura keep-out falls through to
-    // the next pick like the tank's victim below.
+    // the next pick like the tank's victim below. A mark on a member the group holds falls through to the group's pick
+    // for the same reason the tactic exists (that member has to live to the burn); an explicit attack order above is
+    // the only thing that outranks the tactic, and a mark anywhere else still wins.
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
+        !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))
+        return rti;
+
+    if (Unit* fankriss = GetFankrissSpawnTarget(ai))
+        return fankriss;
 
     GeneralDpsStrategy ccProbe(ai, 0.0f);
 
@@ -422,10 +538,31 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* runner = FinishRunnerTarget(ai, bot, AI_VALUE(Unit*, "current target"), ccProbe))
         return runner;
 
+    // A linked_death group (ai_boss_tactic kind linked_death, "die together") splits the free DPS bots' damage: the
+    // pick is the member with the highest health fraction, never one at or below the row's param % while another is
+    // above it, and it outranks the tank's victim, so the guard's pickups do not drag the raid onto one member (an
+    // explicit order wins above; a raid mark wins unless it names a held member). Once every living member is at or
+    // below param % the group is released: the release burn follows the row's burn order (all DPS on the first living
+    // member, then the next), so the encounter's raiser chain dies in the order that keeps the window open. A group
+    // with no order keeps the old released pick. While it is held with nothing above param % reachable, the bot waits
+    // instead of turning on a held member.
+    if (linked)
+    {
+        const int pick = linkedHold ? PickLinkedDeath(linkedScan.param, linkedScan.members)
+                          : linkedScan.order.empty() ? -1
+                                                     : PickLinkedDeathBurn(linkedScan.order, linkedScan.members);
+        if (pick >= 0)
+            return linkedScan.units[pick];
+        if (linkedHold)
+            return nullptr; // a held group with no member above param % in reach: wait for the equalise
+    }
+
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
-            !IsWastedDpsTarget(ai, tankTarget))
+            !IsWastedDpsTarget(ai, tankTarget) && !HeldDpsTarget(ai, bot, tankTarget) &&
+            !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members,
+                                               tankTarget->GetObjectGuid().GetRawValue())))
             return tankTarget;
     }
 
@@ -435,25 +572,33 @@ Unit* DpsTargetValue::Calculate()
     float groupDps = AI_VALUE(float, "estimated group dps");
     // Every tournament skips the CC marks; when they are all that is left,
     // the marked mob is killed last instead of never (FindLastCcTarget).
+    Unit* target = nullptr;
     if (nearCount > 3 && IsCasterBot(ai, bot))
     {
         CasterDpsStrategy strategy(ai, groupDps);
-        if (Unit* target = TargetValue::FindTarget(&strategy))
-            return target;
-        return FindLastCcTarget();
+        target = TargetValue::FindTarget(&strategy);
     }
-    if (nearCount > 3 && IsComboBot(ai, bot))
+    else if (nearCount > 3 && IsComboBot(ai, bot))
     {
         ComboDpsStrategy strategy(ai, groupDps);
-        if (Unit* target = TargetValue::FindTarget(&strategy))
-            return target;
-        return FindLastCcTarget();
+        target = TargetValue::FindTarget(&strategy);
     }
-
-    GeneralDpsStrategy strategy(ai, groupDps);
-    if (Unit* target = TargetValue::FindTarget(&strategy))
-        return target;
-    return FindLastCcTarget();
+    else
+    {
+        GeneralDpsStrategy strategy(ai, groupDps);
+        target = TargetValue::FindTarget(&strategy);
+    }
+    if (!target)
+        target = FindLastCcTarget();
+    // Nobody attacks a held entry: with nothing unheld left the value returns null and the bot waits for the blocker.
+    // The same for a held linked_death member (a latch with no order, or a member above param % out of reach): the
+    // bot stops instead of nuking it, which would start the raise the hold exists to prevent.
+    if (HeldDpsTarget(ai, bot, target))
+        return nullptr;
+    if (linked && target &&
+        LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, target->GetObjectGuid().GetRawValue()))
+        return nullptr;
+    return target;
 }
 
 class FindMaxHpTargetStrategy : public FindNonCcTargetStrategy
@@ -468,8 +613,8 @@ public:
     virtual void CheckAttacker(Unit* attacker, ThreatManager* threatManager) override
     {
         // Same CC-mark rule as every other picker: a protected mark is
-        // skipped, a free one is a normal enemy.
-        if (IsCcTarget(attacker))
+        // skipped, a free one is a normal enemy. A held entry is nobody's pick: the hold_kill blocker is the kill.
+        if (IsCcTarget(attacker) || HeldDpsTarget(ai, ai->GetBot(), attacker))
             return;
         if (!result || result->GetHealth() < attacker->GetHealth())
             result = attacker;
@@ -481,11 +626,22 @@ protected:
 
 Unit* DpsAoeTargetValue::Calculate()
 {
+    // An opted-in Fankriss DPS: a raid healer's bug, then the raid's one
+    // shared Spawn inside the formation, win even over an old boss order.
+    // Tanks, healers and DPS without a Fankriss role never get these picks.
+    if (Unit* target = GetFankrissDpsTarget(ai))
+        return target;
+    if (Unit* spawn = GetFankrissSpawnTarget(ai))
+        if (spawn->GetEntry() == 15630)
+            return spawn;
+
+    // (No recursion: the non-pick falls through to the picks below, which never read the explicit target.)
     if (Unit* explicitTarget = GetExplicitAttackTarget())
-        return explicitTarget;
+        if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))
+            return explicitTarget;
 
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+    if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti)) return rti;
 
     FindMaxHpTargetStrategy strategy(ai);
     return TargetValue::FindTarget(&strategy);

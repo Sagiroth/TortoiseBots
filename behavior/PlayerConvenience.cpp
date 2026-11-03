@@ -1,4 +1,5 @@
 #include "PlayerConvenience.h"
+#include "SummonPointPolicy.h"
 
 #include "../runtime/BotManager.h"
 #include "../runtime/PlayerbotAIStorage.h"
@@ -30,7 +31,6 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 constexpr uint32 kSummonDelayMs = 3000;
 constexpr uint32 kSummonArrivalTimeoutMs = 10000;
-constexpr float kMaxSummonGroundDrop = 4.0f;
 
 // A bot that keeps holding after a summon (stay/guard/hold ordered while it
 // was pending) must hold where it lands: move its stay/guard/return anchors
@@ -96,19 +96,22 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot, Player* an
     constexpr float distance = 5.0f;
     float destX = origin->getPositionX() + std::cos(angle) * distance;
     float destY = origin->getPositionY() + std::sin(angle) * distance;
-    float destZ = origin->getPositionZ();
+    float const originZ = origin->getPositionZ();
+    float const ground = origin->GetMap()->GetHeight(destX, destY, originZ, true);
+    bool const groundFound = ground > INVALID_HEIGHT;
+    float destZ = groundFound ? ground + 0.05f : originZ;   // + 0.05f as UpdateGroundPositionZ
+    bool const inLos = groundFound && origin->IsWithinLOS(destX, destY, destZ + bot->GetCollisionHeight(), true);
 
     // The visual portal used by the first implementation was not part of the
     // Tortoise data contract. Reuse the mature summon action's conservative
     // ground/line-of-sight policy instead, then fall back to the master's
     // exact position when there is no safe nearby point.
-    origin->UpdateGroundPositionZ(destX, destY, destZ);
-    if (std::fabs(destZ - origin->getPositionZ()) > kMaxSummonGroundDrop ||
-        !origin->IsWithinLOS(destX, destY, destZ + bot->GetCollisionHeight(), true))
+    if (!SummonPointIsSafe(groundFound, originZ, destZ, inLos))
     {
+        // No safe point beside the summoner (a drop, a ledge, a wall): the summoner's exact spot.
         destX = origin->getPositionX();
         destY = origin->getPositionY();
-        destZ = origin->getPositionZ();
+        destZ = originZ;
     }
 
     constexpr uint32 kSummonPortalEntry = 179944; // Meeting Stone Summoning Portal (Spells\Ritual_Portal.mdx)

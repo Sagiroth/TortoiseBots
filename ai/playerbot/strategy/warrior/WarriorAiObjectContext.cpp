@@ -137,6 +137,7 @@ namespace ai
                 creators["disarm"] = [](PlayerbotAI* ai) { return new DisarmDebuffTrigger(ai); };
                 creators["concussion blow"] = [](PlayerbotAI* ai) { return new ConcussionBlowTrigger(ai); };
                 creators["improved shield slam proc"] = [](PlayerbotAI* ai) { return new ImprovedShieldSlamProcTrigger(ai); };
+                creators["patchwerk shield slam"] = [](PlayerbotAI* ai) { return new PatchwerkShieldSlamTrigger(ai); };
                 creators["shield bash on enemy healer"] = [](PlayerbotAI* ai) { return new ShieldBashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new BattleStanceTrigger(ai); };
                 creators["defensive stance"] = [](PlayerbotAI* ai) { return new DefensiveStanceTrigger(ai); };
@@ -148,7 +149,7 @@ namespace ai
                 creators["overpower"] = [](PlayerbotAI* ai) { return new OverpowerAvailableTrigger(ai); };
                 creators["mocking blow"] = [](PlayerbotAI* ai) { return new MockingBlowTrigger(ai); };
                 creators["mocking blow taunt"] = [](PlayerbotAI* ai) { return new MockingBlowTauntTrigger(ai); };
-                creators["mortal strike"] = [](PlayerbotAI* ai) { return new MortalStrikeDebuffTrigger(ai); };
+                creators["mortal strike"] = [](PlayerbotAI* ai) { return new MortalStrikeTrigger(ai); };
                 creators["thunder clap on snare target"] = [](PlayerbotAI* ai) { return new ThunderClapSnareTrigger(ai); };
                 creators["thunder clap"] = [](PlayerbotAI* ai) { return new ThunderClapTrigger(ai); };
                 creators["bloodthirst"] = [](PlayerbotAI* ai) { return new BloodthirstTrigger(ai); };
@@ -197,6 +198,8 @@ namespace ai
                 creators["bloodrage"] = [](PlayerbotAI* ai) { return new CastBloodrageAction(ai); };
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new CastBattleStanceAction(ai); };
                 creators["battle stance for mocking blow"] = [](PlayerbotAI* ai) { return new CastBattleStanceForMockingBlowAction(ai); };
+                creators["berserker stance for whirlwind"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceForWhirlwindAction(ai); };
+                creators["berserker stance for pummel"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceForPummelAction(ai); };
                 creators["heroic strike"] = [](PlayerbotAI* ai) { return new CastHeroicStrikeAction(ai); };
                 creators["intimidating shout"] = [](PlayerbotAI* ai) { return new CastIntimidatingShoutAction(ai); };
                 creators["demoralizing shout"] = [](PlayerbotAI* ai) { return new CastDemoralizingShoutAction(ai); };
