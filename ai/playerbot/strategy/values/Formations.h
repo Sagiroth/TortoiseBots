@@ -16,9 +16,11 @@ namespace ai
     // Shared ground/LOS guard for every formation's follow spot
     // (FollowSpotSafetyPolicy.h): false when the floor below the spot is a
     // drop the leader is not standing on. `from*` is the formation center the
-    // line of sight is tested from.
+    // line of sight is tested from. `refuseVoid`: a formation that always
+    // refused a spot with no floor under it (the circle, the line rows, the
+    // arrow) keeps refusing it.
     bool FinalizeFollowSpot(Player* bot, Map* map, float fromX, float fromY, float fromZ,
-        float x, float y, float& z);
+        float x, float y, float& z, bool refuseVoid = false);
 
     class Formation : public AiNamedObject
     {

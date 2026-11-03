@@ -48,7 +48,7 @@ WorldLocation ArrowFormation::GetLocationInternal()
     float z = followTarget->getPositionZ();
 
     if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
-            followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+            followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z, true))
         return Formation::NullLocation;
 
     return WorldLocation(followTarget->GetMapId(), x, y, z);

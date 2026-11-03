@@ -44,13 +44,23 @@ class RaidFollowFormationWiringTest(unittest.TestCase):
         for name, text in spots.items():
             with self.subTest(formation=name):
                 self.assertIn("FinalizeFollowSpot(", text)
-                self.assertNotIn("UpdateAllowedPositionZ", text)
+        # Near, the circle, the line rows and the arrow had the ground guard before the wedge and keep it everywhere.
+        for name in ("near", "circle", "line", "arrow"):
+            self.assertNotIn("UpdateAllowedPositionZ", spots[name], name)
+            self.assertNotIn("UsesRaidFollowWedge(ai) && !FinalizeFollowSpot(", spots[name], name)
+        # The formations that had no guard get the shared one only inside the instance wedge: outside it the
+        # open-world follow stays as it was (issue #217's guard is the formations' own).
+        for name in ("plain follow", "chaos", "custom"):
+            self.assertIn("UsesRaidFollowWedge(ai)", spots[name], name)
+        self.assertIn("bot->UpdateAllowedPositionZ(x, y, z);", spots["chaos"])
         # Shield and line build their spots through MoveLine -> MoveSingleLine.
         self.assertIn("return MoveSingleLine(", body(FORMATIONS, "WorldLocation MoveFormation::MoveLine(", "\n}\n"))
 
     def test_one_ground_guard(self):
         self.assertEqual(FORMATIONS.count("bool ai::FinalizeFollowSpot("), 1)
+        self.assertIn("float& z, bool refuseVoid = false);", FORMATIONS_H)
         guard = body(FORMATIONS, "bool ai::FinalizeFollowSpot(", "\n}\n")
+        self.assertIn("refuseVoid && ground <= INVALID_HEIGHT", guard)
         self.assertIn("ai::FollowSpotGroundRejected(fromZ, ground)", guard)
         self.assertIn("map->GetLosHitPosition(", guard)
         self.assertIn("bot->UpdateAllowedPositionZ(x, y, z);", guard)

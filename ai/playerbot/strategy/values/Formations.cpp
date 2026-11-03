@@ -43,12 +43,15 @@ bool ai::UsesRaidFollowWedge(PlayerbotAI* ai)
 // and clear of terrain. NearFormation carried these; chaos, circle, line,
 // shield, arrow, custom and the plain follow formations now share them.
 bool ai::FinalizeFollowSpot(Player* bot, Map* map, float fromX, float fromY, float fromZ,
-    float x, float y, float& z)
+    float x, float y, float& z, bool refuseVoid)
 {
     if (!map || !bot)
         return false;
 
     float const ground = map->GetHeight(x, y, fromZ + kStairSearchHeadroom);
+    // A spot with no floor under it hangs over a void: the formations that always refused one keep refusing it.
+    if (refuseVoid && ground <= INVALID_HEIGHT)
+        return false;
     if (ai::FollowSpotGroundRejected(fromZ, ground))
         return false;
     if (ground > INVALID_HEIGHT && fabs(ground - fromZ) <= kMaxGroundDrop)
@@ -131,8 +134,8 @@ WorldLocation FollowFormation::GetLocation()
     float y = followTarget->getPositionY() + sin(angle) * range;
     float z = followTarget->getPositionZ();
 
-    if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
-            followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+    if (UsesRaidFollowWedge(ai) && !FinalizeFollowSpot(bot, followTarget->GetMap(),
+            followTarget->getPositionX(), followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
         return Formation::NullLocation;
 
     return WorldLocation(bot->GetMapId(), x, y, z);
@@ -273,9 +276,17 @@ namespace ai
             float y = followTarget->getPositionY() + sin(angle) * range + dy;
             float z = followTarget->getPositionZ();
 
-            if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
-                    followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
-                return WorldLocation();
+            if (UsesRaidFollowWedge(ai))
+            {
+                if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+                        followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z))
+                    return WorldLocation();
+            }
+            else if (!bot->IsFlying())
+            {
+                z += CONTACT_DISTANCE;
+                bot->UpdateAllowedPositionZ(x, y, z);
+            }
 
             return WorldLocation(followTarget->GetMapId(), x, y, z);
         }
@@ -309,7 +320,7 @@ namespace ai
             float z = target->getPositionZ();
 
             if (!FinalizeFollowSpot(bot, target->GetMap(), target->getPositionX(),
-                    target->getPositionY(), target->getPositionZ(), x, y, z))
+                    target->getPositionY(), target->getPositionZ(), x, y, z, true))
                 return Formation::NullLocation;
 
             return WorldLocation(bot->GetMapId(), x, y, z);
@@ -497,6 +508,8 @@ namespace ai
             relPos.rotateXY(followTarget->getOrientation());
 
             WorldPosition spot = WorldPosition(followTarget) + relPos;
+            if (!UsesRaidFollowWedge(ai))
+                return spot;
             float z = spot.getZ();
             if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
                     followTarget->getPositionY(), followTarget->getPositionZ(),
@@ -782,7 +795,7 @@ WorldLocation MoveFormation::MoveSingleLine(std::vector<Player*> line, float dif
             float ly = y + sin(angle) * radius;
             float lz = cz;
 
-            if (!FinalizeFollowSpot(bot, bot->GetMap(), cx, cy, cz, lx, ly, lz))
+            if (!FinalizeFollowSpot(bot, bot->GetMap(), cx, cy, cz, lx, ly, lz, true))
                 return Formation::NullLocation;
 
             return WorldLocation(bot->GetMapId(), lx, ly, lz);
