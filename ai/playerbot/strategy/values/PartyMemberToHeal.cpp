@@ -4,6 +4,7 @@
 #include "PartyMemberToHeal.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/policy/raid/FankrissRaidPolicy.h"
+#include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
@@ -131,6 +132,12 @@ bool ai::AnotherHealerCoversAlly(PlayerbotAI* ai, Unit* ally, float maxDistance)
 
 Unit* PartyMemberToHeal::Calculate()
 {
+    // A Patchwerk healer keeps its fixed tank seat while assigned tanks fight him.
+    if (bot->GetMapId() == 533)
+        if (Player* assigned = PatchwerkHealingTarget(ai))
+            if (Check(assigned))
+                return assigned;
+
     HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
     bool const preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);

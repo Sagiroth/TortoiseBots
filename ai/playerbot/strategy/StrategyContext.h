@@ -2,6 +2,7 @@
 
 #include "CustomStrategy.h"
 #include "generic/FankrissStrategy.h"
+#include "generic/PatchwerkStrategy.h"
 #include "actions/FankrissTankActions.h"
 #include "actions/FankrissRaidActions.h"
 #include "generic/NonCombatStrategy.h"
@@ -182,6 +183,9 @@ namespace ai
             creators["fankriss spawn tank"] = [](PlayerbotAI* ai) { return new FankrissSpawnTankStrategy(ai); };
             creators["fankriss stack"] = [](PlayerbotAI* ai) { return new FankrissStackStrategy(ai); };
             creators["fankriss healing"] = [](PlayerbotAI* ai) { return new FankrissHealingStrategy(ai); };
+            creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk main"); };
+            creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk soak"); };
+            creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk melee safety"); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsStrategy(ai); };

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AttackAction.h"
 #include "FankrissFocusActions.h"
+#include "PatchwerkSoakerActions.h"
 #include "playerbot/FankrissGauntletPolicy.h"
 #include "Movement/MovementGenerator.h"
 #include "AI/CreatureAI.h"
@@ -244,6 +245,9 @@ bool AttackAction::Attack(Player* requester, Unit* target, float maxDistance, bo
     // An opted-in Fankriss DPS attacks only its encounter pick (a healer's bug,
     // the shared Spawn, or the boss) while the fight runs.
     if (!FankrissDpsMayAttack(ai, target))
+        return false;
+    // Patchwerk: DPS hold their attack through the opening and the damage budget.
+    if (target && target->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai))
         return false;
     if (!bot->IsAlive())
     {

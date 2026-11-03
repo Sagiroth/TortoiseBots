@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "AttackersValue.h"
 #include "playerbot/ServerFacade.h"
@@ -281,6 +282,10 @@ Unit* TankTargetValue::Calculate()
         return boss;
     if (Unit* spawn = GetAssignedFankrissSpawnTankTarget(ai))
         return spawn;
+    // An assigned Patchwerk main or soaker stays on Patchwerk (nothing while
+    // it is ordered elsewhere).
+    if (Unit* patchwerk = GetAssignedPatchwerkTankTarget(ai))
+        return patchwerk;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner:
     // the rotation outranks raid marks here, or the mark walks the tank

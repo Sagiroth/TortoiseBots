@@ -1,5 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
@@ -154,6 +156,9 @@ bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
 
 bool HealerShouldAttackTrigger::IsActive()
 {
+    if (bot->GetMapId() == 533 && RaidHealerShouldHoldDamage(ai))
+        return false;
+
     if (!bot->GetGroup())
         return true;
 
@@ -310,6 +315,12 @@ bool LoseAggroTrigger::IsActive()
     // effect (donor GenericTriggers.cpp guards the same way).
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->IsPlayer())
+        return false;
+
+    // An assigned Patchwerk soaker never takes the boss back: a soaker taunt
+    // keeps Patchwerk off the main tank.
+    if (target && target->GetEntry() == 16028 &&
+        ai->HasStrategy("patchwerk soak", BotState::BOT_STATE_COMBAT))
         return false;
 
     if(!AI_VALUE2(bool, "has aggro", "current target"))

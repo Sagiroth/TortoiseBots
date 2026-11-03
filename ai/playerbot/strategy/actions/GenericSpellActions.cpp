@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "FankrissFocusActions.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
@@ -235,6 +236,10 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 
 bool CastSpellAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool executed = false;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
     if (spellName == "conjure food" || spellName == "conjure water")
@@ -390,6 +395,10 @@ bool CastSpellAction::isPossible()
 bool CastSpellAction::isUseful()
 {
     if (FankrissBlocksAoe(ai, spellId))
+        return false;
+    // A Patchwerk healer spends no cast on damage filler while a Patchwerk tank is hurt.
+    if (bot->GetMapId() == 533 && (IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) &&
+        RaidHealerShouldHoldDamage(ai))
         return false;
 
     // A mounted travelling bot must not start an out-of-combat cast the core
@@ -1054,6 +1063,9 @@ bool CastShootAction::isUseful()
 
 bool CastShootAction::Execute(Event& event)
 {
+    if (bot->GetMapId() == 533 && RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool succeeded = false;
 
     UpdateWeaponInfo();

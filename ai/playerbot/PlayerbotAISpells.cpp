@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/GroupMembers.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "playerbot/InterruptCastingPolicy.h"
@@ -471,7 +472,7 @@ bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMa
 {
     // An opted-in Fankriss DPS casts no area, chain or swing-copy spell
     // while the boss is engaged.
-    if (FankrissBlocksAoe(this, spellid))
+    if (FankrissBlocksAoe(this, spellid) || PatchwerkOpeningBlocksSpell(this, spellid, target))
     {
         if (checkResult)
             *checkResult = SPELL_FAILED_NOT_READY;
@@ -793,7 +794,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
 {
     // An opted-in Fankriss DPS casts no area, chain or swing-copy spell
     // while the boss is engaged.
-    if (FankrissBlocksAoe(this, spellid))
+    if (FankrissBlocksAoe(this, spellid) || PatchwerkOpeningBlocksSpell(this, spellid, nullptr))
     {
         if (checkResult)
             *checkResult = SPELL_FAILED_NOT_READY;
@@ -929,7 +930,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, float x, float y, float z, uint8 
 {
     // An opted-in Fankriss DPS casts no area, chain or swing-copy spell
     // while the boss is engaged.
-    if (FankrissBlocksAoe(this, spellid))
+    if (FankrissBlocksAoe(this, spellid) || PatchwerkOpeningBlocksSpell(this, spellid, nullptr))
     {
         if (checkResult)
             *checkResult = SPELL_FAILED_NOT_READY;
@@ -1073,7 +1074,7 @@ bool PlayerbotAI::CastSpell(std::string name, Unit* target, Item* itemTarget, bo
 
 bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    if (FankrissBlocksAoe(this, spellId))
+    if (FankrissBlocksAoe(this, spellId) || PatchwerkOpeningBlocksSpell(this, spellId, target))
         return false;
 
     if (!spellId)
@@ -1396,7 +1397,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
 bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    if (FankrissBlocksAoe(this, spellId))
+    if (FankrissBlocksAoe(this, spellId) || PatchwerkOpeningBlocksSpell(this, spellId, nullptr))
         return false;
 
     if (!spellId)
@@ -1545,7 +1546,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
 
 bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    if (FankrissBlocksAoe(this, spellId))
+    if (FankrissBlocksAoe(this, spellId) || PatchwerkOpeningBlocksSpell(this, spellId, nullptr))
         return false;
 
     if (!spellId)
@@ -1707,7 +1708,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
 bool PlayerbotAI::CastPetSpell(uint32 spellId, Unit* target)
 {
-    if (FankrissBlocksAoe(this, spellId))
+    if (FankrissBlocksAoe(this, spellId) || PatchwerkOpeningBlocksSpell(this, spellId, target))
         return false;
 
     Pet* pet = bot->GetPet();

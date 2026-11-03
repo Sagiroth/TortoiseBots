@@ -22,6 +22,8 @@
 
 namespace ai
 {
+    bool PatchwerkDpsOpeningHold(PlayerbotAI* ai);
+
     class ReachTargetAction : public MovementAction, public Qualified
     {
     public:
@@ -100,6 +102,9 @@ namespace ai
         virtual bool Execute(Event& event) override
         {
             Unit* target = GetTarget();
+            // Patchwerk: DPS do not walk in during the opening hold.
+            if (target && target->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai))
+                return false;
             if (target)
             {
                 UpdateMovementState();

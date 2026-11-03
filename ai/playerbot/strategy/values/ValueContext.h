@@ -1,6 +1,8 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 #include "ActiveSpellValue.h"
@@ -120,6 +122,12 @@ namespace ai
         ValueContext()
         {
             creators["fankriss active boss"] = [](PlayerbotAI* ai) { return new FankrissActiveBossValue(ai); };
+            creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };
+            creators["patchwerk soaker to shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldValue(ai); };
+            creators["patchwerk soak boss"] = [](PlayerbotAI* ai) { return new PatchwerkSoakBossValue(ai); };
+            creators["patchwerk soak puller"] = [](PlayerbotAI* ai) { return new PatchwerkSoakPullerValue(ai); };
+            creators["patchwerk opening window"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningWindowValue(ai); };
+            creators["patchwerk opening owner"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningOwnerValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };
