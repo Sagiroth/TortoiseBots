@@ -45,14 +45,15 @@ inline bool UseObjectDue(bool rowHasAura, bool bossHasAura, float windowSec, boo
     return static_cast<double>(sinceMs) >= static_cast<double>(windowSec) * 1000.0;
 }
 
-// Milliseconds until the row is due: 0 when due now, UINT32_MAX when only an
-// aura trigger exists and the aura is absent.
+// Milliseconds until the row is due: 0 when due now, UINT32_MAX when no
+// timer can fire it (aura-only row, aura absent). An aura-plus-timer row
+// counts the timer down while the aura is absent; the aura only fires early.
 inline std::uint32_t UseObjectMsToDue(bool rowHasAura, bool bossHasAura, float windowSec, bool everClicked,
                                       std::uint32_t sinceClickMs, std::uint32_t sinceFirstSeenMs)
 {
     if (UseObjectDue(rowHasAura, bossHasAura, windowSec, everClicked, sinceClickMs, sinceFirstSeenMs))
         return 0;
-    if (rowHasAura && !bossHasAura)
+    if (rowHasAura && !bossHasAura && windowSec <= 0.0f)
         return std::numeric_limits<std::uint32_t>::max();
     const std::uint32_t sinceMs = everClicked ? sinceClickMs : sinceFirstSeenMs;
     const double leftMs = static_cast<double>(windowSec) * 1000.0 - static_cast<double>(sinceMs);

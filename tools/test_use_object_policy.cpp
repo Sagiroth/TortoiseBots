@@ -65,6 +65,11 @@ int main()
     CHECK(UseObjectMsToDue(true, false, 0.0f, false, 0, 0) == std::numeric_limits<std::uint32_t>::max());
     CHECK(UseObjectMsToDue(false, false, 38.0f, false, 0, 1000) == 37000);
     CHECK(UseObjectMsToDue(false, false, 38.0f, false, 0, 38000) == 0);
+    // An aura-plus-timer row still counts the timer down while the aura is absent: the clicker walks in on the
+    // timer's lead, the aura only fires it early.
+    CHECK(!UseObjectDue(true, false, 38.0f, false, 0, 1000));
+    CHECK(UseObjectMsToDue(true, false, 38.0f, false, 0, 1000) == 37000);
+    CHECK(UseObjectMsToDue(true, false, 38.0f, false, 0, 38000) == 0);
     std::cout << "  [PASS] ms-to-due answers the pre-position walk\n";
 
     // Pick: nearest eligible wins, lowest guid on a tie, -1 when nobody may go.
