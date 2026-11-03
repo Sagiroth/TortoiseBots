@@ -17,6 +17,7 @@ Commands (rank >= TT.CFG.min_gm_rank; anything else is refused):
   .tt q floor [x y [z]]                    floor (z-aware) and top surface
   .tt q units [r] [x y z] [all] [dead] [e=<entry>] [au=<id,id>]
   .tt q unit <0xGUID> [au=<id,id>]
+  .tt q los <x> <y> <z> <0xGUID>...           sight from 2 yd above the point (1-8 guids)
   .tt q gos [r] [x y z] [e=<entry>]         doors/objects with GO state
   .tt q group                               the caller's group, floor under each
   .tt q inst                                map/instance; saved instance data*
@@ -43,7 +44,7 @@ local MAX_RANK = 4
 -- ---------------------------------------------------------------------------
 -- reply helpers
 -- ---------------------------------------------------------------------------
-local LIST_KEYS = { "units", "gos", "members", "near", "removed", "skipped", "roamers", "rows", "live" }
+local LIST_KEYS = { "units", "gos", "members", "near", "removed", "skipped", "roamers", "rows", "live", "los" }
 
 local function fitLine(t)
     local line = "TTJSON " .. TT.json(t)
@@ -254,6 +255,46 @@ function Q.unit(player, req)
     -- the reply carries the guid asked for: the client drops a reply whose
     -- unit.g differs (wrong-unit protection)
     t.asked = hex
+    return okReply(player, req, t)
+end
+
+-- q los <x> <y> <z> <0xGUID>... (1-8 guids): line of sight from an eye 2 yd
+-- above the point to each unit. An absent guid answers its own not_found
+-- entry; a found one carries "in" (WorldObject:IsWithinLoS) and the 3D
+-- distance from the point.
+function Q.los(player, req)
+    local map = player:GetMap()
+    local x, y, z = point(req, 2)
+    local first = 5
+    local count = #req.pos - first + 1
+    if not x or count < 1 then
+        return fail(player, req, "usage", "q los <x> <y> <z> <0xGUID>... (1-8 guids)")
+    end
+    if count > 8 then
+        return fail(player, req, "too_many", "q los takes 1-8 guids")
+    end
+    local ok, msg = checkPoint(player, x, y)
+    if not ok then return fail(player, req, "point_far", msg) end
+    local eye = z + 2.0
+    local los = {}
+    for i = first, #req.pos do
+        local hex = req.pos[i]
+        local o, why = TT.findByHex(map, hex, player)
+        local u = o and o:ToUnit()
+        if not u then
+            los[#los + 1] = { g = hex, err = why or "not_a_unit" }
+        else
+            local seen = false
+            local good, res = pcall(function() return u:IsWithinLoS(x, y, eye) end)
+            if good then seen = res and true or false end
+            los[#los + 1] = { g = TT.objHex(u) or hex, ["in"] = seen,
+                d = TT.round(TT.dist3(x, y, z, u:GetX(), u:GetY(), u:GetZ()), 1) }
+        end
+    end
+    local t = mapInfo(map)
+    t.at = { TT.round(x), TT.round(y), TT.round(z) }
+    t.n = #los
+    t.los = los
     return okReply(player, req, t)
 end
 
@@ -753,7 +794,7 @@ end
 -- ---------------------------------------------------------------------------
 -- dispatch
 -- ---------------------------------------------------------------------------
-local HELP = "tt: q floor|units|unit|gos|group|inst|link, quiet, clearto, place, reset; quiet/clearto take dz=<yd> (default 8, 0=any) and skip=<entry,..>; clearto never touches friendly NPCs unless all=1 (of=<lead> picks the group); `#id` echoes; see README"
+local HELP = "tt: q floor|units|unit|los|gos|group|inst|link, quiet, clearto, place, reset; quiet/clearto take dz=<yd> (default 8, 0=any) and skip=<entry,..>; clearto never touches friendly NPCs unless all=1 (of=<lead> picks the group); `#id` echoes; see README"
 
 local function dispatch(player, req)
     local sub = (req.pos[1] or "help"):lower()
@@ -772,7 +813,7 @@ local function dispatch(player, req)
         local what = (req.pos[1] or ""):lower()
         req.cmd = "q." .. what
         local h = Q[what]
-        if not h then return fail(player, req, "usage", "q floor|units|unit|gos|group|inst|link") end
+        if not h then return fail(player, req, "usage", "q floor|units|unit|los|gos|group|inst|link") end
         return h(player, req)
     end
     req.cmd = sub
