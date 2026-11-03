@@ -2,6 +2,10 @@
 #include "generic/TempleOfAhnQirajStrategies.h"
 
 #include "CustomStrategy.h"
+#include "generic/FankrissStrategy.h"
+#include "generic/PatchwerkStrategy.h"
+#include "actions/FankrissTankActions.h"
+#include "actions/FankrissRaidActions.h"
 #include "generic/NonCombatStrategy.h"
 #include "generic/RacialsStrategy.h"
 #include "generic/ChatCommandHandlerStrategy.h"
@@ -175,6 +179,14 @@ namespace ai
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
+            creators["fankriss tank"] = [](PlayerbotAI* ai) { return new FankrissTankStrategy(ai); };
+            creators["fankriss spawn tank"] = [](PlayerbotAI* ai) { return new FankrissSpawnTankStrategy(ai); };
+            creators["fankriss stack"] = [](PlayerbotAI* ai) { return new FankrissStackStrategy(ai); };
+            creators["fankriss healing"] = [](PlayerbotAI* ai) { return new FankrissHealingStrategy(ai); };
+            creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk main"); };
+            creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk soak"); };
+            creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai, "patchwerk melee safety"); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsStrategy(ai); };

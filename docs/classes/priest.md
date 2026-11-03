@@ -37,6 +37,8 @@ Direct heals are downranked to match target wounds per [shared downranking rules
 ### Power Word: Shield & Weakened Soul Refusal
 The bot verifies that the target does not have the *Weakened Soul* debuff before casting *Power Word: Shield*. If present, the shield is skipped in favor of direct heals. Above 20 % health the shield is also held off a warrior or bear tank that is fighting, since absorbed hits give no rage and starve the tank's threat; the shield still lands as the save at or below 20 %. Rotation reference: stevemcqueenz/turtle-knowledge-base- (Turtle WoW class guides).
 
+In a Patchwerk fight with the opt-in tank roles ([Patchwerk roles](../play/dungeons-and-raids.md#patchwerk-opt-in-roles)) a priest in range pre-shields an engaged soaker while no assigned tank is hurt, below its critical heals.
+
 ### Threat Drops & Loose Adds
 - **Fade:** Casts *Fade* at high priority when climbing toward the tank's threat on a mob the tank holds, or immediately when attacked by a mob in a group.
 

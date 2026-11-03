@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/FankrissGauntletPolicy.h"
 #include "InvalidTargetValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleAttackTargetsValue.h"
@@ -16,6 +17,10 @@ bool InvalidTargetValue::Calculate()
     {
         return true;
     }
+
+    // Reject before explicit orders or the cached attacker fallback can retain it.
+    if (IgnoreFankrissGauntlet(bot, target))
+        return true;
 
     Unit* duelTarget = AI_VALUE(Unit*, "duel target");
     if (duelTarget && duelTarget == target)

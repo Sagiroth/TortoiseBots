@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "FankrissSpawnTarget.h"
+#include "../actions/FankrissFocusActions.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
@@ -475,6 +477,15 @@ namespace
 
 Unit* DpsTargetValue::Calculate()
 {
+    // An opted-in Fankriss DPS: a raid healer's bug, then the raid's one
+    // shared Spawn inside the formation, win even over an old boss order.
+    // Tanks, healers and DPS without a Fankriss role never get these picks.
+    if (Unit* target = GetFankrissDpsTarget(ai))
+        return target;
+    if (Unit* spawn = GetFankrissSpawnTarget(ai))
+        if (spawn->GetEntry() == 15630)
+            return spawn;
+
     // Opt-in "viscidus glob focus" encounter selection (map 531): ahead of stale
     // explicit orders and raid marks, inactive everywhere else.
     if (Unit* viscidus = GetViscidusCombatTarget(ai)) return viscidus;
@@ -516,6 +527,9 @@ Unit* DpsTargetValue::Calculate()
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
         !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))
         return rti;
+
+    if (Unit* fankriss = GetFankrissSpawnTarget(ai))
+        return fankriss;
 
     GeneralDpsStrategy ccProbe(ai, 0.0f);
 
@@ -612,6 +626,15 @@ protected:
 
 Unit* DpsAoeTargetValue::Calculate()
 {
+    // An opted-in Fankriss DPS: a raid healer's bug, then the raid's one
+    // shared Spawn inside the formation, win even over an old boss order.
+    // Tanks, healers and DPS without a Fankriss role never get these picks.
+    if (Unit* target = GetFankrissDpsTarget(ai))
+        return target;
+    if (Unit* spawn = GetFankrissSpawnTarget(ai))
+        if (spawn->GetEntry() == 15630)
+            return spawn;
+
     // (No recursion: the non-pick falls through to the picks below, which never read the explicit target.)
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         if (!OrderedOneAtATimeNonPick(ai, bot, explicitTarget))

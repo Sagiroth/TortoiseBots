@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/FankrissGauntletPolicy.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleTargetsValue.h"
@@ -336,6 +337,9 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
 
 bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, float range, bool ignoreCC)
 {
+    if (IgnoreFankrissGauntlet(player, target))
+        return false;
+
     if(target)
     {
         // Defer to the same attackability check the real spell-cast validation uses

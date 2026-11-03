@@ -212,6 +212,43 @@ an avoidance action succeeds.
 - **Viscidus (AQ40, opt-in):** `.bot strategy +viscidus glob focus @all` (off by default; only active on map 531 in an already engaged Viscidus fight). Mages use rank-one Frostbolt to freeze him and stop frost casts once frozen; melee and ranged physical damage keep hitting the frozen boss. After the shatter all DPS switch to the nearest-to-merging glob while tanks keep the boss and healers keep healing; tanks retake him after the globs re-form (a spare taunts if no tank holds him), and ranged/healers back out of his melee reach. Every role steps out of the poison cloud. Remove with `.bot strategy -viscidus glob focus @all`.
 - **Paladin Aura Auto-Swap:** Paladins in raids automatically swap to *Fire Resistance Aura* or *Shadow Resistance Aura* on applicable bosses.
 
+### Fankriss (opt-in roles)
+
+Fankriss the Unyielding (Temple of Ahn'Qiraj) has opt-in roles, all off by default. A raid that sets none of them fights him as before. Give two warrior or bear tanks the boss role, optionally a third tank the spawn role, then the rest:
+
+```text
+.bot strategy +fankriss tank TankOne
+.bot strategy +fankriss tank TankTwo
+.bot strategy +fankriss spawn tank SpareTank
+.bot strategy +fankriss spawn focus @ranged
+.bot strategy +fankriss stack @melee
+.bot strategy +fankriss healing @heal
+```
+
+- **`fankriss tank`:** the tank stays on Fankriss instead of picking loose adds. When the current tank reaches [`AiPlayerbot.FankrissSwapStacks`](../server/settings/dungeons-raids.md#aiplayerbotfankrissswapstacks) Mortal Wound stacks (default 5), one assigned tank with no stacks taunts (warrior Taunt, druid Growl); the other assigned tanks' automatic taunts on the boss are held. With `fankriss stack` as well (`@melee` includes tanks), the boss tanks hold him at his pull centre.
+- **`fankriss spawn tank`:** a spare tank picks up loose Spawns of Fankriss near the raid and taunts one that is not on a tank. The boss role wins if a tank has both.
+- **`fankriss spawn focus`** (DPS) and **`fankriss stack`** (melee DPS): the raid kills one shared Spawn at a time (lowest health, then the earliest to reach the raid) before going back to the boss, and from 10 s after a Spawn joins the fight a DPS with a stun or slow uses it on it. While Fankriss is engaged these DPS use single-target damage only (area, chain and swing-copy spells are blocked and running ones stopped), ignore the other bugs in the room except one attacking a healer (the three nearest DPS within 20 yd kill it), and do not chase into the tunnels. `fankriss stack` also keeps melee packed behind the boss.
+- **`fankriss healing`:** a healer moved away by Entangle heals whoever it can reach from where it stands instead of walking back first.
+
+An attack order, a raid mark on another enemy, or `stay`/`follow` still wins over the tank and stack roles. Remove a role with `-` instead of `+`.
+
+### Patchwerk (opt-in roles)
+
+Patchwerk (Naxxramas) has opt-in roles, all off by default. The tested set-up is four warrior or bear tanks on `patchwerk soak`, a ranged raid, and `patchwerk melee safety` on the DPS:
+
+```text
+.bot strategy -patchwerk main @tank
+.bot strategy +patchwerk soak @tank
+.bot strategy +patchwerk melee safety @dps
+```
+
+- **`patchwerk soak`** (tanks): the tank goes to Patchwerk as soon as he engages a raid member, in Defensive Stance or bear form, even while on `stay`, `follow` or a wait order (only for this encounter; the saved orders and stay point resume after he dies or resets). Soakers never taunt him. The first assigned tank holding him is the main; when it dies the surviving tank with the most threat takes over.
+- **Healers** (no strategy needed): while assigned tanks fight him, the raid's healers are seated on the tanks in guid order, the main first (ten healers on four tanks heal 3/3/2/2), one healer per tank may heal before a hit, and while no assigned tank is hurt a priest pre-shields an engaged soaker. Seated healers cast no damage filler (Smite, Holy Fire, a wand) during the fight.
+- **DPS:** they hold for at least 4 s and until the tanks have built threat (the holder 10,000, the weakest tank 5,000; melee wait for all four tanks), then keep their threat below 70 % of the lowest tank (resuming below 60 %). With a `patchwerk main` assigned they also hold for [`AiPlayerbot.PatchwerkOpeningDelay`](../server/settings/dungeons-raids.md#aiplayerbotpatchwerkopeningdelay) seconds from its engage. Melee with `patchwerk melee safety` step in only while the main and three soakers fill the four Hateful Strike threat slots, attack from behind, and back out when that stops being true.
+- **`patchwerk main`** (optional, one of the four tanks *instead of* `patchwerk soak`: `.bot strategy -patchwerk soak TankName`, then `+patchwerk main TankName`; a tank with both roles has neither): on an ordered `.bot action pull` the soakers first gather beside this tank in stance and the shot waits for them (the normal 15 s pull window still ends it).
+
+An attack order or raid mark on another enemy still wins over the tank roles. Remove a role with `-` instead of `+`.
+
 ## Custom Turtle Raids
 
 When [`AiPlayerbot.EnableCustomRaidTactics`](../server/settings/dungeons-raids.md#aiplayerbotenablecustomraidtactics) is enabled, the raid engine handles custom Turtle WoW raid encounters:

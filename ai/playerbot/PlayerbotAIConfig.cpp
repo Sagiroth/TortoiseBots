@@ -126,6 +126,11 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRaid = config.GetBoolDefault("AiPlayerbot.DungeonRunRaid", false);
     dungeonRunRaidBossRules = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidBossRules", false);
     dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
+    fankrissSwapStacks = std::min(9, std::max(1, config.GetIntDefault("AiPlayerbot.FankrissSwapStacks", 5)));
+    {
+        int const patchwerkDelay = config.GetIntDefault("AiPlayerbot.PatchwerkOpeningDelay", 4);
+        patchwerkOpeningDelay = patchwerkDelay <= 0 ? 0 : std::min(5, std::max(3, patchwerkDelay));
+    }
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
@@ -978,6 +983,7 @@ bool PlayerbotAIConfig::Initialize()
     actionLogMaxTotalMB = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.ActionLogMaxTotalMB", 2048)));
     actionLogMaxFileMB = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.ActionLogMaxFileMB", 100)));
     actionCountsLog = config.GetBoolDefault("AiPlayerbot.ActionCountsLog", false);
+    healerDiagnostics = config.GetBoolDefault("AiPlayerbot.HealerDiagnostics", false);
     botLogFile = config.GetStringDefault("AiPlayerbot.BotLogFile", "");
     {
         std::string logsDir = sConfig.GetStringDefault("LogsDir", "");
