@@ -26,6 +26,8 @@
 #include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/actions/PositionAction.h"
 #include "playerbot/AvoidAoePolicy.h"
+#include "../../../../runtime/CcOrderFamily.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 
 #include <regex>
 
@@ -1344,6 +1346,16 @@ bool HasCcTargetTrigger::IsActive()
 
 bool HasCcTargetTrigger::CcTargetPending()
 {
+    // The run's automatic cc order names the family it picked. Only that
+    // class row fires on its mark: a Seduction order must not turn into the
+    // warlock's higher-priority Fear, which runs the mob into other packs.
+    // A hand-written order carries no family and leaves every row as it was;
+    // outside a running run the stored family is not consulted, so a finished
+    // run leaves the bot's own choices behind.
+    if (TortoiseBots::BotCommands::IsInRunningDungeonRun(bot) &&
+        !TortoiseBots::DungeonRun::CcOrderFamilyAllows(AI_VALUE(std::string, "run cc family"), getName()))
+        return false;
+
     // mod-playerbots d9ee5198/#2648: inside a non-raid dungeon the generic
     // CC never fires on a free pick — only on this bot's assigned raid
     // mark ("rti cc target"). Open world keeps today's free CC; raids

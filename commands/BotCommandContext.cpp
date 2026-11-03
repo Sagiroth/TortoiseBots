@@ -2,6 +2,7 @@
 
 #include "../host/BotSessionAdapter.h"
 #include "../runtime/PlayerbotAIStorage.h"
+#include "../runtime/CcOrderFamily.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/AltBotService.h"
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -593,7 +594,8 @@ static uint32 CcSpellPreference(std::string const& spell)
 }
 
 static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const& mark,
-    uint32* outPreference, CcDenyReason* outDeny, std::string* outDenySpell)
+    uint32* outPreference, CcDenyReason* outDeny, std::string* outDenySpell,
+    std::string const& family)
 {
     if (!ai || !target || !target->IsInWorld() || !target->IsAlive())
         return {};
@@ -649,6 +651,11 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
 
         std::string spell = action->GetCrowdControlSpellName();
         if (spell.empty() || !ai->HasSpell(spell))
+            continue;
+        // A run's automatic cc order names its family: only that spell may
+        // be the immediate cast, never the warlock's higher-priority Fear
+        // behind a Seduction order. No family: every row as before.
+        if (!TortoiseBots::DungeonRun::CcOrderFamilyAllows(family, spell))
             continue;
         anyCcSpellKnown = true;
 
@@ -737,13 +744,14 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
 } // namespace
 
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
-    std::string* outAction)
+    std::string* outAction, std::string const& family)
 {
-    return ResolveCcExecutor(context, target, mark, outAction, nullptr, nullptr);
+    return ResolveCcExecutor(context, target, mark, outAction, nullptr, nullptr, family);
 }
 
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
-    std::string* outAction, CcDenyReason* outDeny, std::string* outDenySpell)
+    std::string* outAction, CcDenyReason* outDeny, std::string* outDenySpell,
+    std::string const& family)
 {
     if (outDeny)
         *outDeny = CcDenyReason::None;
@@ -757,7 +765,7 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(context.selectedBot);
         if (ai)
         {
-            std::string action = FindCcAction(ai, target, mark, nullptr, outDeny, outDenySpell);
+            std::string action = FindCcAction(ai, target, mark, nullptr, outDeny, outDenySpell, family);
             if (!action.empty())
             {
                 if (outAction) *outAction = action;
@@ -785,7 +793,7 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
         uint32 preference = 0;
         CcDenyReason deny = CcDenyReason::None;
         std::string denySpell;
-        std::string action = FindCcAction(ai, target, mark, &preference, &deny, &denySpell);
+        std::string action = FindCcAction(ai, target, mark, &preference, &deny, &denySpell, family);
         if (action.empty())
         {
             // First durable failure wins the message; transient ones stay

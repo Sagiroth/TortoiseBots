@@ -151,10 +151,10 @@ Defaults to a 5-second pull delay (accepted in either order with `ranged`). Non-
 Assigns a crowd control mark and target to a capable party bot.
 
 ```text
-.bot cmd cc <mark> <guid> [bot]
+.bot cmd cc <mark> <guid> [bot] [family]
 ```
 
-Places the specified raid target icon on the target GUID and assigns the crowd control duty to a bot.
+Places the specified raid target icon on the target GUID and assigns the crowd control duty to a bot. The optional family (`polymorph`, `seduction`, `fear`, ...) is what the run leader's automatic crowd control adds to its own orders: the bot then fires only that crowd control row on the mark. A hand-written order without it leaves the bot's usual choice.
 
 ```text
 .bot cmd cc clear <bot> [<mark> <guid>]

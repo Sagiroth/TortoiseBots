@@ -30676,8 +30676,667 @@ static void TestLinkedDeathNoteIsAppendedToTheFightLine()
     CHECK(r.note.find("11348 fell at ") != std::string::npos);
 }
 
+// The automatic crowd control (Facts::autoCc, AiPlayerbot.DungeonRunAutoCc): the run marks the pack from what the
+// raid has when the pull brings more than the threshold.
+static Facts AutoParty(std::uint32_t above)
+{
+    Facts f = Party(0);
+    f.autoCc = true;
+    f.autoCcAbove = above;
+    return f;
+}
+
+static MemberFact AutoCcMem(const std::string& name, CcFamily family, std::uint32_t level = 0)
+{
+    MemberFact m = CcMem(name, family);
+    m.level = level;
+    return m;
+}
+
+// A humanoid unit at `dist` from the lead bot, its entry derived from the guid.
+static UnitFact AutoHumanoid(std::uint64_t guid, float dist, bool caster = false, std::uint32_t level = 0)
+{
+    UnitFact u = Typed(guid, 100 + static_cast<std::uint32_t>(guid), dist, kCreatureHumanoid);
+    u.caster = caster;
+    u.level = level;
+    return u;
+}
+
+// Fails on the plan-only picker (no cc order: every unit unlisted).
+static void TestAutoCcMarksUnlistedUnits()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(r, f) == "cc moon 9 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 8 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 7 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+}
+
+static void TestAutoCcStopsAtTheThreshold()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph), AutoCcMem("Magefour", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
+    CHECK(Tick(r, f) == "pullback 1"); // 8 - 2 = 6, not over 6
+    CHECK(r.ccHolds.size() == 2);
+}
+
+static void TestAutoCcCastersFirstThenPlanRank()
+{
+    // The plan's rank outranks the caster rule; between listed units the rank decides.
+    DungeonPlan plan = CcPlan({200, 201, 202});
+    Run r = Start(&plan);
+    Facts f = AutoParty(0);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    UnitFact listedCaster = AutoHumanoid(10, 12, true);
+    listedCaster.entry = 200;
+    UnitFact listedA = AutoHumanoid(11, 14);
+    listedA.entry = 201;
+    UnitFact listedB = AutoHumanoid(12, 16);
+    listedB.entry = 202;
+    UnitFact unlistedCaster = AutoHumanoid(13, 30, true);
+    UnitFact unlisted = AutoHumanoid(14, 25);
+    f.units = {listedCaster, listedA, listedB, unlistedCaster, unlisted};
+    CHECK(Tick(r, f) == "cc moon 10 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 11 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 12 Magethree polymorph");
+
+    // No plan list: the casters go first (the farther one first), though a non-caster stands farther still.
+    DungeonPlan plain = CcPlan({});
+    Run p = Start(&plain);
+    Facts g = AutoParty(0);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph)};
+    g.units = {AutoHumanoid(20, 22), AutoHumanoid(21, 20, true), AutoHumanoid(22, 12), AutoHumanoid(23, 18, true)};
+    CHECK(Tick(p, g) == "cc moon 21 Magey polymorph");
+    CHECK(Tick(p, g) == "cc square 23 Magetwo polymorph");
+}
+
+static void TestAutoCcPicksTheFamilyThatFits()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Druidy", CcFamily::Hibernate)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 200, 20, kCreatureBeast)};
+        CHECK(Tick(r, f) == "cc moon 2 Druidy hibernate");
+        CHECK(r.note.find("Hibernate") != std::string::npos);
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 200, 20, kCreatureUndead)};
+        CHECK(Tick(r, f) == "cc moon 2 Priesty shackleundead");
+    }
+    {
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Locky", CcFamily::Banish)};
+        f.units = {AutoHumanoid(1, 10), Typed(2, 300, 20, kCreatureDemon)};
+        CHECK(Tick(r, f) == "cc moon 2 Locky banish");
+    }
+    {
+        // A beast immune to Polymorph: the druid's Hibernate fits it.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Druidy", CcFamily::Hibernate)};
+        UnitFact beast = Typed(2, 200, 20, kCreatureBeast);
+        beast.ccImmune = CcBit(CcFamily::Polymorph);
+        f.units = {Typed(1, 201, 10, kCreatureBeast), beast}; // the farther one is the immune one
+        CHECK(Tick(r, f) == "cc moon 2 Druidy hibernate");
+        CHECK(r.note.find("Hibernate") != std::string::npos);
+    }
+    {
+        // Immune to the only family the party has: nothing goes out, and the note says so.
+        DungeonPlan plan = CcPlan({});
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Hunty", CcFamily::FreezingTrap)};
+        UnitFact near = AutoHumanoid(1, 10);
+        near.ccImmune = CcBit(CcFamily::FreezingTrap);
+        UnitFact humanoid = AutoHumanoid(2, 20);
+        humanoid.ccImmune = CcBit(CcFamily::FreezingTrap);
+        f.units = {near, humanoid};
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+        CHECK(r.note.find("no free crowd control fits") != std::string::npos);
+    }
+}
+
+static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.killFirst = {104};
+    Run r = Start(&plan);
+    Facts f = AutoParty(0);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    UnitFact tankTarget = AutoHumanoid(101, 12);
+    UnitFact offTankHeld = AutoHumanoid(102, 14);
+    offTankHeld.victimTank = true;
+    UnitFact killFirst = AutoHumanoid(103, 16);
+    killFirst.entry = 104;
+    UnitFact focused = AutoHumanoid(105, 18);
+    UnitFact free = AutoHumanoid(106, 20);
+    UnitFact leadPick = AutoHumanoid(107, 22); // the tank's own selection, farther than the free one
+    f.units = {tankTarget, offTankHeld, killFirst, focused, free, leadPick};
+    f.leadTargetGuid = 107;
+    r.focusGuid = 105;
+    CHECK(Tick(r, f) == "cc moon 106 Magey polymorph");
+    CHECK(Tick(r, f) == "pullback 103"); // the kill_first unit is the pull's target
+    CHECK(r.ccSent.size() == 1 && r.ccSent.count(106) == 1);
+}
+
+static void TestAutoCcSevenMarks()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(2);
+    for (int i = 1; i <= 7; ++i)
+        f.members.push_back(AutoCcMem("Mage" + std::to_string(i), CcFamily::Polymorph));
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    f.raidIcons[0] = 0x9999; // a player's star: never moved
+    char const* const marks[] = {"moon", "square", "diamond", "triangle", "circle", "cross"};
+    for (int i = 0; i < 6; ++i)
+    {
+        std::string const guid = std::to_string(9 - i);
+        CHECK(Tick(r, f) == std::string("cc ") + marks[i] + " " + guid + " Mage" + std::to_string(i + 1) +
+            " polymorph");
+    }
+    CHECK(Tick(r, f) == "pullback 1"); // the seventh mark would be star: a player's
+    CHECK(r.ccSent.size() == 6);
+    CHECK(r.note.find("no free raid mark") != std::string::npos);
+}
+
+static void TestAutoCcHealersKept()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.raid.on = true;
+    MemberFact priestA = AutoCcMem("PriestA", CcFamily::Shackle);
+    MemberFact priestB = AutoCcMem("PriestB", CcFamily::Shackle);
+    MemberFact healA = AutoCcMem("HealA", CcFamily::None);
+    MemberFact healB = AutoCcMem("HealB", CcFamily::None);
+    MemberFact healC = AutoCcMem("HealC", CcFamily::None);
+    for (MemberFact* m : {&priestA, &priestB, &healA, &healB, &healC})
+        m->healer = true;
+    f.members = {priestA, priestB, healA, healB, healC};
+    for (std::uint64_t guid = 1; guid <= 4; ++guid)
+        f.units.push_back(Typed(guid, 200 + static_cast<std::uint32_t>(guid), 10.0f + static_cast<float>(guid),
+            kCreatureUndead));
+    CHECK(Tick(r, f) == "cc moon 4 PriestA shackleundead"); // 5 healers - 1 stays 4 free
+    CHECK(Tick(r, f) == "pullback 1");        // the second priest would leave 3
+    CHECK(r.ccHolds.size() == 1);
+    CHECK(r.note.find("no free crowd control fits") != std::string::npos);
+}
+
+static void TestAutoCcFearOnlyWithRoomAndKey()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        CHECK(Tick(r, f) == "pullback 1"); // the risky key is off
+        CHECK(r.ccSent.empty());
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 20.0f; // not enough room to run
+        CHECK(Tick(r, f) == "pullback 1");
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 40.0f;
+        CHECK(Tick(r, f) == "cc moon 2 Locky fear");
+        CHECK(r.note.find("Fear") != std::string::npos);
+    }
+    {
+        // A family that fits goes before the fear.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.autoCcRisky = true;
+        f.members = {AutoCcMem("Locky", CcFamily::Fear), AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        f.units[1].fleeRoomYd = 40.0f;
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
+// A warlock holding a succubus, assigned a humanoid: the automatic pick is
+// Seduction, and its order names it. The warlock's Fear row sits above
+// Seduction, so without the family the mark would run the mob into the next
+// pack. Every class row consults the same gate (CcOrderFamilyAllows): only the
+// ordered family may fire; a hand-written order carries none and is unchanged.
+static void TestAutoCcSeductionOrderNamesItsFamily()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Locky", CcFamily::None)};
+    f.members[0].succubus = true;
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(r, f) == "cc moon 2 Locky seduction");
+    auto const hold = r.ccHolds.find(2);
+    CHECK(hold != r.ccHolds.end() && hold->second.family == CcFamily::Seduction && hold->second.autoOrder);
+
+    // The trigger gate: a Seduction order never lets Fear fire, a Fear order
+    // never lets Seduction fire, and no family leaves every row as before.
+    CHECK(CcOrderFamilyAllows("seduction", "seduction"));
+    CHECK(!CcOrderFamilyAllows("seduction", "fear"));
+    CHECK(!CcOrderFamilyAllows("fear", "seduction"));
+    CHECK(CcOrderFamilyAllows("fear", "fear"));
+    CHECK(CcOrderFamilyAllows("none", "fear"));
+    CHECK(CcOrderFamilyAllows("", "seduction"));
+    CHECK(CcOrderFamilyAllows("none", "seduction"));
+
+    // Risky off: a fear-only party never sends a fear order, whatever the room.
+    Run s = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Locky", CcFamily::Fear)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    g.units[1].fleeRoomYd = 40.0f;
+    CHECK(Tick(s, g) == "pullback 1");
+    CHECK(s.ccSent.empty());
+}
+
+// The glue answers every run order (CcOrderTaken). An automatic cc order that was refused assigned nothing: the
+// unit, its bot, its mark, the order budget and the spacing go back, so the next tick may pick it again. Accepted
+// orders keep their hold; a refused re-apply keeps the existing hold and only gives back the order's cost.
+static void TestAutoCcRefusedOrderIsNoHold()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        // Pre-pull: the refused mark is no hold, and the next tick sends it again.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 2 Magey polymorph");
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+        CcOrderTaken(r, order, true); // accepted: the hold stands
+        CHECK(r.ccAutoPending.order.empty() && r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1);
+
+        Run q = Start(&plan);
+        Facts g = f;
+        std::string const refused = Tick(q, g);
+        CHECK(refused == order);
+        CcOrderTaken(q, refused, false);
+        CHECK(q.ccSent.empty() && q.ccHolds.empty() && q.ccWatch.empty() && q.ccIcons.empty());
+        CHECK(q.ccAutoOrders == 0);
+        CHECK(Tick(q, g) == refused); // the pick is free again
+    }
+    {
+        // A fight joiner: the refusal gives the budget and the spacing back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(900, 20));
+        std::string const order = Tick(r, f);
+        CHECK(order == "cc moon 900 Magey polymorph");
+        CHECK(r.ccAutoOrders == 1 && r.ccSent.count(900) == 1);
+        CcOrderTaken(r, order, false);
+        CHECK(r.ccAutoOrders == 0 && !r.ccSent.count(900) && !r.ccHolds.count(900) && r.ccWatch.empty());
+        CHECK(Tick(r, f) == order); // the joiner is picked again
+    }
+    {
+        // A refused re-apply: the hold and its mark stay, the budget and the re-apply count go back.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+        std::string const first = Tick(r, f);
+        CHECK(first == "cc moon 2 Magey polymorph");
+        CcOrderTaken(r, first, true);
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        f.members[0].inCombat = true;
+        f.units[1].polymorphed = true;
+        CHECK(Tick(r, f).empty()); // the aura lands
+        f.units[1].polymorphed = false;
+        CHECK(Tick(r, f).empty()); // 1 s
+        std::string const again = Tick(r, f); // the aura broke: re-apply
+        CHECK(again == "cc moon 2 Magey polymorph");
+        CHECK(r.ccReapplied[2] == 1 && r.ccAutoOrders == 2);
+        CcOrderTaken(r, again, false);
+        CHECK(r.ccSent.count(2) == 1 && r.ccHolds.count(2) == 1); // still the run's hold
+        CHECK(r.ccReapplied.find(2) == r.ccReapplied.end() && r.ccAutoOrders == 1);
+        CHECK(Tick(r, f) == again); // retried at once
+    }
+}
+
+static void TestAutoCcLevelGap()
+{
+    DungeonPlan plan = CcPlan({});
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    UnitFact held = AutoHumanoid(1, 10, false, 60);
+    held.polymorphed = true; // not a candidate: the level gap decides on unit 2 alone
+    f.units = {held, AutoHumanoid(2, 20, false, 64)};
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f) == "pullback 1"); // +4 levels: another bot's
+    }
+    f.units[1].level = 63;
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // +3 is the core's hit chance's edge
+    }
+}
+
+static void TestAutoCcJoinerInTheFight()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60), AutoCcMem("Magetwo", CcFamily::Polymorph, 60)};
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    std::vector<UnitFact> engaged;
+    for (std::uint64_t guid = 100; guid <= 107; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        engaged.push_back(hit);
+    }
+    UnitFact joiner = AutoHumanoid(900, 25);
+    engaged.push_back(joiner);
+    UnitFact second = AutoHumanoid(902, 20);
+    engaged.push_back(second);
+    UnitFact tankTarget = AutoHumanoid(901, 18);
+    engaged.push_back(tankTarget);
+    UnitFact liveKill = AutoHumanoid(903, 30); // the fight's own kill_first read: killed, never held
+    engaged.push_back(liveKill);
+    f.killFirst = {liveKill};
+    f.partyAttackers = engaged;
+    f.leadTargetGuid = 901;
+    CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+    CHECK(r.note.find("engaged 12 over 6") != std::string::npos);
+    CHECK(Tick(r, f).empty());                        // 1 s: the 2 s spacing
+    CHECK(Tick(r, f) == "cc square 902 Magetwo polymorph");     // 2 s
+    CHECK(r.ccSent.count(901) == 0);                  // never the tank's
+}
+
+// The fight's pull counts the mobs on the lead bot too: eight on the tank and one joiner is a pull of nine, and the
+// joiner is marked (the mutation that leaves the lead bot's attackers out of the count reads one and sends nothing).
+// A guid in two lists is one mob (adding the lists up would cross the threshold alone), and the lead bot's held mobs
+// count as held, never as more unheld bodies.
+static void TestAutoCcCountsTheLeadBotsAttackers()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.partyAttackers = {AutoHumanoid(900, 20)}; // the joiner, free
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 9 over 6") != std::string::npos);
+    }
+    {
+        // Five on the tank, one of them twice, and a joiner: six mobs, not over the threshold.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 104; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(104, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.ccSent.empty());
+    }
+    {
+        // Six on the tank, one of them twice, and a joiner: seven mobs, the joiner marked.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        UnitFact twice = AutoHumanoid(100, 15);
+        twice.partyHits = true;
+        f.partyAttackers = {twice, AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+    {
+        // One mob the tank's mark holds is a held body: seven unheld fighters, the joiner among them.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 105; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.leadAttackers.push_back({106, true}); // held by a run cc
+        f.partyAttackers = {AutoHumanoid(900, 20)};
+        CHECK(Tick(r, f) == "cc moon 900 Magey polymorph");
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+}
+
+static void TestAutoCcReappliesTwiceThenStops()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(1);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.members[0].inCombat = true;
+    f.units[1].polymorphed = true;
+    CHECK(Tick(r, f).empty()); // the aura lands
+    CHECK(r.ccLandedSeen.count(2) == 1);
+    f.units[1].polymorphed = false;
+    CHECK(Tick(r, f).empty()); // 1 s
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // 3 s: broke free, again
+    CHECK(r.note.find("broke free") != std::string::npos);
+    CHECK(Tick(r, f).empty()); // 1 s
+    CHECK(Tick(r, f).empty()); // 2 s
+    CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // 3 s: the second
+    CHECK(r.ccReapplied[2] == 2);
+    for (int i = 0; i < 3; ++i)
+        CHECK(Tick(r, f).empty()); // the limit: nothing more
+
+    // A joiner marked in the fight is an attacker: its aura lands and a break is re-applied the same way.
+    Run q = Start(&plan);
+    Facts h = AutoParty(6);
+    h.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    h.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(q, h) == "pullback 1");
+    h.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 106; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        h.partyAttackers.push_back(hit);
+    }
+    h.partyAttackers.push_back(AutoHumanoid(900, 20)); // the joiner
+    UnitFact other = AutoHumanoid(901, 18);
+    other.partyHits = true; // a second unit is on it
+    h.partyAttackers.push_back(other);
+    CHECK(Tick(q, h) == "cc moon 900 Magey polymorph");
+    h.partyAttackers[7].polymorphed = true;
+    CHECK(Tick(q, h).empty());
+    CHECK(q.ccLandedSeen.count(900) == 1);
+    h.partyAttackers[7].polymorphed = false;
+    CHECK(Tick(q, h).empty()); // 2 s since the order, the reapply waits 3
+    CHECK(Tick(q, h) == "cc moon 900 Magey polymorph");
+
+    // The fight's own read decides: a step unit the party now hits (its attacker record) is not re-applied.
+    Run s = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(s, g) == "cc moon 2 Magey polymorph");
+    CHECK(Tick(s, g) == "pullback 1");
+    g.anyInCombat = true;
+    g.members[0].inCombat = true;
+    g.units[1].polymorphed = true;
+    CHECK(Tick(s, g).empty()); // the aura lands
+    g.units[1].polymorphed = false;
+    UnitFact hit = AutoHumanoid(2, 20);
+    hit.partyHits = true;
+    g.partyAttackers = {hit};
+    for (int i = 0; i < 4; ++i)
+        CHECK(Tick(s, g).empty()); // no re-apply on a unit the party is on
+}
+
+static void TestAutoCcBudget()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    r.ccAutoOrders = kRunCcAutoOrdersPerStep; // 24 orders this step pass
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.empty());
+    CHECK(r.note.find("budget is spent") != std::string::npos);
+}
+
+static void TestAutoCcKeyOffIsToday()
+{
+    // A beast a druid could Hibernate: with the key off the plan's four families only, so nothing goes out.
+    DungeonPlan plan = CcPlan({300});
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.members = {AutoCcMem("Druidy", CcFamily::Hibernate)};
+    f.units = {AutoHumanoid(1, 10), Typed(2, 300, 20, kCreatureBeast)};
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.empty());
+
+    // The plan's four marks still cap it: nine listed humanoids and five mages give four orders.
+    DungeonPlan listed = CcPlan({200});
+    Run s = Start(&listed);
+    Facts g = Party(0);
+    for (int i = 1; i <= 5; ++i)
+        g.members.push_back(AutoCcMem("Mage" + std::to_string(i), CcFamily::Polymorph));
+    for (std::uint64_t guid = 1; guid <= 9; ++guid)
+    {
+        UnitFact u = AutoHumanoid(guid, 9.0f + static_cast<float>(guid));
+        u.entry = 200;
+        g.units.push_back(u);
+    }
+    char const* const marks[] = {"moon", "square", "diamond", "triangle"};
+    for (int i = 0; i < 4; ++i)
+    {
+        // The plan's picker takes the nearest listed unit.
+        std::string const guid = std::to_string(i + 1);
+        CHECK(Tick(s, g) == std::string("cc ") + marks[i] + " " + guid + " Mage" + std::to_string(i + 1));
+    }
+    CHECK(Tick(s, g) == "pullback 5");
+    CHECK(s.ccSent.size() == 4);
+}
+
+static void TestHealerGuardSkipsCcHolders()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.autoCc = true;
+    f.raid.healerGuard = true;
+    f.leadHasAttacker = true;
+    f.leadHit = true;
+    Run r = StartRaidTrashFight(plan, f);
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact sheepy = Mem("Sheepy", 21); // holds the run's sheep, nearer the add
+    sheepy.ranged = true;
+    sheepy.rangedDps = true;
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {tank, sheepy, near};
+    r.ccHolds[999] = Run::CcHold{"Sheepy", "moon", CcFamily::Polymorph};
+    f.units.push_back(Unit(999, 11368, 22));
+    UnitFact add = Hitter(50071, 11368, 20, true);
+    add.x = 22.0f; // Sheepy 1 yd, NearDps 2 yd
+    f.partyAttackers = {add};
+    CHECK(GuardTick(r, f) == "attack 50071 NearDps");
+    CHECK(r.healerGuardAssigned.count(50071) == 1);
+}
+
+static void TestRunCcFamilyTableKeyOffOrder()
+{
+    std::vector<CcFamily> order;
+    for (const RunCcSpell& c : kRunCc)
+        if (!c.autoOnly)
+            order.push_back(c.family);
+    CHECK(order == std::vector<CcFamily>({CcFamily::Polymorph, CcFamily::Shackle, CcFamily::Banish, CcFamily::Sap}));
+}
+
 int main()
 {
+    TestAutoCcMarksUnlistedUnits();
+    TestAutoCcStopsAtTheThreshold();
+    TestAutoCcCastersFirstThenPlanRank();
+    TestAutoCcPicksTheFamilyThatFits();
+    TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
+    TestAutoCcSevenMarks();
+    TestAutoCcHealersKept();
+    TestAutoCcFearOnlyWithRoomAndKey();
+    TestAutoCcSeductionOrderNamesItsFamily();
+    TestAutoCcRefusedOrderIsNoHold();
+    TestAutoCcLevelGap();
+    TestAutoCcJoinerInTheFight();
+    TestAutoCcCountsTheLeadBotsAttackers();
+    TestAutoCcReappliesTwiceThenStops();
+    TestAutoCcBudget();
+    TestAutoCcKeyOffIsToday();
+    TestHealerGuardSkipsCcHolders();
+    TestRunCcFamilyTableKeyOffOrder();
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();
     TestLinkedDeathNoteIsAppendedToTheFightLine();

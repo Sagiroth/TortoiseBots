@@ -149,6 +149,10 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunStandClearance = config.GetBoolDefault("AiPlayerbot.DungeonRunStandClearance", false);
     dungeonRunStandPullPreCc = config.GetBoolDefault("AiPlayerbot.DungeonRunStandPullPreCc", false);
     dungeonRunStandDiscipline = config.GetBoolDefault("AiPlayerbot.DungeonRunStandDiscipline", false);
+    dungeonRunAutoCc = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCc", false);
+    dungeonRunAutoCcAbove = static_cast<uint32>(std::min(40, std::max(2,
+        config.GetIntDefault("AiPlayerbot.DungeonRunAutoCcAbove", 6))));
+    dungeonRunAutoCcRisky = config.GetBoolDefault("AiPlayerbot.DungeonRunAutoCcRisky", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);
     dungeonRunRetreatAt2Dead = config.GetBoolDefault("AiPlayerbot.DungeonRunRetreatAt2Dead", false);
     dungeonRunWalkBackRescue = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackRescue", true);

@@ -6124,7 +6124,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] [family] / cc clear <bot> [<mark> <guid>] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / gossip <npc entry> <bot> <option number|\"option text\"> / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
         return true;
     }
 
@@ -6457,6 +6457,8 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             }
         }
         namedAi->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set("none");
+        if (ai::Value<std::string>* familyValue = namedAi->GetAiObjectContext()->GetValue<std::string>("run cc family"))
+            familyValue->Set("none");
         sPlayerbotDbStore.Save(namedAi);
         if (iconIndex >= 0 && order.group &&
             order.group->GetTargetIcon(static_cast<uint8>(iconIndex)).GetRawValue() == iconGuid)
@@ -6465,10 +6467,10 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
 
-    // cc <mark> <guid> [bot]
-    if (parts.size() < 2 || parts.size() > 3)
+    // cc <mark> <guid> [bot] [family]
+    if (parts.size() < 2 || parts.size() > 4)
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot] [family]");
         return true;
     }
     std::string mark = parts[0];
@@ -6480,7 +6482,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
     std::string ccIntent = "cc " + mark;
-    if (parts.size() == 3)
+    if (parts.size() >= 3)
     {
         Player* named = FindCommandedBot(order, parts[2]);
         if (!named)
@@ -6495,6 +6497,14 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             return true;
         }
         ccIntent += " " + std::string(named->GetName());
+    }
+    if (parts.size() == 4)
+    {
+        // The run leader's automatic pick names the family it chose: the bot
+        // then fires only that class row on the mark.
+        std::string const family = TortoiseBots::DungeonRun::CcFamilyTokenNorm(parts[3]);
+        if (!family.empty() && family != "none")
+            ccIntent += " " + family;
     }
     Unit* target = ResolveOrderTarget(handler, intent, order, parts[1]);
     if (!target)
@@ -7828,19 +7838,49 @@ bool KnowsPolymorph(Player* bot)
     return KnowsAny(bot, TortoiseBots::DungeonRun::kPolymorphSpells);
 }
 
-// The run cc a bot knows besides Polymorph (DungeonRun::MemberFact::cc,
-// issue #1159), by its class: a priest's Shackle Undead, a warlock's Banish,
-// a rogue's Sap.
+// The run cc a bot knows besides Polymorph (DungeonRun::MemberFact::cc), by
+// its class: a priest's Shackle Undead, a warlock's Banish and Fear, a rogue's
+// Sap, a druid's Hibernate, a hunter's Freezing Trap (the trap spell, not its
+// aura) and Scare Beast, a paladin's Repentance (a talent). Read at most once
+// per 5 s a bot: HasSpell walks the spell book.
+struct KnownRunCcRead
+{
+    uint32 atMs = 0;
+    uint32 cc = 0;
+};
+std::map<uint64, KnownRunCcRead>& KnownRunCcReads()
+{
+    static std::map<uint64, KnownRunCcRead> reads;
+    return reads;
+}
+
 uint32 KnownRunCc(Player* bot)
 {
     using namespace TortoiseBots::DungeonRun;
+    KnownRunCcRead& read = KnownRunCcReads()[bot->GetObjectGuid().GetRawValue()];
+    uint32 const now = WorldTimer::getMSTime();
+    if (read.atMs != 0 && WorldTimer::getMSTimeDiff(read.atMs, now) < 5000)
+        return read.cc;
+    read.atMs = now;
+    uint32 cc = 0;
     switch (bot->GetClass())
     {
-        case CLASS_PRIEST: return KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0;
-        case CLASS_WARLOCK: return KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0;
-        case CLASS_ROGUE: return KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0;
-        default: return 0;
+        case CLASS_PRIEST: cc = KnowsAny(bot, kShackleUndeadSpells) ? CcBit(CcFamily::Shackle) : 0; break;
+        case CLASS_WARLOCK:
+            cc = (KnowsAny(bot, kBanishSpells) ? CcBit(CcFamily::Banish) : 0) |
+                (KnowsAny(bot, kFearSpells) ? CcBit(CcFamily::Fear) : 0);
+            break;
+        case CLASS_ROGUE: cc = KnowsAny(bot, kSapSpells) ? CcBit(CcFamily::Sap) : 0; break;
+        case CLASS_DRUID: cc = KnowsAny(bot, kHibernateSpells) ? CcBit(CcFamily::Hibernate) : 0; break;
+        case CLASS_HUNTER:
+            cc = (KnowsAny(bot, kFreezingTrapSpells) ? CcBit(CcFamily::FreezingTrap) : 0) |
+                (KnowsAny(bot, kScareBeastSpells) ? CcBit(CcFamily::ScareBeast) : 0);
+            break;
+        case CLASS_PALADIN: cc = KnowsAny(bot, kRepentanceSpells) ? CcBit(CcFamily::Repentance) : 0; break;
+        default: break;
     }
+    read.cc = cc;
+    return cc;
 }
 
 template <std::size_t N>
@@ -7862,7 +7902,10 @@ uint32 RunCcImmune(Creature* creature)
     struct FamilySpell { CcFamily family; uint32 spell; };
     static FamilySpell const families[] = {
         { CcFamily::Polymorph, kPolymorphSpells[0] }, { CcFamily::Shackle, kShackleUndeadSpells[0] },
-        { CcFamily::Banish, kBanishSpells[0] }, { CcFamily::Sap, kSapSpells[0] } };
+        { CcFamily::Banish, kBanishSpells[0] }, { CcFamily::Sap, kSapSpells[0] },
+        { CcFamily::Hibernate, kHibernateSpells[0] }, { CcFamily::FreezingTrap, kFreezingTrapAuras[0] },
+        { CcFamily::Seduction, kSeductionSpells[0] }, { CcFamily::Repentance, kRepentanceSpells[0] },
+        { CcFamily::Fear, kFearSpells[0] }, { CcFamily::ScareBeast, kScareBeastSpells[0] } };
     uint32 const templateMask = creature->GetCreatureInfo() ? creature->GetCreatureInfo()->mechanic_immune_mask : 0;
     uint32 immune = 0;
     for (FamilySpell const& entry : families)
@@ -7877,13 +7920,15 @@ uint32 RunCcImmune(Creature* creature)
     return immune;
 }
 
-// A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed):
-// Polymorph, Shackle Undead, Banish or Sap.
+// A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
+// any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
 {
     using namespace TortoiseBots::DungeonRun;
     return HasAnyAura(unit, kPolymorphSpells) || HasAnyAura(unit, kShackleUndeadSpells) ||
-        HasAnyAura(unit, kBanishSpells) || HasAnyAura(unit, kSapSpells);
+        HasAnyAura(unit, kBanishSpells) || HasAnyAura(unit, kSapSpells) || HasAnyAura(unit, kHibernateSpells) ||
+        HasAnyAura(unit, kFreezingTrapAuras) || HasAnyAura(unit, kSeductionSpells) ||
+        HasAnyAura(unit, kRepentanceSpells) || HasAnyAura(unit, kFearSpells) || HasAnyAura(unit, kScareBeastSpells);
 }
 
 // In this fight: a party bot is its victim or attacks it.
@@ -8449,6 +8494,48 @@ Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, Tortoise
     return nullptr;
 }
 
+// The fear families' room (DungeonRun::UnitFact::fleeRoomYd): how far the unit stands from the nearest living
+// creature the read already lists that is not one of the row's own pack. Only the lists that carry a place (a
+// patroller's, residue, an attacker's) can tell; -1 when none of them does (no room read, so no fear family is
+// picked on it). No grid visit of its own.
+float FleeRoomYd(Unit* unit, TortoiseBots::DungeonRun::Facts const& f)
+{
+    using TortoiseBots::DungeonRun::UnitFact;
+    float best = -1.0f;
+    auto const eachList = [&](std::vector<UnitFact> const& list)
+    {
+        for (UnitFact const& u : list)
+        {
+            if (!u.guid || (u.x == 0.0f && u.y == 0.0f))
+                continue;
+            float const dx = u.x - unit->GetPositionX();
+            float const dy = u.y - unit->GetPositionY();
+            float const dz = u.z - unit->GetPositionZ();
+            float const yd = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (best < 0.0f || yd < best)
+                best = yd;
+        }
+    };
+    eachList(f.patrollers);
+    eachList(f.standPatrols);
+    eachList(f.packResidue);
+    eachList(f.partyAttackers);
+    eachList(f.raid.walkAttackers);
+    eachList(f.engagedUnits);
+    return best;
+}
+
+// The unit's room to run, only while the automatic crowd control's risky key is on and a fear family fits it.
+float FearRoomFor(Unit* unit, uint32 creatureType, uint32 ccImmune, TortoiseBots::DungeonRun::Facts const& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!sPlayerbotAIConfig.dungeonRunAutoCc || !sPlayerbotAIConfig.dungeonRunAutoCcRisky)
+        return -1.0f;
+    bool const fear = CcFits(CcFamily::Fear, creatureType) && !(ccImmune & CcBit(CcFamily::Fear));
+    bool const scare = CcFits(CcFamily::ScareBeast, creatureType) && !(ccImmune & CcBit(CcFamily::ScareBeast));
+    return fear || scare ? FleeRoomYd(unit, f) : -1.0f;
+}
+
 // In a fight: what the run's guard of the party needs (DungeonRun::GuardTarget).
 // Whether the lead bot is a tank on "stay" and holds a mob in melee reach, and
 // the mobs that have a party bot within kGuardYd of it as their victim, each
@@ -8537,6 +8624,15 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
             f.leadHasAttacker = true;
         }
+        // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
+        // in melee reach above is only EngageTarget's pick).
+        std::unordered_set<uint64> seenLead;
+        for (Unit* attacker : lead->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
+                !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
+                f.leadAttackers.push_back(
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -8547,6 +8643,20 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     // One entry per mob in each list: a mob has one victim, the sets keep a repeat of it out.
     std::unordered_set<uint64> seen;
     std::unordered_set<uint64> seenWalk;
+    // The units a living party bot or pet has as its victim: the party hits those (DungeonRun::UnitFact::partyHits;
+    // the automatic crowd control never marks a unit someone is on).
+    std::unordered_set<uint64> partyVictims;
+    for (Player* bot : bots)
+    {
+        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap())
+            continue;
+        if (Unit* victim = bot->GetVictim())
+            partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+        if (Pet* pet = bot->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                if (Unit* victim = pet->GetVictim())
+                    partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+    }
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
     // `tankVictim`: the victim is a tank (an off-tank holding the mob). `toParty`: the victim is within kGuardYd of the
     // lead bot (the mobs go in f.partyAttackers, as on dev); `toWalk`: the walk read is on (the mobs in the band go in
@@ -8576,6 +8686,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
+            fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
+            fact.level = attacker->GetLevel();
+            fact.partyHits = partyVictims.count(fact.guid) != 0;
+            fact.fleeRoomYd = FearRoomFor(attacker, fact.creatureType, fact.ccImmune, f);
             fact.engaged = true;
             bool const melee = attacker->CanReachWithMeleeAutoAttack(victim);
             fact.hitting = melee || (!attacker->IsMoving() && attacker->IsNonMeleeSpellCasted(false));
@@ -10303,6 +10419,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.standDiscipline = sPlayerbotAIConfig.dungeonRunStandDiscipline;
     // The CC before the walk in (DungeonRun::NextStandPull): the approach row holds outside the pack's wake reach.
     f.standPullPreCc = sPlayerbotAIConfig.dungeonRunStandPullPreCc;
+    // The automatic crowd control (DungeonRun::RunAutoCcPickOrder): off, no candidate or bot rule is read, and the
+    // four plan families and marks stay byte-identical.
+    f.autoCc = sPlayerbotAIConfig.dungeonRunAutoCc;
+    f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;
+    f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
@@ -10326,6 +10447,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.leadLeadsGroup = leadGroup->IsLeader(lead->GetObjectGuid());
         }
     f.leadAlive = lead->IsAlive();
+    // The tank's own selection: never crowd-controlled (DungeonRun::RunAutoCcPickOrder, RunAutoCcFightTick).
+    f.leadTargetGuid = f.autoCc ? lead->GetSelectionGuid().GetRawValue() : 0;
     // Whose attack rules say whether the group can attack a unit (UnitFact::attackable), as `cmd attack` judges it.
     Player* const judge = RunJudge(lead, bots);
     // The instance's doors: a living lead bot raised at another wing's door (DungeonRun::LeadInOtherPart).
@@ -10494,6 +10617,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.dz = bot->GetMap() == lead->GetMap() ? bot->GetPositionZ() - lead->GetPositionZ() : 0.0f;
         member.polymorph = bot->GetClass() == CLASS_MAGE && KnowsPolymorph(bot);
         member.cc = KnownRunCc(bot);
+        // The automatic crowd control's bot rules (DungeonRun::RunCcBotFor): a tank is never one, a healer only
+        // while kRunCcHealersKept stay free, and a warlock with a live succubus may Seduce.
+        member.healer = f.raid.on ? isHeal : PlayerbotAI::IsHeal(bot);
+        member.tank = f.raid.on ? isTank : PlayerbotAI::IsTank(bot);
+        member.level = bot->GetLevel();
+        if (bot->GetClass() == CLASS_WARLOCK)
+        {
+            Pet* const pet = bot->GetPet();
+            member.succubus = pet && pet->IsAlive() && pet->IsInWorld() && pet->GetCreatureInfo() &&
+                pet->GetCreatureInfo()->beast_family == CREATURE_FAMILY_SUCCUBUS;
+        }
         member.x = bot->GetPositionX(); // the stand-still watch (DungeonRun::UpdateStill)
         member.y = bot->GetPositionY();
         member.z = bot->GetPositionZ();
@@ -10872,6 +11006,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.polymorphed = RunCcHeld(creature);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
+                    unit.level = creature->GetLevel();
+                    unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
                     unit.attackable = GroupCanAttack(judge, creature); // never pulled when it cannot be attacked
                     // The pull stand: can the tank shoot it from where it stands (one ray, key on only, or any
                     // stand-pull boss or pull step whatever the key says, or the stand discipline's key).
@@ -11128,6 +11265,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.polymorphed = RunCcHeld(creature);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
+                    unit.level = creature->GetLevel();
+                    unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
                     unit.attackable = GroupCanAttack(judge, creature); // never engaged when it cannot be attacked
                     // Awake and fighting: the unit the tank takes (DungeonRun::HoldEngageTarget).
                     Unit* const victim = creature->GetVictim();
@@ -11656,6 +11796,23 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
         seen.insert(known.guid);
     if (f.leadHasAttacker)
         seen.insert(f.leadAttacker.guid);
+    // The units a living party bot, pet or player has as its victim: the party hits those (UnitFact::partyHits).
+    std::unordered_set<uint64> partyVictims;
+    for (Player* member : bots)
+    {
+        if (!member->IsAlive() || !member->IsInWorld() || member->GetMap() != lead->GetMap())
+            continue;
+        if (Unit* victim = member->GetVictim())
+            partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+        if (Pet* pet = member->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                if (Unit* victim = pet->GetVictim())
+                    partyVictims.insert(victim->GetObjectGuid().GetRawValue());
+    }
+    for (Player* member : players)
+        if (member->IsAlive() && member->IsInWorld())
+            if (Unit* victim = member->GetVictim())
+                partyVictims.insert(victim->GetObjectGuid().GetRawValue());
     for (Player* player : players)
     {
         if (!player->IsAlive() || !player->IsInWorld() || player->GetMap() != lead->GetMap() ||
@@ -11673,6 +11830,12 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.creatureType = attacker->GetCreatureType();
+            fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
+            fact.level = attacker->GetLevel();
+            fact.partyHits = partyVictims.count(fact.guid) != 0;
+            fact.fleeRoomYd = FearRoomFor(attacker, fact.creatureType, fact.ccImmune, f);
             fact.engaged = true;
             bool const melee = attacker->CanReachWithMeleeAutoAttack(player);
             fact.hitting = melee || (!attacker->IsMoving() && attacker->IsNonMeleeSpellCasted(false));
@@ -12344,6 +12507,9 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             return;
         // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
         TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
+        // An automatic cc order that was refused assigned nothing: its unit,
+        // bot, mark, budget and spacing go back for the next pick.
+        TortoiseBots::DungeonRun::CcOrderTaken(it->second.run, order, accepted);
         if (accepted && captured.movePathRead)
             TortoiseBots::DungeonRun::NoteMovePathType(it->second.run, order, captured.movePathType);
         // A stalled walk's `direct` move refused: the walk goes on without it (DungeonRun::StallDirectRefused).
