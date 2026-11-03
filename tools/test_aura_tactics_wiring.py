@@ -56,10 +56,17 @@ def body(text, start, end="\n}\n"):
 
 class RowGateWiring(unittest.TestCase):
     def test_the_scan_gates_each_row_on_the_boss_health_and_the_bot_aura(self):
-        # The band reads the unit that activated the row (the first living of the boss entry the scan sees), never
-        # an add's health: NX-46's "gate on the add's own health" is deliberately not supported.
+        # The band reads one unit of the boss entry, never an add's health (NX-46's "gate on the add's own health" is
+        # deliberately not supported) and never whichever attacker the scan met first: PickBossGateUnit picks the
+        # same-entry unit with the highest max health, so a low-health clone cannot open a phase row.
         scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
-        self.assertIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
+        self.assertIn("std::vector<std::vector<Unit*>> entryUnits;", scan)
+        self.assertIn("gateUnit.maxHealth = unit->GetMaxHealth();", scan)
+        self.assertIn("gateUnit.hpPct = static_cast<int>(unit->GetHealthPercent());", scan)
+        self.assertIn("const int gatePick = PickBossGateUnit(gateUnits);", scan)
+        self.assertIn("int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;", scan)
+        # No row is gated on the loop's own unit any more (the old first-attacker pick).
+        self.assertNotIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
         self.assertIn("bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;", scan)
         self.assertIn("RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura))", scan)
         self.assertIn("fight.rows.push_back(&row);", scan)
@@ -80,6 +87,17 @@ class RowGateWiring(unittest.TestCase):
         self.assertIn("std::uint8_t hpMin = 0;", POLICY)
         self.assertIn("std::uint8_t hpMax = 100;", POLICY)
         self.assertIn("std::uint32_t botAura = 0;", POLICY)
+        # The band's unit is picked from the entry's units, not from their order: max health, then current %,
+        # then guid.
+        self.assertIn("inline int PickBossGateUnit(const std::vector<BossGateUnit>& units)", POLICY)
+        pick = body(POLICY, "inline bool BossGateUnitBefore(", "\n    }\n")
+        self.assertIn("a.maxHealth > b.maxHealth", pick)
+        self.assertIn("a.hpPct > b.hpPct", pick)
+        self.assertIn("a.guid < b.guid", pick)
+        # Both orders of the same two units must agree; a first-seen pick trips this.
+        self.assertIn("CHECK(bossPick == 0);", POLICY_TEST)
+        self.assertIn("CHECK(clonePick == 1);", POLICY_TEST)
+        self.assertIn("CHECK(RowGateOpen(band, true, cloneFirst[0].hpPct, false));", POLICY_TEST)
 
     def test_only_a_scan_read_kind_may_gate(self):
         add = body(POLICY, "bool Add(const BossTacticRow& row)", "\n        }\n")

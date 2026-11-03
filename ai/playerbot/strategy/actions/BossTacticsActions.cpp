@@ -582,7 +582,10 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
-    std::vector<uint32> seen;
+    // The living units of each entry the fight sees, in the order the attackers list showed them; an entry's rows are
+    // loaded once, in its first-seen order.
+    std::vector<std::uint32_t> seen;
+    std::vector<std::vector<Unit*>> entryUnits;
     for (const ObjectGuid& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
@@ -590,14 +593,34 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             continue;
         fight.units.push_back(unit);
         const uint32 entry = unit->GetEntry();
-        if (std::find(seen.begin(), seen.end(), entry) != seen.end())
-            continue;
-        seen.push_back(entry);
-        const std::vector<BossTacticRow>* rows = table.Rows(mapId, entry);
+        const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
+        if (known == seen.end())
+        {
+            seen.push_back(entry);
+            entryUnits.push_back(std::vector<Unit*>(1, unit));
+        }
+        else
+            entryUnits[known - seen.begin()].push_back(unit);
+    }
+    for (std::size_t i = 0; i < seen.size(); ++i)
+    {
+        const std::vector<BossTacticRow>* rows = table.Rows(mapId, seen[i]);
         if (rows)
         {
-            // The gate reads the health of the boss entry the row hangs on, the unit that activated it, never an add's.
-            int const bossHpPct = static_cast<int>(unit->GetHealthPercent());
+            // The band reads one unit of the row's boss entry, never an add's: of the same-entry attackers the one with
+            // the highest max health (the real boss over its clones and adds), the highest current %, then the lowest
+            // guid. A first-seen pick would let a low-health clone open a phase row.
+            std::vector<BossGateUnit> gateUnits;
+            for (Unit* unit : entryUnits[i])
+            {
+                BossGateUnit gateUnit;
+                gateUnit.maxHealth = unit->GetMaxHealth();
+                gateUnit.hpPct = static_cast<int>(unit->GetHealthPercent());
+                gateUnit.guid = unit->GetObjectGuid().GetRawValue();
+                gateUnits.push_back(gateUnit);
+            }
+            const int gatePick = PickBossGateUnit(gateUnits);
+            int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;
             bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
             for (const BossTacticRow& row : *rows)
             {

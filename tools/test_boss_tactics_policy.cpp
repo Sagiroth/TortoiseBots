@@ -280,6 +280,59 @@ int main()
         CHECK(!RowGateSet(plain));
     }
 
+    // Row gates: the band reads one unit of the boss entry, never whichever attacker the scan met first. Of the
+    // same-entry attackers it is the highest max health (the real boss over its clones and adds), the highest current
+    // %, then the lowest guid, so both orders of the same fight open or close a row alike.
+    {
+        BossTacticRow band = Gated(Row(309, 15263, BossTacticKind::DpsHoldAfter, 0, 0, 0, 3.0f), 0, 75);
+        BossGateUnit boss;
+        boss.maxHealth = 200000;
+        boss.hpPct = 80;  // the real boss is out of the band, so the row stays closed
+        boss.guid = 200;
+        BossGateUnit clone;
+        clone.maxHealth = 50000;
+        clone.hpPct = 10;  // a first-seen pick would open the phase row on the clone
+        clone.guid = 100;
+        std::vector<BossGateUnit> bossFirst;
+        bossFirst.push_back(boss);
+        bossFirst.push_back(clone);
+        std::vector<BossGateUnit> cloneFirst;
+        cloneFirst.push_back(clone);
+        cloneFirst.push_back(boss);
+        const int bossPick = PickBossGateUnit(bossFirst);
+        const int clonePick = PickBossGateUnit(cloneFirst);
+        CHECK(bossPick == 0);
+        CHECK(clonePick == 1);
+        CHECK(bossFirst[bossPick].hpPct == cloneFirst[clonePick].hpPct);
+        CHECK(!RowGateOpen(band, true, bossFirst[bossPick].hpPct, false));
+        CHECK(!RowGateOpen(band, true, cloneFirst[clonePick].hpPct, false));
+        // A first-seen pick would have opened the row on the clone: the case the authoritative pick exists for.
+        CHECK(RowGateOpen(band, true, cloneFirst[0].hpPct, false));
+        // Equal max health: the highest current % decides, whichever came first.
+        BossGateUnit woundedBoss = boss;
+        woundedBoss.maxHealth = clone.maxHealth;
+        woundedBoss.hpPct = 40;
+        std::vector<BossGateUnit> woundedFirst;
+        woundedFirst.push_back(woundedBoss);
+        woundedFirst.push_back(clone);  // 10 %
+        CHECK(PickBossGateUnit(woundedFirst) == 0);
+        std::vector<BossGateUnit> woundedLast;
+        woundedLast.push_back(clone);
+        woundedLast.push_back(woundedBoss);
+        CHECK(PickBossGateUnit(woundedLast) == 1);
+        // Equal max health and health: the lowest guid decides.
+        BossGateUnit older = clone;
+        older.guid = 50;
+        std::vector<BossGateUnit> guidOrder;
+        guidOrder.push_back(clone);  // guid 100
+        guidOrder.push_back(older);  // guid 50
+        CHECK(PickBossGateUnit(guidOrder) == 1);
+        std::vector<BossGateUnit> guidOrderReversed;
+        guidOrderReversed.push_back(older);
+        guidOrderReversed.push_back(clone);
+        CHECK(PickBossGateUnit(guidOrderReversed) == 0);
+        CHECK(PickBossGateUnit(std::vector<BossGateUnit>()) == -1);
+    }
     // Loader: the band is a percentage range, the duplicate key includes it, and only a scan-read kind may gate.
     {
         BossTacticTable table;

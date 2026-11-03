@@ -177,8 +177,8 @@ namespace ai
 
     // Whether a row is open for this bot right now. `keyOn` is AiPlayerbot.DungeonRunAuraTactics: with it off a
     // gated row is closed, so the table behaves exactly as before the gates existed. The health band is the row's
-    // boss entry's health (`bossHpPct`, inclusive), never the add's; `botHasGateAura` is whether this bot carries
-    // `botAura`. An ungated row is open whenever the band and the aura allow it.
+    // boss entry's health (`bossHpPct`, inclusive; the unit PickBossGateUnit picks), never the add's; `botHasGateAura`
+    // is whether this bot carries `botAura`. An ungated row is open whenever the band and the aura allow it.
     inline bool RowGateOpen(const BossTacticRow& row, bool keyOn, int bossHpPct, bool botHasGateAura)
     {
         if (RowGateSet(row) && !keyOn)
@@ -188,6 +188,38 @@ namespace ai
         if (row.botAura != 0 && !botHasGateAura)
             return false;
         return true;
+    }
+
+    // One living unit of a boss entry the fight sees: its max health, current health % and guid.
+    struct BossGateUnit
+    {
+        std::uint32_t maxHealth = 0;
+        int hpPct = 0;
+        std::uint64_t guid = 0;
+    };
+
+    // Whether `a` outranks `b` as its entry's authoritative unit. Max health first: a boss clone or add of the same
+    // entry has less health than the real boss, so a low-health clone never supplies the band. Then the highest
+    // current %, then the lowest guid: the pick depends only on the units, not on the order the scan met them.
+    inline bool BossGateUnitBefore(const BossGateUnit& a, const BossGateUnit& b)
+    {
+        if (a.maxHealth != b.maxHealth)
+            return a.maxHealth > b.maxHealth;
+        if (a.hpPct != b.hpPct)
+            return a.hpPct > b.hpPct;
+        return a.guid < b.guid;
+    }
+
+    // The index of the unit an entry's rows gate on, -1 for an empty list.
+    inline int PickBossGateUnit(const std::vector<BossGateUnit>& units)
+    {
+        int pick = -1;
+        for (int i = 0; i < static_cast<int>(units.size()); ++i)
+        {
+            if (pick < 0 || BossGateUnitBefore(units[i], units[pick]))
+                pick = i;
+        }
+        return pick;
     }
 
     // The creature a row is about.
