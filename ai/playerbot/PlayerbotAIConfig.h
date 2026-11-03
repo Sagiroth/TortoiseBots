@@ -642,7 +642,7 @@ public:
     // patroller, a patrol of the row) is walked to and pulled by the acting tank (the lead bot, else the off-tank
     // holding the main tank role) instead of the pause, when the way to it keeps clear of another pack
     // (DungeonRunPolicy.h StragglerPullTick; default off).
-    bool dungeonRunStragglerPull;
+    bool dungeonRunStragglerPull = false;
     // The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the revive after either) within
     // dungeonRunNearWipeStopMinutes of running time pause the run once the fight is over. 0: off.
     uint32 dungeonRunNearWipeStop;
