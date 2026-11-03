@@ -228,6 +228,12 @@ constexpr std::uint32_t kFruitlessPulls = 3;      // three pulls in a row that k
 constexpr float kShotMarginYd = 5.0f;
 constexpr std::uint32_t kShotStandTries = 2;      // firing stands walked to per unit and step, then the order as before
 constexpr std::uint32_t kShotStillWaitMs = 3000;  // a moving tank is waited for this long before the stand rule judges it
+// AiPlayerbot.DungeonRunStandDiscipline: a tank or melee is at the plan's stand when it stands this close to the
+// authored approach row; the next pull's pack is clear when it is farther than the row's radius plus the core's 20 yd
+// aggro ring from its point. The pull row waits this long for them, then fires with their names in the note.
+constexpr float kStandDisciplineYd = 5.0f;
+constexpr float kStandDisciplineRingYd = 20.0f;
+constexpr std::uint32_t kStandDisciplineWaitMs = 10000;
 // A stand walk that gains nothing for kWalkRetryMs, or takes longer than this
 // in all, is given up: the order goes out from where the tank is (never a pause).
 constexpr std::uint32_t kShotWalkCapMs = kWalkRetryMs * kWalkTries;
@@ -1572,6 +1578,11 @@ struct Facts
     // rule of an authored stand-pull step's own pull (PullStandRuleOn) and
     // the glue's clearance read of the stands it offers.
     bool standClearance = false;
+    // AiPlayerbot.DungeonRunStandDiscipline: the key is on. A pull row whose
+    // authored approach cannot see its unit holds at that stand instead of
+    // searching a closer one, and the tanks and melee are waited for there
+    // before the pull (HoldForShot, StandDisciplineOutOfPlace).
+    bool standDiscipline = false;
     // AiPlayerbot.DungeonRunWalkBackAfterWonFight (GuardWalkBackWanted): on (1),
     // the old walk back to the guard's stand point after every guarded fight. Off
     // (0, the default) the run goes on from where the tank stands once the step's
@@ -2155,6 +2166,10 @@ struct Run
     // stand rule; the pull's fruitless count is not taken again until it goes out.
     std::uint64_t shotStandFor = 0;
     std::unordered_map<std::uint64_t, std::uint32_t> shotStandTries;
+    // AiPlayerbot.DungeonRunStandDiscipline (StandDisciplineOutOfPlace): the unit whose pull row waits for the tanks
+    // and melee to reach the plan's stand, and how long it has waited (kStandDisciplineWaitMs).
+    std::uint64_t standDisciplineGuid = 0;
+    std::uint32_t standDisciplineMs = 0;
     bool shotStandWalk = false;
     std::uint64_t shotStandGuid = 0;
     float shotStandX = 0.0f, shotStandY = 0.0f, shotStandZ = 0.0f;
@@ -2935,6 +2950,8 @@ inline void ResetStep(Run& r)
         r.standPullMs = 0;
     }
     r.standPullShotGuid = 0;
+    r.standDisciplineGuid = 0;
+    r.standDisciplineMs = 0;
     r.holdAheadStep = static_cast<std::size_t>(-1);
     r.holdAheadMs = 0;
     r.holdAheadDone = false;
@@ -8224,6 +8241,20 @@ inline const PlanStep* StandPullStand(const Run& r, const PlanStep& s)
     return &prev;
 }
 
+// The plan's own stand for a pull or boss row: the move row right before it in the same leg (the approach row the
+// plan walks the party to), whether or not the row carries kPlanFlagStandPull. AiPlayerbot.DungeonRunStandDiscipline
+// uses it as the only stand a pull row may fire from. Null: no authored approach.
+inline const PlanStep* AuthoredApproach(const Run& r)
+{
+    const PlanStep* const s = Current(r);
+    if (!s || (s->kind != PlanStepKind::Pull && s->kind != PlanStepKind::Boss) || r.step == 0 || !r.plan)
+        return nullptr;
+    const PlanStep& prev = r.plan->steps[r.step - 1];
+    if (prev.kind != PlanStepKind::Move || prev.leg != s->leg)
+        return nullptr;
+    return &prev;
+}
+
 // The current step is an authored stand-pull step (kPlanFlagStandPull, the glue's StandThisStep): a pull or boss step
 // with its stand row right before it in the same leg. The glue reads its shot range and sight whatever the key says
 // (the stand-pull row's own unit is judged with them); the stand rule runs for its own pull with the clearance key
@@ -8666,6 +8697,35 @@ inline bool HoldForShot(Run& r, const Facts& f, const UnitFact& u, std::uint32_t
             (moving ? ", still moving" : "");
         return false;
     }
+    // AiPlayerbot.DungeonRunStandDiscipline: a pull row with an authored approach fires from that stand only. A tank
+    // that cannot shoot from there walks back to it and the row holds there: never a closer stand the path offers (the
+    // ZG terrace's 8.7 yd stand stood 24 yd nearer the middle packs than the authored approach), and never a stand the
+    // plan did not author. The plan's next authored stand is where the run goes once this step gives up.
+    if (f.standDiscipline)
+    {
+        const PlanStep* const stand = AuthoredApproach(r);
+        if (stand)
+        {
+            if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, stand->x, stand->y, stand->z) > kStandDisciplineYd)
+            {
+                if (!WalkTo(r, f, stand->x, stand->y, stand->z, false, dt, order))
+                {
+                    if (r.state != State::Running)
+                        return true; // stuck: WalkTo paused the run with its reason
+                    r.shotHow = "to the plan's stand";
+                    r.shotStandPrep = true;
+                    r.note = "to the plan's stand before the pull of " + what;
+                    return true;
+                }
+                EnterPhase(r, Phase::Begin); // arrived (the anchor is the stand now)
+            }
+            r.shotHow = "no LOS from the authored stand; holding";
+            r.shotStandPrep = true;
+            r.standPullShotGuid = 0;
+            r.note = "no LOS from the authored stand; holding";
+            return true;
+        }
+    }
     if (tries >= kShotStandTries)
     {
         if (r.shotHow.compare(0, 24, "firing stand unreachable") != 0)
@@ -8762,6 +8822,47 @@ inline std::unordered_set<std::uint64_t> PullPackOf(const Run& r, const UnitFact
     if (cc)
         pack.insert(cc->guid);
     return pack;
+}
+
+// AiPlayerbot.DungeonRunStandDiscipline: the living tanks and melee (every member that is neither a healer nor a
+// ranged bot) at the plan's stand before a pull row fires. A member is in place within kStandDisciplineYd of the
+// authored approach, or clear of the next pull's pack: farther than its radius plus the core's 20 yd aggro ring from
+// the next pull or boss row's point in the same leg. `names` gets those out of place (comma separated). False: all in
+// place, or no authored approach to judge against.
+inline bool StandDisciplineOutOfPlace(const Run& r, const Facts& f, std::string& names)
+{
+    const PlanStep* const stand = AuthoredApproach(r);
+    if (!stand)
+        return false;
+    const PlanStep* next = nullptr;
+    if (r.plan)
+        for (std::size_t i = r.step + 1; i < r.plan->steps.size(); ++i)
+        {
+            const PlanStep& s = r.plan->steps[i];
+            if (s.leg != stand->leg)
+                break;
+            if (s.kind == PlanStepKind::Pull || s.kind == PlanStepKind::Boss)
+            {
+                next = &s;
+                break;
+            }
+        }
+    bool out = false;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.ranged || m.offPlanMap || m.otherCopy)
+            continue;
+        if (ai::PlanDistance(m.x, m.y, m.z, stand->x, stand->y, stand->z) <= kStandDisciplineYd)
+            continue;
+        if (next && ai::PlanDistance(m.x, m.y, m.z, next->x, next->y, next->z) >
+                next->radius + kStandDisciplineRingYd)
+            continue;
+        if (!names.empty())
+            names += ", ";
+        names += m.name;
+        out = true;
+    }
+    return out;
 }
 
 // Gathers the party, crowd-controls the plan's cc targets of the pack (a
@@ -8938,6 +9039,34 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         EnterPhase(r, Phase::Begin);
         return;
     }
+    // AiPlayerbot.DungeonRunStandDiscipline: a tank or melee that is neither at the plan's stand nor clear of the next
+    // pull's pack holds the row up to kStandDisciplineWaitMs (ZG walk 28 step 323: the OT stood 3 yd from the next
+    // pack while the MT pulled). Then the row fires and its note names who was out of place.
+    std::string outOfPlace;
+    if (f.standDiscipline && !hop && StandDisciplineOutOfPlace(r, f, outOfPlace))
+    {
+        if (r.standDisciplineGuid != u.guid)
+        {
+            r.standDisciplineGuid = u.guid;
+            r.standDisciplineMs = 0;
+        }
+        r.standDisciplineMs += dt;
+        r.standPullShotGuid = 0; // the pull never went out (the party is not in place)
+        r.stepIdleMs = dt > r.stepIdleMs ? 0 : r.stepIdleMs - dt; // the wait is the step's work, not idling
+        if (r.standDisciplineMs < kStandDisciplineWaitMs)
+        {
+            r.shotStandPrep = true; // a held pull is the same pull, not another (FightStep's fruitless count)
+            r.note = "stand discipline: waiting for " + outOfPlace + " to reach the plan's stand before the pull";
+            return;
+        }
+        r.shotStandPrep = false; // the row fires now
+        outOfPlace = "; out of place: " + outOfPlace;
+    }
+    else
+    {
+        r.standDisciplineGuid = 0;
+        r.standDisciplineMs = 0;
+    }
     std::uint32_t& tries = r.pullTries[u.guid];
     if (tries >= kMaxPullsPerTarget)
     {
@@ -8985,6 +9114,8 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // fight and reported by JoinerReport, estimated or not.
     if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
+    if (!outOfPlace.empty())
+        r.note += outOfPlace;
 }
 
 // The step's pull is out: wait for the fight (the fight gate takes over) or
