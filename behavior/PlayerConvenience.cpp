@@ -197,6 +197,12 @@ bool PlayerConvenience::IsBusy(ObjectGuid botGuid) const
     return m_summons.find(key) != m_summons.end();
 }
 
+uint32 PlayerConvenience::SummonCancels(ObjectGuid botGuid) const
+{
+    auto const it = m_summonCancels.find(botGuid.GetCounter());
+    return it == m_summonCancels.end() ? 0 : it->second;
+}
+
 bool PlayerConvenience::NoteHoldOrder(ObjectGuid botGuid)
 {
     auto it = m_summons.find(botGuid.GetCounter());
@@ -250,6 +256,8 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             origin->IsTaxiFlying() ||
             origin->GetMapId() != state.destMap)
         {
+            if (state.phase == SummonState::Phase::Delaying)
+                ++m_summonCancels[state.botGuid.GetCounter()]; // the summon point went away before the teleport
             cleanupPortal(state, origin);
             it = m_summons.erase(it);
             continue;
@@ -339,6 +347,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         {
             sLog.outString("TortoiseBots: Summon cancelled bot %s became incompatible before teleport",
                 bot->GetName());
+            ++m_summonCancels[state.botGuid.GetCounter()];
             cleanupPortal(state, origin);
             it = m_summons.erase(it);
             continue;
@@ -352,6 +361,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         if (bot->IsInCombat())
         {
             sLog.outString("TortoiseBots: Summon aborted bot %s still in combat", bot->GetName());
+            ++m_summonCancels[state.botGuid.GetCounter()];
             cleanupPortal(state, origin);
             it = m_summons.erase(it);
             continue;
@@ -367,6 +377,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             // in-world position as a successful summon and restore Follow.
             sLog.outError("TortoiseBots: Summon teleport rejected for bot %s",
                 bot->GetName());
+            ++m_summonCancels[state.botGuid.GetCounter()];
             it = m_summons.erase(it);
             continue;
         }

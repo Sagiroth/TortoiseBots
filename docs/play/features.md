@@ -182,7 +182,7 @@ For queue intervals, fill limits, and bracket instance caps, see [Queue settings
 | In-game bot inspection and status panel | Always on | None | [Bot panel](commands/bot-panel.md) |
 | GameMaster pool commands and adoption | Always on | None | [Admin commands](../server/admin-commands.md) |
 | Automatic previous-run log preservation | Always on | None | [Log rotation](../server/settings/logging.md#log-rotation--previous-run-logs) |
-| Live UDP telemetry stream for dashboard | No | [`AiPlayerbot.Observability`](../server/settings/logging.md#aiplayerbotobservability) | [Dashboard](../server/dashboard.md) |
+| Live UDP telemetry stream for dashboard | Yes | [`AiPlayerbot.Observability`](../server/settings/logging.md#aiplayerbotobservability) | [Dashboard](../server/dashboard.md) |
 | Detailed per-bot decision execution logs | Yes | [`AiPlayerbot.EnableActionLog`](../server/settings/logging.md#aiplayerbotenableactionlog) | [Action logs](../server/settings/logging.md#aiplayerbotenableactionlog) |
 | Track cumulative action success/fail counts | No | [`AiPlayerbot.ActionCountsLog`](../server/settings/logging.md#aiplayerbotactioncountslog) | [Action counts](../server/settings/logging.md#aiplayerbotactioncountslog) |
 | Restrict detailed action logs to groups | Yes | [`AiPlayerbot.LogInGroupOnly`](../server/settings/performance.md#aiplayerbotlogingrouponly) | [Log scope](../server/settings/logging.md#aiplayerbotactionlogscope) |

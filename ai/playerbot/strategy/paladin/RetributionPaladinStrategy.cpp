@@ -364,6 +364,11 @@ void RetributionPaladinCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         "repentance on snare target",
         NextAction::array(0, new NextAction("repentance on snare target", ACTION_INTERRUPT), NULL)));
 
+    // The run leader's mark, below the enemy-healer and snare rows: it only fires on an assigned mark.
+    triggers.push_back(new TriggerNode(
+        "repentance on cc",
+        NextAction::array(0, new NextAction("repentance on cc", ACTION_INTERRUPT), NULL)));
+
     triggers.push_back(new TriggerNode(
         "repentance interrupt",
         NextAction::array(0, new NextAction("repentance", ACTION_INTERRUPT), NULL)));

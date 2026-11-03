@@ -563,7 +563,7 @@ void ObservabilityEmitter::Initialize()
     Shutdown();
 
     m_enabled = sPlayerbotAIConfig.observability ||
-                sConfig.GetBoolDefault("AiPlayerbot.Observability", false) ||
+                sConfig.GetBoolDefault("AiPlayerbot.Observability", true) ||
                 sConfig.GetBoolDefault("TortoiseBots.Observability", false);
 
     if (!m_enabled)

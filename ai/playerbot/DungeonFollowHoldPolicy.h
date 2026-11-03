@@ -3,7 +3,7 @@
 // Pure decision rules for "hold before a pack" dungeon follow
 // (AiPlayerbot.DungeonFollowHoldBeforePacks, audit fix 127).
 //
-// When the leader is far ahead inside a dungeon and nobody is fighting, a
+// When the leader is far ahead inside a dungeon and the bot is not fighting, a
 // following bot walks the navmesh route to the leader with the module's own
 // MoveTo instead of the core follow, and stops just outside the aggro radius
 // of the first unpulled hostile creature that route passes. Without it the
@@ -52,13 +52,16 @@ namespace ai
     constexpr unsigned kDungeonFollowHoldTellCooldownSec = 30;
 
     // Gate: the pack-aware walk only replaces the core follow in a dungeon,
-    // with the option on, out of combat on both sides (a leader in combat
-    // needs help, not a careful approach) and with the leader far ahead:
-    // more than 30 yd to switch it on, more than 25 yd to keep it on.
+    // with the option on, the bot out of combat and the leader far ahead:
+    // more than 30 yd to switch it on, more than 25 yd to keep it on. The
+    // leader's own fight does not open the gate: a bot far behind that walks
+    // to it pulls every pack on the way, and the pack the leader fights is in
+    // combat, so it is never the one the bot holds before.
     inline bool UseDungeonFollowHold(bool enabled, bool inDungeon, bool botInCombat,
         bool leaderInCombat, float leaderDistance, bool alreadyOn = false)
     {
-        if (!enabled || !inDungeon || botInCombat || leaderInCombat)
+        (void)leaderInCombat;
+        if (!enabled || !inDungeon || botInCombat)
             return false;
         return leaderDistance > (alreadyOn ? kDungeonFollowHoldReleaseDistanceYd : kDungeonFollowHoldLeaderDistanceYd);
     }

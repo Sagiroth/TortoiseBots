@@ -16,8 +16,9 @@
 // A run in progress holds a raw `const DungeonPlan*` into the table it started from (DungeonRun::Run::plan). The replaced
 // plan table is therefore RETIRED, not freed: ReloadableTable keeps it alive as long as a run's plan points into it
 // (checked on each reload against every run's pointer), so such a run goes on with the copy it started with, and the
-// next `.bot run start` takes the new plan. Nothing holds a boss tactic row across a world tick (ScanBossTactics builds
-// its list per call), so the replaced tactic table is freed at once.
+// next `.bot run start` takes the new plan. No boss tactic row is held past the update that read it (ScanBossTactics
+// caches one scan per bot and AI tick, and the cache is keyed by the table's identity, so a replaced table's rows are
+// never read again), so the replaced tactic table is freed at once.
 //
 // World thread only: chat commands run there (a player's `.bot` is queued and drained by the world tick, a console or
 // SOAP command runs in the world's CLI pass), and every reader of the tables (run ticks, bot AI, the dashboard snapshot)

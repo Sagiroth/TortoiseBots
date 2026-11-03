@@ -47,11 +47,11 @@ WorldLocation ArrowFormation::GetLocationInternal()
     float y = followTarget->getPositionY() - masterUnit->GetY() + botUnit->GetY();
     float z = followTarget->getPositionZ();
 
-    float ground = followTarget->GetMap()->GetHeight(x, y, z + 0.5f);
-    if (ground <= INVALID_HEIGHT)
+    if (!FinalizeFollowSpot(bot, followTarget->GetMap(), followTarget->getPositionX(),
+            followTarget->getPositionY(), followTarget->getPositionZ(), x, y, z, true))
         return Formation::NullLocation;
 
-    return WorldLocation(followTarget->GetMapId(), x, y, 0.05f + ground);
+    return WorldLocation(followTarget->GetMapId(), x, y, z);
 }
 
 void ArrowFormation::Build()

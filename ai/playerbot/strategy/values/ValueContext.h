@@ -254,6 +254,7 @@ namespace ai
             creators["aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealValue(ai); };
 
             creators["rti cc"] = [](PlayerbotAI* ai) { return new RtiCcValue(ai); };
+            creators["run cc family"] = [](PlayerbotAI* ai) { return new RunCcFamilyValue(ai); };
             creators["rti"] = [](PlayerbotAI* ai) { return new RtiValue(ai); };
             creators["position"] = [](PlayerbotAI* ai) { return new PositionValue(ai); };
             creators["pos"] = [](PlayerbotAI* ai) { return new SinglePositionValue(ai); };

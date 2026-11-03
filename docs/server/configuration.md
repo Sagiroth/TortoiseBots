@@ -49,7 +49,7 @@ A line that is commented out with `#` in the configuration file sets nothing; th
 
 ## Recommended presets
 
-Once enabled (`AiPlayerbot.Enabled = 1`), a full living world runs 500 autonomous bots. The following recommended configuration in `aiplayerbot.conf` configures a balanced living world for an average PC:
+Out of the box (`AiPlayerbot.Enabled = 1`, the default), a full living world runs 500 autonomous bots; set it to `0` for a plain server with the module built in but inert. The following recommended configuration in `aiplayerbot.conf` configures a balanced living world for an average PC:
 
 ```ini
 # Master bot toggle

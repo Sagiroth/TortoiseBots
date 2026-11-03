@@ -48,6 +48,7 @@ COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
 TRIGGERS = (STRATEGY / "triggers/GenericTriggers.cpp").read_text()
 VALUES = (STRATEGY / "values/NearestGameObjects.cpp").read_text()
 VALUE_CONTEXT = (STRATEGY / "values/ValueContext.h").read_text()
+TARGETS = (STRATEGY / "values/PossibleTargetsValue.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -83,6 +84,29 @@ class DynObjScanWiring(unittest.TestCase):
         fn = body(VALUES, "void ai::CollectDamagingDynObjHazardsAt(")
         self.assertIn("Cell::VisitGridObjects(", fn)
         self.assertNotIn("Cell::VisitAllObjects(", fn)
+
+
+class GroundCloudEmitterWiring(unittest.TestCase):
+    """A periodic-trigger aura that drops a persistent area aura (effect 27)
+    every tick - Sapphiron's Blizzard emitter 16474, Chill 28534 -> 28547 -
+    was invisible to the trigger sensor, which knew only school damage and
+    weapon spins. Failing case before the fix: neither call site named
+    TriggerSpellMarksGroundHazard, so the emitter was never listed and the
+    step-out never fired on it."""
+
+    def test_the_trigger_list_accepts_a_ground_cloud_emitter(self):
+        fn = body(TARGETS, "bool PossibleTriggersValue::AcceptUnit(")
+        self.assertIn("TriggerSpellMarksGroundHazard(", fn)
+        self.assertIn("triggerProto->IsPositiveEffect(SpellEffectIndex(i))", fn)
+
+    def test_the_step_out_uses_the_cloud_radius(self):
+        fn = body(MOVEMENT, "bool AvoidAoeAction::AvoidTriggerNpc(")
+        self.assertIn("TriggerSpellMarksGroundHazard(", fn)
+        self.assertIn("triggerProto->IsPositiveEffect(SpellEffectIndex(i))", fn)
+        # The circle is the triggered (effect-27) spell's own radius, read
+        # after the gate that now accepts the cloud.
+        self.assertLess(fn.index("TriggerSpellMarksGroundHazard("),
+                        fn.index("sSpellRadiusStore.LookupEntry(triggerProto->EffectRadiusIndex[i])"))
 
 
 class DynObjHazardWiring(unittest.TestCase):

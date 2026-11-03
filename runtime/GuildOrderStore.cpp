@@ -48,7 +48,9 @@
 #include <cstdint>
 #include <ctime>
 #include <iterator>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1636,22 +1638,58 @@ public:
         return true;
     }
 
-    // Three days with nothing back means the posting no longer reports on
-    // the auction house: the entry stops being a debt to the guild. World
-    // thread only; called at a minute's cadence, never per tick.
+    // The bots whose ledger rows are old enough to expire (see
+    // RelistEntryAged): only those need a presence lookup.
+    std::vector<uint32_t> RelistAgedBots(uint64_t nowSec)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<uint32_t> out;
+        for (auto const& [guid, rows] : m_relist)
+        {
+            for (RelistLedgerEntry const& row : rows)
+            {
+                if (RelistEntryAged(row, nowSec))
+                {
+                    out.push_back(guid);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    // A row expires only when the policy says so (RelistEntryExpiry): three
+    // days with nothing back AND the bot online after the auction ended, or
+    // the core's 30-day mail lifetime gone. A bot offline for days keeps its
+    // row, because the sale proceeds or the expired stack still wait in its
+    // mail. World thread only; called at a minute's cadence, never per tick.
     void ExpireStaleRelists(uint64_t nowSec)
     {
-        std::vector<RelistLedgerEntry> dropped;
+        std::vector<uint32_t> const aged = RelistAgedBots(nowSec);
+        if (aged.empty())
+            return;
+        std::unordered_map<uint32_t, RelistBotPresence> presence = ReadRelistPresence(aged);
+
+        struct Dropped
+        {
+            RelistLedgerEntry row;
+            RelistExpiry why;
+        };
+        std::vector<Dropped> dropped;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             for (auto it = m_relist.begin(); it != m_relist.end();)
             {
                 std::vector<RelistLedgerEntry>& rows = it->second;
+                auto seen = presence.find(it->first);
                 for (auto row = rows.begin(); row != rows.end();)
                 {
-                    if (RelistEntryStale(*row, nowSec))
+                    // No presence read for this bot: keep the row for the next sweep.
+                    RelistExpiry const why = seen == presence.end() ? RelistExpiry::Keep :
+                        RelistEntryExpiry(*row, seen->second, nowSec);
+                    if (why != RelistExpiry::Keep)
                     {
-                        dropped.push_back(*row);
+                        dropped.push_back({ *row, why });
                         row = rows.erase(row);
                     }
                     else
@@ -1660,15 +1698,45 @@ public:
                 it = rows.empty() ? m_relist.erase(it) : std::next(it);
             }
         }
-        for (RelistLedgerEntry const& entry : dropped)
+        for (Dropped const& d : dropped)
         {
-            TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u) posted %llu s ago "
-                "returned nothing; dropping the ledger row.", entry.botGuidLow, entry.itemId,
-                entry.count, static_cast<unsigned long long>(nowSec - entry.postedAtSec));
+            RelistLedgerEntry const& entry = d.row;
+            if (d.why == RelistExpiry::MailExpired)
+                TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u, %u copper held, %u items "
+                    "held) is past the %llu s auction mail lifetime (ended %llu s ago); dropping the "
+                    "ledger row, the mail is gone.", entry.botGuidLow, entry.itemId, entry.count,
+                    entry.heldGold, entry.heldCount,
+                    static_cast<unsigned long long>(kRelistMailLifetimeSec),
+                    static_cast<unsigned long long>(nowSec - RelistEndSec(entry)));
+            else
+                TB_LOG_BASIC("TortoiseBots: guild relist for bot %u (item %u x%u, buyout %u copper) posted "
+                    "%llu s ago returned nothing and the bot has been online since the auction ended; "
+                    "dropping the ledger row.", entry.botGuidLow, entry.itemId, entry.count,
+                    entry.buyout, static_cast<unsigned long long>(nowSec - entry.postedAtSec));
             CharacterDatabase.PExecute(
                 "DELETE FROM `tortoise_bots_guild_relist` WHERE `bot_guid` = '%u' AND `seq` = '%u'",
                 entry.botGuidLow, entry.seq);
         }
+    }
+
+    // Online bots carry their session start. Every other bot is offline with
+    // the default presence, so its rows can only expire by the mail lifetime.
+    static std::unordered_map<uint32_t, RelistBotPresence> ReadRelistPresence(
+        std::vector<uint32_t> const& bots)
+    {
+        std::unordered_map<uint32_t, RelistBotPresence> out;
+        for (uint32_t guidLow : bots)
+        {
+            RelistBotPresence p;
+            Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, guidLow));
+            if (bot && bot->IsInWorld())
+            {
+                p.online = true;
+                p.loginSec = static_cast<uint64_t>(bot->GetLoginTime());
+            }
+            out[guidLow] = p;
+        }
+        return out;
     }
 
     void NoteBagsFull(uint32_t botGuidLow)
@@ -3526,7 +3594,9 @@ void Update(uint32_t diff)
     // live updates; map-thread mutators only mark rows dirty.
     uint32_t now = WorldTimer::getMSTime();
     // Once a minute, not per tick: an entry whose posting never reported back
-    // after three days stops being a debt to the guild (one log line each).
+    // stops being a debt to the guild only once its bot has been online after
+    // the auction ended, or the core's 30-day mail lifetime ran out (one log
+    // line each).
     uint64_t nowSec = static_cast<uint64_t>(std::time(nullptr));
     if (OrderStore::Instance().RelistExpireDue(nowSec))
         OrderStore::Instance().ExpireStaleRelists(nowSec);

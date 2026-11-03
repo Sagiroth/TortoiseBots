@@ -112,6 +112,10 @@ namespace
     {
         if (!unit || !ai || !bot)
             return false;
+        // A dps_hold_after hold is the aura-tactics key's own rule and lives beside this one (IsDpsHeld): the subject
+        // of an active hold is skipped exactly like a held boss entry, so no free DPS bot starts on it.
+        if (IsDpsHeld(ai, bot, unit))
+            return true;
         const BossTacticTable& table = GetBossTactics();
         if (!table.HasMap(bot->GetMapId()))
             return false;

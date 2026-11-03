@@ -38,6 +38,7 @@ using ai::RangedAoeCandidates;
 using ai::RangedAoeLandingInRange;
 using ai::TrapHazardRadius;
 using ai::TriggerSpellMarksSpinHazard;
+using ai::TriggerSpellMarksGroundHazard;
 using ai::TankDragFitsCap;
 using ai::TankDragStep;
 using ai::TankLandingDragsTargetOut;
@@ -107,6 +108,43 @@ int main()
     CHECK(!TriggerSpellMarksSpinHazard(10, 22, 15, true)); // heal around caster: not a hazard
     CHECK(!TriggerSpellMarksSpinHazard(0, 0, 0, false));   // empty effect
     std::cout << "  [PASS] whirlwind-type trigger marks a spin hazard\n";
+
+    // Periodic trigger -> ground cloud (effect 27, persistent area aura).
+    // Failing case before the fix: Sapphiron's Blizzard emitter 16474
+    // (NOT_SELECTABLE, Chill 28534 -> Chill 28547 = effect 27, periodic
+    // damage) was skipped by TriggerSpellMarksSpinHazard, which knows only
+    // effects 2/17/58/31, so no bot ever stepped off the emitter.
+    CHECK(!TriggerSpellMarksSpinHazard(27, 18, 28, false));  // the old gate: blind to effect 27
+    CHECK(TriggerSpellMarksGroundHazard(27, false, false));  // Chill 28547 on emitter 16474: hazard
+    CHECK(!TriggerSpellMarksGroundHazard(27, false, true));  // selectable mob's own cloud: stay and fight
+    CHECK(!TriggerSpellMarksGroundHazard(27, true, false));  // positive cloud (a heal/buff field): no hazard
+    CHECK(!TriggerSpellMarksGroundHazard(2, false, false));  // school damage is the spin gate's job
+    CHECK(!TriggerSpellMarksGroundHazard(6, false, false));  // plain apply-aura (Locust Swarm 28786): no cloud
+    CHECK(!TriggerSpellMarksGroundHazard(0, false, false));  // empty effect
+    std::cout << "  [PASS] periodic trigger to a persistent area aura marks a ground hazard\n";
+
+    // Inside a hostile dynamic object -> step out (the AvoidAuraWithDynamicObj
+    // decision: DynObjIsHostileHazard gate, then the centre test). Failing
+    // case before the sensor was real: the value was a stub, so this decision
+    // never ran for Toxic Vapors 25786 (Kri, 8 yd) or Rain of Fire 28794
+    // (Faerlina, 10 yd).
+    {
+        auto stepsOut = [](bool positive, bool playerCaster, bool friendly, AoeHazardCircle const& c,
+                           float x, float y)
+        {
+            return DynObjIsHostileHazard(positive, playerCaster, friendly, c.radius) &&
+                InsideAoeHazard(c, x, y, 0.0f);
+        };
+        AoeHazardCircle const vapors{0.0f, 0.0f, 0.0f, 8.0f};
+        AoeHazardCircle const rain{0.0f, 0.0f, 0.0f, 10.0f};
+        CHECK(stepsOut(false, false, false, vapors, 3.0f, 0.0f));   // bot in Kri's cloud: leave
+        CHECK(stepsOut(false, false, true, rain, 9.0f, 0.0f));      // creature cloud whatever its faction
+        CHECK(!stepsOut(false, false, false, vapors, 8.5f, 0.0f));  // outside the circle: stay
+        CHECK(!stepsOut(false, true, true, rain, 1.0f, 0.0f));      // group mage's Blizzard: stay
+        CHECK(!stepsOut(true, false, false, rain, 1.0f, 0.0f));     // positive effect: stay
+        CHECK(!stepsOut(false, false, false, AoeHazardCircle{0.0f, 0.0f, 0.0f, 30.0f}, 1.0f, 0.0f)); // past the dodge cap
+    }
+    std::cout << "  [PASS] inside a hostile dynamic object steps out\n";
 
     // Escape step: just past the edge, capped at flee distance.
     CHECK(AoeEscapeStep(5.0f, 15.0f) == 6.0f);

@@ -85,7 +85,7 @@ When a reset executes, the following pool bot data is permanently removed:
 - Active auction listings posted by pool bots. Active bidders receive full mail refunds prior to listing deletion (hardcore characters excepted). If any bidder cannot be resolved, the reset stops before the listing is deleted.
 - An empty managed set is a verified no-op: the generation is still recorded, so a token cannot silently wipe a pool that auto-create builds afterwards.
 
-Login accounts themselves are **never deleted**. The server retains the registered pool accounts; auto-create recreates level 1 characters on them, and each fresh bot is then level-seeded on its first login to a random level between `AiPlayerbot.RandomBotStartLevelMin` and `RandomBotStartLevelMax` (defaults `1` and `60`).
+Login accounts themselves are **never deleted**. The server retains the registered pool accounts; auto-create recreates level 1 characters on them, and each fresh bot is then level-seeded on its first login to a random level between `AiPlayerbot.RandomBotStartLevelMin` and `RandomBotStartLevelMax` (defaults `5` and `60`).
 
 ### Safety Guarantees & Multi-Phase Execution
 

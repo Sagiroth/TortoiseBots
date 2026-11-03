@@ -8,14 +8,12 @@
 [AiPlayerbotConf]
 ConfVersion=2020072501
 
-# Enable or disable AI Playerbot
-# The bot subsystem is built into mangosd but inert
-# unless this is flipped to 1 + the user knows what they're doing. Flip when you
-# want to test/play with bots; flip back when you want guaranteed clean live play.
-AiPlayerbot.Enabled = 0
+# Enable or disable AI Playerbot (default 1). Set 0 to keep the module built in
+# but inert: no pool bots and no bot AI, a plain server.
+AiPlayerbot.Enabled = 1
 
-# Enable Observability telemetry UDP emitter (default 0, switched off)
-AiPlayerbot.Observability = 0
+# Enable Observability telemetry UDP emitter for the dashboard (default 1)
+AiPlayerbot.Observability = 1
 AiPlayerbot.ObservabilityPort = 9195
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1)
 AiPlayerbot.ObservabilityDungeonMobs = 1
@@ -725,7 +723,10 @@ AiPlayerbot.RandomGearMaxDiff = 9
 
 # Seed gear progressively by bot level instead of throwing the full band at once
 #AiPlayerbot.RandomGearProgression = 1
-# Upgrade pooled bots' gear as they level (from level 5, bots without a real master)
+# One-time starter gear for fresh pool bots (level 5 and up): seeds a bot's gear
+# at its first login while its played time is still 0, and for the timer backstop
+# retry of a bot that never played. It does NOT upgrade gear as bots level up;
+# after the seed a bot gears from loot, quest rewards and vendor buys.
 #AiPlayerbot.RandomGearUpgradeEnabled = 1
 
 # Owner-rule source-tier cap for seeded/hired bot gear (roadmap #289: higher
@@ -798,7 +799,7 @@ AiPlayerbot.GenerateItemCaches = 1
 # AiPlayerbot.BoostFollow = 1
 
 # Dungeon follow: hold before a pack (audit fix 127).
-# Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
+# Inside a dungeon or raid, with the bot out of combat (the leader may be fighting), a bot whose leader is more
 # than 30 yd ahead walks the route to the leader itself and stops just outside
 # the aggro range of the first unpulled hostile creature on that route, instead
 # of walking past or through it. It whispers its master once per pack ("pack in
@@ -909,6 +910,18 @@ AiPlayerbot.DungeonTactics = 0
 # 0 - off: DPS bots pick as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunLinkedDeath = 0
+
+# The aura tactics of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): the dispel_priority,
+# flee_on_aura, freeze_on_aura, dps_hold_after, taunt_after_cast and swap_on_aura kinds, and the shared row gates.
+# A row can gate itself to a boss health band (hp_min/hp_max %) and to bots carrying an aura (bot_aura); only a row
+# the fight scan reads can gate, so the loader skips a gate on hold_kill, tank_hold, one_at_a_time and linked_death.
+# With this key off a gated row is closed and the six kinds are not read at all, so the table behaves exactly as
+# before them. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because the
+# kinds change what every bot does mid-fight. `.reload config` reads it again with the other AiPlayerbot.DungeonRun*
+# keys.
+# 0 - off: no gate is honoured, the six aura kinds are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAuraTactics = 0
 
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
@@ -1026,6 +1039,30 @@ AiPlayerbot.DungeonRunRetreatAt2Dead = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunWalkBackRescue = 1
 
+# The run leader's teleport return. A party bot the run brings back from farther
+# than this many yards from the lead bot (revived far away, left behind after the
+# lead bot's rescue teleport, wedged on another floor, or a summon the portal
+# dropped because the bot was fighting) has its combat dropped and is teleported
+# to the lead bot at once, in a fight or not, instead of the 3 s summon portal or
+# a walk back through the packs. If the lead bot stands in the reach of a pack
+# not pulled yet, the bot lands beside it outside that reach. Three tries 5 s
+# apart, then the run's note names the bot. Parties with no real player only.
+# 0 - off (the shipped default): the summon portal, and a walk back when it fails, as before
+# Recommended 120.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.RunTeleportReturnYd = 0
+
+# The run leader's hold for bots waiting to be brought back. A run's bot revived
+# in a dungeon farther than this many yards from the lead bot (any revive: the
+# run's, a player's, a GameMaster's, with the run paused too) stands still for up
+# to 60 s for a summon or teleport, and so does every bot the run is summoning
+# or teleporting back, until it is within 10 yd of where it is brought: no
+# follow, no walking, no chasing; it fights back only from where it stands.
+# 0 - off (the shipped default)
+# Recommended 100.
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonReviveHoldYd = 0
+
 # The run leader's fight forward. After a won fight, the next pack within 30 yd
 # of the tank is pulled from where the tank stands instead of walking the plan's
 # rows back to its stand, when the navmesh path to it is direct, the tank sees it
@@ -1051,9 +1088,10 @@ AiPlayerbot.DungeonRunMaxMinutes = 180
 
 # The run leader's pull aggro estimate. Before each pack pull it works out how many
 # other creatures the pull would bring (the pack, creatures in aggro range of the
-# party, one ring of family assistance) and, when that is more than the ceiling
-# below, rests the party to its end lines once before it pulls (status note
-# "N joiners expected"). It adds no movement and never skips a pull.
+# party, one ring of family assistance from every member of the pulled pack, at
+# least 20 yd wide) and, when that is more than the ceiling below, rests the party
+# to its end lines once before it pulls (status note "N joiners expected"). It adds
+# no movement and never skips a pull.
 # 0 - off, the run leader pulls as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunAggroEstimate = 0
@@ -1168,6 +1206,47 @@ AiPlayerbot.DungeonRunStandClearance = 0
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunStandPullPreCc = 0
+
+# The plan's stand is the only stand a pull row uses. With this key the run leader
+# never searches a closer firing stand when the plan's authored approach cannot see
+# the pulled unit: it walks the tank back to that approach and holds there for up to
+# 20 s per unit (status note "no LOS from the authored stand; holding"), then searches a
+# firing stand as with 0 (note "no LOS from the authored stand after 20 s; searching a
+# firing stand"). It needs no AiPlayerbot.DungeonRunPullStand. Before the row fires it also
+# waits for every living tank and melee to stand at that approach (within 5 yd) or
+# clear of the next pull's pack (farther than its radius plus the core's 20 yd aggro
+# ring from its point): up to 10 s, then the row fires and its note names those still
+# out of place. A hop pull and a walk-back pull never wait.
+# 0 - off, a stand the path offers is searched as before and the row fires as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunStandDiscipline = 0
+
+# Automatic crowd control: the run leader marks crowd control on a pack from what the raid
+# actually has, not only the plan's cc_priority/cc_always entries. Before a pull that brings
+# more than DungeonRunAutoCcAbove bodies it marks the pack's best targets (casters and healers
+# first, then the plan's rank, then the class families Polymorph, Shackle, Banish, Hibernate,
+# Seduction, Freezing Trap, Sap, Repentance) until the unmarked bodies fit the threshold; in
+# the fight it marks a joiner while more than the threshold of unheld units fight it, and it
+# re-sends a crowd control that broke (twice a unit a step). The pack's own units are the only
+# pre-pull candidates; a tank, the lead bot, a healer while fewer than 4 healers (1 in a party)
+# would stay free, and the unit the tank or an off-tank holds are never marked. With the key on
+# the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; skull stays
+# the fight's focus); a player's icon is never moved.
+# 0 - off, the plan's cc list only, as before (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunAutoCc = 0
+
+# How many bodies a pull may bring before the automatic crowd control starts (CC starts above
+# it), and the ceiling a plan row's own max_bodies still lowers.
+# 6 - default (CC from 7 bodies); 2 to 40. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcAbove = 6
+
+# The risky crowd control families (Fear, Scare Beast): the mob runs. Only with 35 yd of room
+# to the nearest creature outside its pack, and only when no other family has a free bot.
+# 0 - off (Default); 1 - on. Only read while AiPlayerbot.DungeonRunAutoCc = 1.
+AiPlayerbot.DungeonRunAutoCcRisky = 0
 
 # The run leader's loot step when the corpse's item is another member's under the group's loot
 # rules (round robin / group loot: the loot step is refused with "nothing this bot may loot",
@@ -1334,8 +1413,11 @@ AiPlayerbot.RandomBotShowCloak = 1
 # level-bound skills, professions and starter gear are seeded, so a fresh pool
 # starts playable instead of walking up from level 1. Bots level up normally
 # from there. 1/1 keeps the historic behaviour (start at level 1).
-# Default: 1 / 60 (fresh bots spread over every level)
-AiPlayerbot.RandomBotStartLevelMin = 1
+# The minimum defaults to 5: gear seeding starts at level 5, and a bot that
+# rolls 1-4 keeps its level-1 outfit for good (its played time is no longer 0
+# when it reaches level 5), so the default never rolls below 5.
+# Default: 5 / 60 (fresh bots spread over levels 5-60)
+AiPlayerbot.RandomBotStartLevelMin = 5
 AiPlayerbot.RandomBotStartLevelMax = 60
 
 # Set XP rate for bots (default: 1)
@@ -2191,7 +2273,7 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 #       hold even 100, run fewer bots.
 # The pass cost and whether the budget cut a pass are reported by the
 # "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
-AiPlayerbot.PoolTickBudgetUs = 10000
+AiPlayerbot.PoolTickBudgetUs = 22000
 AiPlayerbot.PoolBudgetWhenTickOverMs = 0
 AiPlayerbot.CombatTickBudgetUs = 15000
 AiPlayerbot.TargetWorldTickMs = 100
@@ -2272,7 +2354,7 @@ AiPlayerbot.ShootDistance = 26.0
 #AiPlayerbot.TooCloseDistance = 5.0
 #AiPlayerbot.MeleeDistance = 1.5
 #AiPlayerbot.FollowDistance = 1.5
-#AiPlayerbot.RaidFollowDistance = 5.0
+#AiPlayerbot.RaidFollowDistance = 4.0
 #AiPlayerbot.WhisperDistance = 6000.0
 #AiPlayerbot.ContactDistance = 0.5
 #AiPlayerbot.AoeRadius = 5.0
@@ -2492,6 +2574,13 @@ AiPlayerbot.UseKnockback = 1
 
 # Default bot formation
 #AiPlayerbot.DefaultFormation = chaos
+
+# Raid/dungeon follow wedge: inside an instance a group follows in a 150 degree
+# arc behind the leader (near formation, raid follow distance, two rings above
+# ten followers), and a follower more than 20 yd behind, out of combat, walks
+# the leader's own path. An explicit .bot formation order still wins.
+# 0 keeps the configured formation everywhere.
+#AiPlayerbot.RaidFollowWedge = 0
 
 # Debug switches
 #AiPlayerbot.SpellDump = 0

@@ -222,16 +222,88 @@ inline bool RelistClaimMailHoldsValue(RelistLedgerEntry const& entry, RelistMail
     return mail.hasItems && mail.itemId == entry.itemId;
 }
 
-// Nothing returned after three days: the posting can no longer report on the
-// auction house, so the entry stops being a payable debt (the store drops it
-// with a log line). A claimed row is not stale: its mail is named and the
-// next read settles it.
+// Age alone never drops a row: the auction ended hours after posting, but the
+// settlement mail waits in the bot's box until the bot logs in, and the core
+// keeps a mail 30 days (Mail.cpp:312-318, MailDraft::SendMailTo: no COD means
+// `expire_delay = 30 * DAY`; the auction sale and expired mails carry items or
+// money and are sent without an explicit delay, AuctionHouseMgr.cpp:313, 363).
+inline constexpr uint64_t kRelistMailLifetimeSec = 30 * 24 * 60 * 60;
+
+// Nothing returned after three days AND the bot's current session began after
+// the auction ended and has lasted the settle time: the posting can no longer
+// report on the auction house, so the entry stops being a payable debt.
 inline constexpr uint64_t kRelistStaleSec = 3 * 24 * 60 * 60;
 
-inline bool RelistEntryStale(RelistLedgerEntry const& entry, uint64_t nowSec)
+// How long the bot's current session has to last, having begun after the
+// auction ended, before a mail that has not shown up is trusted not to exist.
+inline constexpr uint64_t kRelistMailSettleSec = 60 * 60;
+
+// What the module knows about the bot's presence: online now and since when
+// (the session start). Any other bot is offline, with the default presence:
+// no login is known for it, so only the mail lifetime can expire its rows.
+struct RelistBotPresence
 {
-    return entry.state == RelistState::Posted && nowSec > entry.postedAtSec &&
-        nowSec - entry.postedAtSec >= kRelistStaleSec;
+    bool online = false;
+    uint64_t loginSec = 0; // session start, when online
+};
+
+// When the listing's mail could first have been waiting: the auction's end.
+inline uint64_t RelistEndSec(RelistLedgerEntry const& entry)
+{
+    return entry.expiresAtSec > entry.postedAtSec ? entry.expiresAtSec : entry.postedAtSec;
+}
+
+// Whether the bot has been online long enough after the auction's end to have
+// read the mail the auction left: the current session must have begun after
+// the end and lasted the settle time. An offline bot never counts. Its last
+// logout says nothing about a login, so its rows wait for the mail lifetime.
+inline bool RelistBotSawMail(RelistLedgerEntry const& entry, RelistBotPresence const& presence,
+    uint64_t nowSec)
+{
+    if (!presence.online || presence.loginSec <= RelistEndSec(entry))
+        return false;
+    return nowSec >= presence.loginSec + kRelistMailSettleSec;
+}
+
+enum class RelistExpiry : uint8_t
+{
+    Keep,
+    NoReturn,    // three days on, the bot was online after the end, nothing came
+    MailExpired, // past the core's mail lifetime: the mail itself is gone
+};
+
+// Whether the store may drop a row. A received row never expires: its value is
+// in the bot's hands. A posted row waits for its mail until the bot has been
+// online in a session that began after the auction's end and lasted an hour
+// (then three days with nothing back drops it),
+// and whatever happens is dropped once the core would have deleted the mail.
+// A claimed row is dropped past the mail lifetime only while its bot is
+// offline: an online bot settles it by the next mail read.
+inline RelistExpiry RelistEntryExpiry(RelistLedgerEntry const& entry,
+    RelistBotPresence const& presence, uint64_t nowSec)
+{
+    if (entry.state == RelistState::Received)
+        return RelistExpiry::Keep;
+    uint64_t const end = RelistEndSec(entry);
+    if (nowSec > end && nowSec - end >= kRelistMailLifetimeSec &&
+        (entry.state == RelistState::Posted || !presence.online))
+        return RelistExpiry::MailExpired;
+    if (entry.state == RelistState::Posted && nowSec > entry.postedAtSec &&
+        nowSec - entry.postedAtSec >= kRelistStaleSec && RelistBotSawMail(entry, presence, nowSec))
+        return RelistExpiry::NoReturn;
+    return RelistExpiry::Keep;
+}
+
+// Rows the sweep has to look at the bot's presence for: anything that could
+// expire by age. Lets the store skip the presence lookup on fresh rows.
+inline bool RelistEntryAged(RelistLedgerEntry const& entry, uint64_t nowSec)
+{
+    if (entry.state == RelistState::Received)
+        return false;
+    uint64_t const end = RelistEndSec(entry);
+    return (nowSec > end && nowSec - end >= kRelistMailLifetimeSec) ||
+        (entry.state == RelistState::Posted && nowSec > entry.postedAtSec &&
+            nowSec - entry.postedAtSec >= kRelistStaleSec);
 }
 
 // The mail is about to be taken: the row names it and records the value it
