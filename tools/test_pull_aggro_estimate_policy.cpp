@@ -207,16 +207,17 @@ int main()
     }
 
     // -------------------------------------------------------------
-    // The assist hop: same faction within 10 yd of a caller.
+    // The assist hop: same faction within 20 yd of a caller. The observed cross-pack wakes are spawn pairs 11.0-19.5
+    // yd apart, so the server's 10 yd assistance radius is never the whole ring.
     {
-        std::vector<AggroMob> mobs = {Target(), Mob(108.0f, 0.0f)};
+        std::vector<AggroMob> mobs = {Target(), Mob(118.0f, 0.0f)};
+        CHECK(Bodies(mobs) == 2); // 18 yd: inside the ring
+        mobs[1].x = 120.0f; // exactly on the ring assists
         CHECK(Bodies(mobs) == 2);
-        mobs[1].x = 110.0f; // exactly on the radius assists
-        CHECK(Bodies(mobs) == 2);
-        mobs[1].x = 111.0f;
+        mobs[1].x = 121.0f;
         CHECK(Bodies(mobs) == 1);
         // Another faction template does not assist.
-        mobs[1].x = 108.0f;
+        mobs[1].x = 118.0f;
         mobs[1].faction = 15;
         CHECK(Bodies(mobs) == 1);
         mobs[1].faction = 14;
@@ -235,28 +236,32 @@ int main()
         mobs[1].partySees = false;
         CHECK(Bodies(mobs) == 2);
         mobs[1].partySees = true;
-        // The configured radius is read: 10 yd by default.
-        mobs[1].x = 112.0f;
+        // A configured radius wider than the observed ring is read.
+        mobs[1].x = 125.0f; // exactly on the wider ring
         AggroEstimateParams wide = Params();
-        wide.familyAssistYd = 13.0f;
+        wide.familyAssistYd = 25.0f;
         CHECK(Bodies(mobs, wide) == 2);
-        mobs[1].x = 108.0f;
+        mobs[1].x = 126.0f;
+        CHECK(Bodies(mobs, wide) == 1);
+        mobs[1].x = 118.0f;
         CHECK(Bodies(mobs) == 2);
     }
 
     // The hop does not chain: the one assisted does not call.
     {
-        std::vector<AggroMob> mobs = {Target(), Mob(108.0f, 0.0f), Mob(116.0f, 0.0f)};
+        // The second one stands 16 yd from the assisted one (24 yd from the target, outside the ring): only a chain
+        // could take it.
+        std::vector<AggroMob> mobs = {Target(), Mob(108.0f, 0.0f), Mob(124.0f, 0.0f)};
         CHECK(Bodies(mobs) == 2);
     }
 
-    // A pack member dragged in by the pack does not call; a waker does, and so
-    // does a pack member that stands in reach itself.
+    // A pack member dragged in by the pack calls too: the assist comes from every member of the pull's pack, not only
+    // the pulled creature. A waker does as well, and so does a pack member that stands in reach itself.
     {
-        std::vector<AggroMob> mobs = {Target(), Mob(100.0f, 30.0f), Mob(100.0f, 38.0f)};
+        std::vector<AggroMob> mobs = {Target(), Mob(100.0f, 30.0f), Mob(100.0f, 48.0f)};
         mobs[0].groupId = 3;
         mobs[1].groupId = 3;
-        CHECK(Bodies(mobs) == 2);
+        CHECK(Bodies(mobs) == 3); // 18 yd from the pack mate, 48 yd from the target
         // The proximity waker at 20 yd calls its neighbour 8 yd on (28 yd from
         // the party: out of its own reach).
         std::vector<AggroMob> waker = {Target(), Mob(20.0f, 0.0f), Mob(28.0f, 0.0f)};
@@ -266,6 +271,23 @@ int main()
         mobs[1].groupId = 3;
         mobs[2] = Mob(28.0f, 0.0f);
         CHECK(Bodies(mobs) == 3);
+    }
+
+    // The ring starts from every pack member's spawn: the ZG terrace's cross-pack wakes are spawn pairs 11.0-19.5 yd
+    // apart, and the woken creature was never near the pulled one itself.
+    {
+        std::vector<AggroMob> mobs = {Target(), Mob(100.0f, 30.0f), Mob(100.0f, 49.5f)};
+        mobs[0].groupId = 3;
+        mobs[1].groupId = 3;
+        CHECK(Bodies(mobs) == 3); // 19.5 yd from the pack mate, 49.5 yd from the target
+        mobs[2].y = 50.5f; // 20.5 yd: outside the ring
+        CHECK(Bodies(mobs) == 2);
+        // The assisted neighbour drags its own pack in.
+        mobs[2].y = 49.5f;
+        mobs[2].groupId = 4;
+        mobs.push_back(Mob(500.0f, 500.0f));
+        mobs[3].groupId = 4;
+        CHECK(Bodies(mobs) == 4);
     }
 
     // An assisted creature drags its pack in, and that pack does not call.
