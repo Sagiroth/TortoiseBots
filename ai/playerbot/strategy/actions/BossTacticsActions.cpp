@@ -14,6 +14,7 @@
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
+#include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
@@ -243,6 +244,77 @@ bool IsCleaveToggleAction(Action* action)
         return false;
     std::string const& name = action->GetName();
     return name == "sweeping strikes" || name == "blade flurry";
+}
+
+// The creature-charmed members of the bot's group, read once per AI update: the hold multiplier asks for every action
+// the engine weighs, and the roster cannot change inside one update. Aura-free by design (GetCharmerGuid only): an
+// aura walk here would run for every action of every bot.
+constexpr std::size_t kCharmedAllyMax = 40;  // a raid's member slots
+struct CharmedAllyCache
+{
+    PlayerbotAI* ai = nullptr;
+    Player* bot = nullptr;
+    std::uint32_t tick = 0;
+    bool valid = false;
+    std::size_t count = 0;
+    Player* members[kCharmedAllyMax] = {};
+};
+thread_local CharmedAllyCache t_charmedAllies;
+
+const CharmedAllyCache& CharmedAllies(PlayerbotAI* ai, Player* bot)
+{
+    std::uint32_t const tick = ai->UpdateTick();
+    if (t_charmedAllies.valid && t_charmedAllies.ai == ai && t_charmedAllies.bot == bot && t_charmedAllies.tick == tick)
+        return t_charmedAllies;
+    t_charmedAllies = CharmedAllyCache();
+    t_charmedAllies.ai = ai;
+    t_charmedAllies.bot = bot;
+    t_charmedAllies.tick = tick;
+    t_charmedAllies.valid = true;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return t_charmedAllies;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (t_charmedAllies.count >= kCharmedAllyMax)
+            break;
+        if (!member || member == bot)
+            continue;
+        ObjectGuid const charmer = member->GetCharmerGuid();
+        // A player charmer is the core's business (it installs its own AI); only a creature's charm leaves the bot's
+        // own AI running beside the charmer's control.
+        if (charmer.IsEmpty() || charmer.IsPlayer())
+            continue;
+        t_charmedAllies.members[t_charmedAllies.count++] = member;
+    }
+    return t_charmedAllies;
+}
+
+// Whether this area action stands down because a creature-charmed group member would take it (DungeonRunCharmYield):
+// a hostile ally is healable damage for ten seconds, while an ally's blast on him is not. Any map: the key is the
+// encounter's, no row is needed. A self-centred blast (Thunder Clap, Consecration, Swipe, the cleave toggles) has no
+// point but the bot; anything else is judged at its target, and an action with nothing picked yet from the bot, the
+// conservative side.
+bool CharmedAllyAreaVeto(PlayerbotAI* ai, Player* bot, Action* action)
+{
+    if (!sPlayerbotAIConfig.dungeonRunCharmYield || !action)
+        return false;
+    const CharmedAllyCache& charmed = CharmedAllies(ai, bot);
+    if (charmed.count == 0)
+        return false;
+    bool const cleave = IsCleaveToggleAction(action);
+    if (!cleave && !IsAreaDamageAction(ai, action))
+        return false;
+    Unit* const point = cleave ? nullptr : action->GetTarget();
+    bool const selfCentred = !point || point == bot || action->GetTargetName() == "self target";
+    for (std::size_t i = 0; i < charmed.count; ++i)
+    {
+        Player* const member = charmed.members[i];
+        float const toPoint = selfCentred ? 0.0f : point->GetDistance(member);
+        if (CharmedAllyInArea(toPoint, bot->GetDistance(member), selfCentred))
+            return true;
+    }
+    return false;
 }
 
 // A single-target damage action that lands on the bot's current target: a melee swing or an attack spell. Heals, the
@@ -1494,6 +1566,13 @@ bool BossTacticsLinkedDeathAction::Execute(Event& event)
     if (AI_VALUE(Unit*, "current target") == pick)
         return false;
     return Attack(bot, pick);
+}
+
+float CharmedAllyHoldMultiplier::GetValue(Action* action)
+{
+    // The charmed ally's veto is not boss tactics': every bot carries this multiplier (avoid aoe and the dungeon
+    // strategy), so AiPlayerbot.DungeonRunCharmYield alone stands an area action down, on any map, with no row.
+    return CharmedAllyAreaVeto(ai, bot, action) ? 0.0f : 1.0f;
 }
 
 float BossTacticsHoldMultiplier::GetValue(Action* action)

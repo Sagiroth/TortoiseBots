@@ -250,6 +250,16 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // AiPlayerbot.DungeonRunCharmYield: an area action that would land within kCharmedAllyAreaYd of a creature-charmed
+    // group member is stood down. Not a boss-tactics rule: the key alone decides, on any map, so the class is
+    // registered on the always-on combat strategies (the TrapHoldMultiplier placement), not on BossTacticsStrategy.
+    class CharmedAllyHoldMultiplier : public Multiplier
+    {
+    public:
+        CharmedAllyHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "charmed ally hold") {}
+        float GetValue(Action* action) override;
+    };
+
     // Once on the kill-first creature, the generic assist/AoE re-pick would swing
     // the bot back to the boss the next tick.
     class BossTacticsHoldMultiplier : public Multiplier
