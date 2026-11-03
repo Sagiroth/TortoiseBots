@@ -250,13 +250,11 @@ class SpreadKindWiring(unittest.TestCase):
 class KeyConsumerWiring(unittest.TestCase):
     """Both keys of this worker now have a consumer, so their allowlist lines are gone."""
 
-    def test_the_two_allowlist_lines_are_dropped(self):
+    def test_the_hakkar_allowlist_lines_are_all_dropped(self):
+        # Every Hakkar key has a consumer once the seek, spread, charm yield and pull gate kinds have landed.
         allow = body(CONFIG_USAGE, "ALLOWLIST = {", "\n}\n")
-        self.assertNotIn("dungeonRunSeekAura", allow)
-        self.assertNotIn("dungeonRunBossSpread", allow)
-        # W3's and W4's stay until their kinds land.
-        self.assertIn("dungeonRunPullGate", allow)
-        self.assertIn("dungeonRunCharmYield", allow)
+        for key in ("dungeonRunSeekAura", "dungeonRunBossSpread", "dungeonRunPullGate", "dungeonRunCharmYield"):
+            self.assertNotIn(key, allow)
 
     def test_the_keys_are_read_where_they_act(self):
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekAura", ACTIONS)
