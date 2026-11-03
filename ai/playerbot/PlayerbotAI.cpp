@@ -5014,8 +5014,9 @@ bool PlayerbotAI::ReturnHeld()
 
 bool PlayerbotAI::CanMove(bool ignoreReturnHold)
 {
-    // No follow, walk, chase or pull while the run brings the bot back: it fights from where it stands.
-    if (!ignoreReturnHold && ReturnHeld())
+    // No follow, walk, chase or pull while the run brings the bot back: it fights from where it stands. The mark is
+    // only written with the revive hold key on (Commander's SyncReturnHolds), so the lookup itself waits for it.
+    if (!ignoreReturnHold && sPlayerbotAIConfig.dungeonReviveHoldYd > 0.0f && ReturnHeld())
     {
         return false;
     }

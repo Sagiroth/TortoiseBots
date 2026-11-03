@@ -83,7 +83,9 @@ class TeleportReturnWiringTest(unittest.TestCase):
 
     def test_can_move_reads_the_hold(self):
         can = body(AI, "bool PlayerbotAI::CanMove(bool ignoreReturnHold)", "\n}\n")
-        self.assertIn("if (!ignoreReturnHold && ReturnHeld())\n    {\n        return false;", can)
+        # The mark is only written with the key on, so the lookup itself waits for it.
+        self.assertIn("if (!ignoreReturnHold && sPlayerbotAIConfig.dungeonReviveHoldYd > 0.0f && ReturnHeld())\n"
+                      "    {\n        return false;", can)
         held = body(AI, "bool PlayerbotAI::ReturnHeld()", "\n}\n")
         self.assertIn('"return hold until ms"', held)
         self.assertIn("ai::ReturnHoldOn(", held)
