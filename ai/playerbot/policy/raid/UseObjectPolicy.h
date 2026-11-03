@@ -113,6 +113,16 @@ struct UseObjectAttempts
     std::uint64_t secondObject = 0;
     std::uint32_t secondCount = 0;
 
+    // The attempts taken on one object so far (the object scan drops an object at kUseObjectAttemptsPerObject).
+    std::uint32_t AttemptsFor(std::uint64_t objectGuid) const
+    {
+        if (objectGuid == firstObject)
+            return firstCount;
+        if (objectGuid == secondObject)
+            return secondCount;
+        return 0;
+    }
+
     bool Ready(std::uint64_t objectGuid, std::uint32_t now) const
     {
         if (attempted && now - lastAttemptMs < kUseObjectAttemptSpacingMs)

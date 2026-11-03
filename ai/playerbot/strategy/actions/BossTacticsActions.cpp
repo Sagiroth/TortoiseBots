@@ -15,6 +15,7 @@
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
+#include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 #include "ChooseTargetActions.h"
@@ -1456,4 +1457,533 @@ bool BossTacticsStandAction::Execute(Event& event)
     lastY = stand.y;
     hasLast = true;
     return true;
+}
+
+namespace
+{
+// The use_object record: one per (map instance, boss, row), shared by every bot of the instance (the g_standHolds
+// pattern). It holds the one clicker claim, the click clock and the per-object attempts, so every bot's decision is
+// made from the same state. A mutex guards it: the trigger and the action of every bot reach it.
+struct UseObjectRecord
+{
+    std::uint32_t firstSeenMs = 0;  // the row's timer starts here before the first click
+    std::uint32_t lastSeenMs = 0;
+    std::uint32_t lastClickMs = 0;
+    bool everClicked = false;
+    std::uint64_t clicker = 0;  // 0: unclaimed
+    std::uint32_t clickerSinceMs = 0;
+    bool claimLogged = false;
+    UseObjectAttempts attempts;
+    std::uint64_t objectGuid = 0;
+    std::uint32_t objectScanMs = 0;
+    // The anchor walk's episode: the moment it started and how far the boss was, so one walk logs one pair of lines.
+    std::uint32_t anchorStartMs = 0;
+    float anchorFromYd = 0.0f;
+    bool anchorDone = false;  // this cycle's walk is over (arrived), no second one until the row is due again
+};
+
+std::mutex g_useObjectMutex;
+std::map<std::tuple<std::uint32_t, std::uint64_t, const BossTacticRow*>, UseObjectRecord> g_useObjectRecords;
+
+// The tank's walk point is close enough: the anchor is over and the tank goes back to the boss.
+const float kUseObjectArriveYd = 3.0f;
+// The object search around the boss: a used crystal's replacement spawns 40-80 yd from it.
+const float kUseObjectSearchYd = 100.0f;
+// The record's object is searched at most this often: one grid walk per record per second, never per bot per tick.
+const std::uint32_t kUseObjectObjectScanMs = 1000;
+// A record nobody evaluated for this long is dropped (the fight is over or the boss left).
+const std::uint32_t kUseObjectRecordIdleMs = 90000;
+const std::uint32_t kUseObjectSkipLogGapMs = 5000;
+
+using UseObjectKey = std::tuple<std::uint32_t, std::uint64_t, const BossTacticRow*>;
+
+UseObjectKey UseObjectRecordKey(Unit* boss, const BossTacticRow* row)
+{
+    return UseObjectKey(boss->GetInstanceId(), boss->GetObjectGuid().GetRawValue(), row);
+}
+
+// Drops the records of fights that stopped being evaluated. Called with g_useObjectMutex held; the sweep itself runs
+// at most once per idle window.
+void SweepUseObjectRecords(std::uint32_t nowMs)
+{
+    static std::uint32_t lastSweepMs = 0;
+    if (lastSweepMs != 0 && nowMs - lastSweepMs < kUseObjectRecordIdleMs)
+        return;
+    lastSweepMs = nowMs;
+    for (auto it = g_useObjectRecords.begin(); it != g_useObjectRecords.end();)
+        it = nowMs - it->second.lastSeenMs > kUseObjectRecordIdleMs ? g_useObjectRecords.erase(it) : std::next(it);
+}
+
+// The record's object: the ready object of the row's entry nearest the boss (not the bot: both the clicker and the
+// anchoring tank go where the boss is), cached for a second. An object the record spent its two attempts on is skipped
+// so the next one of the pair takes over.
+GameObject* ReadyUseObject(PlayerbotAI* ai, UseObjectRecord& record, Unit* boss, const BossTacticRow& row,
+                           std::uint32_t nowMs)
+{
+    const auto ready = [&record](GameObject* go)
+    {
+        return go && sServerFacade.isSpawned(go) && go->GetGoState() == GO_STATE_READY &&
+            !go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE) && !go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT) &&
+            record.attempts.AttemptsFor(go->getObjectGuid().GetRawValue()) < kUseObjectAttemptsPerObject;
+    };
+    if (record.objectGuid != 0 && nowMs - record.objectScanMs < kUseObjectObjectScanMs)
+    {
+        GameObject* cached = ai->GetGameObject(ObjectGuid(record.objectGuid));
+        if (ready(cached))
+            return cached;
+        // Used or gone: look again now instead of after the cache's second.
+        record.objectScanMs = 0;
+    }
+    std::list<GameObject*> objects;
+    boss->GetGameObjectListWithEntryInGrid(objects, row.targetEntry, kUseObjectSearchYd);
+    GameObject* best = nullptr;
+    float bestDistance = 0.0f;
+    for (GameObject* go : objects)
+    {
+        if (!ready(go))
+            continue;
+        const float distance = boss->GetDistance3dToCenter(go);
+        if (best && (distance > bestDistance || (distance == bestDistance &&
+                go->getObjectGuid().GetRawValue() > best->getObjectGuid().GetRawValue())))
+            continue;
+        best = go;
+        bestDistance = distance;
+    }
+    record.objectGuid = best ? best->getObjectGuid().GetRawValue() : 0;
+    record.objectScanMs = nowMs;
+    return best;
+}
+
+struct UseObjectEval
+{
+    GameObject* object = nullptr;
+    float bossToObject = 0.0f;
+    bool bossMoving = false;
+    bool due = false;
+    std::uint32_t msToDue = 0;
+    std::uint32_t sinceMs = 0;
+};
+
+// The row's state for its record: the object, the boss's range to it and the clock (UseObjectPolicy.h owns the rules).
+UseObjectEval EvaluateUseObject(PlayerbotAI* ai, UseObjectRecord& record, Unit* boss, const BossTacticRow& row,
+                                std::uint32_t nowMs)
+{
+    UseObjectEval eval;
+    const bool bossHasAura = row.spellId != 0 && boss->HasAura(row.spellId);
+    const std::uint32_t sinceClickMs = record.everClicked ? nowMs - record.lastClickMs : 0;
+    const std::uint32_t sinceFirstSeenMs = nowMs - record.firstSeenMs;
+    eval.sinceMs = record.everClicked ? sinceClickMs : sinceFirstSeenMs;
+    eval.due = UseObjectDue(row.spellId != 0, bossHasAura, row.windowSec, record.everClicked, sinceClickMs,
+                            sinceFirstSeenMs);
+    eval.msToDue = UseObjectMsToDue(row.spellId != 0, bossHasAura, row.windowSec, record.everClicked, sinceClickMs,
+                                    sinceFirstSeenMs);
+    eval.object = ReadyUseObject(ai, record, boss, row, nowMs);
+    if (eval.object)
+    {
+        eval.bossToObject = boss->GetDistance3dToCenter(eval.object);
+        // The weakness lands 5 s after the click, so the boss has to be still now (the click gate's rule).
+        eval.bossMoving = sServerFacade.isMoving(boss) || !boss->movespline->Finalized();
+    }
+    return eval;
+}
+
+// The clicker roles the row's `priority` names: 0 free DPS, 1 healer, 2 any non-tank.
+bool UseObjectRoleAllows(Player* member, std::uint8_t priority)
+{
+    const bool tank = PlayerbotAI::IsTank(member);
+    const bool healer = PlayerbotAI::IsHeal(member);
+    if (priority == 0)
+        return !tank && !healer;
+    if (priority == 1)
+        return healer;
+    return !tank;
+}
+
+// A bot that may take the click: in the group, alive, on the boss's map and instance, armed with the tactics, of the
+// row's role, able to move, in control and not on an explicit stay. The row's `bot_aura` gate is a fact every bot can
+// see, so the pick stays the same in every bot's evaluation.
+bool UseObjectCanClick(PlayerbotAI* self, Player* bot, Player* member, Unit* boss, const BossTacticRow& row)
+{
+    if (!member || !member->IsInWorld() || member->IsBeingTeleported() || !sServerFacade.IsAlive(member))
+        return false;
+    if (member->GetMapId() != boss->GetMapId() || member->GetInstanceId() != boss->GetInstanceId())
+        return false;
+    PlayerbotAI* memberAi = member == bot ? self : PlayerbotAIStorage::Instance().GetAI(member);
+    if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (!UseObjectRoleAllows(member, row.priority))
+        return false;
+    if (member->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) || !memberAi->CanMove())
+        return false;
+    if (memberAi->HasStrategy("stay", BotState::BOT_STATE_COMBAT))
+        return false;
+    return row.botAura == 0 || member->HasAura(row.botAura);
+}
+
+// The group roster as the pick sees it, this bot included: 2D distance to the object and the eligibility gates.
+std::vector<UseObjectCandidate> UseObjectCandidates(PlayerbotAI* ai, Player* bot, Unit* boss, GameObject* object,
+                                                    const BossTacticRow& row)
+{
+    std::vector<UseObjectCandidate> candidates;
+    const auto add = [&](Player* member)
+    {
+        UseObjectCandidate candidate;
+        candidate.guid = member->GetObjectGuid().GetRawValue();
+        candidate.distanceYd = member->GetDistance2dToCenter(object);
+        candidate.eligible = UseObjectCanClick(ai, bot, member, boss, row);
+        candidates.push_back(candidate);
+    };
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+            if (member)
+                add(member);
+    }
+    else
+        add(bot);
+    return candidates;
+}
+
+std::mutex g_useObjectLogMutex;
+std::unordered_map<std::uint64, std::uint32_t> g_useObjectSkipLog;
+
+// The clicker's decisions, one bot_events.csv row each: claim, walk, click, and the skip (throttled to one per 5 s per
+// bot). A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hold-kill and avoid-cast rows; the
+// throttle is checked before any string is built.
+void LogUseObject(PlayerbotAI* ai, Player* bot, const char* phase, const UseObjectTask& task, std::uint32_t nowMs,
+                  std::uint32_t tries, const char* skip)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    if (skip)
+    {
+        std::lock_guard<std::mutex> lock(g_useObjectLogMutex);
+        std::uint32_t& last = g_useObjectSkipLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kUseObjectSkipLogGapMs)
+            return;
+        last = nowMs;
+    }
+    const bool auraDue = task.row && task.row->spellId != 0 && task.boss && task.boss->HasAura(task.row->spellId);
+    char info1[192];
+    if (skip)
+        snprintf(info1, sizeof(info1), "phase=%s,go=%u,boss=%u,boss_yd=%.1f,due=%s,since_ms=%u,try=%u,reason=%s", phase,
+                 task.row ? task.row->targetEntry : 0, task.row ? task.row->bossEntry : 0, task.bossToObject,
+                 auraDue ? "aura" : "timer", task.sinceMs, tries, skip);
+    else
+        snprintf(info1, sizeof(info1), "phase=%s,go=%u,boss=%u,boss_yd=%.1f,due=%s,since_ms=%u,try=%u", phase,
+                 task.row ? task.row->targetEntry : 0, task.row ? task.row->bossEntry : 0, task.bossToObject,
+                 auraDue ? "aura" : "timer", task.sinceMs, tries);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsUseObject", info1, "");
+}
+
+// The anchor walk's two lines (start and arrival), from the finder both the trigger and the action call.
+void LogUseObjectAnchor(PlayerbotAI* ai, const BossTacticRow& row, float fromYd, bool arrived,
+                        std::uint32_t arrivedMs)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[128];
+    if (arrived)
+        snprintf(info1, sizeof(info1), "boss=%u,go=%u,from_yd=%.1f,arrived_ms=%u", row.bossEntry, row.targetEntry,
+                 fromYd, arrivedMs);
+    else
+        snprintf(info1, sizeof(info1), "boss=%u,go=%u,from_yd=%.1f,arrived_ms=none", row.bossEntry, row.targetEntry,
+                 fromYd);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsAnchor", info1, "");
+}
+
+// Takes the record's next attempt for the claimed clicker: at most two per object, 8 s apart, and a taken attempt
+// restarts the row's timer and frees the claim, so the next cycle picks again.
+bool TakeUseObjectAttempt(Player* bot, const UseObjectTask& task, std::uint32_t nowMs, std::uint32_t& tries)
+{
+    if (!task.object || !task.boss || !task.row)
+        return false;
+    const std::uint64_t objectGuid = task.object->getObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_useObjectMutex);
+    auto it = g_useObjectRecords.find(UseObjectRecordKey(task.boss, task.row));
+    if (it == g_useObjectRecords.end())
+        return false;
+    UseObjectRecord& record = it->second;
+    if (!record.attempts.Take(objectGuid, bot->GetObjectGuid().GetRawValue(), record.clicker, nowMs))
+        return false;
+    record.lastClickMs = nowMs;
+    record.everClicked = true;
+    record.clicker = 0;
+    record.clickerSinceMs = nowMs;
+    record.claimLogged = false;
+    tries = record.attempts.AttemptsFor(objectGuid);
+    return true;
+}
+
+// The boss a use_object row is about, among the fight's units: alive (the scan's list) and fighting.
+Unit* UseObjectBoss(const BossTacticsFight& fight, const BossTacticRow& row)
+{
+    for (Unit* unit : fight.units)
+    {
+        if (unit->GetEntry() == row.bossEntry && unit->IsInCombat())
+            return unit;
+    }
+    return nullptr;
+}
+}  // namespace
+
+UseObjectTask ai::FindBossUseObject(PlayerbotAI* ai, Player* bot)
+{
+    UseObjectTask task;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunUseObject)
+        return task;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return task;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !ai->CanMove())
+        return task;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::UseObject)
+            continue;
+        Unit* boss = UseObjectBoss(fight, *row);
+        if (!boss)
+            continue;
+        std::lock_guard<std::mutex> lock(g_useObjectMutex);
+        SweepUseObjectRecords(nowMs);
+        UseObjectRecord& record = g_useObjectRecords[UseObjectRecordKey(boss, row)];
+        if (record.firstSeenMs == 0)
+            record.firstSeenMs = nowMs;
+        record.lastSeenMs = nowMs;
+        const UseObjectEval eval = EvaluateUseObject(ai, record, boss, *row, nowMs);
+        if (eval.object)
+        {
+            const std::vector<UseObjectCandidate> candidates = UseObjectCandidates(ai, bot, boss, eval.object, *row);
+            const int pick = PickUseObjectClicker(candidates);
+            const std::uint64_t pickGuid = pick < 0 ? 0 : candidates[pick].guid;
+            // A claim nobody acted on for 30 s is given up so the roster is looked at again (a path the mover cannot
+            // find, a bot that died mid-walk).
+            const bool lapsed = record.clicker != 0 && nowMs - record.clickerSinceMs > kUseObjectClaimTimeoutMs;
+            if (pickGuid != record.clicker)
+            {
+                record.clicker = pickGuid;
+                record.clickerSinceMs = nowMs;
+                record.claimLogged = false;
+            }
+            else if (lapsed)
+            {
+                record.clickerSinceMs = nowMs;
+                record.claimLogged = false;
+            }
+        }
+        if (record.clicker != self)
+            continue;
+        if (!(eval.due || eval.msToDue <= kUseObjectLeadMs))
+            continue;
+        task.valid = true;
+        task.logClaim = !record.claimLogged;
+        task.boss = boss;
+        task.object = eval.object;
+        task.row = row;
+        task.due = eval.due;
+        task.bossMoving = eval.bossMoving;
+        task.bossToObject = eval.bossToObject;
+        task.msToDue = eval.msToDue;
+        task.sinceMs = eval.sinceMs;
+        task.attemptReady = eval.object && record.attempts.Ready(record.objectGuid, nowMs);
+        return task;
+    }
+    return task;
+}
+
+void ai::NoteBossUseObjectClaimLogged(Unit* boss, const BossTacticRow* row)
+{
+    if (!boss || !row)
+        return;
+    std::lock_guard<std::mutex> lock(g_useObjectMutex);
+    auto it = g_useObjectRecords.find(UseObjectRecordKey(boss, row));
+    if (it != g_useObjectRecords.end())
+        it->second.claimLogged = true;
+}
+
+UseObjectAnchor ai::FindBossUseObjectAnchor(PlayerbotAI* ai, Player* bot)
+{
+    UseObjectAnchor anchor;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunUseObject)
+        return anchor;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return anchor;
+    if (!PlayerbotAI::IsTank(bot) || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !ai->CanMove())
+        return anchor;
+    if (bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
+        return anchor;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::UseObject || row->mode != TacticMode::TankAnchor)
+            continue;
+        Unit* boss = UseObjectBoss(fight, *row);
+        // Only the tank the boss is on moves it: while Enveloping Winds dropped its threat the boss is on someone else
+        // and the anchor waits (the timer has the margin).
+        if (!boss || boss->GetVictim() != bot)
+            continue;
+        bool want = false;
+        bool started = false;
+        bool arrived = false;
+        std::uint32_t arrivedMs = 0;
+        float fromYd = 0.0f;
+        UseObjectEval eval;
+        float x = 0.0f;
+        float y = 0.0f;
+        float tankDistance = 0.0f;
+        {
+            std::lock_guard<std::mutex> lock(g_useObjectMutex);
+            SweepUseObjectRecords(nowMs);
+            UseObjectRecord& record = g_useObjectRecords[UseObjectRecordKey(boss, row)];
+            if (record.firstSeenMs == 0)
+                record.firstSeenMs = nowMs;
+            record.lastSeenMs = nowMs;
+            eval = EvaluateUseObject(ai, record, boss, *row, nowMs);
+            if (!eval.object || !TankAnchorWanted(true, eval.msToDue, eval.bossToObject, row->param))
+            {
+                // The row is not asking for the walk: the next cycle starts a new episode.
+                record.anchorStartMs = 0;
+                record.anchorDone = false;
+            }
+            else
+            {
+                TankAnchorPoint(eval.object->GetPositionX(), eval.object->GetPositionY(), bot->GetPositionX(),
+                                bot->GetPositionY(), row->param * 0.4f, x, y);
+                tankDistance = bot->GetDistance2dToCenter(x, y);
+                if (tankDistance <= kUseObjectArriveYd)
+                {
+                    if (record.anchorStartMs != 0)
+                    {
+                        arrived = true;
+                        arrivedMs = nowMs - record.anchorStartMs;
+                        fromYd = record.anchorFromYd;
+                        record.anchorStartMs = 0;
+                        record.anchorDone = true;
+                    }
+                }
+                else if (!record.anchorDone)
+                {
+                    if (record.anchorStartMs == 0)
+                    {
+                        record.anchorStartMs = nowMs;
+                        record.anchorFromYd = eval.bossToObject;
+                        started = true;
+                    }
+                    want = true;
+                }
+            }
+        }
+        if (started)
+            LogUseObjectAnchor(ai, *row, eval.bossToObject, false, 0);
+        if (arrived)
+            LogUseObjectAnchor(ai, *row, fromYd, true, arrivedMs);
+        if (!want)
+            continue;
+        anchor.valid = true;
+        anchor.boss = boss;
+        anchor.object = eval.object;
+        anchor.row = row;
+        anchor.bossToObject = eval.bossToObject;
+        anchor.tankDistance = tankDistance;
+        anchor.x = x;
+        anchor.y = y;
+        return anchor;
+    }
+    return anchor;
+}
+
+bool BossTacticsUseObjectAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsUseObjectAction::Execute(Event& event)
+{
+    (void)event;
+    const UseObjectTask task = FindBossUseObject(ai, bot);
+    if (!task.valid)
+    {
+        hasLast = false;
+        return false;
+    }
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const bool logIt = sPlayerbotAIConfig.hasLog("bot_events.csv");
+    if (logIt && task.logClaim)
+    {
+        LogUseObject(ai, bot, "claim", task, nowMs, 0, nullptr);
+        NoteBossUseObjectClaimLogged(task.boss, task.row);
+    }
+    if (!task.object)
+    {
+        // The pair is spent or between spawns: nothing to click this tick.
+        if (logIt)
+            LogUseObject(ai, bot, "skip", task, nowMs, 0, "no_object");
+        return false;
+    }
+    if (bot->GetDistance3dToCenter(task.object) > INTERACTION_DISTANCE - 1.0f)
+    {
+        const float x = task.object->GetPositionX();
+        const float y = task.object->GetPositionY();
+        // Already walking to this object: leave the spline alone.
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
+            std::fabs(lastY - y) < 1.0f)
+            return true;
+        const float z = task.object->GetPositionZ();
+        if (logIt)
+            LogUseObject(ai, bot, "walk", task, nowMs, 0, nullptr);
+        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            return false;
+        lastX = x;
+        lastY = y;
+        hasLast = true;
+        return true;
+    }
+    hasLast = false;
+    // At the object: hold until the click is allowed (returning true keeps combat moves from dragging the bot back).
+    ai->StopMoving();
+    if (!UseObjectClickReady(task.due, task.bossToObject, task.row->param, task.bossMoving, task.attemptReady))
+    {
+        if (logIt)
+        {
+            const char* reason = !task.due || !task.attemptReady ? "window" : (task.bossMoving ? "moving" : "far");
+            LogUseObject(ai, bot, "skip", task, nowMs, 0, reason);
+        }
+        return true;
+    }
+    std::uint32_t tries = 0;
+    if (!TakeUseObjectAttempt(bot, task, nowMs, tries))
+    {
+        if (logIt)
+            LogUseObject(ai, bot, "skip", task, nowMs, 0, "window");
+        return true;
+    }
+    if (logIt)
+        LogUseObject(ai, bot, "click", task, nowMs, tries, nullptr);
+    // The core re-checks the use; the packet is the module's established path to a gameobject use.
+    if (!bot->GetGameObjectIfCanInteractWith(task.object->getObjectGuid()))
+        return false;
+    std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
+    *packet << task.object->getObjectGuid();
+    bot->GetSession()->QueuePacket(packet.release());
+    return true;
+}
+
+bool BossTacticsObjectAnchorAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsObjectAnchorAction::Execute(Event& event)
+{
+    (void)event;
+    const UseObjectAnchor anchor = FindBossUseObjectAnchor(ai, bot);
+    if (!anchor.valid)
+        return false;
+    // The walk point sits between the object and the tank; its z comes from the ground under it.
+    float z = anchor.object->GetPositionZ();
+    bot->UpdateGroundPositionZ(anchor.x, anchor.y, z);
+    return MoveTo(bot->GetMapId(), anchor.x, anchor.y, z);
 }

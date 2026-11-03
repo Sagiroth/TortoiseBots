@@ -211,4 +211,63 @@ namespace ai
         bool isPossible() override;
         bool Execute(Event& event) override;
     };
+
+    // The use_object kind's clicker side: one claimed bot walks to the ready object nearest the boss, holds there and
+    // uses the object once the row is due and the boss stands still inside the row's range. Every bot computes the same
+    // claim from the same group roster (UseObjectPolicy.h); `valid` is true only for the claimed bot and only from the
+    // row's lead onwards, so no other bot's trigger fires.
+    struct UseObjectTask
+    {
+        bool valid = false;
+        bool logClaim = false;  // the claim line has not been written yet
+        Unit* boss = nullptr;
+        GameObject* object = nullptr;  // null when no object of the row's entry is ready right now
+        const BossTacticRow* row = nullptr;
+        bool due = false;
+        bool attemptReady = false;
+        bool bossMoving = false;
+        float bossToObject = 0.0f;
+        std::uint32_t msToDue = 0;
+        std::uint32_t sinceMs = 0;  // since the last click, or since the boss was first seen before any
+    };
+    UseObjectTask FindBossUseObject(PlayerbotAI* ai, Player* bot);
+    void NoteBossUseObjectClaimLogged(Unit* boss, const BossTacticRow* row);
+
+    // The mode tank_anchor side: the point the tank the boss is on walks it to, 0.4 * the row's range short of the
+    // object. `valid` only while the walk is still wanted and the tank is farther than 3 yd from the point.
+    struct UseObjectAnchor
+    {
+        bool valid = false;
+        Unit* boss = nullptr;
+        GameObject* object = nullptr;
+        const BossTacticRow* row = nullptr;
+        float bossToObject = 0.0f;
+        float tankDistance = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+    UseObjectAnchor FindBossUseObjectAnchor(PlayerbotAI* ai, Player* bot);
+
+    class BossTacticsUseObjectAction : public MovementAction
+    {
+    public:
+        BossTacticsUseObjectAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics use object") {}
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk in was started for this spot: MoveTo relaunches the spline on every call, so a bot already on its way
+        // is left alone (the stand action's pattern).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+    };
+
+    class BossTacticsObjectAnchorAction : public MovementAction
+    {
+    public:
+        BossTacticsObjectAnchorAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics object anchor") {}
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+    };
 }
