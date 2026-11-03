@@ -1221,6 +1221,21 @@ class RunLeaderWiringTest(unittest.TestCase):
                       '        !TortoiseBots::DungeonRun::CcOrderFamilyAllows(AI_VALUE(std::string, "run cc family"), getName())',
                       trig)
 
+    def test_unknown_cc_family_is_refused_before_any_side_effect(self):
+        # An unknown family token is refused by the command and by RunCcOrder before anything changes: the held attacks
+        # are dropped, the raid mark moves, the bot's rti assignment and its run family are written only after the check.
+        run_cc = body((ROOT / "commands/Action.cpp").read_text(), "bool RunCcOrder(", "\n}\n")
+        check = run_cc.find("CcOrderFamilyKnown(ccFamilyToken)")
+        self.assertNotEqual(check, -1)
+        for side_effect in ("SetTargetIcon(", 'ExecuteQuietAction(ai, "rti"', 'familyValue->Set(runFamily ? ccFamily : "none");'):
+            self.assertNotEqual(run_cc.find(side_effect), -1, side_effect)
+            self.assertLess(check, run_cc.find(side_effect), side_effect)
+        cc_parse = COMMANDS.index("// cc <mark> <guid> [bot] [family]")
+        cmd_check = COMMANDS.find("CcOrderFamilyKnown(parts[3])", cc_parse)
+        self.assertNotEqual(cmd_check, -1)
+        self.assertLess(cmd_check, COMMANDS.find('if (!family.empty() && family != "none")', cc_parse))
+        self.assertLess(cmd_check, COMMANDS.find("DropHeldAttacks(order.commander->GetObjectGuid().GetRawValue(), 0);", cc_parse))
+
     def test_hold_follows_the_tank_and_dead_gossip_npc_is_named(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         # 1. A hold's fight lets the places go when the tank is off the spot; the glue's existing release

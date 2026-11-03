@@ -37,5 +37,22 @@ inline bool CcOrderFamilyAllows(std::string const& orderFamily, std::string cons
     std::string const token = CcFamilyTokenNorm(orderFamily);
     return token.empty() || token == "none" || CcFamilyTokenNorm(spell) == token;
 }
+
+// Whether a family token an order names is one of the families the run's automatic pick can choose (the normalized
+// spell names of DungeonRunPolicy.h kRunCc), or "none". The empty text names no family. Any other text, a misspelling
+// or a family outside that set (Sleep, Gouge, ...) is refused by the command before a raid mark moves. Callers pass the
+// trimmed token.
+inline bool CcOrderFamilyKnown(std::string const& text)
+{
+    if (text.empty())
+        return true;
+    static constexpr char const* kKnownFamilies[] = {"polymorph", "shackleundead", "banish", "hibernate", "seduction",
+        "freezingtrap", "sap", "repentance", "scarebeast", "fear", "none"};
+    std::string const token = CcFamilyTokenNorm(text);
+    for (char const* known : kKnownFamilies)
+        if (token == known)
+            return true;
+    return false;
+}
 }
 }

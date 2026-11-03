@@ -541,6 +541,15 @@ bool RunCcOrder(ChatHandler* handler, BotCommandContext const& context, Player* 
         if (ccMore != std::string::npos)
             ccFamilyToken = Trim(rest.substr(ccMore + 1));
     }
+    // An unknown family is refused before any name, target or mark is touched: no mark moves, no assignment is made and
+    // the bot's family state stays as it was.
+    if (!TortoiseBots::DungeonRun::CcOrderFamilyKnown(ccFamilyToken))
+    {
+        SendActionError(handler, reportIntent, "invalid",
+            "Unknown cc family. Use polymorph, shackleundead, banish, hibernate, seduction, freezingtrap, sap, "
+            "repentance, scarebeast, fear or none.");
+        return true;
+    }
     std::string const ccFamily = TortoiseBots::DungeonRun::CcFamilyTokenNorm(ccFamilyToken);
     bool const runFamily = !ccFamily.empty() && ccFamily != "none";
     int markIndex = RtiTargetValue::GetRtiIndex(ccMark);

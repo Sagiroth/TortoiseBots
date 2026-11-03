@@ -30957,6 +30957,20 @@ static void TestAutoCcSeductionOrderNamesItsFamily()
     CHECK(CcOrderFamilyAllows("", "seduction"));
     CHECK(CcOrderFamilyAllows("none", "seduction"));
 
+    // The command's family check (CcOrderFamilyKnown): every family the automatic pick can name is known, "none" and
+    // the empty text name no family, and a misspelling or a family outside the run's set is refused before a mark moves.
+    for (const RunCcSpell& c : kRunCc)
+        CHECK(CcOrderFamilyKnown(c.spell));
+    CHECK(CcOrderFamilyKnown(""));
+    CHECK(CcOrderFamilyKnown("none"));
+    CHECK(CcOrderFamilyKnown("Shackle Undead"));
+    CHECK(!CcOrderFamilyKnown("fearr"));           // misspelled
+    CHECK(!CcOrderFamilyKnown("Shakle Undead"));   // misspelled
+    CHECK(!CcOrderFamilyKnown("sleep"));           // unsupported: the mage's Sleep is no run family
+    CHECK(!CcOrderFamilyKnown("gouge"));           // unsupported
+    CHECK(!CcOrderFamilyKnown("fear extra"));      // two tokens after the mark normalize to one unknown token
+    CHECK(!CcOrderFamilyKnown("!!!"));             // no family letters at all
+
     // Risky off: a fear-only party never sends a fear order, whatever the room.
     Run s = Start(&plan);
     Facts g = AutoParty(1);

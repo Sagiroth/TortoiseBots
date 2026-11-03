@@ -6501,7 +6501,13 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (parts.size() == 4)
     {
         // The run leader's automatic pick names the family it chose: the bot
-        // then fires only that class row on the mark.
+        // then fires only that class row on the mark. A token outside the
+        // supported families is refused here, before any target or mark moves.
+        if (!TortoiseBots::DungeonRun::CcOrderFamilyKnown(parts[3]))
+        {
+            SendActionError(handler, intent, "invalid", "Usage: .bot cmd cc <mark> <guid> [bot] [family]");
+            return true;
+        }
         std::string const family = TortoiseBots::DungeonRun::CcFamilyTokenNorm(parts[3]);
         if (!family.empty() && family != "none")
             ccIntent += " " + family;
