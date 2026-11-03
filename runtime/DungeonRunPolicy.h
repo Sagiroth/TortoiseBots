@@ -8131,19 +8131,26 @@ inline const UnitFact* StepUnit(const Facts& f, std::uint64_t guid)
     return nullptr;
 }
 
-// The unit of `guid` as a fight reads it: the step's units first, else a unit
-// attacking the party (a joiner) or one of the walk attackers.
+// The unit of `guid` as a fight reads it: a unit attacking the party (a joiner, or one of the walk attackers) first,
+// since that record carries the fight's own flags (partyHits, victimTank); else the step's units.
 inline const UnitFact* FightUnit(const Facts& f, std::uint64_t guid)
 {
-    if (const UnitFact* u = StepUnit(f, guid))
-        return u;
     for (const UnitFact& u : f.partyAttackers)
         if (u.guid == guid)
             return &u;
     for (const UnitFact& u : f.raid.walkAttackers)
         if (u.guid == guid)
             return &u;
-    return nullptr;
+    return StepUnit(f, guid);
+}
+
+// A unit the fight's own kill_first read holds (Facts::killFirst, PickKillFirst): killed, never crowd-controlled.
+inline bool FightKillFirst(const Facts& f, std::uint64_t guid)
+{
+    for (const UnitFact& u : f.killFirst)
+        if (u.guid == guid)
+            return true;
+    return false;
 }
 
 // ccPending, ccResent and ccWaitMs mirror the first watched order.
@@ -8204,7 +8211,9 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
     for (std::size_t i = 0; i < r.ccWatch.size();)
     {
         Run::CcWatch& w = r.ccWatch[i];
-        const UnitFact* held = StepUnit(f, w.guid);
+        // A joiner marked in the fight is an attacker, not one of the step's units: its aura must still count as
+        // landed there (RunCcReapplyTick finds it the same way).
+        const UnitFact* held = FightUnit(f, w.guid);
         auto const hold = r.ccHolds.find(w.guid);
         const RunCcSpell* spell = hold == r.ccHolds.end() ? nullptr : RunCcOf(hold->second.family);
         if (!held || held->polymorphed || !spell)
@@ -8609,6 +8618,16 @@ inline void RegisterCcOrder(Run& r, const CcPick& pick, std::uint64_t guid)
     r.ccSent.insert(guid);
     r.ccHolds[guid] = Run::CcHold{pick.bot, pick.mark, pick.family};
     r.ccIcons[CcMarkIcon(pick.mark)] = guid;
+    // One watch a unit: a re-send while the first watch is still pending starts that watch over, so CheckCc cannot
+    // re-send the same hold twice by itself.
+    for (Run::CcWatch& w : r.ccWatch)
+        if (w.guid == guid)
+        {
+            w.resent = false;
+            w.waitMs = 0;
+            SyncCcWatch(r);
+            return;
+        }
     Run::CcWatch watch;
     watch.guid = guid;
     r.ccWatch.push_back(watch);
@@ -8774,7 +8793,8 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
     {
         auto const reapplied = r.ccReapplied.find(u.guid);
         if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
-            PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || u.polymorphed || u.partyHits ||
+            PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
+            u.polymorphed || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
             r.healerGuardAssigned.count(u.guid) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
@@ -8862,7 +8882,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
             if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || r.ccSent.count(u.guid) ||
                 u.partyHits || u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
-                (r.plan && r.plan->KillFirstRank(u.entry) >= 0) ||
+                (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
                 r.healerGuardAssigned.count(u.guid) ||
                 (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
                 continue;

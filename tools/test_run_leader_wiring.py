@@ -257,7 +257,7 @@ class RunLeaderWiringTest(unittest.TestCase):
                        "kFreezingTrapAuras", "kSeductionSpells", "kRepentanceSpells", "kFearSpells", "kScareBeastSpells"):
             self.assertIn("HasAnyAura(unit, %s)" % spells, held)
         # A warlock's live succubus is the only way the run may Seduce.
-        self.assertIn("pet->GetCreatureInfo()->family == CREATURE_FAMILY_SUCCUBUS;", code)
+        self.assertIn("pet->GetCreatureInfo()->beast_family == CREATURE_FAMILY_SUCCUBUS;", code)
         # Review of fe5d4109: each unit's immunity, the rogue's live master and the live raid icons are read.
         self.assertEqual(code.count("unit.ccImmune = RunCcImmune(creature);"), 2)
         self.assertIn("member.canSap = (member.cc & CcBit(CcFamily::Sap)) && memberAi && memberAi->HasRealPlayerMaster() &&", code)

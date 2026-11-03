@@ -30689,10 +30689,13 @@ static void TestAutoCcJoinerInTheFight()
     engaged.push_back(second);
     UnitFact tankTarget = AutoHumanoid(901, 18);
     engaged.push_back(tankTarget);
+    UnitFact liveKill = AutoHumanoid(903, 30); // the fight's own kill_first read: killed, never held
+    engaged.push_back(liveKill);
+    f.killFirst = {liveKill};
     f.partyAttackers = engaged;
     f.leadTargetGuid = 901;
     CHECK(Tick(r, f) == "cc moon 900 Magey");
-    CHECK(r.note.find("engaged 11 over 6") != std::string::npos);
+    CHECK(r.note.find("engaged 12 over 6") != std::string::npos);
     CHECK(Tick(r, f).empty());                        // 1 s: the 2 s spacing
     CHECK(Tick(r, f) == "cc square 902 Magetwo");     // 2 s
     CHECK(r.ccSent.count(901) == 0);                  // never the tank's
@@ -30722,6 +30725,49 @@ static void TestAutoCcReappliesTwiceThenStops()
     CHECK(r.ccReapplied[2] == 2);
     for (int i = 0; i < 3; ++i)
         CHECK(Tick(r, f).empty()); // the limit: nothing more
+
+    // A joiner marked in the fight is an attacker: its aura lands and a break is re-applied the same way.
+    Run q = Start(&plan);
+    Facts h = AutoParty(6);
+    h.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    h.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(q, h) == "pullback 1");
+    h.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 106; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        h.partyAttackers.push_back(hit);
+    }
+    h.partyAttackers.push_back(AutoHumanoid(900, 20)); // the joiner
+    UnitFact other = AutoHumanoid(901, 18);
+    other.partyHits = true; // a second unit is on it
+    h.partyAttackers.push_back(other);
+    CHECK(Tick(q, h) == "cc moon 900 Magey");
+    h.partyAttackers[7].polymorphed = true;
+    CHECK(Tick(q, h).empty());
+    CHECK(q.ccLandedSeen.count(900) == 1);
+    h.partyAttackers[7].polymorphed = false;
+    CHECK(Tick(q, h).empty()); // 2 s since the order, the reapply waits 3
+    CHECK(Tick(q, h) == "cc moon 900 Magey");
+
+    // The fight's own read decides: a step unit the party now hits (its attacker record) is not re-applied.
+    Run s = Start(&plan);
+    Facts g = AutoParty(1);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 20)};
+    CHECK(Tick(s, g) == "cc moon 2 Magey");
+    CHECK(Tick(s, g) == "pullback 1");
+    g.anyInCombat = true;
+    g.members[0].inCombat = true;
+    g.units[1].polymorphed = true;
+    CHECK(Tick(s, g).empty()); // the aura lands
+    g.units[1].polymorphed = false;
+    UnitFact hit = AutoHumanoid(2, 20);
+    hit.partyHits = true;
+    g.partyAttackers = {hit};
+    for (int i = 0; i < 4; ++i)
+        CHECK(Tick(s, g).empty()); // no re-apply on a unit the party is on
 }
 
 static void TestAutoCcBudget()
