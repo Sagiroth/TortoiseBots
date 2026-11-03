@@ -30943,7 +30943,7 @@ static void TestAutoCcPicksTheFamilyThatFits()
         UnitFact humanoid = AutoHumanoid(2, 20);
         humanoid.ccImmune = CcBit(CcFamily::FreezingTrap);
         f.units = {near, humanoid};
-        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
+        CHECK(Tick(r, f) == "pullback 1");
         CHECK(r.ccSent.empty());
         CHECK(r.note.find("no free crowd control fits") != std::string::npos);
     }
