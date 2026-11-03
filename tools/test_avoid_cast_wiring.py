@@ -626,7 +626,7 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # linked_death row (per-map flags, like HasAvoidCastMap): the gate precedes ScanBossTactics, and it is not the
         # any-row HasMap.
         self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
-        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())))", fn)
+        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds)", fn)
         self.assertNotIn("HasMap(bot->GetMapId())",
                          fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))
@@ -895,7 +895,10 @@ class LinkedDeathBurnOrderWiring(unittest.TestCase):
         # and never a grid search (the one site is HoldKillBlockersValue.cpp).
         self.assertIn("member.inCombat = known->IsInCombat();", fn)
         self.assertIn("if (!known || !groupScan.members.empty())", fn)
-        self.assertIn("WorldTimer::getMSTime(), scanMs, idle);", fn)
+        self.assertIn("WorldTimer::getMSTime(), scanMs, idle,", fn)
+        self.assertIn("LinkedDeathWindowMs(group.windowSec), &windowEvent);", fn)
+        self.assertIn('"BossTacticsLinkedWindow"', fn)
+        self.assertIn("first_ms=%u,last_ms=%u,window_ms=%u,inside=%d", fn)
         # Write order is not observation order: the scan's stamp is taken before its reads and before the lock.
         self.assertLess(fn.index("const std::uint32_t scanMs = WorldTimer::getMSTime();"),
                         fn.index("std::lock_guard<std::mutex> lock(g_linkedDeathLatchMutex);"))

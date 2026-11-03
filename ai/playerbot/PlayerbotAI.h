@@ -14,6 +14,7 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/GatherSpotPolicy.h"
+#include "playerbot/policy/heal/DispelTargetPolicy.h"
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
@@ -542,8 +543,8 @@ public:
     uint8 GetManaPercent() const;
 
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string spell, uint8 effectMask);
-    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);
-    bool canDispel(const SpellEntry* entry, uint32 dispelType);
+    virtual bool HasAuraToDispel(Unit* player, uint32 dispelType, const DispelOverride* override = nullptr);
+    bool canDispel(const SpellEntry* entry, uint32 dispelType, const DispelOverride* override = nullptr);
     static bool IsNeverDispelSpell(uint32 spellId);
     static bool IsHealSpell(const SpellEntry* entry);
 

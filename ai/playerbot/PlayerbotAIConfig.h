@@ -588,6 +588,11 @@ public:
     // below the row's param % and burn them together once all are there (BossTacticsPolicy.h; its own key on top of
     // the tactics gate, default off).
     bool dungeonRunLinkedDeath = false;
+    // The aura tactic kinds and their row gates (dps_hold_after, dispel_priority, flee_on_aura, freeze_on_aura,
+    // taunt_after_cast, swap_on_aura, and a row's hp_min/hp_max/bot_aura gate): on, the fight scan keeps them (its own
+    // key on top of the tactics gate). Off, the six kinds are ignored and a gated row is closed, so the table behaves
+    // exactly as before them (BossTacticsPolicy.h RowGateOpen; default off).
+    bool dungeonRunAuraTactics = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
