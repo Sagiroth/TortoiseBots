@@ -30,7 +30,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.ActionLogMaxFileMB`](#aiplayerbotactionlogmaxfilemb) | `100` | Maximum size in megabytes of a single bot log file before rotating. |
 | [`AiPlayerbot.ActionCountsLog`](#aiplayerbotactioncountslog) | `0` | Records cumulative action execution counts and failure rates to CSV. |
 | [`AiPlayerbot.HealerDiagnostics`](#aiplayerbothealerdiagnostics) | `0` | Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`. |
-| [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `0` | Enables non-blocking UDP telemetry stream to the observability daemon. |
+| [`AiPlayerbot.Observability`](#aiplayerbotobservability) | `1` | Enables non-blocking UDP telemetry stream to the observability daemon. |
 | [`AiPlayerbot.ObservabilityHost`](#aiplayerbotobservabilityhost) | `127.0.0.1` | Destination host IP address or service name for UDP observability telemetry. |
 | [`AiPlayerbot.ObservabilityPort`](#aiplayerbotobservabilityport) | `9195` | Destination UDP port for the observability telemetry daemon. |
 | [`AiPlayerbot.RunTrace.Enabled`](#aiplayerbotruntraceenabled) | `0` | Opt-in run recorder (`.bot trace`): a party's run as a `bt-trace` v1 JSONL file plus a summary. |
@@ -211,7 +211,7 @@ Only acts when `bot_events.csv` is in `AiPlayerbot.AllowedLogFiles`, and only fo
 
 ### `AiPlayerbot.Observability`
 Enables the non-blocking UDP telemetry emitter streaming bot lifecycle events to the observability daemon.
-**Default:** `0` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
+**Default:** `1` · **Values:** `0` disabled, `1` enabled · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

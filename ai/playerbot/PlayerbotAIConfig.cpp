@@ -264,7 +264,7 @@ bool PlayerbotAIConfig::Initialize()
 
     sLog.outString("Bot configuration read from %s.", config.GetFilename().c_str());
 
-    enabled = config.GetBoolDefault("AiPlayerbot.Enabled", false);
+    enabled = config.GetBoolDefault("AiPlayerbot.Enabled", true);
     if (!enabled)
     {
         sLog.outString("AI Playerbot is Disabled in aiplayerbot.conf");
@@ -369,7 +369,7 @@ bool PlayerbotAIConfig::Initialize()
     // Module-side pool pass budget (PlayerbotAIConfig.h). The floor keeps a
     // typo from starving the pool to a single bot per tick; the ceiling keeps
     // the key from silently disabling itself.
-    poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 10000);
+    poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 22000);
     if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
     if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
     poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 0);
@@ -974,7 +974,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", false);
     randomBotRaidNearby = config.GetBoolDefault("AiPlayerbot.RandomBotRaidNearby", true);
     randomBotGuildNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGuildNearby", true);
-    observability = config.GetBoolDefault("AiPlayerbot.Observability", false);
+    observability = config.GetBoolDefault("AiPlayerbot.Observability", true);
     observabilityPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityPort", 9195));
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     observabilityDungeonMobs = config.GetBoolDefault("AiPlayerbot.ObservabilityDungeonMobs", true);
