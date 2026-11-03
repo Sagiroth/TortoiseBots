@@ -10569,17 +10569,17 @@ void ReadPatrolLoop(Creature* creature, TortoiseBots::DungeonRun::UnitFact& unit
     float loopYd = 0.0f;
     for (auto const& node : *loop)
     {
-        TortoiseBots::ai::ApproachPoint point;
+        ai::ApproachPoint point;
         point.x = node.second.x;
         point.y = node.second.y;
         point.z = node.second.z;
         if (!unit.loop.empty())
-            loopYd += TortoiseBots::ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+            loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
                 point.x, point.y, point.z);
         unit.loop.push_back(point);
     }
     if (unit.loop.size() > 1)
-        loopYd += TortoiseBots::ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+        loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
             unit.loop.front().x, unit.loop.front().y, unit.loop.front().z);
     float const speed = creature->GetSpeed(MOVE_WALK);
     if (loopYd > 0.0f && speed > 0.1f)
