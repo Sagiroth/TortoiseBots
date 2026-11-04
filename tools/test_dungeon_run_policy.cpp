@@ -33569,8 +33569,168 @@ static void TestHakkarBerserkAndSiphonNotes()
     CHECK(r.note.find("Hakkar siphon 2: 19 dosed, 1 not") != std::string::npos);
 }
 
+// --- Dry walk (AiPlayerbot.DungeonRunDryWalk) ---
+
+// ZG run 35 f3 / run 36 c3-r2: the lead bot's core path to the firing-stand hop crossed the
+// pool (samples past x=-11775 are wet), so the hop landed in the water and the 0x81 swim
+// chord held the lead there. The path reads the swim after the dry start; a walk on it
+// takes a dry leg first.
+static void TestZgC3HopDipsIntoThePool()
+{
+    std::vector<PathPoint> path = {{-11810, -1250, 96}, {-11790, -1250, 100}, {-11770, -1250, 104},
+        {-11750.1f, -1249.6f, 107.6f}};
+    auto wet = [](float x, float, float) { return x >= -11775.0f && x <= -11745.0f; };
+    CHECK(PathSwimsAfterLeaving(path, wet) == 20); // the first 2 yd sample at or past x=-11775
+    CHECK(PathSwimsAfterLeaving(std::vector<PathPoint>{{0, 0, 0}}, wet) == -1);
+
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -11750.1f, -1249.6f, 107.6f)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(-11810);
+    f.leadY = -1250;
+    f.leadZ = 96;
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move -11750.1 -1249.6 107.6");
+    CHECK(r.phase == Phase::Walk);
+    CHECK(DryWalkWanted(r, f, walk));
+    CHECK(!DryWalkWanted(r, f, MoveOrder(-11750.1f, -1249.6f, 107.6f, true)));
+    CHECK(DryLegTaken(r, f, -11780, -1250, 99));
+    CHECK(r.legOn && r.walkDryLegs == 1 && !r.walkLegs);
+    CHECK(r.note == "the way to -11750.1 -1249.6 107.6 swims through deep water: walking a dry leg first, "
+        "to -11780.0 -1250.0 99.0 (dry leg 1)");
+}
+
+// A lead bot in its own pool heading for the shore: the leading wet samples are exempt, so the path is
+// dry; the first wet sample after a dry one is still found.
+static void TestLeadInPoolHeadingAshoreIsNotWet()
+{
+    auto wet = [](float x, float, float) { return x < 6.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {20, 0, 0}}, wet) == -1);
+    auto wetAgain = [](float x, float, float) { return x < 6.0f || x > 14.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {20, 0, 0}}, wetAgain) == 8); // x=16, the first sample wet again
+}
+
+// Two dry corners 30 yd apart with a wet middle: the path swims, and the samples between the corners find it.
+static void TestWetBetweenTwoDryCorners()
+{
+    auto wet = [](float x, float, float) { return x > 12.0f && x < 18.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {30, 0, 0}}, wet) == 7); // x=14
+}
+
+// Wading never counts: every sample dry is no swim, however deep the water polygon's neighbours are.
+static void TestWadingIsNotSwimming()
+{
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {30, 0, 0}}, [](float, float, float) { return false; }) == -1);
+}
+
+static void TestDryPathUsable()
+{
+    CHECK(DryPathUsable(true, 300, 100, 100)); // exactly 3x
+    CHECK(!DryPathUsable(true, 310, 100, 100)); // 3.1x
+    CHECK(!DryPathUsable(false, 100, 100, 100)); // does not reach
+    CHECK(DryPathUsable(true, 9, 0, 0)); // the kArriveYd floor when both ways are tiny
+    CHECK(!DryPathUsable(true, 9.1f, 0, 0));
+}
+
+static void TestDryWalkWanted()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 60), Step(PlanStepKind::Move, 80)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move 60.0 0.0 0.0" && r.phase == Phase::Walk);
+    CHECK(!DryWalkWanted(r, f, walk)); // the key off
+    f.dryWalk = true;
+    CHECK(DryWalkWanted(r, f, walk));
+    CHECK(!DryWalkWanted(r, f, MoveOrder(60, 0, 0, true))); // a direct move
+    CHECK(!DryWalkWanted(r, f, MoveOrder(f.leadX, f.leadY, f.leadZ, false))); // a gather to the lead's own spot
+    r.walkDryLegs = kMaxDryLegs;
+    CHECK(!DryWalkWanted(r, f, walk));
+    r.walkDryLegs = 0;
+    r.phase = Phase::Gather;
+    CHECK(!DryWalkWanted(r, f, walk));
+}
+
+// A long dry way: the 40 and 20 yd points are wet, the 10 yd point is dry, so the leg shrinks; a
+// 5 yd way keeps its first corner though it is under kDryLegMinYd.
+static void TestDryLegPickShrinks()
+{
+    std::vector<PathPoint> dry = {{0, 0, 0}, {100, 0, 0}};
+    PathPoint out;
+    int calls = 0;
+    CHECK(DryLegPick(dry, [&calls](const PathPoint& p) { ++calls; return p.x >= 11.0f; }, out));
+    CHECK(out.x == 10.0f && calls == 3);
+    CHECK(!DryLegPick(dry, [](const PathPoint&) { return true; }, out));
+    std::vector<PathPoint> shortDry = {{0, 0, 0}, {5, 0, 0}};
+    CHECK(DryLegPick(shortDry, [](const PathPoint&) { return false; }, out) && out.x == 5.0f);
+}
+
+// At the dry leg's end the walk sends its own point again (the existing leg rule), and the walk on is
+// intercepted once more by the glue.
+static void TestDryLegWalkedResendsTheWalk()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move 50.0 0.0 0.0");
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    f.leadX = 20;
+    CHECK(Tick(r, f) == walk && !r.legOn);
+    CHECK(r.note.find("the leg 20.0 0.0 0.0 walked: on to 50.0 0.0 0.0") == 0);
+}
+
+static void TestFreshWalkResetsDryLegs()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50), Step(PlanStepKind::Move, 70)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    f.leadX = 50;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 70.0 0.0 0.0" && r.walkDryLegs == 0 && !r.legOn);
+}
+
+// The StartLeg refactor leaves the too-far leg's count and note byte for byte the same.
+static void TestTooFarLegNoteIsUnchanged()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 200)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    std::string const move = Tick(r, f);
+    CHECK(move == "move 200.0 0.0 0.0");
+    CHECK(TooFarLegTaken(r, f, 120, 0, 0, true, ""));
+    CHECK(r.note == "the move to 200.0 0.0 0.0 is beyond the lead bot's reach: walking a leg of the way first, "
+        "to 120.0 0.0 0.0 (leg 1)");
+    CHECK(r.walkLegs == 1 && r.walkDryLegs == 0 && r.legOn);
+}
+
 int main()
 {
+    TestZgC3HopDipsIntoThePool();
+    TestLeadInPoolHeadingAshoreIsNotWet();
+    TestWetBetweenTwoDryCorners();
+    TestWadingIsNotSwimming();
+    TestDryPathUsable();
+    TestDryWalkWanted();
+    TestDryLegPickShrinks();
+    TestDryLegWalkedResendsTheWalk();
+    TestFreshWalkResetsDryLegs();
+    TestTooFarLegNoteIsUnchanged();
     TestPullGateHoldsHakkarWithPriestAlive();
     TestPullGateIgnoresOtherUnits();
     TestPullGateHoldsOrdersOnTheGuardPath();

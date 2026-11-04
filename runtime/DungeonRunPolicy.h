@@ -65,6 +65,7 @@
 #include "RemoteCommanderTasks.h"
 #include "RaidLayoutPolicy.h"
 #include "RezHoldPolicy.h"
+#include "../ai/playerbot/SwimPathPolicy.h" // kSwimSampleYd: the dry walk's water samples
 
 #include <algorithm>
 #include <cctype>
@@ -1545,6 +1546,9 @@ struct Facts
     // AiPlayerbot.DungeonRunWalkBackRescue (default 1): a stuck walk back, and a placed run's lead bot revived behind
     // its start step, are teleported to a safe point (WalkBackStuckRescue, PlacedRunRescue). Off: the old pause.
     bool walkBackRescue = true;
+    // AiPlayerbot.DungeonRunDryWalk (default 0): the run leader's route picks stay off deep water (the glue's
+    // DryWayPath and DryWayFor; the policy's DryWalkWanted and DryLegPick).
+    bool dryWalk = false;
     // AiPlayerbot.RunTeleportReturnYd (default 0: off; recommended 120): a member the run brings back from farther than this is
     // teleported to the lead bot with its combat dropped (FarReturnTick, the glue's RunFetchReturn), never summoned
     // with the portal and never left to walk. Bot-only parties only.
@@ -2145,6 +2149,9 @@ struct Run
     float legBestYd = 0.0f;
     float legStartYd = 0.0f; // the lead bot's distance to the leg when it went out
     std::uint32_t walkLegs = 0;
+    // A walk whose core path swims after leaving the lead bot's own water goes in dry legs first
+    // (DryWalkWanted, DryLegTaken): how many this walk sent. A fresh walk clears it.
+    std::uint32_t walkDryLegs = 0;
     // An exact waypoint's tighten (ExactWalkTo): on once the walk to the point
     // ended (3 yd, or a stall within 6 yd); it brings the lead bot onto the
     // point and wants the stand-still proof before the step is done.
@@ -8416,6 +8423,7 @@ inline bool WalkTo(Run& r, const Facts& f, float x, float y, float z, bool direc
         r.stallStandInWanted = false;
         r.legOn = false;
         r.walkLegs = 0;
+        r.walkDryLegs = 0;
         r.legEnds.clear();
         r.walkMoveX = f.leadX;
         r.walkMoveY = f.leadY;
@@ -11338,6 +11346,127 @@ inline bool PointAlongPath(const std::vector<PathPoint>& path, float maxYd, floa
     return ai::PlanDistance(path[0].x, path[0].y, path[0].z, x, y, z) > kArriveYd;
 }
 
+// The dry walk (AiPlayerbot.DungeonRunDryWalk): the run leader's route picks stay off deep water. The core's
+// own player filter includes NAV_WATER, so where a pool is the shorter way its path crosses it on the water
+// surface; a hop or a leg picked there lands in the water, and the core's straight swim chord (0x81, checked
+// on vmap models only) can then hold the lead bot against a bank or a sandbar (ZG run 36 c3-r2 step 535, b2
+// step 439). The glue asks Detour for a NAV_GROUND-only path instead and takes its picks from that one.
+constexpr float kDryLegYd = 40.0f;          // a dry leg's length along the dry path at most
+constexpr float kDryLegMinYd = 8.0f;        // ... and at least (the first corner when nearer)
+constexpr float kDryDetourFactor = 3.0f;    // a dry path longer than this times max(core path, straight) is not taken
+constexpr std::uint32_t kMaxDryLegs = 24;   // dry legs per walk
+constexpr float kDryStartSearchYd = 25.0f;  // the glue's start-poly search, horizontal (vertical 15)
+
+// The first sample, at most kSwimSampleYd apart and both ends included, where the path is wet after at least
+// one dry sample: `at(x, y, z)` is the core's deep-water test. The leading wet samples are the lead bot's own
+// pool and are exempt (a lead in water heading for the shore is not "wet"), so a dry path, or one wet only at
+// its start, gives -1. Fewer than two points: -1.
+template <class SwimmableAt>
+inline int PathSwimsAfterLeaving(const std::vector<PathPoint>& path, SwimmableAt&& at)
+{
+    if (path.size() < 2)
+        return -1;
+    bool left = false;
+    int index = 0;
+    for (std::size_t i = 1; i < path.size(); ++i)
+    {
+        const PathPoint& a = path[i - 1];
+        const PathPoint& b = path[i];
+        float const length = ai::PlanDistance(a.x, a.y, a.z, b.x, b.y, b.z);
+        std::uint32_t const samples = ai::SwimSampleCount(length);
+        for (std::uint32_t k = i == 1 ? 0 : 1; k < samples; ++k)
+        {
+            float const t = samples == 1 ? 0.0f : static_cast<float>(k) / static_cast<float>(samples - 1);
+            if (at(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z)))
+            {
+                if (left)
+                    return index;
+            }
+            else
+                left = true;
+            ++index;
+        }
+    }
+    return -1;
+}
+
+// A dry path reaches the point and is no detour: at most kDryDetourFactor times the way the run would walk
+// (the core path, the straight line, or the arrival distance when both are tiny).
+inline bool DryPathUsable(bool reaches, float dryYd, float coreYd, float straightYd)
+{
+    return reaches && dryYd <= kDryDetourFactor * std::max({coreYd, straightYd, kArriveYd});
+}
+
+// The walk's own order, in Phase::Walk, is the one a dry leg may replace. Not a `direct` move, not a gather,
+// regroup or hold-in-place order (those never equal the walk's own point), and at most kMaxDryLegs a walk.
+inline bool DryWalkWanted(const Run& r, const Facts& f, const std::string& order)
+{
+    return f.dryWalk && r.state == State::Running && r.phase == Phase::Walk &&
+        order == MoveOrder(r.walkX, r.walkY, r.walkZ, false) && r.walkDryLegs < kMaxDryLegs;
+}
+
+// The first dry leg toward the walk's point: the 40, 20 and 10 yd points along `dry` (its end when it is
+// shorter), then its first corner when that is at least kArriveYd away; a candidate nearer than kDryLegMinYd
+// is dropped (the corner excepted), as is a duplicate. `wetTo(point)` says whether the core path from the
+// lead bot to it swims after leaving its own water: the first candidate whose own way is dry is taken.
+template <class CoreWetTo>
+inline bool DryLegPick(const std::vector<PathPoint>& dry, CoreWetTo&& wetTo, PathPoint& out)
+{
+    std::vector<PathPoint> candidates;
+    auto add = [&candidates](float x, float y, float z)
+    {
+        for (const PathPoint& c : candidates)
+            if (ai::PlanDistance(c.x, c.y, c.z, x, y, z) <= 1.0f)
+                return;
+        candidates.push_back(PathPoint{x, y, z});
+    };
+    for (float const maxYd : {kDryLegYd, kDryLegYd / 2.0f, kDryLegYd / 4.0f})
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if (!PointAlongPath(dry, maxYd, x, y, z))
+            continue;
+        if (ai::PlanDistance(dry[0].x, dry[0].y, dry[0].z, x, y, z) < kDryLegMinYd)
+            continue;
+        add(x, y, z);
+    }
+    if (dry.size() >= 2 && ai::PlanDistance(dry[0].x, dry[0].y, dry[0].z, dry[1].x, dry[1].y, dry[1].z) >= kArriveYd)
+        add(dry[1].x, dry[1].y, dry[1].z);
+    for (const PathPoint& c : candidates)
+        if (!wetTo(c))
+        {
+            out = c;
+            return true;
+        }
+    return false;
+}
+
+// The leg start a walk's leg shares (TooFarLegTaken, DryLegTaken): the leg is under way from the lead bot's
+// spot, its distance is the leg's best, and the walk's stillness clock starts over.
+inline void StartLeg(Run& r, const Facts& f, float lx, float ly, float lz)
+{
+    r.legOn = true;
+    r.legX = lx;
+    r.legY = ly;
+    r.legZ = lz;
+    r.legBestYd = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, lx, ly, lz);
+    r.legStartYd = r.legBestYd;
+    r.legEnds.insert(r.legEnds.end(), {lx, ly, lz});
+    r.walkStillMs = 0;
+}
+
+// The glue's dry leg went out (`DryWalkWanted` and its `DryLegPick`): the walk goes on toward its own point,
+// and once the lead bot stands at the leg WalkTo sends that point again, to be intercepted again until the
+// rest of the way is dry.
+inline bool DryLegTaken(Run& r, const Facts& f, float lx, float ly, float lz)
+{
+    StartLeg(r, f, lx, ly, lz);
+    ++r.walkDryLegs;
+    r.note = "the way to " + Num(r.walkX) + " " + Num(r.walkY) + " " + Num(r.walkZ) +
+        " swims through deep water: walking a dry leg first, to " + Num(lx) + " " + Num(ly) + " " + Num(lz) +
+        " (dry leg " + std::to_string(r.walkDryLegs) + ")";
+    return true;
+}
+
 // The answer of a `cmd move` refused for its distance alone: the point is farther than
 // AiPlayerbot.ReactDistance from the lead bot (CommanderMove's TooFar verdict). Not a
 // direct step's too-far, which names a bot that is not with the lead bot.
@@ -11403,15 +11532,8 @@ inline bool TooFarLegTaken(Run& r, const Facts& f, float lx, float ly, float lz,
             legAnswer + ")";
         return false;
     }
-    r.legOn = true;
-    r.legX = lx;
-    r.legY = ly;
-    r.legZ = lz;
-    r.legBestYd = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, lx, ly, lz);
-    r.legStartYd = r.legBestYd;
-    r.legEnds.insert(r.legEnds.end(), {lx, ly, lz});
+    StartLeg(r, f, lx, ly, lz);
     ++r.walkLegs;
-    r.walkStillMs = 0;
     r.note = "the move to " + Num(r.walkX) + " " + Num(r.walkY) + " " + Num(r.walkZ) +
         " is beyond the lead bot's reach: walking a leg of the way first, to " + Num(lx) + " " + Num(ly) + " " + Num(lz) +
         " (leg " + std::to_string(r.walkLegs) + ")";

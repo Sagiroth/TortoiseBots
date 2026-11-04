@@ -1125,6 +1125,18 @@ AiPlayerbot.DungeonRunRetreatAt2Dead = 0
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
 AiPlayerbot.DungeonRunWalkBackRescue = 1
 
+# The run leader's dry walk. A walk whose own way would swim after leaving the
+# lead bot's own water goes in dry legs first (at most 24 a walk), and the hop,
+# leg, firing stand and walk-back shortcut it picks come from a ground-only
+# navmesh path instead of one over the water's surface. A point in deep water,
+# and a dry way more than 3 times the way the run would walk, keep the old
+# behaviour, so intended swims still work. This changes routes on every walk
+# whose path crosses deep water.
+# 0 - off: the run leader walks the core's own path, water included (Default)
+# 1 - on
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunDryWalk = 0
+
 # The run leader's teleport return. A party bot the run brings back from farther
 # than this many yards from the lead bot (revived far away, left behind after the
 # lead bot's rescue teleport, wedged on another floor, or a summon the portal

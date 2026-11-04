@@ -701,6 +701,9 @@ public:
     bool dungeonRunWalkBackAfterWonFight;
     bool dungeonRunRetreatAt2Dead;
     bool dungeonRunWalkBackRescue;
+    // The run leader's route picks stay off deep water (DungeonRunPolicy.h DryWalkWanted, the glue's DryWayPath;
+    // default off).
+    bool dungeonRunDryWalk;
     // A member a run brings back from farther than this is teleported with its combat dropped (0: the old summon).
     float runTeleportReturnYd;
     // A run's bot revived farther than this from the lead bot, and any bot the run brings back, stands still
