@@ -51,8 +51,7 @@ Allows hunters to switch into Aspect of the Viper during combat when their mana 
 A hunter that knows Aspect of the Viper switches to it during combat when its mana falls below 20%.
 
 Once its mana recovers to 60% or higher, the hunter switches back to Aspect of the Hawk. Between 20% and 60% mana, the hunter maintains its current aspect to avoid unnecessary aspect flipping.
-
-Player-assigned aspect strategies (such as Aspect of the Cheetah or Pack) are never overridden, and hunters currently running in utility aspects are left undisturbed. When set to `0`, Aspect of the Viper remains a manual player action and the bot remains in Aspect of the Hawk.
+Player-assigned aspect strategies (such as Aspect of the Hawk, Monkey, Cheetah, Pack, Beast or Wild) are never overridden, and hunters running Aspect of the Cheetah or Pack are left undisturbed. When set to `0`, Aspect of the Viper remains a manual player action and the bot remains in Aspect of the Hawk.
 
 </details>
 
@@ -63,7 +62,7 @@ Coordinates paladins in a group to maintain Judgement of Wisdom and Judgement of
 <details>
 <summary>How it works in detail</summary>
 
-In a group, paladin bots coordinate to maintain debuffs on bosses, elite targets, or the primary mob engaged by the tank:
+In a group, paladin bots coordinate to maintain debuffs on bosses, elite targets, or the tank's current target inside dungeons and raids:
 - Retribution paladins prioritize Judgement of Wisdom.
 - Holy paladins prioritize Judgement of Light.
 - If two paladins of the same specialization are present, the second takes the alternate debuff so two paladins never judge the same debuff. A third non-tank paladin maintains none.

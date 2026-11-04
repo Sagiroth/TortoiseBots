@@ -51,9 +51,7 @@ Health percentage ceiling above which bots skip routine heals to conserve mana.
 
 <details>
 <summary>How it works in detail</summary>
-
-When a party member health exceeds this percentage, bots hold back routine healing casts and may cancel a direct heal already being cast on a target that no longer needs it.
-
+When a party member health exceeds this percentage, bots hold back routine healing casts. A direct heal already being cast on a target at 90% or more is cancelled even if this setting is higher than 90.
 Hybrid direct-plus-HoT spells (such as Regrowth) can still land for their heal-over-time part.
 
 </details>
@@ -70,7 +68,7 @@ When a bot or party member drops below this health percentage, bots deploy emerg
 - Protection warriors activate *Shield Wall* at low health and *Last Stand* at critical health.
 - Healers fire their critical-tier direct heals (*Healing Wave*, *Holy Light*, *Flash Heal*, *Regrowth*).
 
-Pool bots without player masters may also flee at critical health unless hold-ground settings are configured.
+Masterless pool bots outside PvP may also flee at critical health (having a real master, or being in PvP, holds them).
 
 </details>
 
@@ -83,7 +81,7 @@ Health percentage triggering prioritized heavy healing spells.
 
 Healers deploy heavy direct heals on this trigger (*Greater Heal*, *Healing Wave*, *Regrowth*).
 
-For safer dungeon runs or high-damage raid encounters, raising this value to `65` provides earlier healing intervention. (Suggested in the old tuning guide; the code only reads the value, so any number in range works.)
+For safer dungeon runs or high-damage raid encounters, raising this value to `65` provides earlier healing intervention.
 
 </details>
 
@@ -94,7 +92,7 @@ Health percentage triggering routine maintenance healing and small direct heals.
 <details>
 <summary>How it works in detail</summary>
 
-When group members fall below this line, healers fire their medium-tier heals (*Flash Heal*, *Regrowth*).
+When group members fall below this line, healers fire their medium-tier heals (druid *Regrowth*; priest pace and fast-damage picks include *Flash Heal*).
 
 Utility actions such as Paladin Judgement upkeep are suspended while a healer's party member to heal remains below this threshold.
 
@@ -108,7 +106,7 @@ Mana floor percentage where casters recover mana or hold back expensive casts.
 <summary>How it works in detail</summary>
 
 When caster mana falls below this percentage, bots react on the "low mana" trigger:
-- Mages fire *Evocation*; warlocks use *Life Tap*.
+- Mages fire *Evocation* (it also arms below medium mana, so it can fire above this line).
 - Several self-heal flee checks stay armed: bots with mana at or above this line hold ground instead of fleeing.
 
 </details>
@@ -120,9 +118,9 @@ Threshold percentage where bots begin pacing expensive spell usage against mana 
 <details>
 <summary>How it works in detail</summary>
 
-At this mana level, the "medium mana" trigger fires: buff casts are suppressed while it holds, and priests skip top-up-tier heals to save mana for emergencies. Paladin *Consecration* is also held back below this line.
+At this mana level, the "medium mana" trigger fires: combat buff casts on the current target are suppressed while it holds, and priests skip top-up-tier heals to save mana for emergencies. Paladin *Consecration* is also held back below this line, and warlocks use *Life Tap*.
 
-Healer paladins also need at least this mana percentage (and no party member below medium health) to keep up offensive seals and judgements in groups.
+Healer paladins also need at least 50% mana (and no party member below medium health) to keep up offensive seals and judgements in groups.
 
 </details>
 
@@ -185,9 +183,9 @@ Maximum distance in yards at which bots remain responsive to combat and leader c
 <details>
 <summary>How it works in detail</summary>
 
-Sets the outer awareness envelope around the leader: follow targets beyond it count as unsafe, and graveyard and object scans use it as their range.
+Sets the outer awareness envelope around the leader for follow targets and orders: a follow target beyond it is refused, and move orders past it are refused.
 
-If a follower falls farther behind than this distance, it triggers [`AiPlayerbot.BoostFollow`](party.md#aiplayerbotboostfollow) mount checks to catch up (BoostFollow itself is off by default).
+If a follower falls farther behind than this distance, it triggers [`AiPlayerbot.BoostFollow`](party.md#aiplayerbotboostfollow) mount checks to catch up.
 
 </details>
 
@@ -358,7 +356,7 @@ Unflagged players, challenge-mode characters (except War Mode) and GMs with visi
 
 A seeker chases a fleeing target for up to 60 seconds, camps a player it killed for up to 5 minutes and then ignores that player for 10 minutes, and joins a PvP fight within 30 yards that someone from its own faction is in.
 
-One bot can be switched on or off with `nc +world pvp` / `nc -world pvp`.
+One bot can be switched on with `nc +world pvp` (combat copy needs `co +world pvp`). `nc -world pvp` alone leaves the combat copy seeking, and the next auto-grant can add it back.
 
 </details>
 
