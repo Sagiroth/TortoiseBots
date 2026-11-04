@@ -58,4 +58,28 @@ namespace ai::TeleportLandingPolicy
             : std::sqrt(2.0f * path / kGravity);
         return static_cast<std::uint32_t>(seconds * 1000.0f);
     }
+
+    // The jump state a near teleport leaves behind: cleared first, then the landing fall when there is a floor to
+    // fall to. A fall or knockback still in flight is superseded by the teleport - its destination would Relocate the
+    // bot back to where it was before - so the caller replaces the state whole instead of adding to it.
+    struct JumpState
+    {
+        std::uint32_t jumpTimeMs = 0; // 0: no jump
+        bool hasDestination = false;
+        float destinationZ = 0.0f;
+    };
+
+    inline JumpState NearTeleportJumpState(float destZ, bool probeFound, float probeZ, float mapFloorZ,
+        float jumpHeightLimit, std::uint32_t nowMs)
+    {
+        JumpState state;
+        float const landingZ = TeleportLandingZ(destZ, probeFound, probeZ, mapFloorZ, jumpHeightLimit);
+        if (landingZ < destZ)
+        {
+            state.jumpTimeMs = nowMs + SimulatedFallMs(destZ - landingZ) + 1000;
+            state.hasDestination = true;
+            state.destinationZ = landingZ;
+        }
+        return state;
+    }
 }

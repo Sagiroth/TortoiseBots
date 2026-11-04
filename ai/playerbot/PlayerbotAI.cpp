@@ -2469,6 +2469,12 @@ void PlayerbotAI::HandleTeleportAck()
         // it come down instead of jumping to the floor.
         if (sPlayerbotAIConfig.teleportLandingFall)
         {
+            // The teleport supersedes any fall or knockback still in flight: its destination would Relocate the bot
+            // back to where it was before. Clear it before the landing is decided, not after.
+            jumpTime = 0;
+            fallAfterJump = false;
+            ResetJumpDestination();
+
             float const destZ = bot->GetPositionZ();
             float mapFloorZ = destZ;
             bot->UpdateAllowedPositionZ(bot->GetPositionX(), bot->GetPositionY(), mapFloorZ);
@@ -2486,17 +2492,15 @@ void PlayerbotAI::HandleTeleportAck()
                     probeFound = true;
                 }
             }
-            float const landingZ = ai::TeleportLandingPolicy::TeleportLandingZ(destZ, probeFound, probeZ, mapFloorZ,
-                sPlayerbotAIConfig.jumpHeightLimit);
-            if (landingZ < destZ)
+            ai::TeleportLandingPolicy::JumpState const jump = ai::TeleportLandingPolicy::NearTeleportJumpState(destZ,
+                probeFound, probeZ, mapFloorZ, sPlayerbotAIConfig.jumpHeightLimit, WorldTimer::getMSTime());
+            if (jump.hasDestination)
             {
-                SetJumpDestination(WorldPosition(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), landingZ));
-                SetJumpTime(WorldTimer::getMSTime() +
-                    ai::TeleportLandingPolicy::SimulatedFallMs(destZ - landingZ) + 1000);
-                // The teleport supersedes any fall or knockback still in flight: this is a normal landing, not the
-                // second fall that flag would start from the new position.
-                fallAfterJump = false;
-                sLog.outDetail("%s: Teleport landing: falling from %f to %f", bot->GetName(), destZ, landingZ);
+                SetJumpDestination(WorldPosition(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
+                    jump.destinationZ));
+                SetJumpTime(jump.jumpTimeMs);
+                sLog.outDetail("%s: Teleport landing: falling from %f to %f", bot->GetName(), destZ,
+                    jump.destinationZ);
             }
         }
 

@@ -13,6 +13,8 @@
     } \
 } while (0)
 
+using ai::TeleportLandingPolicy::JumpState;
+using ai::TeleportLandingPolicy::NearTeleportJumpState;
 using ai::TeleportLandingPolicy::SimulatedFallMs;
 using ai::TeleportLandingPolicy::TeleportLandingZ;
 
@@ -66,12 +68,27 @@ static void TestFallTimeMatchesTheJumpFormula()
     CHECK(SimulatedFallMs(1000.0f) > SimulatedFallMs(500.0f));
 }
 
+// With the key on every near teleport replaces the jump state before the landing is decided: a fall or knockback
+// still in flight (its own jump time and destination) must not Relocate the bot back after the teleport. On the
+// ground nothing is scheduled; in the air the new landing is the only jump.
+static void TestNearTeleportClearsTheJumpInFlight()
+{
+    JumpState const onTheGround = NearTeleportJumpState(10.0f, false, 10.0f, 10.0f, 20.0f, 5000);
+    CHECK(onTheGround.jumpTimeMs == 0);
+    CHECK(!onTheGround.hasDestination);
+    JumpState const inTheAir = NearTeleportJumpState(10.0f, true, -1.5f, -1.5f, 20.0f, 5000);
+    CHECK(inTheAir.hasDestination);
+    CHECK(inTheAir.destinationZ == -1.5f);
+    CHECK(inTheAir.jumpTimeMs == 5000 + SimulatedFallMs(11.5f) + 1000);
+}
+
 int main()
 {
     TestBanishLandsOnThePitFloor();
     TestNoFloorStays();
     TestTheHigherFloorWins();
     TestNoFallWithinAStep();
+    TestNearTeleportClearsTheJumpInFlight();
     TestFallTimeMatchesTheJumpFormula();
     std::cout << "test_teleport_landing_policy: all checks passed\n";
     return 0;

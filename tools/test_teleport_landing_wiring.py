@@ -30,17 +30,20 @@ class TeleportLandingWiringTest(unittest.TestCase):
         near = body(fn, "if (bot->IsBeingTeleportedNear())", "else if (bot->IsBeingTeleportedFar())")
         # The ack first (the core moves the bot), then the landing read off the new position.
         self.assertLess(near.index("HandleMoveTeleportAckOpcode(p)"), near.index("sPlayerbotAIConfig.teleportLandingFall"))
-        self.assertIn("TeleportLandingZ(", near)
+        self.assertIn("NearTeleportJumpState(", near)
         # The same feet probe the jump landing uses, and the map's floor beside it: the higher walkable floor wins.
         self.assertIn("kFeetProbeDepth", near)
         self.assertIn("ClosestCorrectPoint(", near)
         self.assertIn("UpdateAllowedPositionZ(", near)
         self.assertIn("mapFloorZ", near)
         self.assertIn("sPlayerbotAIConfig.jumpHeightLimit", near)
+        # Every near teleport clears a fall or knockback still in flight before the landing is decided.
+        self.assertLess(near.index("jumpTime = 0"), near.index("NearTeleportJumpState("))
+        self.assertLess(near.index("fallAfterJump = false"), near.index("NearTeleportJumpState("))
+        self.assertLess(near.index("ResetJumpDestination()"), near.index("NearTeleportJumpState("))
         # The fall is the jump landing's, not a bare Relocate: the bot is put down when it ends.
         self.assertIn("SetJumpDestination(", near)
-        self.assertIn("SetJumpTime(", near)
-        self.assertIn("SimulatedFallMs(", near)
+        self.assertIn("SetJumpTime(jump.jumpTimeMs)", near)
 
     def test_the_key_is_read_and_documented_off_by_default(self):
         self.assertIn("config.GetBoolDefault(\"AiPlayerbot.TeleportLandingFall\", false)", CONFIG)
