@@ -31,7 +31,7 @@ DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15339 AND `kin
 DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15339 AND `kind` = 'taunt_after_cast' AND `target_entry` = 0 AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;
 DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15339 AND `kind` = 'dispel_priority' AND `target_entry` = 0 AND `spell_id` = 25195 AND `hp_min` = 0 AND `hp_max` = 100;
 DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15340 AND `kind` = 'kill_first' AND `target_entry` = 15527 AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;
-DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15369 AND `kind` = 'kill_first' AND `target_entry` = 15934 AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;
+DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` IN (15369) AND `kind` = 'kill_first';
 DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15369 AND `kind` = 'taunt_after_cast' AND `target_entry` = 0 AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;
 DELETE FROM `ai_boss_tactic` WHERE `map` = 509 AND `boss_entry` = 15324 AND `kind` = 'linked_death' AND `target_entry` = 15324 AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;
 
