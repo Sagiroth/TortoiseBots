@@ -11471,7 +11471,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             probeZ = feet.getZ();
             probeFound = true;
         }
-        f.leadOffFloor = mmapLoaded &&
+        // A lead bot in water is not hovering: the probe excludes water polys, so its own depth would read as off the
+        // floor. A summon into water is survivable and the run's water rules handle it.
+        f.leadOffFloor = mmapLoaded && !lead->IsInWater() && !lead->IsUnderwater() &&
             TortoiseBots::DungeonRun::LeadOffFloor(lead->GetPositionZ(), probeFound, probeZ);
     }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
