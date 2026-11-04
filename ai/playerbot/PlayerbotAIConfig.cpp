@@ -1032,7 +1032,7 @@ bool PlayerbotAIConfig::Initialize()
 
     botAcceptDuelMinimumLevel = config.GetIntDefault("AiPlayerbot.BotAcceptDuelMinimumLevel", 10);
 
-    randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", true);
+    randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", false);
 
     boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", true);
     raidFollowWedge = config.GetBoolDefault("AiPlayerbot.RaidFollowWedge", false);

@@ -1553,8 +1553,8 @@ AiPlayerbot.ImmuneSpellIds = 19428
 # AiPlayerbot.RandomBotRaidNearby = 1
 # AiPlayerbot.RandomBotGuildNearby = 1
 
-# Randombots will form guilds by buying a charter, getting signatures and handing it in.
-# AiPlayerbot.RandomBotFormGuild = 1
+# Bots founding their own guilds is off by default. Turn on to let eligible pool bots buy a charter, gather signatures and found a guild.
+AiPlayerbot.RandomBotFormGuild = 0
 
 # Enable per-bot action log files (logs/bots/<botname>_acc<id>_<timestamp>.log)
 # and "[BOT]" prefixed structured log lines in the server log. Useful for
