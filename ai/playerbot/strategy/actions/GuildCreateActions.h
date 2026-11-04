@@ -4,6 +4,7 @@
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/ServerFacade.h"
 #include "runtime/BotActivityLease.h"
+#include "playerbot/policy/guild/GuildFoundingPolicy.h"
 
 namespace ai
 {
@@ -43,8 +44,10 @@ namespace ai
         virtual bool isUseful() override
         {
             if (!sPlayerbotAIConfig.randomBotFormGuild || bot->GetGuildId() ||
-                !AI_VALUE2(uint32, "item count", chat->formatQItem(5863)) ||
-                AI_VALUE(uint8, "petition signs") >= sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS))
+                !AI_VALUE2(uint32, "item count", chat->formatQItem(5863)))
+                return false;
+            if (ai::GuildPetitionReadyToTurnIn(AI_VALUE(uint8, "petition signs"),
+                sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS)))
                 return false;
             TortoiseBots::BotActivity activity = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
             return activity == TortoiseBots::BotActivity::Idle || activity == TortoiseBots::BotActivity::Grinding ||

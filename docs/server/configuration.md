@@ -68,7 +68,7 @@ AiPlayerbot.RandomBotStartLevelMax = 15
 # Social immersion
 AiPlayerbot.RandomBotInvitePlayer = 1
 AiPlayerbot.RandomBotGroupNearby = 0
-AiPlayerbot.RandomBotFormGuild = 1
+AiPlayerbot.RandomBotFormGuild = 0
 AiPlayerbot.EnableGreet = 1
 
 # Optional living economy and queues

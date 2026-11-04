@@ -41,7 +41,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotGroupNearby`](#aiplayerbotrandombotgroupnearby) | `0` | Allows masterless pool bots to form spontaneous questing groups together. |
 | [`AiPlayerbot.RandomBotRaidNearby`](#aiplayerbotrandombotraidnearby) | `1` | Allows masterless pool bots to form and invite nearby bots into raid groups. |
 | [`AiPlayerbot.RandomBotGuildNearby`](#aiplayerbotrandombotguildnearby) | `1` | Allows masterless pool bots to invite nearby unguilded bots into their guild. |
-| [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
+| [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `0` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
 | [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
 | [`AiPlayerbot.ProfessionsGrowWithLevel`](#aiplayerbotprofessionsgrowwithlevel) | `1` | Pool bots get profession skill and recipes with their level. |
@@ -410,15 +410,13 @@ When enabled, bot guild members will periodically invite nearby guildless bots i
 </details>
 
 ### `AiPlayerbot.RandomBotFormGuild`
-Allows autonomous random bots to buy guild charters, collect signatures from other bots, and found guilds.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+Off by default: bots do not found guilds on their own. When on, eligible pool bots travel to a guild master, buy a charter, gather the signatures the core requires from nearby bots and register the guild.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-When enabled, eligible random bots purchase guild charters from guild masters, seek out signatures from fellow bots, and establish autonomous bot guilds.
-
-Once founded, bot guilds invite additional bots or human players, and display guild tags above members' heads.
+When on, an eligible bot (above level 10, no guild and no invite, enough spare coin) walks to a guild master and buys a charter named "<Bot> Guild". It then asks nearby unguilded bots of its own faction to sign; once the core's signature count is reached it walks back and registers the guild. Founded guilds keep inviting bots and interested players.
 
 </details>
 

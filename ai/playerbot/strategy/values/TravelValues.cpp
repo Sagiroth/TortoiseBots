@@ -14,6 +14,8 @@
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include "GuildValues.h"
 #include "Guild/GuildMgr.h"
+#include "runtime/HireLifecycle.h"
+#include "playerbot/policy/guild/GuildFoundingPolicy.h"
 
 using namespace ai;
 
@@ -536,6 +538,29 @@ bool ShouldTravelNamedValue::Calculate()
         if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
             return false;
         return AI_VALUE(uint32, "guild order vendor reagent") != 0;
+    }
+    else if (name == "petition")
+    {
+        if (!sPlayerbotAIConfig.randomBotFormGuild)
+            return false;
+        if (AI_VALUE(bool, "has guild travel order") || AI_VALUE(bool, "has guild order delivery"))
+            return false;
+        if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
+            return false;
+        if (TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+            return false;
+        if (bot->GetGuildId() != 0 || bot->GetGuildIdInvited() != 0)
+            return false;
+        if (!ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT))
+            return false;
+        if (!ai::GuildCharterLevelEligible(bot->GetLevel()))
+            return false;
+        bool const hasCharter = AI_VALUE2(uint32, "item count", chat->formatQItem(5863)) > 0;
+        if (!hasCharter)
+            return ai::GuildCharterAffordable(
+                AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::guild));
+        return ai::GuildPetitionReadyToTurnIn(AI_VALUE(uint8, "petition signs"),
+            sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS));
     }
     else if (name == "mount")
     {

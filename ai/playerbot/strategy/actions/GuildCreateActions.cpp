@@ -6,6 +6,9 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "Guild/GuildMgr.h"
+#include "playerbot/policy/guild/GuildFoundingPolicy.h"
+#include "runtime/HireLifecycle.h"
+#include "runtime/AltBotService.h"
 
 using namespace ai;
 
@@ -20,7 +23,7 @@ bool BuyPetitionAction::Execute(Event& event)
         if (!pCreature)
             continue;
 
-        std::string guildName = std::string(bot->GetName()) + "'s Guild";
+        std::string guildName = std::string(bot->GetName()) + " Guild";
         if (guildName.empty())
             continue;
 
@@ -91,9 +94,12 @@ bool BuyPetitionAction::canBuyPetition(Player* bot)
     if (!ai->HasStrategy("guild", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    uint32 cost = 1000; //GUILD_CHARTER_COST;
+    uint32 cost = ai::GUILD_CHARTER_COST_COPPER;
 
     if (AI_VALUE2(uint32, "free money for", uint32(NeedMoneyFor::guild)) < cost)
+        return false;
+
+    if (bot->GetLevel() <= ai::GUILD_CHARTER_MIN_LEVEL)
         return false;
 
     return true;
@@ -168,19 +174,37 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
         if (player->GetGuildIdInvited())
             continue;
 
+        if (player->GetTeam() != bot->GetTeam())
+            continue;
+
         if (!sPlayerbotAIConfig.randomBotInvitePlayer && isRealPlayer_Helper(player))
+            continue;
+
+        if (TortoiseBots::HireLifecycle::Instance().IsHired(player->GetObjectGuid()))
             continue;
 
         PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (botAi)
         {
-            if (botAi->HasActivePlayerMaster()) //Do not invite alts of active players.
+            if (botAi->HasActivePlayerMaster())
+                continue;
+            if (TortoiseBots::AltBotService::Instance().IsAutonomous(player->GetObjectGuid()))
+            {
+                WorldSession const* playerSession = player->GetSession();
+                WorldSession const* botSession = bot->GetSession();
+                bool const sameAccount = playerSession && botSession &&
+                    playerSession->GetAccountId() == botSession->GetAccountId();
+                if (!sameAccount && !(playerSession && playerSession->GetSecurity() > SEC_PLAYER))
+                    continue;
+            }
+            if (!botAi->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_GUILD, true, bot, true))
                 continue;
         }
-
-        if (sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
+        else if (isRealPlayer_Helper(player))
+        {
             continue;
+        }
 
         //Parse rpg target to quest action.
         WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
@@ -296,7 +320,9 @@ bool PetitionTurnInAction::isUseful()
             inCity = true;
     }
 
-    return inCity && !bot->GetGuildId() && AI_VALUE2(uint32, "item count", chat->formatQItem(5863)) && AI_VALUE(uint8, "petition signs") >= sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS) && !AI_VALUE(bool, "travel target traveling");
+    return inCity && ai::GuildFoundingTurnInTripNeeded(bot->GetGuildId() != 0,
+        AI_VALUE2(uint32, "item count", chat->formatQItem(5863)) > 0,
+        AI_VALUE(uint8, "petition signs"), sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS)) && !AI_VALUE(bool, "travel target traveling");
 };
 
 bool BuyTabardAction::Execute(Event& event)
