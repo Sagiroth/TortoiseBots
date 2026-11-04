@@ -2275,6 +2275,37 @@ int main()
         CHECK(!TauntAfterDue(true, 10000, 10000, false)); // the deadline passed
         CHECK(!TauntAfterDue(false, 1, 10000, false));    // no episode
         CHECK(!TauntAfterDue(true, 1, 10000, true));      // the assigned tank already has it
+
+        // A creature-charmed tank yields its AI, so the until_tank order counts it as gone (M5).
+        CHECK(TauntAfterTankUsable(false, false));
+        CHECK(TauntAfterTankUsable(true, true));          // a player MC leaves the bot's AI in the core, not gone
+        CHECK(!TauntAfterTankUsable(true, false));        // a creature's charm
+
+        // The episode's state machine: the rising edge opens it, the deadline turns a non-tank into one miss, a tank
+        // has it back as regained, and a spent charm does not reopen before a tank does.
+        {
+            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, false, 0, 10000, false);
+            CHECK(edge.starts && edge.open && !edge.spent && edge.step == TauntEpisodeStep::Due);
+            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, false, 5000, 10000, false);
+            CHECK(!due.starts && due.open && due.step == TauntEpisodeStep::Due);
+            // The assigned tank has it back: the episode ends, the next charm starts clean.
+            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, false, 5000, 10000, true);
+            CHECK(!assigned.open && !assigned.spent && assigned.step == TauntEpisodeStep::Regained);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, false, 10000, 10000, false);
+            CHECK(!miss.open && miss.spent && miss.step == TauntEpisodeStep::Miss);
+            TauntEpisodeRead spent = TauntEpisodeTick(true, false, false, true, 0, 10000, false);
+            CHECK(!spent.starts && !spent.open && spent.spent && spent.step == TauntEpisodeStep::None);
+            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, false, 4000, 10000, false);
+            CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
+            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, false, 4000, 10000, false);
+            CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // The widest live spread row wins, never narrower than the fallback.
+        CHECK(WidestSpreadYd({10.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({10.0f, 12.0f, 11.0f}, 10.0f) == 12.0f);
+        CHECK(WidestSpreadYd({6.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({}, 10.0f) == 10.0f);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

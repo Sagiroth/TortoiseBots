@@ -3888,13 +3888,11 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
         return fallback;
     // The largest live row's spacing, never narrower than the fallback: the row widens a formation, it does not
     // crowd the raid back into the splash.
-    float best = fallback;
+    std::vector<float> params;
     for (const BossTacticRow* row : ScanBossTactics(ai, bot).rows)
-    {
-        if (row->kind == BossTacticKind::Spread && row->param > best)
-            best = row->param;
-    }
-    return best;
+        if (row->kind == BossTacticKind::Spread)
+            params.push_back(row->param);
+    return WidestSpreadYd(params, fallback);
 }
 
 bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out)
@@ -4179,8 +4177,10 @@ TauntAfterKey TauntAfterKeyOf(Player* bot, Unit* subject, const BossTacticRow& r
 }
 
 // Drops the episodes nobody has read for kTauntAfterStaleMs and those of a subject that died (a respawned one must
-// not inherit its previous pull's deadline). Runs at most once a second, whatever asks.
-void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t nowMs)
+// not inherit its previous pull's deadline). Only the caller's own instance is pruned: Zul'Gurub's static spawns share
+// a guid across instances, so resolving another instance's key on this map would drop its open episode (L2). Runs at
+// most once a second, whatever asks.
+void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t instanceId, std::uint32_t nowMs)
 {
     // The once-a-second throttle is read unlocked (a tank asks it every tick): two threads that both pass the test
     // re-check under the lock, which is what keeps the pass to once a second.
@@ -4194,6 +4194,11 @@ void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t nowMs)
     g_tauntAfterPruneMs.store(nowMs, std::memory_order_relaxed);
     for (auto it = g_tauntAfter.begin(); it != g_tauntAfter.end();)
     {
+        if (std::get<1>(it->first) != instanceId)
+        {
+            it = std::next(it);
+            continue;
+        }
         bool drop = nowMs - it->second.lastReadMs > kTauntAfterStaleMs;
         if (!drop)
         {
@@ -4241,7 +4246,10 @@ void LogTauntAfter(PlayerbotAI* ai, Unit* subject, int tankIndex, const TauntAft
 BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     BossTauntAfter out;
-    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+    // The row is only live with the charm yield on as well: the until_tank episode exists because a charmed victim
+    // cannot be its own tank, so applying the migration must not switch it on under AuraTactics alone (L8).
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
+        !sPlayerbotAIConfig.dungeonRunCharmYield)
         return out;
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
         return out;
@@ -4249,10 +4257,17 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     if (roles.tanks.empty() || roles.botIndex < 0)
         return out;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
-    PruneTauntAfter(ai, nowMs);
-    // The role order already drops a dead or absent tank, so every slot it reports is alive; the pure pick's wrap is
-    // what covers a row that names an index past the end (fewer tanks than the row expects).
-    std::vector<bool> const alive(roles.tanks.size(), true);
+    PruneTauntAfter(ai, bot->GetInstanceId(), nowMs);
+    // The role order drops a dead or absent tank; a creature-charmed one yields its AI, so it is as gone for the order
+    // as a dead one and the pick wraps past it (M5). The pure pick's wrap also covers a row naming an index past the
+    // end (fewer tanks than the row expects).
+    std::vector<bool> alive;
+    alive.reserve(roles.tanks.size());
+    for (Player* const tank : roles.tanks)
+    {
+        const ObjectGuid charmer = tank ? tank->GetCharmerGuid() : ObjectGuid();
+        alive.push_back(TauntAfterTankUsable(!charmer.IsEmpty(), charmer.IsPlayer()));
+    }
     for (const BossTacticRow* row : fight.rows)
     {
         // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
@@ -4285,61 +4300,50 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             TauntAfterEpisode episode;
             bool close = false;
             bool regained = false;
-            bool missed = false;
             {
                 std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
                 TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
                 state.lastReadMs = nowMs;
-                if (onNonTank)
+                std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
+                const TauntEpisodeRead read = TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,
+                    sinceMs, deadlineMs, victimIsAssigned);
+                if (read.starts)
                 {
-                    if (!state.open && !state.spent)
-                    {
-                        state.open = true;
-                        state.startMs = nowMs;
-                        state.taunted = false;
-                    }
-                    if (state.open)
-                    {
-                        std::uint32_t const sinceMs = nowMs - state.startMs;
-                        if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
-                        {
-                            out.valid = true;
-                            out.subject = unit;
-                            out.row = row;
-                            out.tankIndex = assigned;
-                            out.deadlineMs = deadlineMs;
-                            out.sinceMs = sinceMs;
-                        }
-                        else
-                        {
-                            // The deadline ran out on a non-tank: the miss is logged once and the window is spent.
-                            episode = state;
-                            close = true;
-                            missed = true;
-                        }
-                    }
+                    state.startMs = nowMs;
+                    state.taunted = false;
                 }
-                else if (victimIsTank)
+                state.open = read.open;
+                state.spent = read.spent;
+                if (read.step == TauntEpisodeStep::Due)
                 {
-                    // A tank has the subject back: the episode ends here (regained) and the next charm starts from a
-                    // clean state.
-                    if (state.open)
+                    out.valid = true;
+                    out.subject = unit;
+                    out.row = row;
+                    out.tankIndex = assigned;
+                    out.deadlineMs = deadlineMs;
+                    out.sinceMs = read.starts ? 0 : sinceMs;
+                }
+                else if (read.step == TauntEpisodeStep::Miss || read.step == TauntEpisodeStep::Regained)
+                {
+                    // The miss is logged once and the window is spent; a tank having the subject back ends the episode
+                    // and the next charm starts from a clean state.
+                    episode = state;
+                    episode.regainedMs = read.step == TauntEpisodeStep::Regained ? sinceMs : 0;
+                    regained = read.step == TauntEpisodeStep::Regained;
+                    close = true;
+                    if (regained)
                     {
-                        episode = state;
-                        episode.regainedMs = nowMs - state.startMs;
-                        regained = true;
-                        close = true;
+                        state = TauntAfterEpisode();
+                        state.lastReadMs = nowMs;
                     }
-                    state = TauntAfterEpisode();
-                    state.lastReadMs = nowMs;
+                    else
+                    {
+                        state.open = false;
+                        state.spent = true;
+                    }
                 }
                 // A subject between victims, or one on a pet, is mid-transition: the episode stays open and its
                 // deadline keeps running, so a rival victim retarget does not hand the off-tank a second window.
-                if (close)
-                {
-                    state.open = false;
-                    state.spent = missed;
-                }
             }
             if (close)
                 LogTauntAfter(ai, unit, assigned, episode, regained);

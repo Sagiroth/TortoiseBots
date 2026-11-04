@@ -1921,6 +1921,82 @@ namespace ai
         return sinceMs < deadlineMs;
     }
 
+    // Whether a tank in the raid order can still take the taunt: a creature-charmed tank yields its AI completely
+    // (AiPlayerbot.DungeonRunCharmYield), so it is as gone as a dead one and the order wraps past it.
+    inline bool TauntAfterTankUsable(bool hasCharmer, bool charmerIsPlayer)
+    {
+        return !(hasCharmer && !charmerIsPlayer);
+    }
+
+    enum class TauntEpisodeStep
+    {
+        None = 0,
+        Due = 1,      // an open episode inside its deadline and the victim is not its tank
+        Miss = 2,     // the deadline ran out on a non-tank: log once, no second attempt this charm
+        Regained = 3, // a tank has the subject back: the episode ends
+    };
+
+    struct TauntEpisodeRead
+    {
+        bool starts = false; // the rising edge: the caller opens the episode now
+        bool open = false;
+        bool spent = false;
+        TauntEpisodeStep step = TauntEpisodeStep::None;
+    };
+
+    // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
+    // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
+    // and one between victims (a pet, a transition) keeps its deadline.
+    inline TauntEpisodeRead TauntEpisodeTick(bool onNonTank, bool victimIsTank, bool open, bool spent,
+        std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
+    {
+        TauntEpisodeRead out;
+        out.open = open;
+        out.spent = spent;
+        if (onNonTank)
+        {
+            if (!open && !spent)
+            {
+                out.starts = true;
+                out.open = true;
+                if (TauntAfterDue(true, 0, deadlineMs, victimIsAssigned))
+                    out.step = TauntEpisodeStep::Due;
+                return out;
+            }
+            if (out.open)
+            {
+                if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
+                    out.step = TauntEpisodeStep::Due;
+                else
+                {
+                    out.step = TauntEpisodeStep::Miss;
+                    out.open = false;
+                    out.spent = true;
+                }
+            }
+            return out;
+        }
+        if (victimIsTank)
+        {
+            if (open)
+                out.step = TauntEpisodeStep::Regained;
+            out.open = false;
+            out.spent = false;
+        }
+        return out;
+    }
+
+    // The widest live spread row's spacing, never narrower than the fallback: the row widens a formation, it does not
+    // crowd the raid back into the splash.
+    inline float WidestSpreadYd(const std::vector<float>& params, float fallback)
+    {
+        float best = fallback;
+        for (float param : params)
+            if (param > best)
+                best = param;
+        return best;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
