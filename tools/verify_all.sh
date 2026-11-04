@@ -66,8 +66,8 @@ if command -v g++ >/dev/null 2>&1; then
     "${BUILD_DIR}/test_combat_monitor_service"
 
     # Special case: the decision capture's tick-time assertion (2 ms per tick)
-    # is a release-build budget, so this test is built with -O2. It is only
-    # enforced with TB_STRICT_TIMING=1 (see the test's header comment).
+    # is a release-build budget, so this test is built with -O2. It is enforced
+    # unless TB_RELAX_TIMING=1 is set on a busy shared box (see the test's header comment).
     g++ -std=c++17 -O2 -Wall -Wextra tools/test_decision_capture_codec.cpp \
         -o "${BUILD_DIR}/test_decision_capture_codec"
     "${BUILD_DIR}/test_decision_capture_codec"
