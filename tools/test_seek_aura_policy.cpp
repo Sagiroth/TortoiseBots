@@ -90,6 +90,36 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
+    // At the gather the seek action stops a walk once, then leaves the tick to the rotation, the heals and the burn:
+    // a seek that kept consuming every tick at the spot froze the seekers (H1).
+    CHECK(SeekActionConsumesTick(false, false)); // still walking
+    CHECK(SeekActionConsumesTick(false, true));
+    CHECK(SeekActionConsumesTick(true, true));   // the one stop
+    CHECK(!SeekActionConsumesTick(true, false)); // standing at the spot: the engine's turn
+
+    // The gather keeps its source while that unit stands at the spot; with two there the pick is deterministic (the
+    // lowest health %, then the lowest guid), so no bot flips the shared latch (M2).
+    {
+        const std::vector<SeekSourceChoice> two = {{0x2000, 30.0f}, {0x1000, 30.0f}};
+        CHECK(SeekKeepOrPickGatherSource(0, two) == 0x1000);
+        CHECK(SeekKeepOrPickGatherSource(0x2000, two) == 0x2000);
+        const std::vector<SeekSourceChoice> closer = {{0x2000, 28.0f}, {0x1000, 40.0f}};
+        CHECK(SeekKeepOrPickGatherSource(0, closer) == 0x2000);
+        CHECK(SeekKeepOrPickGatherSource(0x3000, closer) == 0x2000); // the old one left the spot
+        CHECK(SeekKeepOrPickGatherSource(0, {}) == 0);
+    }
+
+    // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
+    CHECK(SeekSourceSearchYd(true) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(false) == kSeekFallbackYd);
+    CHECK(kSeekFallbackYd == 35.0f);
+
+    // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
+    CHECK(SeekClockStartOver(false, 0, 5000));
+    CHECK(!SeekClockStartOver(true, 1000, 1500));
+    CHECK(SeekClockStartOver(true, 1000, 12000));
+    CHECK(!SeekClockStartOver(true, 0, 12000));
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

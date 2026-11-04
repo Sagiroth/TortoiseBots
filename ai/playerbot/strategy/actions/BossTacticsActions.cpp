@@ -3971,13 +3971,17 @@ bool BossTacticsSeekAction::Execute(Event& event)
     }
     if (task.atSpot)
     {
-        // At the gather: stand, and do not break a cast that is already running.
+        // At the gather: stop a walk once, then leave the tick to the rotation, the heals and the burn. Returning true
+        // here every tick starved all of them (one successful action a tick), healers included.
         hasLast = false;
         const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
-        ai->StopMoving();
-        if (moving)
+        if (SeekActionConsumesTick(task.atSpot, moving))
+        {
+            ai->StopMoving();
             bot->CastStop();
-        return true;
+            return true;
+        }
+        return false;
     }
     if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
         std::fabs(lastY - task.y) < 1.0f)
