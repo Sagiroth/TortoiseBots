@@ -117,7 +117,7 @@ Stops the warlock rotation from spending casts on a target that is about to die,
 <summary>How it works in detail</summary>
 
 - A DoT or curse (*Corruption*, *Siphon Life*, *Immolate*, the curse rows) only starts on a target at 35% health or more. A DoT spread to another attacker only lands while that attacker is above 50% health.
-- In a raid group a spread keeps at most two extra targets dotted besides the current target.
+- In a converted raid group (not a five-player party) each spread row keeps at most two extra targets dotted besides the current target.
 - *Drain Soul* only harvests from trash, never from a boss, and only while the warlock holds fewer than two Soul Shards. The shard row also sits below *Shadowburn*, so a dying trash mob takes the instant first.
 - In combat *Life Tap* only fires when two *Shadow Bolts* cannot be paid for, instead of at the 40% medium-mana line. The health floor and the out-of-combat top-up band are unchanged.
 

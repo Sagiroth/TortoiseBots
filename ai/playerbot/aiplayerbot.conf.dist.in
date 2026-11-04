@@ -870,8 +870,8 @@ AiPlayerbot.WarlockPetBySpec = 1
 # - a DoT or curse (Corruption, Siphon Life, Immolate, the curse rows) only
 #   starts on a target at 35 percent health or more, and a DoT spread to
 #   another attacker only while that attacker is above 50 percent;
-# - in a raid group (more than five members) a spread keeps at most two extra
-#   targets dotted besides the current target;
+# - in a converted raid group (not a five-player party) each spread row keeps
+#   at most two extra targets dotted besides the current target;
 # - Drain Soul only harvests from trash (never from a boss or raid boss) and
 #   only while the warlock holds fewer than two Soul Shards;
 # - in combat Life Tap only fires when two Shadow Bolts cannot be paid for,
