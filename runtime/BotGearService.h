@@ -67,7 +67,10 @@ public:
     // item back on (raid-w1-r2 item 2).
     uint32_t PinnedCap(uint32_t guidLow) const;
 
-    void OnBotLogout(uint32_t guidLow);
+    // Clears the pin. The pin survives logout/relog; it ends only when a new
+    // `.bot gear` pass overwrites it, the hire is dismissed, or the
+    // character is deleted.
+    void UnpinBot(uint32_t guidLow);
 
 private:
     BotGearService() = default;
