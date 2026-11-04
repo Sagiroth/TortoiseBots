@@ -33,10 +33,12 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
+| [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no area action lands on a charmed group member (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
+| [`AiPlayerbot.DungeonRunKillFirstGrid`](#aiplayerbotdungeonrunkillfirstgrid) | `0` | `1`: the boss tactics find a kill-first unit (a ward on the boss, a Shade) by a grid search when no bot's attacker list shows it. |
 | [`AiPlayerbot.DungeonRunLightRest`](#aiplayerbotdungeonrunlightrest) | `1` | Before a small pull the party rests to light lines (60/35/25 to 75/60/45); before a boss, an event or a big pull the full ones. |
 | [`AiPlayerbot.DungeonRunLinkedDeath`](#aiplayerbotdungeonrunlinkeddeath) | `0` | `1`: free DPS bots equalise a `linked_death` group's health, hold every member at its `param` % and burn them together (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunLootFfa`](#aiplayerbotdungeonrunlootffa) | `0` | A run leader loot step whose item is another member's under the group loot rules sets free-for-all for the carrier's loot, then puts the method back. |
@@ -47,6 +49,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPackClearMarginYd`](#aiplayerbotdungeonrunpackclearmarginyyd) | `10` | A pull step is done only when nothing of its entries is left within its radius plus this band (`0` = off). |
 | [`AiPlayerbot.DungeonRunPackClearRepulls`](#aiplayerbotdungeonrunpackclearrepulls) | `3` | Residue pulls a pull step may send before it pauses for a human. |
 | [`AiPlayerbot.DungeonRunStragglerPull`](#aiplayerbotdungeonrunstragglerpull) | `0` | The tank walks to and pulls a pack unit or patrol the step waited for and did not come, instead of pausing; a stand-pull row's patrol is waited for one loop of its path at most. |
+| [`AiPlayerbot.DungeonRunTotemFocus`](#aiplayerbotdungeonruntotemfocus) | `0` | A totem the plan kills first is focused by the damage dealers alone, and before the guard, so its 1-2 s kill never waits. |
 | [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `0` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
 | [`AiPlayerbot.DungeonRunPlayerLedAwayMinutes`](#aiplayerbotdungeonrunplayerledawayminutes) | `10` | How long the leading player of a player-led run may be out of the plan's dungeon before the run stops. |
 | [`AiPlayerbot.DungeonRunPlayerLedPullYd`](#aiplayerbotdungeonrunplayerledpullyd) | `40` | How close the leading player stands to a plan pack or boss for the player-led run to pull it. |
@@ -244,6 +247,17 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 
 </details>
 
+### `AiPlayerbot.DungeonRunAuraGatedTargets`
+Leaves a unit a `needs_aura` boss-tactic row gates to the bots that carry the row's aura.
+**Default:** `0` · **Values:** `0` off (every bot may target it, as before), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Aura-gated targets:** the AI boss tactics table's `needs_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): `boss_entry` is the unit and `spell` the aura it takes damage from, and the row is only read by a bot running the `boss tactics` strategy. A bot without the aura does 0 damage to the unit, so with this key on the target picks leave it out (the current and attack targets, DPS/AoE, the boss kill-first pick), the boss-tactic taunts skip it, the run's guard sends nobody at it, and an explicit attack order on it is refused with *is immune to my damage without its aura*. Jin'do's Shade of Jin'do (14986) takes damage only from a Delusions (24306) carrier. A bot carrying the aura targets it as before, and with the key off the row changes nothing.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunBotKeysForPlayers`
 Whether the bots carry the dungeon keys for a party that has real players in it.
 **Default:** `0` · **Values:** `0` players bring their own key, `1` the bots carry the keys and open the doors · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -274,6 +288,17 @@ Whether a bot-only run gives the bots the dungeon keys and items it needs.
 <summary>How it works in detail</summary>
 
 **Giving run items:** only read while `AiPlayerbot.DungeonSelfClear = 1`. At the start of a run with no real player in the party, every bot gets each item the plan needs and does not carry (the Mallet of Zul'Farrak, the keys of the locked doors). The items are soulbound, so they cannot be traded, mailed or sold. The run takes them back when it ends or stops, when it is erased, when a bot leaves the party, and when a real player joins. The exact item instances are recorded in the characters database (`ai_run_given_item`), so a crash does not leave them with the bots. A bot's own copy is never taken. With `0` nothing is given, and a bot-only run pauses at a locked door until `.bot run skip` passes it. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#keys-and-doors).
+
+</details>
+
+### `AiPlayerbot.DungeonRunKillFirstGrid`
+Lets the boss tactics find a kill-first unit no bot's attacker list shows, by searching the grid around the bot.
+**Default:** `0` · **Values:** `0` off (only the units the bots already see), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Kill-first grid:** the boss tactics' kill-first focus is read from the bots' cached attacker lists, which never show a ward standing on the boss or a Shade no uncursed bot can see. With this key on, the read also searches each row's `target_entry` within 40 yd around the bot (one grid search per bot and entry per second), and a unit of the fight joins the candidates when it fights itself or through an owner in the fight (a totem's summoner). It is a fallback only: the attacker lists and the plan's own kill_first list keep their picks.
 
 </details>
 
@@ -384,6 +409,17 @@ Pulls a pack unit or a patrol that the step waited for and did not come, instead
 <summary>How it works in detail</summary>
 
 **The straggler pull:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Added 2026-11-03 for Zul'Gurub walks 32 and 33: the Arlokk pack paused with `pack not cleared: 11365 0x… of this pack (spawned 12.7 yd from the centre) is 12.7 yd out and did not come within 60 s`, and Jeklik's bat rider 14750 held its stand-pull row with `patrol pull: 14750 0x… did not come within 28.5 yd of the stand`, each until a human pulled it. With `1`, a unit a `pull` step waits for that did not come (a spawn-owned patroller outside the radius) is walked to and pulled by the acting tank after the 60 s wait: the lead bot while it lives and is a tank, else the off-tank that holds the main tank role. The tank walks to the unit and sends `attack <guid> <tank>`, the rest of the party staying with the lead bot at the stand. Each try has 45 s; a failed try — a refused order, a way with no path, a blocked way or the 45 s run out — goes to one untried off-tank, and only then the run pauses as before with the reason in the line. The way is read again right before each movement order and every 2 s while the tank walks or waits at the point: another pack not pulled yet that comes within its aggro reach plus 5 yd of the remaining way aborts that tank's try exactly like a blocked way, and a way that no longer has a path does the same. A stand-pull row's patrol is waited for one full loop of its own waypoint path at its walk speed (90 s when the loop cannot be read) instead of the row's 600 s, then the tank walks to the nearest point of that loop on the party's side and pulls it from there. A boss, a `kill_first` unit and a `linked_death` unit keep the old behaviour. One `TBM:RUN` note per try says which tank walks where.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTotemFocus`
+Focuses a totem the plan kills first on the damage dealers alone, and before the guard's order.
+**Default:** `0` · **Values:** `0` off (the totem is an ordinary add), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#pull-stand).
 
 </details>
 

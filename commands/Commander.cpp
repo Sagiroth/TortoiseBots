@@ -8730,7 +8730,7 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
             return;
-        // A charmed group member is no fact of the fight (C4): every order at it is refused, and the tick it spends
+        // A charmed group member is no fact of the fight: every order at it is refused, and the tick it spends
         // is the focus' own.
         if (TortoiseBots::DungeonRun::RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit)))
             return;
@@ -9013,11 +9013,13 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             f.leadHasAttacker = true;
         }
         // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
-        // in melee reach above is only EngageTarget's pick).
+        // in melee reach above is only EngageTarget's pick). A charmed group member is no fact of the fight, as in
+        // the read below: every order at it is refused.
         std::unordered_set<uint64> seenLead;
         for (Unit* attacker : lead->GetAttackers())
             if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
                 !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 f.leadAttackers.push_back(
                     {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
@@ -9056,7 +9058,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
-            // A charmed group member is no fact of the fight (C4): every order at it is refused, so it would only spend
+            // A charmed group member is no fact of the fight: every order at it is refused, so it would only spend
             // the guard's budget and the focus' tick.
             if (TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)))
                 continue;
@@ -12442,6 +12444,10 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
                 !seen.insert(attacker->GetObjectGuid().GetRawValue()).second ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
+            // A charmed group member is no fact of the fight, as on the bot path: every order at it is refused, so it
+            // would only spend the guard's budget and the auto-CC's count.
+            if (TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)))
+                continue;
             TortoiseBots::DungeonRun::UnitFact fact;
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
@@ -12451,6 +12457,9 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
+            if (f.auraGatedTargets)
+                fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;

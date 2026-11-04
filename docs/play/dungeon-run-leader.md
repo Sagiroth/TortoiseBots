@@ -282,6 +282,8 @@ Opt-in (`AiPlayerbot.DungeonRunPullStand = 1`, default `0`; not yet proven in a 
 
 **A fight only the holds keep open is broken one at a time** (with `AiPlayerbot.DungeonRunAutoCc = 1`). When every hostile still in combat with the party is under the run's own crowd control (Polymorph, Shackle Undead, Sap, Banish, Seduction, Hibernate, Repentance, Fear) and nothing else engages, the fight cannot end by itself: the run leader orders the tank onto one held unit, the one whose hold ends soonest (the oldest one when no remaining time is read), the party kills it, and then the next. Only one is broken at a time, and the run never re-applies the hold on the unit it is breaking. Zul'Gurub Jin'do steps 540/550 stood still about 50 minutes with eight shackled Sacrificed Trolls and nothing else engaged, pausing three times on "a fight lasted more than 180 s (kept on by nothing hostile engaged)".
 
+**A charmed group member is never a fight's unit** (Hakkar's Cause Insanity, Whitemane's Dominate Mind). Every order at it is refused, so the run leader's reads leave it out — the bots' attackers, the lead bot's own and a real player's — and the automatic crowd control counts it for nothing: neither in the body count nor as a mark.
+
 ### Events
 
 A scripted event is two or more steps: a **start** (`ritual`, or an `open` / `use_item` / `gossip` / `use_on` when an object, an item or an NPC's words start it), then a **hold**. The hold:
