@@ -417,8 +417,8 @@ namespace ai
     BossTankSwapTask FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
     // Whether the fight's swap record names `bot` as the tank the last swap moved off `boss`: it stands down (the
-    // stop action and the hold multiplier) while TankSwapStandsDown says so (the record's window, its own stacks, or
-    // both).
+    // stop action and the hold multiplier) while TankSwapStandsDown says so (the record's window, its own stacks,
+    // and the boss still on the new tank). HeldSwapBoss clears it for an explicit player order on the boss.
     bool TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, int stacks);
 
     // The swap_on_aura boss this tank was moved off and still stands on (its victim or its current target), or null
