@@ -33232,6 +33232,37 @@ static void TestAutoCcSkipsFastRespawnUnits()
     }
 }
 
+// The boundary of the fast-respawn window: a minute counts as quick, a second more does not (the unit is back after
+// the order's window), and no spawn read is no respawn.
+static void TestRespawnQuickBoundary()
+{
+    CHECK(RespawnsQuickly(60));
+    CHECK(!RespawnsQuickly(61));
+    CHECK(RespawnsQuickly(1));
+    CHECK(!RespawnsQuickly(0));
+}
+
+// Before the pull the same rule holds: the pack's first choice (the farthest unit) is a 10 s respawn, so the mark
+// goes to the next unit instead.
+static void TestAutoCcSkipsFastRespawnUnitsBeforeThePull()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    UnitFact troll = AutoHumanoid(9, 20.0f);
+    troll.respawnSec = 10;
+    f.units.push_back(troll);
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 6 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.count(9) == 0);
+}
+
 // A temporary summon's respawn delay is its lifetime (TemporarySummon), not a respawn: Gandling's Risen Guardians
 // (15 s) must keep their crowd control and their place in the pull. Only a spawn of its own carries a respawn delay.
 static void TestAutoCcTemporarySummonWithALifetimeStillCounts()
@@ -33920,6 +33951,8 @@ int main()
     TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcSkipsFastRespawnUnits();
+    TestRespawnQuickBoundary();
+    TestAutoCcSkipsFastRespawnUnitsBeforeThePull();
     TestAutoCcTemporarySummonWithALifetimeStillCounts();
     TestAutoCcReappliesTwiceThenStops();
     TestTheCcReSendsSkipAHeldBot();
