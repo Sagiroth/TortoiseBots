@@ -405,7 +405,7 @@ void BotPacketAdapter::DrainDeferredPackets(uint64_t before, bool endOfTick)
 
 void BotPacketAdapter::ClearDeferredPackets()
 {
-    g_heldBacklogs.clear();
+    g_heldBacklogs.Clear();
     DeferredBotChat().Clear();
     DeferredBotPackets().Clear();
 }
