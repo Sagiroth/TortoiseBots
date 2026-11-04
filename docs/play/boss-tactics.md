@@ -228,7 +228,7 @@ What needs a live check: that the melee and healers leave the 13 yd before the 3
 
 ## Known limits
 
-- Recurring threat-reset holds need a cast trigger (follow-up). A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, once per fight. The Mandokir Threatening Gaze and Hakkar Cause Insanity rows were removed (`data/sql/world/20261103020000_world.sql`) for that reason. Cause Insanity 24327 is instant (castingTimeIndex 1) and lands on a player, which the hold's cast/aura edge cannot see on the boss. Threatening Gaze 24314 is a real cast (castingTimeIndex 5), so a keyed row for Mandokir alone is the likely first follow-up.
+- Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, once per fight, so the spell-less Mandokir and Hakkar rows were removed (`data/sql/world/20261103020000_world.sql`, then `20261103060000_world.sql` on upgraded servers). Mandokir is covered: `data/sql/world/20261104040000_world.sql` keys an `until_tank` row on Threatening Gaze 24314 (a real cast, castingTimeIndex 5), a 4 s hold per cast that stays on while the victim is not a tank, up to 12 s. Hakkar's Cause Insanity 24327 is still open: it is instant (castingTimeIndex 1) and lands on a player, which the hold's cast/aura edge cannot see on the boss, so it needs a cast trigger of its own (follow-up).
 
 ## Stand sets (`ai_boss_stand`)
 
