@@ -454,6 +454,10 @@ namespace ai
     // Whether the bot is in a seek phase right now: the move hold and the raid spread stand-down read it.
     bool BossSeeking(PlayerbotAI* ai, Player* bot);
 
+    // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
+    // off. False on every other bot, row or target.
+    bool IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit);
+
     // Whether `dyn` is a seek_aura row's cloud: the aura itself, or the trigger spell of its persistent area effect.
     // The ground-hazard readers skip it while the row is live, so the raid stands in the poison on purpose.
     bool IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn);

@@ -2228,6 +2228,15 @@ int main()
         CHECK(table.Add(bossItself));
         BossTacticRow gaze = Row(309, 11382, BossTacticKind::FreezeOnAura, 0, 24314);
         CHECK(table.Add(gaze));
+        // A seek_aura source is dragged to the spot and burned there: a CC'd Son cannot be dragged (M4).
+        BossTacticRow seekSource = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        seekSource.cycleSpell = 24324;
+        seekSource.cycleSec = 90.0f;
+        seekSource.spotX = -11802.0f;
+        seekSource.spotY = -1683.0f;
+        seekSource.spotZ = 52.9f;
+        seekSource.windowSec = 80.0f;
+        CHECK(table.Add(seekSource));
         // Before the seal a reader sees nothing.
         CHECK(table.NoCcEntries(309).empty() && table.FreezeAuras(309).empty());
         table.Seal();
@@ -2235,7 +2244,10 @@ int main()
         CHECK(table.NoCcEntries(309).count(15163) == 1);  // Nightmare Illusion
         CHECK(table.NoCcEntries(309).count(11348) == 1);  // the linked_death partner
         CHECK(table.NoCcEntries(309).count(14834) == 1);  // a targetless kill_first is its boss entry
-        CHECK(table.NoCcEntries(309).size() == 4);
+        CHECK(table.NoCcEntries(309).count(11357) == 1);  // the seek_aura source (Son of Hakkar)
+        CHECK(table.NoCcEntries(309).size() == 5);
+        CHECK(table.SeekTargets(309).count(11357) == 1);  // the third off-tank's pickup rule reads it
+        CHECK(table.SeekTargets(531).empty());
         CHECK(table.NoCcEntries(531).empty());            // another map's rows are not smeared in
         CHECK(table.FreezeAuras(309).size() == 1 && table.FreezeAuras(309)[0] == 24314);
         CHECK(table.FreezeAuras(531).empty());

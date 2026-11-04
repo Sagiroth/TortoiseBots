@@ -1130,18 +1130,36 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             }
         }
         LogSiphon(ai, bot, pendingCycle, dosed, undosed, boss);
+        std::lock_guard<std::mutex> lock(g_seekMutex);
+        auto it = g_seekRecords.find(key);
+        if (it != g_seekRecords.end())
+        {
+            it->second.siphonCycle = pendingCycle;
+            it->second.siphonDosed = dosed;
+            it->second.siphonUndosed = undosed;
+        }
     }
     out.seekers = out.windowOpen ? CountSeekWanted(ai, bot, boss, *row, out.windowOpen, nullptr, 0.0f) : 0;
-    // The source the gather stands around: the nearest living source at the row's spot.
+    // The source the gather stands around: one pick for the whole raid. The record's current source wins while it still
+    // stands at the spot; with two Sons there every bot else would pick its own and flip the shared latch. Without the
+    // third tank the search reaches 35 yd, so the gather goes to the source wherever it stands.
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3);
+    const std::vector<Creature*> sources =
+        SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
+    std::vector<SeekSourceChoice> atSpot;
+    atSpot.reserve(sources.size());
+    for (Creature* candidate : sources)
+        atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
+    const std::uint64_t chosenGuid = SeekKeepOrPickGatherSource(gatherGuid, atSpot);
     Unit* source = nullptr;
-    float sourceDist = 0.0f;
-    for (Creature* candidate : SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, kSeekSpotYd))
+    for (Creature* candidate : sources)
     {
-        const float dist = bot->GetDistance3dToCenter(candidate);
-        if (source && dist >= sourceDist)
-            continue;
-        source = candidate;
-        sourceDist = dist;
+        if (candidate->GetObjectGuid().GetRawValue() == chosenGuid)
+        {
+            source = candidate;
+            break;
+        }
     }
     out.source = source;
     {
@@ -1165,9 +1183,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             record.missing = CountSeekWanted(ai, bot, boss, *row, out.windowOpen, source, row->param + 1.0f);
             record.ready = record.ready || SeekGatherReady(record.missing, record.gatherStartMs, nowMs, forceBurn);
         }
-        else if (record.gatherSourceGuid != 0)
+        else if (record.gatherSourceGuid != 0 && (!source || !out.windowOpen))
         {
-            // The gather is over (the source died, left the spot or the window closed): the next one starts afresh.
+            // The gather is over (the source died or left the spot, or the window closed): the next one starts afresh.
             record.gatherSourceGuid = 0;
             record.gatherStartMs = 0;
             record.ready = false;
@@ -1279,6 +1297,24 @@ bool ai::IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn)
 bool ai::BossSeeking(PlayerbotAI* ai, Player* bot)
 {
     return FindBossSeek(ai, bot).valid;
+}
+
+bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
+{
+    if (!ai || !bot || !unit || !sPlayerbotAIConfig.dungeonRunSeekAura)
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return false;
+    // The table's source entries, not a fight read: a target pick asks this per candidate, and the fight read walks the
+    // grid around the row's spot.
+    if (GetBossTactics().SeekTargets(bot->GetMapId()).count(unit->GetEntry()) == 0)
+        return false;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.tanks.size() < 3 || roles.tanks[2] != bot)
+        return false;
+    // Only a source the tank actually holds: one on someone else is the pickup the tank should take.
+    return unit->GetVictim() == bot;
 }
 
 SeekTask ai::FindBossSeek(PlayerbotAI* ai, Player* bot)

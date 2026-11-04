@@ -353,7 +353,7 @@ namespace ai
                 (row.targetEntry == 0 || row.spellId == 0 || row.cycleSpell == 0 || !row.HasSpot() ||
                     !(row.param > 0.0f) || row.param > 10.0f || row.priority > 99 ||
                     !(row.cycleSec > 0.0f) || row.cycleSec > 600.0f ||
-                    !(row.windowSec > 0.0f) || row.windowSec > row.cycleSec))
+                    !(row.windowSec > 0.0f) || row.windowSec >= row.cycleSec))
                 return false;
             // pull_gate: the boss itself (target_entry 0), the stake spell it wears and the seconds the run holds
             // before it ends. priority is the most stacks allowed.
@@ -382,8 +382,10 @@ namespace ai
             rows.push_back(row);
             maps_[row.map] = true;
             // The automatic crowd control's exclusions (Commander's run facts): a kill_first unit is killed, a
-            // linked_death group's partner must die with it, so neither is ever held.
-            if (row.kind == BossTacticKind::KillFirst || row.kind == BossTacticKind::LinkedDeath)
+            // linked_death group's partner must die with it, and a seek_aura source is dragged to the spot and burned
+            // there (a polymorphed or trapped Son cannot be dragged), so none is ever held.
+            if (row.kind == BossTacticKind::KillFirst || row.kind == BossTacticKind::LinkedDeath ||
+                row.kind == BossTacticKind::SeekAura)
                 noCcEntries_[row.map].insert(row.targetEntry != 0 ? row.targetEntry : row.bossEntry);
             if (row.kind == BossTacticKind::FreezeOnAura)
                 freezeAuras_[row.map].push_back(row.spellId);
@@ -398,7 +400,10 @@ namespace ai
             if (row.kind == BossTacticKind::UseObject)
                 useObjectMaps_[row.map] = true;
             if (row.kind == BossTacticKind::SeekAura)
+            {
                 seekAuraMaps_[row.map] = true;
+                seekTargets_[row.map].insert(row.targetEntry);
+            }
             if (row.kind == BossTacticKind::PullGate)
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
@@ -481,6 +486,17 @@ namespace ai
         bool HasSeekAuraMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && seekAuraMaps_.find(map) != seekAuraMaps_.end();
+        }
+
+        // The map's seek_aura source entries (the creatures whose death leaves the cloud): the third off-tank's pickup
+        // rule reads them without a fight scan. Empty before the seal.
+        const std::unordered_set<std::uint32_t>& SeekTargets(std::uint32_t map) const
+        {
+            static const std::unordered_set<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = seekTargets_.find(map);
+            return it == seekTargets_.end() ? none : it->second;
         }
 
         // Whether the map has a pull_gate row (the run leader's gate lookup runs only there). False before the seal.
@@ -591,6 +607,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
         std::unordered_map<std::uint32_t, bool> useObjectMaps_;
         std::unordered_map<std::uint32_t, bool> seekAuraMaps_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
