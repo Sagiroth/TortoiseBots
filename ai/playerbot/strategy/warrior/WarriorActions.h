@@ -130,6 +130,10 @@ namespace ai
         }
     };
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
+    // Thunder Clap is a rage trap in the Arms swing cycle (Mortal
+    // Strike/Overpower/Sweeping Strikes out-damage it), so grouped PvE Arms
+    // skips it. Fury keeps the row, and so do solo and PvP Arms: dual-wield
+    // spreads the debuff for free and a masterless bot has no tank covering it.
     class CastThunderClapAction : public CastMeleeDebuffSpellAction
     {
     public:
@@ -139,7 +143,10 @@ namespace ai
         }
         bool isUseful() override
         {
-            if (!ai->IsTank(bot))
+            if (!ai->IsTank(bot) &&
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT) &&
+                !ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
+                ai->HasActivePlayerMaster())
                 return false;
             return CastMeleeDebuffSpellAction::isUseful();
         }
@@ -150,7 +157,10 @@ namespace ai
         CastThunderClapSnareAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "thunder clap") {}
         bool isUseful() override
         {
-            if (!ai->IsTank(bot))
+            if (!ai->IsTank(bot) &&
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT) &&
+                !ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
+                ai->HasActivePlayerMaster())
                 return false;
             return CastSnareSpellAction::isUseful();
         }
