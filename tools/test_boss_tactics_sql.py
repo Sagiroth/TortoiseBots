@@ -815,6 +815,101 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(set(once), set(twice), "re-applying 20261104150000 changes the live rows")
 
 
+    def test_migrations_remove_only_rows_they_replace(self):
+        # Every data/sql/world migration's DELETE on ai_boss_tactic removes only rows the same file re-inserts.
+        # A re-export sorted after an earlier file (the old-style full-boss plan DELETE) would silently drop a
+        # live row it never replaces; a fix that removes a bad row names its replacement, or no replacement when
+        # the core cannot use it. Apply all migrations in order on an empty schema and fail on a row an earlier
+        # file inserted that disappears without the same file inserting its key.
+        # Intent removals the core audit asked for (a kick the core cannot stop, so no replacement exists):
+        #   map 822 boss 63133 spell 3143, map 820 boss 62771 spell 36732 (20261020082925);
+        #   map 70 boss 4854 spell 8292 (20261029150000);
+        #   map 309 boss 14507 spell 23895, boss 14834 spell 24324, map 409 boss 12119 spell 20604,
+        #   map 531 bosses 15275/15276 spell 7393, map 532 boss 61224 spell 57094 (20261101234600).
+        # Renew 23895's replacement (Holy Fire 23860) lives one file later (20261101080000).
+        allowed = {
+            (822, 63133, "interrupt", 0, 3143, 0, 100),
+            (820, 62782, "interrupt", 62771, 36732, 0, 100),
+            (70, 4854, "interrupt", 0, 8292, 0, 100),
+            (309, 14507, "interrupt", 0, 23895, 0, 100),
+            (309, 14834, "interrupt", 0, 24324, 0, 100),
+            (409, 12118, "interrupt", 12119, 20604, 0, 100),
+            (531, 15275, "interrupt", 0, 7393, 0, 100),
+            (531, 15276, "interrupt", 0, 7393, 0, 100),
+            (532, 61224, "interrupt", 0, 57094, 0, 100),
+        }
+
+        def key(row):
+            return (row[1], row[2], row[3], row[4], row[5], row[9], row[10])
+
+        live = {}
+        for path in migration_paths():
+            name = os.path.basename(path)
+            own = {key(payload) for kind, payload in migration_statements([path]) if kind == "insert"}
+            for kind, payload in migration_statements([path]):
+                if kind != "delete":
+                    continue
+                _name, match = payload
+                scope = delete_scope(match)
+                removed = {live_key for live_key in live if delete_covers(scope, live_key)}
+                dropped = {live_key for live_key in removed - own if live_key not in allowed}
+                self.assertFalse(dropped, "%s DELETE `%s` removes live rows it does not re-insert: %s"
+                                 % (name, match.string.strip(), sorted(dropped)))
+                for live_key in removed:
+                    del live[live_key]
+            for own_key in own:
+                live[own_key] = name
+
+    def test_stand_migrations_remove_only_rows_they_replace(self):
+        # Same rule as above for ai_boss_stand, keyed by its primary key
+        # (map, boss_entry, anchor, role, window_spell, side, seq). Only
+        # 20261101080000 writes the table so far; its DELETE names the same
+        # (309, 14507) boss it inserts, so a future re-export cannot silently
+        # drop another boss's seats.
+        stand_delete = re.compile(
+            r"^DELETE FROM `ai_boss_stand` WHERE `map` = (\d+)"
+            r"(?: AND `boss_entry` = (\d+))?;?$"
+        )
+
+        def stand_key(columns, tuple_text):
+            values = _selected_values(tuple_text, set(range(len(columns))))
+            row = dict(zip(columns, (values[i] for i in range(len(columns)))))
+            return (int(row["map"]), int(row["boss_entry"]), int(row["anchor"]),
+                    str(row["role"]).strip("'"), int(row["window_spell"]),
+                    int(row["side"]), int(row["seq"]))
+
+        live = {}
+        for path in migration_paths():
+            name = os.path.basename(path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            if "`ai_boss_stand`" not in text:
+                continue
+            own = set()
+            deletes = []
+            for statement in _sql_statements(text):
+                line = statement.strip()
+                if line.startswith("INSERT INTO `ai_boss_stand`"):
+                    columns = [c.strip().strip("`") for c in line.split("(", 1)[1].split(")", 1)[0].split(",")]
+                    values = line.split("VALUES", 1)[1]
+                    for tuple_text in _tuples(values):
+                        own.add(stand_key(columns, tuple_text))
+                elif line.startswith("DELETE FROM `ai_boss_stand`"):
+                    match = stand_delete.match(line)
+                    self.assertIsNotNone(match, "unparsable stand DELETE in %s: %s" % (name, line))
+                    deletes.append((int(match.group(1)), int(match.group(2)) if match.group(2) else None))
+            for map_id, boss in deletes:
+                removed = {stand_row for stand_row in live
+                           if stand_row[0] == map_id and (boss is None or stand_row[1] == boss)}
+                dropped = removed - own
+                self.assertFalse(dropped, "%s stand DELETE (map %s boss %s) removes seats it does not re-insert: %s"
+                                 % (name, map_id, boss, sorted(dropped)))
+                for stand_row in removed:
+                    del live[stand_row]
+            for own_row in own:
+                live[own_row] = name
+
+
 def _sql_statements(text):
     """Split a dump into statements: comments dropped, quotes and escapes respected."""
     statements = []
