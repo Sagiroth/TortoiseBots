@@ -31,8 +31,7 @@ private:
     ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
-
-
+};
 ArmsWarriorStrategy::ArmsWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
 {
     actionNodeFactories.Add(std::make_unique<ArmsWarriorStrategyActionNodeFactory>());

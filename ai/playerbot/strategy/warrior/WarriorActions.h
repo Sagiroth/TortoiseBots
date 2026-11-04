@@ -179,6 +179,7 @@ namespace ai
             return CastSnareSpellAction::isUseful();
         }
     };
+    SNARE_ACTION(CastHamstringAction, "hamstring");
     MELEE_ACTION(CastOverpowerAction, "overpower");
     MELEE_ACTION(CastMockingBlowAction, "mocking blow");
     class CastRetaliationAction : public CastBuffSpellAction
