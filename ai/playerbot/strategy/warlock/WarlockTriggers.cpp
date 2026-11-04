@@ -35,6 +35,17 @@ bool WarlockBossTarget(Unit* target)
     return creature && creature->IsWorldBoss();
 }
 
+// Cost of one Shadow Bolt at the learned rank, without the probe spellmods
+// (as PlayerbotAISpells.cpp prices a cast). 0 when it is not known.
+uint32 WarlockShadowBoltCost(PlayerbotAI* ai)
+{
+    uint32 const spellId = ai->GetAiObjectContext()->GetValue<uint32>("spell id", "shadow bolt")->Get();
+    SpellEntry const* spellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!spellInfo || spellInfo->powerType != POWER_MANA)
+        return 0;
+    return Spell::CalculatePowerCost(spellInfo, ai->GetBot(), nullptr, nullptr);
+}
+
 // "On attacker" DoT row: the candidate must be above 50% health, and a raid
 // group keeps at most two other attackers dotted besides the current target.
 bool WarlockSpreadTargetAllowed(PlayerbotAI* ai, Unit* target, std::string const& spell, bool checkIsOwner)
@@ -233,7 +244,15 @@ bool LifeTapTrigger::IsActive()
     // WarlockStrategy puts it above the dot upkeep it feeds.
     TortoiseBots::WarlockTapInputs inputs;
     FillWarlockTapInputs(ai, inputs);
-    return TortoiseBots::DecideWarlockTap(inputs, ai->GetBot()->IsInCombat()) == TortoiseBots::WarlockTapDecision::TapUrgent;
+    bool const inCombat = ai->GetBot()->IsInCombat();
+    if (TortoiseBots::DecideWarlockTap(inputs, inCombat) != TortoiseBots::WarlockTapDecision::TapUrgent)
+        return false;
+    // Raid rotation: keep tapping a GCD ahead of the mana line only while two
+    // filler casts cannot be paid for. Every other tap is a GCD and healing
+    // the raid does not get back.
+    if (!inCombat || !sPlayerbotAIConfig.warlockRaidRotation)
+        return true;
+    return TortoiseBots::WarlockCombatTapAllowed(true, bot->GetPower(POWER_MANA), WarlockShadowBoltCost(ai));
 }
 
 bool LifeTapTopUpTrigger::IsActive()

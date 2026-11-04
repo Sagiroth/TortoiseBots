@@ -10,7 +10,8 @@
 //     to another attacker only while that attacker is above 50%, and a raid
 //     group keeps at most two extra dotted targets;
 //   - Drain Soul is a trash finisher: never on a boss, and only below two
-//     shards, so it never channels a boss execute phase instead of nuking.
+//     shards, so it never channels a boss execute phase instead of nuking;
+//   - Life Tap in combat only when two filler casts cannot be paid for.
 // Pure functions of already-read facts, unit-tested on their own
 // (tools/test_warlock_raid_rotation_policy.cpp). Key off returns the
 // behaviour the rows had before the key existed.
@@ -22,6 +23,7 @@ inline constexpr std::uint8_t WARLOCK_DOT_MIN_TARGET_HEALTH = 35;
 inline constexpr std::uint8_t WARLOCK_DOT_MIN_SPREAD_HEALTH = 50;
 inline constexpr std::size_t WARLOCK_SPREAD_MAX_EXTRA_TARGETS = 2;
 inline constexpr std::uint32_t WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2;  // fewer than this
+inline constexpr std::uint32_t WARLOCK_COMBAT_TAP_NUKE_COUNT = 2;  // filler casts paid up front
 
 // Current-target rows use the 35% line; "on attacker" spreads need the target
 // above 50%.
@@ -54,6 +56,14 @@ inline bool WarlockDrainSoulAllowed(bool raidRotation, bool boss, std::uint32_t 
     if (!raidRotation)
         return shards < 5;
     return !boss && shards < WARLOCK_DRAIN_SOUL_MAX_SHARDS;
+}
+
+// A filler the warlock has not learned prices at 0: keep the mana-line tap.
+inline bool WarlockCombatTapAllowed(bool raidRotation, std::uint32_t mana, std::uint32_t nukeCost)
+{
+    if (!raidRotation || !nukeCost)
+        return true;
+    return mana < nukeCost * WARLOCK_COMBAT_TAP_NUKE_COUNT;
 }
 
 } // namespace TortoiseBots

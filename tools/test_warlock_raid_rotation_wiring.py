@@ -65,12 +65,21 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
         fn = body(STRATEGY, '"drain soul",', "NULL)));")
         self.assertIn("sPlayerbotAIConfig.warlockRaidRotation ? ACTION_HIGH - 1 : ACTION_HIGH + 1", fn)
 
+    def test_life_tap_uses_the_two_filler_gate_in_combat(self):
+        fn = body(TRIGGERS, "bool LifeTapTrigger::IsActive()", "\n}\n")
+        self.assertIn("WarlockShadowBoltCost(ai)", fn)
+        self.assertIn("TortoiseBots::WarlockCombatTapAllowed(", fn)
+        # Never gate the out-of-combat urgent or top-up rows on a cost.
+        topup = body(TRIGGERS, "bool LifeTapTopUpTrigger::IsActive()", "\n}\n")
+        self.assertNotIn("WarlockCombatTapAllowed(", topup)
+
     def test_policy_header_is_the_single_threshold_source(self):
         policy = (ROOT / "runtime/policy/class/WarlockRaidRotationPolicy.h").read_text()
         for constant in ("WARLOCK_DOT_MIN_TARGET_HEALTH = 35",
                          "WARLOCK_DOT_MIN_SPREAD_HEALTH = 50",
                          "WARLOCK_SPREAD_MAX_EXTRA_TARGETS = 2",
-                         "WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2"):
+                         "WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2",
+                         "WARLOCK_COMBAT_TAP_NUKE_COUNT = 2"):
             self.assertIn(constant, policy)
         # Triggers call the decisions; they do not re-type the numbers.
         self.assertNotRegex(TRIGGERS, r"\bWARLOCK_(DOT|SPREAD|DRAIN|COMBAT)_")

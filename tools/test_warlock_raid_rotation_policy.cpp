@@ -3,7 +3,8 @@
 // AiPlayerbot.WarlockRaidRotation):
 //   - no new DoT/curse on a target under 35% health, no spread to an attacker
 //     at or below 50%, and at most two extra dotted targets in a raid;
-//   - Drain Soul never on a boss and only below two shards.
+//   - Drain Soul never on a boss and only below two shards;
+//   - Life Tap in combat only when two filler casts cannot be paid for.
 // Every helper must also answer "today's behaviour" with the key off.
 //
 // Build and run:
@@ -72,12 +73,24 @@ static void TestDrainSoulBossGate()
     CHECK(!WarlockDrainSoulAllowed(true, false, 0, 15, false));
 }
 
+// Life Tap: with the key on, combat taps only while two Shadow Bolts cannot be
+// paid for. An unknown/zero filler cost keeps the mana-line tap.
+static void TestCombatTapNeedsTwoFillers()
+{
+    CHECK(!WarlockCombatTapAllowed(true, 1000, 400));
+    CHECK(!WarlockCombatTapAllowed(true, 800, 400));
+    CHECK(WarlockCombatTapAllowed(true, 799, 400));
+    CHECK(WarlockCombatTapAllowed(true, 1000, 0));
+    CHECK(WarlockCombatTapAllowed(false, 1000, 400));
+}
+
 int main()
 {
     TestDotLifeGateOnCurrentTarget();
     TestSpreadLifeGate();
     TestRaidSpreadCap();
     TestDrainSoulBossGate();
+    TestCombatTapNeedsTwoFillers();
 
     std::printf("warlock raid rotation policy: %d checks passed\n", checks);
     return 0;
