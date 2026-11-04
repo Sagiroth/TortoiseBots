@@ -41,6 +41,16 @@ int main()
     CHECK(QuestRewardTiebreak({{5, 0}, {6, 0}}) == 5);
     std::cout << "  [PASS] all-zero picks first\n";
 
+    // Gain, not own score: a resto druid's reward tunic scores 20 on its own
+    // but only +1 over the worn suffixed tunic, while the staff scores 20 and
+    // is +10 over the worn staff - the staff must win even listed second.
+    CHECK(QuestRewardTiebreak({{0, 20 - 19}, {1, 20 - 10}}) == 1);
+    std::cout << "  [PASS] biggest upgrade wins over biggest own score\n";
+
+    // Negative gains still rank: the smaller loss wins.
+    CHECK(QuestRewardTiebreak({{0, -30}, {1, -5}}) == 1);
+    std::cout << "  [PASS] negative gains rank by smallest loss\n";
+
     std::cout << "All TortoiseBots quest-reward tiebreak tests passed.\n";
     return 0;
 }

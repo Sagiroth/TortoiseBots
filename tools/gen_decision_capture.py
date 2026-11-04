@@ -1058,12 +1058,29 @@ def sample_json(model, node, depth=0):
         return "[" + sample_json(model, node[1], depth) + "," + sample_json(model, node[2], depth) + "]"
     raise AssertionError(kind)
 
+SCHEMA_CHUNK_LIMIT = 7000
+
 
 # -- output --------------------------------------------------------------
 
 
 def mangled(qualified):
     return schema_name(qualified).replace("::", "_")
+
+
+def split_schema_chunks(text, limit=SCHEMA_CHUNK_LIMIT):
+    """Split the schema text so no emitted literal trips MSVC C2026."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + limit, len(text))
+        if end < len(text):
+            newline = text.rfind("\n", start, end)
+            if newline > start:
+                end = newline + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 
 def schema_text(model, roots=ROOTS):
@@ -1133,7 +1150,10 @@ def generate_header(model, roots=ROOTS):
         tail = " \\" if index + 1 < len(enums) else ""
         out.append("    E(%s, %s)%s" % (mangled(qualified), qualified, tail))
     out.append("")
-    out.append("inline constexpr char kDecisionSchemaText[] = R\"TBSCHEMA(" + text + ")TBSCHEMA\";")
+    chunks = split_schema_chunks(text)
+    out.append("inline constexpr char kDecisionSchemaText[] =")
+    for index, chunk in enumerate(chunks):
+        out.append('    R"TBSCHEMA(' + chunk + ')TBSCHEMA"' + (";" if index + 1 == len(chunks) else ""))
     out.append("")
     out.append('inline constexpr char kDecisionSchemaHash[] = "%s";' % digest)
     out.append("")
