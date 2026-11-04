@@ -311,7 +311,11 @@ Drop rate multipliers for green (uncommon) and blue (rare) items dropped for poo
 
 Provides an optional loot boost for random pool bots to stimulate their equipment progression and supply the Auction House.
 
-When a random pool bot kills a creature, uncommon and rare loot table entries roll an additional check scaled by this factor. The boost only lands on the bot's own personal loot from its own kill; quest items, quest starters, and unique items the bot already holds at `max_count` are skipped. Other quality entries remain untouched. When `bot_events.csv` logging is enabled, boost events are logged there as `BotLootBonus` rows. Real players and characters that are not random pool bots always use standard core drop rates.
+When a random pool bot kills a creature, uncommon and rare loot table entries roll an extra check scaled by this factor:
+
+- Only the bot's own personal loot from its own kill. Quest items, quest starters, and unique items the bot already holds at `max_count` are skipped. Other qualities are untouched.
+- When `bot_events.csv` logging is enabled, boost events are logged there as `BotLootBonus` rows.
+- Real players and characters that are not random pool bots always use standard core drop rates.
 
 A value of `1.0` disables the boost.
 

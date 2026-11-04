@@ -38,7 +38,7 @@ Enables automatic bot backfill for players queued in the Looking for Turtles (LF
 <details>
 <summary>How it works in detail</summary>
 
-Fill is demand-driven: with no human player waiting, bots queue nothing new (pending offers are still reconciled). Fill-owned bots accept the dungeon invite themselves; humans always accept their own. The fill service itself never teleports anyone: the formed party walks to the portal. (A separate follow catch-up may summon a bot whose human master is already inside a dungeon.)
+Fill is demand-driven: with no human player waiting, bots queue nothing new (pending offers are still reconciled). Fill-owned bots accept the dungeon invite themselves; humans always accept their own. The fill service itself never teleports anyone: the formed party walks to the portal. (A separate follow catch-up may summon a bot whose human master is already inside a dungeon or raid.)
 
 If you queue as a party with your own bots, they accept on the same tick even with `RandomBotLftEnabled = 0`. The toggle only gates random-pool backfill.
 </details>
