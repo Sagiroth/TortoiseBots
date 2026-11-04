@@ -744,7 +744,7 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 - order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
 - risky Fear and Scare Beast go last and only with this key's risky flag on
 - never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit, and a `cc_never` entry of the plan
-- a non-elite unit neither counts toward the engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do
+- a non-elite unit neither counts toward the fight's engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do (the pre-pull body count still includes it, since it does come with the pull)
 - the plan's `cc_never` list (`ai_dungeon_plan`) excludes those entries from the automatic pick entirely, before the pull, in the fight and on a re-send; the plan's own list with the key off is unchanged
 - in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
 - tanks and the lead bot never do crowd control; a healer only while 4 healers (1 in a party) stay free, holding one unit

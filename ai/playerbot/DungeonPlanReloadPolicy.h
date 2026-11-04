@@ -197,7 +197,8 @@ namespace ai
     {
         if (a.map != b.map || a.legs.size() != b.legs.size() || a.steps.size() != b.steps.size() ||
             a.needs.size() != b.needs.size() ||
-            a.ccPriority != b.ccPriority || a.ccAlways != b.ccAlways || a.killFirst != b.killFirst)
+            a.ccPriority != b.ccPriority || a.ccAlways != b.ccAlways || a.killFirst != b.killFirst ||
+            a.ccNever != b.ccNever)
             return false;
         for (std::size_t i = 0; i < a.legs.size(); ++i)
             if (a.legs[i].leg != b.legs[i].leg || a.legs[i].name != b.legs[i].name)
