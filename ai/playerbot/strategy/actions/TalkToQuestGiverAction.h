@@ -27,6 +27,7 @@ namespace ai
         void RewardNoItem(Quest const* quest, WorldObject* questGiver, std::string& out);
         void RewardSingleItem(Quest const* quest, WorldObject* questGiver, std::string& out);
         std::set<uint32> BestRewards(Quest const* quest);
+        int64 RewardGain(uint32 itemId);
         void RewardMultipleItem(Player* requester, Quest const* quest, WorldObject* questGiver, std::string& out);
         void AskToSelectReward(Player* requester, Quest const* quest, std::string& out, bool forEquip);
     };
