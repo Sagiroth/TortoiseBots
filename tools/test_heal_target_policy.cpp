@@ -12,7 +12,8 @@
 
 using ai::HealablePet;
 using ai::HealableTarget;
-using ai::FocusedHealerMayHelpRaid;
+using ai::RaidAssistCandidate;
+using ai::TankSeatQuiet;
 
 static int checks = 0;
 #define CHECK(cond) do { \
@@ -47,19 +48,37 @@ static void TestDeadTargetIsNotHealable()
     CHECK(HealableTarget(true));
 }
 
-// A focused tank healer whose own targets are all above "almost full" may heal
-// a raid member below 70%; with the seat key off it never leaves its seat.
-static void TestTankHealerHelpsRaid()
+// Two healers on the main tank, both quiet: the tank's first seat never
+// leaves, its second does, so exactly one of them helps the raid member.
+static void TestOnlyASecondTankSeatHelps()
 {
-    CHECK(FocusedHealerMayHelpRaid(true, 95.0f, 50.0f, 90.0f));
-    CHECK(FocusedHealerMayHelpRaid(true, 90.0f, 50.0f, 90.0f));
-    // Its own tank is not full: the seat still comes first.
-    CHECK(!FocusedHealerMayHelpRaid(true, 89.0f, 20.0f, 90.0f));
-    // A raid member at or above 70% is not an emergency.
-    CHECK(!FocusedHealerMayHelpRaid(true, 95.0f, 70.0f, 90.0f));
-    CHECK(FocusedHealerMayHelpRaid(true, 95.0f, 69.0f, 90.0f));
-    // Key off: today's behaviour, the focus targets only.
-    CHECK(!FocusedHealerMayHelpRaid(false, 100.0f, 10.0f, 90.0f));
+    CHECK(!TankSeatQuiet(true, 0, true, true, false, 100.0f));
+    CHECK(TankSeatQuiet(true, 1, true, true, false, 100.0f));
+}
+
+// The quiet test: the tank found, alive, not on a boss, and at or above 90%
+// health after the damage it is taking. A missing seat or focus target is a
+// missing answer at the call site (tankFound false).
+static void TestQuietTankSeat()
+{
+    CHECK(TankSeatQuiet(true, 1, true, true, false, 95.0f));
+    CHECK(TankSeatQuiet(true, 1, true, true, false, 90.0f));
+    CHECK(!TankSeatQuiet(true, 1, true, true, false, 89.0f));
+    CHECK(!TankSeatQuiet(true, 1, true, true, true, 100.0f));
+    CHECK(!TankSeatQuiet(true, 1, false, true, false, 100.0f));
+    CHECK(!TankSeatQuiet(true, 1, true, false, false, 100.0f));
+    CHECK(!TankSeatQuiet(false, 1, true, true, false, 100.0f));
+}
+
+// The raid member the quiet seat may heal: in sight and inside heal range,
+// below 70%.
+static void TestAssistNeedsSightAndRange()
+{
+    CHECK(RaidAssistCandidate(true, true, true, 50.0f));
+    CHECK(!RaidAssistCandidate(true, true, true, 70.0f));
+    CHECK(!RaidAssistCandidate(false, true, true, 10.0f));
+    CHECK(!RaidAssistCandidate(true, false, true, 10.0f));
+    CHECK(!RaidAssistCandidate(true, true, false, 10.0f));
 }
 
 int main()
@@ -69,7 +88,9 @@ int main()
     TestAlivePetIsHealable();
     TestMiniPetIsNeverHealable();
     TestDeadTargetIsNotHealable();
-    TestTankHealerHelpsRaid();
+    TestOnlyASecondTankSeatHelps();
+    TestQuietTankSeat();
+    TestAssistNeedsSightAndRange();
     std::printf("  [PASS] %d checks\n", checks);
     return 0;
 }

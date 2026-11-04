@@ -604,6 +604,8 @@ public:
     bool dungeonRunRaidBossRules = false;
     // Healer seats of a raid binding go by class instead of member order (default off: member order).
     bool raidHealerSeatsByClass = false;
+    // A layout tank healer's second seat on its tank helps the raid while the tank is quiet (default off).
+    bool raidTankHealerAssist = false;
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;

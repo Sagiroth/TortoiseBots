@@ -9,9 +9,11 @@
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
+#include "playerbot/DungeonPlanMgr.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RaidTankRolePolicy.h"
+#include "../../../runtime/CommandedGroupQuery.h"
 #include "ObjectAccessor.h"
 #include <algorithm>
 #include "playerbot/HealingTriagePolicy.h"
@@ -36,6 +38,27 @@ uint32 getIncomingdamage(Unit const* pTarget)
             damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
 
     return damage;
+}
+
+// A tank is engaged with a boss while a boss is its target or attacks it: an
+// ai_dungeon_boss row or a plan's boss step on its map, or a world boss. A
+// quiet seat never leaves a tank on a boss.
+static bool EngagedWithBoss(Unit* tank)
+{
+    auto boss = [](Unit* unit)
+    {
+        if (!unit || !unit->IsCreature())
+            return false;
+        Creature* creature = static_cast<Creature*>(unit);
+        return creature->IsWorldBoss() ||
+            ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry());
+    };
+    if (boss(tank->GetVictim()))
+        return true;
+    for (Unit* attacker : tank->GetAttackers())
+        if (boss(attacker))
+            return true;
+    return false;
 }
 
 bool compareByHealth(const Unit *u1, const Unit *u2)
@@ -142,18 +165,33 @@ Unit* PartyMemberToHeal::Calculate()
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
     bool const preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
     bool const focused = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
-    // The lowest health of the healer's own seat (its tank and itself); above
-    // almost full with nobody to heal there, the seat is quiet.
-    float ownLowestHealth = 100.0f;
-    if (focused)
-        for (ObjectGuid const& guid :
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get())
+    // The layout seat this healer took (a mid-raid joiner's focus list is not
+    // one) and whether its tank is quiet: only a quiet second seat on the tank
+    // may help the raid, so the tank keeps its first healer.
+    bool quietSeat = false;
+    if (focused && sPlayerbotAIConfig.raidTankHealerAssist)
+    {
+        TortoiseBots::BotCommands::RaidTankSeat const seat =
+            TortoiseBots::BotCommands::RaidTankHealerSeat(bot);
+        std::list<ObjectGuid> const focus =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
+        bool owned = !focus.empty();
+        for (ObjectGuid const& guid : focus)
+            if (!ai->GetUnit(guid))
+                owned = false;
+        bool const listsTank = std::find(focus.begin(), focus.end(), seat.tank) != focus.end();
+        Unit* tank = seat.seated ? ai->GetUnit(seat.tank) : nullptr;
+        if (owned && listsTank && tank)
         {
-            Unit* own = ai->GetUnit(guid);
-            if (own)
-                ownLowestHealth = std::min(ownLowestHealth,
-                    own->IsAlive() ? float(own->GetHealthPercent()) : 0.0f);
+            uint32 const incoming = getIncomingdamage(tank);
+            float const effective = tank->GetMaxHealth()
+                ? 100.0f * (tank->GetHealth() > incoming ? tank->GetHealth() - incoming : 0) /
+                    tank->GetMaxHealth()
+                : 100.0f;
+            quietSeat = TankSeatQuiet(seat.seated, seat.seat, true, tank->IsAlive(),
+                EngagedWithBoss(tank), effective);
         }
+    }
     std::map<ObjectGuid, uint32> const incomingHeals =
         ai->GetAiObjectContext()->GetValue<std::map<ObjectGuid, uint32>>("incoming heals")->Get();
     std::size_t healerOrdinal = 0;
@@ -225,15 +263,19 @@ Unit* PartyMemberToHeal::Calculate()
             addTarget(pet, false, true);
     }
 
-    // A tank healer with a quiet seat helps the raid: while its tank and itself
-    // are all at or above almost full, an injured group member below 70% joins
-    // the candidates (the seat keeps its urgency otherwise).
-    if (focused && sPlayerbotAIConfig.raidHealerSeatsByClass &&
-        ownLowestHealth >= float(sPlayerbotAIConfig.almostFullHealth))
+    // A quiet tank seat helps the raid: an injured group member in sight and
+    // inside heal range, below 70%. The seat keeps its own targets' line of
+    // sight exemption; these helpers get none, and no walk into sight.
+    if (quietSeat)
+    {
+        float const reach = HealReachLimit(ai);
         for (Player* player : LiveGroupMembers(bot->GetGroup()))
-            if (FocusedHealerMayHelpRaid(true, ownLowestHealth, player->GetHealthPercent(),
-                float(sPlayerbotAIConfig.almostFullHealth)))
+            if (player != bot &&
+                RaidAssistCandidate(true, sServerFacade.IsWithinLOSInMap(bot, player),
+                    bot->GetDistance(player, SizeFactor::CombatReach) <= reach,
+                    player->GetHealthPercent()))
                 addTarget(player, ai->IsTank(player), false);
+    }
 
     // An out-of-LOS candidate is only a fallback: a visible one at the same
     // urgency wins, and with nobody visible the healer may walk into LOS only
