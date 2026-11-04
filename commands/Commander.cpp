@@ -8183,6 +8183,14 @@ uint32 RunCcImmune(Creature* creature)
     return immune;
 }
 
+// The spawn's respawn delay in seconds (DungeonRun::UnitFact::respawnSec): the run never crowd-controls a unit that
+// comes back within its window (ZG's Sacrificed Trolls, 10 s) and never counts it as a body of the pull. 0 for a
+// unit with no spawn of its own (a player, a pet's fact) or one whose read did not fill it.
+uint32 RunRespawnSec(Unit* unit)
+{
+    return unit && unit->IsCreature() ? static_cast<Creature*>(unit)->GetRespawnDelay() : 0;
+}
+
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
 // any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
@@ -9024,7 +9032,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 f.leadAttackers.push_back(
-                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker), RunRespawnSec(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -9085,6 +9093,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;
@@ -11624,6 +11633,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -11886,6 +11896,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -12459,6 +12470,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;

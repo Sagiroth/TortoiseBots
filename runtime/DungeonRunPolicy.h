@@ -890,6 +890,10 @@ struct UnitFact
     // mechanic_immune_mask or a live mechanic immunity against that spell's
     // mechanic): never picked for that spell.
     std::uint32_t ccImmune = 0;
+    // The spawn's respawn delay in seconds (Creature::GetRespawnDelay): 0 for a unit with no spawn of its own or a
+    // read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control target and no body of the
+    // pull the order is for (RespawnsQuickly).
+    std::uint32_t respawnSec = 0;
     // Kill-first candidates (Facts::killFirst): in combat with a party member,
     // or summoned / owned (a healing ward) by a unit that is.
     bool engaged = false;
@@ -1240,6 +1244,15 @@ constexpr std::uint32_t kRunCcOpenOrders = 3;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
+// A unit whose spawn respawns within this long is no crowd control target and no body of the pull the order is for:
+// the hold ends with the kill and the same guid is back seconds later, so the same order would go out on it again
+// and again (ZG walk 36: the pit's Sacrificed Trolls, 14826, come back 10 s after they die; one priest made 170
+// Shackle Undead casts in troll-only fights).
+constexpr std::uint32_t kRunCcMinRespawnSec = 60;
+inline bool RespawnsQuickly(std::uint32_t respawnSec)
+{
+    return respawnSec >= 1 && respawnSec <= kRunCcMinRespawnSec;
+}
 // A fight kept open only by the run's own holds (RunCcBreakTick) breaks them one at a time: a break order that has
 // not ended its unit's hold in this long no longer holds the fight ceiling off, so a hold the party cannot reach
 // still ends in the usual pause instead of a stall.
@@ -1427,11 +1440,13 @@ struct PullReadIn
 };
 
 // One of the lead bot's attackers, as the automatic cc's fight threshold counts it: by guid (the union with the
-// party's and the walk's attackers counts a mob once) and held now (a run cc's aura on it).
+// party's and the walk's attackers counts a mob once), held now (a run cc's aura on it), and its spawn's respawn
+// delay (0: not read or no spawn of its own; a unit back within kRunCcMinRespawnSec is no body of the pull).
 struct LeadAttackerFact
 {
     std::uint64_t guid = 0;
     bool held = false;
+    std::uint32_t respawnSec = 0;
 };
 
 // What the glue reads once a tick for the run's current step.
@@ -9520,7 +9535,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
             f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
-            r.healerGuardAssigned.count(u.guid) ||
+            r.healerGuardAssigned.count(u.guid) || RespawnsQuickly(u.respawnSec) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
             continue;
         std::size_t spellIdx = 0;
@@ -9664,9 +9679,21 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs && !opening)
         return false;
     // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
-    // union is by guid so a guid reaching the count from two lists still counts once).
+    // union is by guid so a guid reaching the count from two lists still counts once). A unit that respawns within
+    // kRunCcMinRespawnSec is no body of the fight the order is for: respawning trolls alone would hold the
+    // threshold open for the whole grind.
     std::uint32_t engaged = 0, held = 0;
     std::unordered_set<std::uint64_t> engagedGuids;
+    std::unordered_set<std::uint64_t> shortLived;
+    auto const countsAsEngaged = [&](std::uint64_t guid, std::uint32_t respawnSec)
+    {
+        if (RespawnsQuickly(respawnSec))
+        {
+            shortLived.insert(guid);
+            return false;
+        }
+        return shortLived.count(guid) == 0;
+    };
     auto const countEngaged = [&](std::uint64_t guid, bool polymorphed)
     {
         if (!engagedGuids.insert(guid).second)
@@ -9680,10 +9707,12 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         {
             if (!u.guid || !u.hostile || !u.attackable || u.evading)
                 continue;
+            if (!countsAsEngaged(u.guid, u.respawnSec))
+                continue;
             countEngaged(u.guid, u.polymorphed);
         }
     for (const LeadAttackerFact& u : f.leadAttackers)
-        if (u.guid)
+        if (u.guid && countsAsEngaged(u.guid, u.respawnSec))
             countEngaged(u.guid, u.held);
     std::uint32_t const threshold = RunAutoCcThreshold(s, f);
     if (engaged <= held || engaged - held <= threshold)
@@ -9707,6 +9736,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
                 f.bossTacticNoCc.count(u.entry) || r.healerGuardAssigned.count(u.guid) ||
+                RespawnsQuickly(u.respawnSec) ||
                 (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
                 continue;
             std::size_t spellIdx = 0;

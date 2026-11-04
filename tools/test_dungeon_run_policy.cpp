@@ -33161,6 +33161,77 @@ static void TestAutoCcCountsTheLeadBotsAttackers()
     }
 }
 
+// A unit that respawns within a minute is no crowd control target and no body of the pull the order is for: the
+// hold ends with the kill and the same guid is back seconds later (ZG's Sacrificed Trolls, 14826, 10 s), so the
+// same order would go out on it for the whole grind (walk 36: 170 Shackle Undead casts in troll-only fights, about
+// one every 20 s). The 10 s unit is the plan's first choice here: the pick must pass over it.
+static void TestAutoCcSkipsFastRespawnUnits()
+{
+    DungeonPlan plan = CcPlan({14826, 14882});
+    auto const fillers = [](Facts& f, std::uint64_t last)
+    {
+        for (std::uint64_t guid = 100; guid <= last; ++guid)
+        {
+            UnitFact filler = Typed(guid, 14880 + static_cast<std::uint32_t>(guid), 12.0f, kCreatureUndead);
+            filler.partyHits = true; // the party hits them: no candidate, a body of the fight
+            f.partyAttackers.push_back(filler);
+        }
+    };
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        fillers(f, 105);
+        UnitFact troll = Typed(200, 14826, 18.0f, kCreatureUndead);
+        troll.respawnSec = 10;
+        f.partyAttackers.push_back(troll);
+        UnitFact keeper = Typed(201, 14882, 20.0f, kCreatureUndead);
+        f.partyAttackers.push_back(keeper); // no spawn delay read: a keeper is a candidate
+        CHECK(Tick(r, f) == "cc moon 201 Priesty shackleundead");
+        // ... and it is no body of the pull either: eight attackers, one a 10 s respawn, read seven.
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+    {
+        // The count alone: six bodies and the 10 s troll is a pull of six, not over the threshold, so no order at
+        // all. The same seven with the troll's spawn read (a real spawn) is over it, and the plan puts the troll
+        // first. The mutation that counts the respawning body sends the order in the first read.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        fillers(f, 105);
+        UnitFact troll = Typed(200, 14826, 18.0f, kCreatureUndead);
+        troll.respawnSec = 10;
+        f.partyAttackers.push_back(troll);
+        CHECK(Tick(r, f).empty());
+        f.partyAttackers.back().respawnSec = 0;
+        CHECK(Tick(r, f) == "cc moon 200 Priesty shackleundead");
+    }
+    {
+        // The lead bot's own attackers count with the party's: the 10 s troll on the tank is no body of the pull
+        // either. Five on the tank and the troll, plus a keeper in the party, read six, not over the threshold; with
+        // the troll's spawn read they read seven and the keeper is marked.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 104; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.leadAttackers.push_back({200, false, 10});
+        f.partyAttackers = {Typed(201, 14882, 20.0f, kCreatureUndead)};
+        CHECK(Tick(r, f).empty());
+        f.leadAttackers.back().respawnSec = 0;
+        CHECK(Tick(r, f) == "cc moon 201 Priesty shackleundead");
+    }
+}
+
 // The pull's opening: every unit a pre-pull order marked and whose aura is not
 // read gets its order again on the fight's first ticks, at once: no engaged
 // threshold, no 2 s gap. ZG walk 32: no pre-pull mark ever landed, every flow
@@ -33825,6 +33896,7 @@ int main()
     TestPrePullMarksCastWhenThePackOpens();
     TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
+    TestAutoCcSkipsFastRespawnUnits();
     TestAutoCcReappliesTwiceThenStops();
     TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();
