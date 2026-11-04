@@ -1126,12 +1126,17 @@ AiPlayerbot.DungeonRunRetreatAt2Dead = 0
 AiPlayerbot.DungeonRunWalkBackRescue = 1
 
 # The run leader's dry walk. A walk whose own way would swim after leaving the
-# lead bot's own water goes in dry legs first (at most 24 a walk), and the hop,
-# leg, firing stand and walk-back shortcut it picks come from a ground-only
-# navmesh path instead of one over the water's surface. A point in deep water,
-# and a dry way more than 3 times the way the run would walk, keep the old
-# behaviour, so intended swims still work. This changes routes on every walk
-# whose path crosses deep water.
+# lead bot's own water goes in dry legs first (at most 24 a walk), and the
+# approach hops and firing stand it picks come from a ground-only navmesh path
+# instead of one over the water's surface. The walk-back shortcut is not
+# re-pathed: its straight swim chord is refused, so the walk back replays the
+# plan's points (the leg-on-path read and the too-far legs are unchanged). A
+# point in deep water, and a dry way more than 3 times the way the run would
+# walk, keep the old behaviour, so intended swims still work: a wet firing
+# stand of a pack in the water, a straggler standing in water, and a walk point
+# in water are as before. A dry straggler whose way would swim has no path that
+# ends at the point: its pull moves to the next tank and can pause the run.
+# This changes routes on every walk whose path crosses deep water.
 # 0 - off: the run leader walks the core's own path, water included (Default)
 # 1 - on
 # Only read while AiPlayerbot.DungeonSelfClear = 1.
