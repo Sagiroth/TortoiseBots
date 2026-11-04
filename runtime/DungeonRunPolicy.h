@@ -2076,12 +2076,14 @@ struct Run
     std::uint32_t fightMs = 0;
     std::uint32_t staleMs = 0;          // all the time in this fight the combat flag stood with nothing hostile engaged (Facts::staleCombat)
     std::uint32_t staleRunMs = 0;       // ... and the time it has stood so without a break
-    // The guids of the run's own units engaged at some point in this fight (FightOwnsUnit: the current pull or boss
-    // row's units and the pack its pull took, and a later row's). Once none of them is engaged any more the step's
-    // end and its fight ceiling read the fight as over, though unrelated units (respawning trash, a patrol) still
-    // fight: those are the bots' own combat's, not the step's. A fight that never engaged one of them keeps the old
-    // rules. Cleared with the combat.
+    // The guids of the run's own units engaged at some point in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit)
+    // and the step whose own units were among them. Once none of them is engaged any more the step's end and its
+    // fight ceiling read the fight as over, though unrelated units (respawning trash, a patrol) still fight: those are
+    // the bots' own combat's, not the step's. A pull or boss step goes on so only for its own step (a cleared row:
+    // a later pull never goes out from inside another fight); a walk goes on for the fight's own units. A fight that
+    // never engaged one of them keeps the old rules. Cleared with the combat.
     std::unordered_set<std::uint64_t> ownFightGuids;
+    std::size_t ownFightStep = static_cast<std::size_t>(-1);
     std::uint32_t restRepeatMs = 0;
     // The last point the run itself walked the party to (a move, an approach
     // hop, a stand point): a gather goes back there when a fight left the lead
@@ -19728,29 +19730,37 @@ inline std::string EngagedUnitsNote(const Facts& f, bool withHp = false)
     return note;
 }
 
-// Whether an engaged unit (Facts::engagedUnits) is the current step's fight: one the step reads as its own (by guid,
-// the lists the glue filled for this step's point: its entries within its radius, a residue unit, a patroller it
-// waits for), a guid of the pack the step's own pull took (Run::joinerPack, so a pack member dragged out of the
-// radius is still its own), or one a later pull, boss or hold row owns (OwnedByLaterStep). A unit of none of them
-// (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826 respawning every 10 s beside a cleared pull row) is no fight
-// the step waits for: the bots' own combat fights it, and the step's end and its fight ceiling read the own units
-// only. An engaged fact carries the unit's position (the glue reads it); one at exactly the origin was not read
-// (a policy test's default) and is no later row's.
-inline bool FightOwnsUnit(const Run& r, const Facts& f, const UnitFact& u)
+// Whether an engaged unit (Facts::engagedUnits) is one the current pull or boss row reads as its own: a unit of one
+// of its lists (by guid, the lists the glue filled for this step's point: its entries within its radius, a residue
+// unit, a patroller it waits for), or a guid of the pack the step's own pull took (Run::joinerPack, so a pack member
+// dragged out of the radius is still its own).
+inline bool StepOwnEngagedUnit(const Run& r, const Facts& f, const UnitFact& u)
 {
     if (!u.guid)
         return false;
     if (r.joinerPack.count(u.guid))
         return true;
     const PlanStep* const s = Current(r);
-    if (s && (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss))
-        for (const std::vector<UnitFact>* own : {&f.units, &f.packResidue, &f.patrollers})
-            for (const UnitFact& stepUnit : *own)
-                if (stepUnit.guid == u.guid)
-                    return true;
+    if (!s || (s->kind != PlanStepKind::Pull && s->kind != PlanStepKind::Boss))
+        return false;
+    for (const std::vector<UnitFact>* own : {&f.units, &f.packResidue, &f.patrollers})
+        for (const UnitFact& stepUnit : *own)
+            if (stepUnit.guid == u.guid)
+                return true;
+    return false;
+}
+
+// Whether an engaged unit belongs to a later pull, boss or hold row (OwnedByLaterStep). ZG walk 36 d/e3: the pit's
+// Sacrificed Trolls 14826, respawning every 10 s beside a cleared pull row, are no row's. An engaged fact carries
+// the unit's position (the glue reads it); one at exactly the origin was not read (a policy test's default) and is
+// no later row's.
+inline bool LaterStepOwnsEngagedUnit(const Run& r, const Facts& f, const UnitFact& u)
+{
+    if (!u.guid || !r.plan)
+        return false;
     if (u.x == 0.0f && u.y == 0.0f && u.z == 0.0f)
         return false;
-    return r.plan && ai::OwnedByLaterStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team);
+    return ai::OwnedByLaterStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team);
 }
 
 // What the fight ceiling's hp watch (FightProgressTick) saw over its last kFightProgressWindowMs.
@@ -20622,6 +20632,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.staleMs = 0;
         r.staleRunMs = 0;
         r.ownFightGuids.clear(); // the fight is over: the next one reads its own units afresh
+        r.ownFightStep = static_cast<std::size_t>(-1);
     }
     else if (f.staleCombat)
     {
@@ -20997,24 +21008,34 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     if (f.anyInCombat)
         ResetStragglerPull(r);
     // The fight's own units: the current pull or boss row's (its read lists, the pack its pull took) and a later
-    // row's (FightOwnsUnit), remembered for the fight. Once none of them is engaged any more, and one of them was,
-    // the step is over for the run: unrelated units that still fight (respawning trash, a patrol) are the bots' own
-    // combat's and neither hold the step nor run its ceiling (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826
-    // respawned every 10 s beside a cleared pull row, and the run paused 14 min later at the 180 s ceiling with 20
-    // dead). A fight that never engaged one of them keeps today's rules, a patrol met on the way included, and so
-    // does a wipe: its regroup and stop caps stay the fight block's.
+    // row's, remembered for the fight. Once none of them is engaged any more, and one of them was, the step is over
+    // for the run: unrelated units that still fight (respawning trash, a patrol) are the bots' own combat's and
+    // neither hold the step nor run its ceiling (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every
+    // 10 s beside a cleared pull row, and the run paused 14 min later at the 180 s ceiling with 20 dead).
+    // A pull or boss step goes on so only for its own step (the cleared row this fight was); a walk goes on for the
+    // fight's own units wherever they were. A fight that never engaged one of them keeps today's rules, a patrol met
+    // on the way included, and so does a wipe: its regroup and stop caps stay the fight block's.
     bool ownEngaged = false;
     if (f.anyInCombat && f.engagedRead)
     {
         for (const UnitFact& u : f.engagedUnits)
-            if (FightOwnsUnit(r, f, u))
+        {
+            if (StepOwnEngagedUnit(r, f, u))
+            {
                 r.ownFightGuids.insert(u.guid);
+                r.ownFightStep = r.step;
+            }
+            else if (LaterStepOwnsEngagedUnit(r, f, u))
+                r.ownFightGuids.insert(u.guid);
+        }
         for (const UnitFact& u : f.engagedUnits)
             ownEngaged = ownEngaged || r.ownFightGuids.count(u.guid) != 0;
     }
+    bool const overForStep = (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss)
+        ? r.ownFightStep == r.step
+        : (s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
     bool const ownFightOver = f.anyInCombat && f.engagedRead && !r.ownFightGuids.empty() && !ownEngaged && !wipe &&
-        (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss || s->kind == PlanStepKind::Move ||
-            s->kind == PlanStepKind::MoveDirect);
+        overForStep;
     // Fights are the bots' own; the run only bounds them.
     if (f.anyInCombat && !objectDone && !ownFightOver)
     {

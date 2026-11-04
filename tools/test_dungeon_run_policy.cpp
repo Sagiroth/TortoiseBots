@@ -33379,6 +33379,49 @@ static void TestWipeOverUnrelatedUnitsKeepsTheRegroup()
     CHECK(r.note.find("dead and the fight went past 180 s") != std::string::npos);
 }
 
+// A later pull row met while the unrelated fight is still on keeps today's rules: the run never sends another pull
+// from inside a fight (the fight block holds it, its own ceiling included).
+static void TestNewPullIsNotBypassedByTheEarlierFight()
+{
+    DungeonPlan plan;
+    PlanStep first = PullStep(10, {14825});
+    first.radius = 6.0f;
+    PlanStep next = PullStep(50, {14826});
+    next.radius = 6.0f;
+    plan.steps = {first, Step(PlanStepKind::Move, 20), next, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    // The first row's own pack comes in and dies; the pit's respawns fight on and the row clears.
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    // The walk goes on (its fight's own units were the cleared row's) ...
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    f.leadX = 20.0f;
+    Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    // ... and the next pull row is no bypass: the fight block takes the step (no pull from inside the fight) and
+    // today's ceiling holds it.
+    f.units = {Unit(0x200, 14826, 20)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 2 && r.state == State::Running);
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 2);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
 static void TestHealerGuardSkipsCcHolders()
 {
     DungeonPlan plan;
@@ -33743,6 +33786,7 @@ int main()
     TestFightWithoutOwnUnitsKeepsTheCeiling();
     TestLaterRowsUnitKeepsItsFight();
     TestWipeOverUnrelatedUnitsKeepsTheRegroup();
+    TestNewPullIsNotBypassedByTheEarlierFight();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();
