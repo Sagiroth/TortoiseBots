@@ -7,9 +7,9 @@ owner and no creator guid, so only the temporary summon's summoner names him, an
 T2: the totem focus sits at the top of TickBody's fight branch, before HpHeldTick, the CC break, the retreat, CheckCc
 and the automatic crowd control, so none of them spends its tick.
 T3/T5: CommanderFocus sends the DPS by guid (`attack my target`) with no SetTargetIcon, cuts only its own generic cast
-or channel through the policy's TotemFocusMayInterrupt first (never an Auto Shot, a wand's shot, a run crowd-control
-spell, a resurrect or the hearthstone) and opens with an instant; the policy's IssueKillFirstFocus then leaves
-Run::focusIconGuid alone.
+or channel through the policy's TotemFocusMayInterrupt first (only an offensive cast on a hostile target, so never a
+heal, shield, buff or defensive cast; never an Auto Shot, a wand's shot, a run crowd-control spell, a resurrect or the
+hearthstone) and opens with an instant; the policy's IssueKillFirstFocus then leaves Run::focusIconGuid alone.
 T4: the kill-first trigger checks every second under the key, every two seconds otherwise.
 """
 import pathlib
@@ -33,12 +33,19 @@ class TotemFocusWiringTest(unittest.TestCase):
         # The summoner fallback is the totem read's alone.
         self.assertIn(
             "if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())", fn)
-        self.assertIn("GetCreatureListWithEntryInGrid(found, entry, TortoiseBots::DungeonRun::kKillFirstTotemGridYd)",
-            fn)
+        # One bounded grid visit per engaged boss, not one per plan entry: the visitor filters the entries.
+        self.assertIn(
+            "Cell::VisitGridObjects(boss, searcher, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false)", fn)
+        self.assertIn(
+            "std::unordered_set<std::uint32_t> const entries(plan.killFirst.begin(), plan.killFirst.end());", fn)
+        self.assertIn("MaNGOS::CreatureListSearcher<KillFirstTotemCheck> searcher(found, check);", fn)
         # 24262 sets no creator guid: the temporary summon's summoner is the boss.
-        self.assertIn("GetSummonerGuid()", fn)
-        self.assertIn("TortoiseBots::DungeonRun::KillFirstOwner(", fn)
-        self.assertIn("TortoiseBots::DungeonRun::KillFirstGridTotemOf(", fn)
+        visitor = body(COMMANDER, "struct KillFirstTotemCheck", "\n};\n")
+        self.assertIn("entries.count(c->GetEntry())", visitor)
+        self.assertIn("boss->IsWithinDist(c, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false)", visitor)
+        self.assertIn("GetSummonerGuid()", visitor)
+        self.assertIn("TortoiseBots::DungeonRun::KillFirstOwner(", visitor)
+        self.assertIn("TortoiseBots::DungeonRun::KillFirstGridTotemOf(", visitor)
         # The plan's boss, by entry or by the entry its spawn row first had.
         self.assertIn("TortoiseBots::DungeonRun::ScriptChangedFrom(c)", fn)
         self.assertIn("step.kind == ai::PlanStepKind::Boss", fn)
@@ -72,6 +79,9 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn("kTotemFocusOpeners", helper)
         cut = body(COMMANDER, "static void TotemFocusCutSlot(Player* bot")
         self.assertIn("TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind", cut)
+        # Only a cast that is positively offense: the spell not beneficial, its target hostile.
+        self.assertIn("spell->m_spellInfo->IsPositiveSpell()", cut)
+        self.assertIn("target && bot->IsHostileTo(target)", cut)
         self.assertIn("bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL)", cut)
 
     def test_the_totem_focus_yields_to_the_retreat(self):

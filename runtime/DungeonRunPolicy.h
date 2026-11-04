@@ -10117,11 +10117,16 @@ inline bool RunCcSpellId(std::uint32_t spellId)
 
 // The totem focus cuts a damage dealer's own cast or channel before it switches (a Rain of Fire or a Drain Soul
 // channel otherwise finishes before the attack lands). Only a generic cast and a channel are cut (an Auto Shot or a
-// wand's shot keeps firing), and never a spell the fight depends on: the run's crowd control, a resurrect (Rebirth, or
-// any spell with a resurrect effect) and the hearthstone.
-inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect)
+// wand's shot keeps firing), and only a cast that is positively offense: a spell that is not beneficial and a current
+// target that is hostile. A heal, shield, buff or defensive cast is never cut, whatever the role casting it (a hybrid
+// healing the tank keeps the heal). Nor a spell the fight depends on: the run's crowd control, a resurrect (Rebirth,
+// or any spell with a resurrect effect) and the hearthstone.
+inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect,
+    bool positiveSpell, bool hostileTarget)
 {
     if (slot != TotemFocusSpell::Generic && slot != TotemFocusSpell::Channeled)
+        return false;
+    if (positiveSpell || !hostileTarget)
         return false;
     if (spellId == kHearthstoneSpell || spellId == kRebirthSpell || resurrectEffect)
         return false;

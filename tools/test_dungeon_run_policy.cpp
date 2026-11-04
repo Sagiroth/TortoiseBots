@@ -26734,29 +26734,36 @@ static void TestTotemFocusLeavesTheSkullOnTheBoss()
     }
 }
 
-// H1: the totem focus cuts only the damage dealer's own generic cast or channel, and never a spell the fight needs:
-// a run crowd-control spell, a resurrect (Rebirth or any spell with a resurrect effect) or the hearthstone. An Auto
-// Shot or a wand's shot is an autorepeat spell and is never cut.
+// H1: the totem focus cuts only the damage dealer's own generic cast or channel, and only an offensive cast: a spell
+// that is not beneficial and a current target that is hostile. A hybrid's heal, a shield or a defensive cooldown is
+// never cut, whatever the role casting it. Nor a spell the fight needs: a run crowd-control spell, a resurrect
+// (Rebirth or any spell with a resurrect effect) or the hearthstone. An Auto Shot or a wand's shot is an autorepeat
+// spell and is never cut.
 static void TestTotemFocusMayInterrupt()
 {
-    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false));     // Fireball
-    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false));   // a Drain Life channel
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 118, false));    // Polymorph
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 12826, false));  // ... another rank
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 9484, false));   // Shackle Undead
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 710, false));    // Banish
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 6770, false));   // Sap
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2637, false));   // Hibernate
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1499, false));   // Freezing Trap
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 6358, false)); // Seduction (a channel)
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20066, false));  // Repentance
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 5782, false));   // Fear
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1513, false));   // Scare Beast
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 8690, false));   // Hearthstone
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20484, false));  // Rebirth
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true));    // any resurrect effect
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false));       // Auto Shot
-    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false));     // Shoot (a wand's shot)
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true));     // Fireball on an enemy
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false, false, true));   // a Drain Life channel
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, true));     // Shadow Bolt on an enemy
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2050, false, true, true));    // a hybrid's heal
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 17, false, true, true));      // a shield (Power Word)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 871, false, true, true));     // a defensive (Shield Wall)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, false));   // ... with no hostile target
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 118, false, false, true));    // Polymorph
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 12826, false, false, true));  // ... another rank
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 9484, false, false, true));   // Shackle Undead
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 710, false, false, true));    // Banish
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 6770, false, false, true));   // Sap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2637, false, false, true));   // Hibernate
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1499, false, false, true));   // Freezing Trap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 6358, false, false, true)); // Seduction (a channel)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20066, false, false, true));  // Repentance
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 5782, false, false, true));   // Fear
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1513, false, false, true));   // Scare Beast
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 8690, false, false, true));   // Hearthstone
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20484, false, false, true));  // Rebirth
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true, false, true));    // any resurrect effect
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false, false, true));       // Auto Shot
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false, false, true));     // Shoot (a wand's shot)
 }
 
 // M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back
