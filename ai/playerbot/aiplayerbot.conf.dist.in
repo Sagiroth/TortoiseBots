@@ -969,10 +969,13 @@ AiPlayerbot.DungeonRunAuraTactics = 0
 AiPlayerbot.DungeonRunUseObject = 0
 
 # The swap_on_aura boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): at the row's stack
-# count of its aura on the tank the boss is on, the next tank of the row's rotation taunts the boss off it, and the
-# swapped-off tank holds its threat rotation (Sunder Armor, Revenge, Heroic Strike, Mocking Blow) and its taunts for
-# 20 s or until its own stacks are gone, whichever comes first. With this key off the rows are ignored, so the table
-# behaves exactly as before the kind. Needs
+# count of its aura on the tank the boss is on, the next tank of the row's rotation that is alive, in melee reach and
+# knows a taunt (Taunt or Growl) takes the boss off it. The swapped-off tank then holds for 20 s or until its own
+# stacks are gone, whichever comes first: it stops attacking the boss, and every action aimed at that boss (any
+# class's threat builder, melee swing or cast), all area damage and every taunt stay down, so it cannot take the boss
+# back. The hold ends at once when the boss is no longer on the new tank (a resisted taunt, a dead new tank), so the
+# old tank can rescue; an explicit player attack order on the boss also clears it. With this key off the rows are
+# ignored, so the table behaves exactly as before the kind. Needs
 # AiPlayerbot.DungeonRunAuraTactics as well (the row is one of the six aura kinds). This is its own key on top of
 # AiPlayerbot.DungeonTactics (or a commander-bound group) because the kind changes what the tanks do mid-fight.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
