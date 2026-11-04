@@ -15,6 +15,12 @@ CONFIG_H = (PB / "PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (PB / "PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (PB / "aiplayerbot.conf.dist.in").read_text()
 TRIGGERS = (PB / "strategy/warlock/WarlockTriggers.cpp").read_text()
+TRIGGER_H = (PB / "strategy/warlock/WarlockTriggers.h").read_text()
+ACTIONS = (PB / "strategy/warlock/WarlockActions.h").read_text()
+TARGETING = (PB / "strategy/warlock/WarlockSpreadTargeting.h").read_text()
+VALUE_H = (PB / "strategy/values/AttackerWithoutAuraTargetValue.h").read_text()
+VALUE_CPP = (PB / "strategy/values/AttackerWithoutAuraTargetValue.cpp").read_text()
+VALUE_CONTEXT = (PB / "strategy/values/ValueContext.h").read_text()
 STRATEGY = (PB / "strategy/warlock/WarlockStrategy.cpp").read_text()
 
 
@@ -44,35 +50,58 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
             self.assertIn("WarlockDotTargetAllowed(", fn, start)
 
     def test_manual_curse_elements_order_is_not_gated(self):
-        for start in ("bool CurseOfTheElementsTrigger::IsActive()",
-                      "bool CurseOfTheElementsOnAttackerTrigger::IsActive()"):
-            fn = body(TRIGGERS, start, "\n}\n")
-            self.assertIn('ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)', fn, start)
+        fn = body(TRIGGERS, "bool CurseOfTheElementsTrigger::IsActive()", "\n}\n")
+        self.assertIn('ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)', fn)
 
-    def test_spread_rows_use_the_spread_gate(self):
-        for start in ("bool CorruptionOnAttackerTrigger::IsActive()",
-                      "bool SiphonLifeOnAttackerTrigger::IsActive()",
-                      "bool ImmolateOnAttackerTrigger::IsActive()",
-                      "bool CurseOfTheElementsOnAttackerTrigger::IsActive()"):
-            fn = body(TRIGGERS, start, "\n}\n")
-            self.assertIn("WarlockSpreadTargetAllowed(", fn, start)
-        # The raid cap lives in the policy, not in a trigger loop copy.
-        helper = body(TRIGGERS, "bool WarlockSpreadTargetAllowed(", "\n}\n")
-        self.assertIn("TortoiseBots::WarlockSpreadCapApplies(", helper)
-        self.assertIn("TortoiseBots::WarlockSpreadAllowed(true, true,", helper)
-        # The curse spread skips attackers below the spread line as well, and
-        # the Agony spread is capped like every other spread row.
+    def test_spread_rows_use_the_policy_gated_target_value(self):
+        # The three DoT spreads and their actions resolve one value, so the
+        # scan skips a health-gated attacker instead of stopping at it.
+        for trigger, action in (
+                ("CorruptionOnAttackerTrigger", "CastCorruptionOnAttackerAction"),
+                ("SiphonLifeOnAttackerTrigger", "CastSiphonLifeOnAttackerAction"),
+                ("ImmolateOnAttackerTrigger", "CastImmolateOnAttackerAction")):
+            fn = body(TRIGGERS, "Value<Unit*>* " + trigger + "::GetTargetValue()", "\n}\n")
+            self.assertIn('"warlock spread attacker my aura"', fn, trigger)
+            self.assertIn('Value<Unit*>* GetTargetValue() override;',
+                          body(TRIGGER_H, "class " + trigger + " ", "};"), trigger)
+            act = body(ACTIONS, "class " + action + " ", "};")
+            self.assertIn('return "warlock spread attacker my aura";', act, action)
+
+        # Manual Curse of the Elements lifts the health line only; the manual
+        # value still applies the raid cap.
+        fn = body(TRIGGERS, "Value<Unit*>* CurseOfTheElementsOnAttackerTrigger::GetTargetValue()", "\n}\n")
+        self.assertIn('ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn('manual ? "warlock spread attacker manual" : "warlock spread attacker"', fn)
+        act = body(ACTIONS, "class CastCurseOfTheElementsOnAttackerAction ", "};")
+        self.assertIn('ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)', act)
+        self.assertIn('? "warlock spread attacker manual" : "warlock spread attacker"', act)
+
+        # The value scans every attacker and applies the policy gates.
+        calc = body(VALUE_CPP, "Unit* WarlockSpreadAttackerTargetValue::Calculate()", "\n}\n")
+        self.assertIn("WarlockSpreadAttackerTarget(", calc)
+        scan = body(TARGETING, "inline Unit* WarlockSpreadAttackerTarget(", "\n}\n")
+        self.assertIn("WarlockFirstAllowed(", scan)
+        self.assertIn("WarlockSpreadCandidateAllowed(", scan)
+        self.assertIn("TortoiseBots::WarlockSpreadAllowed(", scan)
+        self.assertIn("WarlockExtraDottedTargets(", scan)
+        self.assertIn('"possible attack targets"', scan)
+        for name in ("warlock spread attacker my aura", "warlock spread attacker",
+                     "warlock spread attacker manual"):
+            self.assertIn('creators["' + name + '"]', VALUE_CONTEXT)
+        self.assertIn("class WarlockSpreadAttackerTargetValue", VALUE_H)
+
+    def test_agony_spread_is_capped_like_the_other_rows(self):
         fn = body(TRIGGERS, "bool NoCurseOnAttackerTrigger::IsActive()", "\n}\n")
         self.assertIn("WarlockDotTargetAllowed(ai, attacker, true)", fn)
-        self.assertIn('WarlockExtraDottedTargets(ai, "curse of agony", true)', fn)
+        self.assertIn('warlock::WarlockExtraDottedTargets(ai, "curse of agony", true)', fn)
         self.assertIn("TortoiseBots::WarlockSpreadAllowed(", fn)
 
     def test_drain_soul_uses_the_boss_and_shard_gate(self):
         fn = body(TRIGGERS, "bool DrainSoulTrigger::IsActive()", "\n}\n")
-        self.assertIn("WarlockBossTarget(ai, ", fn)
+        self.assertIn("warlock::WarlockBossTarget(ai, ", fn)
         # The lookup is only paid for with the key on.
-        self.assertIn("raidRotation && WarlockBossTarget(ai, ", fn)
-        boss = body(TRIGGERS, "bool WarlockBossTarget(PlayerbotAI* ai, Unit* target)", "\n}\n")
+        self.assertIn("raidRotation && warlock::WarlockBossTarget(ai, ", fn)
+        boss = body(TARGETING, "inline bool WarlockBossTarget(PlayerbotAI* ai, Unit* target)", "\n}\n")
         self.assertIn("TortoiseBots::WarlockIsBossTarget(", boss)
         self.assertIn("creature->IsWorldBoss()", boss)
         self.assertIn("CREATURE_FLAG_EXTRA_INSTANCE_BIND", boss)
@@ -96,11 +125,11 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
     def test_boss_and_raid_group_decisions_are_policy_functions(self):
         gate = body(TRIGGERS, "bool WarlockDotTargetAllowed(", "\n}\n")
         self.assertIn("TortoiseBots::WarlockIsBossTarget(", body(
-            TRIGGERS, "bool WarlockBossTarget(", "\n}\n"))
-        self.assertIn("WarlockBossTarget(ai, target)", gate)
-        spread = body(TRIGGERS, "bool WarlockSpreadTargetAllowed(", "\n}\n")
-        self.assertIn("TortoiseBots::WarlockSpreadCapApplies(", spread)
-        self.assertIn("WarlockBossTarget(ai, target)", spread)
+            TARGETING, "inline bool WarlockBossTarget(", "\n}\n"))
+        self.assertIn("warlock::WarlockBossTarget(ai, target)", gate)
+        scan = body(TARGETING, "inline Unit* WarlockSpreadAttackerTarget(", "\n}\n")
+        self.assertIn("TortoiseBots::WarlockSpreadCapApplies(", scan)
+        self.assertIn("WarlockBossTarget(ai, unit)", scan)
 
     def test_bosses_and_raid_utility_curses_skip_the_life_gate(self):
         for start in ("bool CurseOfTheElementsTrigger::IsActive()",
@@ -108,8 +137,6 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
                       "bool CurseOfShadowRaidTrigger::IsActive()"):
             fn = body(TRIGGERS, start, "\n}\n")
             self.assertIn("WarlockDotTargetAllowed(ai, GetTarget(), false, true)", fn, start)
-        fn = body(TRIGGERS, "bool CurseOfTheElementsOnAttackerTrigger::IsActive()", "\n}\n")
-        self.assertIn('WarlockSpreadTargetAllowed(ai, GetTarget(), "curse of the elements", false, true)', fn)
 
     def test_policy_header_is_the_single_threshold_source(self):
         policy = (ROOT / "runtime/policy/class/WarlockRaidRotationPolicy.h").read_text()
@@ -119,8 +146,10 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
                          "WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2",
                          "WARLOCK_COMBAT_TAP_NUKE_COUNT = 2"):
             self.assertIn(constant, policy)
-        for function in ("WarlockIsBossTarget(", "WarlockSpreadCapApplies("):
+        for function in ("WarlockIsBossTarget(", "WarlockSpreadCapApplies(",
+                         "WarlockSpreadCandidateAllowed(", "WarlockFirstAllowed("):
             self.assertIn(function, policy)
+        for function in ("WarlockIsBossTarget(", "WarlockSpreadCapApplies("):
             self.assertNotIn("bool " + function, TRIGGERS)
         # Triggers call the decisions; they do not re-type the numbers.
         self.assertNotRegex(TRIGGERS, r"\bWARLOCK_(DOT|SPREAD|DRAIN|COMBAT)_")

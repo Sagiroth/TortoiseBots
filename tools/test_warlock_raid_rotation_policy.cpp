@@ -85,6 +85,39 @@ static void TestSpreadCapApplies()
     CHECK(!WarlockSpreadCapApplies(false, false));
 }
 
+// The scan walks past a health-gated attacker: a 40% attacker first in scan
+// order does not hide the 80% one behind it, and an attacker that already
+// carries the aura is never picked.
+static void TestSpreadScanSkipsGatedAttacker()
+{
+    struct Candidate
+    {
+        std::uint8_t healthPct;
+        bool boss;
+        bool hasAura;
+    };
+    Candidate const candidates[] = {{40, false, false}, {80, false, false}};
+    auto const picked = WarlockFirstAllowed(candidates, candidates + 2,
+        [](Candidate const& c) {
+            return WarlockSpreadCandidateAllowed(true, c.healthPct, c.boss, false, c.hasAura);
+        });
+    CHECK(picked == candidates + 1);
+    CHECK(picked->healthPct == 80);
+    CHECK(!WarlockSpreadCandidateAllowed(true, 80, false, false, true));
+}
+
+// A manual curse order lifts the health line only: the raid cap still blocks
+// a third extra target.
+static void TestManualCurseLiftsHealthOnly()
+{
+    CHECK(WarlockSpreadCandidateAllowed(true, 10, false, false, false, true));
+    CHECK(!WarlockSpreadCandidateAllowed(true, 10, false, false, false, false));
+    // Curse of the Elements is raid utility and already health-exempt.
+    CHECK(WarlockSpreadCandidateAllowed(true, 10, false, true, false, false));
+    CHECK(!WarlockSpreadAllowed(true, true, WARLOCK_SPREAD_MAX_EXTRA_TARGETS));
+    CHECK(WarlockSpreadAllowed(true, true, WARLOCK_SPREAD_MAX_EXTRA_TARGETS - 1));
+}
+
 // Raids keep at most two extra dotted targets per spread row; a party and the
 // key off never cap.
 static void TestRaidSpreadCap()
@@ -128,6 +161,8 @@ int main()
     TestBossDetection();
     TestBossAndUtilityExemption();
     TestSpreadCapApplies();
+    TestSpreadScanSkipsGatedAttacker();
+    TestManualCurseLiftsHealthOnly();
     TestRaidSpreadCap();
     TestDrainSoulBossGate();
     TestCombatTapNeedsTwoFillers();

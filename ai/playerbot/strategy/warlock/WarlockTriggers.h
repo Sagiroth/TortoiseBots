@@ -116,7 +116,7 @@ namespace ai
     {
     public:
         CorruptionOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "corruption", true) {}
-        bool IsActive() override;
+        Value<Unit*>* GetTargetValue() override;
     };
 
     class CurseOfAgonyTrigger : public DebuffTrigger
@@ -146,7 +146,7 @@ namespace ai
     {
     public:
         CurseOfTheElementsOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "curse of the elements") {}
-        bool IsActive() override;
+        Value<Unit*>* GetTargetValue() override;
     };
 
     DEBUFF_TRIGGER(CurseOfRecklessnessTrigger, "curse of recklessness");
@@ -185,7 +185,7 @@ namespace ai
     {
     public:
         SiphonLifeOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "siphon life", true) {}
-        bool IsActive() override;
+        Value<Unit*>* GetTargetValue() override;
     };
 
     class ImmolateTrigger : public DebuffTrigger
@@ -199,7 +199,7 @@ namespace ai
     {
     public:
         ImmolateOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "immolate", true) {}
-        bool IsActive() override;
+        Value<Unit*>* GetTargetValue() override;
     };
 
     class ShadowTranceTrigger : public HasAuraTrigger

@@ -65,6 +65,32 @@ inline bool WarlockSpreadAllowed(bool raidRotation, bool inRaidGroup, std::size_
     return extraTargetsDotted < WARLOCK_SPREAD_MAX_EXTRA_TARGETS;
 }
 
+// A spread candidate is legal only while it misses the aura and the life gate
+// allows it. `ignoreHealth` is a player's manual curse order: it lifts the
+// health line only, never the raid cap (that is checked once per row).
+inline bool WarlockSpreadCandidateAllowed(bool raidRotation, std::uint8_t targetHealthPct,
+                                          bool boss, bool raidUtility, bool hasAura,
+                                          bool ignoreHealth = false)
+{
+    if (hasAura)
+        return false;
+    if (ignoreHealth)
+        return true;
+    return WarlockDotAllowed(raidRotation, targetHealthPct, true, boss, raidUtility);
+}
+
+// The first item in [begin, end) accepted by `allowed`, or `end`. A rejected
+// item never stops the scan, so a health-gated attacker cannot hide a later
+// legal one.
+template <typename Iterator, typename Allowed>
+inline Iterator WarlockFirstAllowed(Iterator begin, Iterator end, Allowed allowed)
+{
+    for (; begin != end; ++begin)
+        if (allowed(*begin))
+            return begin;
+    return end;
+}
+
 // Drain Soul needs the dying-target envelope (at or below 20% health, bag
 // space) either way. With the key it is limited to trash and fewer than two
 // shards instead of fewer than five.
