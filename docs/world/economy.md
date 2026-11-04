@@ -81,7 +81,9 @@ flowchart TD
 - **Bot buyers:** Bots holding spendable gold scan the Auction House for equipment upgrades suited to their class and talent specialization, placing bids or buying out listings that beat equipped gear by the configured value threshold.
 - **Native mail settlement:** All bot auction transactions use core mail systems. When a bot purchases an auction listed by a human player, gold is delivered directly to the player's in-game mailbox.
 - **Getting to the auction house:** Bots walk to the auction house on their own continent (same map; cross-map listings never open a trip). A bot already on its way there, or within 300 yards of it, is moved the last stretch onto the auctioneer; nobody is teleported across the world to sell.
-- **Settings:** Bots selling is [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and bots buying with their own gold is [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer); both are on. Made-up listings for an empty auction house are [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply), off by default. Chance, value, spend, quality, level, variance, bid, and duration tuning live in [Economy settings](../server/settings/economy.md).
+- **Settings:** Bots selling is [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and bots buying with their own gold is [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer); both are on.
+- Made-up listings for an empty auction house are [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply), off by default.
+- Chance, value, spend, quality, level, variance, bid, and duration tuning live in [Economy settings](../server/settings/economy.md).
 
 <details>
 <summary>Organic buyer mechanics in detail</summary>
@@ -98,5 +100,7 @@ The organic Auction House buyer runs without teleportation:
 
 Admins can monitor and tune economic activity:
 
-- **Admin commands:** Server operators can inspect market volume, reload custom price tables, trigger market rebuilds, and inspect or override item pricing using the [`.bot ah`](../server/admin-commands.md#autonomous-auction-house-administration-bot-ah--ahbot) and `.ahbot` commands (including `.bot ah item <id>` status, `reset`, `<value> [chance] [min] [max]` overrides, and `0 0` blacklisting).
-- **Drop rate multipliers:** To adjust bot progression without inflating player drop rates, admins can scale uncommon and rare item drop rates for pool bots using [`AiPlayerbot.BotLootRateUncommon`](../server/settings/economy.md#aiplayerbotbotlootrateuncommon--botlootraterare) and `BotLootRateRare` (default `1.0` = off; the extra roll runs once per kill on the creature's own loot table at `(multiplier - 1) x` each entry's chance). Quest-class or quest-starting items and unique items already held at `max_count` are never boosted; player characters, hired/alt bots, and group loot (non-personal or unowned corpses) keep server rates.
+- **Drop rate multipliers:** Admins can scale uncommon and rare item drop rates for pool bots using [`AiPlayerbot.BotLootRateUncommon`](../server/settings/economy.md#aiplayerbotbotlootrateuncommon--botlootraterare) and `BotLootRateRare` (default `1.0` = off).
+- The extra roll runs once per kill on the creature's own loot table at `(multiplier - 1) x` each entry's chance.
+- Quest-class or quest-starting items and unique items already held at `max_count` are never boosted.
+- Player characters, hired/alt bots, and group loot (non-personal or unowned corpses) keep server rates.

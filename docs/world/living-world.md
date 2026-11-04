@@ -21,7 +21,10 @@ TortoiseBots fills the world with autonomous characters on managed pool accounts
 
 Managed pool accounts are tracked in the character-database registry ([The Managed Registry](../server/bot-pool.md#the-managed-pool-registry)).
 
-Hired mercenary companions are temporary characters created through the hire flow. When dismissed, released, or expired after player logout, the character is deleted for good and never returns to the roaming pool. Freed pool capacity is refilled by auto-create toward the configured bot counts ([`AiPlayerbot.MinRandomBots`](../server/settings/world-population.md#aiplayerbotminrandombots--maxrandombots)). Roaming alt-bots, by contrast, stay active in the world ([Alt-bots](../play/commands/roster-and-hiring.md#alt-bots-autonomous-alts)).
+- Hired mercenary companions are temporary characters created through the hire flow.
+- When dismissed, released, or expired after player logout, the character is deleted for good and never returns to the roaming pool.
+- Freed pool capacity is refilled by auto-create toward the configured bot counts ([`AiPlayerbot.MinRandomBots`](../server/settings/world-population.md#aiplayerbotminrandombots--maxrandombots)).
+- Roaming alt-bots, by contrast, stay active in the world ([Alt-bots](../play/commands/roster-and-hiring.md#alt-bots-autonomous-alts)).
 
 ## Autonomous bot lifecycle
 
@@ -60,16 +63,22 @@ The table below summarizes autonomous activities in the open world:
 | **Gathering** | Bots gather nearby herbs and mining nodes, and skin beasts they kill. |
 | **Fishing** | Idle pool bots fish in nearby open water. |
 | **Town services** | Bots visit nearby trainers, repair gear at blacksmiths, and sell vendor trash. |
-
 <details>
 <summary>Travel & flight paths in detail</summary>
 
-Autonomous pool bots travel without routine teleporting. When a bot picks a distant destination, it plans a route using flight masters, zeppelins, boats, or roads.
+Autonomous pool bots travel without routine teleporting. When a bot picks a distant destination, it plans a route:
+- Flight paths run from known taxi nodes to the node nearest the destination.
+- The hop must be level-appropriate: the destination area can be at most five levels above the bot.
+- The bot must have enough gold to cover the fare above its class-trainer savings reserve.
+- The bot walks to the flight master, boards the taxi, and pays the standard fare.
+- Cross-zone travel such as leaving starting islands happens by air or boat, not by artificial movement.
+- Teleports remain a last resort for stuck travel, ghost recovery, and scatter of newly seeded bots.
 
-Flight paths run from known taxi nodes to the node nearest the destination. The hop must be level-appropriate (the destination area can be at most five levels above the bot), and the bot must have enough gold to cover the fare above its class-trainer savings reserve. The bot walks to the flight master, boards the taxi, and pays the standard fare. Cross-zone travel such as leaving starting islands happens by air or boat, not by artificial movement. Teleports remain a last resort for stuck travel, ghost recovery, and scatter of newly seeded bots.
-
-A destination is accepted only when the walk there is survivable, not just when the destination itself fits: the route is checked at every waypoint and along the legs between them (every 64 yd, against the static town-guard index and the same area-level table the destination gate uses), so a bot refuses a trip whose walk crosses a hostile-faction town or an area more than five levels above it. Boat, zeppelin, portal, and taxi hops are exempt — the bot is a passenger, not on foot. The verdict is cached per bot and destination for five minutes.
-
+- A destination is accepted only when the walk there is survivable, not just when the destination fits:
+- The route is checked at every waypoint and along the legs between them (every 64 yd, against the static town-guard index and the same area-level table the destination gate uses).
+- A bot refuses a trip whose walk crosses a hostile-faction town or an area more than five levels above it.
+- Boat, zeppelin, portal, and taxi hops are exempt: the bot is a passenger, not on foot.
+- The verdict is cached per bot and destination for five minutes.
 </details>
 
 <details>
@@ -159,14 +168,18 @@ A vendor trip needs a valid reason: items vendors buy (grey items or surplus gea
 On realms where bots progress organically, new pool bots start with sensible attributes:
 
 ### Level seed & distribution
-A newly created pool bot receives an initial level randomly selected between [`AiPlayerbot.RandomBotStartLevelMin`](../server/settings/world-population.md#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) and `Max`. This spreads characters across all level bands rather than bunching the whole population at level 1. With [`AiPlayerbot.LevelLadder`](../server/settings/world-population.md#aiplayerbotlevelladder) enabled, the online population is distributed proportionally across level brackets.
+- A newly created pool bot receives an initial level between [`AiPlayerbot.RandomBotStartLevelMin`](../server/settings/world-population.md#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) and `Max`.
+- This spreads characters across all level bands rather than bunching the whole population at level 1.
+- With [`AiPlayerbot.LevelLadder`](../server/settings/world-population.md#aiplayerbotlevelladder) enabled, the online population is distributed proportionally across level brackets.
 
 New bots are spread evenly across the starting zones via [`AiPlayerbot.RandomBotEvenStartZones`](../server/settings/world-population.md#aiplayerbotrandombotevenstartzones). Auto-creation monitors starting zone populations and assigns newly created bots to less populated regions. Custom race starting areas relocate naturally to core racial hubs (such as Goblins to Valley of Trials and High Elves to Northshire).
 
 Hunters follow standard class progression: hunters own no pets below level 10. Upon reaching level 10, a pool hunter acquires a level-appropriate pet. A pool hunter logging in below level 10 gives up any previously seeded pet; player-owned, hired, or adopted hunters keep theirs.
 
 ### Class spells
-Pool bots and hired companions learn every class spell and rank their trainer would teach, for free, the moment they level up ([`AiPlayerbot.AutoLearnTrainerSpells`](../server/settings/world-population.md#aiplayerbotautolearntrainerspells), on), and the spells from class quests as well ([`AiPlayerbot.AutoLearnQuestSpells`](../server/settings/world-population.md#aiplayerbotautolearnquestspells), on). Your own alts do not get this: take them to a trainer and train them yourself ([`trainer`](../play/commands/whispers.md#w--trainer)).
+- Pool bots and hired companions learn every class spell and rank for free the moment they level up ([`AiPlayerbot.AutoLearnTrainerSpells`](../server/settings/world-population.md#aiplayerbotautolearntrainerspells), on).
+- They also learn the spells from class quests ([`AiPlayerbot.AutoLearnQuestSpells`](../server/settings/world-population.md#aiplayerbotautolearnquestspells), on).
+- Your own alts do not get this: take them to a trainer and train them yourself ([`trainer`](../play/commands/whispers.md#w--trainer)).
 
 ### Initial skills & professions
 Seeding runs once per fresh bot (skipped if primary professions exist or played time is recorded); learned professions and skill ranks save as permanent character data and are never re-rolled:
@@ -194,7 +207,11 @@ Every seeded pool bot and newly hired companion receives a complete starting fie
 Hired mercenary companions receive an hourly restock of class reagents, rations, potions, and bandages.
 
 ### Mount rules
-Random pool bots and hired companions strictly ride vendor mounts matching their own character race, governed by [`AiPlayerbot.RandomBotShopMounts`](../server/settings/world-population.md#aiplayerbotrandombotshopmounts). Fast epic mounts are strictly gated to level 60 characters. When [`AiPlayerbot.LevelUpMounts`](../server/settings/world-population.md#aiplayerbotlevelupmounts) is enabled, bots earn level 40 and 60 mounts upon reaching the required level with riding-skill gating; otherwise mounts come only from seeding/hiring (no level-up award). By default, pool bots never ride rare dungeon or raid loot-drop mounts. Player-owned alts are not subject to these mount restrictions.
+- Random pool bots and hired companions strictly ride vendor mounts matching their own character race, governed by [`AiPlayerbot.RandomBotShopMounts`](../server/settings/world-population.md#aiplayerbotrandombotshopmounts).
+- Fast epic mounts are strictly gated to level 60 characters.
+- When [`AiPlayerbot.LevelUpMounts`](../server/settings/world-population.md#aiplayerbotlevelupmounts) is enabled, bots earn level 40 and 60 mounts upon reaching the required level with riding-skill gating; otherwise mounts come only from seeding/hiring (no level-up award).
+- By default, pool bots never ride rare dungeon or raid loot-drop mounts.
+- Player-owned alts are not subject to these mount restrictions.
 
 ### Gear evaluation & upgrades
 Fresh pool bots at level 5 and above receive level-appropriate starter equipment when seeded ([`AiPlayerbot.RandomGearUpgradeEnabled`](../server/settings/world-population.md#aiplayerbotrandomgearupgradeenabled)); ongoing loot and vendor upgrades are evaluated continuously using class and spec stat weight scales:

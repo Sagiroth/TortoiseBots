@@ -42,11 +42,16 @@ Player role signups match standard core logic: multi-role selections take the fi
 <summary>Strict role validation & spec borrowing in detail</summary>
 
 Role matching is fail-closed based on each bot's talent spec and equipped gear:
-- A **Tank** slot requires a tanking specialization with a shield equipped (Warrior, Paladin, Shaman). The bot equips the best shield from its bags before queueing. Druid tanks must have Bear Form, and a Shaman tank must have its key talents (*Totemic Alignment* or *Spirit Armor*, from level 25) or already play the tank kit — a 7.3 Shaman below that level without the kit is offered as DPS instead, never as a tank.
+- A **Tank** slot requires a tanking specialization with a shield equipped (Warrior, Paladin, Shaman). The bot equips the best shield from its bags before queueing.
+- Druid tanks must have Bear Form. A Shaman tank needs its key talents (*Totemic Alignment* or *Spirit Armor*, from level 25) or the installed tank kit.
+- A 7.3 Shaman below that level without the kit is offered as DPS instead, never as a tank.
 - A **Healer** slot requires a healing specialization with core healing spells trained.
 - If no eligible bot can be found, the slot stays empty with a logged reason rather than assigning an unsuitable spec.
 
-Admins can optionally let bots respec into missing roles using [`AiPlayerbot.RandomBotLftAllowRoleBorrow`](../server/settings/queues.md#aiplayerbotrandombotlftallowroleborrow). When a bot whose default kit differs from its queued role is adopted (such as a Feral Druid queued as a Tank), the engine assigns the matching role kit (Bear kit instead of Cat kit), rebuilding the strategies on the spot — the same rebuild [`.bot role`](../play/commands/roster-and-hiring.md#bot-role) runs. Clearing the role when the fill ends rebuilds the bot's own kit again, so a borrowed role never outlives the queue.
+- Admins can optionally let bots respec into missing roles using [`AiPlayerbot.RandomBotLftAllowRoleBorrow`](../server/settings/queues.md#aiplayerbotrandombotlftallowroleborrow).
+- When a bot whose default kit differs from its queued role is adopted (such as a Feral Druid queued as a Tank), the engine assigns the matching role kit (Bear kit instead of Cat kit).
+- This rebuilds the strategies on the spot — the same rebuild [`.bot role`](../play/commands/roster-and-hiring.md#bot-role) runs.
+- Clearing the role when the fill ends rebuilds the bot's own kit again, so a borrowed role never outlives the queue.
 
 </details>
 
