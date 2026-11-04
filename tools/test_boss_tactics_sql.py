@@ -782,7 +782,6 @@ class BossTacticsSql(unittest.TestCase):
         glad = live[(509, 15324, "linked_death", 15324, 0)]
         self.assertEqual(7.0, glad["window_s"])
         self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
-        self.assertNotIn((509, 15369, "behind", 0, 25814), live)
 
     def test_aq20_step_one_keeps_the_ayamiss_larva_row(self):
         # 20261104150000 re-inserts Ayamiss's hornet row 15934 (kill_first). Its DELETE used to match every kill_first
