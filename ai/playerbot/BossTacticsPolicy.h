@@ -1948,9 +1948,12 @@ namespace ai
 
     // Index of the nearest candidate a free DPS bot may attack: the same candidate rules the kill_first pick applies
     // (pickable, kBossTacticsEngageRange) minus the entries a hold_kill row holds, so a bot switching off a held entry
-    // lands on the blocker or a loose add and never on another held entry. -1 when nothing is left.
+    // lands on the blocker or a loose add and never on another held entry. `seekHeldEntry`: a seek_aura source the row
+    // holds right now (its entry is not a hold_kill one), skipped too, so the drop never re-picks another Son. -1 when
+    // nothing is left.
     inline int PickNearestUnheld(const ActiveBossRows& rows, const std::vector<TacticCandidate>& candidates,
-                                 const std::function<std::uint32_t(std::uint32_t)>& countNear)
+                                 const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                                 std::uint32_t seekHeldEntry = 0)
     {
         int best = -1;
         float bestDistance = 0.0f;
@@ -1958,6 +1961,8 @@ namespace ai
         {
             const TacticCandidate& c = candidates[i];
             if (!c.pickable || c.distance > kBossTacticsEngageRange)
+                continue;
+            if (seekHeldEntry != 0 && c.entry == seekHeldEntry)
                 continue;
             if (KillHeld(rows, c.entry, countNear))
                 continue;

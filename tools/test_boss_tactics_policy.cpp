@@ -708,6 +708,26 @@ int main()
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
         CHECK(PickNearestUnheld(active, { Cand(15146, 5.0f, false) }, countOf(15146, 0)) == -1);
+        // A seek_aura source the row holds is not a hold_kill entry: the extra argument skips it too, so a drop never
+        // re-picks another Son (H2).
+        const std::vector<TacticCandidate> sons = { Cand(11357, 3.0f), Cand(11359, 9.0f) };
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0)) == 0);
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0), 11357) == 1);
+    }
+
+    // A seek_aura row's dose window has to be shorter than its cycle (spec §4's open interval): equal is refused.
+    {
+        BossTacticRow row = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        row.cycleSpell = 24324;
+        row.cycleSec = 90.0f;
+        row.spotX = -11802.0f;
+        row.spotY = -1683.0f;
+        row.spotZ = 52.9f;
+        row.windowSec = 90.0f;
+        BossTacticTable table;
+        CHECK(!table.Add(row));
+        row.windowSec = 89.9f;
+        CHECK(table.Add(row));
     }
 
     // "a Mad Servant that is not the sole pick is held with no Voidwalker alive": a one_at_a_time row paces an entry by

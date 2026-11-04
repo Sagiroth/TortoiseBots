@@ -1215,6 +1215,19 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
 }
 
+// Whether the row holds the damage on this source: every source but the one at the spot (a Son dragged or patrolling
+// elsewhere must not be killed away from B), and the one at the spot outside the dose window or at the hold percent
+// until the gather is ready.
+bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
+{
+    if (!IsSeekSource(state, unit))
+        return false;
+    if (unit != state.source)
+        return true;
+    return SeekSourceHeld(state.windowOpen, unit->GetHealthPercent(), static_cast<float>(state.row->priority),
+                          state.ready);
+}
+
 // The source a damage action would hit: its own target, or (area actions) the row's source inside the area of the
 // action's target point or of the bot. The read's source is the only one asked: a grid search per action would put a
 // world scan in the multiplier's path, and the source the raid damages is the one the gather stands around.
@@ -1517,14 +1530,12 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     Unit* current = AI_VALUE(Unit*, "current target");
     if (!current)
         return nullptr;
-    // seek_aura: a source the row holds right now (outside the dose window, or at the hold percent until the gather
-    // is ready) is dropped the same way, so the assist re-picks the boss and the burn waits for the gather.
+    // seek_aura: a source the row holds right now is dropped the same way, so the assist re-picks the boss and the
+    // burn waits for the gather. That covers every source but the one at the spot, whatever the window says.
     if (sPlayerbotAIConfig.dungeonRunSeekAura)
     {
         SeekFight state;
-        if (ReadSeekFightCached(ai, bot, state) && IsSeekSource(state, current) &&
-            SeekSourceHeld(state.windowOpen, current->GetHealthPercent(), static_cast<float>(state.row->priority),
-                state.ready))
+        if (ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, current))
             return current;
     }
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
@@ -2106,33 +2117,48 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     if (!held)
         return false;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
+    // A seek_aura source the row holds takes the drop path at once: the nearest pick would be the Son itself (it is
+    // not a hold_kill entry), and re-attacking it is what kept the pre-damage going past the hold percent (H2).
+    bool seekHeld = false;
+    if (sPlayerbotAIConfig.dungeonRunSeekAura)
+    {
+        SeekFight state;
+        seekHeld = ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, held);
+    }
     // The kill_first pick moves the bot off a held boss entry (a Voidwalker, the Blood Priest). A pick that is the held
     // entry itself falls through: the hold row's whole point is to leave it.
-    if (Unit* pick = FindBossKillFirst(ai, bot, fight))
+    if (!seekHeld)
     {
-        if (pick != held)
+        if (Unit* pick = FindBossKillFirst(ai, bot, fight))
         {
-            LogHoldKillPick(ai, bot, fight, held, pick, countNear);
-            return Attack(bot, pick);
+            if (pick != held)
+            {
+                LogHoldKillPick(ai, bot, fight, held, pick, countNear);
+                return Attack(bot, pick);
+            }
         }
     }
     // Else the nearest creature this bot may attack, by the same candidate rules the kill_first pick applies
-    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds.
-    std::vector<TacticCandidate> candidates;
-    candidates.reserve(fight.units.size());
-    for (Unit* unit : fight.units)
+    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds and,
+    // for a held seek source, every source entry.
+    if (!seekHeld)
     {
-        TacticCandidate c;
-        c.entry = unit->GetEntry();
-        c.distance = bot->GetDistance(unit);
-        c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
-        candidates.push_back(c);
-    }
-    const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
-    if (nearestIndex >= 0)
-    {
-        LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear);
-        return Attack(bot, fight.units[nearestIndex]);
+        std::vector<TacticCandidate> candidates;
+        candidates.reserve(fight.units.size());
+        for (Unit* unit : fight.units)
+        {
+            TacticCandidate c;
+            c.entry = unit->GetEntry();
+            c.distance = bot->GetDistance(unit);
+            c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+            candidates.push_back(c);
+        }
+        const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
+        if (nearestIndex >= 0)
+        {
+            LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear);
+            return Attack(bot, fight.units[nearestIndex]);
+        }
     }
     // Nothing to switch to: drop the held pick and stop, so the assist rows re-pick once the blocker is dead. Every
     // picker skips a held entry, so the bot has no dps target while the blocker lives and waits the Servant out.
@@ -2230,7 +2256,10 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     // hold_kill clause, and the area test alone misses the cleave buffs.
     const bool cleaveToggle = linkedDeath && IsCleaveToggleAction(action);
     const bool singleTarget = linkedDeath && !area && IsSingleTargetDamageAction(action);
-    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget)
+    // The seek_aura hold also answers a plain swing or bolt on the held source (H2: the first swing slipped through;
+    // L6: the third tank's own rotation on the Son it holds). Heals are never single-target damage.
+    const bool seekSingle = seeksRow && !area && IsSingleTargetDamageAction(action);
+    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget && !seekSingle)
         return 1.0f;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // The log row's veto kind: the action class that was stood down, replaced by "sole" wherever the one_at_a_time
@@ -2239,19 +2268,20 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         : aoe || cleaveToggle ? "aoe"
         : attackerDebuff ? "dot" : "area";
     // seek_aura: the row's source is left alone outside the dose window and between the pre-damage and the gather's
-    // readiness (SeekSourceHeld), so a DPS assist, an AoE or a DoT on it re-picks the boss; the hold_kill clause
-    // above is the other half of the rule (the current target is dropped).
-    if (seeksRow && (dpsAssist || aoe || attackerDebuff || area))
+    // readiness (SeekHoldsUnit), and every source but the one at the spot is held all window, so a DPS assist, an AoE,
+    // a DoT or a single-target swing on it re-picks the boss; the hold_kill clause above is the other half of the rule
+    // (the current target is dropped).
+    if (seeksRow && (dpsAssist || aoe || attackerDebuff || area || seekSingle))
     {
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
             Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
                 : aoe ? AI_VALUE(Unit*, "dps aoe target")
-                : attackerDebuff ? action->GetTarget() : nullptr;
+                : attackerDebuff ? action->GetTarget()
+                : AI_VALUE(Unit*, "current target");
             Unit* source = SeekSourceInAction(bot, action, state, picked, area);
-            if (source && SeekSourceHeld(state.windowOpen, source->GetHealthPercent(),
-                    static_cast<float>(state.row->priority), state.ready))
+            if (source && SeekHoldsUnit(state, source))
             {
                 LogHoldKillVeto(ai, bot, "seek", source);
                 return 0.0f;
@@ -3874,9 +3904,8 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
     if (!state.windowOpen || !state.source)
         return nullptr;
     // Outside the window nothing damages a source; inside it the pre-damage stops at the row's percent until the
-    // gather is ready, and the burn runs on after (SeekSourceHeld).
-    if (SeekSourceHeld(state.windowOpen, state.source->GetHealthPercent(), static_cast<float>(state.row->priority),
-            state.ready))
+    // gather is ready, and the burn runs on after (SeekHoldsUnit). A source anywhere but the spot is held too.
+    if (SeekHoldsUnit(state, state.source))
         return nullptr;
     return state.source;
 }
