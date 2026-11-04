@@ -22,6 +22,7 @@ These settings configure player-owned bots, alt-bots, formation positioning, and
 | [`AiPlayerbot.DungeonFollowHoldBeforePacks`](#aiplayerbotdungeonfollowholdbeforepacks) | `0` | Stops follower bots outside unpulled pack aggro radius (attack detection range). |
 | [`AiPlayerbot.DefaultFormation`](#aiplayerbotdefaultformation) | `chaos` | Sets default idle follow formation around the party leader. |
 | [`AiPlayerbot.RaidFollowWedge`](#aiplayerbotraidfollowwedge) | `0` | Spreads raid and dungeon followers behind the leader and has far stragglers walk the leader's path. |
+| [`AiPlayerbot.TeleportLandingFall`](#aiplayerbotteleportlandingfall) | `0` | Lands a bot on the floor under a near-teleport destination that ends in mid-air. |
 | [`AiPlayerbot.NonGmFreeSummon`](#aiplayerbotnongmfreesummon) | `0` | Enables the free instant summon action for non-staff players. |
 | [`AiPlayerbot.OwnedBotMaintenanceEnabled`](#aiplayerbotownedbotmaintenanceenabled) | `0` | Enables the maintenance command for owned and hired companion bots. |
 | [`AiPlayerbot.OwnedBotAutogearEnabled`](#aiplayerbotownedbotautogearenabled) | `0` | Enables automated incremental re-gearing for owned and hired bots. |
@@ -122,6 +123,19 @@ Inside a dungeon or raid, while the bot is in a group, the configured formation 
 The follow distance in the wedge is `AiPlayerbot.RaidFollowDistance` (4 yd). A follower more than 20 yards behind the leader, while neither of them is in combat, walks the leader's recorded recent positions instead of the direct route to its slot, so stairs and corners are taken the way the leader took them.
 
 The open world, and a bot whose player chose a formation with [`.bot formation`](../../play/commands/party-actions.md#bot-formation), keep the configured formation. `0` keeps the configured formation everywhere.
+
+</details>
+
+### `AiPlayerbot.TeleportLandingFall`
+Lands a bot whose near teleport (a summon, Jin'do's Banish) ends in mid-air on the floor under its destination.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+A player's client makes it fall to the floor after the server moves it. A bot has no client, so a teleport that ends above the floor left its server position there: Jin'do's Banish (spell 24466) drops a player 12 yd over the Zul'Gurub pit floor, and melee bots hovered there, never walked back into the fight, and dealt no damage.
+
+With this on, every near teleport probes the floor at or under the destination (the navmesh first, the map's floor as a fallback within `AiPlayerbot.JumpHeightLimit`) and starts the jump landing's simulated fall, so the bot comes down and plays on. A destination less than a yard above its floor does not fall, so a summon or revive port that lands on the ground is unaffected. It changes every near teleport, so it is off by default.
 
 </details>
 

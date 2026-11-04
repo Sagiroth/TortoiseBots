@@ -930,6 +930,9 @@ public:
     float jumpInPlaceChance;
     float jumpBackwardChance;
     float jumpHeightLimit;
+    // A near teleport whose destination ends in mid-air (Jin'do's Banish 24466) lands the bot on the floor under
+    // it instead of leaving it hovering. Off by default: it changes every near teleport.
+    bool teleportLandingFall = false;
     float jumpVSpeed;
     float jumpHSpeed;
 

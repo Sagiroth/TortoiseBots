@@ -37,6 +37,7 @@
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
 #include "../../runtime/RemoteCommanderTasks.h"
+#include "../../runtime/policy/movement/TeleportLandingPolicy.h"
 #include "../../runtime/AltBotService.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
@@ -653,29 +654,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 // the box AT the feet, so only floor at or under the bot can be found. A deck
                 // over the head (a canal bridge) must not count as landing ground - it would
                 // snap the landing above where the jump ended.
-                constexpr float kFeetProbeDepth = 4.0f;
-                WorldPosition feet(bot->GetMapId(), bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, bot->m_movementInfo.pos.z - kFeetProbeDepth);
-                if (feet.isMmapLoaded(bot->GetInstanceId()) && feet.ClosestCorrectPoint(2.0f, kFeetProbeDepth, bot->GetInstanceId()))
+                WorldPosition feet(bot->GetMapId(), bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, bot->m_movementInfo.pos.z - ai::TeleportLandingPolicy::kFeetProbeDepth);
+                if (feet.isMmapLoaded(bot->GetInstanceId()) && feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange, ai::TeleportLandingPolicy::kFeetProbeDepth, bot->GetInstanceId()))
                     landingHeight = std::min(feet.getZ(), bot->m_movementInfo.pos.z);
                 else if (bot->m_movementInfo.pos.z - landingHeight > sPlayerbotAIConfig.jumpHeightLimit)
                     landingHeight = bot->m_movementInfo.pos.z;
             }
 
-            // calculate fall time
-            float gravity = 19.2911f;
-            float terminalVelocity = 60.148f;
-            float time;
-
-            const float terminal_length = float(terminalVelocity * terminalVelocity) / (2.f * gravity);
-            const float terminalFallTime = float(terminalVelocity / gravity);
-
-            float path_length = fabs(bot->m_movementInfo.pos.z - landingHeight);
-            if (path_length >= terminal_length)
-                time = (path_length - terminal_length) / terminalVelocity + terminalFallTime;
-            else
-                time = sqrtf(2.f * path_length / gravity);
-
-            SetJumpTime(curTime + uint32(time * static_cast<uint32>(IN_MILLISECONDS)) + 1000);
+            SetJumpTime(curTime + ai::TeleportLandingPolicy::SimulatedFallMs(bot->m_movementInfo.pos.z - landingHeight) + 1000);
             fallAfterJump = false;
             jumpDestination = WorldPosition(bot->GetMapId(), bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, landingHeight);
             sLog.outDetail("%s: Jump: Falling simulated, height: %f, timeToLand %u", bot->GetName(), landingHeight, jumpTime);
@@ -2475,6 +2461,43 @@ void PlayerbotAI::HandleTeleportAck()
 		p << bot->GetLastCounterForMovementChangeType(TELEPORT); // movement counter the core is waiting to ACK
 		p << (uint32) time(0); // time - not currently used
         bot->GetSession()->HandleMoveTeleportAckOpcode(p);
+
+        // A near teleport can end in mid-air: Jin'do's Banish 24466 lands a bot 12 yd over the ZG pit floor, and
+        // with no client nothing makes it fall, so it hovers there and never paths back. Land it the way the jump
+        // landing does: the feet probe at or under the destination first (a navmesh floor is authoritative), the
+        // map's floor as the fallback (within the jump limit, so a deck over it is never a landing), and the same
+        // simulated fall, so clients see it come down instead of jumping to the floor.
+        if (sPlayerbotAIConfig.teleportLandingFall)
+        {
+            float const destZ = bot->GetPositionZ();
+            float floorZ = destZ;
+            bot->UpdateAllowedPositionZ(bot->GetPositionX(), bot->GetPositionY(), floorZ);
+            bool floorFound = false;
+            if (destZ - floorZ > ai::TeleportLandingPolicy::kLandingYd)
+            {
+                WorldPosition feet(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
+                    destZ - ai::TeleportLandingPolicy::kFeetProbeDepth);
+                if (feet.isMmapLoaded(bot->GetInstanceId()) &&
+                    feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
+                        ai::TeleportLandingPolicy::kFeetProbeDepth, bot->GetInstanceId()))
+                {
+                    floorZ = std::min(feet.getZ(), destZ);
+                    floorFound = true;
+                }
+            }
+            float const landingZ = ai::TeleportLandingPolicy::TeleportLandingZ(destZ, floorFound, floorZ,
+                sPlayerbotAIConfig.jumpHeightLimit);
+            if (landingZ < destZ)
+            {
+                SetJumpDestination(WorldPosition(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), landingZ));
+                SetJumpTime(WorldTimer::getMSTime() +
+                    ai::TeleportLandingPolicy::SimulatedFallMs(destZ - landingZ) + 1000);
+                // The teleport supersedes any fall or knockback still in flight: this is a normal landing, not the
+                // second fall that flag would start from the new position.
+                fallAfterJump = false;
+                sLog.outDetail("%s: Teleport landing: falling from %f to %f", bot->GetName(), destZ, landingZ);
+            }
+        }
 
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(1000, 2000));
