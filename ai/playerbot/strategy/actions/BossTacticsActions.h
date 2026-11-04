@@ -609,7 +609,8 @@ namespace ai
 
     // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap
     // (param, yards) or more above it (RangedOnlyPolicy.h). Gated by AiPlayerbot.DungeonRunRangedOnly, the map's rows
-    // and the "boss tactics" strategy; ranged bots and healers are never held. `gapYdOut` (optional) the measured gap.
+    // and the "boss tactics" strategy; ranged bots and healers are never held, and an explicit attack order wins.
+    // `gapYdOut` (optional) the measured gap.
     bool IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYdOut = nullptr);
     // The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`), at most once per bot per five seconds.
     void LogBossRangedOnly(PlayerbotAI* ai, Player* bot, Unit* subject, float gapYd);

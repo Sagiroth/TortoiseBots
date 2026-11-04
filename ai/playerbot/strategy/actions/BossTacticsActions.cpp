@@ -4841,7 +4841,8 @@ bool ai::IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYd
     if (!(rowGap > 0.0f))
         return false;
     const float gap = unit->GetPositionZ() - bot->GetPositionZ();
-    if (!RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), rowGap))
+    const bool ordered = !ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+    if (!RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), rowGap, ordered))
         return false;
     if (gapYdOut)
         *gapYdOut = gap;
