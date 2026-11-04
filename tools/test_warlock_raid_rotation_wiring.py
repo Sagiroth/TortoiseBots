@@ -49,6 +49,9 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
                       "bool CurseOfTheElementsOnAttackerTrigger::IsActive()"):
             fn = body(TRIGGERS, start, "\n}\n")
             self.assertIn("WarlockSpreadTargetAllowed(", fn, start)
+        # The raid cap lives in the policy, not in a trigger loop copy.
+        helper = body(TRIGGERS, "bool WarlockSpreadTargetAllowed(", "\n}\n")
+        self.assertIn("TortoiseBots::WarlockSpreadAllowed(true, true, dotted)", helper)
         # The curse spread skips attackers below the spread line as well.
         fn = body(TRIGGERS, "bool NoCurseOnAttackerTrigger::IsActive()", "\n}\n")
         self.assertIn("WarlockDotTargetAllowed(attacker, true)", fn)
@@ -56,7 +59,8 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
     def test_policy_header_is_the_single_threshold_source(self):
         policy = (ROOT / "runtime/policy/class/WarlockRaidRotationPolicy.h").read_text()
         for constant in ("WARLOCK_DOT_MIN_TARGET_HEALTH = 35",
-                         "WARLOCK_DOT_MIN_SPREAD_HEALTH = 50"):
+                         "WARLOCK_DOT_MIN_SPREAD_HEALTH = 50",
+                         "WARLOCK_SPREAD_MAX_EXTRA_TARGETS = 2"):
             self.assertIn(constant, policy)
         # Triggers call the decisions; they do not re-type the numbers.
         self.assertNotRegex(TRIGGERS, r"\bWARLOCK_(DOT|SPREAD|DRAIN|COMBAT)_")

@@ -27,12 +27,32 @@ bool WarlockDotTargetAllowed(Unit* target, bool spread = false)
     return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), spread);
 }
 
-// "On attacker" DoT row: the candidate must be above 50% health.
-bool WarlockSpreadTargetAllowed(Unit* target)
+// "On attacker" DoT row: the candidate must be above 50% health, and a raid
+// group keeps at most two other attackers dotted besides the current target.
+bool WarlockSpreadTargetAllowed(PlayerbotAI* ai, Unit* target, std::string const& spell, bool checkIsOwner)
 {
     if (!target || !sPlayerbotAIConfig.warlockRaidRotation)
         return true;
-    return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), true);
+    if (!TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), true))
+        return false;
+
+    Group* group = ai->GetBot()->GetGroup();
+    if (!group || !group->isRaidGroup())
+        return true;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = context->GetValue<Unit*>("current target")->Get();
+    std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+    std::size_t dotted = 0;
+    for (ObjectGuid const& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || unit == current)
+            continue;
+        if (ai->HasAura(spell, unit, false, checkIsOwner))
+            ++dotted;
+    }
+    return TortoiseBots::WarlockSpreadAllowed(true, true, dotted);
 }
 }
 
@@ -135,14 +155,14 @@ bool CurseOfAgonyTrigger::IsActive()
 
 bool CorruptionOnAttackerTrigger::IsActive()
 {
-    if (!WarlockSpreadTargetAllowed(GetTarget()))
+    if (!WarlockSpreadTargetAllowed(ai, GetTarget(), "corruption", true))
         return false;
     return DebuffOnAttackerTrigger::IsActive();
 }
 
 bool SiphonLifeOnAttackerTrigger::IsActive()
 {
-    if (!WarlockSpreadTargetAllowed(GetTarget()))
+    if (!WarlockSpreadTargetAllowed(ai, GetTarget(), "siphon life", true))
         return false;
     return DebuffOnAttackerTrigger::IsActive();
 }
@@ -156,7 +176,7 @@ bool ImmolateTrigger::IsActive()
 
 bool ImmolateOnAttackerTrigger::IsActive()
 {
-    if (!WarlockSpreadTargetAllowed(GetTarget()))
+    if (!WarlockSpreadTargetAllowed(ai, GetTarget(), "immolate", true))
         return false;
     return DebuffOnAttackerTrigger::IsActive();
 }
@@ -170,7 +190,7 @@ bool CurseOfTheElementsTrigger::IsActive()
 
 bool CurseOfTheElementsOnAttackerTrigger::IsActive()
 {
-    if (!WarlockSpreadTargetAllowed(GetTarget()))
+    if (!WarlockSpreadTargetAllowed(ai, GetTarget(), "curse of the elements", false))
         return false;
     return DebuffOnAttackerTrigger::IsActive();
 }

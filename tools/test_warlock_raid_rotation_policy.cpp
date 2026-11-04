@@ -1,8 +1,8 @@
 // Standalone regression test for the warlock raid rotation
 // (runtime/policy/class/WarlockRaidRotationPolicy.h, key
 // AiPlayerbot.WarlockRaidRotation):
-//   - no new DoT/curse on a target under 35% health, and no spread to an
-//     attacker at or below 50%.
+//   - no new DoT/curse on a target under 35% health, no spread to an attacker
+//     at or below 50%, and at most two extra dotted targets in a raid.
 // Every helper must also answer "today's behaviour" with the key off.
 //
 // Build and run:
@@ -47,10 +47,21 @@ static void TestSpreadLifeGate()
     CHECK(WarlockDotAllowed(false, 30, true));
 }
 
+// Raids keep at most two extra dotted targets; a party and the key off never cap.
+static void TestRaidSpreadCap()
+{
+    CHECK(WarlockSpreadAllowed(true, true, 0));
+    CHECK(WarlockSpreadAllowed(true, true, 1));
+    CHECK(!WarlockSpreadAllowed(true, true, 2));
+    CHECK(WarlockSpreadAllowed(true, false, 5));
+    CHECK(WarlockSpreadAllowed(false, true, 5));
+}
+
 int main()
 {
     TestDotLifeGateOnCurrentTarget();
     TestSpreadLifeGate();
+    TestRaidSpreadCap();
 
     std::printf("warlock raid rotation policy: %d checks passed\n", checks);
     return 0;
