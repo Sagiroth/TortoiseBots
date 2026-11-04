@@ -38,7 +38,7 @@ class TimeSinksWiringTest(unittest.TestCase):
                       "            lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), end.x, end.y, end.z, x, y, z);", approach)
         # Before the no-path return, so a no path leaves it read too.
         self.assertLess(approach.index("*incomplete ="), approach.index("if (path.getPathType() & PATHFIND_NOPATH)"))
-        self.assertIn("direct ? &f.approachIncomplete : nullptr);", COMMANDS)
+        self.assertIn("direct ? &f.approachIncomplete : nullptr, f.dryWalk);", COMMANDS)
         walk_back = body(POLICY, "inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& order)",
                          "\n}\n")
         self.assertIn("if (r.walkBackDirect && f.approachKnown && f.approachIncomplete)", walk_back)
@@ -83,15 +83,17 @@ class TimeSinksWiringTest(unittest.TestCase):
 
     def test_fight_forward_and_shortcut_reads(self):
         reads = body(COMMANDS, "void ReadTimeSinkWays(", "\n}\n")
-        self.assertIn("f.forwardPathOk = DirectNavPath(lead, pull.x, pull.y, pull.z, way);", reads)
+        self.assertIn("f.forwardPathOk = DirectNavPath(lead, pull.x, pull.y, pull.z, way, f.dryWalk);", reads)
         self.assertIn("f.forwardLos = lead->IsWithinLOS(pull.x, pull.y, pull.z + 1.0f, true, 0.0f);", reads)
         self.assertIn("GetAttackDistance(lead) + kForwardAggroMarginYd;", reads)
         self.assertIn("<= kHopPullYd;", reads)
-        self.assertIn("f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way);", reads)
+        self.assertIn("f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way, f.dryWalk);", reads)
         direct = body(COMMANDS, "bool DirectNavPath(", "\n}\n")
-        # Round 2 (Codex, a4a16e14): a genuine navmesh route only, no SHORTCUT or NOT_USING_PATH fallback.
+        # Round 2 (Codex, a4a16e14): a genuine navmesh route only, no SHORTCUT or NOT_USING_PATH fallback; the dry
+        # walk adds the straight swim chord (PATHFIND_UNDERWATER) to the fallbacks.
+        self.assertIn("bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 || (dryWalk && (type & PATHFIND_UNDERWATER) != 0);", direct)
         self.assertIn("if (!NavPathReaches((type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0, (type & PATHFIND_SHORTCUT) != 0,\n"
-                      "            (type & PATHFIND_NOT_USING_PATH) != 0, end.x, end.y, end.z, x, y, z))", direct)
+                      "            fallback, end.x, end.y, end.z, x, y, z))", direct)
         # Both users go through it; LegOnPath keeps its own (stricter: no incomplete path at all) test of the same flags.
         self.assertEqual(reads.count("DirectNavPath(lead,"), 2)
         leg = body(COMMANDS, "bool LegOnPath(", "\n}\n")
