@@ -12570,7 +12570,8 @@ static void TestThePartyJoinIsBoundedByThePlan()
         CHECK(r.note.find("teleporting it to the earlier point of step 5") != std::string::npos);
     }
     {
-        // The party stands behind the point the lead bot would go to but after the start step (row 4): no join.
+        // The party stands behind the point the lead bot would go to but after the start step (row 4): the earlier
+        // clear point is read first (the join is the last option, see TestThePartyJoinKeepsTheBaseFallbacks).
         Facts f = partyAt(395.0f);
         Run r = stranded(3);
         CHECK(Tick(r, f).empty());
@@ -12597,6 +12598,149 @@ static void TestThePartyJoinIsBoundedByThePlan()
         CHECK(r.note.find("the stranded lead bot has nowhere safe to go") != std::string::npos);
         CHECK(r.note.find("the party stands at step 3, behind the run's start step 6") != std::string::npos);
         CHECK(r.note.find("no member stands out of combat") == std::string::npos);
+    }
+}
+
+// Opus review round 1: only a party that stands before the run's start step is never joined. Between the start step
+// and the point the lead bot would go to, the earlier clear points are read first and the party is the last option
+// before the hold, so the base's join never becomes a pause. On a folded route the nearest row of the whole plan can
+// be an early pass: a party with a run row (start step to the current step) within kSeeYd is not before the start and
+// is joined as before, while a party with no plan row within kSeeYd is off the plan and never joined.
+static void TestThePartyJoinKeepsTheBaseFallbacks()
+{
+    auto heldAt = [](Facts& f, float x, float y, float z)
+    {
+        f.rescueRead = true;
+        f.rescueReadX = x;
+        f.rescueReadY = y;
+        f.rescueReadZ = z;
+        f.rescueReach.clear();
+        StandPackReach mob;
+        mob.x = x;
+        mob.y = y;
+        mob.z = z;
+        mob.reachYd = 20.0f;
+        f.rescueReach.push_back(mob);
+    };
+    auto groupOf = [](Facts f, float ax, float ay, float bx, float by)
+    {
+        MemberFact a = Mem("Aaa", 0.0f);
+        a.x = ax;
+        a.y = ay;
+        a.z = 0.0f;
+        a.yd = 100.0f;
+        MemberFact b = Mem("Bbb", 0.0f);
+        b.x = bx;
+        b.y = by;
+        b.z = 0.0f;
+        b.yd = 100.0f;
+        f.members = {f.members[0], a, b};
+        return f;
+    };
+    DungeonPlan longPlan;
+    for (int i = 0; i < 210; ++i)
+        longPlan.steps.push_back(Step(PlanStepKind::Move, 0.0f, 100.0f * static_cast<float>(i), 0.0f));
+    longPlan.steps.push_back(Step(PlanStepKind::Rest));
+    auto longStranded = [&longPlan]()
+    {
+        Run r = Start(&longPlan, 209);
+        r.startStep = 37;
+        r.walkBack = true;
+        r.walkBackIdx = r.walkBackStart = 203;
+        r.strandDue = true;
+        r.strandIdx = 203;
+        r.rescueScanWanted = true;
+        r.rescueScanX = 0.0f;
+        r.rescueScanY = 20300.0f;
+        r.rescueScanZ = 0.0f;
+        return r;
+    };
+    {
+        // The party stands at row 150, between the placed start step 37 and the stranded point 203, with every
+        // earlier point held: the base's join is the last option, never the pause. The three earlier reads the
+        // rescue allows are all held first.
+        Facts f = groupOf(StrandFacts(2000.0f, 20300.0f, 0.0f), 4.0f, 15005.0f, 6.0f, 15006.0f);
+        Run r = longStranded();
+        heldAt(f, 0.0f, 20300.0f, 0.0f);
+        CHECK(Tick(r, f).empty());
+        CHECK(r.note == "the lead bot is stranded: reading the earlier point of step 203 for live hostiles (the point "
+            "of step 204 is held)");
+        CHECK(!r.strandParty);
+        std::string order;
+        for (float y : {20200.0f, 20100.0f, 20000.0f})
+        {
+            heldAt(f, 0.0f, y, 0.0f);
+            order = Tick(r, f);
+        }
+        CHECK(order == "rescue from 2000.0 20300.0 0.0 to 6.0 15006.0 0.0");
+        CHECK(r.strandOn && r.strandParty);
+        CHECK(r.state == State::Running); // the base's join, never the pause
+        CHECK(r.note.find("the party (Bbb's spot, 2 out of combat)") != std::string::npos);
+    }
+    {
+        // A folded route: rows 0-20 run east on y 0, rows 21-40 come back west on y 20. The party's nearest row of
+        // the whole plan is row 10 on the early pass (9.2 yd), but run row 30 is 11.2 yd away: ambiguous, so the
+        // join is kept as before.
+        DungeonPlan folded;
+        for (int i = 0; i <= 20; ++i)
+            folded.steps.push_back(Step(PlanStepKind::Move, 5.0f * static_cast<float>(i), 0.0f, 0.0f));
+        for (int i = 21; i <= 40; ++i)
+            folded.steps.push_back(Step(PlanStepKind::Move, 5.0f * static_cast<float>(40 - i), 20.0f, 0.0f));
+        folded.steps.push_back(Step(PlanStepKind::Rest));
+        Facts f = groupOf(StrandFacts(200.0f, 200.0f, 0.0f), 52.0f, 9.0f, 54.0f, 10.0f);
+        heldAt(f, 75.0f, 20.0f, 0.0f); // row 25's point
+        Run r = Start(&folded, 40);
+        r.startStep = 21;
+        r.walkBack = true;
+        r.walkBackIdx = r.walkBackStart = 25;
+        r.strandDue = true;
+        r.strandIdx = 25;
+        r.rescueScanWanted = true;
+        r.rescueScanX = 75.0f;
+        r.rescueScanY = 20.0f;
+        r.rescueScanZ = 0.0f;
+        CHECK(Tick(r, f) == "rescue from 200.0 200.0 0.0 to 54.0 10.0 0.0");
+        CHECK(r.strandOn && r.strandParty);
+    }
+    {
+        // No plan row within kSeeYd of the party: it is off the plan, never joined, and the hold says so.
+        Facts f = groupOf(StrandFacts(2000.0f, 20300.0f, 0.0f), 300.0f, 15005.0f, 302.0f, 15006.0f);
+        Run r = longStranded();
+        heldAt(f, 0.0f, 20300.0f, 0.0f);
+        CHECK(Tick(r, f).empty());
+        CHECK(!r.strandParty);
+        for (float y : {20200.0f, 20100.0f, 20000.0f})
+        {
+            heldAt(f, 0.0f, y, 0.0f);
+            Tick(r, f);
+        }
+        for (std::uint32_t i = 0; i < 60 && r.state == State::Running; ++i)
+            Tick(r, f);
+        CHECK(r.state == State::Paused);
+        CHECK(r.note.find("the party stands off the plan") != std::string::npos);
+        CHECK(r.note.find("nowhere safe to go") != std::string::npos);
+    }
+    {
+        // A rescue point before the run's start step (a run placed past it) is no bound: a party on the run at row 6
+        // is joined, never deferred or refused.
+        DungeonPlan plan;
+        for (int i = 0; i < 10; ++i)
+            plan.steps.push_back(Step(PlanStepKind::Move, 0.0f, 100.0f * static_cast<float>(i), 0.0f));
+        plan.steps.push_back(Step(PlanStepKind::Rest));
+        Facts f = groupOf(StrandFacts(600.0f, 300.0f, 0.0f), 4.0f, 605.0f, 6.0f, 606.0f);
+        heldAt(f, 0.0f, 300.0f, 0.0f); // row 3's point, before the start step 5
+        Run r = Start(&plan, 7);
+        r.startStep = 5;
+        r.walkBack = true;
+        r.walkBackIdx = r.walkBackStart = 3;
+        r.strandDue = true;
+        r.strandIdx = 3;
+        r.rescueScanWanted = true;
+        r.rescueScanX = 0.0f;
+        r.rescueScanY = 300.0f;
+        r.rescueScanZ = 0.0f;
+        CHECK(Tick(r, f) == "rescue from 600.0 300.0 0.0 to 4.0 605.0 0.0");
+        CHECK(r.strandOn && r.strandParty);
     }
 }
 
@@ -33813,6 +33957,7 @@ int main()
     TestTheRescueRetryAsksForItsRead();
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
     TestThePartyJoinIsBoundedByThePlan();
+    TestThePartyJoinKeepsTheBaseFallbacks();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheRescueReadFiltersTriggerCreatures();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
