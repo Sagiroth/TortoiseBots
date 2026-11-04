@@ -260,11 +260,15 @@ def new_kind_problem(row):
             return "burn_mana start percent outside (0, 100)"
         if row["priority"] > 10:
             return "burn_mana above ten burners"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
         return None
     if kind == "ranged_only":
         # target_entry 0 (the boss) or an entry; param is the vertical gap the melee bot is held under.
         if not 3.0 <= row["param"] <= 40.0:
             return "ranged_only gap outside [3, 40]"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
         return None
     if kind == "seek_aura":
         if not row["target_entry"] or not row["spell_id"] or not row["cycle_spell"] or not has_spot:
