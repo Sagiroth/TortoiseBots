@@ -38,12 +38,9 @@ Enables automatic bot backfill for players queued in the Looking for Turtles (LF
 <details>
 <summary>How it works in detail</summary>
 
-When human players queue for dungeons in the LFT tool and wait for missing roles (such as a Tank or Healer), eligible idle random bots in the world are selected to fill the empty party slots.
+Fill is demand-driven: with no human player waiting, bots queue nothing new (pending offers are still reconciled). Fill-owned bots accept the dungeon invite themselves; humans always accept their own. The fill service itself never teleports anyone: the formed party walks to the portal. (A separate follow catch-up may summon a bot whose human master is already inside a dungeon or raid.)
 
-Fill is strictly demand-driven: bots never initiate dungeon finder queues on their own without a waiting human player. When a group forms, bots automatically accept the dungeon invite.
-
-There is no automatic teleport into the dungeon. The formed party walks to the instance portal together, so group leaders can summon stragglers using `.bot summon` if needed. Your own party bots always queue with you and auto-accept dungeon invitations regardless of this setting.
-
+If you queue as a party with your own bots, they accept on the same tick even with `RandomBotLftEnabled = 0`. The toggle only gates random-pool backfill.
 </details>
 
 ### `AiPlayerbot.RandomBotLftAllowRoleBorrow`
@@ -53,12 +50,11 @@ Allows the LFT autofill service to borrow and respec bots into missing group rol
 <details>
 <summary>How it works in detail</summary>
 
-By default (`0`), role assignment is fail-closed based on each bot's natural talent specialization and equipment. A tank slot requires a dedicated tank with a shield equipped, a druid tank requires bear form capabilities, and a healer requires healing talents and spells. If no matching bot is available, the slot remains open.
+By default (`0`), role assignment is fail-closed on each bot's natural spec and gear. A tank slot needs a dedicated tank with a shield, a druid tank needs bear form, a shaman tank needs tank talents or the tank kit, and a healer needs healing talents and spells. If no matching bot is online, the slot waits.
 
-Setting this to `1` allows the matcher to select a bot and reconfigure (respec) it into the missing role via forced role + talent rebuild.
+Setting this to `1` lets the matcher pick a bot and rebuild it into the missing role (forced role plus talent rebuild). Even with `0`, a bot whose spec fits but whose installed kit does not (for example a feral druid defaulting to Cat queued as a tank) still gets the matching kit.
 
 </details>
-
 ### `AiPlayerbot.RandomBotLftUpdateInterval`
 Interval in milliseconds between LFT queue evaluation passes.
 **Default:** `15000` · **Values:** milliseconds, clamped 5000..60000 in service · **Restart:** needed
@@ -88,14 +84,13 @@ Enables automatic bot matchmaking for battleground PvP queues when players queue
 <details>
 <summary>How it works in detail</summary>
 
-Monitors PvP queues for Warsong Gulch (WSG), Arathi Basin (AB), and Alterac Valley (AV). When real human players queue, random bots of the matching level bracket queue on both factions to meet the core's minimum player requirement plus one.
+Monitors PvP queues for Warsong Gulch (WSG), Arathi Basin (AB), and Alterac Valley (AV). When real human players queue, random bots of the matching level bracket queue on both factions toward the core's minimum player requirement plus one.
 
 This launches battleground matches within seconds even on low-population private servers. When a match concludes, bots leave rather than waiting for instance shutdown timers.
 
-Your own party bots can queue alongside you via "Join as Group" at battlemasters (supported for WSG and AB; AV requires solo queues in the core) and will auto-accept match invites regardless of this toggle.
+Your own party bots can queue alongside you via "Join as Group" at battlemasters (supported for WSG and AB; AV needs solo queues in the core) and auto-accept match invites regardless of this toggle. Hired companions refuse battleground invites while `HireAllowPvP = 0`, and the service never queues a party that includes a hire then.
 
 </details>
-
 ### `AiPlayerbot.RandomBotBgAutonomous`
 Allows pool bots to initiate bot-only Warsong Gulch matches when no human players are queued.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -110,13 +105,13 @@ Human player demand always takes precedence: the autonomous seeder halts immedia
 </details>
 
 ### `AiPlayerbot.RandomBotBgAutonomousMaxInstances`
-Limits the number of concurrent autonomous bot-only battlegrounds active per level bracket.
+Limits how many bot-only battlegrounds can run at once per level bracket.
 **Default:** `1` · **Values:** integers (0..2) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Caps the number of simultaneous bot-only matches running per level bracket. The default setting of 1 limits each bracket to a single active 10v10 match, which is optimal for average hardware. Raise to 2 only on high-performance dedicated servers.
+Caps full bot-only matches per level bracket. A still-forming match keeps absorbing queued seeds and does not count; top-up stops once both sides reach 10 or a full match forms. The default of 1 suits average hardware. Raise to 2 only on fast dedicated servers.
 
 </details>
 
@@ -139,8 +134,9 @@ Number of bots queued per interval check by the autonomous battleground seeder.
 
 <details>
 <summary>How it works in detail</summary>
-Controls the pace at which bots are queued into forming autonomous battlegrounds.
 
-Setting this to `0` disables both autonomous seeding and human demand backfill.
+How many bots the autonomous seeder queues per check into a forming bot-only match.
+
+Human-demand backfill always uses a fixed pace (10 bots per 5-second check, 5 per side); this knob only switches it off: setting it to `0` disables both autonomous seeding and human-demand backfill.
 
 </details>
