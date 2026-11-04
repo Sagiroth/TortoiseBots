@@ -450,8 +450,9 @@ void BotPacketAdapter::DispatchMasterIncoming(WorldSession* session, WorldPacket
     {
         if (onWorldThread)
         {
-            if (PlayerbotAI* ai = FindBotAI(botGuid))
-                ai->HandleMasterIncomingPacket(packet);
+            // Same gate as the other world-thread hand-offs: a bot between maps
+            // or with a held backlog keeps this packet behind its older ones.
+            DeliverNowOrHold(botGuid, PacketRoute::MasterIncoming, packet);
             continue;
         }
         if (!copy)

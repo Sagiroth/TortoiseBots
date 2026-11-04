@@ -57,6 +57,13 @@ class DirectHandOffWiringTest(unittest.TestCase):
         self.assertIn("DeliverNowOrHold(botGuid.GetRawValue(), PacketRoute::BotOutgoing, packet);", ADAPTER)
         self.assertIn("DeliverNowOrHold(botGuid, PacketRoute::MasterOutgoing, packet);", ADAPTER)
 
+    def test_master_incoming_world_thread_goes_through_the_gate(self):
+        # A quest accept / gossip / loot roll / uninvite on the world thread must
+        # not overtake the bot's older held packets (M3 in test_bot_packet_backlog.cpp).
+        dispatch = body(ADAPTER, "void BotPacketAdapter::DispatchMasterIncoming(WorldSession* session, WorldPacket const& packet)")
+        self.assertIn("DeliverNowOrHold(botGuid, PacketRoute::MasterIncoming, packet);", dispatch)
+        self.assertNotIn("HandleMasterIncomingPacket", dispatch)
+
 
 class CommandDeferWiringTest(unittest.TestCase):
     def test_command_drain_runs_before_the_defer_check(self):

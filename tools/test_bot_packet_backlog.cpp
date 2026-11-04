@@ -12,6 +12,7 @@
 //   /tmp/test_bot_packet_backlog
 
 #include "../host/BotPacketBacklog.h"
+#include "../runtime/policy/infra/DeferredDeliveryPolicy.h"
 
 #include <cstdio>
 #include <string>
@@ -20,6 +21,8 @@
 
 using TortoiseBots::BotPacketBacklog;
 using TortoiseBots::DeferCommandForHeldPackets;
+using TortoiseBots::DeferredDelivery::Decide;
+using TortoiseBots::DeferredDelivery::Verdict;
 
 static int g_failed = 0;
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); ++g_failed; } } while (0)
@@ -31,6 +34,9 @@ constexpr std::uint64_t kMaster = 0x11;
 constexpr std::uint64_t kMaxHeldMs = 3000;
 char const* const kStay = "/p stay";
 char const* const kFollow = "/p .bot action follow";
+// Stands for a CMSG master-incoming opcode (quest accept, gossip, loot roll,
+// group removal): none of them is in DeferredDelivery::ReadsBotMap.
+constexpr std::uint16_t kMasterIncomingOpcode = 0;
 
 // The adapter's tick, in the shipped order: the defer gate drains the queues
 // first (queued chat before the bound goes to the AI, or is held when the bot
@@ -79,6 +85,35 @@ struct Tick
         Drain(commandSeq);
         return held;
     }
+
+    // DeliverNowOrHold for a master-incoming packet that arrives on the world
+    // thread: behind the bot's backlog when it has one, else the delivery gate
+    // decides. The pre-fix direct call (preFixDirect) skipped both and handed
+    // the packet to the AI at once.
+    void HandOffNow(std::uint64_t seq, std::string const& text, bool preFixDirect)
+    {
+        if (preFixDirect)
+        {
+            applied.push_back(text);
+            return;
+        }
+        if (backlog.Contains(kBot))
+        {
+            backlog.Append(kBot, seq, text, nowMs);
+            return;
+        }
+        switch (Decide(true, teleporting, kMasterIncomingOpcode))
+        {
+            case Verdict::Deliver:
+                applied.push_back(text);
+                break;
+            case Verdict::Hold:
+                backlog.Append(kBot, seq, text, nowMs);
+                break;
+            case Verdict::Drop:
+                break;
+        }
+    }
 };
 } // namespace
 
@@ -115,6 +150,41 @@ static void M1FollowWinsWhenChatPrecedesItInOneTick(bool shippedOrder)
         CHECK(tick.applied[0] == kFollow);
         CHECK(tick.applied[1] == kStay);
     }
+}
+
+// The master's packet (direct hand-off, world thread) during a far teleport,
+// behind an older packet that is already held: both reach the bot in arrival
+// order once the teleport lands. The pre-fix direct call delivered the newer
+// packet first, while the bot was still between maps.
+static void M3MasterIncomingWaitsBehindHeldPacket(bool preFixDirect)
+{
+    Tick tick;
+    tick.queued.push_back({ 10, "older" });
+    // Tick 1: still between maps; the older packet is drained and held.
+    tick.Drain(11);
+    CHECK(tick.applied.empty());
+    CHECK(tick.backlog.Contains(kBot));
+
+    // The newer master packet arrives on the world thread, still between maps.
+    tick.HandOffNow(11, "direct", preFixDirect);
+    CHECK(tick.applied.empty() == !preFixDirect); // shipped: held; pre-fix: overtook
+
+    // Tick 2: the teleport landed. The held packet, then the direct one.
+    ++tick.nowMs;
+    tick.teleporting = false;
+    tick.Drain(20);
+    CHECK(tick.applied.size() == 2);
+    if (preFixDirect)
+    {
+        CHECK(tick.applied[0] == "direct");
+        CHECK(tick.applied[1] == "older");
+    }
+    else
+    {
+        CHECK(tick.applied[0] == "older");
+        CHECK(tick.applied[1] == "direct");
+    }
+    CHECK(tick.backlog.Empty());
 }
 
 static void M2OnlyOlderHeldItemsDeferACommand()
@@ -181,6 +251,8 @@ int main()
     M1FollowWinsWhenChatPrecedesItInOneTick(true);
     M1FollowWinsWhenChatPrecedesItInOneTick(false);
     M2OnlyOlderHeldItemsDeferACommand();
+    M3MasterIncomingWaitsBehindHeldPacket(false);
+    M3MasterIncomingWaitsBehindHeldPacket(true);
     BacklogDropsStaleAndGoneEntriesInOrder();
 
     if (g_failed)
