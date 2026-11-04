@@ -13,7 +13,7 @@ relates_to:
 
 These settings control AI execution scheduling, per-tick time budgets, activity throttling, and core server optimizations for hosting large bot populations. Settings go in `aiplayerbot.conf` and `mangosd.conf`; see [How configuration works](../configuration.md).
 
-The total bot population is the primary factor influencing server CPU and memory usage. When hosting hundreds or thousands of bots, adjusting per-tick budgets and core memory caching ensures smooth gameplay.
+The total bot population is a major factor in server CPU and memory usage. When hosting hundreds or thousands of bots, adjusting per-tick budgets and core memory caching ensures smooth gameplay.
 
 ## Summary
 
@@ -89,7 +89,7 @@ Forces bots visible to human players to always run at maximum reaction rates.
 <details>
 <summary>How it works in detail</summary>
 
-When throttling is enabled, setting this to `1` ensures any bot within human visibility range is immediately promoted to full update frequency, preventing visual stutter or delayed reactions.
+Reserved: bots within human visibility range already run at full update frequency, so this flag changes nothing today. Leave it at `0`.
 
 </details>
 
@@ -102,7 +102,7 @@ Microsecond execution budget ceiling per world tick for processing pool bots.
 
 Defines the time budget allocated for updating random pool bots during each server world tick (22,000 microseconds = 22 milliseconds).
 
-Player-owned bots and companions hired by online players always update first, on every tick, and are completely exempt from this budget. The random pool runs afterward as one turn queue, most-overdue-first; bots it does not reach run first on the next tick. The budget is checked between bots so a single pass can overshoot by one bot. Setting this to `0` removes the budget ceiling entirely.
+Player-owned bots and companions hired by online players always update first, on every tick, and are completely exempt from this budget. The random pool runs afterward as one turn queue, most-overdue-first; bots it does not reach run first on the next tick. The budget is checked between bots so a single pass can overshoot by one bot. Setting either budget to `0` disables the whole combined budget.
 
 If pool bots feel sluggish or unresponsive, raise `PoolTickBudgetUs` to `30000`–`50000` (30–50 ms). On a weak machine, run fewer bots rather than lowering it.
 
@@ -115,9 +115,9 @@ Microsecond execution budget ceiling per world tick for processing bots in comba
 <details>
 <summary>How it works in detail</summary>
 
-Combines with `PoolTickBudgetUs` to form the overall module execution ceiling per server tick. The pool runs as one turn queue under this combined budget; combat turns are ordered by the scheduler's urgency (combat has a 400 ms cap, so combat bots naturally sort first when late).
+Combines with `PoolTickBudgetUs` to form the overall module execution ceiling per server tick (the two values are added). The pool runs as one turn queue under this combined budget; combat turns are ordered by the scheduler's urgency (combat has a 400 ms cap, so combat bots naturally sort first when late).
 
-Setting this to `0` removes the combat budget limit, executing all combat turns immediately.
+Setting this to `0` disables the whole combined budget, so all pool turns run.
 
 </details>
 
@@ -142,14 +142,12 @@ Target world tick duration in milliseconds used by the automated self-tuning bud
 <details>
 <summary>How it works in detail</summary>
 
-On every tick, the controller feeds the measured world tick through an 8-tick moving average and dynamically scales the effective pool budgets:
+On every tick, the controller feeds the measured world tick through an exponential moving average (window 8) and dynamically scales the effective pool budgets:
 
 - If the smoothed reading exceeds `TargetWorldTickMs + 10 ms`, budgets shrink fast (x0.7 per tick) — but only when the pool turns are what keep the tick over the line. If the core and other services alone keep the tick over, budgets hold instead of starving bot logic.
 - If the smoothed reading is at or under the target, budgets grow back slowly (+1 ms per tick) up to their configured ceilings.
 
-The controller only trims bot processing time if doing so will successfully bring the tick below the target line; if the core engine itself is overloaded, bot budgets are preserved to prevent starving bot logic. Setting this to `0` disables dynamic adjustment and locks budgets to static ceilings.
-
-The target trades player lag for bot speed: measured on 2,000 bots, target 50 gave player-lag p95 66 ms with 14.5% stalled turns, while target 100 gave 107 ms with 7.4% stalled turns.
+Setting this to `0` disables dynamic adjustment and locks budgets to static ceilings.
 
 </details>
 
@@ -162,9 +160,9 @@ Refreshes cached AI sensory values at their full configured interval instead of 
 
 Bots access world data (targets, inventory, quest states) through cached AI values. By default (`0`), caches refresh after half their interval (for example, a 2-second value refreshes every second).
 
-Setting this to `1` refreshes values only after their full interval elapses, cutting calculation overhead in half. Critical combat and situational values remain on legacy rapid refresh cycles: attackers and attacker counts, aggro, possible attack targets and all targets, nearest adds, stealthed units, possible triggers, damaging traps, boss target, AoE heal, enemy players, free-move values, and grind target.
+Setting this to `1` refreshes values only after their full interval elapses, cutting calculation overhead by up to half for eligible values. Critical combat and situational values remain on legacy rapid refresh cycles: attackers and attacker counts, aggro, possible attack targets and all targets, nearest adds, stealthed units, possible triggers, damaging traps, boss target, AoE heal, the single-enemy-player value, free-move values, and grind target.
 
-To evaluate performance gains safely, conduct an A/B test run of at least 20 minutes under each setting: compare `BOTPERF` metrics (`usPerTurn`, `passUs`, and `turnLateAvgMs`) and verify bot combat responsiveness.
+To evaluate performance gains safely, compare `BOTPERF` metrics (`usPerTurn`, `passUs`, and `turnLateAvgMs`) under each setting and verify bot combat responsiveness.
 
 </details>
 
@@ -203,7 +201,7 @@ Builds equipment and item candidate database tables on first startup.
 
 On initial server boot, if the `ai_playerbot_equip_cache` and `ai_playerbot_rnditem_cache` character-database tables are empty, this setting generates them from the loaded item prototypes.
 
-Once generated, the tables are loaded directly from SQL on subsequent restarts. Leave this setting enabled; if disabled with empty tables, bots cannot judge gear upgrades.
+Once generated, the tables are loaded directly from SQL on subsequent restarts. Leave this setting enabled; if disabled with empty tables, bots only fill empty slots from loot.
 
 </details>
 
@@ -238,7 +236,7 @@ Disables generic out-of-combat fleeing behaviors for masterless warrior and rogu
 
 When set to `1`, masterless pool warriors and rogues are not granted the generic fleeing strategy at all. Instead, they stand their ground and fight using their own defensive abilities, matching classic melee behaviors.
 
-Player-owned bots and party companions are not affected by this toggle.
+Grouped pool warriors and rogues without a real master also lose flee; player-owned bots never had it. Party companions are otherwise not affected by this toggle.
 
 </details>
 
@@ -323,9 +321,23 @@ Enables remote commander commands for leading parties from outside them, of up t
 <details>
 <summary>How it works in detail</summary>
 
-Enables remote binds (`.bot commander bind` without `inparty`) and every other `.bot cmd` order typed by a player, and the commander view (`.bot commander view`). Without it (`0`), the `inparty` bind, `cmd enter` and `cmd summon`, and the run leader (`.bot run`, behind `AiPlayerbot.DungeonSelfClear = 1`) still work: the remote commander only drives parties from outside. When enabled, a GameMaster or the owner of every bot in it can bind a bot-only party of up to five and command their movement, targeting, and spellcasting by GUID or 3D coordinates from anywhere in the world.
+What it does:
+- remote binds (`.bot commander bind` without `inparty`) and every other `.bot cmd` order typed by a player
+- the commander view (`.bot commander view`)
+- without it (`0`), `inparty` bind, `cmd enter`, `cmd summon`, and the run leader still work
+- with it (`1`), a GameMaster, owner, claimer, or master of every bot binds a bot-only party of up to five
+- that party is commanded by GUID or 3D coordinates from anywhere in the world
 
 When disabled (`0`), remote binds and the other commander orders report that the feature is off and any existing remote bindings terminate (inparty bindings stay while `AiPlayerbot.DungeonSelfClear = 1`).
+
+### `AiPlayerbot.RemoteCommanderViewMs`
+Milliseconds between visual perception updates sent to remote commanders.
+**Default:** `1000` · **Values:** milliseconds (`250..60000`, clamped) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Controls how often a bound commander with the feed on gets a `TBM:VIEW` frame. The snapshot is read from what the bots already hold, with no world scan. New bindings start with the feed off.
 
 </details>
 ---
@@ -336,14 +348,14 @@ When hosting hundreds of always-active bots across both continents, the core ser
 
 ### `CleanupTerrain`
 Controls whether unused continent terrain maps are unloaded from memory.
-**Recommended:** `0` · **Core Default:** `1` · **Restart:** needed
+**Recommended:** `0` · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-With the core default of `1`, terrain maps without active players are freed every 60 seconds. Because roaming bots frequently re-enter these tiles, the core is forced to reload terrain synchronously, creating 2-second world server freezes.
+With terrain cleanup on, terrain maps without active players are freed on a timer. Because roaming bots frequently re-enter these tiles, the core is forced to reload terrain synchronously, creating world server stalls.
 
-Setting `CleanupTerrain = 0` keeps extracted continent maps permanently in memory. This eliminates terrain-reload stalls completely, at the cost of approximately 2 GB of system RAM.
+Setting `CleanupTerrain = 0` keeps extracted continent maps permanently in memory. This eliminates terrain-reload stalls, at the cost of approximately 2 GB of system RAM.
 
 > [!NOTE]
 > Keep `CleanupTerrain = 0` even with the upstream grid fix ([#588](https://github.com/tortoise-wow/tortoise-wow/pull/588)) on bot-heavy realms.
@@ -352,7 +364,7 @@ Setting `CleanupTerrain = 0` keeps extracted continent maps permanently in memor
 
 ### `PlayerSave.Interval`
 Defines the interval in milliseconds between periodic character database saves.
-**Recommended:** `300000` (5 minutes) · **Core Default:** `60000` (1 minute) · **Restart:** needed
+**Recommended:** `300000` (5 minutes) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -363,14 +375,14 @@ Saving hundreds of active bots every 60 seconds produces severe database I/O wri
 
 ### `DynamicRespawn.MaxReductionRate` / `DynamicRespawn.MinRespawnTime`
 Controls dynamic creature respawn rate acceleration in crowded zones.
-**Recommended:** `0.75` / `15` · **Core Defaults:** `0.25` / `25` · **Restart:** needed
+**Recommended:** `0.75` / `15` · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
 The core shortens creature respawn timers when groups of players gather in the same area. In bot-populated realms, starting valleys and popular grinding camps are cleared rapidly.
 
-Increasing `MaxReductionRate` to `0.75` and lowering `MinRespawnTime` to `15` seconds allows creature spawns to keep pace with bot grinding demand without starving human players.
+The recommended values let creature spawns keep pace with bot grinding demand.
 
 </details>
 
@@ -381,7 +393,7 @@ Specifies log files for recording all character logins and creature looting even
 <details>
 <summary>How it works in detail</summary>
 
-Because the core treats every bot as a native player, every bot loot roll and login creates an entry in these files. With 1,000 bots active, `loot.log` accumulates over 450,000 lines (~50 MB) daily without log rotation.
+Because the core treats every bot as a native player, every bot loot roll and login creates an entry in these files. On a busy realm these files grow fast without log rotation.
 
 Setting both filename keys to empty strings (`""`) disables these files, saving disk space and eliminating unnecessary file writes.
 
