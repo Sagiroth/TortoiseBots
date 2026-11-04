@@ -2,7 +2,7 @@
 id: server-configuration
 title: How Configuration Works
 category: server
-summary: Configuration files, templates, restart rules, recommended presets, settings index, and removed dead keys.
+summary: Configuration files, restart rules, recommended presets, settings index, and removed dead keys.
 tags: [config, server, administration]
 relates_to:
   - server-settings-party
@@ -19,37 +19,30 @@ relates_to:
 
 # How Configuration Works
 
-TortoiseBots provides configuration files to customize bot intelligence, party behavior, world immersion, and server performance. This page explains how configuration files work, their lifecycle, recommended presets, and which dead settings were removed.
-
-## Configuration philosophy
-
-The default settings ship the intended vision of a living world and faithful vanilla gameplay. Bots level organically, use class abilities intelligently, and participate in the world without artificial shortcuts.
-
-Alternate playstyles are supported through configuration options rather than unconfigurable hardcoding:
-- Features that alter progression, such as faster bot experience rates, equipment seeding, synthetic auction house supply, teleportation travel, or activity throttling, live behind explicit configuration toggles.
-- Systems such as mercenary hiring gear ladders and dungeon follow holds provide configurable knobs to tailor the experience to private realms or solo play.
-- Principle: default configurations aim to preserve standard gameplay, while config toggles give server administrators explicit choice.
-
-## Configuration files & lifecycle
-
 Bot settings live in two files created during installation:
 
-1. `aiplayerbot.conf`: located next to `mangosd.conf`. This file contains all gameplay flags, player quality-of-life toggles, artificial intelligence thresholds, and autonomous services. The shipped template is `ai/playerbot/aiplayerbot.conf.dist.in` (installed as `aiplayerbot.conf.dist`). A custom path can be specified using `AiPlayerbot.ConfigFile` in `mangosd.conf`.
-2. `modules/tortoise_bots.conf`: located in the server configuration directory. This file contains module-level options such as logging verbosity and telemetry. The shipped template is `conf/tortoise_bots.conf.dist`.
+1. `aiplayerbot.conf`: next to `mangosd.conf`. Gameplay flags, party behaviour, AI thresholds, autonomous services. Template: `ai/playerbot/aiplayerbot.conf.dist.in` (installed as `aiplayerbot.conf.dist`). A custom path can be set with `AiPlayerbot.ConfigFile` in `mangosd.conf`.
+2. `modules/tortoise_bots.conf`: in the server configuration directory. Module-level options such as log verbosity. Template: `conf/tortoise_bots.conf.dist`.
 
-### Installation and updates
+## Install and update
 
-The first server installation creates both configuration files from their respective `.dist` templates. Subsequent server updates never overwrite existing `.conf` files. When updating the server, compare your active files against the updated `.dist` templates to discover newly added keys. Any setting omitted from your active configuration file automatically falls back to its built-in default.
+The first install creates both files from their templates. Later updates never overwrite them. When updating, compare your files against the `.dist` templates to find new keys. A key missing from your file falls back to its built-in default. A line starting with `#` is a comment and sets nothing.
 
-### Restart versus reload
+## Restart versus reload
 
-Configuration settings are loaded once when the server boots. The console command `.reload config` re-reads only `TortoiseBots.LogLevel`. All other settings require a full server restart to take effect.
+Most settings load once at startup and need a full server restart. `.reload config` re-reads only these without a restart:
 
-A line that is commented out with `#` in the configuration file sets nothing; the hardcoded C++ code default applies.
+- Run leader keys: `AiPlayerbot.DungeonSelfClear`, the `AiPlayerbot.DungeonRun*` keys, and the `AiPlayerbot.BotLfg*` keys.
+- Dashboard keys: `AiPlayerbot.ObservabilityRaids`, `AiPlayerbot.ObservabilityRealtime` and its sub-keys.
+- `TortoiseBots.LogLevel` in `modules/tortoise_bots.conf`.
+
+Everything else needs a restart. `.reload config` never starts a pool reset.
 
 ## Recommended presets
 
-Out of the box (`AiPlayerbot.Enabled = 1`, the default), a full living world runs 500 autonomous bots; set it to `0` for a plain server with the module built in but inert. The following recommended configuration in `aiplayerbot.conf` configures a balanced living world for an average PC:
+Out of the box (`AiPlayerbot.Enabled = 1`), a full living world runs 500 bots. Set it to `0` for a plain server with the module built in but inactive.
+
+The block below gives a balanced living world for an average PC. It uses the shipped defaults except the fresh-bot level band: the default spreads new bots over levels 5-60, while 10-15 concentrates them in the early zones.
 
 ```ini
 # Master bot toggle
@@ -61,7 +54,7 @@ AiPlayerbot.RandomBotAutoCreate = 1
 AiPlayerbot.MinRandomBots = 500
 AiPlayerbot.MaxRandomBots = 500
 
-# Fresh-bot level seed
+# Fresh-bot level seed (defaults are 5 and 60)
 AiPlayerbot.RandomBotStartLevelMin = 10
 AiPlayerbot.RandomBotStartLevelMax = 15
 
@@ -71,7 +64,7 @@ AiPlayerbot.RandomBotGroupNearby = 0
 AiPlayerbot.RandomBotFormGuild = 1
 AiPlayerbot.EnableGreet = 1
 
-# Optional living economy and queues
+# Living economy and queues
 AiPlayerbot.AhMarketEnabled = 1
 AiPlayerbot.RandomBotLftEnabled = 1
 AiPlayerbot.RandomBotBgEnabled = 1
@@ -79,7 +72,7 @@ AiPlayerbot.RandomBotBgEnabled = 1
 
 ## Settings index
 
-Every configuration setting is documented across specialized settings pages:
+Every setting is documented in a settings page:
 
 | Settings Category | Configuration File | What It Covers |
 | :--- | :--- | :--- |
@@ -90,14 +83,14 @@ Every configuration setting is documented across specialized settings pages:
 | [Combat & reaction thresholds](settings/combat.md) | `aiplayerbot.conf` | Health and mana lines, follow distances, casting pacing, and commanded pulls. |
 | [World population & immersion](settings/world-population.md) | `aiplayerbot.conf` | Pool sizing, level ladders, wander limits, greetings, guilds, and gear upkeep. |
 | [Economy & auction house](settings/economy.md) | `aiplayerbot.conf` | Synthetic auction house market supply, bidding, buyouts, and trade limits. |
-| [Dungeon finder & battlegrounds](settings/queues.md) | `aiplayerbot.conf` | Looking for Turtles (LFT) autofill and autonomous battleground queues. |
+| [Dungeon finder & battlegrounds](settings/queues.md) | `aiplayerbot.conf` | Looking for Turtles (LFT) autofill and battleground queues. |
 | [Performance & tick budget](settings/performance.md) | `aiplayerbot.conf` + `mangosd.conf` | Per-tick AI turn limits, self-tuning tick controllers, and core map caching. |
 | [Diagnostic logging](settings/logging.md) | `aiplayerbot.conf` + `tortoise_bots.conf` | Module log levels, telemetry streams, CSV logs, and per-bot action log rotation. |
 
 ## Removed keys
 
-`aiplayerbot.conf.dist.in` once carried keys that were read into configuration and never used; they are gone now. An older `aiplayerbot.conf` that still sets one of them keeps loading, because the config reader ignores unknown keys. Nothing these keys appeared to control ever changed, so there is nothing to migrate: delete the lines. The one pair from that list that now has an effect is `RandomBotShowHelmet` / `RandomBotShowCloak`: they hide the helmet and cloak of pool bots (default: shown).
+`aiplayerbot.conf.dist.in` once carried keys that were read into configuration and never used; they are gone now. An older `aiplayerbot.conf` that still sets one keeps loading, because the config reader ignores unknown keys. Nothing these keys appeared to control ever changed, so there is nothing to migrate: delete the lines. One pair that now has an effect is `RandomBotShowHelmet` / `RandomBotShowCloak`: they hide the helmet and cloak of pool bots (default: shown).
 
-Raid diagnostics are separately opt-in through
+Raid diagnostics stay opt-in through
 [`AiPlayerbot.RaidBossDiagnostics`](settings/logging.md#aiplayerbotraidbossdiagnostics)
-(default `0`); enabling event CSV files alone does not enable boss observations.
+(default `0`); event CSV files alone do not enable boss observations.
