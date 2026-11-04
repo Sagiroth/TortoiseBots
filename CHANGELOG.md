@@ -179,6 +179,7 @@
 - Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
 - Fixed: warriors no longer Piercing Howl a mob out of its 10 yd reach — in a dungeon Arms and Fury snare it with Hamstring instead, and in a raid they skip it rather than walk off the melee target.
 - Fixed: arms warriors cast Mortal Strike on cooldown and pool rage for it.
+- Fixed: arms warriors hold their damage on two targets no longer — the rage spenders and Sweeping Strikes now agree it needs three or more attackers, so the buff fires and the spenders stop waiting for one that never comes; Arms also steps back to Battle Stance after Pummel and Intercept instead of white-hitting from Berserker, and grouped arms warriors leave Thunder Clap to the tank (solo and player-versus-player arms keep it).
 - Fixed: warriors in raids no longer dance to Berserker Stance for a single-target Whirlwind.
 - Fixed: dps warriors in raids no longer Mocking Blow the tank's mob or walk off to Hamstring a mob on a healer when Piercing Howl is held back, and Fury warriors stay in Berserker Stance between fights.
 - Holy paladins heal a party member between 50 and 70 % health with Holy Light instead of Flash of Light, so their healing in raids matches a priest's instead of half of it.

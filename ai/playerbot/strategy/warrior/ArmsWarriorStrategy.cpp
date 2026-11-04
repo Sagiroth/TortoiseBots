@@ -31,7 +31,9 @@ private:
     ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
+
 };
+
 ArmsWarriorStrategy::ArmsWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
 {
     actionNodeFactories.Add(std::make_unique<ArmsWarriorStrategyActionNodeFactory>());
@@ -318,9 +320,8 @@ void ArmsWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     // Retaliation while winning (donor arms fires at almost-full-health):
     // 70-90% hp with melee attackers is when the counterattack shield earns
-    // its 30-min cooldown. Battle-locked: fires from battle stance (the
-    // WAR-5 pin holds it there; without that PR this row simply waits for
-    // battle rather than dancing).
+    // its 30-min cooldown. Battle-locked: fires from battle stance rather
+    // than dancing stances.
     triggers.push_back(new TriggerNode(
         "almost full health",
         NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));

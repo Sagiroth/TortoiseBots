@@ -41,10 +41,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
   - Saves *Challenging Shout* for real emergencies: 3 or more loose mobs on non-tanks, not for a pack it already holds.
 
 ### Arms & Fury (Melee DPS)
-- **Arms:**
-  - Fights in Battle Stance, maintaining *Rend*, casting *Mortal Strike* on cooldown and *Overpower* on dodges. Never swaps stances mid-fight and never casts *Thunder Clap* (a tank-only spell).
-  - Cleaves packs with *Sweeping Strikes* (Battle Stance, 3 or more attackers in melee) and *Whirlwind* (only while already in Berserker Stance). *Sweeping Strikes* is never started, and is dropped, beside a mob under the party's crowd control.
-  - Dumps rage with *Master Strike* and uses *Heroic Strike* once rage reaches 40.
+  - Fights in Battle Stance, maintaining *Rend*, casting *Mortal Strike* on cooldown and *Overpower* on dodges. It swaps to Berserker Stance for *Pummel* and *Intercept*, then back to Battle Stance, but never dances for anything else — and never casts *Thunder Clap* in a group (a tank-only spell; solo Arms keeps it).
+  - Cleaves packs with *Sweeping Strikes* (Battle Stance, 3 or more attackers in melee) and *Whirlwind* (only while already in Berserker Stance). *Sweeping Strikes* and its rage spenders agree on the pack size, so on two targets Arms keeps its single-target cycle instead of holding damage back for a buff that never fires. *Sweeping Strikes* is never started, and is dropped, beside a mob under the party's crowd control.
 - **Fury:**
   - Fights in Berserker Stance, centering rage spend on *Bloodthirst* and *Whirlwind*. The build takes Dual-Wield Specialization.
   - Activates *Death Wish* and *Recklessness* in hard fights; uses *Retaliation* at high health against 2 or more melee attackers.
@@ -67,7 +65,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
 - **Interrupts:**
   - *Protection:* Relies strictly on *Shield Bash* to remain in Defensive Stance.
   - *Fury:* Uses *Pummel* (in Berserker Stance).
-  - *Arms:* Uses *Pummel* first, falling back to *Shield Bash* without stance dancing.
+  - *Arms:* Uses *Pummel* first (stepping into Berserker Stance and back to Battle), falling back to *Shield Bash* without stance dancing.
   - Interrupts only fire on active cast bars or channels; delayed instants never trigger interrupts.
 - **Shouts:** Maintains *Battle Shout* on party members (skipping if an equal or stronger *Blessing of Might* is active, or below 10 rage). Protection maintains *Demoralizing Shout*. *Intimidating Shout* is off in dungeons and raids unless the group opts in with `co +aoe fear`.
 - **Rage gates:** *Disarm* is only cast on a target that carries a weapon and only with the 20 rage it costs; *Bloodrage* is held while its cooldown runs, below medium health (70%), or below 20 rage to spend. Unusable rows are skipped, so low-rage ticks go to *Sunder Armor* and *Revenge* instead.

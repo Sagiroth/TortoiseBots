@@ -701,15 +701,15 @@ namespace ai
 		CastBlessingOfSacrificeAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "hand of sacrifice") {}
 	};
 
-    class CastBlessingOfFreedomOnTankAction : public CastSpellAction
-    {
-    public:
-        CastBlessingOfFreedomOnTankAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of freedom") {}
-        bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget()); }
-        std::string GetReachActionName() override { return "reach spell"; }
-        std::string GetTargetName() override { return "tank to remove roots"; }
-        std::string getName() override { return "blessing of freedom on tank"; }
-    };
+	class CastBlessingOfFreedomOnTankAction : public CastSpellAction
+	{
+	public:
+		CastBlessingOfFreedomOnTankAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of freedom") {}
+		bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget()); }
+		std::string GetReachActionName() override { return "reach spell"; }
+		std::string GetTargetName() override { return "tank to remove roots"; }
+		std::string getName() override { return "blessing of freedom on tank"; }
+	};
 
     class CastBlessingOfFreedomOnPartyAction : public CastSpellAction
     {
