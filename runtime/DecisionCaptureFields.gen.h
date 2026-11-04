@@ -903,11 +903,11 @@ struct Run
   strandRearms: std::uint32_t
   strandReplay: bool
   strandBotOnly: bool
-  strandFromOtherPart: bool
+)TBSCHEMA"
+    R"TBSCHEMA(  strandFromOtherPart: bool
   offMapReturnAt: std::unordered_map<std::string, std::uint64_t>
   offMapReturnStep: std::size_t
-)TBSCHEMA"
-    R"TBSCHEMA(  offMapReturnTries: std::unordered_map<std::string, std::uint32_t>
+  offMapReturnTries: std::unordered_map<std::string, std::uint32_t>
   offMapNotedStep: std::size_t
   offMapNoted: std::unordered_set<std::string>
   rejoinAt: std::unordered_map<std::string, std::uint64_t>
@@ -1168,7 +1168,8 @@ struct UnitFact
   patrols: bool
   packGuids: std::vector<std::uint64_t>
   loop: std::vector<ApproachPoint>
-  cycleMs: std::uint32_t
+)TBSCHEMA"
+    R"TBSCHEMA(  cycleMs: std::uint32_t
 struct WaitSight
   entry: std::uint32_t
   x: float
@@ -1176,8 +1177,7 @@ struct WaitSight
   z: float
 struct Member
   dead: bool
-)TBSCHEMA"
-    R"TBSCHEMA(  name: std::string
+  name: std::string
   rez: RezClass
   blocksDruid: bool
   healer: bool
