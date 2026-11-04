@@ -4,6 +4,7 @@
 #include "WarlockActions.h"
 #include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/DungeonPlanMgr.h"
 #include "../../../runtime/policy/pet/VoidwalkerPolicy.h"
 #include "../../../runtime/policy/pet/HealthFunnelPolicy.h"
 #include "../../../runtime/policy/pet/WarlockPetPolicy.h"
@@ -27,12 +28,18 @@ bool WarlockDotTargetAllowed(Unit* target, bool spread = false)
     return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), spread);
 }
 
-// Bosses carry rank 3 (CREATURE_ELITE_WORLDBOSS), the Zul'Gurub rank; Drain
-// Soul is a trash finisher and never spends a boss execute phase channelling.
-bool WarlockBossTarget(Unit* target)
+// Bosses: rank 3 (world and raid bosses, Zul'Gurub included), an
+// instance-binding boss, or a boss row of the loaded dungeon plan (5-man
+// bosses carry the elite rank). Drain Soul is a trash finisher and never
+// spends a boss execute phase channelling.
+bool WarlockBossTarget(PlayerbotAI* ai, Unit* target)
 {
     Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
-    return creature && creature->IsWorldBoss();
+    if (!creature)
+        return false;
+    if (creature->IsWorldBoss() || creature->HasExtraFlag(CREATURE_FLAG_EXTRA_INSTANCE_BIND))
+        return true;
+    return ai::GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry());
 }
 
 // Cost of one Shadow Bolt at the learned rank, without the probe spellmods
@@ -202,14 +209,19 @@ bool ImmolateOnAttackerTrigger::IsActive()
 
 bool CurseOfTheElementsTrigger::IsActive()
 {
-    if (!WarlockDotTargetAllowed(GetTarget()))
+    // The manual "curse elements" strategy is a player order, so the life
+    // gate never silences it.
+    if (!ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) &&
+        !WarlockDotTargetAllowed(GetTarget()))
         return false;
     return DebuffTrigger::IsActive();
 }
 
 bool CurseOfTheElementsOnAttackerTrigger::IsActive()
 {
-    if (!WarlockSpreadTargetAllowed(ai, GetTarget(), "curse of the elements", false))
+    // Same manual-order exemption as the main row.
+    if (!ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) &&
+        !WarlockSpreadTargetAllowed(ai, GetTarget(), "curse of the elements", false))
         return false;
     return DebuffOnAttackerTrigger::IsActive();
 }
@@ -245,14 +257,19 @@ bool LifeTapTrigger::IsActive()
     TortoiseBots::WarlockTapInputs inputs;
     FillWarlockTapInputs(ai, inputs);
     bool const inCombat = ai->GetBot()->IsInCombat();
-    if (TortoiseBots::DecideWarlockTap(inputs, inCombat) != TortoiseBots::WarlockTapDecision::TapUrgent)
-        return false;
-    // Raid rotation: keep tapping a GCD ahead of the mana line only while two
-    // filler casts cannot be paid for. Every other tap is a GCD and healing
-    // the raid does not get back.
+    bool const urgentBand = TortoiseBots::DecideWarlockTap(inputs, inCombat) == TortoiseBots::WarlockTapDecision::TapUrgent;
+    // Raid rotation: in combat the two-filler test replaces the mana line, so
+    // a warlock that cannot fund two Shadow Bolts taps even above 40%. The
+    // health floor and the learned spell still gate it; every other tap is a
+    // GCD and healing the raid does not get back.
     if (!inCombat || !sPlayerbotAIConfig.warlockRaidRotation)
-        return true;
-    return TortoiseBots::WarlockCombatTapAllowed(true, bot->GetPower(POWER_MANA), WarlockShadowBoltCost(ai));
+        return urgentBand;
+    if (!inputs.knowsLifeTap || inputs.healthPct <= inputs.lowHealth)
+        return false;
+    uint32 const cost = WarlockShadowBoltCost(ai);
+    if (!cost)
+        return urgentBand;
+    return TortoiseBots::WarlockCombatTapAllowed(true, bot->GetPower(POWER_MANA), cost);
 }
 
 bool LifeTapTopUpTrigger::IsActive()
@@ -276,7 +293,7 @@ bool DrainSoulTrigger::IsActive()
 	// moves below Shadowburn), so a boss execute is left to nukes.
 	return TortoiseBots::WarlockDrainSoulAllowed(
 		sPlayerbotAIConfig.warlockRaidRotation,
-		WarlockBossTarget(AI_VALUE(Unit*, "current target")),
+		WarlockBossTarget(ai, AI_VALUE(Unit*, "current target")),
 		bot->GetItemCount(6265),
 		AI_VALUE2(uint8, "health", "current target"),
 		AI_VALUE(uint8, "bag space") > 0);

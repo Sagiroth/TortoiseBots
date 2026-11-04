@@ -43,6 +43,12 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
             fn = body(TRIGGERS, start, "\n}\n")
             self.assertIn("WarlockDotTargetAllowed(", fn, start)
 
+    def test_manual_curse_elements_order_is_not_gated(self):
+        for start in ("bool CurseOfTheElementsTrigger::IsActive()",
+                      "bool CurseOfTheElementsOnAttackerTrigger::IsActive()"):
+            fn = body(TRIGGERS, start, "\n}\n")
+            self.assertIn('ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)', fn, start)
+
     def test_spread_rows_use_the_spread_gate(self):
         for start in ("bool CorruptionOnAttackerTrigger::IsActive()",
                       "bool SiphonLifeOnAttackerTrigger::IsActive()",
@@ -59,7 +65,10 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
 
     def test_drain_soul_uses_the_boss_and_shard_gate(self):
         fn = body(TRIGGERS, "bool DrainSoulTrigger::IsActive()", "\n}\n")
-        self.assertIn("WarlockBossTarget(", fn)
+        self.assertIn("WarlockBossTarget(ai, ", fn)
+        boss = body(TRIGGERS, "bool WarlockBossTarget(PlayerbotAI* ai, Unit* target)", "\n}\n")
+        self.assertIn("creature->IsWorldBoss()", boss)
+        self.assertIn("GetDungeonPlans().IsBossEntry(", boss)
         self.assertIn("TortoiseBots::WarlockDrainSoulAllowed(", fn)
         # Below Shadowburn with the key on, above the rotation without it.
         fn = body(STRATEGY, '"drain soul",', "NULL)));")
@@ -69,6 +78,9 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
         fn = body(TRIGGERS, "bool LifeTapTrigger::IsActive()", "\n}\n")
         self.assertIn("WarlockShadowBoltCost(ai)", fn)
         self.assertIn("TortoiseBots::WarlockCombatTapAllowed(", fn)
+        # The two-filler test replaces the mana line in combat: a cheaper
+        # band would keep the 40% rule in force.
+        self.assertNotIn("DecideWarlockTap(inputs, inCombat) != TortoiseBots::WarlockTapDecision::TapUrgent", fn)
         # Never gate the out-of-combat urgent or top-up rows on a cost.
         topup = body(TRIGGERS, "bool LifeTapTopUpTrigger::IsActive()", "\n}\n")
         self.assertNotIn("WarlockCombatTapAllowed(", topup)
