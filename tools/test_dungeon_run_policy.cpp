@@ -33241,6 +33241,144 @@ static void TestCcOnlyFightIsBrokenOneAtATime()
     CHECK(!RunCcBreakTick(p, off, kTickMs, none) && none.empty());
 }
 
+// ZG walk 36 d/e3, Jin'do step 552: a pull row cleared its pack beside the pit, and the pit's Sacrificed Trolls
+// 14826 (respawning every 10 s) kept the party in combat. Nothing of the row's own was engaged any more, yet the
+// run held the step to the 180 s ceiling and paused 14 min later with 20 dead. Once the row's own units are dead
+// and only unrelated units still fight, the step ends: those are the bots' own combat's, not the step's.
+static void TestClearedPullEndsWhileUnrelatedUnitsFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    // The row's own pack comes in: the fight is the step's, as before.
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.state == State::Running);
+    // The pack dies; the pit's respawns take the party. The ceiling's timer is over the cap: the step is not held.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 1 && r.note == "pack cleared");
+    // The next row is a walk: it goes on while the respawns still fight (the fight's own units are remembered).
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
+}
+
+// The row's own unit still engaged: today's rules, the 180 s ceiling included, bound the fight.
+static void TestOwnPullAliveKeepsTheFightCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8), Unit(0x900, 14826, 10)};
+    r.fighting = true;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 0);
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// Nothing of the row's own was ever engaged (a patrol met on the way holds the pull): today's ceiling.
+static void TestFightWithoutOwnUnitsKeepsTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x900, 11373, 10)}; // another pack's patrol, none of the row's units
+    r.fighting = true;
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A later pull row's unit engaged holds the step too: the fight is not only the trash's.
+static void TestLaterRowsUnitKeepsItsFight()
+{
+    DungeonPlan plan;
+    PlanStep own = PullStep(10, {14825});
+    own.radius = 8.0f;
+    PlanStep later = PullStep(50, {14826});
+    later.radius = 8.0f;
+    plan.steps = {own, later, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The row's own pack dies; a later row's unit takes the party: still the run's fight.
+    f.units.clear();
+    UnitFact ahead = Unit(0x900, 14826, 10);
+    ahead.x = 50.0f; // by the later row's own point: its unit
+    f.engagedUnits = {ahead};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A wipe keeps today's fight rules: the fight over unrelated units still runs its ceiling, and the regroup follows.
+static void TestWipeOverUnrelatedUnitsKeepsTheRegroup()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The row's pack dies, the pit's respawns fight on, and the party is at the wipe level: the regroup, not the step.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.dead = kWipeDead;
+    f.alive = 2;
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.regroup);
+    CHECK(r.note.find("dead and the fight went past 180 s") != std::string::npos);
+}
+
 static void TestHealerGuardSkipsCcHolders()
 {
     DungeonPlan plan;
@@ -33600,6 +33738,11 @@ int main()
     TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();
     TestCcOnlyFightIsBrokenOneAtATime();
+    TestClearedPullEndsWhileUnrelatedUnitsFight();
+    TestOwnPullAliveKeepsTheFightCeiling();
+    TestFightWithoutOwnUnitsKeepsTheCeiling();
+    TestLaterRowsUnitKeepsItsFight();
+    TestWipeOverUnrelatedUnitsKeepsTheRegroup();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();

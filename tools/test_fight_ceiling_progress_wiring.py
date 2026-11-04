@@ -40,11 +40,15 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
         self.assertLess(read.index("fact.health = other->GetHealth();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.maxHealth = other->GetMaxHealth();"), read.index("out.push_back(fact);"))
+        # Where it stands feeds the own-fight read (FightOwnsUnit's later-row claim).
+        self.assertLess(read.index("fact.x = other->GetPositionX();"), read.index("out.push_back(fact);"))
+        self.assertLess(read.index("fact.y = other->GetPositionY();"), read.index("out.push_back(fact);"))
+        self.assertLess(read.index("fact.z = other->GetPositionZ();"), read.index("out.push_back(fact);"))
         # The watch's clock is the tick's real length.
         self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", CODE)
 
     def test_the_fight_block_watches_every_fight_tick_before_the_pause(self):
-        fight = body(RULES, "    if (f.anyInCombat && !objectDone)\n    {", "\n    }\n")
+        fight = body(RULES, "    if (f.anyInCombat && !objectDone && !ownFightOver)\n    {", "\n    }\n")
         watch = fight.index("FightProgress const progress = FightProgressTick(r, f, dt);")
         # Before any return of the fight block's ceiling: the 1-hp watch's pause and the ceiling's own.
         self.assertLess(watch, fight.index("if (r.fightMs > stopCap && autoRegroup)"))

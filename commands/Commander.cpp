@@ -8377,6 +8377,9 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         if (Creature* asCreature = other->ToCreature())
             fact.formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(asCreature);
         fact.distLead = other->GetMap() == lead->GetMap() ? lead->GetDistance(other) : 1000.0f;
+        fact.x = other->GetPositionX();
+        fact.y = other->GetPositionY();
+        fact.z = other->GetPositionZ();
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
         fact.evading = other->IsCreature() && static_cast<Creature*>(other)->IsInEvadeMode();
