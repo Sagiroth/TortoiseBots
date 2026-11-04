@@ -411,6 +411,7 @@ class BossTacticsSql(unittest.TestCase):
             (309, 14834, "dispel_priority", 0, 24687): (1, 0.0, 0, "now"),
             (309, 14834, "dispel_priority", 0, 24688): (2, 0.0, 0, "now"),
             (309, 11382, "freeze_on_aura", 0, 24314): (0, 0.0, 0, ""),
+            (309, 11382, "dps_hold_after", 0, 24314): (0, 4.0, 0, "until_tank"),
             (309, 14988, "hold_kill", 11382, 0): (0, 0.0, 0, ""),
             (309, 11380, "dispel_priority", 0, 17172): (0, 0.0, 0, "now"),
             (309, 11380, "dispel_priority", 0, 24306): (0, 0.0, 0, "never"),
@@ -446,6 +447,22 @@ class BossTacticsSql(unittest.TestCase):
         # boss. Re-add only with a trigger that recurs (follow-up in docs/play/boss-tactics.md, Known limits).
         self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
         self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
+
+    def test_mandokir_keyed_gaze_hold_migration(self):
+        # 20261104040000_world.sql: the keyed until_tank hold on Threatening Gaze 24314 (a real cast, castingTimeIndex 5),
+        # the only dps_hold_after row Mandokir has. Its DELETE names that one row, so it is idempotent and touches
+        # neither the freeze_on_aura Gaze row nor Ohgan's hold_kill row.
+        name = "20261104040000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the keyed Gaze hold migration is missing")
+        self.assertGreater(name, "20261103060000_world.sql")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` IN (11382) AND "
+                      "`kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 24314;", text)
+        self.assertIn("(309, 11382, 'dps_hold_after', 0, 24314, 0, 4, 0, 'until_tank', ", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, text.count("(309, 11382, 'dps_hold_after'"))
 
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
