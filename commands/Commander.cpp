@@ -6939,7 +6939,10 @@ static bool DryWayPath(Player* lead, float x, float y, float z,
     float const endX = straight[(straightCount - 1) * VERTEX_SIZE + 2];
     float const endY = straight[(straightCount - 1) * VERTEX_SIZE];
     float const endZ = straight[(straightCount - 1) * VERTEX_SIZE + 1];
-    if (PathEndsShort(false, dtStatusDetail(status, DT_PARTIAL_RESULT), endX, endY, endZ, x, y, z))
+    // The end poly may lie up to the search extents from the point (5 yd to its side, 10 above or below, another
+    // floor included), and a complete route to that poly is not a way to the point: the same bound the run's own
+    // paths are held to.
+    if (PathEndsShort(false, true, endX, endY, endZ, x, y, z))
         return false;
     out.push_back(PathPoint{lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()});
     for (int i = 0; i < straightCount; ++i)
@@ -11543,7 +11546,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f, f.dryWalk);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             std::vector<uint32> entries = step->entries;
@@ -11944,7 +11947,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f, f.dryWalk);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             std::list<Unit*> hostiles;
@@ -12010,7 +12013,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f, f.dryWalk);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             float const range = std::min(toPoint + step->radius, 2.0f * kSeeYd);
@@ -12079,7 +12082,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             // run walks to it in navmesh hops first (DungeonRun::GossipStep).
             if (!f.seen && wantsApproach)
                 f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                    nullptr, &f, f.dryWalk);
+                    nullptr, &f, nullptr, f.dryWalk);
             f.carrierBusy = CommanderTasks().count(lead->GetObjectGuid().GetRawValue()) != 0;
             if (slot.carrierRaw == lead->GetObjectGuid().GetRawValue())
             {

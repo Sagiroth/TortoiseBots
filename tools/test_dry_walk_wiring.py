@@ -44,7 +44,8 @@ class DryWayPathWiringTest(unittest.TestCase):
         self.assertIn("query->findNearestPoly(end, endExtents, &filter, &endRef, endNearest)", fn)
         self.assertIn("query->findPath(startRef, endRef, startNearest, endNearest, &filter, polys, &polyCount, 256)", fn)
         self.assertIn("query->findStraightPath(startNearest, endNearest, polys, polyCount, straight, nullptr, nullptr,", fn)
-        self.assertIn("PathEndsShort(false, dtStatusDetail(status, DT_PARTIAL_RESULT), endX, endY, endZ, x, y, z)", fn)
+        # A complete Detour route may still end on a snapped poly another floor away: the endpoint bound holds too.
+        self.assertIn("PathEndsShort(false, true, endX, endY, endZ, x, y, z)", fn)
 
 
 class WalkInterceptWiringTest(unittest.TestCase):
@@ -99,11 +100,13 @@ class DryFlagReadersTest(unittest.TestCase):
                      "DirectNavPath(lead, p.x, p.y, p.z, way, f.dryWalk)",
                      "DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk)"):
             self.assertIn(call, COMMANDS)
-        # Every approach hop call hands the tick's flag on (the walk back's one spans two lines).
+        # Every approach hop call hands the tick's flag on (the walk back's one spans two lines) and keeps the
+        # incomplete out-parameter slot: a short call passes the flag as a bool* and does not compile.
         calls = COMMANDS.split("f.approachKnown = ApproachOnPath(lead, step->x")[1:]
         self.assertEqual(len(calls), 5)
         for rest in calls:
             self.assertIn("f.dryWalk);", rest[:rest.index(";") + 1])
+        self.assertEqual(COMMANDS.count("nullptr, &f, nullptr, f.dryWalk);"), 4)
 
 
 class DryWalkKeyWiringTest(unittest.TestCase):
