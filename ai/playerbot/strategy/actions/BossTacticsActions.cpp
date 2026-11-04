@@ -4749,6 +4749,44 @@ bool CanBurnMana(PlayerbotAI* ai, Player* player)
     return false;
 }
 
+// What one cast of `spell` costs `player`: the core's CalculateManaCost shape for these flat-cost drain spells (the
+// percentage fallback is the one a buff spell uses, kept so an unusual rank cannot read as free).
+int BurnManaCost(PlayerbotAI* ai, Player* player, const char* spell)
+{
+    std::uint32_t const spellId = ai->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", spell)->Get();
+    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!info)
+        return 0;
+    return info->manaCost
+        ? int(info->manaCost)
+        : int(std::uint32_t(info->ManaCostPercentage) * player->GetCreateMana() / 100);
+}
+
+// Whether a member can contribute a burn to `boss` right now: alive, in combat, its own drain spell in that spell's
+// range (Drain Mana 20 yd, Mana Burn 30 yd, Viper Sting 8-35 yd), and enough mana for the cast. A hunter whose Viper
+// Sting is already on the boss has nothing to add. The ranking uses this so an out-of-range member never holds a slot.
+bool CanBurnManaNow(PlayerbotAI* ai, Player* player, Unit* boss)
+{
+    if (!CanBurnMana(ai, player) || !boss || !boss->IsAlive() || !boss->IsInCombat())
+        return false;
+    if (!player->IsInCombat())
+        return false;
+    for (const char* spell : kBurnManaSpells)
+    {
+        if (!ai->HasSpell(spell))
+            continue;
+        if (std::strcmp(spell, "viper sting") == 0 && ai->HasAura("viper sting", boss))
+            continue;
+        float minRange = 0.0f, maxRange = 0.0f;
+        if (!ai->GetSpellRange(spell, &maxRange, &minRange))
+            continue;
+        if (ai::BurnManaInRangeNow(true, true, player->GetPower(POWER_MANA), BurnManaCost(ai, player, spell),
+                                   player->GetCombatDistance(boss), minRange, maxRange))
+            return true;
+    }
+    return false;
+}
+
 // One bot_events.csv row per burn cast; the cast's own cooldown keeps it from running hot. A no-op unless
 // bot_events.csv is in AiPlayerbot.AllowedLogFiles.
 void LogBurnMana(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint32_t spellId, int manaPct)
@@ -4815,29 +4853,31 @@ bool ai::BossCanBurnMana(PlayerbotAI* ai, Player* bot)
     return CanBurnMana(ai, bot);
 }
 
-int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot)
+int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss)
 {
-    if (!ai || !bot)
-        return 0;
+    if (!ai || !bot || !boss)
+        return -1;
     Group* group = bot->GetGroup();
     if (!group)
-        return 0;
+        return CanBurnManaNow(ai, bot, boss) ? 0 : -1;
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
-    int rank = 0;
+    // A raid is 40; the fixed array keeps the per-tick rank allocation-free.
+    ai::BurnManaCandidate candidates[40];
+    std::size_t count = 0;
     for (Player* member : LiveGroupMembers(group))
     {
         if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
             continue;
-        if (member->GetObjectGuid().GetRawValue() >= self)
-            continue;
-        // A member that does not run the boss tactics never burns, so it must not hold one of the capped slots.
+        // A member that does not run the boss tactics never burns, so it must not hold one of the capped slots; one
+        // that cannot cast right now (out of its spell's range, out of combat, out of mana) holds none either.
         PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
-        if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
-            continue;
-        if (CanBurnMana(memberAi, member))
-            ++rank;
+        bool const runs = memberAi && memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
+        bool const canNow = runs && CanBurnManaNow(memberAi, member, boss);
+        if (count < sizeof(candidates) / sizeof(candidates[0]))
+            candidates[count++] = ai::BurnManaCandidate{member->GetObjectGuid().GetRawValue(), runs, canNow};
     }
-    return rank;
+    return ai::BurnManaRank(candidates, count, self,
+                            ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT), CanBurnManaNow(ai, bot, boss));
 }
 
 const char* ai::BossBurnManaSpell(PlayerbotAI* ai, Unit* boss)
@@ -4867,7 +4907,6 @@ Unit* ai::FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
         return nullptr;
     if (!CanBurnMana(ai, bot))
         return nullptr;
-    const int rank = BossBurnManaRank(ai, bot);
     for (const BossTacticRow* row : fight.rows)
     {
         if (!row || row->kind != BossTacticKind::BurnMana)
@@ -4881,13 +4920,15 @@ Unit* ai::FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
                 break;
             }
         }
-        if (!boss || !boss->IsInCombat() || bot->GetDistance(boss) > 30.0f)
+        if (!boss || !boss->IsInCombat())
             continue;
+        const int rank = BossBurnManaRank(ai, bot, boss);
         const std::uint32_t maxMana = boss->GetMaxPower(POWER_MANA);
         const int manaPct = maxMana > 0
             ? static_cast<int>(100.0f * boss->GetPower(POWER_MANA) / maxMana)
             : 0;
-        if (!BurnManaWanted(static_cast<float>(manaPct), row->param, true, rank, row->priority))
+        if (!BurnManaWanted(static_cast<float>(manaPct), row->param, true, rank, row->priority,
+                            boss->HasAura(ai::kStonePhaseAura)))
             continue;
         if (manaPctOut)
             *manaPctOut = manaPct;

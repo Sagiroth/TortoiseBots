@@ -89,7 +89,7 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 | `spread` | While the boss fights, the ranged raid keeps `param` yd apart (the spell only documents the splash); a bot on a stay spreads too. Needs `AiPlayerbot.DungeonRunBossSpread = 1` (default `0`). | ranged bots and healers; melee and tanks never spread |
 | `needs_aura` | Only a bot carrying `spell_id` may target the unit; with `AiPlayerbot.DungeonRunAuraGatedTargets = 1` other bots leave it alone. | Any bot with the aura |
 | `use_object` | One claimed bot clicks the boss's game object at the right moment; mode `tank_anchor` also walks the boss over to it. Needs `AiPlayerbot.DungeonRunUseObject = 1` (default `0`). | Claimed clicker (free damage, healer or non-tank) |
-| `burn_mana` | A few eligible bots (no tank, no healer, a Mana Burn priest, a Drain Mana warlock or a Viper Sting hunter; `priority` of them, `0` = all, ordered by guid) drain the boss's mana while it stands at or above the row's start % (`param`); `target_entry` is 0, `spell_id` is unused. Needs `AiPlayerbot.DungeonRunBurnMana = 1` (default `0`). | Eligible drainers; the rest of the raid keeps its rotation |
+| `burn_mana` | A few eligible bots (no tank, no healer, a Mana Burn priest, a Drain Mana warlock or a Viper Sting hunter; `priority` of them, `0` = all, ordered by guid) drain the boss's mana while it stands at or above the row's start % (`param`); only members that run the boss tactics and can cast right now (in combat, the boss in their spell's own range, enough mana) take a slot, and the burn pauses while the boss wears the stone-phase aura 25685. `target_entry` is 0, `spell_id` is unused. Needs `AiPlayerbot.DungeonRunBurnMana = 1` (default `0`). | Eligible drainers; the rest of the raid keeps its rotation |
 | `ranged_only` | Melee bots (melee damage and tanks) leave the subject alone while it stands `param` yd (3 to 40) or more above them, and take the adds; a ranged bot is never held, and the hold ends by itself when the subject lands. `target_entry` 0 is the row's boss. Needs `AiPlayerbot.DungeonRunRangedOnly = 1` (default `0`). | melee damage and tanks; ranged bots and healers keep the subject |
 
 \* Needs `AiPlayerbot.DungeonRunAuraTactics = 1`.
@@ -219,7 +219,7 @@ Only kinds the module already runs. Needs `DungeonRunCharmYield = 1` on the two 
 | :--- | :--- |
 | Kurinnaxx | `swap_on_aura` Mortal Wound, 5 stacks, 2 tanks |
 | Ossirian | `use_object` crystal; `taunt_after_cast` mode `until_tank`, tank 1; `dispel_priority` Curse of Tongues |
-| Moam | `kill_first` Mana Fiend; `burn_mana` from 10 % mana, 4 burners |
+| Moam | `kill_first` Mana Fiend; `burn_mana` from 10 % mana, 4 burners (paused during the stone phase, aura 25685) |
 | Ayamiss | `kill_first` Hornet; `taunt_after_cast` mode `until_tank`, tank 0 (shut above 70 % by the hp band); `ranged_only` 8 yd |
 | Qiraji Gladiator | `linked_death` on itself, hold 5 %, window 7 s |
 

@@ -614,15 +614,18 @@ namespace ai
     // The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`), at most once per bot per five seconds.
     void LogBossRangedOnly(PlayerbotAI* ai, Player* bot, Unit* subject, float gapYd);
 
-    // The burn_mana row this bot burns for now, or null: the row's boss stands in the fight, alive, in combat, within
-    // 30 yd and at or above the row's start % of mana, and this bot is one of the row's first `priority` eligible
-    // burners (ordered by guid; 0 = every eligible bot). `manaPctOut` (optional) the boss's mana percent.
+    // The burn_mana row this bot burns for now, or null: the row's boss stands in the fight, alive, in combat and at
+    // or above the row's start % of mana, the boss is not in the stone phase (aura 25685), and this bot is one of the
+    // row's first `priority` burners that can cast now (ordered by guid; 0 = every eligible bot). `manaPctOut`
+    // (optional) the boss's mana percent.
     Unit* FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, int* manaPctOut = nullptr);
     // Whether the bot may burn at all: alive, not a tank, not a healer (a shadow priest counts as damage), and it
     // knows mana burn, drain mana or viper sting.
     bool BossCanBurnMana(PlayerbotAI* ai, Player* bot);
-    // The bot's 0-based place among the group's eligible burners ordered by guid.
-    int BossBurnManaRank(PlayerbotAI* ai, Player* bot);
+    // The bot's 0-based place among the group's burners ordered by guid, or -1 when it cannot burn `boss` now. Only
+    // members that run the boss tactics and can cast their own drain spell right now (in its range, in combat, enough
+    // mana, alive) take a slot, so an out-of-range member never pushes an in-range one past the cap.
+    int BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss);
 
     // The first castable drain spell the bot knows on the boss, or null (a hunter refreshes Viper Sting only when the
     // boss lacks it).

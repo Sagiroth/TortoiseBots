@@ -106,13 +106,16 @@ class BurnManaWiring(unittest.TestCase):
 
     def test_finder_reads_the_row_through_the_policy(self):
         finder = body(ACTIONS, "Unit* ai::FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, int* manaPctOut)")
-        self.assertIn("BurnManaWanted(static_cast<float>(manaPct), row->param, true, rank, row->priority)", finder)
         self.assertIn("BossTacticKind::BurnMana", finder)
         self.assertIn("boss->GetMaxPower(POWER_MANA)", finder)
-        self.assertIn("bot->GetDistance(boss) > 30.0f", finder)
-        rank = body(ACTIONS, "int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("boss->HasAura(ai::kStonePhaseAura)", finder)
+        self.assertIn("BurnManaWanted(static_cast<float>(manaPct), row->param, true, rank, row->priority,", finder)
+        # The rank is per boss now: the 30 yd blanket is gone, the members' own spell ranges decide.
+        self.assertNotIn("bot->GetDistance(boss) > 30.0f", finder)
+        rank = body(ACTIONS, "int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss)")
         self.assertIn("LiveGroupMembers(group)", rank)
-        self.assertIn("member->GetObjectGuid().GetRawValue() >= self", rank)
+        self.assertIn("CanBurnManaNow(memberAi, member, boss)", rank)
+        self.assertIn("ai::BurnManaRank(candidates, count, self,", rank)
         self.assertIn("PlayerbotAI::IsTank(player) || PlayerbotAI::IsHeal(player)", ACTIONS)
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', rank)
     def test_config_key_is_read_templated_and_documented(self):
