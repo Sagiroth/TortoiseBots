@@ -284,6 +284,10 @@ Opt-in (`AiPlayerbot.DungeonRunPullStand = 1`, default `0`; not yet proven in a 
 
 **A charmed group member is never a fight's unit** (Hakkar's Cause Insanity, Whitemane's Dominate Mind). Every order at it is refused, so the run leader's reads leave it out — the bots' attackers, the lead bot's own and a real player's — and the automatic crowd control counts it for nothing: neither in the body count nor as a mark.
 
+### Totem focus
+
+Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`; only read while `AiPlayerbot.DungeonSelfClear = 1`). A creature of type totem (11) whose entry is on the plan's `kill_first` list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. While the key is on, the guard and the engage on arrival leave such a totem alone, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's.
+
 ### Events
 
 A scripted event is two or more steps: a **start** (`ritual`, or an `open` / `use_item` / `gossip` / `use_on` when an object, an item or an NPC's words start it), then a **hold**. The hold:

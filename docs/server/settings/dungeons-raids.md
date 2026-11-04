@@ -419,7 +419,7 @@ Focuses a totem the plan kills first on the damage dealers alone, and before the
 <details>
 <summary>How it works in detail</summary>
 
-**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#pull-stand).
+**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. The guard and the engage on arrival leave such a totem alone while the key is on, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#totem-focus).
 
 </details>
 
