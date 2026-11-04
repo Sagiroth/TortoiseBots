@@ -624,8 +624,9 @@ namespace ai
     // knows mana burn, drain mana or viper sting.
     bool BossCanBurnMana(PlayerbotAI* ai, Player* bot);
     // The bot's 0-based place among the group's burners ordered by guid, or -1 when it cannot burn `boss` now. Only
-    // members that run the boss tactics and can cast their own drain spell right now (in its range, in combat, enough
-    // mana, alive) take a slot, so an out-of-range member never pushes an in-range one past the cap.
+    // members that run the boss tactics and can cast their own drain spell right now take a slot: alive, in combat,
+    // in control (not stunned, feared, confused, charmed, silenced or pacified), the spell off cooldown, in its range
+    // and with enough mana. The global cooldown and an in-flight cast do not count, so a busy burner keeps its slot.
     int BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss);
 
     // The first castable drain spell the bot knows on the boss, or null (a hunter refreshes Viper Sting only when the

@@ -31,12 +31,15 @@ namespace ai
         return maxBurners <= 0 || burnerRank < maxBurners;
     }
 
-    // Whether a member's drain spell reaches the boss and is paid for right now. `minRangeYd`/`maxRangeYd` come from
-    // that member's own spell (warlock Drain Mana 20 yd, priest Mana Burn 30 yd, hunter Viper Sting 8-35 yd).
-    inline bool BurnManaInRangeNow(bool alive, bool inCombat, int mana, int manaCost, float distanceYd,
-                                   float minRangeYd, float maxRangeYd)
+    // Whether a member's drain is available for the rank right now: alive, in combat, in control (not stunned, feared,
+    // confused, charmed, silenced or pacified), its spell off cooldown, enough mana and the boss in that spell's range.
+    // The global cooldown, an in-flight cast and movement are deliberately not inputs: they are transient, and a burner
+    // busy for one GCD keeps its slot, so the guid order never rotates.
+    inline bool BurnManaAvailableNow(bool alive, bool inCombat, bool lostControl, bool silencedOrPacified, bool charmed,
+                                     bool spellOnCooldown, int mana, int manaCost, float distanceYd,
+                                     float minRangeYd, float maxRangeYd)
     {
-        if (!alive || !inCombat)
+        if (!alive || !inCombat || lostControl || silencedOrPacified || charmed || spellOnCooldown)
             return false;
         if (manaCost > 0 && mana < manaCost)
             return false;

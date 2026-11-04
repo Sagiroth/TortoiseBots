@@ -4751,10 +4751,8 @@ bool CanBurnMana(PlayerbotAI* ai, Player* player)
 
 // What one cast of `spell` costs `player`: the core's CalculateManaCost shape for these flat-cost drain spells (the
 // percentage fallback is the one a buff spell uses, kept so an unusual rank cannot read as free).
-int BurnManaCost(PlayerbotAI* ai, Player* player, const char* spell)
+int BurnManaCost(SpellEntry const* info, Player* player)
 {
-    std::uint32_t const spellId = ai->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", spell)->Get();
-    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
     if (!info)
         return 0;
     return info->manaCost
@@ -4762,26 +4760,35 @@ int BurnManaCost(PlayerbotAI* ai, Player* player, const char* spell)
         : int(std::uint32_t(info->ManaCostPercentage) * player->GetCreateMana() / 100);
 }
 
-// Whether a member can contribute a burn to `boss` right now: alive, in combat, its own drain spell in that spell's
-// range (Drain Mana 20 yd, Mana Burn 30 yd, Viper Sting 8-35 yd), and enough mana for the cast. A hunter whose Viper
-// Sting is already on the boss has nothing to add. The ranking uses this so an out-of-range member never holds a slot.
+// Whether a member can contribute a burn to `boss` right now: alive, in combat, in control (the unit state covers
+// stun, fear, confuse and possession; charm, silence and pacify are their own flags), its burn spell off cooldown, the
+// boss in that spell's range (Drain Mana 20 yd, Mana Burn 30 yd, Viper Sting 8-35 yd), and enough mana for the cast. A
+// hunter whose Viper Sting is already on the boss has nothing to add. The ranking uses this so an unavailable member
+// never holds a slot; the GCD and an in-flight cast stay out of it, so a burner busy for one GCD keeps its slot.
 bool CanBurnManaNow(PlayerbotAI* ai, Player* player, Unit* boss)
 {
     if (!CanBurnMana(ai, player) || !boss || !boss->IsAlive() || !boss->IsInCombat())
         return false;
     if (!player->IsInCombat())
         return false;
+    bool const lostControl = player->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
+    bool const silencedOrPacified =
+        (player->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
+    bool const charmed = player->IsCharmed();
     for (const char* spell : kBurnManaSpells)
     {
-        if (!ai->HasSpell(spell))
+        std::uint32_t const spellId = ai->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", spell)->Get();
+        if (!spellId || !ai->HasSpell(spellId))
             continue;
         if (std::strcmp(spell, "viper sting") == 0 && ai->HasAura("viper sting", boss))
             continue;
         float minRange = 0.0f, maxRange = 0.0f;
         if (!ai->GetSpellRange(spell, &maxRange, &minRange))
             continue;
-        if (ai::BurnManaInRangeNow(true, true, player->GetPower(POWER_MANA), BurnManaCost(ai, player, spell),
-                                   player->GetCombatDistance(boss), minRange, maxRange))
+        if (ai::BurnManaAvailableNow(player->IsAlive(), player->IsInCombat(), lostControl, silencedOrPacified, charmed,
+                                     player->HasSpellCooldown(spellId), player->GetPower(POWER_MANA),
+                                     BurnManaCost(sServerFacade.LookupSpellInfo(spellId), player),
+                                     player->GetCombatDistance(boss), minRange, maxRange))
             return true;
     }
     return false;

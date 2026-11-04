@@ -119,6 +119,17 @@ class BurnManaWiring(unittest.TestCase):
         self.assertIn("ai::BurnManaRank(candidates, count, self,", rank)
         self.assertIn("PlayerbotAI::IsTank(player) || PlayerbotAI::IsHeal(player)", ACTIONS)
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', rank)
+
+    def test_availability_counts_control_and_cooldown(self):
+        now = body(ACTIONS, "bool CanBurnManaNow(PlayerbotAI* ai, Player* player, Unit* boss)")
+        self.assertIn("UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL", now)
+        self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", now)
+        self.assertIn("player->IsCharmed()", now)
+        self.assertIn("player->HasSpellCooldown(spellId)", now)
+        self.assertIn("ai::BurnManaAvailableNow(", now)
+        # The GCD is not queried: only the spell's own cooldown takes the slot away.
+        self.assertNotIn("GlobalCooldown", now)
+
     def test_config_key_is_read_templated_and_documented(self):
         self.assertIn('dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);',
                       CONFIG_CPP)
