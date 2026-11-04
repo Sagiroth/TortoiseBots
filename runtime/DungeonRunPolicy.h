@@ -17098,10 +17098,12 @@ inline void LatchTrashHealerGuard(Run& r, const Facts& f)
 
 // Whether the guard leaves a unit alone on the run's own keys: an aura-gated entry (needs_aura: a bot without the aura
 // does 0 damage to it, and a taunt would only move its damage onto another tank) and, under the totem focus, a totem
-// (the focus kills it in 1-2 s, and a guard order would starve that tick).
-inline bool GuardSkipsUnit(const Facts& f, const UnitFact& u)
+// the plan kills first (the focus kills it in 1-2 s, and a guard order would starve that tick; a totem that is no
+// kill_first unit is a normal add and stays the guard's).
+inline bool GuardSkipsUnit(const DungeonPlan* plan, const Facts& f, const UnitFact& u)
 {
-    return (f.auraGatedTargets && u.auraGated) || (f.totemFocus && u.creatureType == kCreatureTotem);
+    return (f.auraGatedTargets && u.auraGated) ||
+        (f.totemFocus && u.creatureType == kCreatureTotem && plan && plan->KillFirstRank(u.entry) >= 0);
 }
 
 // A raid boss fight's or a raid trash fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank
@@ -17172,7 +17174,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
-            GuardSkipsUnit(f, u) ||
+            GuardSkipsUnit(r.plan, f, u) ||
             u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
             GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
@@ -17280,7 +17282,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
-                !u.hitting || u.evading || GuardSkipsUnit(f, u) ||
+                !u.hitting || u.evading || GuardSkipsUnit(r.plan, f, u) ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -17300,7 +17302,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-                GuardSkipsUnit(f, u) || u.distLead > kRaidBossGuardYd)
+                GuardSkipsUnit(r.plan, f, u) || u.distLead > kRaidBossGuardYd)
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
@@ -17364,7 +17366,7 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     auto const eligible = [&r, &f](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-            GuardSkipsUnit(f, u) ||
+            GuardSkipsUnit(r.plan, f, u) ||
             u.distLead > kRaidWalkJoinYd || !u.victimTank || u.victimName == f.carrier)
             return false;
         auto const joined = r.raidBossJoined.find(u.guid);
@@ -17437,10 +17439,13 @@ inline bool GuardEligible(const UnitFact& u, float holdRadius, const Run* capped
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
     bool raidTrash = false, bool skipHealer = false)
 {
+    // The run whose plan the totem skip reads: every live call passes its own run here (the tests' bare picks have no
+    // plan, and a totem is then no kill_first unit).
+    const DungeonPlan* const plan = capped && capped->plan ? capped->plan : (ccRun ? ccRun->plan : nullptr);
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (GuardSkipsUnit(f, u))
+        if (GuardSkipsUnit(plan, f, u))
             continue;
         if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
             continue;
@@ -17474,7 +17479,7 @@ inline const UnitFact* GuardPickHealerAdd(const Run& r, const Facts& f)
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimHealer || u.victimLead || GuardSkipsUnit(f, u) || !GuardEligible(u, 0.0f, &r, &r, true))
+        if (!u.victimHealer || u.victimLead || GuardSkipsUnit(r.plan, f, u) || !GuardEligible(u, 0.0f, &r, &r, true))
             continue;
         if (GuardHeldByRun(r, u.guid) || r.healerGuardDps.count(u.guid) || HealerGuardHasFreeDps(r, f, u, taken))
             continue;
@@ -17536,7 +17541,7 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
     auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.victimTank && u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
-            !GuardSkipsUnit(f, u) &&
+            !GuardSkipsUnit(r.plan, f, u) &&
             u.distLead <= kGuardYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid) &&
             !r.raidAssisted.count(u.guid);
     };
@@ -17568,7 +17573,7 @@ inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
     auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
-            !GuardSkipsUnit(f, u) &&
+            !GuardSkipsUnit(r.plan, f, u) &&
             u.distLead > kGuardYd && u.distLead <= kRaidWalkJoinYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
@@ -17679,7 +17684,7 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     auto const engageable = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
-            !GuardSkipsUnit(f, u) && !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+            !GuardSkipsUnit(r.plan, f, u) && !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
     // With the lead bot dead the healer's add is the healer guard's and the round robin's (the acting tank's mob is

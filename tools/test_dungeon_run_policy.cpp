@@ -26298,12 +26298,14 @@ static Facts FocusGuardFacts()
     return f;
 }
 
-// A totem on the healer is the totem focus' own kill: the guard sends nobody at it, so the focus is not starved for a
-// tick. With the key off the add goes to the nearest ranged dps, as today.
+// A totem the plan kills first is the totem focus' own kill: the guard sends nobody at it, so the focus is not starved
+// for a tick. A totem that is no kill_first unit is an ordinary add and stays the guard's, and with the totem focus off
+// even a kill_first totem does.
 static void TestGuardSkipsTotemWithKey()
 {
     {
         DungeonPlan plan;
+        plan.killFirst = {15112};
         Run r = RaidBossRun(plan);
         Facts f = FocusGuardFacts();
         UnitFact totem = Hitter(50101, 15112, 18, true);
@@ -26314,7 +26316,20 @@ static void TestGuardSkipsTotemWithKey()
             CHECK(GuardTick(r, f).empty());
     }
     {
+        // A Searing Totem no row kills first: still a loose add on the healer.
         DungeonPlan plan;
+        plan.killFirst = {15112};
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact totem = Hitter(50101, 25274, 18, true);
+        totem.creatureType = 11;
+        f.partyAttackers = {totem};
+        f.totemFocus = true;
+        CHECK(GuardTick(r, f) == "attack 50101 NearDps");
+    }
+    {
+        DungeonPlan plan;
+        plan.killFirst = {15112};
         Run r = RaidBossRun(plan);
         Facts f = FocusGuardFacts();
         UnitFact totem = Hitter(50101, 15112, 18, true);
