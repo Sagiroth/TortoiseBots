@@ -53,6 +53,7 @@ AOE_OFF = (ROOT / "ai/playerbot/policy/combat/AoeOffPolicy.h").read_text()
 POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 POLICY_TEST = (ROOT / "tools/test_boss_tactics_policy.cpp").read_text()
 RUN_POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+POSSIBLE_TARGETS = (STRATEGY / "values/PossibleAttackTargetsValue.cpp").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -989,6 +990,36 @@ class LinkedDeathStateIsLogged(unittest.TestCase):
         self.assertLess(drain, COMMANDER.index("The lead bot says what the run needs on /s", tick))
         self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', COMMANDER[drain:drain + 400])
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsLinkedDeath", event.kind, event.detail);', COMMANDER)
+
+
+class AuraGateAndKillFirstGridWiring(unittest.TestCase):
+    def test_the_gate_is_free_with_the_key_off(self):
+        # The key is read before the row lookup: a bot with the gate off pays one bool, not a map table lookup.
+        fn = body(POSSIBLE_TARGETS, "bool PossibleAttackTargetsValue::IsValid(")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)", fn)
+        self.assertLess(fn.index("sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player"),
+                        fn.index("GetBossTactics().RequiredAura("))
+        self.assertIn("AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura))", fn)
+
+    def test_both_taunt_picks_leave_a_gated_subject_alone(self):
+        gate = body(ACTIONS, "bool TauntAuraGated(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraGatedTargets", gate)
+        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry())", gate)
+        self.assertIn("AuraGateRefuses(", gate)
+        # The seek taunt and the taunt-after-cast pick both ask before any order goes out.
+        self.assertEqual(ACTIONS.count("TauntAuraGated(bot, "), 2)
+        seek = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        self.assertIn("if (TauntAuraGated(bot, task.source))\n            return false;", seek)
+
+    def test_kill_first_grid_units_is_registered_and_asked_behind_its_key(self):
+        self.assertIn('creators["kill first grid units"] = [](PlayerbotAI* ai) { return new KillFirstGridUnitsValue(ai); };',
+                      VALUE_CONTEXT)
+        self.assertIn('#include "HoldKillBlockersValue.h"', VALUE_CONTEXT)
+        # The grid search is a fallback of the kill_first read, only with its own key on.
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunKillFirstGrid)", ACTIONS)
+        self.assertIn('AI_VALUE2(std::vector<KillFirstGridUnit>,\n'
+                      '                "kill first grid units", static_cast<int32>(entry))', ACTIONS)
+        self.assertIn("KillFirstGridEligible(", ACTIONS)
 
 
 if __name__ == "__main__":

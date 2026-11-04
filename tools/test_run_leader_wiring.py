@@ -2056,5 +2056,68 @@ class DeadGossipOkWiringTest(unittest.TestCase):
         self.assertIn("no unit of it is hostile", check)
 
 
+class RunFactKeyWiringTest(unittest.TestCase):
+    """The totem focus and the aura-gated targets are run facts read every tick, and a charmed group member is never
+    one of them on either glue path."""
+
+    POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+
+    def test_the_names_are_pure_policy(self):
+        policy = strip_comments(self.POLICY)
+        skip = body(policy, "inline bool RunFactSkipsMember(", "\n}\n")
+        self.assertIn("return isPlayer && inLeadGroup;", skip)
+        focus = body(policy, "inline bool FocusSkipsBot(", "\n}\n")
+        self.assertIn("if (totemKeyOn && totemTarget)", focus)
+        self.assertIn("return isTank || isHealer;", focus)
+        self.assertIn("return tankHoldTarget && isTank;", focus)
+
+    def test_the_totem_focus_reads_the_key_and_goes_before_the_guard(self):
+        self.assertIn("f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;", COMMANDS)
+        self.assertIn("bool const totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;", COMMANDS)
+        self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
+                      "                totemTarget, totemFocus)", COMMANDS)
+        # The focus order hands the tick to the totem before the guard can spend it.
+        policy = strip_comments(self.POLICY)
+        totem = policy.index("if (f.totemFocus)")
+        self.assertLess(totem, policy.index("if (CheckGuard(r, f, dt, order))", totem))
+        self.assertIn("return IssueKillFirstFocus(r, *totem);", policy)
+
+    def test_the_guard_leaves_only_plan_kill_first_totems_to_the_focus(self):
+        skip = body(strip_comments(self.POLICY), "inline bool GuardSkipsUnit(", "\n}\n")
+        self.assertIn("f.auraGatedTargets && u.auraGated", skip)
+        self.assertIn("f.totemFocus && u.creatureType == kCreatureTotem", skip)
+        self.assertIn("plan && plan->KillFirstRank(u.entry) >= 0", skip)
+        # Every live guard site passes the run's own plan.
+        self.assertEqual(skip.count("plan->KillFirstRank"), 1)
+        self.assertNotRegex(skip, r"GuardSkipsUnit\(f,")
+        self.assertEqual(self.POLICY.count("GuardSkipsUnit(r.plan, f, u)"), 8)
+        # GuardPick has no run parameter of its own: it takes the plan off the run it is filtering by.
+        pick = body(strip_comments(self.POLICY), "inline const UnitFact* GuardPick(", "\n}\n")
+        self.assertIn("capped && capped->plan ? capped->plan : (ccRun ? ccRun->plan : nullptr)", pick)
+        self.assertIn("GuardSkipsUnit(plan, f, u)", pick)
+
+    def test_the_aura_gated_fact_is_read_under_the_key(self):
+        self.assertIn("f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;", COMMANDS)
+        # Both glue paths fill it: the mobs on a bot, and the mobs on a real player.
+        self.assertEqual(COMMANDS.count("fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), "
+                                        "fact.entry) != 0;"), 2)
+        self.assertEqual(COMMANDS.count("if (f.auraGatedTargets)"), 2)
+
+    def test_a_charmed_member_is_no_fact_on_every_path(self):
+        self.assertIn("RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit))", COMMANDS)        # kill_first read
+        self.assertIn("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))", COMMANDS)  # both attacker reads
+        self.assertEqual(COMMANDS.count("TortoiseBots::DungeonRun::RunFactSkipsMember("), 4)
+        # The lead bot's own attacker list (the auto-CC's count) skips them as the guard reads do.
+        guard = strip_comments(body(COMMANDS, "void ReadGuardFacts(", "\n}\n"))
+        lead = guard[guard.index("std::unordered_set<uint64> seenLead;"):]
+        lead = lead[:lead.index("f.leadAttackers.push_back(")]
+        self.assertIn("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))", lead)
+        # The real players' attackers path carries the same skip, and the aura gate next to it.
+        players = strip_comments(body(COMMANDS, "void AddPlayerAttackers(", "\n}\n"))
+        self.assertLess(players.index("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))"),
+                        players.index("TortoiseBots::DungeonRun::UnitFact fact;"))
+        self.assertIn("if (f.auraGatedTargets)\n                fact.auraGated =", players)
+
+
 if __name__ == "__main__":
     unittest.main()
