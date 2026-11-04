@@ -211,7 +211,7 @@ Instructs the bot to remove an equipped item and place it into its inventory bag
 .bot item <CharacterName> unequip <bag> <slot>
 ```
 
-Equipped items use the bag and slot numbers shown by `.bot inv` for worn gear. Unequipping fails with `failed` if the bot's inventory bags are full. On success, a refreshed inventory snapshot follows.
+Equipped items use bag index `255` with slot `0` through `18` (the worn-gear numbers shown by `.bot inv`). Unequipping fails with `failed` if the bot's inventory bags are full. On success, a refreshed inventory snapshot follows.
 
 ### `.bot item <Name> give` <a id="bot-item-give"></a>
 
