@@ -25,6 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
 POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
+TACTICS_POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
 TRIGGERS_H = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.h").read_text()
@@ -125,7 +126,8 @@ class SeekWalkWiring(unittest.TestCase):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
         for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekSourceHeld(",
-                     "SeekTankPullDue("):
+                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekKeepOrPickGatherSource(",
+                     "SeekSourceSearchYd(", "SeekClockStartOver("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -135,11 +137,14 @@ class FightStateWiring(unittest.TestCase):
     """One record per fight, exported to the run leader, swept and erased on an evade."""
 
     def test_the_state_is_shared_keyed_and_swept(self):
-        state = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
+        state = body(ACTIONS, "namespace\n{\n// The seek_aura fight state", "\n// A record nobody evaluated")
         self.assertIn("std::mutex g_seekMutex;", state)
-        self.assertIn("std::map<std::tuple<std::uint32_t, std::uint64_t, const BossTacticRow*>, SeekCycleRecord>",
-                      state)
-        self.assertIn("kSeekRecordIdleMs = 120000", state)
+        # The key is the row's primary key, never its address: a reload frees the old table.
+        self.assertIn("using SeekRecordKey = std::tuple<", state)
+        self.assertNotIn("const BossTacticRow*>", state)
+        self.assertIn("std::map<SeekRecordKey, SeekCycleRecord>", state)
+        self.assertIn("record.cycleMs = cycleMs;", ACTIONS)
+        self.assertIn("kSeekRecordIdleMs = 120000", ACTIONS)
         self.assertIn("nowMs - it->second.lastSeenMs > kSeekRecordIdleMs", ACTIONS)
         # The clock: the engage, the accepted siphon and the gather latch.
         self.assertIn("SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs)", ACTIONS)
@@ -188,8 +193,10 @@ class SeekRolesWiring(unittest.TestCase):
         # The pickup search and the drag's arrival are the policy's own distances.
         self.assertIn("kSeekPickupYd", find)
         self.assertIn("kSeekTankArriveYd", find)
-        # The gather's own radius comes from the spot's read.
-        self.assertIn("kSeekSpotYd", body(ACTIONS, "bool ReadSeekFight("))
+        # The gather's own radius comes from the spot's read; without the third tank the search widens to the
+        # fallback (M3).
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("SeekSourceSearchYd(roles.tanks.size() >= 3)", read)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the
@@ -206,11 +213,12 @@ class SeekRolesWiring(unittest.TestCase):
                       body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers("))
         kill = body(ACTIONS, "Unit* ai::FindBossSeekKill(")
         self.assertIn("IsFreeDps(ai, bot)", kill)
-        self.assertIn("SeekSourceHeld(", kill)
+        # Every source but the one at the spot is held all window, and the one at the spot obeys SeekSourceHeld.
+        self.assertIn("SeekHoldsUnit(state, state.source)", kill)
 
     def test_the_sources_are_held_by_the_dps_hold_multiplier(self):
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        self.assertIn("SeekSourceHeld(", hold)
+        self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
 
 
@@ -244,7 +252,8 @@ class SpreadKindWiring(unittest.TestCase):
         self.assertIn("BossTacticKind::Spread", live)
         spread = body(ACTIONS, "float ai::BossSpreadYd(")
         self.assertIn("BossSpreadLive(ai, bot)", spread)
-        self.assertIn("row->param > best", spread)
+        self.assertIn("WidestSpreadYd(params, fallback)", spread)
+        self.assertIn("WidestSpreadYd(", TACTICS_POLICY)
 
 
 class KeyConsumerWiring(unittest.TestCase):
