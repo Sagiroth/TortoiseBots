@@ -72,6 +72,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics tank swap",
         NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
 
+    // The tank a swap moved off still stands on the boss: it drops the boss at once. Above the rotation (whose boss
+    // actions the hold multiplier stands down anyway) and below every defensive cooldown, so a shield wall or a last
+    // stand still wins the tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(
@@ -131,6 +138,11 @@ void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "boss tactics tank swap",
         NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
+    // The stand-down's drop runs there too: the combat engine sleeps through the bot's own cast.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",

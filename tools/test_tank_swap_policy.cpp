@@ -76,6 +76,36 @@ int main()
         CHECK(!TankSwapStandsDown(true, 3, kTankSwapStandDownMs));
         CHECK(!TankSwapStandsDown(true, 0, 1000));
         CHECK(!TankSwapStandsDown(false, 3, 1000));
+        // The hold ends on the stack drop at once, whatever the window still allows.
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), false, false, true));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), true, false, true));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), false, true, false));
+    }
+
+    // The hold names no class: the rule answers from what the action is aimed at, whether it is a taunt and whether it
+    // damages an area, so every tank's boss action is held and single-target actions aimed elsewhere still run.
+    {
+        const bool down = TankSwapStandsDown(true, 5, 0);
+        struct Case { const char* action; bool taunt; bool area; bool targetsBoss; bool held; };
+        const Case cases[] = {
+            { "growl", true, false, true, true },             // a druid's taunt, aimed at the boss
+            { "maul", false, false, true, true },             // a druid's threat builder, aimed at the boss
+            { "heroic strike", false, false, true, true },    // a warrior's rotation, as before
+            { "sunder armor", false, false, true, true },
+            { "revenge", false, false, true, true },
+            { "mocking blow", true, false, false, true },     // a taunt is held whatever the tank picked
+            { "challenging roar", true, false, false, true }, // an area taunt reaches the boss from any pick
+            { "consecration", false, true, false, true },     // a paladin's area cast reaches the boss too
+            { "swipe", false, true, false, true },            // ... as does a druid's cleave on an add
+            { "holy light", false, false, false, false },     // a paladin's heal is not the boss
+            { "faerie fire (feral)", false, false, false, false },  // the same druid's cast on an add
+        };
+        for (const Case& c : cases)
+            CHECK(TankSwapHoldsAction(down, c.taunt, c.area, c.targetsBoss) == c.held);
+        // Outside the stand-down nothing is held, whatever the action.
+        CHECK(!TankSwapHoldsAction(false, true, false, true));
+        CHECK(!TankSwapHoldsAction(false, false, false, true));
+        CHECK(!TankSwapHoldsAction(false, false, true, false));
     }
 
     std::cout << "All tank swap policy tests passed.\n";

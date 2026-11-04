@@ -405,9 +405,14 @@ namespace ai
     };
     BossTankSwapTask FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
-    // Whether the fight's swap record names `bot` as the tank the last swap moved off `boss`: it holds its threat
-    // abilities and its taunts while TankSwapStandsDown says so (the record's window, its own stacks, or both).
+    // Whether the fight's swap record names `bot` as the tank the last swap moved off `boss`: it stands down (the
+    // stop action and the hold multiplier) while TankSwapStandsDown says so (the record's window, its own stacks, or
+    // both).
     bool TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, int stacks);
+
+    // The swap_on_aura boss this tank was moved off and still stands on (its victim or its current target), or null
+    // when the stand-down ended or it is not on that boss: the stop action and its trigger share this rule.
+    Unit* TankSwapStandDownBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
     // Records the swap the bot just did (the boss came to it, the old tank stood down) and writes the
     // `BossTacticsTankSwap` row (taunt=<boss guid>, stacks=<n>, from=<guid>).
@@ -417,6 +422,16 @@ namespace ai
     {
     public:
         BossTacticsTankSwapAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics tank swap") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The swapped-off tank side of the swap: it drops the boss (attack, cast, pick) the tick still stands on it, so
+    // no class keeps building threat there; the hold multiplier stands down every action aimed at that boss until the
+    // stand-down ends.
+    class BossTacticsTankSwapHoldAction : public Action
+    {
+    public:
+        BossTacticsTankSwapHoldAction(PlayerbotAI* ai) : Action(ai, "boss tactics tank swap hold") {}
         bool Execute(Event& event) override;
     };
 }

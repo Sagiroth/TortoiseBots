@@ -53,4 +53,13 @@ namespace ai
     {
         return swappedOut && ownStacks > 0 && sinceMs < kTankSwapStandDownMs;
     }
+
+    // Whether one action is held from the boss a stand-down tank was moved off: anything aimed at that boss itself
+    // (a threat builder, a melee swing, a cast), any area damage (Consecration, a Swipe or a Cleave reaches the boss
+    // from any pick) and any taunt. Nothing names a class, so a druid's Growl and Maul, a paladin's attack and a
+    // warrior's rotation answer alike; a single-target action aimed elsewhere (an add, a heal, a buff) runs.
+    inline bool TankSwapHoldsAction(bool standsDown, bool taunt, bool areaDamage, bool targetsBoss)
+    {
+        return standsDown && (taunt || areaDamage || targetsBoss);
+    }
 }

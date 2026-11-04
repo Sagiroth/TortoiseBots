@@ -203,6 +203,17 @@ bool BossTacticsTankSwapTrigger::IsActive()
     return FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot)).valid;
 }
 
+bool BossTacticsTankSwapHoldTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Both keys gate the kind: it is one of the six aura kinds, and it changes what the tanks do mid-fight.
+    if (!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
+        !GetBossTactics().HasAuraTacticMap(bot->GetMapId()) || !PlayerbotAI::IsTank(bot))
+        return false;
+    return TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot)) != nullptr;
+}
+
 bool BossTacticsObjectAnchorTrigger::IsActive()
 {
     if (!Ready(ai, bot))

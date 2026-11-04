@@ -319,19 +319,48 @@ class TankSwapWiring(unittest.TestCase):
         self.assertIn('"from=%llu"', note)
         self.assertIn('"BossTacticsTankSwap"', note)
 
-    def test_the_swapped_off_tank_holds_through_the_hold_multiplier(self):
+    def test_the_swapped_off_tank_holds_every_class_action_on_the_boss(self):
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(Action* action)")
         self.assertIn("TankSwapHold(ai, bot, action)", hold)
         rule = body(ACTIONS, "bool TankSwapHold(PlayerbotAI* ai, Player* bot, Action* action)")
-        self.assertIn("TankSwapHoldsTank(bot, current, *row, AuraStacks(bot, row->spellId))", rule)
+        # The rule reads what the action is aimed at, not which class's spell it is: no warrior (or druid, paladin)
+        # name is special-cased, so Growl, Maul and a paladin's attack are held by the same test as Sunder Armor.
+        self.assertIn("EbonrocTauntAction(action->getName())", rule)
+        self.assertIn("action->GetTarget() == boss", rule)
+        self.assertIn("IsAreaDamageAction(ai, action)", rule)
+        self.assertIn("TankSwapHoldsAction(true, taunt, area, targetsBoss)", rule)
+        for class_spell in ("sunder armor", "revenge", "heroic strike", "maul", "growl", "mocking blow"):
+            self.assertNotIn('"%s"' % class_spell, rule)
         self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", rule)
         self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", rule)
-        names = body(ACTIONS, "bool IsTankSwapHoldAction(const std::string& name)")
-        for name in ("sunder armor", "revenge", "heroic strike"):
-            self.assertIn('name == "%s"' % name, names)
-        self.assertIn("EbonrocTauntAction(name)", names)
+        held = body(ACTIONS, "Unit* HeldSwapBoss(Player* bot, const BossTacticsFight& fight)")
+        self.assertIn("BossTacticKind::SwapOnAura", held)
+        self.assertIn("TankSwapHoldsTank(bot, boss, *row, AuraStacks(bot, row->spellId))", held)
+        self.assertIn("inline bool TankSwapHoldsAction(bool standsDown, bool taunt, bool areaDamage, bool targetsBoss)",
+                      TANK_SWAP_POLICY)
         self.assertIn("inline constexpr std::uint32_t kTankSwapStandDownMs = 20000;", TANK_SWAP_POLICY)
         self.assertIn("TankSwapStandsDown(true, stacks", body(ACTIONS, "bool ai::TankSwapHoldsTank("))
+
+    def test_the_stand_down_drops_the_boss_at_once(self):
+        trigger = body(TRIGGERS, "bool BossTacticsTankSwapHoldTrigger::IsActive()")
+        self.assertIn("TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot))", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", trigger)
+        self.assertIn("PlayerbotAI::IsTank(bot)", trigger)
+        action = body(ACTIONS, "bool BossTacticsTankSwapHoldAction::Execute(Event& event)")
+        self.assertIn("TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot))", action)
+        self.assertIn("bot->AttackStop();", action)
+        self.assertIn("bot->CastStop();", action)
+        self.assertIn('context->GetValue<Unit*>("current target")->Set(nullptr);', action)
+        self.assertIn('context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());', action)
+        stand_down = body(ACTIONS, "Unit* ai::TankSwapStandDownBoss(")
+        self.assertIn("boss == bot->GetVictim()", stand_down)
+        self.assertIn('GetValue<Unit*>("current target")', stand_down)
+        # The stop runs on the combat and the reaction engine (two rows, the trigger and the action name each): the
+        # latter keeps running through the bot's own cast.
+        self.assertEqual(STRATEGY.count('"boss tactics tank swap hold"'), 4)
+        self.assertIn('creators["boss tactics tank swap hold"]', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics tank swap hold"]', ACTION_CONTEXT)
 
     def test_the_trigger_and_action_are_registered(self):
         self.assertIn('creators["boss tactics tank swap"] = [](PlayerbotAI* ai) '
@@ -806,8 +835,12 @@ class FreezeFleeWiring(unittest.TestCase):
                   "bool BossTacticsFleeTrigger::IsActive()"),
                  (ACTIONS_H, "class BossTacticsTankSwapAction", ACTIONS,
                   "bool BossTacticsTankSwapAction::Execute(Event& event)"),
+                 (ACTIONS_H, "class BossTacticsTankSwapHoldAction", ACTIONS,
+                  "bool BossTacticsTankSwapHoldAction::Execute(Event& event)"),
                  (TRIGGERS_H, "class BossTacticsTankSwapTrigger", TRIGGERS,
-                  "bool BossTacticsTankSwapTrigger::IsActive()"))
+                  "bool BossTacticsTankSwapTrigger::IsActive()"),
+                 (TRIGGERS_H, "class BossTacticsTankSwapHoldTrigger", TRIGGERS,
+                  "bool BossTacticsTankSwapHoldTrigger::IsActive()"))
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)
             self.assertIn(definition, source)
