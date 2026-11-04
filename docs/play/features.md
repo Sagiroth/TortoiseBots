@@ -54,7 +54,7 @@ New here? Read [Getting Started](getting-started.md) first.
 
 | Feature | On? | Setting | More |
 | :--- | :---: | :--- | :--- |
-| Invite a pool bot into your guild and command it like your own alt (hires, your own alts, full guilds and queued bots excluded) | Usually | — | [Guild bots](getting-started.md#guild-bots) |
+| Invite a pool bot into your guild and command it like your own alt (hires, your own alts, full guilds and queued bots excluded) | Always | — | [Guild bots](getting-started.md#guild-bots) |
 | Order guild bots to farm, buy or craft items for the guild bank | Yes | [`AiPlayerbot.AutoDoQuests`](../server/settings/world-population.md#aiplayerbotautodoquests) | [Guild orders](guild-orders.md) |
 
 ### Orders, following and summoning
@@ -166,7 +166,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | :--- | :---: | :--- | :--- |
 | Pool bots invite you to their group (not while you are `/dnd`) | Yes | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Invites](../world/social.md#grouping--party-invites) |
 | Pool bots group with each other | No | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) | [Invites](../world/social.md#grouping--party-invites) |
-| Pool bots join your guild when invited (hires, your own alts, full guilds and queued bots excluded) | Usually | — | [Guilds](../world/social.md#guilds) |
+| Pool bots join your guild when invited (hires, your own alts, full guilds and queued bots excluded) | Always | — | [Guilds](../world/social.md#guilds) |
 | Bots found guilds of their own (switched on, but not seen working on test realms) | Yes | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Guilds](../world/social.md#guilds) |
 | Companion mages conjure food and water and trade it to group members who have none | Yes | — | [Trading](../world/social.md#trading-with-pool-bots) |
 | Your companions greet players they meet | Yes | [`AiPlayerbot.EnableGreet`](../server/settings/world-population.md#aiplayerbotenablegreet) | [Greetings](../world/social.md#greetings--emotes) |
@@ -193,7 +193,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | An LFT group walks to the dungeon together | Always | — | [LFT](../world/queues.md#looking-for-turtles-lft-dungeon-autofill) |
 | Pool bots fill battleground queues when players queue | Yes | [`AiPlayerbot.RandomBotBgEnabled`](../server/settings/queues.md#aiplayerbotrandombotbgenabled) | [Battlegrounds](../world/queues.md#battleground-auto-queue-human-demand) |
 | Bot-only Warsong Gulch matches when no player queues | Yes | [`AiPlayerbot.RandomBotBgAutonomous`](../server/settings/queues.md#aiplayerbotrandombotbgautonomous) | [Bot matches](../world/queues.md#autonomous-bot-only-matches) |
-| Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Usually | [`AiPlayerbot.HireAllowPvP`](../server/settings/hiring.md#aiplayerbothireallowpvp) | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
+| Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Always | — | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
 | Bots play the objectives in WSG, AB and AV | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
 
 ## Server & Monitoring (Dashboard, Logs)
