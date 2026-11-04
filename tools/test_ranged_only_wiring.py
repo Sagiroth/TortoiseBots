@@ -49,6 +49,7 @@ class RangedOnlyWiring(unittest.TestCase):
         hold = body(ACTIONS, "bool ai::IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYdOut)")
         self.assertIn("sPlayerbotAIConfig.dungeonRunRangedOnly", hold)
         self.assertIn("ai->IsRanged(bot)", hold)
+        self.assertIn("PlayerbotAI::IsHeal(bot)", hold)
         self.assertIn("RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), row.param)", hold)
         self.assertIn("BossTacticKind::RangedOnly", hold)
         self.assertIn("float gap = unit->GetPositionZ() - bot->GetPositionZ();", hold)

@@ -4794,6 +4794,9 @@ bool ai::IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYd
         return false;
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || ai->IsRanged(bot))
         return false;
+    // The kind holds melee damage and tanks: a healer keeps its own business in the air phase.
+    if (PlayerbotAI::IsHeal(bot))
+        return false;
     const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry());
     if (!rows)
         return false;
