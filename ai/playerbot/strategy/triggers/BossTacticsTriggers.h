@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/Trigger.h"
 
 namespace ai
@@ -38,11 +39,13 @@ namespace ai
         bool IsActive() override;
     };
 
-    // A kill_first creature is alive and this DPS bot is not on it.
+    // A kill_first creature is alive and this DPS bot is not on it. Checked every second under
+    // AiPlayerbot.DungeonRunTotemFocus (a totem's whole life is 1-2 s), every two seconds otherwise.
     class BossTacticsKillFirstTrigger : public Trigger
     {
     public:
-        BossTacticsKillFirstTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics kill first", 2) {}
+        BossTacticsKillFirstTrigger(PlayerbotAI* ai)
+            : Trigger(ai, "boss tactics kill first", sPlayerbotAIConfig.dungeonRunTotemFocus ? 1 : 2) {}
         bool IsActive() override;
     };
 
