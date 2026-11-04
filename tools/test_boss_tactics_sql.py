@@ -20,7 +20,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
-         "taunt_after_cast", "swap_on_aura", "seek_aura", "pull_gate", "spread"}
+         "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
@@ -30,6 +30,7 @@ MODE_WORDS = {
     "flee_on_aura": {"away", "to_tank"},
     "dps_hold_after": {"engage", "blink", "until_tank"},
     "taunt_after_cast": {"engage", "blink", "until_tank"},
+    "use_object": {"tank_anchor"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -325,6 +326,13 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "swap_on_aura":
                 self.assertGreater(int(spell), 0, where)        # the aura the tanks swap on
                 self.assertGreaterEqual(int(priority), 2, where)  # at least two tanks in the rotation
+            if kind == "use_object":
+                self.assertGreater(int(target), 0, where)       # the game object to click
+                self.assertLessEqual(int(priority), 2, where)   # the clicker role: free DPS, healer, non-tank
+                self.assertGreater(float(param), 0.0, where)   # the boss-to-object range in yards
+                self.assertLessEqual(float(param), 60.0, where)
+                self.assertTrue(float(window_s) == 0.0 or float(window_s) >= 10.0, where)
+                self.assertTrue(int(spell) > 0 or float(window_s) > 0.0, where)
             problem = new_kind_problem(_payload_dict(row))
             self.assertIsNone(problem, "%s: %s" % (where, problem))
 
@@ -1147,7 +1155,7 @@ class BossTacticsCoreData(unittest.TestCase):
         for row in effective_rows():
             where = "map %s boss %s kind %s" % (row[1], row[2], row[3])
             self.assertIn(int(row[2]), self.templates, "%s: boss_entry has no creature_template row" % where)
-            if int(row[4]):
+            if int(row[4]) and row[3] != "use_object":
                 self.assertIn(int(row[4]), self.templates, "%s: target_entry %s has no creature_template row" % (where, row[4]))
 
     def test_bosses_spawn_on_their_map(self):

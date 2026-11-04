@@ -67,9 +67,13 @@ namespace ai
         // path ring is keepout + kCreatureAuraHazardMargin, as for every row.
         { 533, 16027, 0, 5.0f, 10.0f, false },
         // Not tank-exempt: Explode does about 30k, which is how #906 lost both tanks.
-        // The creature is also NOT_SELECTABLE (unit_flags 0x2000040, 28296 HP),
-        // so no bot can target it: nobody kills it or sets it aside, bots only
-        // keep their distance.
+        // Ruins of Ahn'Qiraj, Sand Vortex 15428 (boss_ossirian.cpp:56-60,179-195):
+        // two summoned at aggro, wandering 55 yd, carrying Sand Storm 25160,
+        // which triggers Harsh Winds 25161 (-87 % speed, silence) at
+        // EffectRadiusIndex 8 (5 yd, the index the sludge's pulse uses), so the
+        // pulse is 5 yd and the keep-out matches the sludge's 8 yd. Not
+        // tank-exempt: a slowed tank cannot anchor the boss to a crystal.
+        { 509, 15428, 25160, 5.0f, 8.0f, false },
     };
 
     inline CreatureAuraKeepout const* FindCreatureAuraKeepout(uint32_t mapId, uint32_t creatureEntry)
