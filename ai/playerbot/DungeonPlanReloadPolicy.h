@@ -18,7 +18,9 @@
 // (checked on each reload against every run's pointer), so such a run goes on with the copy it started with, and the
 // next `.bot run start` takes the new plan. No boss tactic row is held past the update that read it (ScanBossTactics
 // caches one scan per bot and AI tick, and the cache is keyed by the table's identity, so a replaced table's rows are
-// never read again), so the replaced tactic table is freed at once.
+// never read again; the seek_aura fight records copy every column they read and key on the row's primary key, never
+// its address, and the reload purges them before the old table is retired), so the replaced tactic table is freed at
+// once.
 //
 // World thread only: chat commands run there (a player's `.bot` is queued and drained by the world tick, a console or
 // SOAP command runs in the world's CLI pass), and every reader of the tables (run ticks, bot AI, the dashboard snapshot)
@@ -31,6 +33,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -266,10 +269,12 @@ namespace ai
     };
 
     // Replaces both tables when JudgeTableReads and JudgePlanReload allow it, else changes nothing. `reads`: the six
-    // tables' revisions and rows read. `inUse`: every run's plan pointer.
+    // tables' revisions and rows read. `inUse`: every run's plan pointer. `beforeInstall`: called just before the old
+    // tactic table is retired (the seek_aura records name its rows; they are purged there, before it can be freed).
     inline PlanReloadOutcome CommitPlanReload(ReloadableTable<DungeonPlanTable>& plans, std::shared_ptr<DungeonPlanTable> next,
         const PlanLoadCounts& counts, ReloadableTable<BossTacticTable>& tactics, std::shared_ptr<BossTacticTable> nextTactics,
-        std::uint32_t skippedTactics, const std::vector<TableRead>& reads, const std::vector<const DungeonPlan*>& inUse)
+        std::uint32_t skippedTactics, const std::vector<TableRead>& reads, const std::vector<const DungeonPlan*>& inUse,
+        const std::function<void()>& beforeInstall = std::function<void()>())
     {
         PlanReloadOutcome out;
         if (!next || !nextTactics)
@@ -292,6 +297,8 @@ namespace ai
         out.changes = PlanReloadChanges(plans.Current(), *next);
         out.bossesBefore = plans.Current().BossCount();
         out.tacticsBefore = tactics.Current().Size();
+        if (beforeInstall)
+            beforeInstall();
         plans.Install(std::move(next));
         tactics.Install(std::move(nextTactics));
         out.keptOld = plans.Prune([&inUse](const DungeonPlanTable& table)

@@ -415,8 +415,17 @@ namespace ai
         bool gathering = false;     // a source stands at the spot and the gather is under way
         bool gatherReady = false;
         int missing = 0;            // seekers still outside the gather radius
+        // The latest accepted siphon's dose counts, read one second after the sighting: not group members carrying the
+        // dummy aura 24323 (dosed) and 24322 (not). siphonCycle 0: none read yet.
+        std::uint32_t siphonCycle = 0;
+        int siphonDosed = 0;
+        int siphonUndosed = 0;
     };
     bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
+
+    // Drops every seek_aura fight record before `.bot run reloadplans` frees the old tactic table: the records' keys
+    // are stable row identities and their clock is copied, but a reload is a new fight's start.
+    void PurgeSeekFightState();
 
     // What this bot does about the row right now: walk into the row's cloud (the source already died), or walk to the
     // gather around the dying source. `phase` is the log's own word (cloud / gather / hold).

@@ -6,6 +6,7 @@
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
 #include <cstdint>
+#include <vector>
 
 namespace ai
 {
@@ -98,5 +99,59 @@ namespace ai
     {
         return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
             nearestSourceToSpotYd <= kSeekPickupYd;
+    }
+
+    // The seek action takes this tick while it walks, and once more to stop a walk already under way. Standing at the
+    // gather consumes nothing (the stand action's rule): the engine runs one successful action a tick, so a seek that
+    // kept returning true at the spot would silence the rotation, the heals and the burn for the rest of the window.
+    inline bool SeekActionConsumesTick(bool atSpot, bool moving)
+    {
+        return !atSpot || moving;
+    }
+
+    // A source at the spot, as the gather's pick sees it: its guid and the health % that breaks the tie.
+    struct SeekSourceChoice
+    {
+        std::uint64_t guid = 0;
+        float hpPct = 100.0f;
+    };
+
+    // The gather's one source: the current one while it still stands at the spot (two Sons there must not make each
+    // bot pick its own, which flipped the shared latch), else the lowest health % and then the lowest guid, so every
+    // bot of the fight reads the same source. 0: no source at the spot.
+    inline std::uint64_t SeekKeepOrPickGatherSource(std::uint64_t currentGuid,
+        const std::vector<SeekSourceChoice>& atSpot)
+    {
+        std::uint64_t best = 0;
+        float bestHp = 0.0f;
+        for (const SeekSourceChoice& c : atSpot)
+        {
+            if (currentGuid != 0 && c.guid == currentGuid)
+                return currentGuid;
+            if (best == 0 || c.hpPct < bestHp || (c.hpPct == bestHp && c.guid < best))
+            {
+                best = c.guid;
+                bestHp = c.hpPct;
+            }
+        }
+        return best;
+    }
+
+    // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
+    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands).
+    constexpr float kSeekFallbackYd = 35.0f;
+
+    inline float SeekSourceSearchYd(bool thirdTank)
+    {
+        return thirdTank ? kSeekSpotYd : kSeekFallbackYd;
+    }
+
+    // The record is only touched while the bots see the boss fighting, so a longer gap is a re-pull: the cycle clock
+    // starts over rather than counting the old engage (due in the past, the window shut until the first siphon).
+    constexpr std::uint32_t kSeekRepullGapMs = 10000;
+
+    inline bool SeekClockStartOver(bool bossInCombat, std::uint32_t lastSeenMs, std::uint32_t nowMs)
+    {
+        return !bossInCombat || (lastSeenMs != 0 && nowMs - lastSeenMs > kSeekRepullGapMs);
     }
 }
