@@ -109,7 +109,7 @@ class CharmYieldWiring(unittest.TestCase):
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
         self.assertIn("TauntAfterTankIndex(alive, static_cast<int>(row->priority))", ACTIONS)
-        self.assertIn("TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned)", ACTIONS)
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", ACTIONS)
         # Only until_tank is implemented; blink and the spell triggers stay parsed and ignored.
         self.assertIn("row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank", ACTIONS)
         self.assertIn("bool BossTacticsTauntAfterTrigger::IsActive()", TRIGGERS)
@@ -125,8 +125,13 @@ class CharmYieldWiring(unittest.TestCase):
         # A subject between victims (or on a pet) is mid-transition: only a tank ends the episode early, so a rival
         # retarget never hands the off-tank a second full window.
         scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
-        self.assertIn("else if (victimIsTank)", scan)
+        # The episode's transitions are the pure machine's; a tank having the subject back ends it early.
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", scan)
+        self.assertIn("TauntEpisodeStep::Regained", scan)
         self.assertIn("state = TauntAfterEpisode();", scan)
+        # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
+        self.assertIn("TauntAfterTankUsable(", scan)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
         self.assertIn("TauntAfterTankIndex", POLICY)
         self.assertIn("TauntAfterDue", POLICY)
         # The pure cases are pinned in the policy test file too.
