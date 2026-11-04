@@ -12216,13 +12216,13 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
     // A member group: two members together away from the point, one alone elsewhere.
     Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
     MemberFact a = Mem("Aaa", 0);
-    a.x = -900.0f;
-    a.y = 600.0f;
+    a.x = -400.0f;
+    a.y = 120.0f;
     a.z = -172.9f;
     a.yd = 100.0f;
     MemberFact b = Mem("Bbb", 0);
-    b.x = -905.0f;
-    b.y = 604.0f;
+    b.x = -398.0f;
+    b.y = 122.0f;
     b.z = -172.9f;
     b.yd = 105.0f;
     MemberFact c = Mem("Ccc", 0);
@@ -12234,7 +12234,7 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
     MemberGroup group;
     CHECK(MemberGroupPoint(f, -422.4f, 82.4f, -172.9f, group));
     CHECK(group.count == 2 && group.nearest == "Aaa");
-    CHECK(group.x == -900.0f && group.y == 600.0f);
+    CHECK(group.x == -400.0f && group.y == 120.0f);
     // Nobody out of combat: no group.
     f.members[1].inCombat = true;
     f.members[2].inCombat = true;
@@ -12269,7 +12269,7 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
         g.rescueReach = live;
         Run r = stranded();
         std::string const order = Tick(r, g);
-        CHECK(order == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+        CHECK(order == "rescue from -960.0 620.0 -172.9 to -400.0 120.0 -172.9");
         CHECK(r.note.find("the party (Aaa's spot, 2 out of combat)") != std::string::npos);
         CHECK(r.strandOn && r.strandParty);
     }
@@ -12311,7 +12311,7 @@ static void TestTheRescueNeverTeleportsAloneOntoLiveHostiles()
         g.rescueReadY = 82.4f;
         g.rescueReadZ = -172.9f;
         g.rescueReach = live;
-        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+        CHECK(Tick(r, g) == "rescue from -960.0 620.0 -172.9 to -400.0 120.0 -172.9");
         CHECK(r.strandOn && r.strandParty);
     }
 }
@@ -12327,8 +12327,8 @@ static void TestTheRescueRetryAsksForItsRead()
         Step(PlanStepKind::Rest)};
     Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
     MemberFact a = Mem("Aaa", 0);
-    a.x = -900.0f;
-    a.y = 600.0f;
+    a.x = -400.0f;
+    a.y = 120.0f;
     a.z = -172.9f;
     a.yd = 100.0f;
     f.members = {f.members[0], a}; // the lead bot, then one member out of combat
@@ -12366,7 +12366,7 @@ static void TestTheRescueRetryAsksForItsRead()
     heldRead.rescueReadY = 82.4f;
     heldRead.rescueReadZ = -172.9f;
     heldRead.rescueReach = live;
-    CHECK(Tick(r, heldRead) == "rescue from -960.0 620.0 -172.9 to -900.0 600.0 -172.9");
+    CHECK(Tick(r, heldRead) == "rescue from -960.0 620.0 -172.9 to -400.0 120.0 -172.9");
     CHECK(r.strandOn && r.strandParty);
     CHECK(r.strandTries == 1);
 }
@@ -12498,6 +12498,106 @@ static void TestAFullWipeRescueStepsBackToAnEarlierClearPoint()
         std::string::npos);
     CHECK(r.state == State::Running); // never the pause after kRescueHoldMs
     CHECK(r.rescueHoldMs == 0);
+}
+
+// ZG walk 35 a4: after the Mar'li wipe the lead bot walked back from step 17 for about 9 minutes. The held rescue
+// point (step 204) took the party-join branch to a party clustered at step 17, before the placed start step 37: a
+// jump backwards the walk back then had to undo. The party join is bounded by the plan now: a group whose nearest
+// row stands before the run's start step, or behind the point the lead bot would go to, is not joined; the earlier
+// clear point of the way it came answers instead. A party at or after the point is joined as before.
+static void TestThePartyJoinIsBoundedByThePlan()
+{
+    DungeonPlan plan;
+    for (int i = 0; i < 10; ++i)
+        plan.steps.push_back(Step(PlanStepKind::Move, 0.0f, 100.0f * static_cast<float>(i), 0.0f));
+    plan.steps.push_back(Step(PlanStepKind::Rest));
+    std::vector<StandPackReach> live;
+    StandPackReach mob;
+    mob.x = 0.0f;
+    mob.y = 500.0f;
+    mob.z = 0.0f;
+    mob.reachYd = 20.0f;
+    live.push_back(mob);
+    auto stranded = [&](std::size_t startStep)
+    {
+        Run r = Start(&plan, 7);
+        r.startStep = startStep;
+        r.walkBack = true;
+        r.walkBackIdx = r.walkBackStart = 5;
+        r.strandDue = true;
+        r.strandIdx = 5;
+        r.rescueScanWanted = true;
+        r.rescueScanX = 0.0f;
+        r.rescueScanY = 500.0f;
+        r.rescueScanZ = 0.0f;
+        return r;
+    };
+    auto partyAt = [&](float y)
+    {
+        Facts f = StrandFacts(600.0f, 500.0f, 0.0f);
+        MemberFact a = Mem("Aaa", 0.0f);
+        a.x = 4.0f;
+        a.y = y;
+        a.z = 0.0f;
+        a.yd = 100.0f;
+        MemberFact b = Mem("Bbb", 0.0f);
+        b.x = 6.0f;
+        b.y = y;
+        b.z = 0.0f;
+        b.yd = 100.0f;
+        f.members = {f.members[0], a, b};
+        f.rescueRead = true;
+        f.rescueReadX = 0.0f;
+        f.rescueReadY = 500.0f;
+        f.rescueReadZ = 0.0f;
+        f.rescueReach = live;
+        return f;
+    };
+    {
+        // A bot-only party clustered before the placed start step (row 1): never joined. The earlier clear point of
+        // the way it came (row 4) is read instead.
+        Facts f = partyAt(95.0f);
+        Run r = stranded(3);
+        CHECK(Tick(r, f).empty());
+        CHECK(!r.strandOn && !r.strandParty);
+        CHECK(r.note == "the lead bot is stranded: reading the earlier point of step 5 for live hostiles (the point "
+            "of step 6 is held)");
+        CHECK(r.rescueScanWanted && r.rescueScanX == 0.0f && r.rescueScanY == 400.0f);
+        f.rescueReadY = 400.0f;
+        f.rescueReach.clear();
+        CHECK(Tick(r, f) == "rescue from 600.0 500.0 0.0 to 0.0 400.0 0.0");
+        CHECK(r.strandOn && !r.strandParty && r.strandIdx == 4 && r.walkBackIdx == 4);
+        CHECK(r.note.find("teleporting it to the earlier point of step 5") != std::string::npos);
+    }
+    {
+        // The party stands behind the point the lead bot would go to but after the start step (row 4): no join.
+        Facts f = partyAt(395.0f);
+        Run r = stranded(3);
+        CHECK(Tick(r, f).empty());
+        CHECK(r.note == "the lead bot is stranded: reading the earlier point of step 5 for live hostiles (the point "
+            "of step 6 is held)");
+        CHECK(!r.strandParty);
+    }
+    {
+        // A party at the stranded point's own row or after it (row 6): the party join is kept.
+        Facts f = partyAt(595.0f);
+        Run r = stranded(3);
+        CHECK(Tick(r, f) == "rescue from 600.0 500.0 0.0 to 4.0 595.0 0.0");
+        CHECK(r.strandOn && r.strandParty);
+        CHECK(r.note.find("the party (Aaa's spot, 2 out of combat)") != std::string::npos);
+    }
+    {
+        // Start step 5 with no earlier clear point at or after it: the party behind it is not joined and the run
+        // pauses naming why, not with "no member stands out of combat".
+        Facts f = partyAt(195.0f);
+        Run r = stranded(5);
+        for (std::uint32_t i = 0; i < 60 && r.state == State::Running; ++i)
+            Tick(r, f);
+        CHECK(r.state == State::Paused);
+        CHECK(r.note.find("the stranded lead bot has nowhere safe to go") != std::string::npos);
+        CHECK(r.note.find("the party stands at step 3, behind the run's start step 6") != std::string::npos);
+        CHECK(r.note.find("no member stands out of combat") == std::string::npos);
+    }
 }
 
 // A fetch with no member out of combat to bring the bot to attempts no teleport, so it spends no try: the member
@@ -33712,6 +33812,7 @@ int main()
     TestTheRescueNeverPicksALiquidPoint();
     TestTheRescueRetryAsksForItsRead();
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
+    TestThePartyJoinIsBoundedByThePlan();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheRescueReadFiltersTriggerCreatures();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();
