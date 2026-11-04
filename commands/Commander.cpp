@@ -85,6 +85,7 @@
 #include "../runtime/PlayerLedPolicy.h"
 #include "../ai/playerbot/DungeonPlanMgr.h"
 #include "../ai/playerbot/BossTacticsMgr.h"
+#include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "CreatureGroups.h"
@@ -6423,8 +6424,11 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                     // out of the instance. Run it now, while the bot is still
                     // a corpse: in a dungeon a managed bot comes back at the
                     // entrance, so nothing was lost by not waiting.
+                    // A far teleport already under way (a corpse run that
+                    // started first) repops there already: a second
+                    // TeleportTo would be issued for the same graveyard.
                     if ((released || running) && !member->IsAlive() &&
-                        IsLiveHeadlessBot(member, memberRecord) &&
+                        IsLiveHeadlessBot(member, memberRecord) && !member->IsBeingTeleportedFar() &&
                         member->IsInWorld() && member->FindMap())
                         member->RepopAtGraveyard();
                     if (released || running)
@@ -7004,7 +7008,9 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
 // The straggler pull's way (DungeonRun::StragglerPullTick): the acting tank's navmesh path to the point it was sent
 // to, and the first living hostile of another pack the way passes within its own aggro reach plus the margin of. One
 // path and one grid search, only on a try's first tick (the read the policy asked for). Read with the lead bot dead
-// too: the tank that holds the main tank role is the one that goes (an off-tank).
+// too: the tank that holds the main tank role is the one that goes (an off-tank). For the attack's read the way ends
+// at the unit's LIVE position: a patrol walks its loop, and the attack walks the tank from its loop point to where
+// the patrol stands now, not to the point the tank already stands on.
 void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
@@ -7014,10 +7020,22 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
     f.stragglerPathRead = true;
     f.stragglerPathFor = wanted;
     f.stragglerPathTank = run.stragglerTank;
+    f.stragglerPathToUnit = run.stragglerAttackPath;
     Player* tank = run.stragglerTank.empty() ? lead : FindOnlineByName(run.stragglerTank);
+    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId())
+        return;
+    float targetX = run.stragglerX, targetY = run.stragglerY, targetZ = run.stragglerZ;
+    if (run.stragglerAttackPath)
+    {
+        Unit* const unit = lead->GetMap() ? lead->GetMap()->GetUnit(::ObjectGuid(wanted)) : nullptr;
+        if (!unit || !unit->IsAlive())
+            return; // gone from the world read: no way to it
+        targetX = unit->GetPositionX();
+        targetY = unit->GetPositionY();
+        targetZ = unit->GetPositionZ();
+    }
     std::vector<PathPoint> way;
-    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId() ||
-        !DirectNavPath(tank, run.stragglerX, run.stragglerY, run.stragglerZ, way))
+    if (!DirectNavPath(tank, targetX, targetY, targetZ, way))
         return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
     float length = 0.0f;
     for (std::size_t i = 1; i < way.size(); ++i)
@@ -8396,14 +8414,14 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
-    Map* const map = lead->GetMap();
+    Map* const map = lead->FindMap();
     if (!map)
         return;
     Player* const judge = RunJudge(lead, bots);
     std::unordered_set<uint64> party;
     for (Player* bot : bots)
     {
-        if (!bot || bot->GetMap() != map)
+        if (!bot || bot->FindMap() != map)
             continue;
         party.insert(bot->GetObjectGuid().GetRawValue());
         if (Pet* const pet = bot->GetPet())
@@ -9279,6 +9297,57 @@ Creature* OwnBossSpawnCreature(Player* lead, ai::PlanStep const& step)
     uint32 const own = OwnBossSpawnLow(lead->GetMapId(), step);
     CreatureData const* data = own ? sObjectMgr.GetCreatureData(own) : nullptr;
     return data ? map->GetCreature(data->GetObjectGuid(own)) : nullptr;
+}
+
+// The Zul'Gurub High Priests whose instance state is not DONE, by name: the pull gate's note names them, so a walk
+// report says why Hakkar is not pulled. The core's instance_zulgurub keeps one state per priest (zulgurub.h's
+// TYPE_ARLOKK 1, TYPE_JEKLIK 2, TYPE_VENOXIS 3, TYPE_MARLI 4, TYPE_THEKAL 6; the same five the saved instance data
+// lists first, in this order). Empty for another map or an instance no script owns.
+std::string ZulGurubPriestsAlive(Player* lead)
+{
+    Map* map = lead->GetMap();
+    InstanceData* data = map ? map->GetInstanceData() : nullptr;
+    if (!data || lead->GetMapId() != 309)
+        return std::string();
+    static const struct { uint32 state; char const* name; } priests[] = {
+        {1, "Arlokk"}, {2, "Jeklik"}, {3, "Venoxis"}, {4, "Mar'li"}, {6, "Thekal"}};
+    std::string out;
+    for (auto const& p : priests)
+    {
+        if (data->GetData(p.state) == 3) // DONE (ScriptedInstance.h)
+            continue;
+        if (!out.empty())
+            out += ", ";
+        out += p.name;
+    }
+    return out;
+}
+
+// The pull gate's read (DungeonRun::Facts::bossGate*, AiPlayerbot.DungeonRunPullGate): a boss step whose boss carries a
+// pull_gate row reads the row's stake aura off the living creature — its stacks, the band and the hold — plus the note's
+// list of the living High Priests. DungeonRun::BossPullGated then never pulls the boss while the aura is up, and the
+// run ends at the row's seconds (Zul'Gurub walk 33 pulled Hakkar with five Hakkar Power 24692 stacks and died in 25-36
+// s). One aura lookup per boss per tick; no row (or the key off) leaves the facts unread.
+void ReadBossPullGate(ai::PlanStep const& step, Player* lead, Creature* boss, TortoiseBots::DungeonRun::Facts& f)
+{
+    if (!sPlayerbotAIConfig.dungeonRunPullGate || !step.entry || !boss || !boss->IsAlive())
+        return;
+    const std::vector<ai::BossTacticRow>* rows = ai::GetBossTactics().Rows(lead->GetMapId(), step.entry);
+    if (!rows)
+        return;
+    for (ai::BossTacticRow const& row : *rows)
+    {
+        if (row.kind != ai::BossTacticKind::PullGate)
+            continue;
+        SpellAuraHolder* holder = boss->GetSpellAuraHolder(row.spellId);
+        f.bossGateStacks = holder ? static_cast<int32>(holder->GetStackAmount()) : 0;
+        f.bossGateSpell = row.spellId;
+        f.bossGateMax = row.priority;
+        f.bossGateHoldS = row.param;
+        f.bossSearchAliveEntry = boss->GetEntry(); // the entry the scan's units read (a script's changed form too)
+        f.bossGatePriests = ZulGurubPriestsAlive(lead);
+        return;
+    }
 }
 
 // A boss step's instance search (DungeonRun::Facts::bossSearch*), on the tick after the policy asked for it
@@ -11408,6 +11477,35 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                             bossCorpseFromSpot = fromPoint;
                         }
                         continue;
+                    }
+                    // The pull gate (ReadBossPullGate): the boss's own stake aura, once per tick, off the creature
+                    // this scan found alive.
+                    if (bossEntry && f.bossGateStacks < 0)
+                        ReadBossPullGate(*step, lead, creature, f);
+                    if (bossEntry)
+                    {
+                        // Hakkar's run-line facts (D8, spec §3.2): his health, the enrage aura, and the seek clock's
+                        // latest siphon. Read once per tick off the living plan boss.
+                        if (f.bossHpPct < 0)
+                            f.bossHpPct = static_cast<int>(creature->GetHealthPercent());
+                        if (lead->GetMapId() == 309 && creature->GetEntry() == TortoiseBots::DungeonRun::kHakkarEntry)
+                        {
+                            // The enrage aura is a note-only fact, so it is read with the seek key off too.
+                            if (creature->GetSpellAuraHolder(TortoiseBots::DungeonRun::kHakkarBerserkSpell))
+                                f.bossBerserk = true;
+                            if (!f.seekClockRead && sPlayerbotAIConfig.dungeonRunSeekAura)
+                            {
+                                f.seekClockRead = true;
+                                ai::SeekCycleView view;
+                                if (ai::SeekCycleSnapshot(lead->GetInstanceId(),
+                                                          creature->GetObjectGuid().GetRawValue(), view))
+                                {
+                                    f.seekSiphonCycle = view.siphonCycle;
+                                    f.seekSiphonDosed = view.siphonDosed;
+                                    f.seekSiphonUndosed = view.siphonUndosed;
+                                }
+                            }
+                        }
                     }
                     PullReadIn read;
                     bool residue = false;

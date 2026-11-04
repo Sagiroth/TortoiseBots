@@ -100,6 +100,7 @@ std::vector<uint32_t> HeldGroupIds()
 // off keeps every group empty. The cache holds the last read per group, so the cycles between two 5 s reads repeat it.
 struct DetailCache
 {
+    bool read = false; // no read yet: a group with no detail is still fresh after its first (empty) read
     uint32_t atMs = 0;
     std::vector<RaidTelemetry::DetailEntry> entries;
 };
@@ -115,7 +116,9 @@ void FillRaidDetail(Group* group, RaidTelemetry::GroupInfo& info)
         return;
     uint32_t const now = WorldTimer::getMSTime();
     DetailCache& cache = DetailCaches()[info.groupId];
-    if (now - cache.atMs < kDetailCadenceMs && !cache.entries.empty())
+    // A group with nothing to report is cached as read too: without that it
+    // re-read every 2 s cycle instead of every kDetailCadenceMs.
+    if (cache.read && now - cache.atMs < kDetailCadenceMs)
     {
         info.detail = cache.entries;
         return;
@@ -124,7 +127,9 @@ void FillRaidDetail(Group* group, RaidTelemetry::GroupInfo& info)
     for (Group::MemberSlot const& slot : group->GetMemberSlots())
     {
         Player* bot = ObjectAccessor::FindPlayer(slot.guid);
-        if (!bot || !bot->IsInWorld())
+        // Bot members only: a real player's auras and ready facts are not the
+        // tab's data and not read (the detail is the bots' own).
+        if (!bot || !bot->IsInWorld() || !PlayerbotAIStorage::Instance().GetAI(bot))
             continue;
         RaidTelemetry::DetailEntry entry;
         entry.guid = slot.guid.GetCounter();
@@ -147,6 +152,7 @@ void FillRaidDetail(Group* group, RaidTelemetry::GroupInfo& info)
             cache.entries.push_back(std::move(entry));
     }
     cache.atMs = now;
+    cache.read = true;
     info.detail = cache.entries;
 }
 
@@ -241,6 +247,15 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
     });
     for (GroupInfo const& info : found)
         RaidSet()[info.groupId] = SelectedCopy{info.map, info.instance};
+    // The detail cache follows the collected set: a group that disbanded or
+    // left the raid maps would otherwise keep its entry for the process life.
+    for (auto cache = DetailCaches().begin(); cache != DetailCaches().end(); )
+    {
+        if (RaidSet().count(cache->first))
+            ++cache;
+        else
+            cache = DetailCaches().erase(cache);
+    }
     out.swap(found);
 }
 

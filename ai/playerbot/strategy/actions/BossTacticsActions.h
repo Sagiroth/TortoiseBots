@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
+#include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
 #include "AttackAction.h"
@@ -250,6 +251,16 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // AiPlayerbot.DungeonRunCharmYield: an area action that would land within kCharmedAllyAreaYd of a creature-charmed
+    // group member is stood down. Not a boss-tactics rule: the key alone decides, on any map, so the class is
+    // registered on the always-on combat strategies (the TrapHoldMultiplier placement), not on BossTacticsStrategy.
+    class CharmedAllyHoldMultiplier : public Multiplier
+    {
+    public:
+        CharmedAllyHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "charmed ally hold") {}
+        float GetValue(Action* action) override;
+    };
+
     // Once on the kill-first creature, the generic assist/AoE re-pick would swing
     // the bot back to the boss the next tick.
     class BossTacticsHoldMultiplier : public Multiplier
@@ -432,6 +443,167 @@ namespace ai
     {
     public:
         BossTacticsTankSwapHoldAction(PlayerbotAI* ai) : Action(ai, "boss tactics tank swap hold") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The seek_aura fight's clock and gather state, as the run leader reads it: the next Blood Siphon's due time, the
+    // dose window, the cycle count and the gather (the source it stands around and whether the burn may start). One
+    // record per (instance, boss, row) is shared by every bot of the instance (SeekCycleSnapshot).
+    struct SeekCycleView
+    {
+        bool valid = false;
+        std::uint32_t dueMs = 0;    // WorldTimer::getMSTime of the next cycle spell (0 = no cycle yet)
+        std::uint32_t dueInMs = 0;  // max(0, dueMs - now)
+        bool windowOpen = false;
+        std::uint32_t cycleNo = 0;
+        bool gathering = false;     // a source stands at the spot and the gather is under way
+        bool gatherReady = false;
+        int missing = 0;            // seekers still outside the gather radius
+        // The latest accepted siphon's dose counts, read one second after the sighting: not group members carrying the
+        // dummy aura 24323 (dosed) and 24322 (not). siphonCycle 0: none read yet.
+        std::uint32_t siphonCycle = 0;
+        int siphonDosed = 0;
+        int siphonUndosed = 0;
+    };
+    bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
+
+    // The seek_aura fight records' handoff across `.bot run reloadplans`: records whose stable row identity still
+    // exists in the new tactic table with the same cycle spell, cycle length and dose window keep their engage, last
+    // siphon and window; records of removed or retimed rows are dropped. The old table may then be freed (the records
+    // copy every column they read and keep no row pointer).
+    void ReconcileSeekFightState(const BossTacticTable& next);
+
+    // What this bot does about the row right now: walk into the row's cloud (the source already died), or walk to the
+    // gather around the dying source. `phase` is the log's own word (cloud / gather / hold).
+    struct SeekTask
+    {
+        enum class Phase
+        {
+            None = 0,
+            Cloud = 1,  // walk into a cloud the row's source already left
+            Gather = 2, // walk to the gather around the source before it dies
+        };
+        bool valid = false;
+        Phase phase = Phase::None;
+        const BossTacticRow* row = nullptr;
+        Unit* boss = nullptr;
+        Unit* source = nullptr;         // the living source the gather stands around (gather only)
+        DynamicObject* cloud = nullptr; // the cloud the bot walks into (cloud only)
+        float x = 0.0f, y = 0.0f, z = 0.0f; // the point the bot walks to
+        float dist = 0.0f;              // bot to the cloud's centre, or to the source
+        bool atSpot = false;            // the gather: already inside the radius
+        bool hasAura = false;
+        std::uint32_t dueInMs = 0;
+        std::uint32_t cycleNo = 0;
+    };
+    SeekTask FindBossSeek(PlayerbotAI* ai, Player* bot);
+    // Whether the bot is in a seek phase right now: the move hold and the raid spread stand-down read it.
+    bool BossSeeking(PlayerbotAI* ai, Player* bot);
+
+    // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
+    // off. False on every other bot, row or target.
+    bool IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit);
+
+    // Whether `dyn` is a seek_aura row's cloud: the aura itself, or the trigger spell of its persistent area effect.
+    // The ground-hazard readers skip it while the row is live, so the raid stands in the poison on purpose.
+    bool IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn);
+
+    // The spacing the ranged raid must keep right now: a live spread row's `param` (never below `fallback`), else
+    // `fallback`. BossSpreadLive says whether any live spread row widened it (the stay exemption drops then).
+    float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
+    bool BossSpreadLive(PlayerbotAI* ai, Player* bot);
+
+    // The source a free DPS bot damages or burns: the one the gather stands around, while the dose window is open and
+    // the row's hold allows the damage (the pre-damage, or the burn once the gather is ready). Null otherwise.
+    Unit* FindBossSeekKill(PlayerbotAI* ai, Player* bot);
+
+    // The second off-tank's job: take a source that fights, pull one while the gather still needs it, and hold it at
+    // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B.
+    struct SeekTankTask
+    {
+        bool valid = false;
+        const BossTacticRow* row = nullptr;
+        Unit* source = nullptr;
+        bool take = false;
+        bool pull = false;
+        bool walkToSpot = false;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+    };
+    SeekTankTask FindBossSeekTank(PlayerbotAI* ai, Player* bot);
+
+    // The seek walk: into the cloud, or to the gather around the dying source, and then stand.
+    class BossTacticsSeekAction : public MovementAction
+    {
+    public:
+        BossTacticsSeekAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics seek") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+    };
+
+    // The second off-tank's source: take it, pull it, drag it to the row's spot.
+    class BossTacticsSeekTankAction : public AttackAction
+    {
+    public:
+        BossTacticsSeekTankAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics seek tank") {}
+        bool Execute(Event& event) override;
+
+    private:
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+    };
+
+    // The free DPS bots' source damage: the pre-damage down to the hold percent, then the burn once the gather is
+    // ready (the kill_first slot's priority; the two never both apply on one boss).
+    class BossTacticsSeekKillAction : public AttackAction
+    {
+    public:
+        BossTacticsSeekKillAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics seek kill") {}
+        bool Execute(Event& event) override;
+    };
+
+    // While the bot seeks (walks into the cloud or to the gather), every other movement action is held so the return
+    // to the stay, the raid spread, a reach, a follow or a hazard step-out cannot undo the walk.
+    class BossTacticsSeekHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsSeekHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek hold") {}
+        float GetValue(Action* action) override;
+    };
+    // A taunt_after_cast row (mode until_tank) whose subject stopped being on a tank, for the one bot the row's raid
+    // order names (`priority`, the first alive at or after it): `valid` is true only while that bot is the one asking
+    // and the deadline the rising edge opened has not run out. `sinceMs` is how long ago it opened, `deadlineMs` the
+    // row's param. blink and the spell triggers stay unimplemented: the loader accepts those rows, this scan ignores
+    // them.
+    struct BossTauntAfter
+    {
+        bool valid = false;
+        Unit* subject = nullptr;
+        const BossTacticRow* row = nullptr;
+        int tankIndex = -1;          // the bot's slot in the raid tank order
+        std::uint32_t deadlineMs = 0;
+        std::uint32_t sinceMs = 0;   // since the subject's victim stopped being a tank
+    };
+    // One read of the taunt_after_cast rows of the fight: opens the episode on the rising edge, closes and logs it
+    // when the subject is on a tank again or the deadline ran out (`BossTacticsTauntAfter`). Gated by
+    // AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; the episode state is the fight's, shared by
+    // every bot of the instance, so a tank taking over mid-episode continues it.
+    BossTauntAfter FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+    // The taunt of the episode was cast: its outcome row then says taunted=1.
+    void NoteBossTauntAfterCast(PlayerbotAI* ai, Player* bot, const BossTauntAfter& task);
+
+    // The row's tank attacks the subject and casts its class taunt (`taunt`/`growl`) as soon as it can.
+    class BossTacticsTauntAfterAction : public AttackAction
+    {
+    public:
+        BossTacticsTauntAfterAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics taunt after") {}
         bool Execute(Event& event) override;
     };
 }

@@ -22,10 +22,10 @@ enum class Verdict
     Drop,
 };
 
-// A held packet waits at most this long, in milliseconds. After that the bot
-// has been between maps for longer than any legitimate teleport, so the packet
-// is stale and dropped. Time is charged once per world tick, not once per
-// drain: a tick drains before every queued command and once more at its end.
+// A held packet waits at most this long, in milliseconds, from the moment it
+// was first held (wall clock, so every drain of a tick sees the same age). After
+// that the bot has been between maps for longer than any legitimate teleport,
+// so the packet is stale and dropped.
 constexpr uint64_t kMaxHeldMs = 3000;
 
 // Wire values of the server packets whose AI handler reads the bot's map

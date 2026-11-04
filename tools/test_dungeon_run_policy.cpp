@@ -19427,12 +19427,14 @@ static UnitFact StragglerUnit(std::uint64_t guid = 0xd001, std::uint32_t entry =
     return u;
 }
 
-// The way was read clear for this guid and tank (the glue's answer).
-static void StragglerWayClear(Facts& f, std::uint64_t guid, const std::string& tank)
+// The way was read clear for this guid and tank (the glue's answer), to the point the tank was sent to or to the
+// unit's live position (the attack's read).
+static void StragglerWayClear(Facts& f, std::uint64_t guid, const std::string& tank, bool toUnit = false)
 {
     f.stragglerPathRead = true;
     f.stragglerPathFor = guid;
     f.stragglerPathTank = tank;
+    f.stragglerPathToUnit = toUnit;
     f.stragglerPathOk = true;
 }
 
@@ -23593,19 +23595,60 @@ static void TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint()
         CHECK(Tick(r, f).empty());
     CHECK(r.state == State::Running && r.step == 1 && r.standPullMs == 29000);
     CHECK(Tick(r, f).empty()); // one loop (30 s) is over: the way to its nearest point is read
-    CHECK(r.state == State::Running && r.stragglerPathWanted == 9);
+    CHECK(r.state == State::Running && r.stragglerPathWanted == 9 && !r.stragglerAttackPath);
     StragglerWayClear(f, 9, "Tanky");
     CHECK(Tick(r, f) == "move -12240.0 -1490.0 130.9");
     f.leadX = -12240.0f;
     f.leadY = -1490.0f;
     f.leadZ = kPatrolPullFloorZ;
-    CHECK(Tick(r, f).empty()); // at the loop point: the way is read once more before the attack
+    // The patrol walked on to the loop point the tank stands at: the attack's
+    // read is asked for the unit's live position, not the point.
+    f.units.front().x = -12240.0f;
+    f.units.front().y = -1490.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerPathWanted == 9 && r.stragglerAttackPath);
+    StragglerWayClear(f, 9, "Tanky", true);
     CHECK(Tick(r, f) == "attack 9 Tanky");
     CHECK(r.state == State::Running && r.step == 1);
     // It comes into the fight: the gate is done for the step, the fight handles it.
     f.anyInCombat = true;
     CHECK(Tick(r, f).empty());
     CHECK(r.stragglerGuid == 0);
+}
+
+// The patrol is on the far side of its loop when the tank reaches the point: no attack goes out until it comes
+// within reach of the point (bounded by the try's 45 s budget). Before, the tank attacked at once and ran the whole
+// loop, through packs the way check never saw.
+static void TestStragglerPullWaitsAtTheLoopPointForThePatrolToComeNear()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(40.0f);
+    f.stragglerPull = true;
+    f.leadIsTank = true;
+    f.units.front().entry = 11368;
+    f.units.front().cycleMs = 30000;
+    f.units.front().loop = {ai::ApproachPoint{-12240.0f, -1490.0f, kPatrolPullFloorZ}};
+    f.standPatrols = {f.units.front()};
+    for (int i = 0; i < 30; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.stragglerPathWanted == 9 && !r.stragglerAttackPath);
+    StragglerWayClear(f, 9, "Tanky");
+    CHECK(Tick(r, f) == "move -12240.0 -1490.0 130.9");
+    f.leadX = -12240.0f;
+    f.leadY = -1490.0f;
+    f.leadZ = kPatrolPullFloorZ;
+    // The patrol is 60 yd away on its loop: no order, no read asked for.
+    f.units.front().x = -12300.0f;
+    f.units.front().y = -1490.0f;
+    for (int i = 0; i < 10; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(!r.stragglerAttackSent && r.stragglerPathWanted == 0);
+    // The try's budget still ends the wait: no tank left, so the run pauses naming it.
+    for (int i = 0; i < 35; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("Tanky did not pull it within 45 s") != std::string::npos);
 }
 
 static void TestPatrolStandPullShootsAPatrollerInShot()
@@ -32835,8 +32878,191 @@ static void TestSignedDzCountsEitherFloor()
     }
 }
 
+// Zul'Gurub walk 33: the placed Hakkar start opened a fresh instance with the five High Priests alive, so Hakkar wore
+// five Hakkar Power 24692 stacks (one per living priest, +20 % damage and +10 % max health each) and every pull died
+// in 25-36 s. The run leader never pulls the boss while its pull_gate row's stake aura is above the allowed stacks,
+// and ends the run after the row's hold (30 s): a fresh Hakkar start is a wipe, not a step to retry.
+static void TestPullGateHoldsHakkarWithPriestAlive()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14834;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(5, 14834, 30)};
+    f.bossSearchAliveEntry = 14834;
+    f.bossGateSpell = 24692;
+    f.bossGateMax = 0;
+    f.bossGateHoldS = 30.0f;
+    f.bossGateStacks = 1; // one living High Priest
+    CHECK(BossPullGated(f, 14834));
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "boss gate: 14834 wears 24692 x1 (0 allowed); not pulling");
+    CHECK(r.state == State::Running && r.step == 0);
+    // 30 s of held ticks: the run ends, its note naming the gate. The TBM:RUN line carries it.
+    for (std::uint32_t ms = 0; ms < 30000 && r.state == State::Running; ms += kTickMs)
+        Tick(r, f);
+    CHECK(r.state == State::Done);
+    CHECK(r.note.find("boss gate: 14834 wears 24692 x1 (0 allowed); the run ends") == 0);
+    // No stack (the five priests are DONE): the pull goes out as before, and the hold never starts.
+    Run p = Start(&plan);
+    Facts g = f;
+    g.bossGateStacks = 0;
+    CHECK(!BossPullGated(g, 14834));
+    CHECK(Tick(p, g) == "pullback 5");
+    CHECK(p.state == State::Running && p.note.find("boss gate") == std::string::npos);
+    // The stack band is `more than max`: at max the boss is pulled (the mutation `>=` would hold it).
+    Facts h = g;
+    h.bossGateMax = 1;
+    h.bossGateStacks = 1;
+    CHECK(!BossPullGated(h, 14834));
+    h.bossGateStacks = 2;
+    CHECK(BossPullGated(h, 14834));
+    // The gate names the living High Priests when the glue read them off the instance data.
+    Run q = Start(&plan);
+    Facts k = f;
+    k.bossGatePriests = "Jeklik, Thekal";
+    CHECK(Tick(q, k).empty());
+    CHECK(q.note == "boss gate: 14834 wears 24692 x1 (0 allowed); priests alive: Jeklik, Thekal; not pulling");
+}
+
+// Only the plan boss is gated: the trash of its step is pulled as before (a Hakkar step's adds are not the wipe).
+static void TestPullGateIgnoresOtherUnits()
+{
+    DungeonPlan pull;
+    pull.steps = {PullStep(10, {7078}), Step(PlanStepKind::Move, 60)};
+    Facts f = Party(0);
+    f.units = {Unit(9, 7078, 12)};
+    f.bossSearchAliveEntry = 14834;
+    f.bossGateSpell = 24692;
+    f.bossGateMax = 0;
+    f.bossGateHoldS = 30.0f;
+    f.bossGateStacks = 1;
+    CHECK(!BossPullGated(f, 7078));
+    Run r = Start(&pull);
+    CHECK(Tick(r, f) == "pullback 9");
+    CHECK(r.bossGateHeldMs == 0);
+    // The boss's own step, his trash in its units: the step's kill order picks the boss, and the gate holds him.
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14834;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Facts g = f;
+    g.units = {Unit(5, 14834, 30), Unit(9, 7078, 12)};
+    Run p = Start(&plan);
+    CHECK(Tick(p, g).empty());
+    CHECK(p.bossGateHeldMs == kTickMs && p.state == State::Running);
+    CHECK(p.note.find("boss gate: 14834") == 0);
+}
+
+// The gate on the guard's engage-on-arrival path (CheckGuard): a fight the gate let through already started, so the
+// gate holds every guard order and ends the run at the row's seconds instead of fighting on. Accepted and pinned
+// here: the alternative (orders during a gated Hakkar fight) is worse, and the whole case is a wipe either way.
+static void TestPullGateHoldsOrdersOnTheGuardPath()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14834;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.leadIsTank = true;
+    f.leadStaying = true;      // the tank on its stand: EngageTarget looks at its attacker
+    f.leadHasAttacker = true;
+    f.leadAttacker = Unit(5, 14834, 10);
+    f.leadAttacker.hostile = true;
+    f.leadAttacker.attackable = true;
+    f.leadAttacker.hitting = true;
+    f.bossSearchAliveEntry = 14834;
+    f.bossGateSpell = 24692;
+    f.bossGateMax = 0;
+    f.bossGateHoldS = 30.0f;
+    f.bossGateStacks = 1;
+    std::string order;
+    CHECK(CheckGuard(r, f, kTickMs, order));
+    CHECK(order.empty());
+    CHECK(r.bossGateHeldMs == kTickMs);
+    CHECK(r.note.find("boss gate: 14834 wears 24692 x1 (0 allowed); not pulling") == 0);
+    for (std::uint32_t ms = kTickMs; ms < 30000 && r.state == State::Running; ms += kTickMs)
+        CheckGuard(r, f, kTickMs, order);
+    CHECK(r.state == State::Done);
+    CHECK(r.note.find("the run ends") != std::string::npos);
+}
+
+// Hakkar's run line (D8, §3.2): the berserk warning at 540 s, the aura's note when it lands, and one siphon note per
+// accepted cycle with the dosed/undosed counts the glue read from SeekCycleSnapshot.
+static void TestHakkarBerserkAndSiphonNotes()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 14834;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    UnitFact hakkar = Unit(5, 14834, 30);
+    hakkar.hostile = true;
+    hakkar.attackable = true;
+    hakkar.health = 1000000;
+    hakkar.maxHealth = 1000000;
+    f.units = {hakkar};
+    f.engagedRead = true;
+    f.bossHpPct = 61;
+    bool noted = false;
+    for (std::uint32_t i = 0; i < 700 && r.state == State::Running; ++i)
+    {
+        hakkar.health -= 1000; // a fight that keeps losing hp goes on past the ceiling
+        f.engagedUnits = {hakkar};
+        f.units = {hakkar};
+        if (r.fightMs + kTickMs >= kHakkarBerserkSoonMs && r.note.find("Hakkar berserk in 60 s (61 %)") != std::string::npos)
+        {
+            noted = true;
+            break;
+        }
+        Tick(r, f);
+    }
+    CHECK(noted);
+    CHECK(r.fightMs >= kHakkarBerserkSoonMs);
+    // The warning is once: a later tick has the plain line again.
+    hakkar.health -= 1000;
+    f.engagedUnits = {hakkar};
+    f.units = {hakkar};
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar berserk in 60 s") == std::string::npos);
+    // The aura's note, once.
+    f.bossBerserk = true;
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar berserk (27680)") != std::string::npos);
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar berserk (27680)") == std::string::npos);
+    // One siphon note per cycle: 18 dosed, 2 not.
+    f.seekSiphonCycle = 1;
+    f.seekSiphonDosed = 18;
+    f.seekSiphonUndosed = 2;
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar siphon 1: 18 dosed, 2 not") != std::string::npos);
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar siphon 1") == std::string::npos);
+    // A new cycle reports again.
+    f.seekSiphonCycle = 2;
+    f.seekSiphonDosed = 19;
+    f.seekSiphonUndosed = 1;
+    Tick(r, f);
+    CHECK(r.note.find("Hakkar siphon 2: 19 dosed, 1 not") != std::string::npos);
+}
+
 int main()
 {
+    TestPullGateHoldsHakkarWithPriestAlive();
+    TestPullGateIgnoresOtherUnits();
+    TestPullGateHoldsOrdersOnTheGuardPath();
+    TestHakkarBerserkAndSiphonNotes();
     TestSignedDzCountsEitherFloor();
     TestRunCcHeldFrozenAndRemoteBotsSkipNoOrder();
     TestAutoCcSkipsBossTacticKillFirstAndLinkedDeathUnits();
@@ -32901,6 +33127,7 @@ int main()
     TestStragglerPullRecheckAbortsOnANewBlocker();
     TestStragglerPullNeverTakesABossKillFirstOrLinkedDeathUnit();
     TestStragglerPullWaitsOnePatrolCycleThenPullsAtItsLoopPoint();
+    TestStragglerPullWaitsAtTheLoopPointForThePatrolToComeNear();
     TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
     TestFightStepEndWaitsOnResidue();
     TestZeroPullClearNamesNearestLeft();

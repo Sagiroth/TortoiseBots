@@ -3,7 +3,7 @@
 
 The core keeps one Eluna state per map (Player/Map ::GetEluna()); the old global sEluna is gone.
 Every Eluna call must sit inside #ifdef ENABLE_ELUNA (or PLAYERBOT_ELUNA) so a core built without
-Eluna never sees it. CI builds both ways; this check catches the common mistakes in about a second.
+Eluna never sees it. CI no longer builds with Eluna; this check catches the common mistakes in about a second.
 """
 import os
 import re

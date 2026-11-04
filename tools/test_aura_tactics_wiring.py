@@ -448,7 +448,10 @@ class DpsHoldWiring(unittest.TestCase):
         multiplier = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(", "\n}\n")
         self.assertIn("const bool auraHolds = sPlayerbotAIConfig.dungeonRunAuraTactics", multiplier)
         self.assertIn("BossTacticKind::DpsHoldAfter", multiplier)
-        self.assertIn("const bool area = (holdsRows || dpsHoldRows) && IsAreaDamageAction(ai, action);", multiplier)
+        # The seek_aura row joins the area clause (a blast beside the Son takes it): the seek wiring has its own
+        # guards in tools/test_seek_aura_wiring.py.
+        self.assertIn("const bool area = (holdsRows || dpsHoldRows || seeksRow) && IsAreaDamageAction(ai, action);",
+                      multiplier)
 
     def test_the_hold_logs_one_row_per_trigger_and_bot(self):
         log = body(ACTIONS, "void LogDpsHold(")

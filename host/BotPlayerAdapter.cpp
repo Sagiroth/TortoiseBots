@@ -1,4 +1,5 @@
 #include "BotPlayerAdapter.h"
+#include "PlayerMapChangePolicy.h"
 
 #include "../behavior/PlayerConvenience.h"
 #include "../commands/BotCommands.h"
@@ -164,7 +165,10 @@ void BotPlayerAdapter::OnMapChanged(Player* player)
     // summon and its cancellation/completion state.
     for (Player* bot : BotManager::Instance().GetBotsForMaster(player->GetObjectGuid()))
     {
-        if (!bot || !bot->FindMap() || bot->FindMap()->IsDungeon())
+        if (!bot)
+            continue;
+        Map* const botMap = bot->FindMap();
+        if (!PlayerMapChange::BotLeftInDungeon(botMap != nullptr, botMap && botMap->IsDungeon()))
             continue;
         // Issue #884: a bot in the group this player commands remotely stays
         // with its lead bot; leading from outside the dungeon is the point.

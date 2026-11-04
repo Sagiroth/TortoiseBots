@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/FankrissGauntletPolicy.h"
 #include "TargetValue.h"
+#include "playerbot/policy/combat/CcAreaGuardPolicy.h"
 #include "CcMarkHoldPolicy.h"
 #include "PeriodicDamageAura.h"
 
@@ -252,6 +253,37 @@ bool CcGuard::IsCrowdControlledUnit(Unit* unit)
     return unit && IsCrowdControlled(ai, unit);
 }
 
+bool CcGuard::BreakableCcNear(float x, float y, float z, uint32 mapId, float radius)
+{
+    Player* const bot = ai->GetBot();
+    std::list<ObjectGuid> const possible =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
+    return ai::AnyBreakableCcInArea(possible,
+        [this](ObjectGuid const& guid) { return ai->GetUnit(guid); },
+        [](Unit* unit) { return unit->IsAlive(); },
+        [](Unit* unit, uint32 map) { return unit->GetMapId() == map; },
+        [](Unit* unit, float px, float py, float pz) { return unit->GetDistance(px, py, pz); },
+        [this, bot](Unit* unit) { return PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot); },
+        mapId, x, y, z, radius);
+}
+
+bool CcGuard::BreakableCcInArea(SpellEntry const* info, Unit* spellTarget)
+{
+    if (!info || !spellTarget)
+        return false;
+    bool atTarget = false;
+    float radius = 0.0f;
+    if (!EnemyAreaOf(info, atTarget, radius) || radius <= 0.0f)
+        return false;
+    // A ground area or a chain lands on the spell's target; a caster-centred
+    // area or a cone is judged around this bot.
+    WorldObject* const center = atTarget ? static_cast<WorldObject*>(spellTarget) : ai->GetBot();
+    if (!center || !center->IsInWorld())
+        return false;
+    return BreakableCcNear(center->GetPositionX(), center->GetPositionY(), center->GetPositionZ(),
+        center->GetMapId(), radius);
+}
+
 bool CcGuard::CcInRunningArea(Spell const* spell)
 {
     if (!spell || !spell->m_spellInfo)
@@ -262,21 +294,22 @@ bool CcGuard::CcInRunningArea(Spell const* spell)
         return false;
     Player* const bot = ai->GetBot();
     float x = bot->GetPositionX(), y = bot->GetPositionY(), z = bot->GetPositionZ();
+    uint32 mapId = bot->GetMapId();
     if (atTarget)
-        spell->m_targets.getDestination(x, y, z);
-    // "possible targets" (no line of sight): a crowd-controlled unit attacks
-    // nobody, so the "attackers" list the other guards read cannot see it.
-    std::list<ObjectGuid> const possible =
-        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
-    for (ObjectGuid const& guid : possible)
     {
-        Unit* const unit = ai->GetUnit(guid);
-        if (!unit || !unit->IsAlive() || unit->GetMap() != bot->GetMap() || unit->GetDistance(x, y, z) > radius)
-            continue;
-        if (PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot))
-            return true;
+        // Where the effect runs: the ground destination the cast was given, or
+        // the unit a chain jumps from (a chain has no destination).
+        if (spell->m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
+            spell->m_targets.getDestination(x, y, z);
+        else if (Unit* const target = spell->m_targets.getUnitTarget())
+        {
+            x = target->GetPositionX();
+            y = target->GetPositionY();
+            z = target->GetPositionZ();
+            mapId = target->GetMapId();
+        }
     }
-    return false;
+    return BreakableCcNear(x, y, z, mapId, radius);
 }
 
 bool CcGuard::GroupCastsCcAt(Unit* unit)

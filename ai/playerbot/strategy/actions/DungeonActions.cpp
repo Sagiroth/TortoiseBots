@@ -3,6 +3,7 @@
 #include "playerbot/HazardEscapePolicy.h"
 #include <vector>
 #include "playerbot/BossTacticsStand.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/triggers/DungeonTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -541,7 +542,9 @@ bool RaidSpreadAction::Execute(Event& event)
     // distance" (or role default) is the "too close" radius. Otherwise the
     // legacy pool-only path: ranged pool bots at the 10yd stack radius.
     bool const optIn = ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT);
-    float radius = kSpreadSettledDistance;
+    // A live spread row widens the legacy spacing and outranks a stay (the run holds the ranged bots on their spots).
+    bool const spreadLive = BossSpreadLive(ai, bot);
+    float radius = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     if (optIn)
     {
         // Tanks never spread: stepping out drags the boss/cleave through the
@@ -566,7 +569,7 @@ bool RaidSpreadAction::Execute(Event& event)
         // maps. Inside a raid companions spread like pool bots.
         if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
             ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
@@ -633,6 +636,13 @@ bool RaidSpreadAction::Execute(Event& event)
                 lastMove.spreadFailures.BeginAttempt(nearest->GetObjectGuid().GetRawValue(),
                     bot->GetMapId(), botPos.GetAngleTo(out), nearestDist, nowMs, bot->movespline->GetId());
                 lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
+                // The landing becomes the stay spot: the return-to-stay keeps the spacing the row asked for instead of
+                // walking the bot back into the pile.
+                if (spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT))
+                {
+                    ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+                    posMap["stay"].Set(out.getX(), out.getY(), out.getZ(), bot->GetMapId());
+                }
                 return true;
             }
         }

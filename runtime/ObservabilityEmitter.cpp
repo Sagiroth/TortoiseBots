@@ -584,6 +584,8 @@ void ObservabilityEmitter::Initialize()
     m_raidsDetail.Read(sPlayerbotAIConfig.observabilityRaidsDetail,
         sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false));
     m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
     // The live fight stream and the cast poller; a `.reload config` re-reads them.
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
     m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
@@ -687,6 +689,8 @@ void ObservabilityEmitter::Shutdown()
     m_raids = ObservabilityFlag::Feed();
     m_raidsDetail = ObservabilityFlag::Feed();
     m_raidsSent = false;
+    m_raidOffset = 0;
+    m_raidTrimLoggedAt.clear();
     m_snapshotTimerMs = 0;
     m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
