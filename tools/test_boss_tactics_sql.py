@@ -664,6 +664,23 @@ class BossTacticsSql(unittest.TestCase):
             for spell in (24306, 17172):
                 self.assertIn(spell, spells, "Jin'do row spell %s has no spell_template row" % spell)
 
+    def test_berserker_taunt_after_cast_row(self):
+        # 20261107100200_world.sql: the Gurubashi Berserker (11352) resets its threat
+        # every 10 s (Knock Away 11130) and every 25-30 s (Intimidating Roar 16508),
+        # both through DoResetThreat (zulgurub_trash.cpp GurubashiBerserkerAI), so the
+        # first off-tank takes it back within 5 s. Spell-less on purpose: the resets are
+        # events, not a cast slot the boss side could key on; mode until_tank only.
+        name = "20261107100200_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Berserker taunt_after_cast migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        taunt = live.get((309, 11352, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Berserker taunt_after_cast row is missing")
+        self.assertEqual((1, 5.0, "until_tank", 0, 100),
+                         (taunt["priority"], taunt["param"], taunt["tactic_mode"], taunt["hp_min"], taunt["hp_max"]),
+                         "the Berserker taunt_after_cast row drifted")
+        self.assertIsNone(new_kind_problem(taunt))
+
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
         # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees
