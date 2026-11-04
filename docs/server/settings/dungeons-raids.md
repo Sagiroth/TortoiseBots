@@ -100,7 +100,14 @@ Collects per-fight combat numbers of every bound group for the observability das
 <details>
 <summary>How it works in detail</summary>
 
-**Combat monitor:** per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; casts made in the 3 s after combat ends are listed apart from the fight's own casts; each finished fight is sent twice with the same id (UDP loss; the daemon dedupes) and a rolling 10 s window. The live window rides the `COMMANDERS` snapshot. While on, a damage, heal or cast event of a player outside every bound group costs one atomic bit test (no lock); a member's event takes the monitor's lock. A fight past 500 distinct engaged creatures counts the rest in `fight.dropped` (distinct guids past the cap; the count stops at 4096). Needs AiPlayerbot.Observability.
+**Combat monitor:** per-fight combat numbers of every bound group for the dashboard:
+- casts, damage, healing and overheal, damage taken, deaths with last hits, debuff uptime
+- casts made in the 3 s after combat ends are listed apart
+- each finished fight is sent twice with the same id (UDP loss; the daemon dedupes)
+- a rolling 10 s window; the live window rides the `COMMANDERS` snapshot
+- a player outside every bound group costs one atomic bit test (no lock); a member event takes the lock
+- past 500 distinct engaged creatures, the rest counts in `fight.dropped` (distinct guids; stops at 4096)
+- needs `AiPlayerbot.Observability`
 
 </details>
 
@@ -124,7 +131,18 @@ Audited allowlist of scripted area triggers that a bot in a commanded or player-
 <details>
 <summary>How it works in detail</summary>
 
-**Scripted area triggers for bots (audited allowlist, off by default):** a bot has no game client, so it never reports walking into an area trigger and a trigger script never ran for it (Zul'Farrak's Witch Doctor Zum'rah stayed friendly before an all-bot party). A living bot in a group inside a dungeon runs the script of a listed trigger it walks into, once per entry, as a player's client would, but only when its party is bound to a remote commander (every run-leader run is) or has a human member within 40 yd, so a follower running ahead of its player cannot start an event alone. Raids are left out until bots are tested there. Instance entrances and exits, taverns and battleground entrances never fire. Each bot tests its own map's listed triggers twice a second, no world scan. Comma-separated ids; empty (the default) turns it off, as new automation ships off. Opt in with `AiPlayerbot.BotAreaTriggers = 962`. Audited ids: **962** (Zul'Farrak, `at_zumrah`): if Witch Doctor Zum'rah is alive within 30 yd he turns hostile, yells and his encounter is marked in progress; nothing else. Not every trigger script is safe to start from a bot (`at_ring_of_law` starts the Blackrock Depths arena, the UBRS stadium trigger starts that event, `at_shadowforge_bridge` spawns guards): read a trigger's script and document what it does here before adding its id. Since fix/plan-gossip-allow a dungeon run did not need this list for the triggers its own plan walks into: a `move` or `move_direct` step whose `entry` names a trigger armed that trigger for the run's bots (running or paused) from that step on until it had fired once for the run, read from the loaded plan, so Zul'Farrak's plan fired `962` with the list empty; any other unlisted trigger stayed off, in a run or out of one. A trigger whose script refused (it returned false: at_zumrah while Zum'rah stood farther than 30 yd) stayed armed and each bot inside tried it again every 2 s; it counted as fired only once its script ran. A run started past the trigger's move step (`.bot run` from a later step) never armed it: when the event had not happened, the run was started again from before that step.
+**Scripted area triggers for bots** (audited allowlist, off by default):
+- a bot has no game client, so it never reports walking into a trigger; the script never ran for it
+- a living grouped bot in a dungeon runs a listed trigger it walks into, once per entry, as a client would
+- only when its party is bound to a remote commander (every run-leader run is) or has a human member within 40 yd
+- raids are left out until bots are tested there; entrances, exits, taverns, and battleground entrances never fire
+- each bot tests its own map's listed triggers twice a second, no world scan
+- Opt in with `AiPlayerbot.BotAreaTriggers = 962`
+- audited: **962** (Zul'Farrak, `at_zumrah`): a living Zum'rah within 30 yd turns hostile, yells, and his encounter starts; nothing else
+- read a trigger's script and document it here before adding its id
+- a run's own `move`/`move_direct` step with an `entry` arms that trigger for its bots (running or paused) until it fires once; other unlisted triggers stay off
+- a refused script stays armed and retries every 2 s; it counts as fired only once its script runs
+- a run started past the trigger's step never arms it
 
 </details>
 
@@ -135,7 +153,11 @@ Allowlist of creature entries the `.bot cmd gossip` order may talk to.
 <details>
 <summary>How it works in detail</summary>
 
-**Bot gossip allowlist:** comma-separated creature entries that `.bot cmd gossip` may talk to. A gossip option can do anything its script says (take money, give items, teleport), so list only NPCs whose scripts you have read. Empty: every listed gossip order is refused with `not-allowed` before anything is sent to the NPC, except a dungeon run's own current gossip step (the step's `entry` only). Audited: `7604` Sergeant Bly (starts his fight after the Zul'Farrak pyramid event) and `7607` Weegli Blastfuse (blows the End Door after it), so `7607,7604` opens both. See [`.bot cmd gossip`](../../play/commands/commander.md#bot-cmd-gossip).
+**Bot gossip allowlist:** comma-separated creature entries that `.bot cmd gossip` may talk to.
+- a gossip option can do anything its script says (money, items, teleport): list only NPCs whose scripts you read
+- empty: every listed order is refused with `not-allowed`, except a run's own current gossip step (its `entry` only)
+- audited: `7604` Sergeant Bly and `7607` Weegli Blastfuse, so `7607,7604` opens both
+- see [`.bot cmd gossip`](../../play/commands/commander.md#bot-cmd-gossip)
 
 </details>
 
@@ -147,7 +169,14 @@ World bots form groups of four that wait for a player, then take a fifth bot.
 <details>
 <summary>How it works in detail</summary>
 
-**Bot LFG groups:** online, idle world bots of one faction and of a proven dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a group of four, tank, healer and damage, with one role left open for a player. While it waits it looks for that player in the LookingForGroup channel ([`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat)). When no player joins within [`AiPlayerbot.BotLfgFillAfterMinutes`](#aiplayerbotbotlfgfillafterminutes) and a free in-band bot exists, a bot of the open role joins (else it retries in 5 minutes); a held invite blocks the fill. Getting the group to the dungeon is not built yet, so a full group breaks up again after two minutes. The count scales with the bots online (one group per [`AiPlayerbot.BotLfgGroupsPer100Bots`](#aiplayerbotbotlfggroupsper100bots) bots, at most [`AiPlayerbot.BotLfgMaxGroups`](#aiplayerbotbotlfgmaxgroups)), only while a real player is online by default. Grouped bots from a previous session are skipped. Needs [`AiPlayerbot.DungeonSelfClear`](#aiplayerbotdungeonselfclear); the remote commander is not needed. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Bot LFG groups:** online, idle same-faction bots in a proven dungeon level band (`ai_bot_lfg_plan`) form a group of four:
+- tank, healer, damage, plus one role left open for a player
+- while waiting it looks in LookingForGroup ([`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat))
+- no player in time + free in-band bot: a bot of the open role joins (else retries in 5 min); a held invite blocks it
+- travel is not built: a full group breaks up after two minutes
+- count scales with bots online (per [`AiPlayerbot.BotLfgGroupsPer100Bots`](#aiplayerbotbotlfggroupsper100bots), at most [`AiPlayerbot.BotLfgMaxGroups`](#aiplayerbotbotlfgmaxgroups))
+- only while a real player is online by default; grouped bots from a past session are skipped
+- needs [`AiPlayerbot.DungeonSelfClear`](#aiplayerbotdungeonselfclear); the remote commander is not needed
 
 </details>
 
@@ -184,7 +213,12 @@ Only read while `AiPlayerbot.BotLfgGroups = 1`.
 <details>
 <summary>How it works in detail</summary>
 
-The leader of a group that waits for a player posts in its faction's LookingForGroup channel (for example the dungeon, the open role as `dps`, the level band, "w me inv"; the text rotates between three variants), again every 3 minutes, never more than one post per 30 s per faction across all groups, and only while a real player of that faction is online. A real player whose short whisper asks for an invite (for example "inv") gets a party invite when his faction, level and class fit the open role; other whispers get an answer at most every 10 s per sender (non-invite hints at most every 5 minutes). Answers: "inv sent" when the invite goes out; "already sent you an inv" when he still holds the invite; "someone's joining atm, w me again in a min" while another invite is open; "sorry, we're full now" when the group stopped waiting; "sorry, can't group with hardcore chars" for a hardcore character; and similar short refusals (grouped, outside the band, wrong role, invite failed).
+The waiting leader posts in LookingForGroup:
+- what: the dungeon, the open role as `dps`, the band, "w me inv" (text rotates between three variants)
+- when: every 3 minutes, at most one post per 30 s per faction, only while a real player of that faction is online
+- a short invite whisper (like "inv") from a fitting player gets an invite
+- other whispers: at most one answer per 10 s per sender (non-invite hints every 5 minutes)
+- answers: "inv sent", "already sent you an inv", "someone's joining atm", "sorry, we're full now", "sorry, can't group with hardcore chars", and short refusals (grouped, band, role, failed invite)
 
 </details>
 
@@ -206,7 +240,13 @@ Lets the run leader (`.bot run`) estimate how many creatures a pull would bring 
 <details>
 <summary>How it works in detail</summary>
 
-**Pull aggro estimate:** before each pack pull the run leader counts the creatures that would come with the pulled one, by the core's own wake-up rules: the pulled creature's whole pack, every creature whose aggro radius reaches the spot the party pulls from (detection range 20 yd, widened or narrowed by the level difference to the lowest party member, plus a few yards of drift), and one ring of family assistance (same faction, at least 20 yd, called from every member of the pulled pack's spawn). When more than [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) would join, the party rests once for that pull before it goes out. It adds no movement and never skips a pull; the estimate is approximate. Apart from the estimate, every pull's status note reports the joiners it really drew from the first 10 s of its fight; that needs no key. Only read while `AiPlayerbot.DungeonSelfClear = 1`. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+**Pull aggro estimate:** before each pack pull the run leader counts what would come, by the core wake-up rules:
+- the pulled creature's whole pack
+- every creature whose aggro radius reaches the pull spot (20 yd detection, widened or narrowed by level gap, plus drift)
+- one ring of family assistance (same faction, at least 20 yd, called from every pack-spawn member)
+- over [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling): the party rests once before the pull
+- adds no movement, never skips a pull; the estimate is approximate
+- every pull note also reports the joiners really drawn (first 10 s of the fight); that needs no key
 
 </details>
 
@@ -228,7 +268,12 @@ Makes the pull aggro estimate count what the party's walk to the pull, the stand
 <details>
 <summary>How it works in detail</summary>
 
-Only read while [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) is `1`. The estimate reads the navmesh walk from the lead bot to the pull's firing spot (at most 64 samples, its end always kept), the spot itself and the fight point, each widened by the party's spread (3 yd, 10 yd in a raid), and every creature counted calls its neighbours within [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) for two hops. A pull row's own bodies ceiling (the plan's `max_bodies`, the pulled creature included) replaces the config ceiling for that row, so a deliberately sized pull never rests; over it the note reads `pull estimate: N bodies over the ceiling M (plan|config): 0x...`. On the last move row before a pull the note also says once how many the coming pull would bring (`ahead: pull N brings ...`; `ahead: pull N estimate unavailable` when the row lists no creature on the map). Advice only: no order changes and no pause. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#aggro-estimate).
+Only read while [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) is `1`:
+- the estimate reads the navmesh walk (at most 64 samples), the spot, and the fight point, widened by party spread (3 yd, 10 yd in a raid)
+- every counted creature calls neighbours within [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) for two hops
+- a row's own `max_bodies` (target included) replaces the config ceiling, so a sized pull never rests
+- over it the note reads `pull estimate: N bodies over the ceiling M (plan|config)`; the last move row previews the coming pull
+- advice only: no order changes, no pause
 
 </details>
 
@@ -239,7 +284,14 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 <details>
 <summary>How it works in detail</summary>
 
-**Aura tactics:** the AI boss tactics table's six newer kinds (see [Boss Tactics](../../play/boss-tactics.md#kinds)): `dispel_priority` ranks and holds cures by the fight's rows (a `never` aura excludes its whole dispel type, a `clear` aura waits until the carrier is clear of the group); `dps_hold_after` holds free DPS off a subject for a row's seconds after a pull, a health-band opening, a listed cast or aura, or a blink; `flee_on_aura` moves a carrier out of the group (or to the main tank); `freeze_on_aura` stands a carrier still and vetoes every action while the aura lasts; `taunt_after_cast` sends a rotation tank to taunt a subject back inside a deadline; `swap_on_aura` rotates two tanks at a stack count. The same key opens the row gates: a row whose `hp_min`/`hp_max` band or `bot_aura` does not match the fight is ignored while the key is off, which keeps every pre-existing row's behaviour. With the key off, the six kinds are not scanned at all. This is the switch a raid owner flips after checking the rows on a live boss; it changes target picks, cures and movement, so it ships off. See [Boss Tactics](../../play/boss-tactics.md) for each kind's rule and the shipped Zul'Gurub rows.
+**Aura tactics:** the six newer boss-tactic kinds (see [Boss Tactics](../../play/boss-tactics.md#kinds)):
+- `dispel_priority`: ranks and holds cures by the rows (`never` excludes its whole dispel type; `clear` waits until the carrier is clear)
+- `dps_hold_after`: holds free DPS off a subject for a row's seconds after a pull, health-band opening, cast, aura, or blink
+- `flee_on_aura`: moves a carrier out of the group (or to the main tank)
+- `freeze_on_aura`: stands a carrier still and vetoes every action while the aura lasts
+- `taunt_after_cast`: sends a rotation tank to taunt a subject back inside a deadline
+- `swap_on_aura`: rotates two tanks at a stack count
+- the same key opens the row gates: a row whose `hp_min`/`hp_max` or `bot_aura` does not match is ignored while off
 
 </details>
 
@@ -250,7 +302,11 @@ Whether the bots carry the dungeon keys for a party that has real players in it.
 <details>
 <summary>How it works in detail</summary>
 
-**Keys with players:** only read while `AiPlayerbot.DungeonSelfClear = 1`. With `0` (the default) a run with a real player in the party gives the bots no keys. The start warns once, naming each key and where to get it. At a locked door the bots stop before it and ask the player to open it with the key or Lockpicking; they go on by themselves once the door reads open, and `.bot run resume` works once it is open. With `1` the bots carry the keys and open the doors for the players, as in a bot-only run. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#keys-and-doors).
+**Keys with players:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- with `0`: a run with a real player gives the bots no keys; the start warns once, naming each key and where to get it
+- at a locked door the bots stop and ask the player to open it (key or Lockpicking), then go on by themselves
+- `.bot run resume` works once the door reads open
+- with `1`: the bots carry the keys and open the doors, as in a bot-only run
 
 </details>
 
@@ -261,7 +317,10 @@ Whether the run leader pulls the next pack close by from where the tank stands a
 <details>
 <summary>How it works in detail</summary>
 
-**Fight forward:** only read while `AiPlayerbot.DungeonSelfClear = 1`, and only with `AiPlayerbot.DungeonRunWalkBackAfterWonFight = 0`. After a `pull` or `boss` step whose pack the party fought and cleared, when at most 4 plain `move` rows of the same leg lead to a `pull` of the party's team within 30 yd of the tank (8 yd up or down), not an ambush and not left uncleared, with no deferred pull pending and no other live plan pack on the straight line, the run pulls the next pack from where the tank stands when the way there is direct and clear. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Fight forward:** only read while `AiPlayerbot.DungeonSelfClear = 1` and `AiPlayerbot.DungeonRunWalkBackAfterWonFight = 0`:
+- after a cleared `pull` or `boss` step, with at most 4 plain `move` rows of the same leg to the team's next `pull`
+- within 30 yd of the tank (8 yd up or down), not an ambush, not uncleared, nothing deferred, no live plan pack on the line
+- then the run pulls the next pack from where the tank stands, when the way is direct and clear
 
 </details>
 
@@ -272,7 +331,12 @@ Whether a bot-only run gives the bots the dungeon keys and items it needs.
 <details>
 <summary>How it works in detail</summary>
 
-**Giving run items:** only read while `AiPlayerbot.DungeonSelfClear = 1`. At the start of a run with no real player in the party, every bot gets each item the plan needs and does not carry (the Mallet of Zul'Farrak, the keys of the locked doors). The items are soulbound, so they cannot be traded, mailed or sold. The run takes them back when it ends or stops, when it is erased, when a bot leaves the party, and when a real player joins. The exact item instances are recorded in the characters database (`ai_run_given_item`), so a crash does not leave them with the bots. A bot's own copy is never taken. With `0` nothing is given, and a bot-only run pauses at a locked door until `.bot run skip` passes it. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#keys-and-doors).
+**Giving run items:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- bot-only run start: every bot gets each needed item it lacks (dungeon keys and plan items)
+- items are soulbound (no trade, mail, or sale); a bot's own copy is never taken
+- taken back when the run ends or stops, is erased, a bot leaves, or a real player joins
+- instances are recorded in `ai_run_given_item`, so a crash leaves none with the bots
+- with `0` nothing is given; a bot-only run pauses at a locked door until `.bot run skip`
 
 </details>
 
@@ -283,7 +347,11 @@ Whether the run leader rests the party only to light lines before a small pull.
 <details>
 <summary>How it works in detail</summary>
 
-**Light rest:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Before a plain `pull` within the next 8 steps, or with no fight ahead, a rest starts only under 60 % health, 35 % healer mana or 25 % other mana and ends at 75 / 60 / 45; a bot still drinking above those lines holds the next order only while the lead bot itself is seated or eating. Before a `boss`, a `hold`, a `ritual`, a scripted event, a pull whose aggro estimate reads 8 joiners or more, or (with the estimate off) a pull whose pack in sight has 5 units or more, the full lines stand; such a big pack gets one rest to the full lines before its pull. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Light rest:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- small pull (plain `pull` in the next 8 steps, or nothing ahead): rests only under 60% health, 35% healer mana, 25% other mana; ends at 75 / 60 / 45
+- a bot still drinking above those lines holds the next order only while the lead bot is seated or eating
+- big pull (`boss`, `hold`, `ritual`, event, 8+ estimated joiners, or 5+ units in sight with the estimate off): full lines
+- a big pack gets one rest to the full lines before its pull
 
 </details>
 
@@ -294,7 +362,12 @@ Turns on the "die together" boss tactic: free DPS bots equalise a linked group's
 <details>
 <summary>How it works in detail</summary>
 
-**Linked death:** the AI boss tactics table's `linked_death` kind (see [Boss Tactics](../../play/boss-tactics.md)) marks a group that must die together: an `ai_boss_tactic` row lists one partner of the group, its `boss_entry` being the anchor, and its `param` a hold percent. While more than one member lives, every free DPS bot (never a tank or a healer) takes the living member with the highest health instead of the tank's victim. A member at or below `param` percent is held (never picked, left out of AoE, area casts and DoTs that would reach it stood down) while another living member stands above that. When every living member is at or below `param` percent the group is released and burned in the row's `burn_order`. An explicit `attack` order from a player still wins.
+**Linked death** (`linked_death` rows, see [Boss Tactics](../../play/boss-tactics.md)): a group that must die together:
+- each row lists one partner; `boss_entry` is the anchor, `param` is the hold percent
+- while more than one member lives, free DPS (never tanks or healers) takes the living member with the highest health
+- a member at or below `param` is held: never picked, left out of AoE, area casts and DoTs that would reach it stood down
+- when every living member is at or below `param`, the group releases and burns in row `burn_order`
+- an explicit player `attack` order still wins
 
 </details>
 
@@ -305,7 +378,16 @@ Lets the run leader's loot step get an item the group's loot rules gave to anoth
 <details>
 <summary>How it works in detail</summary>
 
-**Loot step free-for-all:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A boss's quest item that is a plain drop (Revelosh's Shaft of Tsol, Uldaman) belongs to the round-robin member's turn under group or round-robin loot, so the lead bot, who needs it for the next steps, is refused with *nothing this bot may loot* and the old way is to try the other bots, which leaves the item in a bag the lead bot cannot use. With `1`, on that refusal, once per step and before any other bot is tried, the lead bot (the leader of the bound group) sets the group's loot method to free-for-all (`cmd lootmethod ffa`), the carrier loots the item, and when that loot is answered (ACK or ERR) the method goes back to the one the group had (`cmd lootmethod group`, `rr`, `master` or `nbg`; the loot threshold is kept). The method goes back on any later tick of the running run too, whatever the step (a wipe, a lead death or a fight cap that sends the run back through a regroup in between does not leave it on free-for-all): one `cmd lootmethod <saved method>` a second, at most three tries, until the group reads a method that is not free-for-all; if all three are refused (for instance the lead bot lost the group's leadership meanwhile) the run pauses with a note naming the lead bot's group, this key and the order to give by hand, and the module tries once more as the run pauses. The method also goes back when the run pauses or stops in between, when the binding ends and when the run leader is switched off; it is not touched if a player has set another method since. Switching `AiPlayerbot.DungeonRunLootFfa` off by a config reload while a detour is under way does not stop the restore. The wait for a busy carrier before the free-for-all loot is limited to 20 s: then the method goes back and the step goes on the old way. The saved method is the group's method name only (the loot threshold is kept as it is): a group that was on master loot comes back on master loot with the lead bot as master looter, not the member who held that role before. Known limits: if a player sets free-for-all by hand during the detour, the module cannot tell it from its own and puts the saved method back; the run's state is gone after a server restart, and whether the group's loot method survives a restart was not checked (unverified). Not used when the step has no `item`, when anyone already carries the item, when the item is no longer on the corpse, when the group is free-for-all already or has no loot method to restore, or when the lead bot does not lead the group; a refused `lootmethod ffa` order sends the step down the old path. With `0` nothing is read and nothing changes. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Loot step free-for-all:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- problem: a plain-drop boss quest item belongs to the round-robin member's turn, so the lead bot is refused with *nothing this bot may loot*
+- with `1`: on that refusal, once per step, the lead bot sets free-for-all (`cmd lootmethod ffa`), the carrier loots, and the method goes back on ACK or ERR
+- restore retries once a second, at most three times; if all are refused the run pauses with a note naming the group, the key, and the order to give by hand
+- also restored when the run pauses or stops, the binding ends, or the run leader is switched off; never touched if a player changed the method since
+- switching the key off mid-detour does not stop the restore; a busy carrier waits at most 20 s, then the step goes the old way
+- saved method is the name only (threshold kept); master loot comes back with the lead bot as master looter
+- limits: a hand-set free-for-all looks like its own and is put back; run state is gone after a restart (loot-method survival unverified)
+- skipped when the step has no `item`, someone carries the item, the item left the corpse, the group is already free-for-all or method-less, or the lead bot does not lead
+- with `0` nothing is read and nothing changes
 
 </details>
 
@@ -327,7 +409,12 @@ How many wipe events within the window pause a raid run once the fight is over.
 <details>
 <summary>How it works in detail</summary>
 
-**Near-wipe stop:** only read while `AiPlayerbot.DungeonSelfClear = 1`, and only for a raid binding (`AiPlayerbot.DungeonRunRaid = 1`) unless `AiPlayerbot.DungeonRunNearWipeStopParty = 1`. A *wipe event* is one mark: it starts on the tick the party first reaches the wipe level (a raid: `ceil(40 % of the members)`, at least 3, or every tank dead, or more than half the healers dead; every member dead; or a window wipe) and ends when none of those hold. The marks older than `AiPlayerbot.DungeonRunNearWipeStopMinutes` are dropped; at this many the run stops once the fight is over (out of combat, or only a GameMaster pinned in a fight), before any regroup. `.bot run resume` clears the marks.
+**Near-wipe stop:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- only for a raid binding (`AiPlayerbot.DungeonRunRaid = 1`), unless `AiPlayerbot.DungeonRunNearWipeStopParty = 1`
+- a *wipe event* starts when the party first reaches the wipe level (raid: 40% of members, at least 3; or every tank dead; or more than half the healers dead; or every member dead; or a window wipe)
+- it ends when none of those holds; marks older than `AiPlayerbot.DungeonRunNearWipeStopMinutes` are dropped
+- at the count, the run stops after the fight (out of combat, or only a GM pinned in a fight), before any regroup
+- `.bot run resume` clears the marks
 
 </details>
 
@@ -360,7 +447,11 @@ The band around a pull step's radius in which a living unit of its entries still
 <details>
 <summary>How it works in detail</summary>
 
-**Pack-cleared gate:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A `pull` step is done only when nothing of its entries is left: no living unit in its radius; none in the band outside it (2D distance within radius + this margin, height within 10 yd of the step point, so a unit on another floor is no residue) unless another step's radius holds it; no waypoint patroller or formation follower of one; and no unit that spawned inside the radius still walking its loop. A residue unit is pulled nearest first, up to `AiPlayerbot.DungeonRunPackClearRepulls`; then the run pauses with the units' entries, guids and distances.
+**Pack-cleared gate:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A `pull` step is done when:
+- no living unit of its entries in its radius
+- none in the band outside it (2D distance within radius + margin, height within 10 yd, so another floor is no residue), unless another step's radius holds it
+- no waypoint patroller or formation follower of one; no spawn of the radius still walking its loop
+- residue is pulled nearest first, up to `AiPlayerbot.DungeonRunPackClearRepulls`; then the run pauses with entries, guids, distances
 
 </details>
 
@@ -381,7 +472,11 @@ Lets a player who leads his own party of bots start a player-led run of a dungeo
 
 <details>
 <summary>How it works in detail</summary>
-**Player-led runs:** `.bot run start [plan] player [tank <Bot>]` from a player who leads a party (not a raid) whose every bot is his to control; up to three other real players may be in it. The start makes its own binding: the player stays the party's leader and the bots keep following him, the named tank bot (else the first tank-role bot) is the run's lead bot and puller. Needs `AiPlayerbot.DungeonSelfClear = 1` too. Plain `.bot run start` stays bot-led. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#player-led-runs).
+**Player-led runs:** `.bot run start [plan] player [tank <Bot>]`:
+- from a player leading a party (not a raid) whose every bot is his to control; up to three other players may be in it
+- its own binding: the player stays leader, the bots keep following him
+- the named tank bot (else the first tank-role bot) is the lead bot and puller
+- needs `AiPlayerbot.DungeonSelfClear = 1`; plain `.bot run start` stays bot-led
 
 </details>
 
@@ -392,7 +487,11 @@ How long the leading player of a player-led run may be out of the plan's dungeon
 <details>
 <summary>How it works in detail</summary>
 
-**Player-led away limit:** while the player is out of the plan's dungeon the bots that stayed inside hold where they stand (`cmd stay`, once) and the status note counts the minutes left; back in time, the bots follow him again (`cmd follow`, once) and the run goes on. Past the limit the run stops with a note naming the minutes away (the bots stay where they hold) and its binding ends. Only read while `AiPlayerbot.DungeonRunPlayerLed = 1`. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#player-led-runs).
+**Player-led away limit:** while the player is out of the plan's dungeon:
+- bots inside hold where they stand (`cmd stay`, once); the note counts the minutes left
+- back in time: bots follow again (`cmd follow`, once) and the run goes on
+- past the limit: the run stops with a note naming the minutes away (bots stay where they hold), binding ends
+- only read while `AiPlayerbot.DungeonRunPlayerLed = 1`
 
 </details>
 
@@ -425,7 +524,12 @@ A raid binding's boss fight rules: a longer fight ceiling, deaths that do not pa
 <details>
 <summary>How it works in detail</summary>
 
-**Raid boss fight rules:** only read with `AiPlayerbot.DungeonRunRaid = 1`, on a raid binding. A raid's boss fight is a `boss` step, or a plan boss engaged on any step, outside a scripted event. With `1`: its fight ceiling is 1200 s instead of 420 s, and once a fight is a raid boss fight it stays one until it ends, also while the boss cannot be attacked for a phase; past the ceiling, a member's death in the last 60 s does not pause the fight while a plan boss still lost hp in that window; the 1800 s hard cap still pauses. The mobs that hit the raid go to the living off-tanks one at a time, round-robin; the main tank is never sent off a plan boss it holds. With `0` the boss fight keeps the dungeon rules. With `AiPlayerbot.DungeonRunRaidHealerGuard = 1`, the adds on a healer go to the nearest ranged dps first (see below). See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Raid boss fight rules:** only read with `AiPlayerbot.DungeonRunRaid = 1`, on a raid binding:
+- a raid boss fight is a `boss` step, or a plan boss engaged on any step, outside a scripted event
+- with `1`: fight ceiling is 1200 s instead of 420 s; a raid boss fight stays one until it ends
+- past the ceiling, a death in the last 60 s does not pause the fight while a plan boss still lost hp; the 1800 s hard cap still pauses
+- hitting mobs go to living off-tanks one at a time, round-robin; the main tank never leaves a held plan boss
+- with `0` the boss fight keeps the dungeon rules; with HealerGuard, healer adds go to ranged dps first
 
 </details>
 
@@ -436,7 +540,11 @@ A raid's adds on healers (boss and trash fights): sent to the raid's ranged dps,
 <details>
 <summary>How it works in detail</summary>
 
-**Healer guard:** only read with `AiPlayerbot.DungeonRunRaid = 1`: inside a raid boss fight with `AiPlayerbot.DungeonRunRaidBossRules = 1` whose main tank holds a plan boss, and inside a raid trash fight whose main tank held its current target when the guard turned on. With `1`: an add that attacks a healer goes to the nearest ranged damage bots (up to two per add, within 35 yd, nearest first) instead of the off-tanks; the off-tanks take such an add only when no ranged dps is free for it. With `0` the off-tanks take the healers' adds as before.
+**Healer guard:** only read with `AiPlayerbot.DungeonRunRaid = 1`:
+- boss fight (needs `=1` + main tank holding a plan boss) or trash fight (main tank held its target when the guard turned on)
+- with `1`: a healer add goes to the nearest ranged dps (up to two per add, within 35 yd, nearest first)
+- off-tanks take it only when no ranged dps is free
+- with `0`: off-tanks take the healers' adds as before
 
 </details>
 
@@ -447,7 +555,13 @@ Makes the run leader put the tank where its ranged weapon can fire before it ord
 <details>
 <summary>How it works in detail</summary>
 
-**Pull stand:** only read while `AiPlayerbot.DungeonSelfClear = 1`. The rule only covers a tank whose pull is a ranged weapon shot (bow, crossbow, gun, thrown weapon or wand). Any other pull goes out as before: a spell pull, a body pull (no ranged weapon, skill, shoot spell or ammo), or a shot range of 5 yd or less. With `1`, before each `pullback` the run leader checks three things: the target is in the tank's sight, it is within the shot's range less 5 yd (the range is read from the tank's own pull), and the tank stands still (a moving tank is waited for up to 3 s). If any of them fails, it reads a firing stand on the tank's navmesh path to the target (the path walked back from the target to the first point in range that sees it). It walks the party there, then orders the pull; at most 2 stands per target and step. A stand walk that gains no ground for 12 s, or lasts more than 36 s, is given up and the order goes out from where the tank is (`firing stand unreachable: ordering from here`): the run never pauses for it. No stand, the stands used up, or a scripted event: the order goes out as before. A fight, a gather or a regroup that comes in between ends the wait; the stands already walked to stay counted for that target in that step, so the rule is applied again only with the stands left. A stand walk that is given up is followed by one tick that checks the way back to the last stand point (a tank stuck on another floor first gathers back there) before the order goes out. Among units of the same kill-first rank, one the tank can shoot from where it stands is pulled before a nearer one it cannot. The status note of each order names the target's guid, the how-many-th order to it this step and how its shot stood (`pulling 3636 0x... (order 2; shot from firing stand 1)`). With `0` nothing is read and nothing changes. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#pull-stand).
+**Pull stand:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- covers only a tank whose pull is a ranged weapon shot (bow, crossbow, gun, thrown weapon, wand)
+- other pulls go out as before: spell pull, body pull (no ranged weapon, skill, shoot spell, or ammo), or shot range of 5 yd or less
+- with `1`, before each `pullback` the run checks three things: target in sight, within shot range less 5 yd, tank standing still (moving tank waited for up to 3 s)
+- if any fails: reads a firing stand on the tank's navmesh path (walked back from the target to the first point in range that sees it), walks the party there, then orders the pull
+- at most 2 stands per target and step; a stand walk with no progress for 12 s, or over 36 s, is given up (`firing stand unreachable: ordering from here`); the run never pauses for it
+- kill-first ties break toward a target the tank can shoot from where it stands
 
 </details>
 
@@ -458,7 +572,14 @@ Makes the run leader's regroup wait for a living priest, paladin or shaman to re
 <details>
 <summary>How it works in detail</summary>
 
-**Rez hold:** only read while `AiPlayerbot.DungeonSelfClear = 1`. With `0` the regroup behaves as before: when a priest, paladin or shaman is out of combat it waits 15 s for a resurrection, then sends `cmd revive party`. With `1` the run asks the rez hold (`runtime/RezHoldPolicy.h`) every second while someone is dead. It sends the resurrector no order (the bots' own AI decides who raises whom, and a resurrector short of mana drinks by itself); the one order it does send is a `move` of the lead bot onto the body, once per regroup, after 12 s of hold with a resurrector able, no cast under way and the body more than 8 yd from the lead bot. It **holds** up to 60 s from the moment a resurrector could act (plus 12 s for each body beyond the resurrectors, at most 120 s, and a resurrection being cast may finish: 12 s more, once), **waits for mana** while the only resurrectors are short of their spell's cost (90 s in all), and sends `cmd revive party` at once when no living bot can resurrect, when every body lies more than 80 yd from the party, or when the time is up. The 240 s the dead get to be up after `revive party` starts when the hold gives up. A druid's Rebirth counts only when no priest, paladin or shaman is alive on the map within sight, and only off cooldown with its seed in the bags. Everyone dead is a wipe: the old wipe recovery takes it. See [Dungeon Run Leader](../../play/dungeon-run-leader.md). Derived from jrad7/mod-dungeon-clear (AGPL-3.0-or-later).
+**Rez hold:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- with `0`: an out-of-combat priest, paladin, or shaman waits 15 s for a resurrection, then the run sends `cmd revive party`
+- with `1`: the run asks the rez hold every second while someone is dead; the resurrector gets no order (its own AI picks whom to raise)
+- one order only: a `move` of the lead bot onto the body, once per regroup, after 12 s with a resurrector able, no cast under way, body over 8 yd away
+- holds up to 60 s from when a resurrector could act (plus 12 s per extra body, at most 120 s; a cast in progress may finish)
+- waits for mana up to 90 s; sends `cmd revive party` at once when no living bot can resurrect, every body is over 80 yd away, or time is up
+- the 240 s the dead get to be up starts when the hold gives up; a druid Rebirth counts only with no priest, paladin, or shaman in sight, off cooldown, seed in bags
+- everyone dead is a wipe: the old wipe recovery takes it
 
 </details>
 
@@ -469,7 +590,12 @@ Whether the run leader pulls the living back to the last stand when two party me
 <details>
 <summary>How it works in detail</summary>
 
-**Retreat at two dead:** only read while `AiPlayerbot.DungeonSelfClear = 1`. With `1`, in a party (never a raid), in a fight with two members dead (one fewer than the 3 that make the run regroup by itself), the lead bot alive, and the fight being lost (no engaged unit lost hp in 15 s), the run pulls the living back to its last stand once per fightr 20 s, at a third death or when the lead bot dies, and the fight is the bots' own again; once per fight. A refused move ends it without a pause. Never inside a scripted event, on the steps leading into one, on a `hold` step or on a boss step that is an event (an encounter, or done by instance data or an object). Whether the mobs follow the party back or let it go is the game's (the module adds no leash); this was not proven in a live run when it was added. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Retreat at two dead:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- with `1`, in a party (never a raid): two dead, lead bot alive, fight being lost (no engaged unit lost hp in 15 s)
+- the run pulls the living back to its last stand once per fight; the retreat ends there
+- a refused move ends it without a pause; a third death or lead-bot death ends it too
+- never inside a scripted event, on steps leading into one, on a `hold` step, or on an event boss step
+- whether mobs follow the party back is the game's own rule (the module adds no leash)
 
 </details>
 
@@ -480,7 +606,15 @@ Makes the pull stand keep clear of every other live pack, its patrol loop includ
 <details>
 <summary>How it works in detail</summary>
 
-**Stand clearance:** only read while `AiPlayerbot.DungeonSelfClear = 1`. It applies to every firing stand the run leader picks: an authored stand-pull step's own pull (this key is what gives that step a stand rule at all: with both keys off it pulls as before, and a hop or walk-back pull of the step never takes one) and a generic stand pull's (with `AiPlayerbot.DungeonRunPullStand = 1`). The stands the tank's navmesh path to the target offers are tried in the same order as before (the ranged reach's own point first, then the path's points nearer the target), and the first one clear of every other live pack is taken. Clear means at least the pack's aggro reach (its detection range minus the party's level advantage over it, the core's own rule) plus 4 yd away from it: the bots stand at the stand point, so only the pack's reach and the line of sight the core needs decide whether it can wake on the stand. A pack that patrols is measured along its whole loop (`creature_movement` / `creature_movement_template`, the path its movement generator walks; a loop the server does not hold, as a scripted escort path, stands in by the pack's spot plus 10 yd), so a stand beside a leg it will walk is refused too; a pack already in combat is not checked. The pack the pull itself takes (the step's own living units within its radius and everything walking in their formation) is not another pack, and neither is a creature its call for help takes (the core's 10 yd family assistance radius, one call out: only a creature that can answer it, by the core's own no-assist, control, invisibility, evasion, faction and line-of-sight conditions). On a boss step the boss fight is no other pack either, but only what the spawn proves: the boss himself, the creatures he summoned, the creatures the core links to him or that walk in his formation, and the ones already in a fight are not checked. A creature of one of his add entries is not excused by its entry alone , so only the summoner, the linking row and the formation are evidence. The stand must also stay the pulled pack's widest aggro reach away from every unit of it, so the party does not wake the pack on the way: a stand inside that reach is refused too. A unit that stays put more than 8 yd above or below the stand, with no line of sight to it, is on another storey and is not checked either (the Arlokk terrace's band: the floor between takes its sight as well as the party's); a patroller is judged over its whole loop's height range instead (the lowest and the highest point both out of the band are what excuses it), and no sight line is read for it (a point it has not reached yet), so a patrol now on another storey whose loop comes down to the stand's floor is still checked. The clearance is advisory: with no clear stand the tank walks to the stand the key is off for (the path's first candidate) and the note reads `stand_pull: no clear stand for <entry> (closest <entry> at <yd>); using the default stand`. Only a patrolling pack that alone refuses the reach's own stand is waited for, up to 20 s, to walk clear of it (then that stand is walked to); any other blocker, or the wait spent, goes on at once. The run never pauses or holds a pull for the clearance. The reading is one grid search around the lead bot, a path lookup per patroller and a sight line per refused stand and blocker on another storey, only on the tick a stand is read.
+**Stand clearance:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- applies to every firing stand the run leader picks (authored stand-pull pulls and generic stand pulls with `AiPlayerbot.DungeonRunPullStand = 1`)
+- stands are tried in path order (ranged reach point first, then nearer path points); the first one clear of every other live pack wins
+- clear means: at least the pack's aggro reach plus 4 yd away, with the line of sight the core needs
+- a patrolling pack is measured along its whole loop; a pack already in combat is not checked
+- the pulled pack itself, its formation, and its called help are not other packs; only spawn proof counts on a boss step
+- a stand inside the pulled pack's widest reach is refused; another storey (over 8 yd up or down, no sight line) is not checked
+- advisory: with no clear stand the run uses the default and notes it; only a lone patrolling blocker is waited for (up to 20 s)
+- the run never pauses or holds a pull for the clearance
 
 </details>
 
@@ -491,7 +625,11 @@ Sends a stand-pull step's crowd control from the last point of the approach walk
 <details>
 <summary>How it works in detail</summary>
 
-**Crowd control before the walk in:** only read while `AiPlayerbot.DungeonSelfClear = 1`. With `1`, the move row right before a stand-pull pull or boss row (the same row `stand_pull` reads its stand from) ends at the last point of the lead bot's navmesh path to the plan's approach that stands outside the pack's wake reach: the widest aggro reach of the pack's living units (detection range minus the party's level advantage over it, the aggro estimate's rule) plus the party's 10 yd spread plus 1 yd. The pack is the next row's own: its entries' spawns in its radius, by creature formation, alive or dead, wherever their loop has taken them. At that point the step's crowd control (`cc_priority` marks) goes out, the party waits up to 6 s for the marks to read held (or for the cast's time to pass), then walks to the plan's approach, reads its firing stand from there and pulls: the pack wakes after the marks, not before them. A walk with no such point (an approach inside the pack by design) walks the plan's point as before and the note reads `stand_pull: no pre-cc point for <entry>`; a point the glue has not read within 3 s is dropped the same way, so a read never holds the run. A stand-pull step whose approach is already clear, every other step and the key off are unchanged.
+**Crowd control before the walk in:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- with `1`, the move row before a stand-pull pull or boss row ends at the last approach point outside the pack's wake reach
+- reach: widest aggro reach of the pack's living units plus the party's 10 yd spread plus 1 yd
+- at that point the step's `cc_priority` marks go out; the party waits up to 6 s for them to hold, then walks in and pulls
+- no such point (approach inside the pack): walks the plan's point, note `stand_pull: no pre-cc point`; a point unread within 3 s is dropped the same way
 
 </details>
 
@@ -502,7 +640,13 @@ Fires a pull row from the plan's authored approach only, and waits for the tanks
 <details>
 <summary>How it works in detail</summary>
 
-**The plan's stand is the only stand:** only read while `AiPlayerbot.DungeonSelfClear = 1`. The move row right before a pull or boss row is the plan's own stand, whether or not the row is marked `stand_pull`. With `1`, a tank that cannot shoot the pulled unit from that stand (out of sight, or out of the shot's range) does not search a closer firing stand on its navmesh path: it walks back to the plan's approach if it drifted off and holds there, and the status note reads `no LOS from the authored stand; holding`. That hold lasts up to 20 s for each unit; then the tank searches a firing stand as it does with `0`, and the walk back to the plan's stand does not resume for that unit. The key works without `AiPlayerbot.DungeonRunPullStand`. Before the row fires, every living tank and melee (a member that is not a healer and not a ranged bot) must stand within 5 yd of that approach or be clear of the next pull's pack: farther than the next pull or boss row's radius plus the core's 20 yd aggro ring from its point. The run waits up to 10 s for them; then the row fires and its note ends in `out of place: <names>`. A hop pull and a walk-back pull never wait, and with `0` the stand search and the pull are exactly as before.
+**The plan's stand is the only stand:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- the move row before a pull or boss row is the plan's own stand, marked `stand_pull` or not
+- with `1`, a tank that cannot shoot from that stand holds there (walks back to the approach if it drifted off)
+- status note: `no LOS from the authored stand; holding`; hold lasts up to 20 s per unit, then the tank searches as with `0`
+- needs no `AiPlayerbot.DungeonRunPullStand`
+- before the row fires, every living tank and melee must stand within 5 yd of the approach or stay clear of the next pull (radius + 20 yd ring)
+- the run waits up to 10 s; then fires, noting `out of place: <names>`; hop and walk-back pulls never wait
 </details>
 
 ### `AiPlayerbot.DungeonRunAutoCc`
@@ -512,7 +656,14 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 <details>
 <summary>How it works in detail</summary>
 
-**Automatic crowd control:** only read while `AiPlayerbot.DungeonSelfClear = 1`. Before a pull that brings more bodies than [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (the row's own `max_bodies` lowers the threshold when it is smaller), the run marks the row's own pack, one order a tick, until the unmarked bodies fit the threshold. The order is casters and healers first, then the plan's rank (`cc_always`, then `cc_priority`, as a hint now, not a gate), then the class family's reliability (Polymorph, Shackle Undead, Banish, Hibernate, Seduction, Freezing Trap, Sap, Repentance, and the risky Fear and Scare Beast last), then the higher level, then the unit farther from the pull target. The families are the classes' own `* on cc` rows: a druid's Hibernate, a hunter's Freezing Trap, a warlock's Seduction with a live succubus, a paladin's Repentance. Never marked: the pull target, the tank's selection, a unit an off-tank holds, the fight's focus, a `kill_first` unit, a held unit, a unit the party hits, and an add the raid's healer guard has a bot on. In the fight the run marks a joiner while more unheld units fight than the threshold, two seconds apart, and re-sends a mark whose aura broke (twice a unit a step; a bot that died frees its hold). A tank and the lead bot are never crowd-control bots; a healer only while 4 healers (1 in a party) stay free, and it holds one unit. At most 24 auto orders a step pass. With the key on the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; the skull stays the fight's focus); a player's icon is never moved.
+**Automatic crowd control:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- before a pull over [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (or the row's smaller `max_bodies`), the run marks the row's own pack, one order a tick
+- order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
+- risky Fear and Scare Beast go last and only with this key's risky flag on
+- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add
+- in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
+- tanks and the lead bot never do crowd control; a healer only while 4 healers (1 in a party) stay free, holding one unit
+- at most 24 auto orders a step; uses seven marks (skull stays the fight focus); a player's icon is never moved
 
 </details>
 
@@ -545,7 +696,12 @@ Whether the run leader teleports a stuck walk back's lead bot (and a placed run'
 <details>
 <summary>How it works in detail</summary>
 
-**Walk back rescue:** only read while `AiPlayerbot.DungeonSelfClear = 1`. With `1`, a walk back whose lead bot stays stuck short of its point after the walk's tries is not paused: the lead bot is teleported (the stranded lead bot's rescue, the module's own teleport) to the last point it reached on the plan, or, when a live pack is near that point, to the latest point before it (back to the run's start step, never back over a direct step) out of every live pack's reach (its radius plus 10 yd), and with no such point the run pauses with that reason instead; and a placed run's lead bot that is up behind the run's start step (the plan point nearest it lies before the start step and none of the run's own points is within 60 yd) is teleported at once to such a safe point on the way it came in a party with no real player (with one, to the run's first such safe point). Out of combat only, once a step, three failed tries a step; the party left behind is summoned to it only out of combat. The walk back goes on from that point. A death that paused the run past its regroups by itself armed the rescue again for the walk back after the resume. A walk-back point with no walkable path from the spot where the hop off a navmesh island found no spot was rescued the same way in a party with no real player (Dire Maul North r31: revived on the entrance island, every point passed to a pause); with a real player in the party the walk back went on with him instead. In a party with no real player, a straight walk back that failed and whose replay of the plan's points would have walked 300 yd or more before that safe point was rescued instead of replayed (Stratholme r29, Maraudon r28b). A backoff of the straight walk whose plan points from its new target would have walked 300 yd or more before that safe point was rescued the same way (Shadowfang Keep r36: the second backoff landed on the entrance point where the lead bot was revived, and the walk back walked 307 yd of points without a rescue). See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Walk back rescue:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- with `1`, a stuck walk back is not paused: the lead bot is teleported to the last point it reached on the plan
+- when a live pack is near that point: to the latest earlier point out of every live pack's reach (radius plus 10 yd)
+- never back before the start step or over a direct step; with no such point the run pauses
+- a placed run's lead bot behind the start step is teleported to a safe point on the way it came
+- out of combat only, once a step; left-behind party is summoned only out of combat
 
 </details>
 
@@ -556,7 +712,12 @@ How far (yards) a party bot may be from the lead bot before the run leader bring
 <details>
 <summary>How it works in detail</summary>
 
-**Teleport return:** only read while `AiPlayerbot.DungeonSelfClear = 1`, and only in a party with no real player. A bot the run brings back from farther than this comes by the run's own teleport: its combat and its pet's are dropped (off every threat list), then it is moved at once to the lead bot, in a fight or not. That covers a fallen bot alive again far away, a bot left behind after the stranded lead bot's rescue teleport, a raid member wedged on another floor, and any summon the portal dropped (the run now hears of a dropped summon). When the lead bot stands in the reach of a pack not pulled yet , the bot lands at the nearest point beside the lead bot, on its floor and in its sight, outside every such pack's reach. A bot not within 10 yd of that point 5 s later is sent again; after three tries the run's note names it (*Name is still N yd from the lead bot after 3 teleport returns in 15 s: bring it to the lead bot*), and it is never told to walk back. Not toward a dead lead bot or one in another part of the instance, not while the lead bot's own rescue teleport is due, not with a plan boss engaged. The stranded lead bot's summons now count a bot as brought only once it stands within 10 yd of the lead bot. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Teleport return:** only read while `AiPlayerbot.DungeonSelfClear = 1`, and only in a party with no real player:
+- a bot brought back from farther than this comes by the run's own teleport: combat and pet combat are dropped, then it moves to the lead bot at once
+- covers a revived bot far away, a left-behind bot, a bot wedged on another floor, and a dropped portal summon
+- when the lead bot stands in an unpulled pack's reach, the bot lands at the nearest clear point beside it (same floor, in sight, outside every pack's reach)
+- not within 10 yd after 5 s: sent again; after three tries the run names it and never tells it to walk back
+- not toward a dead or separated lead bot, not while the lead bot's own rescue is due, not with a plan boss engaged
 
 </details>
 
@@ -569,7 +730,11 @@ How far (yards) from the lead bot a run's bot may be revived before it stands st
 
 **Known limit:** a held bot takes no hazard escapes either: while the hold is up it does not step out of a listed boss cast (`avoid_cast`), an area effect or a bomb runout. It waits where it stands and the run is what gets it out; a hold only lasts 60 s at most.
 
-**Waiting to be brought back:** only read while `AiPlayerbot.DungeonSelfClear = 1`, for the bots of a run (`.bot run`); outside a run nothing changes. A bot of a run revived inside a dungeon farther than this from the lead bot (any revive: the run's, a player's or a GameMaster's, with the run running or paused) stands where it is for up to 60 s, waiting for a summon or a teleport. So does every bot the run has decided to bring back (a teleport return, a summon of a revived or wedged bot, a bot left behind after the lead bot's rescue teleport, a summon the portal dropped and that waits for its retry) and any bot with a summon pending from its commander, until it is within 10 yd of where it is brought. While it waits it does not follow, walk or chase; it fights back only from where it stands. After 60 s without arriving it is released and the run's note says so (*Name waited 60 s N yd from the lead bot for its summon or teleport: released*). A paused run leaves its own returns to the bots' own AI; the revive hold above still applies. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Waiting to be brought back:** only read while `AiPlayerbot.DungeonSelfClear = 1`, for the bots of a run:
+- a bot revived farther than this from the lead bot stands still up to 60 s, waiting for a summon or teleport
+- the same hold covers every bot the run is bringing back and any bot with a commander summon pending, until within 10 yd of its target
+- while held it does not follow, walk, or chase; it fights back only from where it stands
+- after 60 s without arriving it is released with a note; a paused run leaves its own returns to the bots' AI
 
 </details>
 
@@ -580,7 +745,12 @@ Whether the run leader walks the tank and the party back to the guard's stand po
 <details>
 <summary>How it works in detail</summary>
 
-**Walk back after a won fight:** only read while `AiPlayerbot.DungeonSelfClear = 1`. When the tank leaves its stand during a fight to take a mob off the party (or engages one on its arrival), the run notes that stand. Before, it walked the tank and the party back to the stand after every such fight, then on to the next pack or boss. With `0`, once the fight is over the walk back is left out when the step is a pull or a boss with none of its units left to pull (the step says `pack cleared` or `boss down` and the next one starts from where the tank stands; its own approach, firing stand or gather places the party, and a tank left on another floor or without a path still gathers back at the last stand) and on a move step (its walk goes on forward). It is kept when a pull or boss step has units left (they are pulled from the same stand) and on every other step (a wait, a rest, an object or item step: those act where the party stood). Nothing changes during a fight (the walk back is only ordered out of combat) or in a scripted event (a hold returns to its own spot). With `1` the walk back goes out after every guarded fight, as before. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Walk back after a won fight:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- the run notes the stand the tank left during a fight
+- with `0`: after the fight the walk back is left out on a cleared `pull`/`boss` step (next step starts from the tank) and on a `move` step
+- kept on steps with units left and on waits, rests, and object or item steps
+- nothing changes during a fight (ordered only out of combat) or in a scripted event
+- with `1`: the walk back goes out after every guarded fight, as before
 
 </details>
 ### `AiPlayerbot.DungeonSelfClear`
@@ -589,7 +759,12 @@ Turns on the run leader (`.bot run`) for in-party, player-led and server-owned r
 
 <details>
 <summary>How it works in detail</summary>
-**Dungeon self-clear (run leader):** a `.reload config` reads this key and the `AiPlayerbot.DungeonRun*` keys again from `aiplayerbot.conf` on the next world tick (only those, plus `AiPlayerbot.ObservabilityRaids`). Set to `0` by a reload, every run ends with a last status line. With `1` a bound party may start `.bot run start [plan]`: its party walks a dungeon plan from the world tables `ai_dungeon_plan`/`ai_dungeon_leg`/`ai_dungeon_step` and pulls, fights, rests, loots and opens doors by itself, using the commander's own `.bot cmd` orders. With 3 or more dead it regroups by itself once the fight is over (the safety rules are in the run leader page); it pauses on any player order and at every wait's ceiling. With `0` every `.bot run` is refused. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+**Dungeon self-clear (run leader):** a `.reload config` re-reads this key and the `AiPlayerbot.DungeonRun*` keys on the next world tick:
+- only those, plus `AiPlayerbot.ObservabilityRaids`; everything else still needs a restart
+- set to `0` by a reload: every run ends with a last status line
+- with `1`: a bound party may start `.bot run start [plan]` and walk the plan by itself (pull, fight, rest, loot, doors)
+- with 3 or more dead it regroups by itself once the fight is over
+- with `0`: every `.bot run` is refused
 
 </details>
 
@@ -600,7 +775,12 @@ Applies the per-boss rows of the world table `ai_boss_tactic` (interrupt, kill f
 <details>
 <summary>How it works in detail</summary>
 
-**Dungeon boss tactics:** applies the per-boss rows of the world table `ai_boss_tactic` while bots fight that boss: interrupt a listed spell (*Pummel*, *Shield Bash*, *Kick*, *Counterspell*, *Earth Shock*), kill a listed add before anything else and in a listed order (DPS only, never tanks or healers), and non-tanks stay out of the front of a boss with a frontal attack (tanks never step aside). Data-driven (`ai_boss_tactic`); see [Boss Tactics](../../play/boss-tactics.md). It changes how bots play, so it is off by default: with `0` only bots in a bound group (remote, in-party, or run-leader bound) get it, with `1` every bot on a map that has rows does. An explicit `attack` order wins the kill-first pick.
+**Dungeon boss tactics:** per-boss rows of `ai_boss_tactic` while bots fight that boss:
+- interrupt a listed spell (*Pummel*, *Shield Bash*, *Kick*, *Counterspell*, *Earth Shock*)
+- kill a listed add before anything else, in order (DPS only, never tanks or healers)
+- non-tanks stay out of a frontal attack's front (tanks never step aside)
+- off by default: `0` gives it only to bound groups (remote, in-party, run-leader); `1` to every bot on a map with rows
+- an explicit player `attack` order wins the kill-first pick
 
 </details>
 
@@ -661,7 +841,10 @@ With `1`, `.bot cmd enter` reads the entrance's condition for the commander too.
 - he commands the bot's raid: he is a member of the bot's raid group when the bots stand at the entrance, or the commander of the bot's binding (`.bot commander bind ... raid` takes him out of the group, so a bound raid never has him listed as a member);
 - the entrance's condition is met for him.
 
-The other entrance checks are never waived: the content phase, the level, the raid group and the per-account instance limit still refuse the bot, and the core's own player teleport still checks the instance (full, locked by an encounter, the map's own refusal). A scripted entrance is refused as if the key were off: that fallback teleport skips the trigger's script, so a zone or instance script that denies entry on the trigger itself is not re-checked by it (only the map's own admission checks are).
+Not waived, even with `1`:
+- content phase, level, raid group, and per-account instance limit still refuse the bot
+- the core's own teleport still checks the instance (full, locked, map refusal)
+- a scripted entrance is refused as if the key were off; its trigger script is skipped, only map admission checks run
 
 The commander's condition is evaluated once per bot at the moment the bot sends the entrance trigger. With `0`, the bot's own condition decides, as before.
 
@@ -674,7 +857,11 @@ Mortal Wound stacks at which an opt-in `fankriss tank` taunts Fankriss off the c
 <details>
 <summary>How it works in detail</summary>
 
-Only tanks given the `fankriss tank` strategy act on it ([Fankriss roles](../../play/dungeons-and-raids.md#fankriss-opt-in-roles)). When the boss's current tank carries at least this many Mortal Wound stacks, one assigned tank with **zero** stacks and a ready Taunt (warrior) or Growl (druid) taunts; the lowest character guid wins a tie, and a failed or resisted taunt is retried after 2 s. If Fankriss is attacking a raid member who is not a tank, an assigned clean tank taunts at once. Setting the key does not enable the role.
+Only tanks given the `fankriss tank` strategy act on it ([Fankriss roles](../../play/dungeons-and-raids.md#fankriss-opt-in-roles)):
+- when the current tank carries at least this many Mortal Wound stacks, one assigned tank with **zero** stacks and a ready Taunt (warrior) or Growl (druid) taunts
+- lowest character guid wins a tie; a failed or resisted taunt is retried after 2 s
+- if Fankriss attacks a non-tank raid member, an assigned clean tank taunts at once
+- setting the key does not enable the role
 
 </details>
 

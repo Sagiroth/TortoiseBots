@@ -321,7 +321,12 @@ Enables remote commander commands for leading parties from outside them, of up t
 <details>
 <summary>How it works in detail</summary>
 
-Enables remote binds (`.bot commander bind` without `inparty`) and every other `.bot cmd` order typed by a player, and the commander view (`.bot commander view`). Without it (`0`), the `inparty` bind, `cmd enter` and `cmd summon`, and the run leader (`.bot run`, behind `AiPlayerbot.DungeonSelfClear = 1`) still work: the remote commander only drives parties from outside. When enabled, a GameMaster, or the owner, claimer, or master of every bot in it, can bind a bot-only party of up to five and command their movement, targeting, and spellcasting by GUID or 3D coordinates from anywhere in the world.
+What it does:
+- remote binds (`.bot commander bind` without `inparty`) and every other `.bot cmd` order typed by a player
+- the commander view (`.bot commander view`)
+- without it (`0`), `inparty` bind, `cmd enter`, `cmd summon`, and the run leader still work
+- with it (`1`), a GameMaster, owner, claimer, or master of every bot binds a bot-only party of up to five
+- that party is commanded by GUID or 3D coordinates from anywhere in the world
 
 When disabled (`0`), remote binds and the other commander orders report that the feature is off and any existing remote bindings terminate (inparty bindings stay while `AiPlayerbot.DungeonSelfClear = 1`).
 

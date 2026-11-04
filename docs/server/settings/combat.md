@@ -350,7 +350,14 @@ A share of free pool bots actively look for PvP-flagged enemy players nearby and
 <details>
 <summary>How it works in detail</summary>
 
-A seeking bot attacks an enemy player only when all of these are true: the bot is not in a battleground, the target is an enemy-faction player who is PvP flagged, the target is not in a zone from `AiPlayerbot.PvpProhibitedZoneIds`, the target is within 20 yards (or within sight range when the bot has more health), the height difference is under 30 yards, neither of them stands within 40 yards of the graveyard they revive at, and the level-gap odds allow it (never 5+ levels above; closer targets always).
+A seeking bot attacks an enemy player only when every item below holds:
+- not in a battleground
+- target is an enemy-faction player who is PvP flagged
+- target zone is not in `AiPlayerbot.PvpProhibitedZoneIds`
+- target is within 20 yards (sight range when the bot has more health)
+- height difference is under 30 yards
+- neither stands within 40 yards of the graveyard they revive at
+- level-gap odds allow it (never 5+ levels above; closer targets always)
 
 Unflagged players, challenge-mode characters (except War Mode) and GMs with visibility off are never attacked. Owned and hired bots and bots grouped with a real player never seek. Battlegrounds keep their own logic.
 
