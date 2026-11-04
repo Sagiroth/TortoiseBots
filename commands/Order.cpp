@@ -7,7 +7,10 @@
 #include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 #include "../runtime/GuildOrderCraftPolicy.h"
+#include "../runtime/GuildOrderPlayerBuyPolicy.h"
 #include "../runtime/GuildOrderStore.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 
@@ -176,6 +179,11 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
     typeToken = lowerType;
+    if (GuildOrders::PlayerBuyOrderRefused(type, sPlayerbotAIConfig.guildOrderPlayerBuy))
+    {
+        OrderError(handler, GuildOrders::PlayerBuyRefusalCode(), GuildOrders::PlayerBuyRefusal());
+        return true;
+    }
     // The item link carries spaces; the amount is the last token, with an
     // optional trailing whole hours 1-24 or `inf` and a trailing `keep`
     // word: the bot works that long in total per round and, with keep,
@@ -615,7 +623,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::string rest = Trim(args ? args : "");
     if (rest.empty())
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps> ... | order list | order search ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ... | order list | order search ....");
         return true;
     }
 
@@ -702,11 +710,12 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         }
         return HandleOrderReassign(handler, requester, subBotName, newBotName);
     }
-    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    // order <bot> cancel | order <bot> steps | order <bot> preview <farm|craft> <item> <amount> |
+    // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     std::string second;
     if (!(in >> second))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps> ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ....");
         return true;
     }
     std::string lowerSecond = second;
@@ -715,6 +724,16 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderCancel(handler, requester, first);
     if (lowerSecond == "steps")
         return HandleOrderSteps(handler, requester, first);
+    if (lowerSecond == "preview")
+    {
+        std::string typeToken, itemToken, amountToken;
+        if (!(in >> typeToken >> itemToken >> amountToken))
+        {
+            OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount>.");
+            return true;
+        }
+        return HandleOrderPreview(handler, requester, first, typeToken, itemToken, amountToken);
+    }
 
 
     return HandleOrderGive(handler, requester, rest);

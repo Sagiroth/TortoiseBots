@@ -775,6 +775,7 @@ public:
     bool guildOrderBankWithdraw;
     bool craftToolsAlways;
     bool guildOrderBankGold;
+    bool guildOrderPlayerBuy;
     bool guildOrderSubOrders;
     uint32_t guildOrderSubOrderDepth;
     // Guild bank access for guild bots: every bot in a guild with a real

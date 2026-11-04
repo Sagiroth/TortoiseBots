@@ -275,6 +275,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 .bot order <BotName> buy <item id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel (cancelling a parent cancels its whole sub-order branch)
+.bot order <BotName> preview <farm|craft> <shift-clicked item link> <amount>
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
 .bot order reassign <SubOrderBot> <NewBot>
@@ -284,6 +285,8 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 
 - **Who may give orders:** you must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes. Anyone else gets an error.
 - **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items).
+- **Buy needs the server option:** `.bot order <BotName> buy` is refused unless [`AiPlayerbot.GuildOrderPlayerBuy`](../../server/settings/guild-orders.md#aiplayerbotguildorderplayerbuy) is `1` (off by default). Farm and craft orders still buy materials themselves.
+- **Preview:** `.bot order <BotName> preview <farm|craft>` answers what the bot would do (reagents held, farm zone, auction house, sub-orders, your need list, rough time, gold cap), read-only and never on a timer. A refused craft answers with its reason instead.
 - **Hours:** optional whole hours 1-24; no hours given (or `inf`) means no time limit: the bot farms until it has the amount, however long it takes. A capped order farms that long in total per round before ending as `cant` with reason `timeout`, after delivering what it holds.
 - **No progress:** every order, capped or not, ends when the bot worked 3 hours without gaining a single order item (a craft order watches its current reagent): the bot still brings what it holds and the order ends as `cant` with reason `noprogress`. Any new item resets the 3 hours.
 - **Keep:** trailing `keep` keeps the ordered amount in stock: after delivery the order watches the bank and restocks what drops below it. Each round gets the full hours again; a round that ends mailed, `cant` or `noskill` ends the keep.
