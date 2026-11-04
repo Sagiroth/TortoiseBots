@@ -298,15 +298,40 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 
 ## Alt-Bots: Autonomous Alts
 
-When [`AiPlayerbot.AltBots`](../../server/settings/party.md#aiplayerbotaltbots) is enabled (1), your owned alternate characters can remain logged in and play autonomously in the open world.
+An **alt-bot** is one of your own alts that plays on its own, like a pool bot, while you do something else. Switched on by default ([`AiPlayerbot.AltBots`](../../server/settings/party.md#aiplayerbotaltbots)).
 
-- **Starting an Alt-Bot:** Log in an alt using `.bot add <Name>`, then remove it from your party with `.bot uninvite <Name>` (or disband the party while the alt is present). The bot announces it is playing autonomously and begins questing, grinding, traveling flight paths, taking boats/zeppelins, resting, gathering, and fishing like a pool bot.
-- **Stopping an Alt-Bot:** Type `.bot remove <Name>` to log it out cleanly, take it back with `.bot add <Name>` without needing to relog, or log into the character yourself from the character selection screen. Upon stopping, the alt whispers you a summary of levels gained, quests completed, deaths, and gold earned.
-- **Pool Slot Displacement:** Each active alt-bot displaces one random bot from the world pool, which is restored when the alt-bot stops. Alt-bots are tagged with the `alt` label on the dashboard and record `AltBotStart` and `AltBotEnd` events in `bot_events.csv`. Server crashes before clean logout may lose unsaved alt progress.
-- **Relocation Rules:** Upon startup, if an alt-bot was left in a dungeon, battleground, or boat, it is relocated to the instance exit or nearest graveyard to avoid broken pathing.
-- **Autonomous Restrictions:** Autonomous alts sell only gray junk and unneeded white items (never soulbound, equipped, or better-than-white gear); never abandon quests they did not take themselves; keep 10 quest-log slots free; never buy mounts, bags, or talent respecs; never use auction houses, mail, direct trade, or guild banks; and never destroy items. On loot rolls, they roll Greed or Pass.
-- **Stranger & Guild Rules:** Strangers can invite your alt-bot and issue tactical orders, but cannot trade with it or log it out. An alt-bot accepts guild invitations only from its owner's account (or GM), and never leaves its guild autonomously. Grouping with an alt-bot binds it to existing instance locks.
-- **Challenge Modes:** Hardcore characters are refused from becoming autonomous alt-bots to prevent character loss.
+### Start and stop
+
+| You want to... | Do this |
+| :--- | :--- |
+| Start one | Log the alt in (`.bot add <Name>`), have it in your group, then let it leave the group: `.bot uninvite <Name>`, kick it, or break up the group. It must leave while you are online. |
+| Stop it | `.bot remove <Name>` logs it out. |
+| Take it back as your companion | `.bot add <Name>`, **Login** in `/tbm`, or invite it into your group again. |
+| Play it yourself | Log into it from the character screen. |
+
+- **Where it goes:** if it was in a dungeon, battleground or on a boat, it first leaves to the entrance or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level; below 10 it stays where it is.
+- **What it tells you:** when it starts it whispers you how to stop it; when it stops it whispers a summary (levels, quests, deaths, gold).
+- **How long it plays:** while you are logged out too, until you stop it or the server restarts. With [`AiPlayerbot.AltBotsLogoutWithOwner`](../../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` it logs out with you. A server crash can lose progress it had not saved yet.
+- **Pool size:** each alt-bot takes the place of one pool bot, which comes back when the alt-bot stops.
+- **Hardcore characters** never become alt-bots.
+
+### What it will and will not do
+
+| Does | Does not |
+| :--- | :--- |
+| Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank |
+| Sell grey items and white items it does not need | Sell soulbound, equipped or better-than-white items |
+| Equip upgrades it finds (the old piece goes to its bags) | Destroy items |
+| Roll Greed or Pass on loot | Need on loot |
+| Keep 10 quest-log slots free | Abandon quests it did not take itself |
+| Leave a dungeon when it is alone in it | Buy mounts, bags or talent resets |
+
+### Other players
+
+- Other players may invite your alt-bot into their group and give it fight and movement orders.
+- Only your account (or a GM) may trade with it, change its gear, spend its talents, manage its quests or log it out.
+- It accepts a guild invite only from your account (or a GM) and never leaves its guild by itself.
+- Grouping with it ties it to the group's instance locks, as for any player.
 
 ---
 
