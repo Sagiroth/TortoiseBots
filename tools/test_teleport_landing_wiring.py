@@ -31,10 +31,11 @@ class TeleportLandingWiringTest(unittest.TestCase):
         # The ack first (the core moves the bot), then the landing read off the new position.
         self.assertLess(near.index("HandleMoveTeleportAckOpcode(p)"), near.index("sPlayerbotAIConfig.teleportLandingFall"))
         self.assertIn("TeleportLandingZ(", near)
-        # The same feet probe the jump landing uses: the navmesh first, the map's floor as the fallback.
+        # The same feet probe the jump landing uses, and the map's floor beside it: the higher walkable floor wins.
         self.assertIn("kFeetProbeDepth", near)
         self.assertIn("ClosestCorrectPoint(", near)
         self.assertIn("UpdateAllowedPositionZ(", near)
+        self.assertIn("mapFloorZ", near)
         self.assertIn("sPlayerbotAIConfig.jumpHeightLimit", near)
         # The fall is the jump landing's, not a bare Relocate: the bot is put down when it ends.
         self.assertIn("SetJumpDestination(", near)

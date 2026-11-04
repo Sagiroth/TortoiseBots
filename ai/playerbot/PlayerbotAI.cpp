@@ -2464,16 +2464,17 @@ void PlayerbotAI::HandleTeleportAck()
 
         // A near teleport can end in mid-air: Jin'do's Banish 24466 lands a bot 12 yd over the ZG pit floor, and
         // with no client nothing makes it fall, so it hovers there and never paths back. Land it the way the jump
-        // landing does: the feet probe at or under the destination first (a navmesh floor is authoritative), the
-        // map's floor as the fallback (within the jump limit, so a deck over it is never a landing), and the same
-        // simulated fall, so clients see it come down instead of jumping to the floor.
+        // landing does: the feet probe and the map's floor (the higher walkable floor wins; a map-only floor only
+        // within the jump limit, so a deck over it is never a landing), then the same simulated fall, so clients see
+        // it come down instead of jumping to the floor.
         if (sPlayerbotAIConfig.teleportLandingFall)
         {
             float const destZ = bot->GetPositionZ();
-            float floorZ = destZ;
-            bot->UpdateAllowedPositionZ(bot->GetPositionX(), bot->GetPositionY(), floorZ);
-            bool floorFound = false;
-            if (destZ - floorZ > ai::TeleportLandingPolicy::kLandingYd)
+            float mapFloorZ = destZ;
+            bot->UpdateAllowedPositionZ(bot->GetPositionX(), bot->GetPositionY(), mapFloorZ);
+            bool probeFound = false;
+            float probeZ = destZ;
+            if (destZ - mapFloorZ > ai::TeleportLandingPolicy::kLandingYd)
             {
                 WorldPosition feet(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
                     destZ - ai::TeleportLandingPolicy::kFeetProbeDepth);
@@ -2481,11 +2482,11 @@ void PlayerbotAI::HandleTeleportAck()
                     feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
                         ai::TeleportLandingPolicy::kFeetProbeDepth, bot->GetInstanceId()))
                 {
-                    floorZ = std::min(feet.getZ(), destZ);
-                    floorFound = true;
+                    probeZ = feet.getZ();
+                    probeFound = true;
                 }
             }
-            float const landingZ = ai::TeleportLandingPolicy::TeleportLandingZ(destZ, floorFound, floorZ,
+            float const landingZ = ai::TeleportLandingPolicy::TeleportLandingZ(destZ, probeFound, probeZ, mapFloorZ,
                 sPlayerbotAIConfig.jumpHeightLimit);
             if (landingZ < destZ)
             {

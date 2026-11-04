@@ -22,28 +22,37 @@ using ai::TeleportLandingPolicy::TeleportLandingZ;
 // it is the landing.
 static void TestBanishLandsOnThePitFloor()
 {
-    CHECK(TeleportLandingZ(90.0f, true, 77.63f, 20.0f) == 77.63f);
-    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 20.0f) == 77.63f);
-    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 60.0f) == 77.63f);
+    CHECK(TeleportLandingZ(90.0f, true, 77.63f, 77.63f, 20.0f) == 77.63f);
+    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 77.63f, 20.0f) == 77.63f);
+    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 77.63f, 60.0f) == 77.63f);
 }
 
 // Nothing to fall to: the terrain under a WMO deck reads far deeper than the jump limit, and a bot is never pulled
 // down through a floor (the jump landing's own deck guard).
 static void TestNoFloorStays()
 {
-    CHECK(TeleportLandingZ(90.0f, false, 90.0f, 20.0f) == 90.0f);   // the map answers with the feet
-    CHECK(TeleportLandingZ(90.0f, false, 60.0f, 20.0f) == 90.0f);   // 30 yd: terrain only, over the limit
-    // A navmesh floor is authoritative however deep it is: it is the surface the bot stands on.
-    CHECK(TeleportLandingZ(180.0f, true, 0.0f, 60.0f) == 0.0f);
+    CHECK(TeleportLandingZ(90.0f, false, 90.0f, 90.0f, 20.0f) == 90.0f);   // the map answers with the feet
+    CHECK(TeleportLandingZ(90.0f, false, 60.0f, 60.0f, 20.0f) == 90.0f);   // 30 yd: terrain only, over the limit
+    // A navmesh floor is authoritative however deep it is: it is the surface the bot stands on (the map read
+    // agrees here).
+    CHECK(TeleportLandingZ(180.0f, true, 0.0f, 0.0f, 60.0f) == 0.0f);
+}
+
+// Both floors are below the destination: the higher walkable floor is the landing. The feet probe can answer with a
+// lower storey under the real floor, and the bot must not drop through it onto ground with no way back.
+static void TestTheHigherFloorWins()
+{
+    CHECK(TeleportLandingZ(10.0f, true, -6.0f, -1.5f, 20.0f) == -1.5f);   // probe 4.5 yd under the map's floor
+    CHECK(TeleportLandingZ(10.0f, true, 6.0f, 2.0f, 20.0f) == 6.0f);       // the probe's deck over the terrain
 }
 
 // A destination at or above the floor it would land on does not fall: same height, a step, or a deck overhead.
 static void TestNoFallWithinAStep()
 {
-    CHECK(TeleportLandingZ(90.0f, true, 90.0f, 20.0f) == 90.0f);
-    CHECK(TeleportLandingZ(90.0f, true, 89.7f, 20.0f) == 90.0f);
-    CHECK(TeleportLandingZ(90.0f, false, 89.7f, 20.0f) == 90.0f);
-    CHECK(TeleportLandingZ(90.0f, true, 92.0f, 20.0f) == 90.0f);   // a bridge over the head is no landing ground
+    CHECK(TeleportLandingZ(90.0f, true, 90.0f, 90.0f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, true, 89.7f, 89.7f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, false, 89.7f, 89.7f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, true, 92.0f, 92.0f, 20.0f) == 90.0f);   // a bridge over the head is no landing ground
 }
 
 // The fall time is the jump landing's formula: the same fall lasts as long whichever caller starts it.
@@ -61,6 +70,7 @@ int main()
 {
     TestBanishLandsOnThePitFloor();
     TestNoFloorStays();
+    TestTheHigherFloorWins();
     TestNoFallWithinAStep();
     TestFallTimeMatchesTheJumpFormula();
     std::cout << "test_teleport_landing_policy: all checks passed\n";

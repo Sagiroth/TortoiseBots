@@ -8,11 +8,13 @@
 // position there: Jin'do's Banish 24466 lands a bot 12 yd over the ZG pit
 // floor (z 90 over 77.6) and it never paths back out. The landing is the jump
 // landing's rule: a floor at or under the feet, more than a step below the
-// destination. The navmesh probe under the feet is authoritative; a floor read
-// off the map alone (UpdateAllowedPositionZ, which answers with the terrain
-// under a WMO deck) is accepted only within the jump height limit, so a deck
-// never drags a bot through a floor.
+// destination. Two floors are read, the navmesh probe under the feet and the
+// map's (UpdateAllowedPositionZ, which answers with the terrain under a WMO
+// deck), and the higher walkable one wins: the probe can answer with a lower
+// storey under the real floor. A map-only floor is accepted only within the
+// jump height limit, so a deck never drags a bot through a floor.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -27,12 +29,16 @@ namespace ai::TeleportLandingPolicy
     inline constexpr float kFeetProbeDepth = 4.0f;
     inline constexpr float kFeetProbeRange = 2.0f;
 
-    inline float TeleportLandingZ(float destZ, bool floorFound, float floorZ, float jumpHeightLimit)
+    // The landing floor: the higher of the probe's floor and the map's (both below the destination; the probe can
+    // find a lower storey, the map alone the terrain under a deck). A probe floor is authoritative however deep it
+    // is; a map-only floor only within the jump limit.
+    inline float TeleportLandingZ(float destZ, bool probeFound, float probeZ, float mapFloorZ, float jumpHeightLimit)
     {
+        float const floorZ = probeFound ? std::max(probeZ, mapFloorZ) : mapFloorZ;
         if (destZ - floorZ <= kLandingYd)
             return destZ; // at or above the feet: no floor below to fall to
-        if (floorFound)
-            return floorZ; // the navmesh's floor, however deep it is
+        if (probeFound)
+            return floorZ;
         if (destZ - floorZ > jumpHeightLimit)
             return destZ; // terrain only, deeper than any jump: a deck above its floor, not a landing
         return floorZ;
