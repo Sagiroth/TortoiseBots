@@ -25,6 +25,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
+| [`AiPlayerbot.WarlockRaidRotation`](#aiplayerbotwarlockraidrotation) | `0` | Stops warlock DoTs, curses and Drain Soul from wasting casts on targets that are about to die. |
 
 ## Settings
 
@@ -105,5 +106,21 @@ In PvE situations (open world and dungeons, excluding raids and PvP), warlocks s
 If the warlock has not yet learned its spec demon, it falls through the available summon hierarchy: Felhunter, Succubus, Voidwalker, and Imp. If the warlock is in a party that has no tank, it keeps the Voidwalker summoned to act as the group tank.
 
 The demon choice evaluates when the warlock has no active pet. Pool bots also swap an existing default demon when shards permit. Player pet strategy commands (such as `.bot strategy +pet imp`) or active pets on owned bots are never replaced. When set to `0`, warlocks summon the Voidwalker once learned, or the Imp before learning it.
+
+</details>
+
+### `AiPlayerbot.WarlockRaidRotation`
+Stops the warlock rotation from spending casts on a target that is about to die, so the Shadow Bolt filler goes out instead of another DoT or a Drain Soul channel.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- A DoT or curse (*Corruption*, *Siphon Life*, *Immolate*, the curse rows) only starts on a target at 35% health or more. A DoT spread to another attacker only lands while that attacker is above 50% health. Bosses (world and raid bosses, instance-binding bosses, and the loaded dungeon plan's bosses) and the raid-utility curses (*Curse of the Elements*, *Curse of Recklessness*, *Curse of Shadow*) are never gated by either line.
+- In a converted raid group (not a five-player party) each of the five "on attacker" spread rows — *Corruption*, *Siphon Life*, *Immolate*, *Curse of the Elements*, and the *Curse of Agony* spread — keeps at most two extra targets dotted besides the current target. The count is per row and counts the attackers already carrying that row's DoT or curse.
+- *Drain Soul* only harvests from trash, never from a boss, and only while the warlock holds fewer than two Soul Shards. The shard row also sits below *Shadowburn*, so a dying trash mob takes the instant first.
+- In combat *Life Tap* only fires when two *Shadow Bolts* cannot be paid for, instead of at the 40% medium-mana line. The health floor and the out-of-combat top-up band are unchanged.
+
+Manual curse strategies a player turns on (`.bot strategy +curse …`) are player orders and are never gated. When set to `0`, every row behaves as before.
 
 </details>

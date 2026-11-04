@@ -4,8 +4,15 @@
 #include "TargetValue.h"
 #include "CcMarkHoldPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/warlock/WarlockSpreadTargeting.h"
 
 using namespace ai;
+
+Unit* WarlockSpreadAttackerTargetValue::Calculate()
+{
+    return ai::warlock::WarlockSpreadAttackerTarget(ai, qualifier, auraCheckIsOwner, capCheckIsOwner,
+                                                    raidUtility, ignoreHealth);
+}
 
 Unit* AttackerWithoutAuraTargetValue::Calculate()
 {

@@ -586,6 +586,9 @@ public:
     bool dungeonFollowHoldBeforePacks;
     // Warlock summons the demon that fits its spec in PvE instead of the Voidwalker (opt-in).
     bool warlockPetBySpec;
+    // Warlock raid rotation: DoT/curse life gate, raid spread cap, trash-only
+    // Drain Soul and a pay-as-needed combat Life Tap (opt-in).
+    bool warlockRaidRotation;
     // Rogue Feint (and Vanish as the last resort) on medium/high threat in 5-man dungeons (opt-in).
     bool rogueDungeonThreatDrops;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
