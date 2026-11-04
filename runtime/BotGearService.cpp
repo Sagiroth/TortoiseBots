@@ -152,7 +152,7 @@ uint32_t BotGearService::PinnedCap(uint32_t guidLow) const
     return it != m_pinned.end() ? it->second.ilvlCap : 0;
 }
 
-void BotGearService::OnBotLogout(uint32_t guidLow)
+void BotGearService::UnpinBot(uint32_t guidLow)
 {
     m_pinned.erase(guidLow);
 }
