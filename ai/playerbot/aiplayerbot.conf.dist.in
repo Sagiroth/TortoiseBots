@@ -2733,6 +2733,11 @@ AiPlayerbot.JumpInPlaceChance = 0.50
 AiPlayerbot.JumpBackwardChance = 0.10
 # Jumping height limit
 AiPlayerbot.JumpHeightLimit = 60
+# Land a bot whose near teleport (Banish, a summon) ends in mid-air: the floor
+# under the destination is probed and the bot falls to it (about the fall time
+# plus a second), instead of hovering there until the next teleport. Changes
+# every near teleport, so off by default.
+AiPlayerbot.TeleportLandingFall = 0
 # Vertical jump speed
 #AiPlayerbot.JumpVSpeed = 7.96
 # Horizontal jump speed

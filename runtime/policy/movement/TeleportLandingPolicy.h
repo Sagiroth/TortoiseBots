@@ -1,0 +1,85 @@
+#pragma once
+
+// Pure policy for the ground a bot lands on after a near teleport (no core
+// types, so tools/test_teleport_landing_policy.cpp builds it standalone).
+//
+// A player's client makes it fall to the floor after the server moves it. A
+// bot has no client, so a teleport that ends in mid-air leaves its server
+// position there: Jin'do's Banish 24466 lands a bot 12 yd over the ZG pit
+// floor (z 90 over 77.6) and it never paths back out. The landing is the jump
+// landing's rule: a floor at or under the feet, more than a step below the
+// destination. Two floors are read, the navmesh probe under the feet and the
+// map's (UpdateAllowedPositionZ, which answers with the terrain under a WMO
+// deck), and the higher walkable one wins: the probe can answer with a lower
+// storey under the real floor. A map-only floor is accepted only within the
+// jump height limit, so a deck never drags a bot through a floor.
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+namespace ai::TeleportLandingPolicy
+{
+    // Under this the destination is on its floor already (a summon dropped on the ground, a revive port, a step):
+    // nothing falls.
+    inline constexpr float kLandingYd = 1.0f;
+
+    // The feet probe: centered this far below the feet and this wide, so only the navmesh at or under the bot is
+    // found and a deck over its head never counts as landing ground.
+    inline constexpr float kFeetProbeDepth = 4.0f;
+    inline constexpr float kFeetProbeRange = 2.0f;
+
+    // The landing floor: the higher of the probe's floor and the map's (both below the destination; the probe can
+    // find a lower storey, the map alone the terrain under a deck). A probe floor is authoritative however deep it
+    // is; a map-only floor only within the jump limit.
+    inline float TeleportLandingZ(float destZ, bool probeFound, float probeZ, float mapFloorZ, float jumpHeightLimit)
+    {
+        float const floorZ = probeFound ? std::max(probeZ, mapFloorZ) : mapFloorZ;
+        if (destZ - floorZ <= kLandingYd)
+            return destZ; // at or above the feet: no floor below to fall to
+        if (probeFound)
+            return floorZ;
+        if (destZ - floorZ > jumpHeightLimit)
+            return destZ; // terrain only, deeper than any jump: a deck above its floor, not a landing
+        return floorZ;
+    }
+
+    // The simulated fall's time over `dropYd` from rest, in ms: gravity 19.2911 yd/s², terminal 60.148 yd/s.
+    // The jump landing and a teleport landing share it, so the same fall lasts as long whichever started it.
+    inline std::uint32_t SimulatedFallMs(float dropYd)
+    {
+        constexpr float kGravity = 19.2911f;
+        constexpr float kTerminalVelocity = 60.148f;
+        float const path = std::fabs(dropYd);
+        float const terminalLength = kTerminalVelocity * kTerminalVelocity / (2.0f * kGravity);
+        float const terminalFallTime = kTerminalVelocity / kGravity;
+        float const seconds = path >= terminalLength
+            ? (path - terminalLength) / kTerminalVelocity + terminalFallTime
+            : std::sqrt(2.0f * path / kGravity);
+        return static_cast<std::uint32_t>(seconds * 1000.0f);
+    }
+
+    // The jump state a near teleport leaves behind: cleared first, then the landing fall when there is a floor to
+    // fall to. A fall or knockback still in flight is superseded by the teleport - its destination would Relocate the
+    // bot back to where it was before - so the caller replaces the state whole instead of adding to it.
+    struct JumpState
+    {
+        std::uint32_t jumpTimeMs = 0; // 0: no jump
+        bool hasDestination = false;
+        float destinationZ = 0.0f;
+    };
+
+    inline JumpState NearTeleportJumpState(float destZ, bool probeFound, float probeZ, float mapFloorZ,
+        float jumpHeightLimit, std::uint32_t nowMs)
+    {
+        JumpState state;
+        float const landingZ = TeleportLandingZ(destZ, probeFound, probeZ, mapFloorZ, jumpHeightLimit);
+        if (landingZ < destZ)
+        {
+            state.jumpTimeMs = nowMs + SimulatedFallMs(destZ - landingZ) + 1000;
+            state.hasDestination = true;
+            state.destinationZ = landingZ;
+        }
+        return state;
+    }
+}

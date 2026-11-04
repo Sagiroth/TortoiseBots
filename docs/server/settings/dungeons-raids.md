@@ -802,7 +802,7 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 - before a pull over [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (or the row's smaller `max_bodies`), the run marks the row's own pack, one order a tick
 - order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
 - risky Fear and Scare Beast go last and only with this key's risky flag on
-- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add
+- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a DB-spawned unit that respawns within a minute (it would be marked again on every respawn; a temporary summon's lifetime is not a respawn) — and such a unit is not counted as a body of the pull either
 - in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
 - tanks and the lead bot never do crowd control; a healer only while 4 healers (1 in a party) stay free, holding one unit
 - at most 24 auto orders a step; uses seven marks (skull stays the fight focus); a player's icon is never moved
