@@ -2719,12 +2719,13 @@ AiPlayerbot.BotCheats = repair,breath
 # Cheats for randombots
 AiPlayerbot.RndBotCheats = repair,breath,item
 
-# Self bot turns your current character into a bot with the command ".bot self"
-# !!DISCLAMER!! Selfbots will work and act like randombots based on their enabled strategies. Your epic mount will be sold to a vendor!
-# Self bot level. Values: 0 (disabled), 1 (Game masters only), 2 (Any player), 3 (Allow .bot always command for all players), 4 (Enabled on login), 4 (Enabled even when offline)
+# There is no ".bot self" in TortoiseBots: a character you are playing never turns into a bot.
+# Only one effect of this key is left, the "always online" lists below: with 5 every character
+# they would cover is kept online as a bot and the lists name the exceptions; with any other
+# value (default 1) only the listed accounts and characters are.
 # AiPlayerbot.SelfBotLevel = 1
 
-# Account/character names that are either, always online as bot (SelfBotLevel < 4) or prevented from being always online as bot (SelfBotLevel = 4)
+# Accounts/characters kept always online as bots (with SelfBotLevel = 5: kept offline instead)
 # AiPlayerbot.ToggleAlwaysOnlineAccounts =
 # AiPlayerbot.ToggleAlwaysOnlineChars =
 

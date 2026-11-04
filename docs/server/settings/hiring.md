@@ -247,7 +247,7 @@ Grace period in seconds before a hire whose master went offline ends.
 
 When a player disconnects from the server, their hired companions hold position and guard their location for this duration.
 
-If the player logs back in within the grace period, companions automatically rejoin their party. If the timer expires before they return, the hire ends and the companion character is deleted.
+If the player logs back in within the grace period, companions automatically rejoin their party. If the timer expires before they return, the hire ends and the companion character is deleted. (On the regroup path the floor is 60 seconds.)
 
 </details>
 
@@ -284,7 +284,7 @@ Named gear presets for `.bot gear <target> preset <name>`: `name=t<tier> [ilvl=<
 <details>
 <summary>How it works in detail</summary>
 
-Each preset fixes the hire gear tier and the item-level cap `.bot gear` applies: `zg` gears tier 2 with every item at or under item level 63. A malformed value logs an error and uses the built-in default.
+Each preset fixes the hire gear tier and the item-level cap `.bot gear` applies: `zg` gears tier 2 with every item at or under item level 63. A value with nothing parseable logs an error and uses the built-in default.
 
 </details>
 
@@ -349,7 +349,7 @@ Comma-separated list of map IDs whose bosses are credited automatically when an 
 
 Allows server administrators to bypass specific raid or dungeon maps for gear tier unlock requirements if those encounters are unscripted or overtuned.
 
-Bosses located on the listed maps are automatically marked complete upon accepting the quest. Items from those maps remain in the candidate equipment database.
+Bosses located on the listed maps are automatically marked complete upon accepting the quest.
 
 </details>
 
@@ -373,7 +373,7 @@ Caps generated standard-kit hire gear relative to the companion's own level.
 <details>
 <summary>How it works in detail</summary>
 
-The randomly generated kit a tier 0 companion arrives in must not exceed `hire level + this value`, and never exceeds `AiPlayerbot.RandomGearMaxLevel`. The default `5` sits a little above the pool-bot rule (`AiPlayerbot.RandomGearMaxItemLevelAboveLevel`, `1`): a level-60 standard hire tops out at item level 65, the tier-1 curated ceiling and below the tier-2 kit at 71.
+The randomly generated kit a tier 0 companion arrives in must not exceed `hire level + this value`, and never exceeds `AiPlayerbot.RandomGearMaxLevel`. The default `5` sits a little above the pool-bot rule (`AiPlayerbot.RandomGearMaxItemLevelAboveLevel`, `1`): a level-60 standard hire tops out at item level 65, around the tier-1 curated ceiling.
 
 Only the standard (tier 0) kit is affected. The curated tiers 1-7 (`tortoise_bots_hire_gear`) and gear the companion earns itself are not capped. `0` keeps `AiPlayerbot.RandomGearMaxLevel` as the only ceiling.
 

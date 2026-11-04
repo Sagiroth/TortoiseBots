@@ -25,35 +25,36 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 ## What the bot does in combat
 
 ### Frost Mage
-- Opens from maximum range with *Frostbolt*.
+- Defaults to *Frostbolt* in combat; pulls open with Shoot (wand).
 - If enemies close within 8 yards and attack the mage, turns away and casts *Blink* to reset distance.
-- Roots attackers with *Frost Nova* — only when a mob within reach is attacking the mage itself, and skipping targets already frozen or immune.
+- Roots attackers with *Frost Nova* — only when a mob within reach is attacking the mage itself, skipping targets already frozen or immune.
 - Casts *Arcane Explosion* when 3 or more enemies cluster inside 10 yards and none of them is loose on the party.
-- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone; a running *Blizzard* is cancelled when a mob under the party's crowd control stands in it.
-- Weaves *Cone of Cold* against 2 or more attackers in front of the mage within 10 yards.
-- Activates *Cold Snap* once Frost cooldowns (*Frost Nova*, *Cone of Cold*, *Ice Barrier*, *Ice Block*, *Frost Ward*) are spent.
-- Area spells (*Blizzard*, *Flamestrike*, *Cone of Cold*) pause during [party threat back-off](overview.md#party-threat-back-off) if holding 50% or more tank threat.
+- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window).
+- Weaves *Cone of Cold* against 2 or more enemies at ranged scan, cast only inside 10 yards while facing the target.
+- Activates *Cold Snap* when any Frost cooldown (*Frost Nova*, *Cone of Cold*, *Ice Barrier*, *Ice Block*, *Frost Ward*) is spent.
+- Area spells (*Blizzard*, *Flamestrike*, *Cone of Cold*) pause during [party threat back-off](overview.md#shared-bot-behaviors) if holding 50% or more tank threat.
+- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window); a running *Blizzard* is cancelled when a mob under the party's crowd control stands in it.
 
 ### Fire Mage
-- Casts *Fireball* as primary filler and weaves *Scorch* to maintain Fire Vulnerability debuffs.
-- Rushes instant *Pyroblast* casts upon reaching full *Hot Streak* stacks.
+- Casts *Fireball* as primary filler and weaves *Scorch* to maintain Fire Vulnerability debuffs (refreshing before the 7-second expiry).
+- Rushes a fast (about 1 second) *Pyroblast* upon reaching full *Hot Streak* stacks.
 - Consumes *Presence of Mind* with instant *Pyroblast*.
-- Uses *Fire Blast* on the move or as an instant finishing blow.
+- Uses *Fire Blast* as an instant finishing blow below 20% target health.
 - Casts *Arcane Explosion* when 3 or more enemies cluster inside 10 yards and none of them is loose on the party.
-- Casts *Blast Wave* as a point-blank interrupt and daze against nearby clustered enemies.
-- Automatically falls back to *Frostbolt* when facing fire-immune enemies.
+- Casts *Blast Wave* as point-blank area damage at interrupt priority on any enemy within 10 yards (no school-lock interrupt or daze logic).
+- Automatically falls back to *Frostbolt* when facing fire-immune enemies (via the generic school-immunity veto).
 
 ### Arcane Mage
 - Opens with *Arcane Rupture*, then channels *Arcane Missiles* while the empowerment buff holds.
 - Uses *Presence of Mind* for instant burst spells.
-- Casts *Arcane Explosion* when hostiles crowd into point-blank range.
+- Casts *Arcane Explosion* at point-blank range when enemies close in (no density or crowd-control gate, unlike Frost and Fire).
 
 <details>
 <summary>Wand and mana recovery details</summary>
 
-- When the primary filler is out of mana reach (*Arcane Missiles* at 320-410 mana, *Fireball* at 190-265), the bot fires cheaper *Frostbolt* (130-195) before falling back to the wand.
-- On Turtle WoW, wand swings trigger the global cooldown. The bot uses a dedicated `wand blocks nuke` trigger to stop wanding as soon as filler spells are affordable again.
-- While under threat back-off (≥80% of tank threat) or out of mana, the bot relies on *Shoot* to maintain damage safely.
+- When the primary filler is out of mana reach, the bot fires cheaper *Frostbolt* before falling back to the wand.
+- On Turtle WoW, wand swings trigger the global cooldown. The bot uses a dedicated `wand blocks nuke` trigger to stop wanding as soon as filler spells are affordable again — keeping the wand only while out of mana or threat-vetoed.
+- While out of mana (below 5%), or under high threat in raids, the bot relies on *Shoot* to keep damage safely. *Shoot* is threat-free, so it keeps running under single-target threat pressure where nukes pause.
 - Wand swings immediately stand down when a *Polymorph* target is queued for crowd control.
 
 </details>
@@ -62,9 +63,9 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 
 ## Turtle WoW custom spells
 
-- **Arcane Power Safety (Spell ID 12042):** *Arcane Power* cannot be cancelled once active. The bot enforces a strict 70% mana floor and checks for a live hostile in range before activating.
-- **Evocation Channeling (Spell ID 12051):** Automatically channels *Evocation* when out of mana and cancels the channel at 95% mana to resume combat.
-- **Icicles (Spell ID 52516):** Custom Frost talent providing root and shatter synergy without disrupting primary spell rotations.
+- **Arcane Power Safety:** The bot enforces a strict 70% mana floor and requires a live hostile target before activating, and never cancels the buff once active.
+- **Evocation Channeling:** Arms below 40% mana, channels *Evocation* when out of spell reach, and cancels the channel at 95% mana to resume combat.
+- **Icicles:** Custom Frost talent providing root and shatter synergy without disrupting primary spell rotations. The bot only casts it above 30% target health, at 60% or more own health, with no attackers on it.
 
 ---
 
@@ -73,38 +74,29 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 - **Polymorph CC:** Casts *Polymorph* on targets assigned via `.bot action cc <mark>`. Stands still during casting and prevents AoE spells near sheeped mobs.
 - **Interrupts:** Casts *Counterspell* immediately upon detecting dangerous enemy spell casts, locking the school.
 - **Food & Drink Conjuration:** Conjures food and water out of combat, sharing stacks with party members in need.
-- **Mana Gems & Runes:** Consumes the strongest mana gem held (Ruby down to Agate) below 40% mana in combat, re-conjuring gems between pulls. Uses *Dark Rune* when gems are exhausted.
-- **Party Buffs:** Maintains *Arcane Intellect* (and *Arcane Brilliance*) on mana users, refreshing expiring buffs (<15s) and coordinating buff claims with other mages.
-- **Defensive Wards:** Casts *Mana Shield* at low health and *Ice Block* at critical health.
+- **Mana Gems & Runes:** Consumes the strongest mana gem held (Ruby down to Agate) below 40% mana in combat, re-conjuring gems between pulls. Uses *Dark Rune* below 40% mana when no ready gem is held (requires level 50).
+- **Party Buffs:** Maintains *Arcane Intellect* (and *Arcane Brilliance*), refreshing expiring buffs (under 15 seconds) and coordinating buff claims with other mages.
+- **Defensive Wards:** Casts *Mana Shield* at low health (also requires mana above medium) and *Ice Block* at critical health.
 - **Decurse:** Casts *Remove Lesser Curse* on party members afflicted by debilitating curses.
 
 ---
 
 ## Talent builds
 
-TortoiseBots provides pre-configured talent progressions at 5-level checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 
 | Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
 | :--- | :--- | :--- | :--- | :--- |
-| **Arcane** | `8.0` | Ranged DPS | `40 / 0 / 11` | Arcane Power, Presence of Mind, Temporal Convergence, Accelerated Arcana, Frost hit dip. |
+| **Arcane** | `8.0` | Ranged DPS | `40 / 0 / 11` | Arcane Power, Presence of Mind, Temporal Convergence, Frost hit dip. |
 | **Fire** | `8.1` | Ranged DPS | `10 / 41 / 0` | Hot Streak, Combustion, Master of Elements, Clearcasting + threat dip. |
 | **Frost** | `8.2` | Ranged DPS | `10 / 0 / 41` | Shatter, Ice Block, Ice Barrier, Icicles, Flash Freeze, Clearcasting dip. |
 
 <details>
 <summary>Leveling milestones and progression rationale</summary>
 
-- **Arcane (`8.0`):**
-  - *Levels 10–35:* Takes *Arcane Subtlety* (2/2), *Improved Arcane Missiles* (5/5), *Arcane Concentration* (5/5), *Presence of Mind* (30), and *Temporal Convergence* (3/3).
-  - *Levels 35–45:* Takes *Accelerated Arcana* (1/1), *Arcane Power* (40), and *Resonance Cascade* (5/5).
-  - *Levels 45–60:* Dips into Frost for *Improved Frostbolt* (5/5) and *Elemental Precision* (3/3) for spell hit cap.
-- **Fire (`8.1`):**
-  - *Levels 10–35:* Takes *Improved Fireball* (5/5), *Ignite* (5/5), *Pyroblast* (20), *Master of Elements* (3/3), and *Hot Streak* (30).
-  - *Levels 35–45:* Takes *Fire Power* (5/5) and *Combustion* (40).
-  - *Levels 45–60:* Takes *Burning Soul* (2/2) and 10 Arcane points (*Arcane Subtlety* 2/2 + *Arcane Concentration* 5/5).
-- **Frost (`8.2`):**
-  - *Levels 10–35:* Takes *Improved Frostbolt* (5/5), *Elemental Precision* (3/3), *Ice Shards* (5/5), *Cold Snap* (25), and *Shatter* (30).
-  - *Levels 35–45:* Takes *Ice Block* (35), *Ice Barrier* (40), *Icicles* (1/1), and *Winter's Chill* (5/5).
-  - *Levels 45–60:* Takes *Flash Freeze* (2/2) and 10 Arcane points (*Arcane Subtlety* 2/2 + *Arcane Concentration* 5/5).
+- **Arcane (`8.0`):** Early levels build missile damage and clearcasting (*Improved Arcane Missiles*, *Arcane Concentration*), reaching *Presence of Mind* (30) and *Arcane Power* (40). Late levels dip into Frost for hit (*Improved Frostbolt*, *Elemental Precision*).
+- **Fire (`8.1`):** Early levels build fireball damage and crit (*Improved Fireball*, *Ignite*, *Pyroblast* at 20, *Master of Elements*, *Hot Streak* at 30). Mid levels take *Fire Power* and *Combustion* (40). Late levels take *Burning Soul* plus an Arcane dip for clearcasting.
+- **Frost (`8.2`):** Early levels build frostbolt damage and crit (*Improved Frostbolt*, *Elemental Precision*, *Ice Shards*, *Cold Snap*, *Shatter* at 30). Mid levels take *Ice Block* (35), *Ice Barrier* (40), and *Icicles*. Late levels take *Flash Freeze* plus an Arcane dip for clearcasting.
 
 </details>
 

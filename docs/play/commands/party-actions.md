@@ -12,7 +12,7 @@ relates_to:
 
 # Tactical Party Actions
 
-TortoiseBots uses an intent-driven control model for combat and movement. Instead of micromanaging individual abilities, you issue high-level tactical orders; the server evaluates party roles and dispatches actions to the most capable bots.
+TortoiseBots keeps orders simple: instead of micromanaging abilities, you issue high-level orders and the bots carry them out with their normal rotations.
 
 Tactical party actions require you to be alive and in the world, and you must control the bots (account owner, group master, claimed bot, or GameMaster). If an action cannot be parsed, the error names the first word typed (up to 32 bytes, UTF-8 safe, `|`/line-breaks → spaces, `unknown` if empty) with code `invalid`.
 
@@ -30,7 +30,7 @@ Companion bots follow special navigation rules inside dungeons and raids to avoi
 | :--- | :--- | :--- | :--- |
 | [`.bot action attack`](#bot-action-attack) | Controller | Hostile Target | Orders scoped damage and tank bots to engage target. |
 | [`.bot action interrupt`](#bot-action-interrupt) | Controller | Casting Hostile | Orders the first bot with a ready interrupt to cast. |
-| [`.bot action stop`](#bot-action-stop) | Controller | None | Clears combat queues and stops current attacks. |
+| [`.bot action stop`](#bot-action-stop) | Controller | None | Stops attacks, keeps current movement. |
 | [`.bot action flee`](#bot-action-flee) | Controller | None | Orders bots to break combat and follow passively. |
 | [`.bot action pull`](#bot-action-pull) | Controller | Hostile Target | Sends tank to pull while party waits to engage. |
 | [`.bot action pullback`](#bot-action-pullback) | Controller | Hostile Target | Tank pulls and retreats to your anchor position. |
@@ -56,9 +56,9 @@ Companion bots follow special navigation rules inside dungeons and raids to avoi
 | [`.bot action stance`](#bot-action-stance) | Controller | None | Sets per-bot combat facing. |
 | [`.bot action rebuff`](#bot-action-rebuff) | Controller | None | Refreshes expiring party buffs out of combat. |
 | [`.bot action guard`](#bot-action-guard) | Controller | None | Holds ground at each bot's current spot. |
-| [`.bot action free`](#bot-action-free) | Controller | None | Releases bots to autonomous movement. |
+| [`.bot action free`](#bot-action-free) | Controller | None | Adds autonomous `free` movement on scoped bots. |
 | [`.bot action raid status`](#bot-action-raid-status) | Controller | None | Displays active raid strategies for party bots. |
-| [`.bot action raid tankface`](#bot-action-raid-tankface) | Controller | Dragon Target | Directs tank to face dragon boss away from group. |
+| [`.bot action raid tankface`](#bot-action-raid-tankface) | Controller | Target | Drags the target away from the raid anchor. |
 | [`.bot action raid douse`](#bot-action-raid-douse) | Controller | None | Orders bots to douse nearby Molten Core runes. |
 | [`.bot action raid custom status`](#bot-action-raid-custom-status) | Controller | None | Reports custom Turtle raid strategy status. |
 | [`.bot action raid custom on`](#bot-action-raid-custom-on) | Controller | None | Enables custom Turtle raid transition strategies. |
@@ -85,306 +85,334 @@ Companion bots follow special navigation rules inside dungeons and raids to avoi
 
 ### `.bot action attack`
 
-Orders scoped tanks and DPS bots (selected bot if targeted, else party) to engage your current hostile target.
+Engages your hostile target with scoped tanks and DPS bots (selected bot if targeted, else party).
 
 ```text
 .bot action attack
 ```
 
-Bots accept targets out to `AiPlayerbot.ReactDistance` (150 yards by default, follows config) and path directly toward them. Dedicated healers continue healing allies rather than dealing damage.
-
-<details>
-<summary>How it works in detail</summary>
-
-- **Evade Handling:** Creatures in evade mode cause bots to whisper `"<name> is evading"`.
-- **Unreachable Targets:** The command lifts any temporary unreachable flags on that mob family. If the target remains physically unreachable after 15 seconds, bots drop the target and ignore that mob family for five minutes.
-- **Target Validation:** Dead targets are rejected with `dead-target`. Missing hostile targets are refused with `no-target`.
-- **Stay Release:** Issuing `.bot action attack` ends any active stay or flee hold on all dispatched bots, so they can move to the target.
-
-</details>
+- Range: accepts targets out to `AiPlayerbot.ReactDistance` (150 yards by default, follows config).
+- Healers keep healing instead of attacking.
+- Evade: creatures in evade mode trigger a `"<name> is evading"` whisper.
+- Unreachable: lifts temp unreachable flags on the target and its mob entry.
+- Still unreachable after 15 seconds: bots drop the target and ignore that mob entry for five minutes.
+- Refusals: `dead-target`, `no-target`.
+- Releases stay and flee holds on the dispatched bots.
 
 ### `.bot action interrupt`
 
-Directs the first available party bot with a ready interrupt ability to interrupt your target's spell cast.
+Interrupts your target's spell cast with the first party bot that has a ready interrupt.
 
 ```text
 .bot action interrupt
 ```
 
-The system checks registered interrupt abilities (including *Counterspell*, *Silence*, *Spell Lock*, *Kick*, *Pummel*, *Shield Bash*, *Earth Shock*, and related stuns). If the chosen bot is out of range, the mature reach action moves it into range before executing the interrupt. Refusal codes: `no-target`, `dead-target`, `not-casting`, and `no-interrupt`.
+- If you target one of your bots, only that bot tries.
+- Spells: *Counterspell*, *Silence*, *Spell Lock*, *Kick*, *Pummel*, *Shield Bash*, *Earth Shock*, *Bash*, *Hammer of Justice*, *Repentance*, *Death Coil*.
+- Bots past sight distance (60 yards) are skipped.
+- Refusals: `no-target`, `dead-target`, `not-casting`, `no-interrupt`.
 
 ### `.bot action stop`
 
-Clears active combat queues and stops ongoing attacks across all companion bots.
+Stops attacks on scoped bots (selected bot if targeted, else party) without changing movement.
 
 ```text
 .bot action stop
 ```
 
-Bots stop attacking and moving, but keep normal follow movement.
+- Keeps the current movement mode: a bot on stay stays where it is.
+- Does not release the DPS join window of a running pull.
 
 ### `.bot action flee`
 
-Orders companion bots to disengage from combat immediately and follow the leader passively without attacking.
+Disengages scoped bots (selected bot if targeted, else party) into passive follow.
 
 ```text
 .bot action flee
 ```
 
-Bots drop their combat targets and pull holds, following you closely. The next tactical order that sends bots at a target or changes movement ends the passive hold.
+- Drops combat targets and pull holds.
+- Ends when the next order sends bots at a target or changes movement.
 
 ### `.bot action pull`
 
-Directs the party tank to pull your hostile target while other bots hold back at your position.
+Pulls your hostile target with the party tank while other bots hold at your position.
 
 ```text
 .bot action pull [seconds] [ranged]
 ```
 
-Parameters `[seconds]` (0 to 60, default 10) and `[ranged]` can be passed in either order. Other bots hold for the specified delay after the tank engages before joining combat. The tank runs its normal rotation without needing a second order. The join window always ends on its own clock; combat end, death, or a movement order only release the anchor hold.
+- `[seconds]` (0 to 60, default 10) and `[ranged]` in either order.
+- Others hold at your position for the delay after the tank engages, then join combat.
+- The tank's rotation takes over; no second order needed.
+- The join window runs on its own clock.
+- `attack` and `flee` end the window early; combat end, death, or movement orders only release the anchor hold.
+- A plain pull walks into melee unless every ranged-opening condition holds.
+- `ranged` walks to a firing position first; `pullback` always opens from range.
+- If the tank cannot shoot, it walks in instead.
 
-<details>
-<summary>How it works in detail</summary>
+Ranged-opening conditions (all must hold):
 
-- **Melee and Ranged Pulling:** The tank walks into melee range unless it has an equipped ranged weapon and ammo. If the target is unreachable on foot or farther than the approach distance configured in [AiPlayerbot.RangedPullMeleeApproach](../../server/settings/combat.md#aiplayerbotrangedpullmeleeapproach) (default 20 yards), the tank pulls from range.
-- **Forced Ranged:** Adding `ranged` requests a ranged opening — the tank walks to a firing position. If the tank cannot shoot, the blockers below apply and it body-pulls instead. Blockers are `no-ranged-weapon`, `weapon-untrained`, `shoot-spell-missing`, `no-ammo`, and `too-close` (whispered only if ordered ranged and blocker is not `NoWeapon` or `TooClose`).
-- **Early Release:** The pull hold ends early if you issue `.bot action attack` or `.bot action flee` (issuing `stop` does not release the DPS join window).
-- **Refusal Codes:** Refused if target is dead (`dead-target`), friendly (`friendly`), beyond `ReactDistance * 3` (450 yards at default settings, returning `too-far`), unable to start walking to a firing position (`unreachable`), or invalid (`invalid-target`). If no tank is available, returns `no-tank`, or `tank-busy` if the only tanks found are already fighting.
+- Ranged pulling is on (`AiPlayerbot.RangedPull`, default on).
+- The target is in line of sight and inside the shot's range.
+- The target is unreachable on foot, or farther than `AiPlayerbot.RangedPullMeleeApproach` (default 20 yards).
 
-</details>
+| Blocker | Meaning |
+| :--- | :--- |
+| `no-ranged-weapon` | No ranged weapon equipped |
+| `weapon-untrained` | Weapon skill missing |
+| `shoot-spell-missing` | Shoot spell not learned |
+| `no-ammo` | No ammo |
+| `too-close` | Target inside the shot's dead zone |
+
+- The reply names the blocker.
+- It is also whispered when you ordered `ranged`, or when the tank has a ranged weapon it cannot fire.
+
+| Refusal | Meaning |
+| :--- | :--- |
+| `dead-target` | Target is dead |
+| `friendly` | Target is friendly |
+| `too-far` | Past `ReactDistance * 3` (450 yards at defaults) |
+| `unreachable` | No foot path for a ranged walk |
+| `invalid-target` | Not a valid target |
+| `no-tank` | No tank available |
+| `tank-busy` | Only tanks found are already fighting |
 
 ### `.bot action pullback`
 
-Orders the tank to pull the target from range and immediately retreat to your current position, breaking line of sight around corners.
+Pulls the target from range and retreats to your position, breaking line of sight around corners.
 
 ```text
 .bot action pullback [seconds] [ranged]
 ```
 
-Accepts `[seconds]` (0 to 60, default 5) and `[ranged]` in either order. The tank approaches only close enough to fire, shoots, and returns to your position. Other bots attack `seconds` after the tank is back at your position.
-
-<details>
-<summary>How it works in detail</summary>
-
-- **Corner Pulling:** Use this maneuver to pull enemy packs around corners or through doorways to break enemy caster line of sight.
-- **Anchor Hold:** The tank holds ground at the pullback spot only while the pulled enemy is still on its way. Once it arrives, stops short or dies, the tank fights the rest of the pack freely and follows you again after combat.
-- **Fallback Melee:** If the tank has no working ranged weapon, it walks in, strikes the target once in melee, and sprints back to your position.
-- **Meal Interrupt:** The order first interrupts a cast of the tank's (a meal) and stands it up, since the reach does not move a casting bot; a walk still not started after the order's decisions gets one direct reach.
-
-</details>
+- `[seconds]` (0 to 60, default 5) and `[ranged]` in either order.
+- The tank shoots, then returns to where you stand.
+- Others attack once the tank is back and the join delay stamped at the shot has run out.
+- No working ranged weapon: the tank strikes once in melee and sprints back.
+- The tank holds at your position for the fight the pull brought in.
+- It fights freely and follows again after combat.
+- Eating or drinking tanks are interrupted and stood up first.
 
 ### `.bot action come`
 
-Commands scoped bots (selected bot if targeted, else party) to walk directly to your current coordinates and hold position.
+Walks scoped bots (selected bot if targeted, else party) to your exact spot and switches them to `stay`.
 
 ```text
 .bot action come
 ```
 
-Aliases include `.bot action hold` and `.bot action comestay`. While `come` records a come order (allowing pending summon follow-restore to run), `hold` and `comestay` record a hold order. Bots arrive at your exact spot and switch their movement state to `stay`.
+- Also: `.bot action hold`, `.bot action comestay`.
+- Only `come` records a come order (lets a pending summon follow-restore run again).
+- `hold` and `comestay` record a hold order instead.
 
 ### `.bot action stay`
 
-Halts scoped bots (selected bot if targeted, else party) at their current positions and makes them hold ground.
+Halts scoped bots (selected bot if targeted, else party) where they stand.
 
 ```text
 .bot action stay
 ```
 
-Bots stop moving immediately. Targeted combat orders automatically release dispatched bots from stay so they engage and follow once combat finishes.
+- Targeted combat orders release dispatched bots so they engage and follow after combat.
 
 ### `.bot action follow`
 
-Breaks current movements and orders scoped bots (selected bot if targeted, else party) to resume follow formation behind the player.
+Resumes follow formation behind you on scoped bots (selected bot if targeted, else party).
 
 ```text
 .bot action follow
 ```
 
-If [`AiPlayerbot.DungeonFollowHoldBeforePacks`](../../server/settings/party.md#aiplayerbotdungeonfollowholdbeforepacks) is enabled, bots in a dungeon or raid trailing while nobody is in combat stop outside unpulled packs and whisper you a warning instead of pulling accidental adds (resuming when the pack dies or the leader returns within 25 yards).
+- If `AiPlayerbot.DungeonFollowHoldBeforePacks` is on, a trailing bot in a dungeon or raid holds outside unpulled packs and whispers you a warning.
+- It resumes when the pack dies or you return.
+- The hold opens past 30 yards and closes inside 25 yards.
 
 ### `.bot action focus skull`
 
-Applies the **Skull** raid target icon to your current hostile target (or targets the already Skull-marked mob if you have no target) and commands all party bots in scope to attack it.
+Attacks the Skull mark with all scoped party bots, using normal rotations.
 
 ```text
 .bot action focus skull
 ```
 
-Orders all party bots in scope to attack the Skull mark using their normal rotations (healers are not exempted here).
+- Applies Skull to your hostile target, or uses the existing Skull mark if you have no target.
+- Healers are not exempted here.
 
+<a id="bot-action-cc"></a><a id="bot-cc"></a>
 ### `.bot action cc`
 
-Assigns a crowd control (CC) raid target icon to a capable companion bot.
+Assigns a crowd-control raid mark to a capable bot.
 
 ```text
 .bot action cc <mark> [bot]
 ```
 
-Supported marks include `moon`, `star`, `circle`, `diamond`, `triangle`, `square`, `cross`, and `skull` (`skull` is normally reserved for focus fire).
-
-<details>
-<summary>How it works in detail</summary>
-
-- **Role and Spell Matching:** The server probes the mature crowd-control actions each bot knows (such as *Polymorph*, *Sap*, *Banish*, *Fear*, *Shackle Undead*, *Hibernate*, *Entangling Roots*, *Freezing Trap*, *Scare Beast*, and *Turn Undead*) and picks the best fit for the mark and target.
-- **Exclusive Ownership:** Only one bot owns a specific mark at a time. Assigning a mark to another bot clears it from the previous owner.
-- **AoE Protection:** Party bots avoid using area-of-effect spells near crowd-controlled targets to avoid breaking the control.
-- **Pre-Pull Sap:** A rogue assigned a mark on a suitable target stealths and saps it out of combat before the pull by default.
-
-</details>
+- Marks: `moon`, `star`, `circle`, `diamond`, `triangle`, `square`, `cross`, `skull`.
+- `skull` is normally reserved for focus fire.
+- The server probes each bot's crowd-control actions and picks the best fit.
+- Probed spells include *Polymorph*, *Sap*, *Banish*, *Fear*, *Shackle Undead*, *Hibernate*, *Entangling Roots*, *Freezing Trap*, *Scare Beast*, *Turn Undead*.
+- One bot owns a mark at a time; reassigning clears the previous owner.
+- Bots avoid area spells near controlled targets.
+- Assigned rogues stealth and Sap suitable targets before the pull by default.
 
 ### `.bot action cc clear`
 
-Clears crowd control mark assignments from party bots.
+Clears crowd-control mark assignments.
 
 ```text
 .bot action cc clear [bot]
 ```
 
-Specifying a bot name clears only that bot's assigned mark; targeting an owned bot clears that bot; omitting both clears marks from all companion bots in the party. The accepted `.bot cc <mark> [bot]` / `.bot cc clear [bot]` forms behave identically.
+- A bot name clears only that bot; targeting an owned bot clears that bot.
+- Neither clears all party bots.
+- `.bot cc <mark> [bot]` and `.bot cc clear [bot]` work the same way.
 
 ### `.bot action auto cc`
 
-Toggles smart autonomous crowd control on loose hostile adds.
+Toggles autonomous crowd control on loose hostile adds.
 
 ```text
 .bot action auto cc [on|off|status]
 ```
 
-With no argument, it toggles the setting. When enabled:
-- Activates in group combat against 2 or more enemies.
-- Target must be a hostile hitting a party healer or ranged bot, never the tank, and nobody in the group may be attacking or targeting it.
-- Target must have no periodic-damage aura, must not be the last mob alive, must not be Skull-marked, and must not be the tank's victim.
-- One bot per mob, no re-sheeping active CC, and explicit CC marks always take precedence.
+- No argument flips the setting.
+- Fires in group combat with 2 or more enemies.
+- Target must be a hostile hitting a healer or ranged bot, never the tank.
+- Nobody in the group may be attacking or targeting it.
+- Skipped: targets with periodic-damage auras, the last mob alive, Skull-marked targets, the tank's victim.
+- One bot per mob; never re-sheeps active control; explicit marks win.
 
 ### `.bot action sap`
 
-Controls whether rogues sneak up and apply *Sap* to their crowd control mark before a pull.
+Toggles pre-pull *Sap* on crowd-control marks.
 
 ```text
 .bot action sap [on|off] [bot]
 ```
 
-Pre-pull Sap is on by default. Specifying a bot name (or targeting a bot) scopes to that bot, else all party rogues; non-rogues are skipped. If no rogues are in scope, returns `no-rogue`. The server acknowledges with `on`, `off`, or `mixed`. `sap=on|off` also rides the `TBM:BOTSTATE` line per bot.
+- On by default.
+- A bot name or targeted bot scopes to that bot, else all party rogues.
+- Non-rogues are skipped; no rogues in scope returns `no-rogue`.
+- Replies `on`, `off`, or `mixed`.
+- `sap=on|off` also rides the `TBM:BOTSTATE` line per bot.
 
 ### `.bot action aoe`
 
-Toggles area-of-effect (AoE) abilities across all companion bots.
+Toggles area-of-effect spells on scoped bots.
 
 ```text
 .bot action aoe [on|off|status]
 ```
 
-Bare `aoe` toggles the switch. AoE is on by default. Turning it off applies the `no aoe` strategy (shared with `.bot behavior <bot> aoe` and persisted across sessions), preventing bots from casting multi-target spells and abilities that might break CC. The `dps aoe` target picker also stops picking cluster targets while AoE is off.
+- Bare `aoe` flips the switch; `status` reports it.
+- On by default.
+- Off applies the `no aoe` strategy (shared with `.bot behavior <bot> aoe`, saved across sessions).
+- Off also stops the `dps aoe` picker from picking cluster targets.
 
-<details>
-<summary>Spells affected by AoE toggle</summary>
-
-- **Mage:** Arcane Explosion, Blast Wave, Blizzard, Cone of Cold, Flamestrike, Frost Nova.
-- **Warlock:** Rain of Fire, Howl of Terror.
-- **Priest:** Holy Nova, Psychic Scream.
-- **Druid:** Hurricane, Swipe, Swipe (bear), Demoralizing Roar, Challenging Roar.
-- **Hunter:** Multi-Shot, Volley, Carve, Explosive Trap, Explosive Trap on target, Frost Trap, Frost Trap on target.
-- **Paladin:** Consecration, Holy Wrath.
-- **Shaman:** Chain Lightning, Magma Totem, Fire Nova, Earthquake.
-- **Warrior:** Cleave, Whirlwind, Sweeping Strikes, Thunder Clap, Thunder Clap on snare target, Demoralizing Shout, Challenging Shout, Intimidating Shout, Piercing Howl.
-- **Rogue:** Blade Flurry.
-- **Other:** War Stomp, Goblin Sapper, Grenades (throw grenade), Oil of Immolation. The `dps aoe` target picker is also suppressed.
-
-</details>
+| Class | Spells held back while off |
+| :--- | :--- |
+| Mage | Arcane Explosion, Blast Wave, Blizzard, Cone of Cold, Flamestrike, Frost Nova |
+| Warlock | Rain of Fire, Howl of Terror |
+| Priest | Holy Nova, Psychic Scream |
+| Druid | Hurricane, Swipe, Swipe (bear), Demoralizing Roar, Challenging Roar |
+| Hunter | Multi-Shot, Volley, Carve, Explosive Trap, Explosive Trap on target, Frost Trap, Frost Trap on target |
+| Paladin | Consecration, Holy Wrath |
+| Shaman | Chain Lightning, Magma Totem, Fire Nova, Earthquake |
+| Warrior | Cleave, Whirlwind, Sweeping Strikes, Thunder Clap, Thunder Clap on snare target, Demoralizing Shout, Challenging Shout, Intimidating Shout, Piercing Howl |
+| Rogue | Blade Flurry |
+| Other | War Stomp, Goblin Sapper, throw grenade, Oil of Immolation |
 
 ### `.bot action loot`
 
-Toggles corpse looting on or off across companion bots.
+Toggles corpse looting on scoped bots.
 
 ```text
 .bot action loot [on|off|status]
 ```
 
-Corpse looting is on by default. Omitting the argument flips the current state and returns an acknowledgment with the resulting setting.
+- On by default.
+- No argument flips the setting and reports the result.
 
 ### `.bot action repair`
 
-Orders companion bots to repair all damaged equipment at a nearby repair merchant.
+Repairs scoped bots' gear at a nearby repair merchant.
 
 ```text
 .bot action repair
 ```
 
-Bots interact with the nearest NPC with the repair flag (`UNIT_NPC_FLAG_REPAIR`).
-
 ### `.bot action sell`
 
-Orders companion bots to sell all gray-quality junk items in their inventory to a nearby merchant.
+Sells scoped bots' gray junk at a nearby stocked vendor.
 
 ```text
 .bot action sell
 ```
 
-Bots find a nearby stocked vendor NPC themselves (`UNIT_NPC_FLAG_VENDOR`) and sell trash items to free up bag space.
-
-If no bot sells anything, the reply says why: nothing grey to sell, no vendor in reach, or no grey item the bot will sell here.
+- If nothing sells, the reply says why.
+- Reasons: nothing grey to sell, no vendor in reach, or no grey item the bot will sell here.
 
 ### `.bot action rest`
 
-Orders companion bots to sit, eat food, and drink water until their health and mana are fully restored.
+Sits scoped bots down to eat and drink until health and mana are full.
 
 ```text
 .bot action rest
 ```
 
-Aliases include `.bot action drink` and `.bot action eat`. Mage bots can share conjured food and water with the party through their own give-food and give-water triggers. In a dungeon run the lead bot also holds these orders while the run is fighting: a 2.5-second mark refreshed once a second while any bound bot or its pet is in combat, reported as `party still fighting`. If bots cannot rest, the system responds with grouped reasons (`No bot rested: <reason>: <bots>...`, capped at 240 bytes with `+K more`):
-- `dead`
-- `in combat`
-- `party still fighting`
-- `nothing to rest (mana X% >= Y%, health A% >= B%)`
-- `no food or drink` (or `no drink`, `no food`)
-- `leader is moving`
-- `other: not useful now`
+- Also: `.bot action drink`, `.bot action eat`.
+- Mage bots share conjured food and water with the party.
+- In a dungeon run, no rest while any bound bot or its pet is fighting.
+- That hold reports as `party still fighting`.
+- If bots cannot rest, the reply groups reasons (`No bot rested: <reason>: <bots>...`).
+- Reasons: `dead`, `in combat`, `party still fighting`, `no food or drink` (or `no drink`, `no food`), `leader is moving`, `nothing to rest (mana X% >= Y%, health A% >= B%)`, `other: not useful now`.
 
 ### `.bot action release`
 
-Commands dead companion bots to release their spirit.
+Releases the spirit of dead scoped bots.
 
 ```text
 .bot action release
 ```
 
-See [Roster and Hiring Commands: .bot release](roster-and-hiring.md#bot-release) for full details.
+- See [Roster and Hiring Commands: .bot release](roster-and-hiring.md#bot-release).
 
 ### `.bot action corpse run`
 
-Commands companion bots in spirit form to path back to their corpse.
+Runs scoped ghost bots back to their corpses.
 
 ```text
 .bot action corpse run
 ```
 
-Alias: `.bot action corpserun`. See [Roster and Hiring Commands: .bot corpse run](roster-and-hiring.md#bot-corpse-run).
+- Alias: `.bot action corpserun`.
+- See [Roster and Hiring Commands: .bot corpse run](roster-and-hiring.md#bot-corpse-run).
 
 ### `.bot action learn`
 
-Commands companion bots to learn available spells and ranks from the selected trainer.
+Learns available spells and ranks from the selected trainer on scoped bots.
 
 ```text
 .bot action learn
 ```
 
-Target a trainer you have selected. See [Roster and Hiring Commands: .bot learn](roster-and-hiring.md#bot-learn).
+- Target a trainer you have selected.
+- See [Roster and Hiring Commands: .bot learn](roster-and-hiring.md#bot-learn).
 
 ### `.bot action trade`
 
-Opens a direct player-to-bot trade window with your targeted companion bot.
+Opens a direct player-to-bot trade window with your targeted bot.
 
 ```text
 .bot action trade
 ```
 
-See [Bot Panel: .bot item trade](bot-panel.md#bot-item-trade).
+- See [Bot Panel: .bot item trade](bot-panel.md#bot-item-trade).
 
 ### `.bot action end pull`
 
-Aborts a running pull maneuver across scoped bots.
+Aborts a running pull maneuver on scoped bots.
 
 ```text
 .bot action end pull
@@ -392,80 +420,93 @@ Aborts a running pull maneuver across scoped bots.
 
 ### `.bot action stance`
 
-Sets per-bot combat facing across scoped bots.
+Sets combat facing on scoped bots.
 
 ```text
 .bot action stance <near|tank|turnback|behind>
 ```
 
-`turn` is accepted as `turnback`. The acknowledgement detail names the stance
-each bot took.
+- `turn` works as `turnback`.
 
 ### `.bot action rebuff`
 
-Refreshes expiring party buffs out of combat across scoped bots.
+Refreshes expiring party buffs out of combat on scoped bots.
 
 ```text
 .bot action rebuff
 ```
 
-Uses the same 2-minute expiration pass as the whisper form.
+- Same 2-minute expiration pass as the whisper form.
 
 ### `.bot action guard`
 
-Orders scoped bots to hold ground at their current positions.
+Holds scoped bots at their current spots.
 
 ```text
 .bot action guard
 ```
 
-Captures each bot's current spot as its guard position.
+- Captures each bot's spot as its guard position.
 
 ### `.bot action free`
 
-Releases scoped bots from `stay` or `guard` back to autonomous movement.
+Adds autonomous `free` movement to scoped bots.
 
 ```text
 .bot action free
 ```
 
+- A `stay` hold drops out through the movement group.
+- A `guard` hold stays with it, so a guarded bot keeps defending its spot.
+
 ### `.bot action ready`
 
-Initiates a party-wide readiness check across all companion bots.
+Runs a readiness check across all scoped bots.
 
 ```text
 .bot action ready
 ```
 
-Bots evaluate health (above `AiPlayerbot.AlmostFullHealth`, 90 by default), mana for mana users (above `AiPlayerbot.MediumHealth`, 70 by default), distance (within `AiPlayerbot.SightDistance`, 60 yards by default), hunter ammo, pet presence and happiness, and food, water, and potion counts. Each bot reports its readiness status directly to the requester. Buff topping off occurs only on real raid checks when [`AiPlayerbot.ForceRebuffOnReadyCheck`](../../server/settings/world-population.md#aiplayerbotforcerebuffonreadycheck) is enabled (default 0, disabled), and only for bots with the `force rebuff` strategy.
+- Health above `AiPlayerbot.AlmostFullHealth` (90 by default).
+- Mana above `AiPlayerbot.MediumHealth` (70) for mana users.
+- Within `AiPlayerbot.SightDistance` (60 yards).
+- Hunter ammo, pet presence, and pet happiness count too.
+- Food, water, and potion counts count too.
+- Each bot reports to you directly.
+- Buff top-off happens only on real raid checks.
+- It also needs `AiPlayerbot.ForceRebuffOnReadyCheck` on (default 0, off).
+- And only bots with the `force rebuff` strategy top off.
 
 ### `.bot action raid status`
 
-Displays the active raid encounter strategy currently configured for party bots.
+Shows the active raid encounter strategy for party bots.
 
 ```text
 .bot action raid status
 ```
 
-Reports active encounter strategies (including `molten core`, `onyxia`, `four horseman`, `emerald sanctum`, `lower karazhan`, `karazhan crypt`, and `solnius`) or falls back to `instance map <id>, no raid strategy` (or `outdoor`).
+- Known strategies include `molten core`, `onyxia`, `four horseman`, `emerald sanctum`, `lower karazhan`, `karazhan crypt`, and `solnius`.
+- Otherwise reports `instance map <id>, no raid strategy`, or `outdoor`.
 
 ### `.bot action raid tankface`
 
-Orders tank bots to position dragon bosses facing directly away from the raid group.
+Drags the target away from the raid anchor so the boss head points away from the group.
 
 ```text
 .bot action raid tankface
 ```
 
-Healers and damage dealers should stand clear of frontal cleaves and breath attacks.
+- Runs on any scoped bot with a live target; not limited to tanks or dragons.
 
 ### `.bot action raid douse`
 
-Commands companion bots to douse nearby Molten Core boss runes. The bot first tries Eternal Quintessence, then falls back to Aqual Quintessence.
+Douses nearby Molten Core boss runes with scoped bots.
 
 ```text
 .bot action raid douse
 ```
+
+- Tries Eternal Quintessence first, then falls back to Aqual Quintessence.
 
 ### `.bot action raid custom status`
 
@@ -475,7 +516,7 @@ Reports the active state of custom Turtle WoW raid encounter strategies.
 .bot action raid custom status
 ```
 
-Outputs exact lowercase states: `emerald sanctum`, `lower karazhan`, `karazhan crypt`, or `off`.
+- Outputs lowercase states: `emerald sanctum`, `lower karazhan`, `karazhan crypt`, or `off`.
 
 ### `.bot action raid custom on`
 
@@ -485,7 +526,8 @@ Enables custom raid encounter tactics for Turtle WoW raid instances.
 .bot action raid custom on
 ```
 
-The manual command works regardless of configuration; [`AiPlayerbot.EnableCustomRaidTactics`](../../server/settings/dungeons-raids.md#aiplayerbotenablecustomraidtactics) gates automatic transition strategies on zone-in.
+- Works regardless of configuration.
+- `AiPlayerbot.EnableCustomRaidTactics` gates only automatic transition strategies on zone-in.
 
 ### `.bot action raid custom off`
 
@@ -503,27 +545,29 @@ Direct commands target one controlled bot by name (or the dynamic scope for togg
 
 ### `.bot follow`
 
-Orders an owned companion bot to follow you.
+Orders an owned bot to follow you.
 
 ```text
 .bot follow <Name>
 ```
 
-A bot name is required (without a name, the server returns usage). For party-wide follow, use [`.bot action follow`](#bot-action-follow).
+- A bot name is required (without one, the server returns usage).
+- For party-wide follow, use [`.bot action follow`](#bot-action-follow).
 
 ### `.bot stay`
 
-Orders a specific companion bot to halt and stay at its current coordinates.
+Halts a specific bot at its current coordinates.
 
 ```text
 .bot stay <Name>
 ```
 
-A bot name is required. For party-wide stay, use [`.bot action stay`](#bot-action-stay).
+- A bot name is required.
+- For party-wide stay, use [`.bot action stay`](#bot-action-stay).
 
 ### `.bot guard`
 
-Orders a specific bot to hold ground at its current position and defend against nearby hostile enemies.
+Holds a specific bot at its current position to defend against nearby enemies.
 
 ```text
 .bot guard <Name>
@@ -531,7 +575,7 @@ Orders a specific bot to hold ground at its current position and defend against 
 
 ### `.bot free`
 
-Releases an owned bot from `stay` or `guard` back to autonomous movement.
+Releases an owned bot to autonomous `free` movement.
 
 ```text
 .bot free <Name>
@@ -539,27 +583,30 @@ Releases an owned bot from `stay` or `guard` back to autonomous movement.
 
 ### `.bot ready`
 
-Runs a readiness check on an individual named bot.
+Runs a readiness check on one named bot.
 
 ```text
 .bot ready <Name>
 ```
 
-A bot name is required. Checks health, mana, distance, and supplies, reporting the result to the requester. For party-wide readiness, use [`.bot action ready`](#bot-action-ready).
+- A bot name is required.
+- Checks health, mana, distance, and supplies, and reports to you.
+- For party-wide readiness, use [`.bot action ready`](#bot-action-ready).
 
 ### `.bot attack`
 
-Orders a specific companion bot to attack your current hostile target.
+Orders a specific bot to attack your current hostile target.
 
 ```text
 .bot attack <Name>
 ```
 
-Ends any active stay or flee hold on the targeted bot; the bot engages the target and then resumes following you when combat ends.
+- Ends stay and flee holds on that bot.
+- The bot follows you again when combat ends.
 
 ### `.bot interrupt`
 
-Orders a specific companion bot to interrupt your current target's spell cast.
+Orders a specific bot to interrupt your current target's spell cast.
 
 ```text
 .bot interrupt <Name>
@@ -573,28 +620,32 @@ Dispatches a pullback maneuver on your designated tank (or selected bot).
 .bot pullback
 ```
 
-Does not accept a name argument. Requires a live non-bot hostile target and a tank-capable bot (player-designated or native tank). The tank pulls from range and retreats to your position.
+- Takes no name argument.
+- Needs a live non-bot hostile target and a tank-capable bot.
+- The tank pulls from range and retreats to your position.
 
 ### `.bot formation`
 
-Configures the follow formation used by companion bots while following the party leader.
+Configures the follow formation used by bots following the party leader.
 
 ```text
 .bot formation [botName] <formation>
 ```
 
-Supported formations:
-- `chaos` (shipped default `AiPlayerbot.DefaultFormation`, resets with `default`)
-- `melee`
-- `queue`
-- `circle`
-- `line`
-- `shield`
-- `arrow`
-- `near`
-- `far`
+| Formation |
+| :--- |
+| `chaos` (shipped default `AiPlayerbot.DefaultFormation`; `default` resets to it) |
+| `melee` |
+| `queue` |
+| `circle` |
+| `line` |
+| `shield` |
+| `arrow` |
+| `near` |
+| `far` |
 
-Out of combat outside instances, mounted bots follow 3 yards further out than their on-foot slot (mounts are bigger than the 1.5-yard follow ring).
+- One token applies to the dynamic scope; two tokens target one owned bot.
+- Mounted bots follow 3 yards further out than their on-foot slot outside combat and instances.
 
 ### `.bot strategy`
 
@@ -605,27 +656,28 @@ Adds or removes strategies on a bot or the whole party.
 .bot strategy reset
 ```
 
-Multiword strategy names are accepted as a whole, for example
-`.bot strategy +aoe fear @dps` or `.bot strategy +tank assist TankName`.
-A complete registered strategy name takes precedence over interpreting its last
-word as a bot name. Comma-separated changes still work, for example
-`.bot strategy +loot,-passive @dps` (no spaces around commas).
+- Multiword names match as a whole (`.bot strategy +aoe fear @dps`).
+- A full strategy name beats reading its last word as a bot name.
+- Comma-separated changes work with no spaces (`.bot strategy +loot,-passive @dps`).
+- No suffix: uses your selected bot, else controllable party bots.
+- Bare `reset` restores defaults on that scope.
+- A role suffix selects matching party bots even with a bot selected.
+- A name selects that online owned bot.
+- Unknown selectors or names are rejected.
+- A role with no match reports `No party bot matches role <role>.`
+- Arguments must begin with `+`, `-`, or `~`.
+- `co`, `nc`, and `de` select combat, non-combat, and dead engines in whisper commands (e.g. `/w <Bot> co +focus`).
 
-Without a suffix, the selected controllable bot is used, or otherwise the
-controllable party bots. Bare `.bot strategy reset` restores default strategies on the same scope and replies `Strategy change 'reset' applied to N bot(s).` A role suffix explicitly selects matching controllable
-party bots, even when a bot is selected. A name selects that online owned bot.
-Ownership checks and strategy persistence are unchanged.
+| Selector | Matches |
+| :--- | :--- |
+| `@tank` | Tanks |
+| `@heal` | Healers |
+| `@dps` | Everyone except tanks and healers |
+| `@melee` | Melee-range attackers, tanks and healers included |
+| `@ranged` | Ranged attackers, tanks and healers included |
 
-Role selectors use the same group-aware predicates as whisper role filters:
-`@tank` and `@heal` match those roles, while `@dps` excludes both. `@melee`
-and `@ranged` select attack-range categories, including tanks and healers.
-Unknown selectors or strategy names are rejected; no matching role reports
-zero bots changed. No new configuration or automatic behavior is enabled.
-
-Arguments must begin with `+`, `-`, or `~`. (The prefixes `co`, `nc`, and `de` select combat, non-combat, and dead engines in whisper commands, e.g. `/w <Bot> co +focus`).
-
-- **Single-Target Burn (`+focus` / `-focus`):** Suppresses multi-target attacks while keeping traps and totems intact (use `ss` / skip spell to exclude specific spells).
-- **Off-spec kits (`+offdps` / `-offdps`, `+offheal` / `-offheal`):** Switches healer damage spells and DPS off-healing per [off-spec rules](../../classes/overview.md#healer-off-dps-offdps), for example `.bot strategy -offdps @heal` or `.bot strategy +offheal @dps`.
+- `+focus` / `-focus`: single-target burn; keeps traps and totems (`ss` excludes specific spells).
+- `+offdps` / `-offdps`, `+offheal` / `-offheal`: off-spec kits per [off-spec rules](../../classes/overview.md#healer-off-dps-offdps).
 
 ### `.bot loot`
 
@@ -659,35 +711,28 @@ Shorthand rest command. See [`.bot action rest`](#bot-action-rest).
 .bot rest
 ```
 
-Aliased as `.bot drink` and `.bot eat`.
+- Aliased as `.bot drink` and `.bot eat`.
 
 ### `.bot downtime` <a id="bot-downtime"></a>
 
-Orders one of your own alt bots to run its town errands by itself: walk to the
-nearest reachable class trainer and learn every rank it can afford, sell its
-gray junk at a vendor, and repair its gear. Afterwards it walks back and
-resumes following you.
+Runs town errands on one of your own alt bots: trainer, junk sale, and repair.
 
 ```text
 .bot downtime [botName]
 ```
 
-Without a name the order applies to your selected alt bot, or to all of your
-own alt bots in the party. Hired companions and pool bots are refused.
-
-The alt only walks when something is reachable: with no trainer or vendor in
-range (for example out in the wild) it answers so and nothing changes, and an
-alt that needs nothing answers that too. The errand is bounded: it never
-touches the auction house or mail, never sells soulbound or equipped items,
-spends its own gold only on trainer ranks, repairs and flight paths, and it
-gives up and comes back if the errands cannot be finished.
-
-> [!NOTE]
-> **Downtime Notes:**
-> - The command is on order only: nothing runs by itself, and a follow or stay
->   order while the alt is out cancels the errands immediately.
-> - Alt bots that already play on their own (`.bot add` alts that left the
->   party) refuse: they already run these errands on their own.
+- The alt walks to the nearest reachable trainer and learns every rank it can afford.
+- It sells gray junk at a vendor and repairs its gear, then walks back and follows you.
+- No name: uses your selected alt bot, or all your own party alts.
+- Hired companions and pool bots are refused.
+- Nothing reachable (or nothing needed): the alt says so and nothing changes.
+- Bounded: never touches the auction house or mail.
+- Never sells soulbound or equipped items.
+- Spends its own gold only on trainer ranks, repairs, and flight paths.
+- Gives up and comes back if the errands cannot be finished.
+- Order only: nothing runs by itself.
+- A follow or stay order while the alt is out cancels the errands at once.
+- Alt bots already playing on their own refuse.
 
 > [!NOTE]
 > **Pet Stance, Autocast, and Boost Notes:**
