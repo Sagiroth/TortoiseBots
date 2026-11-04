@@ -886,18 +886,18 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
 
     def test_aq20_burn_and_ranged_rows_are_live(self):
-        # T2 burn_mana and T3 ranged_only (20261105140000_world.sql), written with their C++ so the loader never
+        # T2 burn_mana and T3 ranged_only (20261104150200_world.sql), written with their C++ so the loader never
         # skips them. Moam: up to four burners from 10 % mana. Ayamiss: melee held under an 8 yd gap while she is in
         # the air (she climbs 20 yd at 5 s, boss_ayamiss.cpp:193-205).
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         burn = live.get((509, 15340, "burn_mana", 0, 0))
         self.assertIsNotNone(burn, "the Moam burn_mana row is missing")
-        self.assertEqual("20261105140000_world.sql", burn["file"], "the T2 migration owns the burn_mana row")
+        self.assertEqual("20261104150200_world.sql", burn["file"], "the T2 migration owns the burn_mana row")
         self.assertEqual((4, 10.0, 0, 100), (burn["priority"], burn["param"], burn["hp_min"], burn["hp_max"]))
         self.assertIsNone(new_kind_problem(burn))
         hold = live.get((509, 15369, "ranged_only", 0, 0))
         self.assertIsNotNone(hold, "the Ayamiss ranged_only row is missing")
-        self.assertEqual("20261105140000_world.sql", hold["file"], "the T3 migration owns the ranged_only row")
+        self.assertEqual("20261104150200_world.sql", hold["file"], "the T3 migration owns the ranged_only row")
         self.assertEqual((0, 8.0, "", 0, 100),
                          (hold["priority"], hold["param"], hold["tactic_mode"], hold["hp_min"], hold["hp_max"]))
         self.assertIsNone(new_kind_problem(hold))
