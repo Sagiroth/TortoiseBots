@@ -594,8 +594,8 @@ namespace ai
     };
     // One read of the taunt_after_cast rows of the fight: opens a window (the first, or the retry after one ran out),
     // logs a window that ran out or ended, and ends the episode when a tank has the subject again
-    // (`BossTacticsTauntAfter`). Gated by AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; the
-    // window state is per bot, subject and row, so a tank taking over mid-episode starts from its own state.
+    // (`BossTacticsTauntAfter`). Gated by AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; every tank
+    // tracks the window in its own per-subject state, and the tank the window's pick names is the one that acts.
     BossTauntAfter FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
     // The taunt of the window was cast: its outcome row then says taunted=1.
     void NoteBossTauntAfterCast(PlayerbotAI* ai, Player* bot, const BossTauntAfter& task);

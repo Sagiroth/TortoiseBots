@@ -4495,6 +4495,7 @@ struct TauntAfterEpisode
     std::uint32_t lastReadMs = 0;
     std::uint32_t startMs = 0;
     std::uint32_t regainedMs = 0;
+    int tankIndex = -1; // the raid-order slot that holds this window
     bool open = false;
     bool taunted = false; // the row's tank cast its taunt in the open window
 };
@@ -4622,17 +4623,6 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             // Shade is never taken off a tank by a taunt that could not kill it anyway.
             if (TauntAuraGated(bot, unit))
                 continue;
-            // A tank that can taunt the subject right now (in melee, with it as its target, and not its victim) counts
-            // before one that cannot; read for every window, so the pick follows the tanks that can act.
-            for (std::size_t i = 0; i < roles.tanks.size(); ++i)
-            {
-                Player* const tank = roles.tanks[i];
-                canTaunt[i] = tank && tank->GetSelectionGuid() == unit->GetObjectGuid() &&
-                    unit->GetVictim() != tank && tank->CanReachWithMeleeAutoAttack(unit);
-            }
-            int const assigned = TauntAfterTankPick(usable, canTaunt, static_cast<int>(row->priority));
-            if (assigned < 0 || roles.tanks[assigned] != bot)
-                continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;
             bool victimIsTank = false;
@@ -4647,55 +4637,81 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     std::find(roles.tanks.begin(), roles.tanks.end(), player) != roles.tanks.end();
             }
             bool const onNonTank = victimIsPlayer && !victimIsTank;
-            bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
+            // A tank that can taunt the subject right now (in melee, with it as its target, and not its victim) is a
+            // window's first choice.
+            for (std::size_t i = 0; i < roles.tanks.size(); ++i)
+            {
+                Player* const tank = roles.tanks[i];
+                canTaunt[i] = tank && tank->GetSelectionGuid() == unit->GetObjectGuid() &&
+                    unit->GetVictim() != tank && tank->CanReachWithMeleeAutoAttack(unit);
+            }
             TauntAfterEpisode closed;
             bool missed = false;
             bool regained = false;
+            int windowTank = -1; // the tank the window that just ended belonged to (the log's row)
             {
                 std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
                 TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
                 state.lastReadMs = nowMs;
                 std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                const TauntEpisodeRead read =
-                    TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned);
-                if (read.missed)
+                // One tank holds a window: the pick is read when the window opens (or when its tank can no longer
+                // take the taunt), never again mid-window, so a rival becoming eligible cannot restart the deadline.
+                bool const opening = !state.open || sinceMs >= deadlineMs;
+                int const holder = state.tankIndex; // the tank that held the window being closed
+                bool const holderUsable = holder >= 0 &&
+                    holder < static_cast<int>(usable.size()) && usable[holder];
+                int const assigned = (opening || !holderUsable)
+                    ? TauntAfterTankPick(usable, canTaunt, static_cast<int>(row->priority))
+                    : holder;
+                if (assigned >= 0)
                 {
-                    // The window ran out on a non-tank: log it once, then the new one opens in the same read.
-                    closed = state;
-                    closed.regainedMs = 0;
-                    missed = true;
-                }
-                if (read.starts)
-                {
-                    state.startMs = nowMs;
-                    state.taunted = false;
-                }
-                state.open = read.open;
-                if (read.step == TauntEpisodeStep::Due)
-                {
-                    out.valid = true;
-                    out.subject = unit;
-                    out.row = row;
-                    out.tankIndex = assigned;
-                    out.deadlineMs = deadlineMs;
-                    out.sinceMs = read.starts ? 0 : sinceMs;
-                }
-                else if (read.step == TauntEpisodeStep::Regained)
-                {
-                    // A tank has the subject back: its window ends and the next charm starts from a clean state.
-                    closed = state;
-                    closed.regainedMs = sinceMs;
-                    regained = true;
-                    state = TauntAfterEpisode();
-                    state.lastReadMs = nowMs;
+                    bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
+                    const TauntEpisodeRead read =
+                        TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned);
+                    if (read.missed)
+                    {
+                        // The window ran out on a non-tank: log it once, then the new one opens in the same read.
+                        closed = state;
+                        closed.regainedMs = 0;
+                        windowTank = holder;
+                        missed = true;
+                    }
+                    if (read.starts)
+                    {
+                        state.startMs = nowMs;
+                        state.taunted = false;
+                    }
+                    state.open = read.open;
+                    state.tankIndex = assigned;
+                    if (read.step == TauntEpisodeStep::Due && roles.tanks[assigned] == bot)
+                    {
+                        out.valid = true;
+                        out.subject = unit;
+                        out.row = row;
+                        out.tankIndex = assigned;
+                        out.deadlineMs = deadlineMs;
+                        out.sinceMs = read.starts ? 0 : sinceMs;
+                    }
+                    else if (read.step == TauntEpisodeStep::Regained)
+                    {
+                        // A tank has the subject back: its window ends and the next charm starts from a clean state.
+                        closed = state;
+                        closed.regainedMs = sinceMs;
+                        windowTank = holder >= 0 ? holder : assigned;
+                        regained = true;
+                        state = TauntAfterEpisode();
+                        state.lastReadMs = nowMs;
+                    }
                 }
                 // A subject between victims, or one on a pet, is mid-transition: the episode stays open and its
                 // deadline keeps running, so a rival victim retarget does not hand the off-tank a second window.
             }
-            if (missed)
-                LogTauntAfter(ai, unit, assigned, closed, false);
-            if (regained)
-                LogTauntAfter(ai, unit, assigned, closed, true);
+            if (missed && windowTank >= 0 && windowTank < static_cast<int>(roles.tanks.size()) &&
+                roles.tanks[windowTank] == bot)
+                LogTauntAfter(ai, unit, windowTank, closed, false);
+            if (regained && windowTank >= 0 && windowTank < static_cast<int>(roles.tanks.size()) &&
+                roles.tanks[windowTank] == bot)
+                LogTauntAfter(ai, unit, windowTank, closed, true);
             if (out.valid)
                 return out;
         }

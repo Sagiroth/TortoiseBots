@@ -108,8 +108,8 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn('"boss tactics taunt after",\n        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));',
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
-        self.assertIn("TauntAfterTankIndex(alive, static_cast<int>(row->priority))", ACTIONS)
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", ACTIONS)
+        self.assertIn("TauntAfterTankPick(usable, canTaunt, static_cast<int>(row->priority))", ACTIONS)
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned)", ACTIONS)
         # Only until_tank is implemented; blink and the spell triggers stay parsed and ignored.
         self.assertIn("row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank", ACTIONS)
         self.assertIn("bool BossTacticsTauntAfterTrigger::IsActive()", TRIGGERS)
@@ -126,16 +126,21 @@ class CharmYieldWiring(unittest.TestCase):
         # retarget never hands the off-tank a second full window.
         scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
         # The episode's transitions are the pure machine's; a tank having the subject back ends it early.
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", scan)
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned)", scan)
         self.assertIn("TauntEpisodeStep::Regained", scan)
         self.assertIn("state = TauntAfterEpisode();", scan)
+        # One tank holds a window while its deadline runs (the pick is not re-read mid-window).
+        self.assertIn("int const holder = state.tankIndex;", scan)
+        self.assertIn("state.tankIndex = assigned;", scan)
         # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
         self.assertIn("TauntAfterTankUsable(", scan)
         self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
+        self.assertIn("TauntAfterTankPick", POLICY)
         self.assertIn("TauntAfterTankIndex", POLICY)
         self.assertIn("TauntAfterDue", POLICY)
         # The pure cases are pinned in the policy test file too.
         self.assertIn("CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);", POLICY_TEST)
+        self.assertIn("CHECK(TauntAfterTankPick({true, true}, {false, true}, 0) == 1);", POLICY_TEST)
         self.assertIn("CHECK(!TauntAfterDue(true, 10000, 10000, false));", POLICY_TEST)
 
 

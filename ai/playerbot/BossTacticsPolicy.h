@@ -1981,8 +1981,9 @@ namespace ai
 
     // The tank of one until_tank window: the first usable tank at or after `priority` that can taunt the subject right
     // now (in melee, targeting it, and not its victim) counts before one that cannot, wrapping to the front; else the
-    // first usable tank, which walks in and takes the next window. A tank that can taunt counts in every window: the
-    // pick is read again each time one opens. -1 when no tank is usable.
+    // first usable tank, which walks in and takes the next window. It is read once per window, when the window opens
+    // or its tank can no longer take the taunt, so one tank holds the window while its deadline runs. -1 when no tank
+    // is usable.
     inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt, int wanted)
     {
         int const count = static_cast<int>(usable.size());
