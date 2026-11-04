@@ -402,6 +402,50 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // The swap_on_aura kind's other-tank side: the tank of the row's rotation that takes the boss at the row's stack
+    // count (TankSwapPolicy.h). `valid` is true only for that tank, and only for a swap the row calls for now.
+    struct BossTankSwapTask
+    {
+        bool valid = false;
+        Unit* boss = nullptr;
+        Unit* victim = nullptr;  // the tank the boss is on, one of the rotation
+        const BossTacticRow* row = nullptr;
+        int victimIndex = -1;    // its place in the raid tank order
+        int botIndex = -1;       // the bot's place (the one that takes over)
+        int victimStacks = 0;
+    };
+    BossTankSwapTask FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // Whether the fight's swap record names `bot` as the tank the last swap moved off `boss`: it stands down (the
+    // stop action and the hold multiplier) while TankSwapStandsDown says so (the record's window, its own stacks,
+    // and the boss still on the new tank). HeldSwapBoss clears it for an explicit player order on the boss.
+    bool TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, int stacks);
+
+    // The swap_on_aura boss this tank was moved off and still stands on (its victim or its current target), or null
+    // when the stand-down ended or it is not on that boss: the stop action and its trigger share this rule.
+    Unit* TankSwapStandDownBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // Records the swap the bot just did (the boss came to it, the old tank stood down) and writes the
+    // `BossTacticsTankSwap` row (taunt=<boss guid>, stacks=<n>, from=<guid>).
+    void NoteBossTankSwapCast(PlayerbotAI* ai, Player* bot, const BossTankSwapTask& task);
+
+    class BossTacticsTankSwapAction : public AttackAction
+    {
+    public:
+        BossTacticsTankSwapAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics tank swap") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The swapped-off tank side of the swap: it drops the boss (attack, cast, pick) the tick still stands on it, so
+    // no class keeps building threat there; the hold multiplier stands down every action aimed at that boss until the
+    // stand-down ends.
+    class BossTacticsTankSwapHoldAction : public Action
+    {
+    public:
+        BossTacticsTankSwapHoldAction(PlayerbotAI* ai) : Action(ai, "boss tactics tank swap hold") {}
+        bool Execute(Event& event) override;
+    };
+
     // The seek_aura fight's clock and gather state, as the run leader reads it: the next Blood Siphon's due time, the
     // dose window, the cycle count and the gather (the source it stands around and whether the burn may start). One
     // record per (instance, boss, row) is shared by every bot of the instance (SeekCycleSnapshot).

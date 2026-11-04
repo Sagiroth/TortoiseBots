@@ -632,6 +632,10 @@ public:
     // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
     // rows are ignored, so the table behaves exactly as before the kind (default off).
     bool dungeonRunUseObject = false;
+    // The swap_on_aura boss-tactic kind (the tanks of the row's rotation trade the boss at a stack count, and the
+    // swapped-off tank holds its threat): on, the rows are read (its own key on top of the aura-tactics and tactics
+    // gates). Off, the rows are ignored, so the table behaves exactly as before the kind (default off).
+    bool dungeonRunTankSwap = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

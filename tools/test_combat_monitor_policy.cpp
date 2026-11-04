@@ -1325,6 +1325,31 @@ static void TestDegradedBuildsCarrySpellsCut()
     }
 }
 
+// Turtle's Flash of Light (51743) is a script effect in the DBC, not a HEAL
+// effect, so the cast hook counts it as a heal only through IsTurtleHealSpell.
+static void TestTurtleHealSpell()
+{
+    CHECK(IsTurtleHealSpell(51743));
+    CHECK(!IsTurtleHealSpell(51744));   // the rank's learn spell
+    CHECK(!IsTurtleHealSpell(45525));   // Earth Shield cast: a buff, its heals come from the proc
+
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.SetInCombat(false, false, 6000);
+    b.OnCast(1, "Flash of Light", IsTurtleHealSpell(51743), 6500);
+    b.SetInCombat(true, false, 7000);
+    b.SetInCombat(false, false, 20000);
+    b.SetInCombat(false, false, 23000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700023000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    size_t const tanky = p[0].find("\"name\":\"Tanky\"");
+    std::string const row = p[0].substr(tanky, p[0].find("\"name\":\"Healy\"") - tanky);
+    CHECK(Contains(row, "\"casts\":1,"));
+    CHECK(Contains(row, "\"heal_casts\":1"));
+}
+
 int main()
 {
     TestMealInTailNotInFight();
@@ -1351,6 +1376,7 @@ int main()
     TestEngageCoalescedPerEntry();
     TestCloseOnFullWipe();
     TestNoteBossSetsOnce();
+    TestTurtleHealSpell();
     TestNoteBossOutsideFightIgnored();
     TestNoteBossKeepsRunBoss();
     TestRefinedBossDeathIsKill();

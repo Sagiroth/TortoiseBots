@@ -1149,6 +1149,31 @@ int main()
         CHECK(table.LinkedDeathGroups(309)[0].group == 1);
         CHECK(table.LinkedDeathGroups(309)[1].group == 2);
     }
+    // A same-entry pair (the two Qiraji Gladiators 15324 in one hall): the rows' anchor is the entry the pair
+    // shares. Two living units of that entry at 80 % and 60 %: the pick is the 80 % one; both at 5 % or under:
+    // released, and the released pick burns the lowest.
+    std::vector<BossTacticRow> glad = {
+        Row(509, 15324, BossTacticKind::LinkedDeath, 15324, 0, 1, 5.0f),
+    };
+    glad[0].windowSec = 7.0f;
+    const ActiveBossRows gladRows = Active(glad);
+    {
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(gladRows, 15324, group));
+        CHECK(group.bossEntry == 15324);
+        CHECK(group.groupId == 1);
+        CHECK(group.entries.size() == 1);
+        CHECK(group.entries[0] == 15324);
+        std::vector<LinkedMember> members = { Linked(1, 80, true, 15324), Linked(2, 60, true, 15324) };
+        CHECK(!LinkedDeathReleased(group.param, members));
+        CHECK(PickLinkedDeath(group.param, members) == 0);  // the highest: 80 %
+        members = { Linked(1, 60, true, 15324), Linked(2, 80, true, 15324) };
+        CHECK(PickLinkedDeath(group.param, members) == 1);  // the highest now
+        members = { Linked(1, 5, true, 15324), Linked(2, 4, true, 15324) };
+        CHECK(LinkedDeathReleased(group.param, members));
+        CHECK(PickLinkedDeathTarget(true, true, gladRows, 15324, members) == -1);
+    }
+
 
     // The group: the anchor and every partner its rows list, resolved from either. Its burn order is the raiser chain:
     // Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal.

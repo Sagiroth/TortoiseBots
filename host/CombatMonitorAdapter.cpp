@@ -143,7 +143,7 @@ void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*
     SpellEntry const* info = spell->m_spellInfo;
     if (!info)
         return;
-    bool heal = false;
+    bool heal = CombatMonitor::IsTurtleHealSpell(info->Id);
     bool taunt = false;
     bool interrupt = false;
     for (int i = 0; i < MAX_EFFECT_INDEX; ++i)

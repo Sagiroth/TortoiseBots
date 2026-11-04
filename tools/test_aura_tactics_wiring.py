@@ -23,6 +23,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+TANK_SWAP_POLICY = (ROOT / "ai/playerbot/policy/raid/TankSwapPolicy.h").read_text()
 LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
@@ -287,6 +288,116 @@ class UseObjectWiring(unittest.TestCase):
         self.assertIn('dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);', load)
         self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunUseObject = 0$")
         self.assertIn("AiPlayerbot.DungeonRunUseObject", DOCS)
+
+class TankSwapWiring(unittest.TestCase):
+    """The swap_on_aura runtime (Kurinnaxx's Mortal Wound): the trigger and the action share one rule, both keys gate
+    them, and the swapped-off tank holds its threat through the existing hold multiplier."""
+
+    def test_the_trigger_reads_the_swap_rule_behind_both_keys(self):
+        trigger = body(TRIGGERS, "bool BossTacticsTankSwapTrigger::IsActive()")
+        self.assertIn("FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot))", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", trigger)
+        self.assertIn("HasAuraTacticMap(bot->GetMapId())", trigger)
+        find = body(ACTIONS, "BossTankSwapTask ai::FindBossTankSwap(")
+        self.assertIn("!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics", find)
+        self.assertIn("TankSwapWanted(victimIndex, victimStacks", find)
+        self.assertIn("stacks, alive, inRange, canTaunt)", find)
+        # A tank with no taunt (never trained one) is skipped, not picked to fire a trigger every tick with nothing
+        # done; Hand of Reckoning is Turtle's paladin taunt, so a paladin that trained it qualifies.
+        self.assertIn("canTaunt[i] = taunt != nullptr;", find)
+        self.assertIn("KnownTaunt(tankAi)", find)
+        # Taunt and Growl are melee-range spells; the core's cast check measures each taunt's own range, not 30 yd.
+        self.assertIn("tankAi->CanCastSpell(taunt, boss)", find)
+        self.assertNotIn("kTankSwapCandidateYd", find)
+        self.assertNotIn("kTankSwapCandidateYd", TANK_SWAP_POLICY)
+        self.assertIn("BossTacticKind::SwapOnAura", find)
+        self.assertIn("GetRaidTankRoles(ai)", find)
+
+    def test_the_action_taunts_and_the_record_names_the_old_tank(self):
+        action = body(ACTIONS, "bool BossTacticsTankSwapAction::Execute(Event& event)")
+        self.assertIn("FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot))", action)
+        self.assertIn("CastableTaunt(ai, task.boss)", action)
+        self.assertIn("NoteBossTankSwapCast(ai, bot, task)", action)
+        taunts = body(ACTIONS, "const char* KnownTaunt(PlayerbotAI* ai)")
+        for name in ("taunt", "growl", "hand of reckoning"):
+            self.assertIn('"%s"' % name, taunts)
+        # Righteous Defense is TBC and no 1.12 spell, so the entry would only stall the rotation.
+        self.assertNotIn("righteous defense", taunts)
+        note = body(ACTIONS, "void ai::NoteBossTankSwapCast(")
+        self.assertIn("record.fromGuid = task.victim->GetObjectGuid().GetRawValue();", note)
+        self.assertIn('"taunt=%llu,stacks=%d"', note)
+        self.assertIn('"from=%llu"', note)
+        self.assertIn('"BossTacticsTankSwap"', note)
+
+    def test_the_swapped_off_tank_holds_every_class_action_on_the_boss(self):
+        hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(Action* action)")
+        self.assertIn("TankSwapHold(ai, bot, action)", hold)
+        rule = body(ACTIONS, "bool TankSwapHold(PlayerbotAI* ai, Player* bot, Action* action)")
+        # The rule reads what the action is aimed at, not which class's spell it is: no warrior (or druid, paladin)
+        # name is special-cased, so Growl, Maul and a paladin's attack are held by the same test as Sunder Armor.
+        self.assertIn("EbonrocTauntAction(action->getName())", rule)
+        self.assertIn("action->GetTarget() == boss", rule)
+        self.assertIn("IsAreaDamageAction(ai, action)", rule)
+        self.assertIn("TankSwapHoldsAction(true, taunt, area, targetsBoss)", rule)
+        for class_spell in ("sunder armor", "revenge", "heroic strike", "maul", "growl", "mocking blow"):
+            self.assertNotIn('"%s"' % class_spell, rule)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", rule)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", rule)
+        held = body(ACTIONS, "Unit* HeldSwapBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)")
+        self.assertIn("BossTacticKind::SwapOnAura", held)
+        self.assertIn("TankSwapHoldsTank(bot, boss, *row, AuraStacks(bot, row->spellId))", held)
+        self.assertIn("inline bool TankSwapHoldsAction(bool standsDown, bool taunt, bool areaDamage, bool targetsBoss)",
+                      TANK_SWAP_POLICY)
+        self.assertIn("inline constexpr std::uint32_t kTankSwapStandDownMs = 20000;", TANK_SWAP_POLICY)
+        self.assertIn("TankSwapStandsDown(true, stacks", body(ACTIONS, "bool ai::TankSwapHoldsTank("))
+        # The stand-down lasts only while the boss is on the new tank: a resisted taunt or a lost boss frees the old
+        # tank at once, so its rescue taunts run.
+        holds = body(ACTIONS, "bool ai::TankSwapHoldsTank(")
+        self.assertIn("boss->GetVictim()", holds)
+        self.assertIn("victim != bot", holds)
+        self.assertIn("sServerFacade.IsAlive(victim)", holds)
+        self.assertIn("record.toGuid", holds)
+        self.assertIn("newTankHolds", holds)
+        # An explicit player attack order on the boss clears the stand-down for that bot.
+        held = body(ACTIONS, "Unit* HeldSwapBoss(")
+        self.assertIn('GetValue<ObjectGuid>("explicit attack target")', held)
+        self.assertIn("boss != ordered", held)
+
+    def test_the_stand_down_drops_the_boss_at_once(self):
+        trigger = body(TRIGGERS, "bool BossTacticsTankSwapHoldTrigger::IsActive()")
+        self.assertIn("TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot))", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", trigger)
+        self.assertIn("PlayerbotAI::IsTank(bot)", trigger)
+        action = body(ACTIONS, "bool BossTacticsTankSwapHoldAction::Execute(Event& event)")
+        self.assertIn("TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot))", action)
+        self.assertIn("bot->AttackStop();", action)
+        self.assertIn("bot->CastStop();", action)
+        self.assertIn('context->GetValue<Unit*>("current target")->Set(nullptr);', action)
+        self.assertIn('context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());', action)
+        stand_down = body(ACTIONS, "Unit* ai::TankSwapStandDownBoss(")
+        self.assertIn("boss == bot->GetVictim()", stand_down)
+        self.assertIn('GetValue<Unit*>("current target")', stand_down)
+        # The stop runs on the combat and the reaction engine (two rows, the trigger and the action name each): the
+        # latter keeps running through the bot's own cast.
+        self.assertEqual(STRATEGY.count('"boss tactics tank swap hold"'), 4)
+        self.assertIn('creators["boss tactics tank swap hold"]', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics tank swap hold"]', ACTION_CONTEXT)
+
+    def test_the_trigger_and_action_are_registered(self):
+        self.assertIn('creators["boss tactics tank swap"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankSwapTrigger(ai); };', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics tank swap"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankSwapAction(ai); };', ACTION_CONTEXT)
+        self.assertIn('"boss tactics tank swap"', STRATEGY)
+
+    def test_the_key_is_read_reloaded_and_documented(self):
+        self.assertIn("bool dungeonRunTankSwap = false;", CONFIG_H)
+        load = body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()")
+        self.assertIn('dungeonRunTankSwap = config.GetBoolDefault("AiPlayerbot.DungeonRunTankSwap", false);', load)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankSwap = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankSwap", DOCS)
 
 class DpsHoldWiring(unittest.TestCase):
     def test_the_policy_holds_on_edges_and_caps_until_tank(self):
@@ -747,7 +858,15 @@ class FreezeFleeWiring(unittest.TestCase):
                  (TRIGGERS_H, "class BossTacticsFreezeTrigger", TRIGGERS,
                   "bool BossTacticsFreezeTrigger::IsActive()"),
                  (TRIGGERS_H, "class BossTacticsFleeTrigger", TRIGGERS,
-                  "bool BossTacticsFleeTrigger::IsActive()"))
+                  "bool BossTacticsFleeTrigger::IsActive()"),
+                 (ACTIONS_H, "class BossTacticsTankSwapAction", ACTIONS,
+                  "bool BossTacticsTankSwapAction::Execute(Event& event)"),
+                 (ACTIONS_H, "class BossTacticsTankSwapHoldAction", ACTIONS,
+                  "bool BossTacticsTankSwapHoldAction::Execute(Event& event)"),
+                 (TRIGGERS_H, "class BossTacticsTankSwapTrigger", TRIGGERS,
+                  "bool BossTacticsTankSwapTrigger::IsActive()"),
+                 (TRIGGERS_H, "class BossTacticsTankSwapHoldTrigger", TRIGGERS,
+                  "bool BossTacticsTankSwapHoldTrigger::IsActive()"))
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)
             self.assertIn(definition, source)

@@ -65,6 +65,19 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics object anchor",
         NextAction::array(0, new NextAction("boss tactics object anchor", ACTION_HIGH + 5), NULL)));
 
+    // A swap_on_aura row is at its stack count on the tank the boss is on and this bot is the next rotation tank: the
+    // taunt goes out at once. Below every EMERGENCY row, so a survival move still wins; above the rotation, which
+    // would otherwise keep the stacked tank building threat.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
+    // The tank a swap moved off still stands on the boss: it drops the boss at once. Above the rotation (whose boss
+    // actions the hold multiplier stands down anyway) and below every defensive cooldown, so a shield wall or a last
+    // stand still wins the tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
     // taunt_after_cast (mode until_tank, Hakkar's Cause Insanity): the row's off-tank takes the boss back once its
     // victim is no tank. Above the target picks, below the survival rows: a taunt is worth nothing to a dead tank.
     triggers.push_back(new TriggerNode(
@@ -143,6 +156,16 @@ void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "boss tactics flee",
         NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
+
+    // The swap's taunt runs there as well: a tank's cast would sleep through the combat engine while the stacks tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
+    // The stand-down's drop runs there too: the combat engine sleeps through the bot's own cast.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
