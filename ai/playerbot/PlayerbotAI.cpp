@@ -6,6 +6,7 @@
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/TransportSnapPolicy.h"
 #include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
@@ -822,18 +823,39 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     if (master && IsSafe(master) && bot->GetDistance(master) < INTERACTION_DISTANCE * 2.5 && master->GetTransport() != bot->GetTransport() && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
-        bot->StopMoving();
-        if (master->GetTransport() && WorldPosition(bot).isOnTransport(master->GetTransport()))
-            master->GetTransport()->AddPassenger(bot);
-        else if (bot->GetTransport())
+        // A transport pointer can outlive the ride; only a player standing on
+        // the transport counts as riding it, so a stale pointer can't trap
+        // the bot in a stop-and-snap loop after disembarking.
+        bool const masterAboard = master->GetTransport() && WorldPosition(master).isOnTransport(master->GetTransport());
+        bool const botAboard = bot->GetTransport() && WorldPosition(bot).isOnTransport(bot->GetTransport());
+        bool const botOnMasterTransport = masterAboard && !botAboard && WorldPosition(bot).isOnTransport(master->GetTransport());
+        ai::TransportSnapStep const snap = ai::DecideTransportSnapStep(masterAboard,
+            bot->GetTransport() != nullptr, botAboard, botOnMasterTransport);
+        if (snap != ai::TransportSnapStep::None)
         {
-            WorldPosition botPos(bot);
-            bot->GetTransport()->RemovePassenger(bot);
-            // RemovePassenger leaves MOVEFLAG_ONTRANSPORT set in the core;
-            // a stale flag with no transport freezes the bot (issue #216).
-            bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
-            bot->NearTeleportTo(bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, bot->m_movementInfo.pos.z, bot->m_movementInfo.pos.o);
-            MANGOS_ASSERT(botPos.fDist(bot) < 500.0f);
+            bot->StopMoving();
+            if (snap == ai::TransportSnapStep::Board)
+                master->GetTransport()->AddPassenger(bot);
+            else if (snap == ai::TransportSnapStep::Alight)
+            {
+                WorldPosition botPos(bot);
+                bot->GetTransport()->RemovePassenger(bot);
+                // RemovePassenger leaves MOVEFLAG_ONTRANSPORT set in the core;
+                // a stale flag with no transport freezes the bot (issue #216).
+                bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
+                bot->NearTeleportTo(bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, bot->m_movementInfo.pos.z, bot->m_movementInfo.pos.o);
+                MANGOS_ASSERT(botPos.fDist(bot) < 500.0f);
+            }
+            else
+            {
+                // Stale bot pointer: not standing on the transport, so no snap.
+                // Clear unconditionally: the core skips the state clear when the
+                // bot is no longer in the passenger set, which would loop forever.
+                bot->GetTransport()->RemovePassenger(bot);
+                bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
+                bot->m_movementInfo.ClearTransportData();
+                bot->SetTransport(nullptr);
+            }
         }
     }
     else if (!HasRealPlayerMaster() && !bot->IsBeingTeleported() && bot->GetTransport() && bot->GetMapId() == bot->GetTransport()->GetMapId() && !WorldPosition(bot).isOnTransport(bot->GetTransport()) && !isMovingToTransport)
