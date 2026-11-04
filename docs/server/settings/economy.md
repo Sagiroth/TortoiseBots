@@ -96,6 +96,7 @@ When enabled, the service periodically generates synthetic listings of crafting 
 
 </details>
 
+### `AiPlayerbot.AhMarketBuyer`
 Pool bots standing at an auctioneer bid on and buy auctions with their own gold (not synthetic).
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
@@ -105,6 +106,8 @@ Pool bots standing at an auctioneer bid on and buy auctions with their own gold 
 Simulates demand by having bots buy sensibly priced player auctions. When a purchase happens, the bid or buyout is placed through native auction handling.
 
 Purchases are organic: only bots already standing at an auctioneer bid, and only with their own gold.
+
+</details>
 
 ### `AiPlayerbot.AhMarketBudgetUs`
 Microsecond execution budget allocated per world tick for the synthetic-market engine.
@@ -138,6 +141,14 @@ Percentage chance per engine cycle to generate a synthetic supply batch.
 Determines how likely the market engine is to build and post a synthetic supply batch when `AiPlayerbot.AhMarketSyntheticSupply` is on.
 
 </details>
+
+### `AiPlayerbot.AhMarketChanceBuy`
+Percentage chance per engine cycle that the market engine looks for auctions for bot buyers.
+**Default:** `10` · **Values:** percentage (0..100) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
 Controls how likely the market engine is to enter the buyer scan when `AiPlayerbot.AhMarketBuyer` is on.
 
 </details>

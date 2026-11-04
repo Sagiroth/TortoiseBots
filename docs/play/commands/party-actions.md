@@ -239,7 +239,8 @@ Attacks the Skull mark with all scoped party bots, using normal rotations.
 - Applies Skull to your hostile target, or uses the existing Skull mark if you have no target.
 - Healers are not exempted here.
 
-### `.bot action cc` <a id="bot-cc"></a>
+<a id="bot-action-cc"></a><a id="bot-cc"></a>
+### `.bot action cc`
 
 Assigns a crowd-control raid mark to a capable bot.
 
