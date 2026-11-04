@@ -20,9 +20,9 @@ For creature IDs, boss kill orders, and pooled rares for individual Turtle WoW 5
 ## The Five Golden Rules of Bot Dungeoneering
 
 1. **Pull to Line-of-Sight Corners, Don't Charge:** Use [`.bot action pullback`](commands/party-actions.md#bot-action-pullback) so the tank pulls from range and runs back around a corner to your party. Never fight in open hallways where patrols roam.
-2. **Toggle AoE Off on Crowd Control Packs:** Before pulling packs where you plan to use *Polymorph*, *Sap*, or traps, run [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe). This stops damage-over-time spells and area attacks from breaking crowd control.
+2. **Toggle AoE Off on Crowd Control Packs:** Before pulling packs where you plan to use *Polymorph*, *Sap*, or traps, run [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe). This stops area attacks from breaking crowd control (dots already ticking stay on).
 3. **Always Mark the Primary Target with Skull:** Issue [`.bot action focus skull`](commands/party-actions.md#bot-action-focus-skull). DPS bots treat the Skull mark as their kill priority while respecting CC and peel rules.
-4. **Give the Tank Two Seconds:** Tanks apply threat abilities like *Sunder Armor* or *Torment* based on lowest personal threat. Give them 2–3 seconds to establish initial aggro before opening burst damage.
+4. **Give the Tank Two Seconds:** Tanks pick targets by lowest personal threat and open with threat abilities like *Sunder Armor* or *Torment*. Give them 2–3 seconds to establish initial aggro before opening burst damage.
 5. **Keep Summon Ready:** If a bot gets stuck on complex instance terrain, stairs, or elevators, use [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) to snap them to your location out of combat.
 
 ## Pulling Mechanics & Line-of-Sight (LoS)
@@ -118,9 +118,14 @@ Inside an instance, a healer or caster that has line of sight to its target but 
 
 ### Stepping Down Off Dais and Ledges
 
-Dungeon navmeshes sometimes contain raised platforms or dais platforms (such as in Uldaman's Hall of the Keepers) that are not linked by stairs to the surrounding floor. Inside dungeons and raids, a bot that lands on an isolated dais steps off the edge: it searches for walkable floor 2–8 yards lower within 8 yards forward. The bot runs over the edge and drops down safely. It will not drop while actively taking melee hits. If no safe landing floor exists, use [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) out of combat.
+Dungeon navmeshes sometimes have raised dais platforms (Uldaman's Hall of the Keepers) with no stairs down. A bot stuck on an isolated dais steps off the edge:
+- It looks for walkable floor 2–8 yards lower within 8 yards forward, then runs over the edge and drops safely.
+- It never drops while taking melee hits.
+- With no safe landing, fetch it with [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) out of combat.
 
-The opposite case also happens: a short flight of stairs or a ramp that the navmesh does not link (for example the walkway up into Odo's room in Shadowfang Keep), so a following bot gets no path and stands still. Out of combat in a dungeon, when you are within 15 yards, in sight and at most 10 yards above (or 5 yards below) the bot, it takes one straight step of up to 12 yards toward you. It does this only when there is floor along the whole step close to the straight line between you, so it never walks through a wall or over a gap, and it tries again only every few seconds.
+The reverse also happens: an unlinked short stairs or ramp (the walkway into Odo's room in Shadowfang Keep) leaves a follower with no path. Out of combat in a dungeon:
+- When you are within 15 yards, in sight, and at most 10 yards above (or 5 yards below) the bot, it takes one straight step of up to 12 yards toward you.
+- It steps only with floor along the whole line, so never through a wall or over a gap, and retries every few seconds.
 
 ### Followers That Stand Still
 
@@ -141,22 +146,21 @@ Bots do not jump autonomously inside dungeons or raids (the chase jump, follow j
 ## Dungeon Loot & Supplies
 
 ### Loot Rolling Rules
-
 - Your own alts and pool bots in your group take part in standard party loot rolls (`Need`, `Greed`, `Pass`). Hired companions do not: by default they never loot and always pass ([`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) = `1` changes that).
-- **Never Need Against a Player:** Genuine upgrades are Needed regardless of settings; both cases still wait for humans and step down to Greed/Pass if a human Needs. Bots hold their vote to give human players the full window, then vote once all humans have voted.
+- **Need what you can use:** Bots Need genuine upgrades. Off-spec pieces drop to Greed, and bots with loot off (hired companions by default) always pass.
+- **Let humans vote first:** Near real players, pool bots and your alts hold their vote to give humans the full window, then vote once all humans have voted. If a human Needs, an automatic Need steps down to Greed (a forced `keep need` / `roll need` order is never stepped down). Hired companions grouped with you vote at once.
 - **Empty Slot Filler:** When [`AiPlayerbot.RollBadItemsWithPlayer`](../server/settings/party.md#aiplayerbotrollbaditemswithplayer) is enabled, bots also roll Need on items that fill empty gear slots.
 - **Whisper Overrides:** You can instruct a bot directly: whisper `/w <BotName> keep need [item]` before a roll or `/w <BotName> roll need [item]` while the roll is open. Whisper `/w <BotName> roll feedback` to have the bot report when it steps down. See [Whisper Commands](commands/whispers.md#inventory-items--banking).
 
 ### Reagents and Food Sharing
-
-- Open trade with Mage or Warlock bots out of combat (`/w <Name> trade`). They automatically place conjured food, water, or healthstones into the trade window.
+- Open trade with Mage or Warlock bots (`/w <Name> trade`). They automatically place conjured food, water, or healthstones into the trade window.
 - To make an owned bot equip an item from its bags, whisper `/w <Name> equip [Item Link]`. See [Whisper Commands](commands/whispers.md#inventory-items--banking).
 
 ## Raid Tactics & Boss Mechanics
 
 Entering a raid map automatically activates the dungeon transition engine, enabling raid strategies for Molten Core, Onyxia's Lair, Blackwing Lair, Naxxramas, Zul'Gurub, Ruins of Ahn'Qiraj, and Temple of Ahn'Qiraj.
 
-Bots switch these strategies on by themselves when they enter the raid, also when they are summoned straight into a fight. A bot that was already online before an update may need a relog to pick up new raid strategies.
+Bots switch these strategies on by themselves when they enter the raid, also when they are summoned straight into a fight.
 
 ### Universal Raid Reactions
 
@@ -165,7 +169,7 @@ Bots switch these strategies on by themselves when they enter the raid, also whe
 - **Living Bomb Spacing:** During the Baron Geddon fight, any bot standing within 10 yards of a Living Bomb carrier steps away to avoid the explosion.
 - **Hazard Evasion:** Bots proactively step out of damaging ground effects, void zones, and trigger traps ([`AiPlayerbot.HazardEvasionDistance`](../server/settings/dungeons-raids.md#aiplayerbothazardevasiondistance)).
 - **Living Poison Avoidance:** In Naxxramas, bots detect drifting Living Poison, step out inside 10 yd, and keep about 11 yd clear ([`AiPlayerbot.AvoidCreatureAuras`](../server/settings/dungeons-raids.md#aiplayerbotavoidcreatureauras)). Tanks step out as well because the explosion is fatal.
-- **Dragon Positioning:** Non-tanks automatically flank dragons to avoid breath and tail sweep cones. Tanks can be ordered to turn dragons with [`.bot action raid tankface`](commands/party-actions.md#bot-action-raid-tankface).
+- **Dragon Positioning:** On the scripted dragons (Onyxia, Ebonroc, Flamegor, Firemaw, Nefarian, Vaelastrasz, Solnius), non-tanks step out of breath and tail sweep cones. Tanks can be ordered to turn dragons with [`.bot action raid tankface`](commands/party-actions.md#bot-action-raid-tankface) (the victim's tank holds while the rest flank).
 - **Tank Assignment & Raid Assistant:** Main tanks and assist tanks coordinate boss and add assignments. Promoting an assist tank to **Raid Assistant** in the party frames assigns them secondary tank roles (such as holding Razorgore or Golemagg adds).
 - **Ranged Spread:** Stacked ranged spellcasters step out to 10-12 yd to minimize chain damage. Wider spacing is opt-in only via `.bot behavior party spread on` (5 yd ranged / 2 yd melee defaults, tanks excluded).
 - **Dispel Coordination:** Decursers and dispellers coordinate target claims to avoid casting multiple dispels on the same friendly target simultaneously.
@@ -179,10 +183,10 @@ Bots switch these strategies on by themselves when they enter the raid, also whe
   - *Golemagg:* Melee back off at 20 Magma Splash stacks; assist tanks hold Core Ragers at fixed camps (30 yd Trust separation); healers work the camp midpoint; DPS leave ragers alone while Golemagg lives (burn below 10%).
 - **Onyxia:** In Phase 2, bots switch to ranged attacks and spread out. Bots take cover in safe zones during *Deep Breath*. With [`AiPlayerbot.OnyxiaWhelpsAndEggs`](../server/settings/dungeons-raids.md#aiplayerbotonyxiawhelpsandeggs) enabled, ranged DPS clear hatched whelps while avoiding unbroken egg clusters.
 - **Blackwing Lair:**
-  - *Razorgore:* Bots assist the orb controller and intercept add waves without attacking the controller. Non-victims clear the frontal cone; assist tank holds the boss while eggs live.
-  - *Vaelastrasz:* Tanks face away; Burning Adrenaline carriers flee from clean bots (tank holds).
-  - *Broodlord & Nefarian:* Tanks face away; rogues disarm suppression devices in both combat and non-combat states. Mages use *Ice Block* to survive Nefarian Wild Magic. Bots whisper a warning if they lack the Onyxia Scale Cloak for Shadow Flame.
-  - *Chromaggus:* Bots carrying Hourglass Sand (item 19183) use it to cleanse Bronze Affliction; bots step out of breath cones.
+- **Razorgore:** While nobody controls him with the orb, non-victims inside his frontal cone step behind him (ranged hold further out against War Stomp). An assist tank holds him while eggs live; nobody touches the orb, that is your job. A controlled Razorgore (orb aura) is left alone. Rogues disarm suppression devices in and out of combat.
+- **Vaelastrasz:** Burning Adrenaline carriers run clear of clean bots (the tank holds). Mages use *Ice Block* to survive Nefarian Wild Magic. Bots whisper a warning if they lack the Onyxia Scale Cloak for Shadow Flame.
+- **Broodlord & Nefarian:** Order tanks to face them away with `.bot action raid tankface`. (Bots only step out of dragon breath on their own; the victim's tank holds position.)
+- **Chromaggus:** Bots carrying Hourglass Sand (item 19183) use it to cleanse Bronze Affliction. Dragons in general are flanked (see above); no separate Chromaggus breath rule is scripted.
 - **Naxxramas:**
   - *Anub'Rekhan:* Non-tanks collapse to the room center during Locust Swarm; non-tanks burn Crypt Guards first when no swarm is up; tank kite ring needs live waypoints (no bot kite tactic).
   - *Gluth:* Tanks rotate taunts at 5 Mortal Wound stacks; non-tank DPS execute sub-10% chow while tanks hold Gluth (kiting/slowing is the player's job; no bot kite ring).
@@ -193,7 +197,10 @@ Bots switch these strategies on by themselves when they enter the raid, also whe
   - *Heigan:* The group dances floor sections 0-1-2-3-2-1 during Plague Cloud.
   - *Kel'Thuzad:* Bots flee Shadow Fissures immediately; Frost Blast handling is not scripted beyond the shared bomb runout for Detonate Mana carriers.
 - **Ahn'Qiraj (AQ20/AQ40):** Designated runners activate crystals while *Strength of Ossirian* is active. Kiting Ossirian remains the player's responsibility.
-- **Viscidus (AQ40, opt-in):** `.bot strategy +viscidus glob focus @all` (off by default; only active on map 531 in an already engaged Viscidus fight). Mages use rank-one Frostbolt to freeze him and stop frost casts once frozen; melee and ranged physical damage keep hitting the frozen boss. After the shatter all DPS switch to the nearest-to-merging glob while tanks keep the boss and healers keep healing; tanks retake him after the globs re-form (a spare taunts if no tank holds him), and ranged/healers back out of his melee reach. Every role steps out of the poison cloud. Remove with `.bot strategy -viscidus glob focus @all`.
+- **Viscidus (AQ40, opt-in):** `.bot strategy +viscidus glob focus @all` (off by default; only on map 531 in an engaged Viscidus fight). Remove with `-` instead of `+`.
+  - Mages freeze him with rank-one Frostbolt, then stop frost casts. Melee and physical ranged keep hitting the frozen boss.
+  - After the shatter, all DPS take the nearest-to-merging glob. Tanks keep the boss, healers keep healing, then tanks retake him (a spare taunts if none holds him). Ranged and healers stay out of melee reach.
+  - Every role steps out of the poison cloud.
 - **Paladin Aura Auto-Swap:** Paladins in raids automatically swap to *Fire Resistance Aura* or *Shadow Resistance Aura* on applicable bosses.
 
 ### Fankriss (opt-in roles)
@@ -208,10 +215,15 @@ Fankriss the Unyielding (Temple of Ahn'Qiraj) has opt-in roles, all off by defau
 .bot strategy +fankriss stack @melee
 .bot strategy +fankriss healing @heal
 ```
-
-- **`fankriss tank`:** the tank stays on Fankriss instead of picking loose adds. When the current tank reaches [`AiPlayerbot.FankrissSwapStacks`](../server/settings/dungeons-raids.md#aiplayerbotfankrissswapstacks) Mortal Wound stacks (default 5), one assigned tank with no stacks taunts (warrior Taunt, druid Growl); the other assigned tanks' automatic taunts on the boss are held. With `fankriss stack` as well (`@melee` includes tanks), the boss tanks hold him at his pull centre.
+- **`fankriss spawn focus`** (DPS) and **`fankriss stack`** (melee DPS):
+  - The raid kills one shared Spawn at a time (lowest health, then earliest to reach the raid) before going back to the boss.
+  - From 10 s after a Spawn joins, a DPS with a stun or slow uses it on the Spawn.
+  - While Fankriss is engaged these DPS use single-target damage only (area, chain and swing-copy spells are blocked and running ones stopped).
+  - They ignore the other bugs except one attacking a healer (the three nearest DPS within 20 yd kill it), and never chase into the tunnels. `fankriss stack` also keeps melee packed behind the boss.
+- **`fankriss tank`:** the tank stays on Fankriss instead of picking loose adds.
+  - When the current tank reaches [`AiPlayerbot.FankrissSwapStacks`](../server/settings/dungeons-raids.md#aiplayerbotfankrissswapstacks) Mortal Wound stacks (default 5), one assigned tank with no stacks taunts (warrior Taunt, druid Growl). Other assigned tanks hold their automatic taunts.
+  - With `fankriss stack` as well (`@melee` includes tanks), the boss tanks hold him at his pull centre.
 - **`fankriss spawn tank`:** a spare tank picks up loose Spawns of Fankriss near the raid and taunts one that is not on a tank. The boss role wins if a tank has both.
-- **`fankriss spawn focus`** (DPS) and **`fankriss stack`** (melee DPS): the raid kills one shared Spawn at a time (lowest health, then the earliest to reach the raid) before going back to the boss, and from 10 s after a Spawn joins the fight a DPS with a stun or slow uses it on it. While Fankriss is engaged these DPS use single-target damage only (area, chain and swing-copy spells are blocked and running ones stopped), ignore the other bugs in the room except one attacking a healer (the three nearest DPS within 20 yd kill it), and do not chase into the tunnels. `fankriss stack` also keeps melee packed behind the boss.
 - **`fankriss healing`:** a healer moved away by Entangle heals whoever it can reach from where it stands instead of walking back first.
 
 An attack order, a raid mark on another enemy, or `stay`/`follow` still wins over the tank and stack roles. Remove a role with `-` instead of `+`.
@@ -226,10 +238,15 @@ Patchwerk (Naxxramas) has opt-in roles, all off by default. The tested set-up is
 .bot strategy +patchwerk melee safety @dps
 ```
 
-- **`patchwerk soak`** (tanks): the tank goes to Patchwerk as soon as he engages a raid member, in Defensive Stance or bear form, even while on `stay`, `follow` or a wait order (only for this encounter; the saved orders and stay point resume after he dies or resets). Soakers never taunt him. The first assigned tank holding him is the main; when it dies the surviving tank with the most threat takes over.
-- **Healers** (no strategy needed): while assigned tanks fight him, the raid's healers are seated on the tanks in guid order, the main first (ten healers on four tanks heal 3/3/2/2), one healer per tank may heal before a hit, and while no assigned tank is hurt a priest pre-shields an engaged soaker. Seated healers cast no damage filler (Smite, Holy Fire, a wand) during the fight.
-- **DPS:** they hold for at least 4 s and until the tanks have built threat (the holder 10,000, the weakest tank 5,000; melee wait for all four tanks), then keep their threat below 70 % of the lowest tank (resuming below 60 %). With a `patchwerk main` assigned they also hold for [`AiPlayerbot.PatchwerkOpeningDelay`](../server/settings/dungeons-raids.md#aiplayerbotpatchwerkopeningdelay) seconds from its engage. Melee with `patchwerk melee safety` step in only while the main and three soakers fill the four Hateful Strike threat slots, attack from behind, and back out when that stops being true.
-- **`patchwerk main`** (optional, one of the four tanks *instead of* `patchwerk soak`: `.bot strategy -patchwerk soak TankName`, then `+patchwerk main TankName`; a tank with both roles has neither): on an ordered `.bot action pull` the soakers first gather beside this tank in stance and the shot waits for them (the normal 15 s pull window still ends it).
+- **`patchwerk soak`** (tanks): the tank goes to Patchwerk as soon as he engages a raid member, in Defensive Stance or bear form. This holds even on `stay`, `follow` or a wait order (orders and stay point resume after he dies or resets). Soakers never taunt him.
+  - The first assigned tank holding him is the main. When it dies, the surviving tank with the most threat takes over.
+- **Healers** (no strategy needed): while assigned tanks fight him, healers sit on the tanks in guid order, the main first (ten healers on four tanks: 3/3/2/2).
+  - One healer per tank may heal before a hit. With no assigned tank hurt, a priest pre-shields an engaged soaker. Seated healers cast no damage filler (Smite, Holy Fire, a wand).
+- **DPS:** they hold for at least 4 s and until the tanks have built threat (the holder 10,000, the weakest tank 5,000; melee wait for all four tanks).
+  - Then they keep threat below 70 % of the lowest tank (resuming below 60 %).
+  - With a `patchwerk main` assigned they also hold for [`AiPlayerbot.PatchwerkOpeningDelay`](../server/settings/dungeons-raids.md#aiplayerbotpatchwerkopeningdelay) seconds from its engage.
+  - Melee with `patchwerk melee safety` step in only while the main and three soakers fill the four Hateful Strike threat slots, attack from behind, and back out when that stops being true.
+- **`patchwerk main`** (optional, one of the four tanks *instead of* `patchwerk soak`): on an ordered `.bot action pull` the soakers first gather beside this tank in stance and the shot waits for them (the normal 15 s pull window still ends it).
 
 An attack order or raid mark on another enemy still wins over the tank roles. Remove a role with `-` instead of `+`.
 
