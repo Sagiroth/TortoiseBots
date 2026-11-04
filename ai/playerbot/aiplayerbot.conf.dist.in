@@ -864,6 +864,23 @@ AiPlayerbot.DungeonFollowHoldBeforePacks = 0
 # 1 - pet that fits the spec (Default)
 AiPlayerbot.WarlockPetBySpec = 1
 
+# Warlock raid rotation.
+# Stops the warlock rotation from spending casts on a target that is about to
+# die, so the Shadow Bolt filler the raid measures actually goes out:
+# - a DoT or curse (Corruption, Siphon Life, Immolate, the curse rows) only
+#   starts on a target at 35 percent health or more, and a DoT spread to
+#   another attacker only while that attacker is above 50 percent;
+# - in a raid group (more than five members) a spread keeps at most two extra
+#   targets dotted besides the current target;
+# - Drain Soul only harvests from trash (never from a boss or raid boss) and
+#   only while the warlock holds fewer than two Soul Shards;
+# - in combat Life Tap only fires when two Shadow Bolts cannot be paid for,
+#   instead of at the 40 percent medium-mana line.
+# Off by default; with 0 the rotation is unchanged.
+# 0 - current rotation (Default)
+# 1 - life gated, raid-capped rotation
+AiPlayerbot.WarlockRaidRotation = 0
+
 # Rogue threat drops in dungeons.
 # In a grouped 5-man dungeon with a living tank in the fight, a rogue uses
 # Feint when its threat on the current target is medium (60 percent of the

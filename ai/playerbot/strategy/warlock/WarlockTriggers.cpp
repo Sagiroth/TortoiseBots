@@ -8,10 +8,33 @@
 #include "../../../runtime/policy/pet/HealthFunnelPolicy.h"
 #include "../../../runtime/policy/pet/WarlockPetPolicy.h"
 #include "../../../runtime/policy/class/WarlockTapPolicy.h"
+#include "../../../runtime/policy/class/WarlockRaidRotationPolicy.h"
 #include "../../../runtime/policy/class/WarlockStonePolicy.h"
 #include "../../../../runtime/policy/class/WarlockSoulstonePolicy.h"
 
 using namespace ai;
+
+namespace
+{
+// AiPlayerbot.WarlockRaidRotation (runtime/WarlockRaidRotationPolicy.h).
+// Off: every helper passes, so the rows behave exactly as before the key.
+
+// A DoT or curse on the current target only while that target is worth it.
+bool WarlockDotTargetAllowed(Unit* target, bool spread = false)
+{
+    if (!target || !sPlayerbotAIConfig.warlockRaidRotation)
+        return true;
+    return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), spread);
+}
+
+// "On attacker" DoT row: the candidate must be above 50% health.
+bool WarlockSpreadTargetAllowed(Unit* target)
+{
+    if (!target || !sPlayerbotAIConfig.warlockRaidRotation)
+        return true;
+    return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), true);
+}
+}
 
 bool DemonArmorTrigger::IsActive()
 {
@@ -89,12 +112,16 @@ bool CorruptionTrigger::IsActive()
     if (AI_VALUE2(uint8, "health", "current target") <= 20)
         return false;
     Unit* target = GetTarget();
+    if (!WarlockDotTargetAllowed(target))
+        return false;
     return target && !ai->HasAura("corruption", target, false, true) && !HasMaxDebuffs();
 }
 
 bool SiphonLifeTrigger::IsActive()
 {
     if (AI_VALUE2(uint8, "health", "current target") <= 20)
+        return false;
+    if (!WarlockDotTargetAllowed(GetTarget()))
         return false;
     return DebuffTrigger::IsActive();
 }
@@ -108,6 +135,43 @@ bool CurseOfAgonyTrigger::IsActive()
 
 bool CorruptionOnAttackerTrigger::IsActive()
 {
+    if (!WarlockSpreadTargetAllowed(GetTarget()))
+        return false;
+    return DebuffOnAttackerTrigger::IsActive();
+}
+
+bool SiphonLifeOnAttackerTrigger::IsActive()
+{
+    if (!WarlockSpreadTargetAllowed(GetTarget()))
+        return false;
+    return DebuffOnAttackerTrigger::IsActive();
+}
+
+bool ImmolateTrigger::IsActive()
+{
+    if (!WarlockDotTargetAllowed(GetTarget()))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool ImmolateOnAttackerTrigger::IsActive()
+{
+    if (!WarlockSpreadTargetAllowed(GetTarget()))
+        return false;
+    return DebuffOnAttackerTrigger::IsActive();
+}
+
+bool CurseOfTheElementsTrigger::IsActive()
+{
+    if (!WarlockDotTargetAllowed(GetTarget()))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+bool CurseOfTheElementsOnAttackerTrigger::IsActive()
+{
+    if (!WarlockSpreadTargetAllowed(GetTarget()))
+        return false;
     return DebuffOnAttackerTrigger::IsActive();
 }
 
@@ -191,6 +255,8 @@ bool NoCurseTrigger::IsActive()
 	Unit* target = GetTarget();
 	if (target)
 	{
+		if (!WarlockDotTargetAllowed(target))
+			return false;
 		return !ai->HasAura("curse of agony", target, false, true) &&
 			   !ai->HasAura("curse of doom", target, false, true) &&
 			   !ai->HasAura("curse of recklessness", target, false, true) &&
@@ -226,11 +292,15 @@ bool HasMyCurse(PlayerbotAI* ai, Unit* target)
 
 bool CurseOfRecklessnessRaidTrigger::IsActive()
 {
+    if (!WarlockDotTargetAllowed(GetTarget()))
+        return false;
     return DebuffTrigger::IsActive() && !HasMyCurse(ai, GetTarget());
 }
 
 bool CurseOfShadowRaidTrigger::IsActive()
 {
+    if (!WarlockDotTargetAllowed(GetTarget()))
+        return false;
     return DebuffTrigger::IsActive() && !HasMyCurse(ai, GetTarget());
 }
 
@@ -251,7 +321,7 @@ bool NoCurseOnAttackerTrigger::IsActive()
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* attacker = ai->GetUnit(*i);
-        if (attacker && attacker != currentTarget)
+        if (attacker && attacker != currentTarget && WarlockDotTargetAllowed(attacker, true))
         {
 			if (!ai->HasAura("curse of agony", attacker, false, true) &&
 				!ai->HasAura("curse of doom", attacker, false, true) &&

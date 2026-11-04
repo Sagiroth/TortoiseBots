@@ -1038,6 +1038,7 @@ bool PlayerbotAIConfig::Initialize()
     raidFollowWedge = config.GetBoolDefault("AiPlayerbot.RaidFollowWedge", false);
     dungeonFollowHoldBeforePacks = config.GetBoolDefault("AiPlayerbot.DungeonFollowHoldBeforePacks", false);
     warlockPetBySpec = config.GetBoolDefault("AiPlayerbot.WarlockPetBySpec", true);
+    warlockRaidRotation = config.GetBoolDefault("AiPlayerbot.WarlockRaidRotation", false);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);

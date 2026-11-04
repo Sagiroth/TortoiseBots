@@ -102,3 +102,4 @@ Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 ## Class settings
 
 - [`AiPlayerbot.WarlockPetBySpec`](../server/settings/class-behaviour.md#aiplayerbotwarlockpetbyspec): Configures warlocks to summon the demon tailored to their active talent spec in PvE content (Affliction/Demonology toward Felhunter, Destruction toward Imp, tankless parties toward Voidwalker).
+- [`AiPlayerbot.WarlockRaidRotation`](../server/settings/class-behaviour.md#aiplayerbotwarlockraidrotation): Opt-in raid rotation that keeps DoTs, curses and *Drain Soul* off targets that are about to die, caps a raid's DoT spread at two extra targets, and taps for mana only when two *Shadow Bolts* cannot be paid for.
