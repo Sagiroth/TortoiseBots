@@ -306,6 +306,7 @@ Only acts while [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraid
 - The collection reads the same per-bot data the bound path reads (ready cache, aura holders), at most every 5 s. Cycles between two detail reads repeat the last read.
 - With the key off the card says "detail off (AiPlayerbot.ObservabilityRaidsDetail)".
 
+</details>
 
 ### `AiPlayerbot.ObservabilityRealtime`
 Streams a commander group's fight events to the dashboard as they happen.

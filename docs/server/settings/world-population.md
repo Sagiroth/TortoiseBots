@@ -625,6 +625,8 @@ Rescues bots stuck in fatal death loops by relocating them to a safe nearby hub.
 
 When a masterless bot suffers repeated deaths in the same hostile area or becomes trapped in an inescapable graveyard loop, the unstuck engine teleports the bot's spirit or corpse to its starting area (< level 10) or a level-fitting overworld point. The town death-loop rescue additionally needs `AiPlayerbot.AvoidHostileTowns = 1`.
 
+</details>
+
 ### `AiPlayerbot.UnstuckHearthLevelFit`
 Requires a bot's homebind location to match its current level bracket before allowing hearthstone unstuck casts.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -681,6 +683,8 @@ When enabled, masterless pool bots actively manage their quest logs:
 - War-effort item turn-ins and banned joke quests are declined.
 
 Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
+
+</details>
 
 ### `AiPlayerbot.AutoDoQuests`
 Pool bots pick up quests on their own and try to complete them.

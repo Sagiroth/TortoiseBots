@@ -313,6 +313,8 @@ Leaves a unit a `needs_aura` boss-tactic row gates to the bots that carry the ro
 
 **Aura-gated targets:** the `needs_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): `boss_entry` is the unit and `spell` the aura it takes damage from. A bot without the aura does no damage to it, so with this key on the target picks, boss-tactic taunts and the run's guard leave it out, and an explicit attack order on it is refused.
 
+</details>
+
 ### `AiPlayerbot.DungeonRunBotKeysForPlayers`
 Whether the bots carry the dungeon keys for a party that has real players in it.
 **Default:** `0` · **Values:** `0` players bring their own key, `1` the bots carry the keys and open the doors · **Restart:** not needed (`.reload config` applies it on the next world tick)

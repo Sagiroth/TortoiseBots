@@ -330,6 +330,8 @@ What it does:
 
 When disabled (`0`), remote binds and the other commander orders report that the feature is off and any existing remote bindings terminate (inparty bindings stay while `AiPlayerbot.DungeonSelfClear = 1`).
 
+</details>
+
 ### `AiPlayerbot.RemoteCommanderViewMs`
 Milliseconds between visual perception updates sent to remote commanders.
 **Default:** `1000` · **Values:** milliseconds (`250..60000`, clamped) · **Restart:** needed
