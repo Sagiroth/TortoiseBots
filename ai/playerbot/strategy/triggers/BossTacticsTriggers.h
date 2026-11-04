@@ -128,4 +128,38 @@ namespace ai
         BossTacticsObjectAnchorTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics object anchor", 2) {}
         bool IsActive() override;
     };
+
+    // This bot is a seeker (no poison, not a tank, not the boss's victim) and the seek_aura row has a phase for it:
+    // a cloud of the row's to stand in, or the gather around the source before it dies.
+    class BossTacticsSeekTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek", 1) {}
+        bool IsActive() override;
+    };
+
+    // The second off-tank has a source to take, to pull, or to drag back to the row's spot.
+    class BossTacticsSeekTankTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekTankTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek tank", 1) {}
+        bool IsActive() override;
+    };
+
+    // A free DPS bot may damage the row's source right now (the pre-damage, or the burn) and is not on it.
+    class BossTacticsSeekKillTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekKillTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek kill", 1) {}
+        bool IsActive() override;
+    };
+
+    // A taunt_after_cast row (mode until_tank) names this tank and its subject's victim is no tank any more: the tank
+    // takes the subject back inside the row's deadline.
+    class BossTacticsTauntAfterTrigger : public Trigger
+    {
+    public:
+        BossTacticsTauntAfterTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics taunt after", 1) {}
+        bool IsActive() override;
+    };
 }

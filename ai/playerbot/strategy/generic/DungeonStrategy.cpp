@@ -11,6 +11,8 @@ using namespace ai;
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new TrapHoldMultiplier(ai));
+    // The charmed ally's area veto is the charm key's own, not the boss tactics': every bot carries this copy.
+    multipliers.push_back(new CharmedAllyHoldMultiplier(ai));
 }
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
