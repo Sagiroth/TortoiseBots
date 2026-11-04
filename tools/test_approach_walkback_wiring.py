@@ -37,7 +37,7 @@ class ApproachStandWiringTest(unittest.TestCase):
         block = tick[i:tick.index("if (!order.empty())", i)]
         self.assertIn("ApproachStandSearch(lead, slot.run, *step, facts.team, sx, sy, sz);", block)
         self.assertNotIn("NearestReachablePoint", block)
-        self.assertIn("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, facts, found, sx, sy, sz);", block)
+        self.assertIn("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, *told, found, sx, sy, sz);", block)
         self.assertIn("lead->IsAlive() && lead->IsInWorld()", block)
 
     def test_stand_search_is_a_safe_ring(self):

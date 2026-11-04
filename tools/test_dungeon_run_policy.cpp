@@ -28995,6 +28995,235 @@ static void TestRefusedFiringPositionNeverLoops()
     CHECK(second >= 1 && second <= 2 && r.state == State::Paused);
 }
 
+// scarlet_graveyard step 32: the step's fight left the tank on a 3 yd navmesh island at the foot of a
+// tomb slab; with the pack in sight the firing stand, the reach pull and all 36 stand candidates came back
+// NOPATH from its start polygon, and the run paused "not reachable from this floor" 4 times. The glue's
+// reading of the lead bot's own way goes with the answer: the island hop, then the pull from off it.
+static void TestRefusedFiringPositionFromAnIslandHopsOffFirst()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(!PullMayBeDeferred(r));
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    Facts island = f;
+    island.leadIsland = true;                   // the glue's reading after the search found none
+    ApproachStandFound(r, island, false, 0, 0, 0);
+    CHECK(r.state == State::Running);
+    CHECK(r.islandSuspect && Has(r.note, "navmesh island at 0.0 0.0 0.0"));
+    std::string const hop = Tick(r, f);
+    CHECK(hop.rfind("escape from 0.0 0.0 0.0", 0) == 0 && Has(hop, "toward 40.0 0.0 0.0") && r.escapeOn);
+    // Settled off the island: the pull goes out again (a fresh firing-stand read), no pause.
+    Facts off = Party(3);
+    off.units = {Unit(7, 1, 37)};
+    std::string next;
+    for (int i = 0; i < 20 && next.rfind("pullback 7", 0) != 0 && r.state == State::Running; ++i)
+        next = Tick(r, off);
+    CHECK(r.state == State::Running && next.rfind("pullback 7", 0) == 0);
+}
+
+// The island suspicion is the lead bot's own spot when the stand answer took it (ApproachStandFound): a tank that
+// moved off it (combat, a walk) stands on other ground by the next tick, so no hop goes out and the step goes on as
+// usual; one that stayed put hops as before.
+static void TestIslandSuspectDroppedWhenTheLeadMoved()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    Facts island = f;
+    island.leadIsland = true;
+    ApproachStandFound(r, island, false, 0, 0, 0);
+    CHECK(r.islandSuspect);
+    Facts moved = f;
+    moved.leadX = 5;                       // the tank walked 5 yd off the spot it was read at
+    moved.units[0].distLead = 35;
+    std::string const order = Tick(r, moved);
+    CHECK(order.rfind("escape", 0) != 0 && !r.escapeOn && !r.islandSuspect);
+    CHECK(r.state == State::Running);
+    // The lead bot still there: the hop goes out on the next tick, as before.
+    Run s = Start(&plan);
+    s.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(s, g) == "pullback 7");
+    OrderRefused(s, "pullback 7", kFiringRefusal);
+    CHECK(Tick(s, g).empty() && s.approachStandWanted);
+    Facts stay = g;
+    stay.leadIsland = true;
+    ApproachStandFound(s, stay, false, 0, 0, 0);
+    CHECK(s.islandSuspect);
+    CHECK(Tick(s, g).rfind("escape from 0.0 0.0 0.0", 0) == 0 && s.escapeOn);
+}
+
+// The reading says the lead bot's way gets somewhere: not an island, so the old pause stays.
+static void TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    Facts notIsland = f;
+    notIsland.leadIsland = false;
+    notIsland.leadPathGood = true;
+    ApproachStandFound(r, notIsland, false, 0, 0, 0);
+    CHECK(r.state == State::Paused && r.approachPauseKnown);
+    CHECK(r.note.find("the pack at 40.0 0.0 0.0 is not reachable from this floor: no safe stand") != std::string::npos);
+    CHECK(!r.islandSuspect);
+}
+
+// The hop caps spent with the lead bot still on its island: the branch still sends it to the hop, and
+// IslandEscape's own cap pause names the island, never "not reachable from this floor".
+static void TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    r.islandEscapes = kIslandEscapes;   // the caps of two hops off it, spent and the lead bot still there
+    r.stepEscapes = kStepEscapes;
+    Facts island = f;
+    island.leadIsland = true;
+    ApproachStandFound(r, island, false, 0, 0, 0);
+    CHECK(r.state == State::Running && r.islandSuspect && Has(r.note, "hopped off it first"));
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused && Has(r.note, "navmesh island at 0.0 0.0 0.0"));
+    CHECK(!Has(r.note, "not reachable from this floor") && Has(r.note, "move it off"));
+}
+
+// The hop caps spent: a pack the deferral fits (Windhorn Canyon r26's terrace reads as an island too, a
+// partial path ending at the lead bot) is deferred as it would have been, not paused on the island.
+static void TestRefusedFiringPositionFromAnIslandPastTheCapsDefers()
+{
+    DungeonPlan plan = FiringPlan();
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(PullMayBeDeferred(r));
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    r.islandEscapes = kIslandEscapes;
+    r.stepEscapes = kStepEscapes;
+    Facts island = f;
+    island.leadIsland = true;
+    CHECK(!ApproachStandFound(r, island, false, 0, 0, 0));
+    CHECK(r.state == State::Running && r.step == 1 && !r.islandSuspect);
+    CHECK(r.deferredPulls == std::vector<std::size_t>{0} && r.notCleared.count(0));
+    CHECK(r.note.find("pack at 40.0 0.0 0.0 deferred: not reachable from this floor") == 0);
+    CHECK(Has(r.note, "navmesh island at 0.0 0.0 0.0") && !Has(r.note, "no safe stand"));
+    CHECK(r.refusedPullStandStep == static_cast<std::size_t>(-1));
+}
+
+// Two hops answered "no-spot" spend the caps with the pack in sight and the lead bot still on the island:
+// the next stand answer defers the pack (no island pause for a deferrable one).
+static void TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer()
+{
+    DungeonPlan plan = FiringPlan();
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    int noSpots = 0;
+    for (int i = 0; i < 40 && r.state == State::Running && r.deferredPulls.empty(); ++i)
+    {
+        std::string const o = Tick(r, f);
+        if (r.approachStandWanted)
+        {
+            Facts island = f;
+            island.leadIsland = true;
+            ApproachStandFound(r, island, false, 0, 0, 0);
+        }
+        if (o.rfind("escape from 0.0 0.0 0.0", 0) == 0)
+        {
+            ++noSpots;
+            OrderRefused(r, o, "no-spot: no spot within 10 yd in the lead bot's sight has a floor, a clear line and a way on");
+        }
+        else if (o == "pullback 7")
+            OrderRefused(r, o, kFiringRefusal);
+    }
+    CHECK(noSpots == static_cast<int>(kIslandEscapes));
+    CHECK(r.state == State::Running && r.step == 1 && !r.islandSuspect);
+    CHECK(r.deferredPulls == std::vector<std::size_t>{0});
+    CHECK(r.note.find("pack at 40.0 0.0 0.0 deferred") == 0);
+}
+
+// "wait" answers refund the hop's caps: the rounds bound the loop, so a step cannot spin to its 300 s ceiling.
+// Past them a pack that cannot be deferred pauses and the note names the island.
+static void TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    int hops = 0;
+    for (int i = 0; i < 60 && r.state == State::Running; ++i)
+    {
+        std::string const o = Tick(r, f);
+        if (r.approachStandWanted)
+        {
+            Facts island = f;
+            island.leadIsland = true;
+            ApproachStandFound(r, island, false, 0, 0, 0);
+        }
+        if (o.rfind("escape from 0.0 0.0 0.0", 0) == 0)
+        {
+            ++hops;
+            OrderRefused(r, o, "wait: a party bot is in combat");
+        }
+        else if (o == "pullback 7")
+            OrderRefused(r, o, kFiringRefusal);
+    }
+    CHECK(r.state == State::Paused);
+    CHECK(hops == static_cast<int>(kIslandRounds));
+    CHECK(Has(r.note, "navmesh island at 0.0 0.0 0.0"));
+    CHECK(!Has(r.note, "not reachable from this floor") && Has(r.note, "move it off"));
+}
+
+// "No firing stand found" had set the unit's tries to the cap: the island branch clears the stand state,
+// so the pull reads a stand afresh off the island instead of a "firing stands used up" pause.
+static void TestRefusedFiringPositionFromAnIslandResetsTheShotStand()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = StandParty();
+    f.units = {Seen(7, 1, 40, false)};     // out of sight: not shootable
+    f.shotStandGuid = 7;                   // the glue's read answers every request: none known
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    CHECK(Has(r.note, "no firing stand found") && r.shotStandTries[7] == kShotStandTries);
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    Facts island = f;
+    island.leadIsland = true;
+    ApproachStandFound(r, island, false, 0, 0, 0);
+    CHECK(r.state == State::Running && r.islandSuspect && !Has(r.note, "used up"));
+    CHECK(r.shotStandTries.empty() && r.shotStandFor == 0);
+    CHECK(Tick(r, f).rfind("escape from 0.0 0.0 0.0", 0) == 0);
+}
+
 // Task A5: raid rules. A raid of 20 (raid.on) scales the wipe level to 40 %
 // (WipeDead = 8), gathers 90 % within kRaidGatherYd, and waits for wipes only
 // at that level; the few dead are revived before the pull as in a party.
@@ -33749,6 +33978,14 @@ int main()
     TestStandFoundThenSeenPullsWithoutWalking();
     TestOtherPullbackRefusalsStillPause();
     TestRefusedFiringPositionNeverLoops();
+    TestRefusedFiringPositionFromAnIslandHopsOffFirst();
+    TestIslandSuspectDroppedWhenTheLeadMoved();
+    TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses();
+    TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt();
+    TestRefusedFiringPositionFromAnIslandPastTheCapsDefers();
+    TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer();
+    TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded();
+    TestRefusedFiringPositionFromAnIslandResetsTheShotStand();
     TestMoveRefusedTooFarGoesInLegsAlongThePath();
     TestTooFarLegsWalkALongWindingWay();
     TestTooFarLegBackToAnEarlierLegIsARepeat();
