@@ -73,6 +73,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunTankSwap`](#aiplayerbotdungeonruntankswap) | `0` | `1`: the boss tactics keep their `swap_on_aura` rows — the tanks of the row's rotation trade the boss at a stack count, and the tank that was swapped off stops attacking it for a while (needs the aura tactics and the boss tactics). |
 | [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunSeekAura`](#aiplayerbotdungeonrunseekaura) | `0` | `1`: the boss tactics keep their `seek_aura` rows — the raid gathers in a dying source's cloud before the boss's cycle spell lands (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
 | [`AiPlayerbot.RunTeleportReturnYd`](#aiplayerbotrunteleportreturnyd) | `0` (recommended `120`) | A party bot the run brings back from farther than this (yards) is teleported to the lead bot with its combat dropped, never summoned by portal or left to walk back; `0` off. |
@@ -645,6 +647,26 @@ Whether the boss tactics widen the ranged raid's spacing while a `spread` row's 
 <summary>How it works in detail</summary>
 
 **Boss spread:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while a row's boss is in the fight the ranged bots and the healers keep the row's `param` yards apart instead of the ordinary spacing, and a stay order no longer exempts a bot from spreading. The row's spell only documents the splash the spacing answers (Hakkar's row: Corrupted Blood 24328 hits 10 yd around a random attacker, the row keeps 12). Melee and tanks never spread.
+
+</details>
+### `AiPlayerbot.DungeonRunBurnMana`
+Whether the boss tactics keep their `burn_mana` rows: a few eligible bots drain the boss's mana while it stands above the row's start percent.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Burn mana:** a boss tactic row of the `burn_mana` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the start percent of the boss's mana (`param`) and the most burners (`priority`, `0` = every eligible bot). Eligible means alive, in the group, in combat, not a tank, not a healer (a shadow priest counts as damage), knowing `mana burn`, `drain mana` or `viper sting`, and able to cast it right now: the bot must be in control (not stunned, feared, confused, charmed, silenced or pacified), its spell must be off cooldown, the boss must stand in that spell's own range (`mana burn` 30 yd, `drain mana` 20 yd, `viper sting` 8 to 35 yd) and the bot must have the cast's mana. Every bot ranks the members that run the boss tactics and can cast right now by guid and takes its own place, so an unavailable member never holds a slot and the same few bots burn without a vote. A global cooldown, an in-flight cast or movement is not a reason to move a slot: the burner keeps its place and casts when free. While the boss is in the fight, alive and at or above the start percent, a burner casts its first castable of the three on the boss, above its ordinary damage rotation and below every survival and avoid action; a hunter refreshes Viper Sting only when the boss lacks it, and a boss in the stone phase (Moam's aura 25685) is not burned at all: the burners go back to the `kill_first` Mana Fiends. The `BossTacticsBurnMana` row (`spell=<id>, boss_mana_pct=<n>`) goes to `bot_events.csv` when that log is on. Moam's Drain Mana 25676 fills him from the raid's own casts and Arcane Eruption 25672 fires at full mana (boss_moam.cpp:65,166-170,209-215), so the burners keep him from a full bar outside the stone phase.
+
+</details>
+### `AiPlayerbot.DungeonRunRangedOnly`
+Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subject that stands the row's gap above them and take the adds.
+**Default:** `0` · **Values:** `0` off (the rows and the held target are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Ranged only:** a boss tactic row of the `ranged_only` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the subject (`target_entry`, `0` = the row's boss) and the vertical gap in yards (`param`, 3 to 40). A melee bot (melee damage or a tank) standing `param` yd or more below the subject skips it in the free-damage and tank picks and drops it if it already holds it, then takes a `kill_first` pick or the nearest attacker that is not held; a ranged bot and a healer are never held. An explicit attack order beats the hold: an ordered bot keeps the subject until the order is cleared (as for `hold_kill`). The heights are the two units' own z, never the navmesh. When the subject lands the gap closes and the hold ends by itself. The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`) goes to `bot_events.csv` at most once per 5 s per bot. Ayamiss climbs 20 yd for her air phase (boss_ayamiss.cpp:193-205).
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

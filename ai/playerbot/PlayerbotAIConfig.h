@@ -652,6 +652,13 @@ public:
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // The burn_mana boss-tactic kind (a few eligible bots drain the boss's mana while it is above the row's start %,
+    // Moam's Drain Mana refills him so the burners keep him from a full-mana eruption): off, the rows are ignored
+    // (default off).
+    bool dungeonRunBurnMana = false;
+    // The ranged_only boss-tactic kind (melee bots leave a subject that stands the row's gap above them: Ayamiss in the
+    // air, so the melee take the adds): off, the rows and the held target are ignored (default off).
+    bool dungeonRunRangedOnly = false;
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;

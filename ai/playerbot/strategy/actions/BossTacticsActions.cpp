@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <atomic>
@@ -24,6 +25,8 @@
 #include "playerbot/policy/combat/AoeOffPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/policy/raid/TankSwapPolicy.h"
+#include "playerbot/policy/raid/BurnManaPolicy.h"
+#include "playerbot/policy/raid/RangedOnlyPolicy.h"
 #include "playerbot/EbonrocSwapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
@@ -799,6 +802,8 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;
             bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
             bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
+            bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
+            bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
             for (const BossTacticRow& row : *rows)
             {
                 // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
@@ -808,6 +813,11 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
                 // The use_object kind is its own key's: with it off its rows are not read at all, so key-off is
                 // exactly today.
                 if (!useObjectOn && row.kind == BossTacticKind::UseObject)
+                    continue;
+                // The two newer kinds keep their own keys too: key-off behaves exactly as before them.
+                if (!burnManaOn && row.kind == BossTacticKind::BurnMana)
+                    continue;
+                if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
                     continue;
                 if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
                     continue;
@@ -4718,4 +4728,280 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (cast)
         NoteBossTauntAfterCast(ai, bot, task);
     return cast;
+}
+
+namespace
+{
+// The three drain spells in the order the action tries them; a class knows at most one of them.
+const char* const kBurnManaSpells[] = { "mana burn", "drain mana", "viper sting" };
+
+// Whether a player's own AI may burn for its class: no tank, no healer (a shadow priest counts as damage), and one of
+// the three drain spells known. The group's other members are read through their own AI, so `ai` belongs to `player`.
+bool CanBurnMana(PlayerbotAI* ai, Player* player)
+{
+    if (!ai || !player || !player->IsAlive())
+        return false;
+    if (PlayerbotAI::IsTank(player) || PlayerbotAI::IsHeal(player))
+        return false;
+    for (const char* spell : kBurnManaSpells)
+        if (ai->HasSpell(spell))
+            return true;
+    return false;
+}
+
+// What one cast of `spell` costs `player`: the core's CalculateManaCost shape for these flat-cost drain spells (the
+// percentage fallback is the one a buff spell uses, kept so an unusual rank cannot read as free).
+int BurnManaCost(SpellEntry const* info, Player* player)
+{
+    if (!info)
+        return 0;
+    return info->manaCost
+        ? int(info->manaCost)
+        : int(std::uint32_t(info->ManaCostPercentage) * player->GetCreateMana() / 100);
+}
+
+// Whether a member can contribute a burn to `boss` right now: alive, in combat, in control (the unit state covers
+// stun, fear, confuse and possession; charm, silence and pacify are their own flags), its burn spell off cooldown, the
+// boss in that spell's range (Drain Mana 20 yd, Mana Burn 30 yd, Viper Sting 8-35 yd), and enough mana for the cast. A
+// hunter whose Viper Sting is already on the boss has nothing to add. The ranking uses this so an unavailable member
+// never holds a slot; the GCD and an in-flight cast stay out of it, so a burner busy for one GCD keeps its slot.
+bool CanBurnManaNow(PlayerbotAI* ai, Player* player, Unit* boss)
+{
+    if (!CanBurnMana(ai, player) || !boss || !boss->IsAlive() || !boss->IsInCombat())
+        return false;
+    if (!player->IsInCombat())
+        return false;
+    bool const lostControl = player->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
+    bool const silencedOrPacified =
+        (player->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
+    bool const charmed = player->IsCharmed();
+    for (const char* spell : kBurnManaSpells)
+    {
+        std::uint32_t const spellId = ai->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", spell)->Get();
+        if (!spellId || !ai->HasSpell(spellId))
+            continue;
+        if (std::strcmp(spell, "viper sting") == 0 && ai->HasAura("viper sting", boss))
+            continue;
+        float minRange = 0.0f, maxRange = 0.0f;
+        if (!ai->GetSpellRange(spell, &maxRange, &minRange))
+            continue;
+        if (ai::BurnManaAvailableNow(player->IsAlive(), player->IsInCombat(), lostControl, silencedOrPacified, charmed,
+                                     player->HasSpellCooldown(spellId), player->GetPower(POWER_MANA),
+                                     BurnManaCost(sServerFacade.LookupSpellInfo(spellId), player),
+                                     player->GetCombatDistance(boss), minRange, maxRange))
+            return true;
+    }
+    return false;
+}
+
+// One bot_events.csv row per burn cast; the cast's own cooldown keeps it from running hot. A no-op unless
+// bot_events.csv is in AiPlayerbot.AllowedLogFiles.
+void LogBurnMana(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint32_t spellId, int manaPct)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[128];
+    snprintf(info1, sizeof(info1), "spell=%u,boss_mana_pct=%d", spellId, manaPct);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsBurnMana", info1, "");
+}
+
+// The ranged_only hold's write throttle: one row per bot per five seconds while the hold is on.
+const std::uint32_t kRangedOnlyLogGapMs = 5000;
+std::mutex g_rangedOnlyLogMutex;
+std::unordered_map<std::uint64_t, std::uint32_t> g_rangedOnlyLog;
+
+}
+
+void ai::LogBossRangedOnly(PlayerbotAI* ai, Player* bot, Unit* subject, float gapYd)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_rangedOnlyLogMutex);
+        std::uint32_t& last = g_rangedOnlyLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kRangedOnlyLogGapMs)
+            return;
+        last = nowMs;
+    }
+    char info1[128];
+    snprintf(info1, sizeof(info1), "subject=%u,gap=%.1f", subject->GetEntry(), gapYd);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsRangedOnly", info1, "");
+}
+
+bool ai::IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYdOut)
+{
+    if (gapYdOut)
+        *gapYdOut = 0.0f;
+    if (!ai || !bot || !unit || !unit->IsAlive())
+        return false;
+    if (!sPlayerbotAIConfig.dungeonRunRangedOnly)
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || ai->IsRanged(bot))
+        return false;
+    // The kind holds melee damage and tanks: a healer keeps its own business in the air phase.
+    if (PlayerbotAI::IsHeal(bot))
+        return false;
+    // The table carries the hold keyed by the held entry: the row's boss for target_entry 0, or its own target. The
+    // kind's key and the strategy are the caller's gate, so a key-off table answers 0 and changes nothing.
+    const float rowGap = GetBossTactics().RangedOnlyGap(bot->GetMapId(), unit->GetEntry());
+    if (!(rowGap > 0.0f))
+        return false;
+    const float gap = unit->GetPositionZ() - bot->GetPositionZ();
+    const bool ordered = !ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get().IsEmpty();
+    if (!RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), rowGap, ordered))
+        return false;
+    if (gapYdOut)
+        *gapYdOut = gap;
+    return true;
+}
+
+bool ai::BossCanBurnMana(PlayerbotAI* ai, Player* bot)
+{
+    return CanBurnMana(ai, bot);
+}
+
+int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss)
+{
+    if (!ai || !bot || !boss)
+        return -1;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return CanBurnManaNow(ai, bot, boss) ? 0 : -1;
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    // A raid is 40; the fixed array keeps the per-tick rank allocation-free.
+    ai::BurnManaCandidate candidates[40];
+    std::size_t count = 0;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            continue;
+        // A member that does not run the boss tactics never burns, so it must not hold one of the capped slots; one
+        // that cannot cast right now (out of its spell's range, out of combat, out of mana) holds none either.
+        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        bool const runs = memberAi && memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
+        bool const canNow = runs && CanBurnManaNow(memberAi, member, boss);
+        if (count < sizeof(candidates) / sizeof(candidates[0]))
+            candidates[count++] = ai::BurnManaCandidate{member->GetObjectGuid().GetRawValue(), runs, canNow};
+    }
+    return ai::BurnManaRank(candidates, count, self,
+                            ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT), CanBurnManaNow(ai, bot, boss));
+}
+
+const char* ai::BossBurnManaSpell(PlayerbotAI* ai, Unit* boss)
+{
+    if (!ai || !boss)
+        return nullptr;
+    for (const char* spell : kBurnManaSpells)
+    {
+        if (!ai->HasSpell(spell))
+            continue;
+        if (std::strcmp(spell, "viper sting") == 0 && ai->HasAura("viper sting", boss))
+            continue;
+        if (!ai->CanCastSpell(spell, boss))
+            continue;
+        return spell;
+    }
+    return nullptr;
+}
+
+Unit* ai::FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, int* manaPctOut)
+{
+    if (manaPctOut)
+        *manaPctOut = 0;
+    if (!ai || !bot || fight.rows.empty())
+        return nullptr;
+    if (!sPlayerbotAIConfig.dungeonRunBurnMana || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    if (!CanBurnMana(ai, bot))
+        return nullptr;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (!row || row->kind != BossTacticKind::BurnMana)
+            continue;
+        Unit* boss = nullptr;
+        for (Unit* unit : fight.units)
+        {
+            if (unit && unit->GetEntry() == row->bossEntry && sServerFacade.IsAlive(unit))
+            {
+                boss = unit;
+                break;
+            }
+        }
+        if (!boss || !boss->IsInCombat())
+            continue;
+        const int rank = BossBurnManaRank(ai, bot, boss);
+        const std::uint32_t maxMana = boss->GetMaxPower(POWER_MANA);
+        const int manaPct = maxMana > 0
+            ? static_cast<int>(100.0f * boss->GetPower(POWER_MANA) / maxMana)
+            : 0;
+        if (!BurnManaWanted(static_cast<float>(manaPct), row->param, true, rank, row->priority,
+                            boss->HasAura(ai::kStonePhaseAura)))
+            continue;
+        if (manaPctOut)
+            *manaPctOut = manaPct;
+        return boss;
+    }
+    return nullptr;
+}
+
+bool BossTacticsBurnManaAction::Execute(Event& event)
+{
+    (void)event;
+    int manaPct = 0;
+    Unit* boss = FindBossBurnMana(ai, bot, ScanBossTactics(ai, bot), &manaPct);
+    if (!boss)
+        return false;
+    const char* const spell = BossBurnManaSpell(ai, boss);
+    if (!spell)
+        return false;
+    if (AI_VALUE(Unit*, "current target") != boss && !Attack(bot, boss))
+        return false;
+    if (!ai->CastSpell(spell, boss))
+        return false;
+    const std::uint32_t spellId = AI_VALUE2(uint32, "spell id", spell);
+    LogBurnMana(ai, bot, boss, spellId, manaPct);
+    return true;
+}
+
+bool BossTacticsRangedOnlyAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    Unit* held = AI_VALUE(Unit*, "current target");
+    if (held && !IsRangedOnlyHeld(ai, bot, held))
+        held = nullptr;
+    if (!held)
+        return false;
+    // The kill_first add is the pick the row exists for (Ayamiss's larva and hornet while she is in the air).
+    if (Unit* pick = FindBossKillFirst(ai, bot, fight))
+    {
+        if (pick != held)
+            return Attack(bot, pick);
+    }
+    // Else the nearest unit this bot may attack by the kill_first rules, minus every subject the rows hold.
+    Unit* nearest = nullptr;
+    float nearestYd = 0.0f;
+    for (Unit* unit : fight.units)
+    {
+        if (!unit || unit == held || !sServerFacade.IsAlive(unit) || !PossibleAttackTargetsValue::IsValid(unit, bot))
+            continue;
+        if (IsRangedOnlyHeld(ai, bot, unit))
+            continue;
+        const float yd = bot->GetDistance(unit);
+        if (!nearest || yd < nearestYd)
+        {
+            nearest = unit;
+            nearestYd = yd;
+        }
+    }
+    if (nearest)
+        return Attack(bot, nearest);
+    // Nothing to switch to: drop the pick and stop, so every picker (which skips a held subject) waits the air phase
+    // out instead of swinging at the air.
+    AiObjectContext* context = ai->GetAiObjectContext();
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    bot->AttackStop();
+    return true;
 }

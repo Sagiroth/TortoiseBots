@@ -606,4 +606,47 @@ namespace ai
         BossTacticsTauntAfterAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics taunt after") {}
         bool Execute(Event& event) override;
     };
+
+    // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap
+    // (param, yards) or more above it (RangedOnlyPolicy.h). Gated by AiPlayerbot.DungeonRunRangedOnly, the map's rows
+    // and the "boss tactics" strategy; ranged bots and healers are never held, and an explicit attack order wins.
+    // `gapYdOut` (optional) the measured gap.
+    bool IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYdOut = nullptr);
+    // The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`), at most once per bot per five seconds.
+    void LogBossRangedOnly(PlayerbotAI* ai, Player* bot, Unit* subject, float gapYd);
+
+    // The burn_mana row this bot burns for now, or null: the row's boss stands in the fight, alive, in combat and at
+    // or above the row's start % of mana, the boss is not in the stone phase (aura 25685), and this bot is one of the
+    // row's first `priority` burners that can cast now (ordered by guid; 0 = every eligible bot). `manaPctOut`
+    // (optional) the boss's mana percent.
+    Unit* FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, int* manaPctOut = nullptr);
+    // Whether the bot may burn at all: alive, not a tank, not a healer (a shadow priest counts as damage), and it
+    // knows mana burn, drain mana or viper sting.
+    bool BossCanBurnMana(PlayerbotAI* ai, Player* bot);
+    // The bot's 0-based place among the group's burners ordered by guid, or -1 when it cannot burn `boss` now. Only
+    // members that run the boss tactics and can cast their own drain spell right now take a slot: alive, in combat,
+    // in control (not stunned, feared, confused, charmed, silenced or pacified), the spell off cooldown, in its range
+    // and with enough mana. The global cooldown and an in-flight cast do not count, so a busy burner keeps its slot.
+    int BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss);
+
+    // The first castable drain spell the bot knows on the boss, or null (a hunter refreshes Viper Sting only when the
+    // boss lacks it).
+    const char* BossBurnManaSpell(PlayerbotAI* ai, Unit* boss);
+
+    // Casts BossBurnManaSpell on the row's boss and writes the `BossTacticsBurnMana` row.
+    class BossTacticsBurnManaAction : public AttackAction
+    {
+    public:
+        BossTacticsBurnManaAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics burn mana") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Drops a subject this melee bot is held off (IsRangedOnlyHeld): the kill_first pick if there is one, else the
+    // nearest attacker that is not held, else nothing (attack stopped so the assist rows re-pick once it lands).
+    class BossTacticsRangedOnlyAction : public AttackAction
+    {
+    public:
+        BossTacticsRangedOnlyAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics ranged only") {}
+        bool Execute(Event& event) override;
+    };
 }

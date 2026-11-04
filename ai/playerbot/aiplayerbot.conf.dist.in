@@ -1032,6 +1032,25 @@ AiPlayerbot.DungeonRunCharmYield = 0
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 
+# The burn_mana boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): while the row's
+# boss stands at or above the row's start percent of mana, the first `priority` eligible bots (no tank, no healer, a
+# priest with Mana Burn, a warlock with Drain Mana or a hunter with Viper Sting, ordered by guid; 0 means every
+# eligible bot) keep draining it. Moam's Drain Mana refills him from the raid's casts, so the burners keep him below
+# full mana and away from Arcane Eruption. With this key off the rows are ignored, so the table behaves exactly as
+# before the kind. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group).
+# 0 - off: burn_mana rows are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunBurnMana = 0
+
+# The ranged_only boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): a melee bot leaves
+# the row's subject alone while it stands the row's gap (param, yards) or more above the bot, and takes the adds; a
+# ranged bot is never held, and the hold ends by itself when the subject lands. With this key off the rows are
+# ignored, so the table behaves exactly as before the kind. This is its own key on top of AiPlayerbot.DungeonTactics
+# (or a commander-bound group).
+# 0 - off: ranged_only rows are ignored (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRangedOnly = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills

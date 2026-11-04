@@ -2392,6 +2392,83 @@ int main()
     CHECK(!KillFirstGridEligible(false, false, true, false, false)); // dead
     CHECK(!KillFirstGridEligible(true, true, true, true, true));    // KillFirstGridSkipsEvading
 
+    // T2 burn_mana: the loader's shape. target_entry 0 (the boss itself), param the start % (exclusive 0 and 100),
+    // priority the most burners (0-10), spell_id unused and the kind takes no mode word.
+    CHECK(ParseBossTacticKind("burn_mana") == BossTacticKind::BurnMana); // ParseBurnManaKind
+    CHECK(static_cast<int>(BossTacticKind::BurnMana) == 20);
+    {
+        BossTacticRow burn = Row(509, 15340, BossTacticKind::BurnMana, 0, 0, 4, 10.0f);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(burn));                       // BurnManaRowAccepted
+        }
+        {
+            BossTacticRow noTarget = burn;
+            noTarget.targetEntry = 15527;
+            BossTacticTable table;
+            CHECK(!table.Add(noTarget));                  // BurnManaRowRefusedWithTarget
+        }
+        {
+            BossTacticRow zeroStart = burn;
+            zeroStart.param = 0.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(zeroStart));                 // BurnManaRowRefusedAtZeroStart
+        }
+        {
+            BossTacticRow fullStart = burn;
+            fullStart.param = 100.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(fullStart));                 // BurnManaRowRefusedAtFullStart
+        }
+        {
+            BossTacticRow tooMany = burn;
+            tooMany.priority = 11;
+            BossTacticTable table;
+            CHECK(!table.Add(tooMany));                   // BurnManaRowRefusedAboveTenBurners
+        }
+    }
+
+    // T3 ranged_only: target_entry 0 (the boss) or an entry, param the vertical gap in [3, 40] yd, no mode word.
+    CHECK(ParseBossTacticKind("ranged_only") == BossTacticKind::RangedOnly); // ParseRangedOnlyKind
+    CHECK(static_cast<int>(BossTacticKind::RangedOnly) == 21);
+    {
+        BossTacticRow hold = Row(509, 15369, BossTacticKind::RangedOnly, 0, 0, 0, 8.0f);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(hold));                       // RangedOnlyRowAccepted
+        }
+        {
+            BossTacticRow entryTarget = hold;
+            entryTarget.targetEntry = 15934;
+            BossTacticTable table;
+            CHECK(table.Add(entryTarget));                // RangedOnlyRowAcceptsAnEntry
+        }
+        {
+            BossTacticRow tooLow = hold;
+            tooLow.param = 2.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(tooLow));                    // RangedOnlyRowRefusedBelowThreeYards
+        }
+        {
+            BossTacticRow tooHigh = hold;
+            tooHigh.param = 41.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(tooHigh));                   // RangedOnlyRowRefusedAboveFortyYards
+        }
+        // The hold is looked up by the held entry: the row's boss for target_entry 0, or its own target for an entry
+        // row. The entry index is what the target pickers read on the hot path.
+        {
+            BossTacticTable table;
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 0.0f)); // not sealed yet
+            CHECK(table.Add(hold));
+            CHECK(table.Add(Row(509, 15369, BossTacticKind::RangedOnly, 15934, 0, 0, 12.0f)));
+            table.Seal();
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 8.0f));   // RangedOnlyGapFromTheBossRow
+            CHECK(Near(table.RangedOnlyGap(509, 15934), 12.0f));  // RangedOnlyGapFromAnEntryRow
+            CHECK(Near(table.RangedOnlyGap(531, 15369), 0.0f));
+        }
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }
