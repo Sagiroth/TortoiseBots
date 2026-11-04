@@ -252,8 +252,8 @@ static void TestSeatsByClass()
     g.push_back({"Pr", Role::Healer, false, kClassPriest});
     Layout byClass = Plan(g, true);
     CHECK(P(byClass, "Pr").healsTank == -1);
-    CHECK(P(byClass, "Sh").healsTank == 0);
-    CHECK(P(byClass, "Dr").healsTank == 1);
+    CHECK(P(byClass, "Dr").healsTank == 0);
+    CHECK(P(byClass, "Sh").healsTank == 1);
 
     // The fixed 5h hire (priest, priest, paladin, druid, priest): the paladin
     // takes a main-tank seat and a priest keeps the raid seat.
@@ -265,12 +265,13 @@ static void TestSeatsByClass()
     five.push_back({"P2", Role::Healer, false, kClassPriest});
     Layout hire = Plan(five, true);
     CHECK(P(hire, "P0").healsTank == -1);
+    CHECK(P(hire, "P1").healsTank == -1);
     CHECK(P(hire, "Pal").healsTank == 0);
     int raidSeats = 0;
     for (auto const& p : hire.placements)
         if (p.role == Role::Healer && p.healsTank < 0)
             ++raidSeats;
-    CHECK(raidSeats == 1);
+    CHECK(raidSeats == 2);
 }
 
 static void TestPlanErrors()

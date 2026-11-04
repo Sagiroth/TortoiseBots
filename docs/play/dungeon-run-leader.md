@@ -278,7 +278,7 @@ Staying away from the dungeon or raid instance for over `AiPlayerbot.DungeonRunP
 ### Raids
 
 A raid bind takes 6-40 bots from your own raid, with you taken out and the lead-bot tank as main tank.
-It applies the raid layout at the start and restores it at the end.
+It applies the raid layout at the start and restores it at the end: with `AiPlayerbot.RaidHealerSeatsByClass = 1` the healer seats go by class instead of member order, so the raid seats take a group healer first (priest, druid, shaman) and the paladin is not always the lone off-tank healer; a tank healer whose targets are all nearly full may then heal a raid member below 70%.
 Gather and wipe rules scale to raid size.
 A near-wipe stops the run with `AiPlayerbot.DungeonRunNearWipeStop = 2` and `AiPlayerbot.DungeonRunNearWipeStopMinutes = 10`, pausing after the fight.
 - It runs `AiPlayerbot.DungeonRunRaid = 1` for the raid bind.

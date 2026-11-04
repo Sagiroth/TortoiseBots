@@ -2096,9 +2096,11 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
             : TortoiseBots::RaidLayout::Role::Damage;
         member.lead = bot == lead;
+        member.cls = bot->GetClass();
         members.push_back(member);
     }
-    TortoiseBots::RaidLayout::Layout layout = TortoiseBots::RaidLayout::Plan(members);
+    TortoiseBots::RaidLayout::Layout layout =
+        TortoiseBots::RaidLayout::Plan(members, sPlayerbotAIConfig.raidHealerSeatsByClass);
     if (!layout.ok)
     {
         handler->PSendSysMessage("TBM:RAID_LAYOUT|warning|raid layout not applied: %s", ProtocolSafe(layout.error).c_str());

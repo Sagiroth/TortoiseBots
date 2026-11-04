@@ -15,6 +15,10 @@ namespace TortoiseBots::RaidLayout
 
 enum class Role : uint8_t { Tank, Healer, Damage };
 
+// WoW class ids (SharedDefines.h) the healer seat order reads; the policy stays
+// plain data and the standard library.
+enum HealerClassId : uint8_t { kClassPaladin = 2, kClassPriest = 5, kClassShaman = 7, kClassDruid = 11 };
+
 constexpr uint8_t kSubgroups = 8;
 constexpr uint8_t kSubgroupSize = 5;
 constexpr size_t kMaxMembers = 40;
@@ -29,6 +33,7 @@ struct Member
     std::string name;
     Role role = Role::Damage;
     bool lead = false;
+    uint8_t cls = 0; // class id; only a healer's class picks its seat
 };
 
 struct Placement
@@ -71,7 +76,34 @@ inline std::vector<uint32_t> TankHealerCounts(uint32_t tanks, uint32_t healers)
     return counts;
 }
 
-inline Layout Plan(std::vector<Member> const& members)
+// With seats by class, a raid seat prefers a group healer: priest, then druid,
+// then shaman; every other class is last.
+inline uint8_t RaidSeatRank(uint8_t cls)
+{
+    switch (cls)
+    {
+        case kClassPriest: return 0;
+        case kClassDruid: return 1;
+        case kClassShaman: return 2;
+        default: return 3;
+    }
+}
+
+// A tank seat takes the healers the raid seat did not need, a healer outside
+// the group-healer classes first (it is not held back for the raid), then the
+// group healers in the raid-seat order.
+inline uint8_t TankSeatRank(uint8_t cls)
+{
+    switch (cls)
+    {
+        case kClassPriest: return 1;
+        case kClassDruid: return 2;
+        case kClassShaman: return 3;
+        default: return 0;
+    }
+}
+
+inline Layout Plan(std::vector<Member> const& members, bool seatsByClass = false)
 {
     Layout layout;
     size_t lead = members.size();
@@ -124,20 +156,54 @@ inline Layout Plan(std::vector<Member> const& members)
     for (Member const& m : members)
         healers += (m.role == Role::Healer) ? 1 : 0;
     std::vector<uint32_t> counts = TankHealerCounts(static_cast<uint32_t>(tanks.size()), healers);
-    std::vector<size_t> raidHealers;
-    for (size_t i = 0; i < members.size(); ++i)
+    // The tank-healer seats in the order they are taken (a tank's seats together).
+    std::vector<uint32_t> seatTanks;
+    for (uint32_t t = 0; t < counts.size(); ++t)
+        for (uint32_t n = 0; n < counts[t]; ++n)
+            seatTanks.push_back(t);
+    // The healers in the order they take a seat. Without seats by class this is
+    // member order and the tank seats come first; with it the raid seats come
+    // first (group healers by class), then the tank seats (any other class
+    // first, then the group healers by class), and the off-tank seat takes
+    // whoever is left.
+    size_t const raidSeats = healers > seatTanks.size() ? healers - seatTanks.size() : 0;
+    std::vector<size_t> healerOrder;
+    if (seatsByClass)
     {
-        if (members[i].role != Role::Healer)
-            continue;
-        uint32_t t = 0;
-        while (t < counts.size() && counts[t] == 0)
-            ++t;
-        if (t == counts.size())
+        std::vector<size_t> raidOrder;
+        std::vector<size_t> tankOrder;
+        for (size_t i = 0; i < members.size(); ++i)
+            if (members[i].role == Role::Healer)
+            {
+                raidOrder.push_back(i);
+                tankOrder.push_back(i);
+            }
+        std::stable_sort(raidOrder.begin(), raidOrder.end(),
+            [&](size_t left, size_t right) { return RaidSeatRank(members[left].cls) < RaidSeatRank(members[right].cls); });
+        std::stable_sort(tankOrder.begin(), tankOrder.end(),
+            [&](size_t left, size_t right) { return TankSeatRank(members[left].cls) < TankSeatRank(members[right].cls); });
+        healerOrder.assign(raidOrder.begin(), raidOrder.begin() + raidSeats);
+        for (size_t i : tankOrder)
+            if (std::find(healerOrder.begin(), healerOrder.end(), i) == healerOrder.end())
+                healerOrder.push_back(i);
+    }
+    else
+        for (size_t i = 0; i < members.size(); ++i)
+            if (members[i].role == Role::Healer)
+                healerOrder.push_back(i);
+
+    std::vector<size_t> raidHealers;
+    size_t tankSeat = 0;
+    for (size_t k = 0; k < healerOrder.size(); ++k)
+    {
+        size_t const i = healerOrder[k];
+        bool const raidSeat = seatsByClass ? k < raidSeats : k >= seatTanks.size();
+        if (raidSeat)
         {
             raidHealers.push_back(i);
             continue;
         }
-        --counts[t];
+        uint32_t const t = seatTanks[tankSeat++];
         layout.placements[i].healsTank = static_cast<int>(t);
         if (t < kSubgroups)
         {

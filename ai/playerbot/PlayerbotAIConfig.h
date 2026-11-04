@@ -602,6 +602,8 @@ public:
     // A raid binding's boss fight: a 1200 s ceiling, deaths that do not pause it while it loses hp, and the adds
     // sent to the off-tanks instead of the main tank (default off: the party rules).
     bool dungeonRunRaidBossRules = false;
+    // Healer seats of a raid binding go by class instead of member order (default off: member order).
+    bool raidHealerSeatsByClass = false;
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;

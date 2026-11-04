@@ -58,6 +58,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunRaidHealerGuard`](#aiplayerbotdungeonrunraidhealerguard) | `0` | `1`: in a raid boss fight with the main tank on the boss, and in a raid trash fight once the main tank held its current target (kept on for the fight), an add on a healer goes to the nearest ranged dps within 35 yd of it (up to two per add), and the off-tanks take only such an add when no ranged dps is free. |
 | [`AiPlayerbot.FankrissSwapStacks`](#aiplayerbotfankrissswapstacks) | `5` | Mortal Wound stacks at which an opt-in `fankriss tank` taunts Fankriss off the current tank (1-9). |
 | [`AiPlayerbot.PatchwerkOpeningDelay`](#aiplayerbotpatchwerkopeningdelay) | `4` | Seconds the DPS hold Patchwerk after an opt-in `patchwerk main` engages him (`0` = off, else 3-5). |
+| [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left — and a tank healer with a quiet seat helps the raid. |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunPullGate`](#aiplayerbotdungeonrunpullgate) | `0` | `1`: the run leader never pulls a boss its `pull_gate` row gates while the boss wears the row's aura, and ends the run after the row's seconds (Hakkar needs all of this, seek, charm yield and boss spread, plus the aura tactics). |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
@@ -600,6 +601,22 @@ A raid's adds on healers (boss and trash fights): sent to the raid's ranged dps,
 - with `0`: off-tanks take the healers' adds as before
 
 </details>
+### `AiPlayerbot.RaidHealerSeatsByClass`
+A raid binding's healer seats go by class instead of member order, and a tank healer with nobody to heal on its seat helps the raid.
+**Default:** `0` · **Values:** `0` off (member order; tank healers keep their focus targets), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Healer seats by class:** only read with `AiPlayerbot.DungeonRunRaid = 1`, when a raid binding applies its layout:
+- the raid seats (the raid keeps a third of its healers, rounded up, off the tanks) take a group healer first: priest, then druid, then shaman, then any other healer
+- the main-tank seats take the next healers, any class; a healer the raid seats do not hold back (a paladin) comes before a remaining group healer, so the fixed priest, priest, paladin hire puts the paladin on a main tank and keeps a priest on the raid
+- the off-tank seats take whoever is left
+- a tank healer whose tank and itself are all at or above `AiPlayerbot.AlmostFullHealth` may heal any raid member below 70%
+- with `0` the seats are handed out in member order, as before
+
+</details>
+
 ### `AiPlayerbot.DungeonRunBossSpread`
 Whether the boss tactics widen the ranged raid's spacing while a `spread` row's boss fights.
 **Default:** `0` · **Values:** `0` off (the ordinary 10 yd spacing, and a stay order keeps its bot in place), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
