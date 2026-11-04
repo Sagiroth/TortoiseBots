@@ -67,7 +67,7 @@ Bots budget gold carefully before spending on optional upgrades:
 
 ## Living Auction House
 
-TortoiseBots provides an active, simulated player economy that maintains steady Auction House supply and demand. The market service is enabled by [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and requires logged-in pool bots ([`AiPlayerbot.RandomBotAutologin`](../server/settings/world-population.md#aiplayerbotrandombotautologin)):
+Pool bots sell their own loot on the Auction House and buy upgrades there with their own gold, so the auction house fills up the way it would on a busy server. Selling is enabled by [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and requires logged-in pool bots ([`AiPlayerbot.RandomBotAutologin`](../server/settings/world-population.md#aiplayerbotrandombotautologin)):
 
 ```mermaid
 flowchart TD
@@ -80,7 +80,8 @@ flowchart TD
 - **Bot sellers:** Bots list surplus items the usage classifier marks for auction (gear where the auction profit beats the vendor price after deposit and repair costs, profession materials, and crafted goods) at market-model prices with a native deposit.
 - **Bot buyers:** Bots holding spendable gold scan the Auction House for equipment upgrades suited to their class and talent specialization, placing bids or buying out listings that beat equipped gear by the configured value threshold.
 - **Native mail settlement:** All bot auction transactions use core mail systems. When a bot purchases an auction listed by a human player, gold is delivered directly to the player's in-game mailbox.
-- **Settings:** The core market is toggled by [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled). Optional synthetic listings and buyers are controlled by [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply) and [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer). Chance, value, spend, quality, level, variance, bid, and duration tuning live in [Economy settings](../server/settings/economy.md).
+- **Getting to the auction house:** bots walk to the auction house on their own continent. A bot selling loot that is already on its way there, or within 300 yards of it, is moved the last stretch onto the auctioneer; nobody is teleported across the world to sell.
+- **Settings:** Bots selling is [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) and bots buying with their own gold is [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer); both are on. Made-up listings for an empty auction house are [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply), off by default. Chance, value, spend, quality, level, variance, bid, and duration tuning live in [Economy settings](../server/settings/economy.md).
 
 <details>
 <summary>Organic buyer mechanics in detail</summary>

@@ -68,8 +68,8 @@ Every bot starts with **Moon** as its default CC mark. The table below represent
 | Raid Icon | Primary Class & Ability | Valid Targets | Notes |
 | :---: | :--- | :--- | :--- |
 | **Moon** | **Mage** (*Polymorph*) / **Rogue** (*Sap*) | Beasts, Humanoids (Sap: humanoids only) | Rogues stealth and Sap out of combat before the pull. |
-| **Star** | **Priest** (*Shackle Undead*) / **Paladin** (*Turn Undead*) | Undead only | Essential in Stratholme, Scholomance, and Shadowfang Keep. |
-| **Diamond** | **Warlock** (*Banish* / *Fear*) | Demons, Elementals (Banish) | Banish immunizes target; Fear only on assigned mark. |
+| **Star** | **Priest** (*Shackle Undead*) / **Paladin** (*Turn Undead*, Retribution *Repentance* on Humanoids) | Undead (Repentance: Humanoids) | Essential in Stratholme, Scholomance, and Shadowfang Keep. |
+| **Diamond** | **Warlock** (*Banish* / *Fear* / Succubus *Seduction*) | Demons, Elementals (Banish); Humanoids (Seduction) | Banish immunizes target; Fear only on assigned mark. |
 | **Triangle** | **Hunter** (*Freezing Trap* or *Scare Beast*) / **Druid** (*Hibernate* / *Roots*) | Beasts, Dragonkin | Hunter Freezing Trap or Scare Beast; Druid Hibernate (beasts, dragonkin) or Roots (outdoors only). |
 
 ### Issuing CC In-Game
@@ -97,25 +97,20 @@ When you order [`.bot action interrupt`](commands/party-actions.md#bot-action-in
 
 If the assigned bot is in range, it casts immediately; otherwise, it closes distance first.
 
-Pets belonging to Hunter and Warlock bots strictly respect breakable CC (*Polymorph*, frozen effects, *Sap*, *Gouge*, *Shackle Undead*) unless explicitly directed to the Skull-marked target. *Seduce* is not an autonomous bot CC executor; however, a seduced mob is treated as crowd-controlled and protected from area-of-effect abilities.
+Pets belonging to Hunter and Warlock bots strictly respect breakable CC (*Polymorph*, frozen effects, *Sap*, *Gouge*, *Shackle Undead*) unless explicitly directed to the Skull-marked target. A warlock's Succubus can use *Seduction* on the warlock's CC mark; the warlock's own Fear or Banish comes first. A seduced mob is protected from area-of-effect abilities like any other CC.
 
 </details>
 
 ## Wipe Recovery & Instance Navigation
 
-If your group wipes, follow this recovery checklist:
+Inside a dungeon or raid, a dead companion bot waits at its body for a resurrection while you are alive on the same map. Once you are dead as well (a wipe), it releases by itself, runs back as a ghost and revives at its corpse. You only need the steps below to hurry a bot along or to fix a stuck one.
 
 ### Releasing Spirit & Corpse Runs
 
 1. When dead, whisper your bots `/w <BotName> release` (or type `.bot command <Name> release`). See [Whisper Commands](commands/whispers.md#w--release).
 2. Once in ghost form at the graveyard, issue `/w <BotName> corpse run`.
-3. Ghost bots path back to the instance entrance and zone inside. On a dungeon with several doors (Scarlet
-   Monastery's four wings, the Uldaman and Gnomeregan back doors) a ghost takes the door whose inside lies nearest
-   its body, so it comes back to life in the part where it died. Only real entrances count: a door on the open world
-   that leads into the dungeon, never a teleport inside it or a door inside another dungeon. The 300 s corpse-run timeout
-   uses the same door when it lies on the ghost's map or the map the dungeon is entered from, and the server's default
-   entrance otherwise.
-4. If a bot gets stuck outside the entrance, zone inside yourself and use [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) at the instance portal.
+3. The ghost walks back to the dungeon entrance and goes in. In a dungeon with several entrances (the Scarlet Monastery wings, the back doors of Uldaman and Gnomeregan) it takes the one closest to where its body lies, so it comes back to life where it died.
+4. A ghost cannot be summoned (`.bot summon` refuses dead bots). If a ghost is stuck, whisper it `/w <BotName> revive`: it takes the spirit healer (with resurrection sickness). Once it is alive again, summon it to you.
 
 ### Healers and Casters Closing Range
 
@@ -133,11 +128,7 @@ When following out of combat inside instances, navmesh paths can occasionally st
 
 ### Bots in Deep Water
 
-A bot in deep water gets a straight swim line from the core's pathfinder instead of a navmesh path (type `NORMAL|UNDERWATER`, or `NORMAL|NOT_USING_PATH` where there is no navmesh polygon). The bot's own route (`WorldPosition::getPathStepFrom`) kept only plain navmesh paths, so it threw that answer away and the move failed every 2 s (`dispatch-short`) while the core's own follow swam the same line: in Blackfathom Deeps (2026-10-22/23) all six "lead bot is stuck" pauses began with the lead bot in a deep pool. From then on the route kept such a swim line when every sample along it, at most 2 yd apart, was in water or ocean at or below the surface and the line was in sight (vmaps and doors); a swim line longer than 80 yd was refused rather than sampled more sparsely (the Codex review of 2026-10-23: a capped sample count had let a dry strip hide between samples past 78 yd). The same bits on land (a map or tile without mmaps, a no-movement area: a straight line through walls) stayed refused, as did a line over land, over a ridge out of the water, into magma or slime, a shortcut, a fly path or a partial swim. (`ai/playerbot/SwimPathPolicy.h`, `tools/test_swim_path_policy.cpp`, `tools/test_swim_path_wiring.py`).
-
-In the first live run with that rule (Blackfathom Deeps r26-19z44e, slot 6, step 82) the lead bot's move still failed 163 times from the big pool (`why=dispatch-short water=1 under=1 swim=1 path=0x81`): the water test had asked the core for water and ocean only, and the core's vmap liquid test ANDs that request with the WMO's raw liquid type id instead of a flag. Every liquid of the Blackfathom WMO has id 1, so `1 & (0x08 | 0x02)` found no water anywhere in the instance and every swim line there was refused. A ray test of the line against the WMO showed nothing in the way, and the pool's surface at -55.97, 20 yd above the floor. From then on the test asked for liquid with no type filter (request 0: an all-liquids request would still miss a raw id with none of the low four bits set) and decided by the answer's liquid type flags, as the core reads them for a player: water or ocean was swim water, magma, slime or a liquid the DBC does not know was not. A partial path that stopped in the water short of its point, which the route had extended toward it by 5 yd when both ends were under water, now needed the same whole-line test, so a dry, magma or slime middle no longer passed (`TestBlackfathomPoolLineIsKept`, `TestRawLiquidIdsAreNotFiltered`).
-
-The swim line was still refused in Blackfathom Deeps r29-19z47e (step 580, `why=dispatch-short ... path=0x81`) and the Karazhan Crypt lead stood at the dive link's lower end in r40-19z55e although the core had a complete path up it. From then on a bot in water whose own route made no progress (fewer than 2 points, or ending within 2 yd of it) handed the move to the core when the core answered a complete path or its swim line (no static model on the line, at most 100 yd): the core planned and swam it as its follow does. With no such answer, a bot over deep water swam up to just under the surface and straight to a shore point at the waterline within 30 yd, both legs in sight. Never for a real player's character, a transport, a flight, the core's straight line on land (0x11), a partial or failed path; the magma guard applied to the line. The server log line `swim hand-off (core line|swim out) ... swim line: <why>` named the sub-check the route's own test had failed (`ChooseSwimHandoff`, `tools/test_swim_path_policy.cpp`, `tools/test_swim_path_wiring.py`).
+In deep water a bot swims a straight line to where it is going when the whole line is water and nothing is in the way. If it makes no progress, it swims up to the surface and to the nearest shore within 30 yards. A bot stuck in water out of combat can always be fetched with [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon).
 
 ### Running Ahead Past Packs
 
@@ -151,7 +142,7 @@ Bots do not jump autonomously inside dungeons or raids (the chase jump, follow j
 
 ### Loot Rolling Rules
 
-- Bots participate in standard party loot rolls (`Need`, `Greed`, `Pass`).
+- Your own alts and pool bots in your group take part in standard party loot rolls (`Need`, `Greed`, `Pass`). Hired companions do not: by default they never loot and always pass ([`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) = `1` changes that).
 - **Never Need Against a Player:** Genuine upgrades are Needed regardless of settings; both cases still wait for humans and step down to Greed/Pass if a human Needs. Bots hold their vote to give human players the full window, then vote once all humans have voted.
 - **Empty Slot Filler:** When [`AiPlayerbot.RollBadItemsWithPlayer`](../server/settings/party.md#aiplayerbotrollbaditemswithplayer) is enabled, bots also roll Need on items that fill empty gear slots.
 - **Whisper Overrides:** You can instruct a bot directly: whisper `/w <BotName> keep need [item]` before a roll or `/w <BotName> roll need [item]` while the roll is open. Whisper `/w <BotName> roll feedback` to have the bot report when it steps down. See [Whisper Commands](commands/whispers.md#inventory-items--banking).
@@ -165,14 +156,7 @@ Bots do not jump autonomously inside dungeons or raids (the chase jump, follow j
 
 Entering a raid map automatically activates the dungeon transition engine, enabling raid strategies for Molten Core, Onyxia's Lair, Blackwing Lair, Naxxramas, Zul'Gurub, Ruins of Ahn'Qiraj, and Temple of Ahn'Qiraj.
 
-The `dungeon` strategy detects the current map after walking or teleporting in,
-including a summon straight into combat. Loading an older combat/non-combat
-strategy snapshot retains this detector when its saved list omits it; an
-explicit saved `-dungeon` still wins. Existing sessions missing it need a
-strategy reload/relog or `.bot command all all +dungeon`. Detection runs on the
-normal trigger interval after world insertion and teleport completion. This
-does not automatically enable every optional boss strategy or guarantee that
-an avoidance action succeeds.
+Bots switch these strategies on by themselves when they enter the raid, also when they are summoned straight into a fight. A bot that was already online before an update may need a relog to pick up new raid strategies.
 
 ### Universal Raid Reactions
 

@@ -17,7 +17,7 @@ In your own guild you can send a bot to fetch items for real: it farms, buys or 
 
 ## Quick start
 
-Before you start, you need three things: an unlocked guild bank with at least one tab open to the bots' rank (see [Guild bank access](#guild-bank-access) below), your own guild rank allowed to edit officer notes, and the bot in your guild. An order on an offline bot is kept and runs when it comes back online.
+Before you start, you need three things: an unlocked guild bank with at least one tab open to the bots' rank (see [Guild bank access](#guild-bank-access) below), your own guild rank allowed to edit officer notes, and the bot in your guild. To get a bot into your guild, invite it like any player (`/ginvite <name>`): a pool bot without a guild accepts, your own alts join as usual, hired companions always refuse. Bots do not found guilds of their own in practice. An order on an offline bot is kept and runs when it comes back online.
 
 Example: 20 Copper Ore from a bot:
 

@@ -31,7 +31,7 @@ TortoiseBots features three distinct categories of bots in the game world:
 <details>
 <summary>How bot types differ in gameplay</summary>
 
-Pool bots represent the living realm: they enter the world across levels 1-60, grind, quest, run dungeons via queue autofill, and progress naturally. They never join your private roster directly unless hired or claimed.
+Pool bots represent the living realm: they level, quest and grind on their own, join your dungeon finder (LFT) group when it is missing a role, and may invite you to their group. They are never your companions: for that, use your own alts or hire someone.
 
 Your own alts are secondary characters on your account. When spawned with `.bot add`, the server starts a headless session for that character and sets it to follow you. You can then invite it into your group with `.bot invite <CharacterName>`, swap gear, train spells, set talents, and log into them directly as a human player at any time.
 
@@ -85,8 +85,8 @@ See [Roster and Hiring Commands](commands/roster-and-hiring.md) for full command
 
 ### Progression and Training Tips
 
-- **Level Synchronization:** When [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster) is enabled, only non-random grouped bots whose master is party leader gain +1 level per update while below master level.
-- **Spell Training:** Escort your bots to class trainers in major cities and whisper `trainer` to each bot (or use `.bot command <Name> trainer`). The bot automatically learns all available, affordable spell ranks and class abilities in a single pass. See [Whisper Commands](commands/whispers.md#w--trainer).
+- **Catching up in level:** off by default. When the server turns on [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster), your own alts in your group (with you as party leader) level up one level at a time until they reach your level.
+- **Spell Training:** Your own alts learn spells the normal way. Take the alt to a trainer of its class, target the trainer yourself, and whisper `trainer` to the bot (or use `.bot command <Name> trainer`). It learns every rank it can afford, paying with its own gold. Hired companions do not need this: they learn their class spells for free whenever they level up. See [Whisper Commands](commands/whispers.md#w--trainer).
 - **Hiring Mercenaries:** If you lack alts of a specific class, visit a <Mercenary Hire> recruiter at an inn or capital city and hire a temporary companion at your level. See [Roster and Hiring Commands](commands/roster-and-hiring.md#bot-hire) and [Hiring Settings](../server/settings/hiring.md).
 
 ## Building a Balanced 5-Man Party

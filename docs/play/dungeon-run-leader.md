@@ -2,7 +2,7 @@
 id: play-dungeon-run-leader
 title: Dungeon Run Leader
 category: play
-summary: The opt-in run leader (.bot run, AiPlayerbot.DungeonSelfClear) that lets a bound party clear a dungeon plan by itself, its safety rules and supported steps (scripted events too, ritual and hold), the plan tables (ai_dungeon_plan, ai_dungeon_leg, ai_dungeon_step) that turtle-agent's exporter fills, and their hot reload (.bot run reloadplans).
+summary: The run leader (.bot run, AiPlayerbot.DungeonSelfClear, on by default, work in progress) that lets a bound party clear a dungeon plan by itself, its safety rules and supported steps (scripted events too, ritual and hold), the plan tables (ai_dungeon_plan, ai_dungeon_leg, ai_dungeon_step) that turtle-agent's exporter fills, and their hot reload (.bot run reloadplans).
 tags: [guide, dungeon, plan, commander, self-clear, uldaman, events]
 relates_to:
   - play-boss-tactics
@@ -18,7 +18,7 @@ relates_to:
 
 A **dungeon plan** is the route of one dungeon written as data: where to walk, which packs to pull, which bosses to kill, which objects to open and what to wait for. Plans are made and checked live by [turtle-agent](https://github.com/pjerra/turtle-agent) (its `dungeons/<name>.json`, plan format v1); its exporter turns them into world migrations for the tables below. The turtle-agent file is the single source: edit the plan there and export again, never the rows by hand.
 
-The **run leader** (`.bot run`) lets a bound party clear such a plan by itself. It is **off by default** (`AiPlayerbot.DungeonSelfClear = 0`); see [Run leader](#run-leader) below.
+The **run leader** (`.bot run`) lets a bound party clear such a plan by itself. It is **on by default** (`AiPlayerbot.DungeonSelfClear = 1`); see [Run leader](#run-leader) below.
 
 The tables are read at startup into a cache (`ai/playerbot/DungeonPlanMgr.cpp`, one pass per table). Nothing reads them per tick. Until 2026-10-22 a change needed a restart; since then a GameMaster reloads them with `.bot run reloadplans` (below).
 

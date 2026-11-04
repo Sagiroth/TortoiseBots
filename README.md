@@ -19,8 +19,8 @@ TortoiseBots delivers native AI companions through a decoupled C++ architecture:
 
 TortoiseBots should make Tortoise WoW feel like a living, populated vanilla server for a player who plays alone. The player levels and gears up at their own pace, and bots fill the world and their group the way real players would.
 
-- **Organic living world:** Random pool bots start at level 1 in starter zones, questing, grinding, and traveling by foot and flight path. Long-range teleports are a stuck-recovery safety net, not normal movement.
-- **Earned progression:** No free gold top-ups, gear handouts, or synthetic AH supply or buyers by default. Equipment and riches come from playing the game.
+- **Organic living world:** Pool bots quest, grind and travel by foot, flight path and boat. A fresh pool is spread over levels 5-60 so every zone has people from day one (the server can start everyone at level 1 instead). Long-range teleports are a stuck-recovery safety net, not normal movement.
+- **Earned progression:** A new pool bot gets a starter outfit and some coin once, when it is created. After that there are no gold top-ups, gear handouts or made-up auction house listings by default: equipment and gold come from playing the game.
 - **Player control first:** Explicit player orders always override automation. Extra automation for player-owned bots sits behind opt-in configuration flags.
 - **Modern AI standard:** Gameplay and class AI adapt modern mod-playerbots behavior to Vanilla 1.12 and Turtle WoW 1.18.1 content.
 
@@ -29,9 +29,9 @@ TortoiseBots should make Tortoise WoW feel like a living, populated vanilla serv
 - [Your Party](docs/play/features.md#your-party-owned-bots-hiring-following-commands): Adventure with your own account alts or hire mercenaries at inn recruiters; command formations, follow behavior, and tactical actions.
 - [Combat & Classes](docs/play/features.md#combat--classes): Tailored combat rotations for all nine classes, Turtle custom abilities, interrupt coordination, and spec-based roles.
 - [Dungeons & Raids](docs/play/features.md#dungeons--raids): Corner pullback line-of-sight pulls, CC protection, boss encounter tactics, hazard avoidance, and wipe recovery.
-- [The Living World](docs/play/features.md#the-living-world-pool-bots-leveling-questing-wandering): Autonomous pool bots level from 1, grind quests, train affordable spell ranks at trainers, gather materials, and travel by foot and flight path.
-- [Social Systems](docs/play/features.md#social-invites-guilds-trading): Roaming bots invite solo questers to groups, greet passing players, establish autonomous guilds, and trade conjured food or water.
-- [Living Economy](docs/play/features.md#economy-auction-house): Optional native Auction House service where pool bots appraise loot, list surplus items, and bid on upgrades.
+- [The Living World](docs/play/features.md#the-living-world-pool-bots-leveling-questing-wandering): Autonomous pool bots level, quest and grind, learn their class spells as they level up, gather materials, and travel by foot and flight path.
+- [Social Systems](docs/play/features.md#social-invites-guilds-trading): Roaming bots invite solo questers to groups, join your guild when you invite them, and take guild orders to farm, buy or craft items for the guild bank.
+- [Living Economy](docs/play/features.md#economy-auction-house): Pool bots sell their own loot on the Auction House and buy upgrades with their own gold (on by default).
 - [Dungeon Finder & PvP](docs/play/features.md#dungeon-finder--battlegrounds): Looking for Turtles queue backfill for missing roles and battleground matchmaking for WSG, AB, and AV.
 - [Server & Monitoring](docs/play/features.md#server--monitoring-dashboard-logs): Live browser map, Prometheus telemetry metrics, in-game bot panel, and structured CSV logging.
 
@@ -47,7 +47,7 @@ Detailed guides, class breakdowns, commands, and architecture rules live in the 
 | [Player Commands](docs/play/commands/README.md) | Complete `.bot` command reference, whisper syntax, and tactical intents |
 | [Class AI & Rotations](docs/classes/overview.md) | Rotations, specs, and Turtle WoW 1.18.1 custom abilities for all classes |
 | [Dungeon & Raid Tactics](docs/play/dungeons-and-raids.md) | Line-of-sight pullback pulls, CC discipline, and wipe recovery |
-| [Living World & Economy](docs/world/living-world.md) | Autonomous roaming, quest grinding, vendor trips, and guilds |
+| [Living World & Economy](docs/world/living-world.md) | Autonomous roaming, questing, vendor trips, and gear |
 | [Configuration & Tuning](docs/server/configuration.md) | Plain-English settings reference, presets, and configuration files |
 | [Observability Dashboard](docs/server/dashboard.md) | Real-time web dashboard, 2D live map, and Prometheus metrics |
 | [Architecture Invariants](docs/developers/architecture.md) | Decoupled C++ rules, headless sessions, and host boundary seams |

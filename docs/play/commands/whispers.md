@@ -23,7 +23,7 @@ Any whisper command can be sent through the `.bot command` proxy for a bot you c
 # Example: .bot command Tanky trainer
 ```
 
-A chat command queued for a bot is read on its next reaction pass; a bot with no player master (a hire bound to a commander) used to skip that pass while idle at full health, so `.bot command <bot> talents` or `spells ...` got no reply after the bind (Ragefire and Uldaman runs, 2026-10-17; before the bind the hirer was the master and the reply came in 40 ms). A waiting command now always forces the pass (`runtime/ReactionWorkPolicy.h`); the reply reaches a commander outside the group as a whisper.
+A bot answers a chat command on its next think step, also when it is idle. When a commander outside the group gives the command, the answer comes back as a whisper.
 
 The whisper prefix `do <action>` or `d <action>` (e.g. `/w <BotName> do attack`) directly executes any internal AI action via `DoSpecificAction`.
 
@@ -219,13 +219,13 @@ Note: Autonomous alt-bots accept guild invitations only from their owner's accou
 <a id="w--trainer"></a>
 ### `/w <BotName> trainer`
 
-Directs the bot to interact with a currently open class trainer NPC and learn all available, affordable spells, abilities, and ranks in one pass.
+Makes the bot learn, in one go, every spell and rank it can afford from the trainer **you have targeted**. The bot pays with its own gold.
 
 ```text
 /w <BotName> trainer
 ```
 
-Requires the bot to stand near a trainer of its matching class.
+Target the trainer first; it must be a trainer of the bot's class (the bot does not have to stand next to it). Only the bot's owner (or a GM) may use it. Pool bots and hired companions learn their class spells for free on level-up and do not need this.
 
 <a id="w--talents"></a>
 ### `/w <BotName> talents`

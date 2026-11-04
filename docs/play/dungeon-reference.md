@@ -11,7 +11,7 @@ relates_to:
 
 # Turtle WoW 5-Man Dungeon Reference
 
-By default, companion bots do not explore or clear dungeons on their own. Autonomous dungeon clearing is an opt-in option, off by default: with `AiPlayerbot.DungeonSelfClear = 1`, the [dungeon run leader](dungeon-run-leader.md) lets a bound party clear a stored dungeon plan by itself ([settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear)). Its limits are in [Known Limitations](known-limitations.md#opt-in-dungeon-clearing). This catalog is a practical reference for human players leading companion bots, detailing creature IDs, recommended boss kill orders, pooled rares to ignore, and event triggers across 18 dungeons.
+Companion bots follow you through a dungeon; they do not explore or clear it on their own. The exception is the [dungeon run leader](dungeon-run-leader.md) (`.bot run`, switched on by default but still work in progress), which lets a bound party walk a stored dungeon route by itself ([settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear)). Its limits are in [Known Limitations](known-limitations.md#dungeon-run-leader-work-in-progress). This catalog is a practical reference for human players leading companion bots, detailing creature IDs, recommended boss kill orders, pooled rares to ignore, and event triggers across 18 dungeons.
 
 For general pulling, crowd control, and wipe recovery tactics, see the [Dungeon & Raid Tactics Guide](dungeons-and-raids.md).
 

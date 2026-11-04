@@ -97,7 +97,7 @@ To keep battlegrounds lively when no human players are queued, pool bots can org
 
 ## Battlegrounds with your own party bots
 
-Players can queue for battlegrounds alongside their owned alts and hired companions:
+Players can queue for battlegrounds alongside their own alts. Hired companions are for PvE: by default they leave you when you enter a battleground ([`AiPlayerbot.HireAllowPvP`](../server/settings/hiring.md#aiplayerbothireallowpvp) = `1` lets them come along).
 
 - **Join as Group:** At the battlemaster, select **Join as Group**. Party bots pass group qualification checks (matching faction, present in world, correct level bracket, no Deserter debuff) and enter the queue with you.
 - **Supported maps:** Group queueing functions for Warsong Gulch and Arathi Basin. The core rejects group queues for Alterac Valley, so queue AV solo alongside your bots.

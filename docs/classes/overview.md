@@ -88,7 +88,7 @@ When an enemy mob flees below 30% health (either flee state or flee-for-assistan
 - During `stay` holds, melee bots hold their position while ranged bots shoot within spell range.
 - Healers and tanks do not chase runners.
 - The active runner is never dropped for a fresh mob, and crowd-controlled targets are never chased.
-- **Chases stop at ledges** (owner decision 2026-10-23, scoped after review): a bot of an active dungeon run let a running enemy go when it, or the end of its run, was more than 6 yards below the bot's floor AND the bot's navmesh way there had a cliff (a drop of more than 6 yards over less than 5 yards across) or no complete path; a staircase or a slope down was chased as before, and so was the bot's explicit attack target (an explicit order also cleared the let-go). Random bots and normal groups were not touched. A runner let go stayed let go for up to 30 seconds while it was still down there.
+- **Chases stop at ledges:** in a dungeon run, a bot lets a fleeing enemy go when following it means dropping more than 6 yards down a cliff (or there is no path). Stairs and slopes are still chased, and so is an enemy you ordered the bot to attack. The enemy is left alone for up to 30 seconds. Pool bots and normal groups are not affected.
 
 ### Party Threat Back-Off
 In groups with the `threat` strategy active, damage dealers (including Druids, Hunters, Mages, Shamans, and Warlocks) monitor relative threat against the tank. When AoE threat reaches 50% of the tank's, or single-target threat reaches 80% (high threat), they pause high-threat single-target nukes or area-of-effect spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*, *Earthquake*) until threat stabilizes.

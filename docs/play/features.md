@@ -13,7 +13,7 @@ relates_to:
 
 # What Bots Can Do
 
-TortoiseBots brings companion and open-world bots to Tortoise WoW, from party dungeon crawls to an autonomous living world. This page indexes the major bot capabilities, their default states, and the settings that toggle them.
+This page lists what bots can do. **On by default?** tells you whether a fresh server has it on; **Turned on/off by** is the line in the server's `aiplayerbot.conf` that changes it (only the person who runs the server can change these). "Always on" means there is no switch.
 
 ## Your Party (Owned Bots, Hiring, Following, Commands)
 
@@ -82,8 +82,8 @@ For health and mana thresholds, engagement distances, and casting pacing, see [C
 | Automated wipe recovery and corpse run | Always on | None | [Wipe recovery](dungeons-and-raids.md#wipe-recovery--instance-navigation) |
 | Bomb debuff carriers run out | Always on | None | [Raid mechanics](dungeons-and-raids.md#universal-raid-reactions) |
 | Scripted tactics for Vanilla raid encounters | Always on | None | [Vanilla raids](dungeons-and-raids.md#specific-encounter-tactics) |
-| Boss strategies for 18 5-player dungeons | Always on | None | [Dungeon reference](dungeon-reference.md) |
-| Autonomous dungeon clearing (run leader) | No | [`AiPlayerbot.DungeonSelfClear`](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear) | [Dungeon run leader](dungeon-run-leader.md) |
+| Boss rules for some 5-player dungeons (what to interrupt, which add to kill first); used by run-leader and commander parties even when off | No | [`AiPlayerbot.DungeonTactics`](../server/settings/dungeons-raids.md#aiplayerbotdungeontactics) | [Boss tactics](boss-tactics.md) |
+| Bots clear a stored dungeon route by themselves (run leader, work in progress) | Yes | [`AiPlayerbot.DungeonSelfClear`](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear) | [Dungeon run leader](dungeon-run-leader.md) |
 | Steer clear of permanent creature auras | Yes | [`AiPlayerbot.AvoidCreatureAuras`](../server/settings/dungeons-raids.md#aiplayerbotavoidcreatureauras) | [Aura avoidance](dungeons-and-raids.md#universal-raid-reactions) |
 | Turtle WoW custom raid encounter tactics | Yes | [`AiPlayerbot.EnableCustomRaidTactics`](../server/settings/dungeons-raids.md#aiplayerbotenablecustomraidtactics) | [Custom raids](dungeons-and-raids.md#custom-turtle-raids) |
 | Onyxia whelp priority and egg avoidance | Yes | [`AiPlayerbot.OnyxiaWhelpsAndEggs`](../server/settings/dungeons-raids.md#aiplayerbotonyxiawhelpsandeggs) | [Onyxia tactics](dungeons-and-raids.md#specific-encounter-tactics) |
@@ -139,8 +139,8 @@ For population counts, XP multipliers, stall timers, and gear quality caps, see 
 | Sharing food, water, and healthstones | Always on | None | [Item trading](../world/social.md#trading-with-pool-bots) |
 | Pool bots invite solo questers to party | Yes | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Player invites](../world/social.md#grouping--party-invites) |
 | Masterless bots form spontaneous groups | No | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) | [Bot parties](../world/social.md#grouping--party-invites) |
-| Send guild bots to fetch items for the guild bank | Yes | [`AiPlayerbot.AutoDoQuests`](../server/settings/world-population.md#aiplayerbotautodoquests) | [Guild orders](guild-orders.md) |
-| Bots buy charters and form guilds | Yes | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Bot guilds](../world/social.md#autonomous-guild-formation) |
+| Order bots in your guild to farm, buy or craft items for the guild bank | Yes | [`AiPlayerbot.AutoDoQuests`](../server/settings/world-population.md#aiplayerbotautodoquests) | [Guild orders](guild-orders.md) |
+| Bots found their own guilds (switched on, but not seen working on test realms) | Yes | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Guilds](../world/social.md#guilds) |
 | Emote greetings when encountering players | Yes | [`AiPlayerbot.EnableGreet`](../server/settings/world-population.md#aiplayerbotenablegreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Masterless pool bots greet players | No | [`AiPlayerbot.RandomBotGreet`](../server/settings/world-population.md#aiplayerbotrandombotgreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Player trading with masterless pool bots | No | [`AiPlayerbot.PoolBotTradeMode`](../server/settings/world-population.md#aiplayerbotpoolbottrademode) | [Player trading](../world/social.md#trading-with-pool-bots) |
@@ -156,7 +156,7 @@ For greeting cooldowns and guild membership limits, see [World population settin
 | Natural gold income from kills and quests | Always on | None | [Gold economy](../world/economy.md#economic-philosophy) |
 | Bots post surplus loot and buy on AH | Yes | [`AiPlayerbot.AhMarketEnabled`](../server/settings/economy.md#aiplayerbotahmarketenabled) | [Living AH](../world/economy.md#living-auction-house) |
 | Synthetic supply for empty auction houses | No | [`AiPlayerbot.AhMarketSyntheticSupply`](../server/settings/economy.md#aiplayerbotahmarketsyntheticsupply) | [Synthetic AH](../world/economy.md#market-administration--drop-tuning) |
-| Bots buy auctions with their own gold | Yes | [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer) | [Synthetic buyer](../world/economy.md#market-administration--drop-tuning) |
+| Bots buy auctions with their own gold | Yes | [`AiPlayerbot.AhMarketBuyer`](../server/settings/economy.md#aiplayerbotahmarketbuyer) | [Bot buyers](../world/economy.md#living-auction-house) |
 | Dynamic auction level matching players | No | [`AiPlayerbot.AhMarketDynamicLevel`](../server/settings/economy.md#aiplayerbotahmarketdynamiclevel) | [Dynamic stock](../world/economy.md#market-administration--drop-tuning) |
 
 For market intervals, price variances, vendor batch sizes, and loot rate boosts, see [Economy settings](../server/settings/economy.md).
@@ -195,9 +195,10 @@ For log verbosity, retention limits, CSV streams, and tick budgets, see [Logging
 ## What Bots Cannot Do (Yet)
 
 - [Self-botting](known-limitations.md#blocked--incomplete-features): you cannot convert your currently logged-in character into an automated bot.
-- [Autonomous dungeon clearing](dungeon-run-leader.md): an opt-in option, off by default (`AiPlayerbot.DungeonSelfClear = 0`). Turned on, a bound party clears a stored dungeon plan by itself; its limits are in [Known limitations](known-limitations.md#opt-in-dungeon-clearing).
+- [Clearing dungeons by themselves](dungeon-run-leader.md): the run leader is switched on by default but is still work in progress. Only a few dungeon routes have been checked in a live run; its limits are in [Known limitations](known-limitations.md#dungeon-run-leader-work-in-progress).
 - [No dedicated 1v1-duel mode](known-limitations.md#blocked--incomplete-features): bots accept duels and fight duel opponents, but lack dedicated competitive player versus player skirmish logic.
 - [Expansion features](known-limitations.md#explicit-non-goals): no Death Knights, glyphs, vehicles, Outland zones, or multi-tab guild banks.
-- [Pre-movement node queries](known-limitations.md#blocked--incomplete-features): bots cannot check loot rights before walking toward a herb or ore vein.
+- [Founding guilds](../world/social.md#guilds): the setting is on, but on test realms with 1000 bots no bot founded a guild. Invite bots to your own guild instead.
+- [Checking a herb or ore vein before walking to it](known-limitations.md#blocked--incomplete-features): a bot may walk to a node that has already been gathered.
 - [Stair pathfinding desync](known-limitations.md#known-quirks-and-workarounds): pathfinding can desync on steep multi-tiered stairs; use `.bot summon` to snap bots to your location.
 - [Dungeon queue teleportation](../world/queues.md#looking-for-turtles-lft-dungeon-autofill): Looking for Turtles forms groups without teleports; bots walk to the instance portal.

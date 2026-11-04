@@ -17,7 +17,7 @@ This page explains how autonomous bots inhabit the realm, progress through level
 
 ## Overview
 
-TortoiseBots populates the game world with autonomous characters on managed pool accounts. These bots travel through zones, complete quests, grind hostile creatures, gather crafting materials, trade on the Auction House, and form guilds. The world feels active and populated without requiring human players to fill every zone.
+TortoiseBots populates the game world with autonomous characters on managed pool accounts. These bots travel through zones, complete quests, grind hostile creatures, gather crafting materials and trade on the Auction House. They join a guild when a player invites them; they do not found guilds of their own in practice ([Guilds](social.md#guilds)). The world feels active and populated without requiring human players to fill every zone.
 
 Managed pool accounts are tracked in the character-database registry ([The Managed Pool Registry](../server/bot-pool.md#the-managed-pool-registry)).
 
@@ -143,7 +143,7 @@ Starting at level 10, bots with Herbalism or Mining will travel directly to near
 
 Masterless pool bots carrying a fishing pole engage in fishing as a casual side activity. Fishing occurs only when the bot is completely idle—with no pending travel, no completed quests to turn in, no vendor or repair needs, and bags at or below 90% capacity.
 
-Side-activity fishing targets visible fishing holes or nearby open shores; approaching hostile creatures within 30 yards or entering combat ends fishing immediately and restores the bot's weapon. Pool bots fish open water directly; the stored world fishing-location travel table is currently empty, so dedicated travel errands to fishing locations never produce a destination. Fishing travel respects the bot's Fishing skill and strips travel errands inside dungeons and raids.
+Side-activity fishing targets visible fishing holes or nearby open shores; approaching hostile creatures within 30 yards or entering combat ends fishing immediately and restores the bot's weapon. Pool bots fish the water near where they already are: they do not travel somewhere just to fish, except for a [guild order](../play/guild-orders.md) on a fish.
 
 </details>
 <details>
@@ -165,6 +165,9 @@ A newly created pool bot receives an initial level randomly selected between [`A
 New bots are distributed evenly across the starting zones via [`AiPlayerbot.RandomBotEvenStartZones`](../server/settings/world-population.md#aiplayerbotrandombotevenstartzones). Auto-creation monitors starting zone populations and assigns newly created bots to less populated regions. Custom race starting areas relocate naturally to core racial hubs (such as Goblins to Valley of Trials and High Elves to Northshire).
 
 Hunters observe standard class progression: hunters do not own pets below level 10. Upon reaching level 10, a pool hunter acquires a level-appropriate pet. A pool hunter logging in below level 10 gives up any previously seeded pet; player-owned, hired, or adopted hunters keep theirs.
+
+### Class spells
+Pool bots and hired companions learn every class spell and rank their trainer would teach, for free, the moment they level up ([`AiPlayerbot.AutoLearnTrainerSpells`](../server/settings/world-population.md#aiplayerbotautolearntrainerspells), on), and the spells from class quests as well ([`AiPlayerbot.AutoLearnQuestSpells`](../server/settings/world-population.md#aiplayerbotautolearnquestspells), on). So they do not walk to a class trainer for spells. Your own alts do not get this: take them to a trainer and train them yourself ([`trainer`](../play/commands/whispers.md#w--trainer)).
 
 ### Initial skills & professions
 Seeding runs once per fresh bot (skipped if primary professions exist or played time is recorded); learned professions and skill ranks save as permanent character data and are never re-rolled:
@@ -220,5 +223,5 @@ Bots manage health and mana between fights to maintain continuous activity:
 - **Health and mana thresholds:** Bots utilizing rations eat and drink until reaching 90% health and mana. Bots without ration cheats rest until reaching 50% health and 85% mana.
 - **Combat response:** A resting bot stands up immediately and engages if an enemy attacks or if a nearby party member within 60 yards enters combat.
 - **Crowd control discipline:** A bot assigned a crowd control mark (such as Moon) will not start a non-essential meal if its health is at or above 70% while the target is alive and in sight.
-- **Ration restocking:** Pool bots receive level-appropriate vendor food and water stacks automatically. Owned and hired bots restock their provisions through vendors.
+- **Ration restocking:** Pool bots receive level-appropriate food and water automatically. Hired companions get an hourly restock of food, water, reagents, potions and bandages. Your own alts buy their food from vendors (or use [`.bot maintenance`](../play/commands/roster-and-hiring.md#bot-maintenance) when the server allows it).
 - **Mage conjuration:** Mage bots out of combat conjure food and water and trade them to group members with no conjured food or water (water only to mana-using classes).
