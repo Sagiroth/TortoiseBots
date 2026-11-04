@@ -7,6 +7,8 @@
 // answer is read from the binding table in commands/BotCommands.cpp (world
 // thread only); the AI includes this header instead of the command layer.
 
+#include "ObjectGuid.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -55,6 +57,17 @@ bool IsCommanderThreat(Player* bot);
 // commands/Commander.cpp): its "focus heal targets" is the layout's, not
 // the bot's, so the snapshot save leaves it out like the binding's "threat".
 bool IsRaidFocusHealer(Player* bot);
+// The tank seat a bound raid's layout gave the bot: the tank it heals and the
+// seat on that tank (0 = the tank's first heal seat, 1 = its second). seated
+// is false outside a bound raid's layout (a player-set focus list, a mid-raid
+// joiner), where no seat rule applies.
+struct RaidTankSeat
+{
+    bool seated = false;
+    ObjectGuid tank;
+    uint8_t seat = 0;
+};
+RaidTankSeat RaidTankHealerSeat(Player* bot);
 
 // A bound bot moves only on the commander's orders (RemoteCommander::
 // CommanderAutonomyLedger): the open-world kit (grind, travel, rpg...) comes

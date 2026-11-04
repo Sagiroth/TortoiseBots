@@ -43,6 +43,7 @@ struct Placement
     uint8_t subgroup = 0;
     int tankIndex = -1;
     int healsTank = -1;
+    uint8_t healsSeat = 0; // the healer's seat on its tank: 0 first, 1 second
 };
 
 struct Layout
@@ -194,6 +195,7 @@ inline Layout Plan(std::vector<Member> const& members, bool seatsByClass = false
 
     std::vector<size_t> raidHealers;
     size_t tankSeat = 0;
+    std::vector<uint8_t> tankSeats(counts.size(), 0);
     for (size_t k = 0; k < healerOrder.size(); ++k)
     {
         size_t const i = healerOrder[k];
@@ -205,6 +207,7 @@ inline Layout Plan(std::vector<Member> const& members, bool seatsByClass = false
         }
         uint32_t const t = seatTanks[tankSeat++];
         layout.placements[i].healsTank = static_cast<int>(t);
+        layout.placements[i].healsSeat = tankSeats[t]++;
         if (t < kSubgroups)
         {
             layout.placements[i].subgroup = static_cast<uint8_t>(t);
