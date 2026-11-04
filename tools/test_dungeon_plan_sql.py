@@ -4910,10 +4910,12 @@ class DungeonPlanSql(unittest.TestCase):
                     inserted.add((row[0], row[1], row[2]))
             whole = set(re.findall(r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+);", text))
             scoped = {}
-            for map_id, entries, kind in re.findall(
-                    r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+) AND `boss_entry` IN \(([\d, ]+)\)"
-                    r"(?: AND `kind` = '(\w+)')?;", text):
-                for entry in entries.split(","):
+            # `boss_entry = N` too, and narrower clauses (target_entry, spell_id, hp band) after a named kind: the
+            # AQ20 step-1 DELETE takes only the hornet row of a kind whose larva row an earlier migration wrote.
+            for map_id, entries, single, kind in re.findall(
+                    r"DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+) AND `boss_entry` (?:IN \(([\d, ]+)\)|= (\d+))"
+                    r"(?: AND `kind` = '(\w+)'(?: AND [^;]*)?)?;", text):
+                for entry in (entries or single).split(","):
                     scoped.setdefault((map_id, entry.strip()), set()).add(kind or "*")
             def deleted(map_id, entry, kind):
                 return map_id in whole or kind in scoped.get((map_id, entry), ()) \

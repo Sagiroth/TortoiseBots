@@ -99,9 +99,9 @@ def _payload_dict(payload):
     return dict(zip(FIELDS, payload))
 
 
-def migration_statements():
+def migration_statements(paths=None):
     """Yield ("insert", payload) and ("delete", (name, match)) in file and statement order."""
-    for path in migration_paths():
+    for path in (migration_paths() if paths is None else paths):
         name = os.path.basename(path)
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
@@ -126,10 +126,10 @@ def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
 
 
-def migration_updates():
+def migration_updates(paths=None):
     """The scoped `UPDATE ai_boss_tactic SET ... WHERE ...` statements the replay applies, in file order."""
     updates = []
-    for path in migration_paths():
+    for path in (migration_paths() if paths is None else paths):
         name = os.path.basename(path)
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
@@ -218,10 +218,13 @@ def delete_covers(scope, key):
     return True
 
 
-def effective_rows():
-    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it, plus the scoped UPDATEs."""
+def effective_rows(paths=None):
+    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it, plus the scoped UPDATEs.
+
+    `paths` replays only those migration files, in the order given (default: every file, in name order).
+    """
     live = {}
-    for kind, payload in migration_statements():
+    for kind, payload in migration_statements(paths):
         if kind == "insert":
             # The key includes the health band, so one boss carries the same kind once per band.
             live[(payload[1], payload[2], payload[3], payload[4], payload[5], payload[9], payload[10])] = payload
@@ -231,7 +234,7 @@ def effective_rows():
         for key in [key for key in live if delete_covers(scope, key)]:
             del live[key]
     rows = list(live.values())
-    for _name, changes, wanted in migration_updates():
+    for _name, changes, wanted in migration_updates(paths):
         for index, payload in enumerate(rows):
             row = _payload_dict(payload)
             if _matches(row, wanted):
@@ -777,6 +780,36 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(7.0, glad["window_s"])
         self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
         self.assertNotIn((509, 15369, "behind", 0, 25814), live)
+
+    def test_aq20_step_one_keeps_the_ayamiss_larva_row(self):
+        # 20261104150000 re-inserts Ayamiss's hornet row 15934 (kill_first). Its DELETE used to match every kill_first
+        # of boss 15369, so it also removed the larva row 15555 from 20261028120000 and bots stopped killing larvae
+        # first. Each DELETE of this file may remove only keys this file inserts; re-applying the file is a no-op.
+        first = os.path.join(ROOT, "data/sql/world/20261028120000_world.sql")
+        step = os.path.join(ROOT, "data/sql/world/20261104150000_world.sql")
+
+        def key(row):
+            return (row[1], row[2], row[3], row[4], row[5], row[9], row[10])
+
+        before = {key(row) for row in effective_rows([first])}
+        self.assertIn((509, 15369, "kill_first", 15555, 0, 0, 100), before, "the larva row is not in 20261028120000")
+        own = {key(payload) for kind, payload in migration_statements([step]) if kind == "insert"}
+        for kind, payload in migration_statements([step]):
+            if kind != "delete":
+                continue
+            _name, match = payload
+            scope = delete_scope(match)
+            removed = {k for k in before if delete_covers(scope, k)}
+            self.assertLessEqual(removed, own,
+                                 "the DELETE `%s` removes rows this file does not insert"
+                                 % match.string.strip())
+
+        once = effective_rows([first, step])
+        live = {key(row) for row in once}
+        self.assertIn((509, 15369, "kill_first", 15555, 0, 0, 100), live, "the larva row is gone")
+        self.assertIn((509, 15369, "kill_first", 15934, 0, 0, 100), live, "the hornet row is gone")
+        twice = effective_rows([first, step, step])
+        self.assertEqual(set(once), set(twice), "re-applying 20261104150000 changes the live rows")
 
 
 def _sql_statements(text):
