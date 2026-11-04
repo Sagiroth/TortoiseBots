@@ -142,6 +142,18 @@ Unit* PartyMemberToHeal::Calculate()
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
     bool const preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
     bool const focused = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
+    // The lowest health of the healer's own seat (its tank and itself); above
+    // almost full with nobody to heal there, the seat is quiet.
+    float ownLowestHealth = 100.0f;
+    if (focused)
+        for (ObjectGuid const& guid :
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get())
+        {
+            Unit* own = ai->GetUnit(guid);
+            if (own)
+                ownLowestHealth = std::min(ownLowestHealth,
+                    own->IsAlive() ? float(own->GetHealthPercent()) : 0.0f);
+        }
     std::map<ObjectGuid, uint32> const incomingHeals =
         ai->GetAiObjectContext()->GetValue<std::map<ObjectGuid, uint32>>("incoming heals")->Get();
     std::size_t healerOrdinal = 0;
@@ -212,6 +224,16 @@ Unit* PartyMemberToHeal::Calculate()
         if (!focused && sServerFacade.IsAlive(player) && pet && CanHealPet(pet))
             addTarget(pet, false, true);
     }
+
+    // A tank healer with a quiet seat helps the raid: while its tank and itself
+    // are all at or above almost full, an injured group member below 70% joins
+    // the candidates (the seat keeps its urgency otherwise).
+    if (focused && sPlayerbotAIConfig.raidHealerSeatsByClass &&
+        ownLowestHealth >= float(sPlayerbotAIConfig.almostFullHealth))
+        for (Player* player : LiveGroupMembers(bot->GetGroup()))
+            if (FocusedHealerMayHelpRaid(true, ownLowestHealth, player->GetHealthPercent(),
+                float(sPlayerbotAIConfig.almostFullHealth)))
+                addTarget(player, ai->IsTank(player), false);
 
     // An out-of-LOS candidate is only a fallback: a visible one at the same
     // urgency wins, and with nobody visible the healer may walk into LOS only

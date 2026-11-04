@@ -19,4 +19,18 @@ namespace ai
     {
         return isAlive;
     }
+
+    // A raid member below this health is an emergency a tank healer with a
+    // quiet seat may take over.
+    constexpr float kRaidHelpBelowHealth = 70.0f;
+
+    // A focused tank healer whose whole assignment (the tank and itself) is at
+    // or above "almost full" may heal a raid member below 70%: the seat is
+    // safe, the raid is not. Disabled keeps the healer on its seat.
+    inline bool FocusedHealerMayHelpRaid(bool enabled, float ownLowestHealthPercent,
+                                         float memberHealthPercent, float almostFullHealth)
+    {
+        return enabled && ownLowestHealthPercent >= almostFullHealth &&
+            memberHealthPercent < kRaidHelpBelowHealth;
+    }
 }
