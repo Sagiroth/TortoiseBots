@@ -344,7 +344,12 @@ class HoldKillWiring(unittest.TestCase):
         self.assertEqual(sites, ["ai/playerbot/strategy/actions/ViscidusActions.cpp",
                                  "ai/playerbot/strategy/values/HoldKillBlockersValue.cpp"])
         self.assertEqual(BLOCKERS.count("GetCreatureListWithEntryInGrid"), 1)
-        self.assertIn("bot->GetCreatureListWithEntryInGrid(found, entry, kHoldKillRangeYd)", BLOCKERS)
+        # One search helper, the caller's range: the blocker and sole counts keep the hold's 50 yd, the kill_first grid
+        # asks for the 40 yd engage range.
+        self.assertIn("bot->GetCreatureListWithEntryInGrid(found, entry, range)", BLOCKERS)
+        self.assertIn("void ScanEntry(Player* bot, uint32 entry, std::list<Creature*>& found, float range = kHoldKillRangeYd)",
+                      BLOCKERS)
+        self.assertIn("ScanEntry(bot, QualifierEntry(qualifier), found, kBossTacticsEngageRange)", BLOCKERS)
         self.assertIn('CalculatedValue<uint32>(ai, "hold kill blockers", 1)', BLOCKERS_H)
         self.assertIn("public Qualified", BLOCKERS_H)
         # The candidates value shares the same grid search and the same one-second cache.
