@@ -19,7 +19,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HOLY = ROOT / "ai/playerbot/strategy/paladin/HolyPaladinStrategy.cpp"
 STRATEGY_H = ROOT / "ai/playerbot/strategy/Strategy.h"
-CONTEXT = ROOT / "ai/playerbot/strategy/paladin/PaladinAiObjectContext.cpp"
+TRIGGER_CTX = ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h"
 
 ROW = re.compile(
     r'TriggerNode\(\s*"([^"]+)",\s*NextAction::array\(0, new NextAction\("([^"]+)", ([^)]+)\), NULL\)\)'
@@ -65,9 +65,10 @@ HOLY_BLESSING_CLASSES = (
     "HolyPaladinBlessingRaidStrategy",
 )
 
-BLESSING_TRIGGERS = {
-    "blessing", "greater blessing",
-    "blessing on party", "greater blessing on party",
+BLESSING_INITS = {
+    "HolyPaladinBlessingPveStrategy": "PaladinBlessingPveStrategy",
+    "HolyPaladinBlessingPvpStrategy": "PaladinBlessingPvpStrategy",
+    "HolyPaladinBlessingRaidStrategy": "PaladinBlessingRaidStrategy",
 }
 
 
@@ -78,12 +79,10 @@ class HolyPaladinCombatWasteWiringTest(unittest.TestCase):
             self.assertEqual(combat, [], "%s must not re-buff in combat" % cls)
 
     def test_holy_blessing_noncombat_still_buffs(self):
-        found = False
-        for cls in HOLY_BLESSING_CLASSES:
-            noncombat = rows(method_body(HOLY, cls, "InitNonCombatTriggers"))
-            if any(trigger in BLESSING_TRIGGERS for trigger, _, _ in noncombat):
-                found = True
-        self.assertTrue(found, "blessing rows must stay out of combat")
+        for cls, base in BLESSING_INITS.items():
+            noncombat = method_body(HOLY, cls, "InitNonCombatTriggers")
+            self.assertIn(base + "::InitNonCombatTriggers", noncombat,
+                          "%s must keep its non-combat blessing rows" % cls)
 
     def test_holy_combat_freedom_targets_tank_below_heals(self):
         combat = ranked_actions(method_body(HOLY, "HolyPaladinCureStrategy", "InitCombatTriggers"))
@@ -94,7 +93,7 @@ class HolyPaladinCombatWasteWiringTest(unittest.TestCase):
                          "blanket party Freedom row must be gone")
 
     def test_tank_rooted_trigger_registered(self):
-        self.assertIn('"tank rooted"', CONTEXT.read_text())
+        self.assertIn('"tank rooted"', TRIGGER_CTX.read_text())
 
 
 if __name__ == "__main__":

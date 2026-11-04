@@ -187,6 +187,7 @@ namespace ai
             creators["duel target"] = [](PlayerbotAI* ai) { return new DuelTargetValue(ai); };
             creators["party member to dispel"] = [](PlayerbotAI* ai) { return new PartyMemberToDispel(ai); };
             creators["party member to protect"] = [](PlayerbotAI* ai) { return new PartyMemberToProtect(ai); };
+            creators["tank to remove roots"] = [](PlayerbotAI* ai) { return new TankToRemoveRoots(ai); };
             creators["party member to remove roots"] = [](PlayerbotAI* ai) { return new PartyMemberToRemoveRoots(ai); };
             creators["health"] = [](PlayerbotAI* ai) { return new HealthValue(ai); };
             creators["rage"] = [](PlayerbotAI* ai) { return new RageValue(ai); };

@@ -417,6 +417,27 @@ Unit* PartyMemberToRemoveRoots::Calculate()
     return target;
 }
 
+Unit* TankToRemoveRoots::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return nullptr;
+    for (Player* player : LiveGroupMembers(group))
+    {
+        if (!sServerFacade.IsAlive(player) || !ai->IsTank(player))
+            continue;
+        if (player->m_duel && player->m_duel->opponent)
+            continue;
+        if (player->HasAuraType(SPELL_AURA_MOD_ROOT) || player->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED))
+        {
+            if (!ai->HasAura("stealth", player) && !ai->HasAura("prowl", player))
+                return player;
+        }
+    }
+
+    return nullptr;
+}
+
 RaidTankRoles ai::GetRaidTankRoles(PlayerbotAI* ai)
 {
     RaidTankRoles roles;
