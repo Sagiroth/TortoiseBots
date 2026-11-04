@@ -246,7 +246,7 @@ HAND_OVERRIDES = {
     # warlock t2 first trinket: BIS rank 1 (19812 Rune of the Dawn) only
     # boosts spell damage against the Undead, which the tier's content
     # (Zul'Gurub and the level 60 dungeons) is not; the mage t2 kit's Eye of
-    # the Beast (13968, all-school spell damage, t1 quest loot) fits the slot.
+    # the Beast (13968, 2% spell crit) fits the slot.
     (9, "affliction", 2, 13): 13968,
     (9, "demonology", 2, 13): 13968,
     (9, "destruction", 2, 13): 13968,
