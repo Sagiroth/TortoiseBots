@@ -17364,6 +17364,7 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     auto const eligible = [&r, &f](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+            GuardSkipsUnit(f, u) ||
             u.distLead > kRaidWalkJoinYd || !u.victimTank || u.victimName == f.carrier)
             return false;
         auto const joined = r.raidBossJoined.find(u.guid);
@@ -17532,9 +17533,10 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
 {
     if (!RaidTrashFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.leadHasAttacker || f.carrier.empty())
         return nullptr;
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.victimTank && u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            !GuardSkipsUnit(f, u) &&
             u.distLead <= kGuardYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid) &&
             !r.raidAssisted.count(u.guid);
     };
@@ -17563,9 +17565,10 @@ inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
     if (!RaidTrashFight(r, f) || !Current(r) || Current(r)->kind != PlanStepKind::Move || !f.leadAlive || !f.leadIsTank ||
         !f.leadStaying || f.leadHasAttacker || f.carrier.empty() || r.raidWalkJoined)
         return nullptr;
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            !GuardSkipsUnit(f, u) &&
             u.distLead > kGuardYd && u.distLead <= kRaidWalkJoinYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
