@@ -2037,16 +2037,19 @@ namespace ai
         float distance = 0.0f;   // from the bot
         bool alive = true;
         bool evading = false;
-        bool inCombat = false;
+        bool victimOurs = false; // its victim is a member of the bot's group (or one of their pets)
+        bool weHoldIt = false;   // a member or their pet is on its threat list, or attacks it
         std::uint64_t owner = 0; // owner, else creator, else the temporary summon's summoner (0: none)
     };
 
-    // Whether a grid hit of a kill_first entry may join the pick: alive, not running home, and part of the fight itself
-    // or through its owner or summoner (which names a living unit of the fight). Keeps an idle add of the entry
-    // elsewhere on the map out.
-    inline bool KillFirstGridEligible(bool alive, bool evading, bool inCombat, bool ownerOrSummonerInFight)
+    // Whether a grid hit of a kill_first entry may join the pick: alive, not running home, and part of our fight --
+    // it is engaged with the group (its victim is ours, or one of ours holds it), or it is a ward or totem of a unit
+    // of this fight. Being in combat is not enough: a creature of the entry brawling with an NPC or a player outside
+    // the group within range is not this fight's, and keeps an idle add of the entry elsewhere on the map out too.
+    inline bool KillFirstGridEligible(bool alive, bool evading, bool victimOurs, bool weHoldIt,
+        bool ownerOrSummonerInFight)
     {
-        return alive && !evading && (inCombat || ownerOrSummonerInFight);
+        return alive && !evading && (victimOurs || weHoldIt || ownerOrSummonerInFight);
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

@@ -2357,13 +2357,15 @@ int main()
         }
     }
 
-    // The kill_first grid search's eligibility (the Shade/ward focus): alive, not evading, and fighting itself or
-    // through its owner or summoner, which names a unit of the fight.
-    CHECK(KillFirstGridEligible(true, false, false, true));   // KillFirstGridAddsOwnedWard
-    CHECK(KillFirstGridEligible(true, false, true, false));   // ... and one fighting itself
-    CHECK(!KillFirstGridEligible(true, false, false, false)); // KillFirstGridSkipsIdleUnowned
-    CHECK(!KillFirstGridEligible(false, false, true, false)); // dead
-    CHECK(!KillFirstGridEligible(true, true, true, true));    // KillFirstGridSkipsEvading
+    // The kill_first grid search's eligibility (the Shade/ward focus): alive, not evading, and part of our fight -- a
+    // victim of ours, one of ours holding it, or the owner or summoner naming a unit of the fight. Being in combat is
+    // no ticket in by itself: a creature of the entry brawling with an NPC or a player outside the group stays out.
+    CHECK(KillFirstGridEligible(true, false, false, false, true));  // KillFirstGridAddsOwnedWard
+    CHECK(KillFirstGridEligible(true, false, true, false, false));  // KillFirstGridAddsOneOnAMember
+    CHECK(KillFirstGridEligible(true, false, false, true, false));  // ... and one the group holds
+    CHECK(!KillFirstGridEligible(true, false, false, false, false)); // KillFirstGridSkipsForeignFight
+    CHECK(!KillFirstGridEligible(false, false, true, false, false)); // dead
+    CHECK(!KillFirstGridEligible(true, true, true, true, true));    // KillFirstGridSkipsEvading
 
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;

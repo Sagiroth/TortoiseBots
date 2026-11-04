@@ -1554,7 +1554,8 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 "kill first grid units", static_cast<int32>(entry));
             for (const KillFirstGridUnit& hit : grid)
             {
-                if (!KillFirstGridEligible(hit.alive, hit.evading, hit.inCombat, ownerInFight(hit.owner)) ||
+                if (!KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
+                        ownerInFight(hit.owner)) ||
                     !seen.insert(hit.guid).second)
                     continue;
                 Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
