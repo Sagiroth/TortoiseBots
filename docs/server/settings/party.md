@@ -135,7 +135,7 @@ Lands a bot whose near teleport (a summon, Jin'do's Banish) ends in mid-air on t
 
 A player's client makes it fall to the floor after the server moves it. A bot has no client, so a teleport that ends above the floor left its server position there: Jin'do's Banish (spell 24466) drops a player 12 yd over the Zul'Gurub pit floor, and melee bots hovered there, never walked back into the fight, and dealt no damage.
 
-With this on, every near teleport probes the floor at or under the destination (the navmesh first, the map's floor as a fallback within `AiPlayerbot.JumpHeightLimit`) and starts the jump landing's simulated fall, so the bot comes down and plays on. A destination less than a yard above its floor does not fall, so a summon or revive port that lands on the ground is unaffected. It changes every near teleport, so it is off by default.
+With this on, every near teleport reads the floor under the destination (the navmesh and the map's floor; the higher walkable one wins, and a map-only floor counts only within `AiPlayerbot.JumpHeightLimit`) and starts the jump landing's simulated fall: the bot hovers for about the fall time plus one second, then lands on the floor and plays on. A destination less than a yard above its floor does not fall, so a summon or revive port that lands on the ground is unaffected. It changes every near teleport, so it is off by default.
 
 </details>
 
