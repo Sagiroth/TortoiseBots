@@ -17,12 +17,12 @@ The **[TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager)** (
 ## Installation & Setup
 
 1. Download the latest release from the [TortoiseBotsManager GitHub repository](https://github.com/Sagiroth/TortoiseBotsManager).
-2. Extract the folder into your game client's addon directory:
+2. Extract it into your game client's addon folder, so the result is:
    ```text
-   World of Warcraft/Interface/AddOns/TortoiseBotsManager
+   World of Warcraft/Interface/AddOns/TortoiseBotsManager/TortoiseBotsManager.toc
    ```
-3. Ensure the folder is named exactly `TortoiseBotsManager` (not nested inside a duplicate folder).
-4. Log into the game and type `/tbm` in chat to toggle the control interface.
+   (not nested inside a duplicate folder).
+3. Log into the game and type `/tbm` in chat to toggle the control interface (`/tb`, `/tbot` and `/tortoise` work too).
 
 ---
 
@@ -32,24 +32,24 @@ The interface is divided into functional tabs designed for different stages of g
 
 ### Roster Tab
 
-- **Character List:** Lists all characters on your account, displaying class, offline/online/starting/removing, plus an in-party indicator. States come from the headless session plus lifecycle: `online` (live bot with an active session), `starting` (pending load or login), `removing`, otherwise `offline`.
-- **Login & Logout:** Click **Login** to spawn an owned alt as a headless companion bot; click **Logout** to log it out cleanly.
-- **Invite & Summon:** Group with online alts or summon them directly to your location with one click.
+- **Character List:** Lists your characters that the server reports as controllable, with class and grouping state. A row shows `online` (live bot with an active session), `starting` (login in progress), or `offline`.
+- **Login & Logout:** Log in an owned alt as a headless companion bot, or log it out again.
+- **Invite & Summon:** Group with an online owned alt, or summon it to your location.
 - **Alt-Bot Indicators:** Highlights alts playing autonomously in the world, allowing you to reclaim them or log them out remotely.
 
 ### Party Tab
 
-- **Movement Controls:** Quick buttons for movement orders such as follow, stay, come, and flee.
-- **Combat Orders:** Direct buttons to issue attack, pull, and pullback maneuvers with configurable pull delay sliders.
-- **Crowd Control:** Assign crowd control raid marks (Moon, Star, Diamond, etc.) to capable party bots.
-- **Live Toggles:** Quick switches for party-wide AoE, corpse looting, consumable mimicry, and smart auto CC.
+- **Movement:** Order bots to follow, stay, guard, move freely, come to you, or flee.
+- **Combat orders:** Attack, pull, and pullback orders, with adjustable pull delays.
+- **Crowd control:** Assign crowd control marks to capable party bots.
+- **Toggles:** Party-wide switches for AoE, corpse looting, consumable mimicry, and smart auto crowd control.
 
 ### Bot Panel Tab
 
-- **Gear Inspector:** View equipped items and durability across paperdoll slots on owned alts and hired companions.
-- **Bag Management:** Browse carried inventory items, identify equippable upgrades, and equip or unequip items remotely.
-- **Behavior Toggles:** Configure individual toggles for threat backoff, mana conservation, offensive cooldowns, and potion usage.
-- **Totem Manager:** For shaman companions, pin totem choices per element and trigger immediate totem drops.
+- **Gear:** View equipped items and durability on your bots.
+- **Bags:** Browse carried items, spot upgrades, and equip or unequip them remotely.
+- **Behaviors:** Toggle threat backoff, mana saving, offensive cooldowns, and potion use.
+- **Totems:** For shaman companions, pin totem choices per element and trigger immediate drops.
 
 ### Guild Tab
 
@@ -62,12 +62,12 @@ The interface is divided into functional tabs designed for different stages of g
 
 The addon talks to the server over private addon messages rather than standard chat channels.
 
-- **Silent Operation:** Commands sent by clicking addon buttons travel as addon messages instead of `.bot` chat text, and server replies return as addon messages; the module consumes its own prefixed payloads so they never reach group chat.
-- **Chat Fallback:** If the private addon channel reports `none` (for example, while ungrouped, in a battleground group with no pre-battleground group, or on an older server build that never sends the trailer), the addon falls back to sending standard `.bot` chat commands.
-- **Execution Order & Queueing:** Commands sent via addon-channel messages and typed `.bot` chat share a single per-requester FIFO queue drained on the world thread. Because packet delivery and chat dispatch can resolve asynchronously, send order does not guarantee receive order across different channels. Addon commands execute on the server's next world tick, before bots update.
-- **Movement Conflict Resolution:** A newer `.bot` movement order drops older chat-queued movement orders (`follow`, `stay`, `guard`, `free`, `flee`, `wander`) queued inside the bot AI; it does not cancel pending `.bot` queue entries.
+- **Silent Operation:** Addon commands travel as addon messages instead of `.bot` chat text, and server replies return as addon messages; the module consumes its own prefixed payloads so they never reach group chat.
+- **Chat Fallback:** If the private addon channel reports `none` (while ungrouped, or in a battleground group with no pre-battleground group), the addon falls back to sending standard `.bot` chat commands.
+- **Execution Order & Queueing:** Commands sent via addon-channel messages and typed `.bot` chat share a single per-requester queue drained on the world thread. Because packet delivery and chat dispatch can resolve asynchronously, send order does not guarantee receive order across different channels. Addon commands execute on the server's next world tick, before bots update.
+- **Movement Conflict Resolution:** A newer `.bot` movement order drops older chat-queued movement orders (`follow`, `stay`, `guard`, `free`, `flee`, `wander`) queued inside the bot AI; queued `.bot` entries are not cancelled.
 - **Exemptions & Teardown:** Action packets the AI handles inline on the world thread (its own casts, hire provisioning) are processed directly and exempt from command queuing. Queued bot chat and packets run in arrival order ahead of each `.bot` command drained on the world tick. Even when the module is globally disabled (`AiPlayerbot.Enabled=0`), the drain still runs and queued orders execute on the world thread before the bot update.
-- **Rate Limiting:** The server queues up to 128 bot commands per player; commands beyond the cap are dropped and reported once per tick with the exact message: `Too many bot commands at once: <n> ignored.`
+- **Rate Limiting:** The server queues up to 128 bot commands per player; commands beyond the cap are dropped and reported with the message: `Too many bot commands at once: <n> ignored.`
 
 ---
 
@@ -79,7 +79,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | :--- | :--- |
 | `TBM:TRANSPORT\|<channel>` | Reports the addon command channel (`party` or `none`). |
 | `TBM:ROSTER_BEGIN\|<n>` / `TBM:ROSTER_END` | Delimits the account character roster stream. |
-| `TBM:ROSTER\|<guid>\|<name>\|<class>\|<state>\|<grouped>\|<loc>` | Emits one owned character row. |
+| `TBM:ROSTER\|<guid>\|<name>\|<class>\|<state>\|<grouped>\|<loc>` | Emits one owned character row (`<loc>` looks like `map:<id>,zone:<id>,area:<id>`, or `-`). |
 | `TBM:CLAIMED_BEGIN\|<n>` / `TBM:CLAIMED_END` | Delimits the claimed guild bots snapshot. |
 | `TBM:CLAIMED\|<guid>\|<name>\|<class>\|<level>\|<state>\|<grouped>\|<loc>\|<locked>` | Emits one claimed bot row. |
 | `TBM:BOTSTATE_BEGIN\|<n>` / `TBM:BOTSTATE_END` | Delimits live movement and toggle states for controllable party bots. |
@@ -90,7 +90,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:LOOT_BEGIN\|<n>\|<nextCursor>` / `TBM:LOOT_END\|<nextCursor>` | Delimits one page of loot history from `.bot lootlog`. |
 | `TBM:LOOT\|<ts>\|<bot>\|<event>\|<itemId>\|<item>\|<sourceType>\|<source>\|<quality>` | Emits one loot row (item taken or money taken). |
 | `TBM:ORDER_BEGIN\|<n>` / `TBM:ORDER_END` | Delimits the guild order list from `.bot order list`. |
-| `TBM:ORDER\|<bot>\|<type>\|<itemId>\|<item>\|<have>\|<want>\|<state>\|<reason>\|<zone>\|<difficulty>\|<hours>\|<keep>\|<parent>\|<goldCap>\|<step>\|<need>\|<carry>` | Emits one guild order row; also sent alone as a live update to the giver when state, supply step, missing items or progress changes. `<have>` is what already reached the guild (a bank deposit, the mail hand-over, or the bank stock on a `stocked` row); `<carry>` is the amount in the bot's bags and mailbox that is not delivered yet; it is `0` once the hand-off succeeded (a `done` row after the bank deposit, a `mailed` row), and a `cant` row keeps the last scanned figure because the stack is still in the bags. A list reply reads a live bot's bags while the row runs, and shows the stored figure once the row is over (online or offline alike) and for an offline bot. `<hours>` is the chosen farm time in whole hours (1-24) or `inf`, `<keep>` is `keep` or `-`, `<parent>` is the parent bot or `-`, `<goldCap>` is guild copper or `-`, `<step>` is `bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need`, `deliver` or `-`, and `<need>` is `itemId:count` pairs separated by semicolons or `-`. Missing trailing fields from older servers are treated as `-`. |
+| `TBM:ORDER\|<bot>\|<type>\|<itemId>\|<item>\|<have>\|<want>\|<state>\|<reason>\|<zone>\|<difficulty>\|<hours>\|<keep>\|<parent>\|<goldCap>\|<step>\|<need>\|<carry>` | Emits one guild order row; also sent alone as a live update to the giver when state, supply step, missing items or progress changes. `<have>` is what already reached the guild (a bank deposit, the mail hand-over, or the bank stock on a `stocked` row); `<carry>` is the amount in the bot's bags and mailbox that is not delivered yet; it is `0` once the hand-off succeeded (a `done` row after the bank deposit, a `mailed` row), and a `cant` row keeps the last scanned figure because the stack is still in the bags. A list reply reads a live bot's bags while the row runs, and shows the stored figure once the row is over or the bot is offline. `<hours>` is the chosen farm time in whole hours (1-24) or `inf`, `<keep>` is `keep` or `-`, `<parent>` is the parent bot or `-`, `<goldCap>` is guild copper or `-`, `<step>` is `bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need`, `deliver` or `-`, and `<need>` is `itemId:count` pairs separated by semicolons or `-`. |
 | `TBM:ORDER_ACCESS\|<rankIndex>\|<rankName>\|<tabsOk>\|<tabsDenied>\|<gold 0/1>\|<canSetRank 0/1>` | The guild's bot rank and what it reaches: comma-separated 1-based bank tab numbers (or `-`), whether it may take guild gold, and whether you may change the rank. Sent first inside `ORDER_BEGIN`/`ORDER_END`, after `.bot order rank`, and as the answer to `.bot order access`. |
 | `TBM:ORDER_STEPS_BEGIN\|<bot>\|<n>\|<dropped>` / `TBM:ORDER_STEPS_END\|<bot>` | Delimits the on-demand step timeline from `.bot order <bot> steps`: `<n>` entries, `<dropped>` older ones pushed out of the 16-entry ring (memory only, so it resets on restart, a new order or a reassign). |
 | `TBM:ORDER_STEP\|<bot>\|<ageSec>\|<state>\|<reason>\|<step>\|<itemId>` | One timeline entry, oldest first: the state word, reason label, step label and leg item the order had at that change; `<ageSec>` is the server's age in seconds (clamped at 0), `<itemId>` the leg item or `0`. Sent only in reply to `.bot order <bot> steps`, never live. |
@@ -106,9 +106,9 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 ### Protocol Grammar & Semantics
 
 - **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime,professions`, with `,guild-orders,guild-order-steps` appended while the order source index is ready (travel tables loaded via `AiPlayerbot.AutoDoQuests = 1`) and `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
-- **Professions (`TBM:PROF`/`TBM:RECIPE`):** `.bot professions <bot>` lists the bot's professions with skill (`TBM:PROF`), the recipes it knows (`TBM:RECIPE`, with the skill steps the addon colours by and an order field: `ok` or the reason), and the recipes it could still learn at its current rank (`TBM:RECIPE_MISSING`, with the recipe item that teaches it or `0` for trainer-only).
+- **Professions (`TBM:PROF`/`TBM:RECIPE`):** `.bot professions <bot>` lists the bot's professions with skill (`TBM:PROF`), the recipes it knows (`TBM:RECIPE`, with the skill steps each colour starts at and an order field: `ok` or the reason), and the recipes it could still learn at its current rank (`TBM:RECIPE_MISSING`, with the recipe item that teaches it or `0` for trainer-only).
 - **Loot history (`TBM:LOOT`):** `.bot lootlog [cursor]` replays loot rows for your controllable party bots (owned alts and hired companions) from the last 24 hours, newest piece first, up to 40 rows per reply. A money row carries the copper amount as `<item>` and the corpse entry as `<itemId>`; an item row carries the item name, id and quality. Send the returned `<nextCursor>` back for the next page; `expired` means the piece it pointed at was pruned, so start over without a cursor.
-@ours When `AiPlayerbot.GuildOrderBotRank = 0` (off) the server manages no bot ranks: the line is `TBM:ORDER_ACCESS|-|-|-|-|0|0`. A guild without an unlocked bank likewise shows no tabs and no gold. `TBM:ORDER_ACCESS` carries the guild's bot rank: `<rankIndex>` the rank every bot holds (by default the rank below the guild master), `<rankName>` its name, `<tabsOk>`/`<tabsDenied>` the 1-based bank tabs it reaches or not (`-` when empty), `<gold 0/1>` whether it may take guild gold (only ranks 0-1 may), `<canSetRank 0/1>` whether you may change the rank (your rank must allow promoting and demoting members). It is sent first inside every `ORDER_BEGIN`/`ORDER_END` list, again after `.bot order rank`, and as the answer to `.bot order access`.
+- **Guild bot rank (`TBM:ORDER_ACCESS`):** When `AiPlayerbot.GuildOrderBotRank = 0` (off) the server manages no bot ranks: the line is `TBM:ORDER_ACCESS|-|-|-|-|0|0`. A guild without an unlocked bank likewise shows no tabs and no gold. `TBM:ORDER_ACCESS` carries the guild's bot rank: `<rankIndex>` the rank every bot holds (by default the rank below the guild master), `<rankName>` its name, `<tabsOk>`/`<tabsDenied>` the 1-based bank tabs it reaches or not (`-` when empty), `<gold 0/1>` whether it may take guild gold (only ranks 0-1 may), `<canSetRank 0/1>` whether you may change the rank (your rank must allow promoting and demoting members). It is sent first inside every `ORDER_BEGIN`/`ORDER_END` list, again after `.bot order rank`, and as the answer to `.bot order access`.
 - **Bot State Grammar (`TBM:BOTSTATE`):** Emitted for all controllable party bots (owned alts and hired companions). Format:
   ```text
   TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]

@@ -45,14 +45,14 @@ Every bot command evaluates permission gates before executing:
 | :--- | :--- | :--- |
 | **GM Only** | GameMasters with session security above player level | Diagnostics, engine cheats, AI profiles (`save/load/list/reset ai`), `.bot pool`, `.bot ah`, `.reload config`. |
 | **Owner or GM** | Account owner of the bot, or any GM | Trading, inventory, gear equipping, talent points, trainer learning, and lifecycle commands. |
-| **Group Member** | Anyone currently grouped with the bot | Tactical combat actions, movement orders, ready checks, whisper `hire` (random bots only), and inspection queries. |
+| **Group Member** | Anyone currently grouped with the bot | Tactical combat actions, movement orders, ready checks, and inspection queries sent as whispers, plus whisper `hire` (random bots only). The `.bot` chat commands need a bot you control. |
 | **Any Player** | Any in-game player | Companion recruitment (`.bot hire`, subject to costs, caps, and `AiPlayerbot.HireAnywhere`). |
 
 ### Alt-Bots and Pool Bots
 
-- **Autonomous Alt-Bots:** When an owned alt plays autonomously in the world, other players may invite it and issue tactical combat orders. Only the account owner (or a GM) may trade with it, equip gear, spend talents, manage quests, or log it out. Note that [`.bot cmd`](commander.md) orders never move autonomous alt-bots; order them with whispers or party chat instead.
-- **Pool-Bot Trading:** By default, masterless random-pool bots refuse trade requests from players. Owned alts and hired companions always trade freely with their master.
-- **Fail-Closed Security:** Unrecognized commands default to requiring Owner or GM permissions. Refused `.bot action` answers with `TBM:ACTION_ERR`; only non-whisper mature-chat denials fail silently (whisper denials answer in chat plus one addon error line).
+- **Autonomous Alt-Bots:** When an owned alt plays autonomously in the world, other players may invite it and issue tactical combat orders as whispers. Only the account owner (or a GM) may trade with it, equip gear, spend talents, manage quests, or log it out. Note that [`.bot cmd`](commander.md#bot-cmd-attack) orders never move autonomous alt-bots; order them with whispers or party chat instead.
+- **Pool-Bot Trading:** By default, masterless random-pool bots refuse trade requests from players. Owned alts and hired companions trade freely with their master.
+- **Fail-Closed Security:** Unrecognized commands default to needing Owner or GM permissions. A refused `.bot action` answers with `TBM:ACTION_ERR`. A refused whisper answers in chat (plus one addon error line); other refused chat commands stay silent.
 
 ## Master Command Index
 
@@ -99,7 +99,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot interrupt`](party-actions.md#bot-interrupt) | Direct Combat | Directs a specific bot to interrupt its target. |
 | [`.bot pullback`](party-actions.md#bot-pullback) | Direct Combat | Triggers a pullback maneuver on a designated tank. |
 | [`.bot formation`](party-actions.md#bot-formation) | Direct Movement | Sets party follow formation geometry. |
-| [`.bot cc`](party-actions.md#bot-cc) | Tactical Action | Assigns crowd control marks (accepted form of `.bot action cc`). |
+| [`.bot cc`](party-actions.md#bot-action-cc) | Tactical Action | Assigns crowd control marks (accepted form of `.bot action cc`). |
 | [`.bot strategy`](party-actions.md#bot-strategy) | Direct Strategy | Adjusts strategies by selected bot, party role or bot name. |
 | [`.bot loot`](party-actions.md#bot-loot) | Direct Party | Toggles corpse looting on targeted bot or party. |
 | [`.bot repair`](party-actions.md#bot-repair) | Direct Party | Orders targeted bot or party to repair gear. |
@@ -133,10 +133,9 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot roster`](roster-and-hiring.md#bot-roster) | Roster & Hiring | Emits snapshot of owned alts and CC assignments. |
 | [`.bot add`](roster-and-hiring.md#bot-add) | Roster & Hiring | Logs in an owned alt character as a bot. |
 | [`.bot remove`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot or dismisses a hired companion. |
-| [`.bot logout`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Safely logs out an owned bot without dismissing it (alias of `.bot remove` for owned alts). |
+| [`.bot logout`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot, keeping its ownership (hire ends and its character is deleted). |
 | [`.bot hire`](roster-and-hiring.md#bot-hire) | Roster & Hiring | Recruits a mercenary companion at recruiters. |
 | [`.bot hire raid`](roster-and-hiring.md#bot-hire-raid) | Roster & Hiring | Recruits up to 39 companions in one command. |
-| [`.bot role`](roster-and-hiring.md#bot-role) | Roster & Hiring | Configures party role overrides for bots or self. |
 | [`.bot invite`](roster-and-hiring.md#bot-invite) | Roster & Hiring | Invites an online owned bot to your party. |
 | [`.bot uninvite`](roster-and-hiring.md#bot-uninvite) | Roster & Hiring | Removes an owned bot or dismisses a hire from group. |
 | [`.bot summon`](roster-and-hiring.md#bot-summon) | Roster & Hiring | Teleports an owned bot or hire to your location. |

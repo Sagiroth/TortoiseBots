@@ -23,15 +23,15 @@ Any whisper command can be sent through the `.bot command` proxy for a bot you c
 # Example: .bot command Tanky trainer
 ```
 
-A bot answers a chat command on its next think step, also when it is idle. When a commander outside the group gives the command, the answer comes back as a whisper.
+A bot answers on its next think step, even when it is idle. If you command from outside the group, the answer comes back as a whisper.
 
-The whisper prefix `do <action>` or `d <action>` (e.g. `/w <BotName> do attack`) directly executes any internal AI action via `DoSpecificAction`.
+The prefix `do <action>` or `d <action>` (for example `/w Tanky do attack`) runs any AI action by name.
 
 ### Access Tiers
 
 Whisper commands fall into distinct permission tiers:
 - **Tactical / Info (Group Members):** Combat movement, target targeting, and read-only status queries. Any group member may issue these.
-- **Owner or GM:** Economy, inventory, equipment, talents, trades, guild actions, and durable configuration changes. Permitted only to the bot's owner account or a GameMaster. Denials tell you in chat (plus one addon error line).
+- **Owner or GM:** Economy, inventory, equipment, talents, trades, guild actions, and lasting setup changes. Only the bot's owner account or a GameMaster may use these. A refused whisper answers in chat (plus one addon error line); other chat types stay silent.
 - **GM Only:** Diagnostic and cheat commands (`debug`, `cdebug`, `cs`, `cheat`, `teleport`, `log`, `set value`, `save ai`, `load ai`, `list ai`, `reset ai`). GameMaster privilege is required.
 
 Multiple whisper commands can be chained in a single line using `\\` as a delimiter (e.g. `/w Tanky follow\\co +focus`).
@@ -49,14 +49,14 @@ Multiple whisper commands can be chained in a single line using `\\` as a delimi
 | `u` | `<item link\|name>` | Owner or GM | Uses an item from inventory (potions, food, bandages). |
 | `destroy` | `<item link\|name>` | Owner or GM | Destroys an inventory item (all bots; strangers refused). |
 | `drop` | `<quest link\|name>` | Owner or GM | Abandons the specified quest (all bots; strangers refused). |
-| `loot` | `[object link]` | Owner or GM | Loots nearby corpses, chests, and nodes immediately. |
+| `loot` | `[object link]` | Owner or GM | Loots nearby corpses, chests, and nodes immediately. With a link, loots that object. |
 | `ll` | None | Owner or GM | Links or lists current loot items in chat. |
 | `bank` | None | Owner or GM | Interacts with a nearby banker NPC. |
 | `gbank` / `gb` | None | Owner or GM | Interacts with a nearby guild banker NPC. |
 | `mail` / `sendmail` | `<recipient> [<item\|money>]` | Owner or GM | Sends mail with optional attached item link or money. |
 | `craft` | `<item link>` | Owner or GM | Crafts an item using learned trade skills. |
-| `outfit <name>` | `<name>` | Owner or GM | Equips a previously saved equipment outfit set. |
-| `outfit save <name>` | `<name>` | Owner or GM | Saves currently equipped items under a profile name. |
+| `outfit` | `<name> [item links]` | Owner or GM | Adds the linked items to the named set, or equips the set when no links are given. |
+| `outfit <name> equip` | `<name>` | Owner or GM | Equips the items stored in the named outfit set. |
 | `keep` | `<item link\|name>` | Owner or GM | Designates an item to keep and not sell. |
 | `keep need` | `<item>` | Owner or GM | Forces Need rolls / retention for that item (bot tries to get more). |
 | `roll <need\|greed\|pass\|auto\|emote>` | `[item]` | Owner or GM | Votes on current loot rolls (or all open rolls if omitted). |
@@ -101,15 +101,15 @@ Multiple whisper commands can be chained in a single line using `\\` as a delimi
 | `trainer` | None | Owner or GM | Trains all available, affordable class spells and ranks. |
 | `talents` | None | Owner or GM | Prints spent talent points and tree distribution. |
 | `talents shift` | `<talent link>` | Owner or GM | Allocates remaining talent points toward linked build. |
-| `spells` | None | Tactical | Lists known spells and highest learned spell ranks. |
+| `spells` | None | Tactical | Lists known spells. |
 | `spell` | `<spell link\|name>` | Owner or GM | Queries information about a specific spell. |
 | `cast <spell>` | `<spell link\|name>` | Owner or GM | Commands the bot to cast a known spell in combat. |
 | `castnc <spell>` | `<spell link\|name>` | Owner or GM | Commands the bot to cast a known spell out of combat. |
 | `ss` | `<spell link\|name>` | Owner or GM | Skips or toggles automatic usage of a specific spell. |
-| `save ai <name>` | `<name>` | GM Only | Saves current strategy configuration to DB table. |
-| `load ai <name>` | `<name>` | GM Only | Loads a previously saved strategy profile from DB table. |
-| `list ai` | None | GM Only | Lists all saved strategy configuration profiles. |
-| `reset ai` | None | GM Only | Resets strategy configuration to default AI. |
+| `save ai <name>` | `<name>` | GM Only | Saves the current strategy setup under a name. |
+| `load ai <name>` | `<name>` | GM Only | Loads a saved strategy setup. |
+| `list ai` | None | GM Only | Lists saved strategy setups. |
+| `reset ai` | None | GM Only | Resets strategies to the default AI. |
 | `reset` | None | Owner or GM | Flushes AI action queues and resets combat strategies. |
 | `co` | `[+|-|~strategy\|?]` | Owner or GM | Queries or toggles combat strategies (`co ?` to list). |
 | `nc` | `[+|-|~strategy\|?]` | Owner or GM | Queries or toggles non-combat strategies (`nc ?` to list). |
@@ -132,7 +132,7 @@ Multiple whisper commands can be chained in a single line using `\\` as a delimi
 | `invite` | `[player]` | Owner or GM | Sends a party invitation to a player. |
 | `join` | None | Owner or GM | Accepts a pending group invitation. |
 | `leave` | None | Owner or GM | Leaves the current group. |
-| `lfg` | `[5\|10\|20\|25\|40]` | Owner or GM | Queues or toggles Looking For Group. |
+| `lfg` | `[5\|10\|20\|25\|40]` | Owner or GM | Forms or joins a group of that size (default 5). |
 | `summon` | None | Owner or GM | Teleports the bot to you. |
 | `logout` | None | Owner or GM | Initiates clean logout for the bot session. |
 | `bg free` | None | Owner or GM | Leaves the active battleground. |
@@ -159,7 +159,7 @@ Bots support explicit target-assignment lists using the `+name` / `-name` parame
 | Command / Whisper | Parameters | Tier | What It Does |
 | :--- | :--- | :--- | :--- |
 | `attack` | None | Tactical | Attacks your current target and breaks active stay. |
-| `tank attack` | None | Tactical | Orders the party tank to taunt and engage target. |
+| `tank attack` | None | Tactical | Orders the tank bot to attack your target. |
 | `flee` / `runaway` | None | Tactical | Retreats toward master in passive mode. |
 | `end pull` | None | Owner or GM | Aborts an active pull maneuver; tank returns. |
 | `rebuff` | None | Tactical | Refreshes expiring party buffs out of combat. |
@@ -198,7 +198,7 @@ Bots support explicit target-assignment lists using the `+name` / `-name` parame
 <a id="guild-management"></a>
 ## Guild Management Whispers
 
-Commands for managing bot guilds through chat whispers. Only the bot's owner account (or a GM) may issue these commands; the bot must itself hold the matching guild privilege in its guild rank:
+Commands for managing bot guilds through chat whispers. Only the bot's owner account (or a GM) may issue these commands; for invite, promote, demote, leader and remove, the bot must itself hold the matching guild privilege in its guild rank (any member can leave):
 
 | Command / Whisper | Parameters | Tier | What It Does |
 | :--- | :--- | :--- | :--- |
@@ -219,13 +219,13 @@ Note: Autonomous alt-bots accept guild invitations only from their owner's accou
 <a id="w--trainer"></a>
 ### `/w <BotName> trainer`
 
-Makes the bot learn, in one go, every spell and rank it can afford from the trainer **you have targeted**. The bot pays with its own gold.
+Makes the bot learn, in one go, every spell and rank it can afford from the trainer **you have selected**. The bot pays with its own gold.
 
 ```text
 /w <BotName> trainer
 ```
 
-Target the trainer first; it must be a trainer of the bot's class (the bot does not have to stand next to it). Only the bot's owner (or a GM) may use it. Pool bots and hired companions learn their class spells for free on level-up and do not need this.
+Select the trainer first; it must be a trainer of the bot's class (the bot does not have to stand next to it). Only the bot's owner (or a GM) may use it. Pool bots and hired companions learn their class spells for free on level-up and do not need this.
 
 <a id="w--talents"></a>
 ### `/w <BotName> talents`
@@ -248,7 +248,7 @@ Prompts the bot to refresh all expiring party buffs out of combat.
 /w <BotName> rebuff
 ```
 
-Performs a 2-minute expiration check and applies missing buffs. Healing actions temporarily yield while rebuffing runs. (Note: there is no direct `.bot rebuff` command).
+Performs a 2-minute expiration check and applies missing buffs. Healing actions temporarily yield while rebuffing runs. (The same pass also runs as `.bot action rebuff`.)
 
 <a id="w--end-pull"></a>
 ### `/w <BotName> end pull`
@@ -289,7 +289,7 @@ Orders the bot to loot nearby corpses, mineral nodes, herbs, or chests immediate
 /w <BotName> loot [object link]
 ```
 
-Passing an object link instructs the bot to interact specifically with that linked object. An explicit player loot order (`NotePlayerOrder`) bypasses prior give-up timers, and an empty window resulting from an explicit player order does not record a failure.
+Passing an object link instructs the bot to interact specifically with that linked object. A direct order from you retries even if the bot gave up on that corpse before. To see what your bots picked up later, use [`.bot lootlog`](bot-panel.md#bot-lootlog).
 
 ### `/w <BotName> s`
 
