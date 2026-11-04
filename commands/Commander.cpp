@@ -3156,6 +3156,10 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
+    // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
+    // healer, so the focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
+    bool const totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3168,7 +3172,8 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
         // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
         // whole party (the run leader counts on every focus order doing that).
-        if (dpsOnly && ai->IsTank(bot))
+        if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
+                totemTarget, totemFocus))
             continue;
         bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
         bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
@@ -8696,6 +8701,16 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
     }
 }
 
+// Whether a unit is a player of the lead bot's group: a charmed group member fights the party as a hostile, but every
+// order at it is refused ("a bot or a member of the group"), so the run leader never makes a fact of it.
+static bool InLeadGroup(Player* lead, Unit* unit)
+{
+    if (!lead || !unit || !unit->IsPlayer())
+        return false;
+    Group* group = lead->GetGroup();
+    return group && static_cast<Player*>(unit)->GetGroup() == group;
+}
+
 // The plan's kill_first units of this fight, from the bots' cached
 // "attackers" lists (no scan): each with whether it is engaged with the party
 // and, for a summoned one (a healing ward), whether its owner is. The creatures
@@ -8715,11 +8730,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
             return;
+        // A charmed group member is no fact of the fight (C4): every order at it is refused, and the tick it spends
+        // is the focus' own.
+        if (TortoiseBots::DungeonRun::RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit)))
+            return;
         if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, lead))
             return;
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = unit->GetObjectGuid().GetRawValue();
         fact.entry = unit->GetEntry();
+        fact.creatureType = unit->GetCreatureType(); // the totem focus reads a type-11 unit (DungeonRunPolicy.h)
         fact.distLead = lead->GetDistance(unit);
         fact.stealthed = IsStealthed(unit);
         fact.evading = unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode();
@@ -9036,6 +9056,10 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
+            // A charmed group member is no fact of the fight (C4): every order at it is refused, so it would only spend
+            // the guard's budget and the focus' tick.
+            if (TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)))
+                continue;
             float const mobYd = anchor->GetDistance(attacker);
             bool const inParty = toParty && seen.insert(attacker->GetObjectGuid().GetRawValue()).second;
             bool const inWalk = toWalk && mobYd > TortoiseBots::DungeonRun::kGuardYd &&
@@ -9070,6 +9094,9 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
             fact.victimTank = tankVictim;
+            // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
+            if (f.auraGatedTargets)
+                fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
             if ((raidBoss || raidTrashOffTanks) && !petVictim)
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
@@ -10948,6 +10975,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());
     f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;
     f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;
+    // The totem focus and the aura-gated targets (FocusSkipsBot, GuardSkipsUnit): read every tick, so a reload switches
+    // them mid-run.
+    f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
+    f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;

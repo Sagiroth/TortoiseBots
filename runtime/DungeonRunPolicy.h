@@ -895,6 +895,9 @@ struct UnitFact
     // is in no combat itself.
     bool auraOnEngaged = false;
     bool victimHealer = false; // its victim is a healer (Facts::partyAttackers, and a hold's units)
+    // Its entry carries a needs_aura row (BossTacticsPolicy.h): only a carrier of the row's aura may touch it. The
+    // guard leaves it alone while Facts::auraGatedTargets is on.
+    bool auraGated = false;
     bool victimLead = false;   // a hold's units: its victim is the lead bot (the tank holds it)
     // Facts::partyAttackers only: its victim is a living tank other than the lead bot (an off-tank holds it).
     bool victimTank = false;
@@ -1084,6 +1087,8 @@ constexpr std::uint32_t kCreatureUndead = 6;
 constexpr std::uint32_t kCreatureHumanoid = 7;
 constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
+// A totem (the Brain Wash Totem 15112, the Powerful Healing Ward 14987): a 1-2 s kill, never a guard's target.
+constexpr std::uint32_t kCreatureTotem = 11;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
 // The run's crowd-control spells, in the order of their reliability: the bot
@@ -1890,6 +1895,11 @@ struct Facts
     bool autoCcRisky = false;
     std::uint32_t autoCcAbove = 6;
     std::uint64_t leadTargetGuid = 0;
+    // AiPlayerbot.DungeonRunTotemFocus: a kill_first totem (creature type 11) is DPS-only and its focus goes out before
+    // the guard, and the guard skips totems. AiPlayerbot.DungeonRunAuraGatedTargets: the guard skips an aura-gated unit
+    // (UnitFact::auraGated).
+    bool totemFocus = false;
+    bool auraGatedTargets = false;
     // Automatic crowd control, a fight kept open only by the run's holds (RunCcBreakTick): the run's own held units
     // that are still in combat, read from its holds (one object lookup each, no scan). ccHeldRead false: not read
     // (the key is off, or the party is out of combat).
@@ -10037,6 +10047,36 @@ inline bool FocusGone(const Run& r, const Facts& f)
     return true;
 }
 
+// Whether the run's kill-first focus leaves a bot out: a tank_hold target arms the DPS and the healers while the tanks
+// keep their own pick (the row's loose adds), and under the totem focus a totem is the DPS' alone: it dies in 1-2 s,
+// and a tank or a healer drawn off its job for it is a lost heal or a lost mob.
+inline bool FocusSkipsBot(bool isTank, bool isHealer, bool tankHoldTarget, bool totemTarget, bool totemKeyOn)
+{
+    if (totemKeyOn && totemTarget)
+        return isTank || isHealer;
+    return tankHoldTarget && isTank;
+}
+
+// Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
+// like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
+// no order budget spent on it.
+inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
+{
+    return isPlayer && inLeadGroup;
+}
+
+// The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
+// skull stays until the new order lands, so it is remembered (FocusOrderRefused).
+inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k)
+{
+    r.prevFocusIconGuid = r.focusIconGuid;
+    r.focusGuid = k.guid;
+    r.focusIconGuid = k.guid;
+    r.focusIconClear = 0;
+    r.note = "fighting: kill " + std::to_string(k.entry) + " first";
+    return "focus " + std::to_string(k.guid);
+}
+
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
 // crowd-controlled one). The unit already focused stays against units of its own rank
 // (2b); only a better rank, or its death, cc or refusal, moves the focus. On a pull or move step (KillFirstBounded) only one
@@ -17056,6 +17096,14 @@ inline void LatchTrashHealerGuard(Run& r, const Facts& f)
     r.trashHealerGuard = true;
 }
 
+// Whether the guard leaves a unit alone on the run's own keys: an aura-gated entry (needs_aura: a bot without the aura
+// does 0 damage to it, and a taunt would only move its damage onto another tank) and, under the totem focus, a totem
+// (the focus kills it in 1-2 s, and a guard order would starve that tick).
+inline bool GuardSkipsUnit(const Facts& f, const UnitFact& u)
+{
+    return (f.auraGatedTargets && u.auraGated) || (f.totemFocus && u.creatureType == kCreatureTotem);
+}
+
 // A raid boss fight's or a raid trash fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank
 // holding the boss or its current target): an add that hits a healer is the ranged dps' job, not the off-tank's. The
 // nearest free ranged dps within
@@ -17124,6 +17172,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
+            GuardSkipsUnit(f, u) ||
             u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
             GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
@@ -17231,7 +17280,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
-                !u.hitting || u.evading ||
+                !u.hitting || u.evading || GuardSkipsUnit(f, u) ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -17250,7 +17299,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     if (!pick)
         for (const UnitFact& u : f.partyAttackers)
         {
-            if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kRaidBossGuardYd)
+            if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+                GuardSkipsUnit(f, u) || u.distLead > kRaidBossGuardYd)
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
@@ -17389,6 +17439,8 @@ inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* ca
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
+        if (GuardSkipsUnit(f, u))
+            continue;
         if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
             continue;
         if (skipHealer && u.victimHealer)
@@ -17421,7 +17473,7 @@ inline const UnitFact* GuardPickHealerAdd(const Run& r, const Facts& f)
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimHealer || u.victimLead || !GuardEligible(u, 0.0f, &r, &r, true))
+        if (!u.victimHealer || u.victimLead || GuardSkipsUnit(f, u) || !GuardEligible(u, 0.0f, &r, &r, true))
             continue;
         if (GuardHeldByRun(r, u.guid) || r.healerGuardDps.count(u.guid) || HealerGuardHasFreeDps(r, f, u, taken))
             continue;
@@ -17621,10 +17673,10 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     // fight's adds are RaidGuardTick's, and an add on a healer is the ranged dps' first.
     if (!f.leadAlive && (trashGuard || !RaidTrashFight(r, f)))
         return nullptr;
-    auto const engageable = [&r](const UnitFact& u)
+    auto const engageable = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
-            !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+            !GuardSkipsUnit(f, u) && !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
     // With the lead bot dead the healer's add is the healer guard's and the round robin's (the acting tank's mob is
@@ -21074,6 +21126,14 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard would never send it anywhere while it stands there.
         if (order.empty() && WedgedSummon(r, f, dt, order))
             return order;
+        // The totem focus goes before the guard (AiPlayerbot.DungeonRunTotemFocus): a kill_first totem dies in 1-2 s,
+        // and a guard order spends the tick. Any other focus waits for the ordinary one below.
+        if (f.totemFocus)
+        {
+            const UnitFact* totem = PickKillFirst(r, f);
+            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
+                return IssueKillFirstFocus(r, *totem);
+        }
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -21085,17 +21145,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
-            {
-                // The order moves the skull onto k; the old skull stays until it lands (the order may be
-                // refused first: not visible/found/dead), so the old unit is remembered (cleared: a refusal of
-                // the new order).
-                r.prevFocusIconGuid = r.focusIconGuid;
-                r.focusGuid = k->guid;
-                r.focusIconGuid = k->guid;
-                r.focusIconClear = 0;
-                r.note = "fighting: kill " + std::to_string(k->entry) + " first";
-                order = "focus " + std::to_string(k->guid);
-            }
+                order = IssueKillFirstFocus(r, *k);
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);

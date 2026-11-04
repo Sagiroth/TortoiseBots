@@ -26263,6 +26263,122 @@ static void TestRaidBossCappedAddIsReArmed()
     CHECK(orders == 2 * static_cast<int>(kGuardOrdersPerUnit));
 }
 
+// Jin'do: the totem focus leaves the tanks and the healers out (the totem dies in 1-2 s and holds no healer), a
+// tank_hold target keeps its own rule, and the guard skips a totem and an aura-gated unit only with their keys on.
+static void TestTotemFocusSkipsTanksAndHealers()
+{
+    CHECK(FocusSkipsBot(true, false, false, true, true));    // a tank is no totem focuser
+    CHECK(FocusSkipsBot(false, true, false, true, true));    // nor a healer
+    CHECK(!FocusSkipsBot(false, false, false, true, true));  // a DPS joins
+}
+
+static void TestTotemFocusKeyOffJoinsAll()
+{
+    CHECK(!FocusSkipsBot(true, false, false, true, false));
+    CHECK(!FocusSkipsBot(false, true, false, true, false));
+    CHECK(!FocusSkipsBot(false, false, false, true, false));
+}
+
+static void TestTankHoldFocusUnchanged()
+{
+    CHECK(FocusSkipsBot(true, false, true, false, true));    // a tank skips a tank_hold target
+    CHECK(!FocusSkipsBot(false, true, true, false, true));   // the healers still join
+    CHECK(!FocusSkipsBot(false, false, true, false, true));
+    CHECK(FocusSkipsBot(true, false, true, false, false));   // and so it stays with the keys off
+}
+
+// A raid boss fight's healer guard with a ranged dps in reach of the add and the main tank holding the boss.
+static Facts FocusGuardFacts()
+{
+    Facts f = RaidHealerGuardFacts();
+    MemberFact near = Mem("NearDps", 24);
+    near.ranged = true;
+    near.rangedDps = true;
+    f.members = {Mem("Tanky", 0), Mem("Healy", 20), near};
+    return f;
+}
+
+// A totem on the healer is the totem focus' own kill: the guard sends nobody at it, so the focus is not starved for a
+// tick. With the key off the add goes to the nearest ranged dps, as today.
+static void TestGuardSkipsTotemWithKey()
+{
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact totem = Hitter(50101, 15112, 18, true);
+        totem.creatureType = 11;
+        f.partyAttackers = {totem};
+        f.totemFocus = true;
+        for (int k = 0; k < 5; ++k)
+            CHECK(GuardTick(r, f).empty());
+    }
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact totem = Hitter(50101, 15112, 18, true);
+        totem.creatureType = 11;
+        f.partyAttackers = {totem};
+        CHECK(GuardTick(r, f) == "attack 50101 NearDps");
+    }
+}
+
+// A needs_aura unit (the Shade of Jin'do) takes damage only from a Delusions carrier: the guard sends no ranged dps at
+// it, and with the key off it does, as today.
+static void TestGuardSkipsAuraGatedShade()
+{
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact shade = Hitter(50102, 14986, 18, true);
+        shade.auraGated = true;
+        f.partyAttackers = {shade};
+        f.auraGatedTargets = true;
+        for (int k = 0; k < 5; ++k)
+            CHECK(GuardTick(r, f).empty());
+    }
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact shade = Hitter(50102, 14986, 18, true);
+        shade.auraGated = true;
+        f.partyAttackers = {shade};
+        CHECK(GuardTick(r, f) == "attack 50102 NearDps");
+    }
+}
+
+// The totem focus is issued before the guard: a totem kill-first unit takes the tick over a guard-worthy healer add.
+// With the key off the guard's order goes out first and the focus waits for the next tick, as today.
+static void TestTotemFocusBeatsGuard()
+{
+    for (bool key : {true, false})
+    {
+        DungeonPlan plan;
+        plan.killFirst = {15112};
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        f.totemFocus = key;
+        f.partyAttackers = {Hitter(50103, 11262, 20, true)};
+        UnitFact totem = Engaged(Unit(50104, 15112, 12));
+        totem.creatureType = 11;
+        f.killFirst = {totem};
+        CHECK(Tick(r, f) == (key ? "focus 50104" : "attack 50103 NearDps"));
+    }
+}
+
+// A charmed group member fights the party as a hostile, but every order at it is refused ("a bot or a member of the
+// group"): the run leader never makes a fact of it, so the guard, the focus and the auto-cc never see one.
+static void TestCharmedMemberIsNoRunFact()
+{
+    CHECK(RunFactSkipsMember(true, true));
+    CHECK(!RunFactSkipsMember(true, false));  // a hostile player outside the group is still a fight's
+    CHECK(!RunFactSkipsMember(false, true));  // a creature
+    CHECK(!RunFactSkipsMember(false, false));
+}
+
 // A whelp 60 yd from the main tank (past kGuardYd, inside kRaidBossGuardYd) still goes to an off-tank.
 static void TestRaidBossFarAddGoesToAnOffTank()
 {
@@ -33794,6 +33910,13 @@ int main()
     TestRaidHealerGuardCapsAndRearmsOneAdd();
     TestRaidHealerGuardPrunesMarksWithTheAddAndTheBot();
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
+    TestTotemFocusSkipsTanksAndHealers();
+    TestTotemFocusKeyOffJoinsAll();
+    TestTankHoldFocusUnchanged();
+    TestGuardSkipsTotemWithKey();
+    TestGuardSkipsAuraGatedShade();
+    TestTotemFocusBeatsGuard();
+    TestCharmedMemberIsNoRunFact();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();
