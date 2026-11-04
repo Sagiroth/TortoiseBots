@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.17.0 (2026-11-04)
+
+### Groups & Dungeons
+- A tank knocked onto a broken patch of floor during a dungeon run now hops back instead of pausing the run. [#1516](https://github.com/Sagiroth/TortoiseBots/pull/1516)
+
+### Followers & Companions
+- Bots keep following you normally after a tram or boat ride instead of stopping and snapping to a spot behind you. [#1515](https://github.com/Sagiroth/TortoiseBots/pull/1515)
+
+### Quests & Levelling
+- When two quest rewards both look like upgrades, bots now take the one that suits them best. [#1515](https://github.com/Sagiroth/TortoiseBots/pull/1515)
+
+### Gear & Loot
+- Healers now pick gear for their healing stats instead of stacking Stamina. [#1517](https://github.com/Sagiroth/TortoiseBots/pull/1517)
+- Damage warriors stop collecting tank gear, and crit and hit now count for more. [#1517](https://github.com/Sagiroth/TortoiseBots/pull/1517)
+- Enhancement shamans no longer treat attack power as far more valuable than Strength. [#1517](https://github.com/Sagiroth/TortoiseBots/pull/1517)
+
+---
+
 ## v1.16.0 (2026-11-04)
 
 ### Raids & Dungeons
