@@ -3497,14 +3497,26 @@ inline void ClearFightProgress(Run& r)
 inline void DropFocus(Run& r)
 {
     // Only the focused unit's own skull comes off. A totem focus sends the DPS by guid and moves no mark
-    // (IssueKillFirstFocus, FocusMovesSkull): its skull is another unit's (the boss), which stays; its record does too,
-    // for the run's own end (ClearRunCcIcons).
+    // (IssueKillFirstFocus, FocusMovesSkull): its skull is another unit's (the boss), which stays while the fight goes
+    // on; its record does too.
     if (r.focusGuid != 0 && r.focusIconGuid == r.focusGuid)
     {
         r.focusIconClear = r.focusIconGuid;
         r.focusIconGuid = 0;
     }
     r.focusGuid = 0;
+}
+
+// The fight is over: the run takes off any skull it still records, even one that was no longer the focus (a totem focus
+// moves no mark, so its record can be the boss's). Left alone it stayed on the unit until the run's own end, across
+// every fight after. Called after DropFocus, so the focus' own skull is already off; the clear goes the same way
+// (Run::focusIconClear, EndRunIcon).
+inline void DropStaleFocusIcon(Run& r)
+{
+    if (r.focusIconGuid == 0)
+        return;
+    r.focusIconClear = r.focusIconGuid;
+    r.focusIconGuid = 0;
 }
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
@@ -21334,6 +21346,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.eatWaitMs = 0;
         r.pullGuid = 0;
         DropFocus(r);
+        DropStaleFocusIcon(r);
         r.focusRefused.clear();
         r.focusUnstayed = false;
         r.guardMs = 0;

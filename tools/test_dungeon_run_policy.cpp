@@ -26791,6 +26791,36 @@ static void TestTotemFocusYieldsToTheRetreat()
     CHECK(Tick(q, g) == "focus 501");
 }
 
+// L2: a totem focus leaves the skull on the boss, and the fight's end takes that skull off too: no run skull outlives
+// the fight it was placed in.
+static void TestStaleFocusSkullComesOffWhenTheFightEnds()
+{
+    DungeonPlan plan;
+    plan.steps = {ZfPack()};
+    plan.killFirst = {5650, 15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 5648, 10)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.killFirst = {Engaged(Unit(30, 5650, 8))};
+    CHECK(Tick(r, f) == "focus 30");
+    CHECK(r.focusIconGuid == 30);
+    // The boss's totem is focused by guid: the recorded skull stays on the boss.
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.engaged = true;
+    f.totemFocus = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    CHECK(r.focusGuid == 501 && r.focusIconGuid == 30);
+    // The fight ends: the boss's skull comes off with it, though it was not the focus.
+    f.anyInCombat = false;
+    f.killFirst.clear();
+    Tick(r, f);
+    CHECK(r.focusGuid == 0 && r.focusIconGuid == 0 && r.focusIconClear == 30);
+}
+
 // T6: the server log's kill_first span lines, exact.
 static void TestKillFirstLogLine()
 {
@@ -34479,6 +34509,7 @@ int main()
     TestTotemFocusLeavesTheSkullOnTheBoss();
     TestTotemFocusMayInterrupt();
     TestTotemFocusYieldsToTheRetreat();
+    TestStaleFocusSkullComesOffWhenTheFightEnds();
     TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();
