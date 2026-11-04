@@ -20,9 +20,9 @@ For creature IDs, boss kill orders, and pooled rares for individual Turtle WoW 5
 ## The Five Golden Rules of Bot Dungeoneering
 
 1. **Pull to Line-of-Sight Corners, Don't Charge:** Use [`.bot action pullback`](commands/party-actions.md#bot-action-pullback) so the tank pulls from range and runs back around a corner to your party. Never fight in open hallways where patrols roam.
-2. **Toggle AoE Off on Crowd Control Packs:** Before pulling packs where you plan to use *Polymorph*, *Sap*, or traps, run [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe). This stops damage-over-time spells and area attacks from breaking crowd control.
+2. **Toggle AoE Off on Crowd Control Packs:** Before pulling packs where you plan to use *Polymorph*, *Sap*, or traps, run [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe). This stops area attacks from breaking crowd control (dots already ticking stay on).
 3. **Always Mark the Primary Target with Skull:** Issue [`.bot action focus skull`](commands/party-actions.md#bot-action-focus-skull). DPS bots treat the Skull mark as their kill priority while respecting CC and peel rules.
-4. **Give the Tank Two Seconds:** Tanks apply threat abilities like *Sunder Armor* or *Torment* based on lowest personal threat. Give them 2–3 seconds to establish initial aggro before opening burst damage.
+4. **Give the Tank Two Seconds:** Tanks pick targets by lowest personal threat and open with threat abilities like *Sunder Armor* or *Torment*. Give them 2–3 seconds to establish initial aggro before opening burst damage.
 5. **Keep Summon Ready:** If a bot gets stuck on complex instance terrain, stairs, or elevators, use [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) to snap them to your location out of combat.
 
 ## Pulling Mechanics & Line-of-Sight (LoS)
@@ -141,22 +141,21 @@ Bots do not jump autonomously inside dungeons or raids (the chase jump, follow j
 ## Dungeon Loot & Supplies
 
 ### Loot Rolling Rules
-
 - Your own alts and pool bots in your group take part in standard party loot rolls (`Need`, `Greed`, `Pass`). Hired companions do not: by default they never loot and always pass ([`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) = `1` changes that).
-- **Never Need Against a Player:** Genuine upgrades are Needed regardless of settings; both cases still wait for humans and step down to Greed/Pass if a human Needs. Bots hold their vote to give human players the full window, then vote once all humans have voted.
+- **Need what you can use:** Bots Need genuine upgrades. Off-spec pieces drop to Greed, and bots with loot off (hired companions by default) always pass.
+- **Let humans vote first:** Near real players, pool bots and your alts hold their vote to give humans the full window, then vote once all humans have voted. If a human Needs, an automatic Need steps down to Greed (a forced `keep need` / `roll need` order is never stepped down). Hired companions grouped with you vote at once.
 - **Empty Slot Filler:** When [`AiPlayerbot.RollBadItemsWithPlayer`](../server/settings/party.md#aiplayerbotrollbaditemswithplayer) is enabled, bots also roll Need on items that fill empty gear slots.
 - **Whisper Overrides:** You can instruct a bot directly: whisper `/w <BotName> keep need [item]` before a roll or `/w <BotName> roll need [item]` while the roll is open. Whisper `/w <BotName> roll feedback` to have the bot report when it steps down. See [Whisper Commands](commands/whispers.md#inventory-items--banking).
 
 ### Reagents and Food Sharing
-
-- Open trade with Mage or Warlock bots out of combat (`/w <Name> trade`). They automatically place conjured food, water, or healthstones into the trade window.
+- Open trade with Mage or Warlock bots (`/w <Name> trade`). They automatically place conjured food, water, or healthstones into the trade window.
 - To make an owned bot equip an item from its bags, whisper `/w <Name> equip [Item Link]`. See [Whisper Commands](commands/whispers.md#inventory-items--banking).
 
 ## Raid Tactics & Boss Mechanics
 
 Entering a raid map automatically activates the dungeon transition engine, enabling raid strategies for Molten Core, Onyxia's Lair, Blackwing Lair, Naxxramas, Zul'Gurub, Ruins of Ahn'Qiraj, and Temple of Ahn'Qiraj.
 
-Bots switch these strategies on by themselves when they enter the raid, also when they are summoned straight into a fight. A bot that was already online before an update may need a relog to pick up new raid strategies.
+Bots switch these strategies on by themselves when they enter the raid, also when they are summoned straight into a fight.
 
 ### Universal Raid Reactions
 
@@ -165,7 +164,7 @@ Bots switch these strategies on by themselves when they enter the raid, also whe
 - **Living Bomb Spacing:** During the Baron Geddon fight, any bot standing within 10 yards of a Living Bomb carrier steps away to avoid the explosion.
 - **Hazard Evasion:** Bots proactively step out of damaging ground effects, void zones, and trigger traps ([`AiPlayerbot.HazardEvasionDistance`](../server/settings/dungeons-raids.md#aiplayerbothazardevasiondistance)).
 - **Living Poison Avoidance:** In Naxxramas, bots detect drifting Living Poison, step out inside 10 yd, and keep about 11 yd clear ([`AiPlayerbot.AvoidCreatureAuras`](../server/settings/dungeons-raids.md#aiplayerbotavoidcreatureauras)). Tanks step out as well because the explosion is fatal.
-- **Dragon Positioning:** Non-tanks automatically flank dragons to avoid breath and tail sweep cones. Tanks can be ordered to turn dragons with [`.bot action raid tankface`](commands/party-actions.md#bot-action-raid-tankface).
+- **Dragon Positioning:** On the scripted dragons (Onyxia, Ebonroc, Flamegor, Firemaw, Nefarian, Vaelastrasz, Solnius), non-tanks step out of breath and tail sweep cones. Tanks can be ordered to turn dragons with [`.bot action raid tankface`](commands/party-actions.md#bot-action-raid-tankface) (the victim's tank holds while the rest flank).
 - **Tank Assignment & Raid Assistant:** Main tanks and assist tanks coordinate boss and add assignments. Promoting an assist tank to **Raid Assistant** in the party frames assigns them secondary tank roles (such as holding Razorgore or Golemagg adds).
 - **Ranged Spread:** Stacked ranged spellcasters step out to 10-12 yd to minimize chain damage. Wider spacing is opt-in only via `.bot behavior party spread on` (5 yd ranged / 2 yd melee defaults, tanks excluded).
 - **Dispel Coordination:** Decursers and dispellers coordinate target claims to avoid casting multiple dispels on the same friendly target simultaneously.
@@ -179,10 +178,10 @@ Bots switch these strategies on by themselves when they enter the raid, also whe
   - *Golemagg:* Melee back off at 20 Magma Splash stacks; assist tanks hold Core Ragers at fixed camps (30 yd Trust separation); healers work the camp midpoint; DPS leave ragers alone while Golemagg lives (burn below 10%).
 - **Onyxia:** In Phase 2, bots switch to ranged attacks and spread out. Bots take cover in safe zones during *Deep Breath*. With [`AiPlayerbot.OnyxiaWhelpsAndEggs`](../server/settings/dungeons-raids.md#aiplayerbotonyxiawhelpsandeggs) enabled, ranged DPS clear hatched whelps while avoiding unbroken egg clusters.
 - **Blackwing Lair:**
-  - *Razorgore:* Bots assist the orb controller and intercept add waves without attacking the controller. Non-victims clear the frontal cone; assist tank holds the boss while eggs live.
-  - *Vaelastrasz:* Tanks face away; Burning Adrenaline carriers flee from clean bots (tank holds).
-  - *Broodlord & Nefarian:* Tanks face away; rogues disarm suppression devices in both combat and non-combat states. Mages use *Ice Block* to survive Nefarian Wild Magic. Bots whisper a warning if they lack the Onyxia Scale Cloak for Shadow Flame.
-  - *Chromaggus:* Bots carrying Hourglass Sand (item 19183) use it to cleanse Bronze Affliction; bots step out of breath cones.
+- **Razorgore:** While nobody controls him with the orb, non-victims inside his frontal cone step behind him (ranged hold further out against War Stomp). An assist tank holds him while eggs live; nobody touches the orb, that is your job. A controlled Razorgore (orb aura) is left alone. Rogues disarm suppression devices in and out of combat.
+- **Vaelastrasz:** Burning Adrenaline carriers run clear of clean bots (the tank holds). Mages use *Ice Block* to survive Nefarian Wild Magic. Bots whisper a warning if they lack the Onyxia Scale Cloak for Shadow Flame.
+- **Broodlord & Nefarian:** Order tanks to face them away with `.bot action raid tankface`. (Bots only step out of dragon breath on their own; the victim's tank holds position.)
+- **Chromaggus:** Bots carrying Hourglass Sand (item 19183) use it to cleanse Bronze Affliction. Dragons in general are flanked (see above); no separate Chromaggus breath rule is scripted.
 - **Naxxramas:**
   - *Anub'Rekhan:* Non-tanks collapse to the room center during Locust Swarm; non-tanks burn Crypt Guards first when no swarm is up; tank kite ring needs live waypoints (no bot kite tactic).
   - *Gluth:* Tanks rotate taunts at 5 Mortal Wound stacks; non-tank DPS execute sub-10% chow while tanks hold Gluth (kiting/slowing is the player's job; no bot kite ring).
