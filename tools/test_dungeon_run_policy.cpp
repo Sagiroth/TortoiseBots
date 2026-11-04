@@ -28731,6 +28731,101 @@ static void TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt()
     CHECK(!Has(r.note, "not reachable from this floor") && Has(r.note, "move it off"));
 }
 
+// The hop caps spent: a pack the deferral fits (Windhorn Canyon r26's terrace reads as an island too, a
+// partial path ending at the lead bot) is deferred as it would have been, not paused on the island.
+static void TestRefusedFiringPositionFromAnIslandPastTheCapsDefers()
+{
+    DungeonPlan plan = FiringPlan();
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(PullMayBeDeferred(r));
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    r.islandEscapes = kIslandEscapes;
+    r.stepEscapes = kStepEscapes;
+    Facts island = f;
+    island.leadIsland = true;
+    CHECK(!ApproachStandFound(r, island, false, 0, 0, 0));
+    CHECK(r.state == State::Running && r.step == 1 && !r.islandSuspect);
+    CHECK(r.deferredPulls == std::vector<std::size_t>{0} && r.notCleared.count(0));
+    CHECK(r.note.find("pack at 40.0 0.0 0.0 deferred: not reachable from this floor") == 0);
+    CHECK(Has(r.note, "navmesh island at 0.0 0.0 0.0") && !Has(r.note, "no safe stand"));
+    CHECK(r.refusedPullStandStep == static_cast<std::size_t>(-1));
+}
+
+// Two hops answered "no-spot" spend the caps with the pack in sight and the lead bot still on the island:
+// the next stand answer defers the pack (no island pause for a deferrable one).
+static void TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer()
+{
+    DungeonPlan plan = FiringPlan();
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    int noSpots = 0;
+    for (int i = 0; i < 40 && r.state == State::Running && r.deferredPulls.empty(); ++i)
+    {
+        std::string const o = Tick(r, f);
+        if (r.approachStandWanted)
+        {
+            Facts island = f;
+            island.leadIsland = true;
+            ApproachStandFound(r, island, false, 0, 0, 0);
+        }
+        if (o.rfind("escape from 0.0 0.0 0.0", 0) == 0)
+        {
+            ++noSpots;
+            OrderRefused(r, o, "no-spot: no spot within 10 yd in the lead bot's sight has a floor, a clear line and a way on");
+        }
+        else if (o == "pullback 7")
+            OrderRefused(r, o, kFiringRefusal);
+    }
+    CHECK(noSpots == static_cast<int>(kIslandEscapes));
+    CHECK(r.state == State::Running && r.step == 1 && !r.islandSuspect);
+    CHECK(r.deferredPulls == std::vector<std::size_t>{0});
+    CHECK(r.note.find("pack at 40.0 0.0 0.0 deferred") == 0);
+}
+
+// "wait" answers refund the hop's caps: the rounds bound the loop, so a step cannot spin to its 300 s ceiling.
+// Past them a pack that cannot be deferred pauses and the note names the island.
+static void TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    int hops = 0;
+    for (int i = 0; i < 60 && r.state == State::Running; ++i)
+    {
+        std::string const o = Tick(r, f);
+        if (r.approachStandWanted)
+        {
+            Facts island = f;
+            island.leadIsland = true;
+            ApproachStandFound(r, island, false, 0, 0, 0);
+        }
+        if (o.rfind("escape from 0.0 0.0 0.0", 0) == 0)
+        {
+            ++hops;
+            OrderRefused(r, o, "wait: a party bot is in combat");
+        }
+        else if (o == "pullback 7")
+            OrderRefused(r, o, kFiringRefusal);
+    }
+    CHECK(r.state == State::Paused);
+    CHECK(hops == static_cast<int>(kIslandRounds));
+    CHECK(Has(r.note, "navmesh island at 0.0 0.0 0.0"));
+    CHECK(!Has(r.note, "not reachable from this floor") && Has(r.note, "move it off"));
+}
+
 // "No firing stand found" had set the unit's tries to the cap: the island branch clears the stand state,
 // so the pull reads a stand afresh off the island instead of a "firing stands used up" pause.
 static void TestRefusedFiringPositionFromAnIslandResetsTheShotStand()
@@ -33510,6 +33605,9 @@ int main()
     TestRefusedFiringPositionFromAnIslandHopsOffFirst();
     TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses();
     TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt();
+    TestRefusedFiringPositionFromAnIslandPastTheCapsDefers();
+    TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer();
+    TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded();
     TestRefusedFiringPositionFromAnIslandResetsTheShotStand();
     TestMoveRefusedTooFarGoesInLegsAlongThePath();
     TestTooFarLegsWalkALongWindingWay();

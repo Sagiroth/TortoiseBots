@@ -13094,14 +13094,17 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             ApproachStandSearch(lead, slot.run, *step, facts.team, sx, sy, sz);
         // No stand found: the lead bot's own way to the step point goes with the answer, so a lead bot on a
         // navmesh island (every candidate NOPATH from its start polygon) is hopped off instead of paused.
-        TortoiseBots::DungeonRun::Facts answer = facts;
+        TortoiseBots::DungeonRun::Facts answer;
+        TortoiseBots::DungeonRun::Facts const* told = &facts;
         if (!found && step && lead->IsAlive() && lead->IsInWorld())
         {
+            answer = facts;
             PathFinder path(lead);
             path.calculate(step->x, step->y, step->z, false);
             NoteLeadWay(path, lead, step->x, step->y, step->z, answer);
+            told = &answer;
         }
-        TortoiseBots::DungeonRun::ApproachStandFound(slot.run, answer, found, sx, sy, sz);
+        TortoiseBots::DungeonRun::ApproachStandFound(slot.run, *told, found, sx, sy, sz);
     }
     // A pull deferred, or skipped on its retry, as not reachable from this floor
     // (DungeonRun::DeferUnreachablePack, in the tick or in the stand's answer above): logged once.

@@ -501,6 +501,8 @@ constexpr float kGoodSpotProbeYd = 40.0f;         // the last good spot this clo
 constexpr std::uint32_t kWalkBackResends = 6;     // a walk-back point sent this often from one spot (kArriveYd) is passed
 constexpr std::uint32_t kStepEscapes = 4;         // hops off an island one step may send in all (a good read in
                                                   // between gives kIslandEscapes again; the step ceiling is 300 s)
+constexpr std::uint32_t kIslandRounds = 3;        // island hop rounds a step's stand answer may start: a "wait"
+                                                  // answer refunds the hop caps, so the rounds bound that loop
 constexpr std::uint32_t kRegroupReviveMs = 240000; // after a resume: the dead must be up within this
 constexpr std::uint32_t kRegroupGatherMs = 60000;  // ... and the party gathered within this after that
 constexpr std::uint32_t kFightCapMs = 180000;
@@ -2767,6 +2769,9 @@ struct Run
     bool noSpotKnown = false; // ... or the forward run's move check's (escapeFromMove)
     float noSpotX = 0.0f, noSpotY = 0.0f, noSpotZ = 0.0f;
     std::uint32_t stepEscapes = 0; // hops off an island this step (kStepEscapes)
+    // Island hop rounds this step: one stand answer on an island and the hop it starts (kIslandRounds). A "wait"
+    // answer gives the hop's caps back, so the rounds are what bounds that loop.
+    std::uint32_t islandRounds = 0;
     std::uint32_t islandRefusals = 0; // path refusals taken as the island's second sign this step (RefusedFromIsland)
     // The stranded lead bot's teleport (StrandedLead, owner decision 2026-10-23): due (the next walk-back tick out
     // of combat sends it), the plan step whose point it goes to, where the lead bot stood at the last send (read
@@ -3526,6 +3531,7 @@ inline void ResetStep(Run& r)
     r.approachBestYd = 0.0f;
     r.hopWalk = false;
     r.hopWaiveUnits.clear();
+    r.islandRounds = 0; // a resume (ResetStep) hops the lead bot off an island again, as the caps do
     r.detour = false;
     r.walkTries = 0;
     r.walkStillMs = 0;
@@ -11187,19 +11193,41 @@ inline bool ApproachStandFound(Run& r, const Facts& f, bool found, float x, floa
         (r.approachBestYd > 0.0f ? ", the approach hops got no nearer than " + Num(r.approachBestYd) + " yd" : "") + ")";
     // None found and the lead bot's own spot is a navmesh island (the glue's reading: every ring candidate came back
     // NOPATH from its start polygon): not the pack's floor, so no pause: hop it off first, then the pull reads its
-    // stand afresh from the mesh the hop ends on. Past the hops' caps the hop pauses and names the island
-    // (IslandEscape), never this floor.
+    // stand afresh from the mesh the hop ends on. LeadOnIsland also reads a partial path that ends at the lead bot
+    // (the terrace a deferral is for), and a "wait" answer gives the hop's caps back, so past the caps or the rounds
+    // a pack the deferral fits is deferred as it would have been; only a pack that cannot be is left to the hop's
+    // own pause, which names the island.
     if (none && f.leadIsland)
     {
+        std::string const island = "the lead bot stands on a navmesh island at " + Num(f.leadX) + " " + Num(f.leadY) +
+            " " + Num(f.leadZ) + " (no path from it to any stand near " + pack + ")";
+        std::string const why = (r.approachStandWhy.empty() ? std::string() : r.approachStandWhy + "; ") + island;
+        // The search is spent whichever way this goes (IslandEscape pauses on its own after a hop's caps).
         r.approachStand = 0;
         r.approachStandStep = static_cast<std::size_t>(-1);
         r.refusedPullStandStep = static_cast<std::size_t>(-1);
         r.approachStandWhy.clear();
         ResetShotStand(r);          // "no firing stand found" set the unit's tries to the cap
+        bool const hopsSpent = r.islandEscapes >= kIslandEscapes || r.stepEscapes >= kStepEscapes;
+        bool const roundsSpent = r.islandRounds >= kIslandRounds;
+        if (hopsSpent || roundsSpent)
+        {
+            if (DeferUnreachablePack(r, *s, why))
+                return false;
+            // Caps spent: the hop itself pauses and names the island. Rounds spent while the caps still allow a hop
+            // ("wait" answers refunded them): no hop left that would not loop, so the pause goes here.
+            if (!hopsSpent)
+            {
+                Pause(r, island + ": the hop off it was tried " + std::to_string(kIslandRounds) +
+                    " rounds this step, each waited out (a fight, or the lead bot on the move); move it off, then " +
+                    ".bot run resume");
+                return false;
+            }
+        }
+        ++r.islandRounds;
         r.islandSuspect = true;     // FightStep's check hops it off (IslandConfirmed: islandSuspect is the second sign)
         EnterPhase(r, Phase::Begin);
-        r.note = "the lead bot stands on a navmesh island at " + Num(f.leadX) + " " + Num(f.leadY) + " " +
-            Num(f.leadZ) + " (no path from it to any stand near " + pack + "): hopped off it first";
+        r.note = island + ": hopped off it first";
         return false;
     }
     // A pull that may be deferred (DeferUnreachablePack): no hops again after a resume's
