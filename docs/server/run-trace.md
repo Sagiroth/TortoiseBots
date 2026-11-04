@@ -25,7 +25,11 @@ It is **off by default** (`AiPlayerbot.RunTrace.Enabled = 0`) and costs almost n
 .bot trace status
 ```
 
-See [`.bot trace`](../play/commands/bot-panel.md#bot-trace) for who may run them. `party` (the default) follows the bots of your party; for a [remote commander](../play/commands/commander.md) with a standing binding it follows the commanded group. `bot <Name>` follows one bot. One run at a time. A run also ends by itself when the size cap is reached (`size_cap`), when the group has no bots for 10 s (`scope_lost`), when the config switch or the bot AI is turned off (`disabled`; a `start` with either off is refused), or at server shutdown (`shutdown`).
+See [`.bot trace`](../play/commands/bot-panel.md#bot-trace) for who may run them. One run at a time.
++
+- `party` (the default) follows the bots of your party. With a standing [remote commander](../play/commands/commander.md) binding it follows the commanded group.
+- `bot <Name>` follows one bot.
+- A run also ends by itself: size cap reached (`size_cap`), no bots for 10 s (`scope_lost`), config switch or bot AI off (`disabled`; a `start` with either off is refused), server shutdown (`shutdown`).
 
 The scope is re-read every frame and permission is re-checked each time: a bot is recorded only while the player who started the run is online and is a GameMaster, controls that bot, or is the bound remote commander of its group, so a stranger's bots that join the party later are left out. If the starter logs out, the run ends once the group has no bots for 10 s (`scope_lost`).
 
@@ -60,7 +64,21 @@ Every line is a flat JSON object with the same five leading fields: `"v":1` (sch
 | `action` | an action the engine took out of its queue | `g`, `name`, `res`, `rel`, and when set `src_trigger`, `n`, `tl`. |
 | `end` | once, last | `reason`, `counters`. |
 
-**Bot sample** (in `frame.bots`): `g`, `al` (alive), `cb` (in combat), `st` (engine: `c` combat, `n` non-combat, `d` dead, `r` reaction), `hp`, `mhp`, `pw`, `mpw`, `pt` (power type: 0 mana, 1 rage, 2 focus, 3 energy), `x`, `y`, `z`, `mv` (a movement generator is active), and when set `tg` (target), `fa` (facing angle in degrees, 0-180, only with a hostile target), `cs` (spell id being cast), `fr` (spell id of a harmful ground or area aura it stands in), `act` (last executed action), `strat` (the engine's strategies, only in the frame where they changed).
+**Bot sample** (in `frame.bots`). Always present:
++
+| Field | Meaning |
+| :--- | :--- |
+| `g` | bot guid |
+| `al` | alive |
+| `cb` | in combat |
+| `st` | engine state: `c` combat, `n` non-combat, `d` dead, `r` reaction |
+| `hp`, `mhp` | health, max health |
+| `pw`, `mpw` | power, max power |
+| `pt` | power type: 0 mana, 1 rage, 2 focus, 3 energy |
+| `x`, `y`, `z` | position |
+| `mv` | a movement generator is active |
++
+Only when set: `tg` (target), `fa` (facing angle in degrees, 0-180, only with a hostile target), `cs` (spell id being cast), `fr` (spell id of a harmful ground or area aura it stands in), `act` (last executed action), `strat` (the engine's strategies, only in the frame where they changed).
 
 **Hostile sample** (in `frame.mobs`): `g`, `hp` (% of max), `x`, `y`, `z`, `cb`, and when set `tg` (what it targets), `cs`, `ev` (evading), `cc` (stunned, confused, fleeing or rooted), `thr` (its threat list, top three as guid plus share of the top entry). Hostiles are what the bots fight, target or are attacked by (deduplicated across the bots, at most 24 per frame); a unit no bot sees does not appear.
 
@@ -86,11 +104,21 @@ Every line is a flat JSON object with the same five leading fields: `"v":1` (sch
  "verdict":"pass","scored_unix":1760000700,"scorer":"trace_score.py v1","trace_complete":true,"bad_lines":0}
 ```
 
-`status` is `running`, `complete`, `aborted` (a line could not be written), `failed` (the trace file could not be flushed or closed at the end; `error` says why) or `incomplete`. A trace interrupted by a shutdown or a crash is marked `incomplete` at the next server start: a summary still `running` then gets `status: incomplete` and keeps the counters it had; its trace file is left as it is (it usually has no `end` record). A failure to write the summary itself is reported by `.bot trace status` and in the server log. The first block is written by the server; `oracles`, `verdict`, `scored_unix`, `scorer`, `trace_complete` and `bad_lines` by the scorer. An oracle `verdict` is `pass`, `fail` or `na` (the trace has nothing to judge, e.g. no healer).
+`status` values:
++
+- `running`, `complete`, `aborted` (a line could not be written), `failed` (the trace file could not be flushed or closed; `error` says why), `incomplete`.
+- A trace cut off by shutdown or crash is marked `incomplete` at the next server start. A summary still `running` gets `status: incomplete` and keeps its counters. Its trace file is left as is (usually no `end` record).
+- A failure to write the summary itself is reported by `.bot trace status` and in the server log.
+- The server writes the first block; the scorer writes `oracles`, `verdict`, `scored_unix`, `scorer`, `trace_complete`, `bad_lines`.
+- An oracle `verdict` is `pass`, `fail` or `na` (nothing to judge, e.g. no healer).
 
 ### Summary fields for the dashboard
 
-The server also writes the fields the dashboard's Dungeon runs tab reads. They come from events the recorder already sees; nothing is read from the database, nothing scans the world. The `running` summary written at start carries only the live fields (`mode`, `build`, `driver`, `started`, `plan`, `dungeon`, `furthest`, `wipes`, `deaths`, `party`): no `outcome`, `bosses` or `clear_s` until the run ends, so a live run is never read as a failure. Old summaries without any of these still parse; the dashboard shows their runs with outcome `unknown`.
+The server also writes the fields the dashboard's Dungeon runs tab reads:
++
+- They come from events the recorder already sees. Nothing is read from the database, nothing scans the world.
+- The `running` summary at start carries only live fields (`mode`, `build`, `driver`, `started`, `plan`, `dungeon`, `furthest`, `wipes`, `deaths`, `party`). No `outcome`, `bosses` or `clear_s` until the run ends, so a live run is never read as a failure.
+- Old summaries without any of these still parse; the dashboard shows their runs as `unknown`.
 
 | Field | Content |
 | :--- | :--- |
@@ -108,9 +136,21 @@ The server also writes the fields the dashboard's Dungeon runs tab reads. They c
 | `deaths` | One entry per death: each time a traced bot goes from alive to dead, with position, bot, role, and the run leader's step. |
 | `party` | `[{"class", "role", "level}]` of the traced bots, as first seen. |
 
-**Boss list.** The run leader's own plan when it runs; otherwise the one plan on the party's map if there is exactly one. With several plans on the map and none chosen there is no list: the bosses of all of them are still watched, and the bosses met are reported. A boss counts as killed when a unit the bots saw alive is found dead on the map of a bot in its instance. A boss killed before the trace started was never seen alive, so such a run cannot be `cleared`: start the trace before the first pull.
+**Boss list.**
++
+- Run leader running: its own plan. Otherwise the one plan on the party's map, if exactly one.
+- Several plans and none chosen: no list. The bosses of all of them are still watched, and the bosses met are reported.
+- A boss counts as killed when a unit the bots saw alive is found dead on the map of a bot in its instance.
+- A boss killed before the trace started was never seen alive, so such a run cannot be `cleared`: start the trace before the first pull.
 
-**Outcome rule** (first match wins). `cleared`: every boss on the plan's list was killed (never without a list). `wiped_out`: not cleared and the run ended while the whole party was dead. `stopped`: there is no list, so nothing says how far it got; or there is a list, no boss was killed and the run was stopped by hand. `partial`: a list and at least one boss killed, not all. `abandoned`: a list, no boss killed, and the run ended by itself. A trace that never stood on an instance map and met no boss carries no `outcome`, `bosses` or `dungeon`, so the dashboard ignores it. At most 200 wipes and 200 deaths are kept.
+**Outcome rule** (first match wins).
++
+- `cleared`: every boss on the plan's list was killed (never without a list).
+- `wiped_out`: not cleared and the run ended while the whole party was dead.
+- `stopped`: no list, so nothing says how far it got. Or a list with no boss killed, stopped by hand.
+- `partial`: a list and at least one boss killed, not all.
+- `abandoned`: a list, no boss killed, and the run ended by itself.
+- A trace that never stood on an instance map and met no boss carries no `outcome`, `bosses` or `dungeon`: the dashboard ignores it. At most 200 wipes and 200 deaths are kept.
 
 ## Scoring
 
@@ -138,7 +178,9 @@ Ten oracles. The facing, self-interrupt, stuck and in-fire checks look for probl
 ## Cost and limits
 
 - **Off, or no run active:** one atomic check per world tick, and one walk over an empty listener list per action the engine takes out of its queue. Nothing else runs.
-- **During a run:** each interval, per scoped bot, member reads, one read of its own aura list, its cached attacker lists, and a by-guid lookup of each hostile on the bot's own map. No world scan, no database access. The JSON lines are built on the world thread; every disk write is on another thread, through a queue of at most 8192 lines / 4 MiB that drops (and counts) lines instead of blocking. The world thread never waits on the disk. The recorder touches the disk only at `.bot trace start` (creating the directory and opening the file) and once at server start (marking interrupted runs `incomplete`).
+- **During a run:** each interval, per scoped bot: member reads, one read of its own aura list, its cached attacker lists, and a by-guid lookup of each hostile on the bot's own map. No world scan, no database access.
+  - JSON lines are built on the world thread. Disk writes run on another thread through a queue of at most 8192 lines / 4 MiB. A line that does not fit is dropped and counted, never waited on.
+  - The recorder touches the disk only at `.bot trace start` (creating the directory and opening the file) and once at server start (marking interrupted runs `incomplete`).
 - **Size:** roughly 200 bytes per bot and 150 per hostile in each frame, plus the action records; five bots in a fight at the default 500 ms is about 0.3-1 MiB a minute (estimate, not measured). `AiPlayerbot.RunTrace.MaxFileMb` ends the run with an intact `end` record.
 - Hostiles are limited to those the bots already track as attackers or targets, not everything in sight; a trace shows who fought whom, not the whole room.
 
