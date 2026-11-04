@@ -11457,6 +11457,21 @@ inline bool DryPathUsable(bool reaches, float dryYd, float coreYd, float straigh
     return reaches && dryYd <= kDryDetourFactor * std::max({coreYd, straightYd, kArriveYd});
 }
 
+// The core's straight swim chord (PATHFIND_UNDERWATER, 0x81 with PATHFIND_NORMAL) is no navmesh route: the glue's
+// DirectNavPath treats it as a fallback, which refuses it. Only for a dry target: a target in deep water is an
+// intended swim, and the chord is then its whole way (a straggler pull in a pool, a plan point in water).
+inline bool DryChordFallback(bool dryWalk, bool underwater, bool dryTarget)
+{
+    return dryWalk && underwater && dryTarget;
+}
+
+// A firing-stand candidate in deep water is refused only while the pack it shoots at stands on dry ground: a pack
+// in deep water keeps a stand in that water, as before.
+inline bool WetStandRefused(bool dryWalk, bool dryPack, bool wetCandidate)
+{
+    return dryWalk && dryPack && wetCandidate;
+}
+
 // The walk's own order, in Phase::Walk, is the one a dry leg may replace. Not a `direct` move, not a gather,
 // regroup or hold-in-place order (those never equal the walk's own point), and at most kMaxDryLegs a walk.
 inline bool DryWalkWanted(const Run& r, const Facts& f, const std::string& order)
@@ -11577,6 +11592,16 @@ inline std::string TooFarLegRepeatNote(const Run& r, float lx, float ly, float l
             Num(r.legEnds[3 * k + 2]) + ": the lead bot made no way toward it)";
     return " (the next leg of the way, " + Num(lx) + " " + Num(ly) + " " + Num(lz) + ", ends where the last one did, " +
         Num(r.legX) + " " + Num(r.legY) + " " + Num(r.legZ) + ": the lead bot made no way toward it)";
+}
+
+// The dry walk's intercept as a whole: the walk's own order (`DryWalkWanted`, which the glue asks first so the
+// path query runs only then), a dry way with a candidate whose own core way is dry, and a leg this walk has not
+// sent yet. True: the glue issues `move` to `out` instead of the walk's order.
+template <class CoreWetTo>
+inline bool DryWalkOrder(const Run& r, const Facts& f, const std::string& order,
+    const std::vector<PathPoint>& dry, CoreWetTo&& wetTo, PathPoint& out)
+{
+    return DryWalkWanted(r, f, order) && DryLegPick(dry, wetTo, out) && !TooFarLegRepeats(r, out.x, out.y, out.z);
 }
 
 // The glue's leg for a move refused too-far (TooFarLegWanted) went out (`accepted`) as

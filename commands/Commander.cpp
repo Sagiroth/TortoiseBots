@@ -6981,6 +6981,14 @@ static bool CorePathSwims(Player* lead, float x, float y, float z, float* coreYd
     }) >= 0;
 }
 
+// Whether (x,y,z) is dry ground for the dry walk: deep water only, wading is fine (the dry target gate).
+static bool DryAt(Player* lead, float x, float y, float z)
+{
+    Map* const map = lead ? lead->GetMap() : nullptr;
+    TerrainInfo const* const terrain = map ? map->GetTerrain() : nullptr;
+    return terrain && !terrain->IsSwimmable(x, y, z);
+}
+
 // The gate every dry pick shares: the core path swims after leaving the lead bot's water, the point itself is
 // dry (deep water only; wading is fine), and a ground-only way reaches it within kDryDetourFactor times the
 // way the run would walk. `dry` gets that way. Any failure keeps the old behaviour byte for byte.
@@ -6990,13 +6998,10 @@ static bool DryWayFor(Player* lead, float x, float y, float z, std::vector<Torto
     dry.clear();
     if (!lead || !lead->IsInWorld() || !lead->GetMap())
         return false;
-    TerrainInfo const* const terrain = lead->GetMap()->GetTerrain();
-    if (!terrain)
-        return false;
     float coreYd = 0.0f;
     if (!CorePathSwims(lead, x, y, z, &coreYd))
         return false;
-    if (terrain->IsSwimmable(x, y, z))
+    if (!DryAt(lead, x, y, z))
         return false;
     float dryYd = 0.0f;
     if (!DryWayPath(lead, x, y, z, dry, dryYd))
@@ -7076,8 +7081,9 @@ bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& o
 
 // The lead bot's navmesh path to (x,y,z) reaches it (DungeonRun::PathEndsShort false) and is no detour
 // (DungeonRun::PathFitsStraight); `path` gets its points. The fight forward's and the replay shortcut's read.
-// With the dry walk on, the straight swim chord (PATHFIND_UNDERWATER) is a fallback too: it is no navmesh
-// route (vmap models alone are checked), so the walk back replays the plan's points instead of the chord.
+// With the dry walk on, the straight swim chord (PATHFIND_UNDERWATER) is a fallback too when the point is dry:
+// it is no navmesh route (vmap models alone are checked), so the walk back replays the plan's points instead of
+// the chord. A point in deep water is an intended swim and keeps the chord.
 bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<TortoiseBots::DungeonRun::PathPoint>& points,
     bool dryWalk = false)
 {
@@ -7087,7 +7093,8 @@ bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<Tortoise
     path.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(path.getPathType());
     Vector3 const end = path.getActualEndPosition();
-    bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 || (dryWalk && (type & PATHFIND_UNDERWATER) != 0);
+    bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 ||
+        DryChordFallback(dryWalk, (type & PATHFIND_UNDERWATER) != 0, DryAt(lead, x, y, z));
     if (!NavPathReaches((type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0, (type & PATHFIND_SHORTCUT) != 0,
             fallback, end.x, end.y, end.z, x, y, z))
         return false;
@@ -7186,7 +7193,7 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
         targetZ = unit->GetPositionZ();
     }
     std::vector<PathPoint> way;
-    if (!DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk))
+    if (!DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk && DryAt(tank, targetX, targetY, targetZ)))
         return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
     float length = 0.0f;
     for (std::size_t i = 1; i < way.size(); ++i)
@@ -10140,13 +10147,15 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
             c->GetPositionZ() + c->GetCollisionHeight(), true);
     };
     // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule). The dry
-    // walk refuses a wet stand and falls to the next candidate even with the clearance off.
+    // walk refuses a wet stand and falls to the next candidate even with the clearance off, unless the pack it
+    // shoots at stands in water: a stand meant to be in that water stays allowed.
     bool blocked = false;
     ShotStand best;
+    bool const dryPack = !map->GetTerrain()->IsSwimmable(goal.x, goal.y, goal.z);
     ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
-        [&f, clearance, dryWalk = f.dryWalk, map, &seesOther](ShotStand const& candidate)
+        [&f, clearance, dryPack, map, &seesOther](ShotStand const& candidate)
         {
-            if (dryWalk && map->GetTerrain()->IsSwimmable(candidate.x, candidate.y, candidate.z))
+            if (WetStandRefused(f.dryWalk, dryPack, map->GetTerrain()->IsSwimmable(candidate.x, candidate.y, candidate.z)))
                 return false;
             return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers,
                 [&seesOther, &candidate](StandOther const& other) { return seesOther(candidate, other); }) &&
@@ -13318,9 +13327,9 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             if (DryWayFor(lead, run.walkX, run.walkY, run.walkZ, dry))
             {
                 TortoiseBots::DungeonRun::PathPoint leg;
-                if (TortoiseBots::DungeonRun::DryLegPick(dry, [lead](TortoiseBots::DungeonRun::PathPoint const& p)
-                        { return CorePathSwims(lead, p.x, p.y, p.z); }, leg) &&
-                    !TortoiseBots::DungeonRun::TooFarLegRepeats(run, leg.x, leg.y, leg.z))
+                if (TortoiseBots::DungeonRun::DryWalkOrder(run, facts, order, dry,
+                        [lead](TortoiseBots::DungeonRun::PathPoint const& p)
+                        { return !DryAt(lead, p.x, p.y, p.z) || CorePathSwims(lead, p.x, p.y, p.z); }, leg))
                 {
                     dryLeg = true;
                     dryLegX = leg.x;

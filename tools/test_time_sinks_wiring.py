@@ -90,8 +90,8 @@ class TimeSinksWiringTest(unittest.TestCase):
         self.assertIn("f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way, f.dryWalk);", reads)
         direct = body(COMMANDS, "bool DirectNavPath(", "\n}\n")
         # Round 2 (Codex, a4a16e14): a genuine navmesh route only, no SHORTCUT or NOT_USING_PATH fallback; the dry
-        # walk adds the straight swim chord (PATHFIND_UNDERWATER) to the fallbacks.
-        self.assertIn("bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 || (dryWalk && (type & PATHFIND_UNDERWATER) != 0);", direct)
+        # walk adds the straight swim chord (PATHFIND_UNDERWATER) to the fallbacks, for a dry point only.
+        self.assertIn("DryChordFallback(dryWalk, (type & PATHFIND_UNDERWATER) != 0, DryAt(lead, x, y, z))", direct)
         self.assertIn("if (!NavPathReaches((type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0, (type & PATHFIND_SHORTCUT) != 0,\n"
                       "            fallback, end.x, end.y, end.z, x, y, z))", direct)
         # Both users go through it; LegOnPath keeps its own (stricter: no incomplete path at all) test of the same flags.

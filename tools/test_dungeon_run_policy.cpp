@@ -33898,6 +33898,47 @@ static void TestDryLegPickShrinks()
     CHECK(DryLegPick(shortDry, [](const PathPoint&) { return false; }, out) && out.x == 5.0f);
 }
 
+// The intercept's whole rule: a dry way whose 20 yd candidate has a dry core way gives the leg, a candidate
+// whose own way swims is not taken, and a leg this walk already sent is not sent again.
+static void TestDryWalkOrderIssuesTheDryLeg()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 100)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    std::vector<PathPoint> dry = {{0, 0, 0}, {100, 0, 0}};
+    PathPoint leg;
+    CHECK(DryWalkOrder(r, f, walk, dry, [](const PathPoint& p) { return p.x >= 40.0f; }, leg) && leg.x == 20.0f);
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint&) { return true; }, leg));
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint& p) { return p.x >= 40.0f; }, leg));
+    f.dryWalk = false;
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint&) { return false; }, leg));
+}
+
+// A target point in deep water is an intended swim: the core's straight swim chord (0x81) is not a fallback
+// there, so a straggler pull into a pool keeps today's way. Only a dry target's chord is refused.
+static void TestDryChordKeepsIntendedSwims()
+{
+    CHECK(!DryChordFallback(false, true, false)); // key off: the chord as before
+    CHECK(!DryChordFallback(true, true, false));  // a target in deep water: the swim keeps the chord
+    CHECK(DryChordFallback(true, true, true));    // a dry target: the chord is no way
+    CHECK(!DryChordFallback(true, false, true));  // no swim chord at all
+}
+
+// A wet firing-stand candidate is refused only while the pack it shoots at stands on dry ground: a pack in
+// deep water keeps a stand in that water.
+static void TestWetStandOnlyForADryPack()
+{
+    CHECK(!WetStandRefused(false, true, true));  // key off
+    CHECK(WetStandRefused(true, true, true));    // a pack on dry ground: its wet stand is refused
+    CHECK(!WetStandRefused(true, false, true));  // a pack in deep water: its wet stand stays allowed
+    CHECK(!WetStandRefused(true, true, false));  // a dry candidate
+}
+
 // At the dry leg's end the walk sends its own point again (the existing leg rule), and the walk on is
 // intercepted once more by the glue.
 static void TestDryLegWalkedResendsTheWalk()
@@ -33957,6 +33998,9 @@ int main()
     TestDryPathUsable();
     TestDryWalkWanted();
     TestDryLegPickShrinks();
+    TestDryWalkOrderIssuesTheDryLeg();
+    TestDryChordKeepsIntendedSwims();
+    TestWetStandOnlyForADryPack();
     TestDryLegWalkedResendsTheWalk();
     TestFreshWalkResetsDryLegs();
     TestTooFarLegNoteIsUnchanged();

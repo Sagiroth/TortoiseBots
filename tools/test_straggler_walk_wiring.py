@@ -120,7 +120,7 @@ class StragglerLivePathWiring(unittest.TestCase):
         self.assertIn("f.stragglerPathToUnit = run.stragglerAttackPath;", fn)
         self.assertIn("lead->GetMap()->GetUnit(::ObjectGuid(wanted))", fn)
         self.assertIn("targetX = unit->GetPositionX();", fn)
-        self.assertIn("DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk)", fn)
+        self.assertIn("DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk && DryAt(tank, targetX, targetY, targetZ))", fn)
 
     def test_the_policy_waits_at_the_point_and_matches_the_read(self):
         self.assertIn("constexpr float kStragglerPatrolReachYd", POLICY)
