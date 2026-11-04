@@ -41,7 +41,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | :--- | :---: | :--- | :--- |
 | Hire companions at `<Mercenary Hire>` recruiters | Yes | [`AiPlayerbot.HireEnabled`](../server/settings/hiring.md#aiplayerbothireenabled) | [Hiring](commands/roster-and-hiring.md#bot-hire) |
 | Hire with the `.bot hire` command anywhere | No | [`AiPlayerbot.HireAnywhere`](../server/settings/hiring.md#aiplayerbothireanywhere) | [Hiring](commands/roster-and-hiring.md#bot-hire) |
-| Hire a whole raid in one go (needs hiring anywhere on, and more than 4 hires allowed) | No | [`HireAnywhere`](../server/settings/hiring.md#aiplayerbothireanywhere), [`HireMaxBotsPerPlayer`](../server/settings/hiring.md#aiplayerbothiremaxbotsperplayer) | [Raid hires](commands/roster-and-hiring.md#bot-hire-raid) |
+| Hire a whole raid in one go (needs hiring anywhere on, and more than 4 hires allowed) | No | [`AiPlayerbot.HireAnywhere`](../server/settings/hiring.md#aiplayerbothireanywhere), [`AiPlayerbot.HireMaxBotsPerPlayer`](../server/settings/hiring.md#aiplayerbothiremaxbotsperplayer) | [Raid hires](commands/roster-and-hiring.md#bot-hire-raid) |
 | Level 60 hires in fixed gear tier sets | Yes | [`AiPlayerbot.HireGearTiersEnabled`](../server/settings/hiring.md#aiplayerbothiregeartiersenabled) | [Mercenary contracts](commands/roster-and-hiring.md#mercenary-contracts) |
 | Gear tier unlocks count for your whole account | No | [`AiPlayerbot.HireGearUnlockAccountWide`](../server/settings/hiring.md#aiplayerbothiregearunlockaccountwide) | [Recruiter services](commands/roster-and-hiring.md#capital-recruiter-services) |
 | All gear tier quests offered at once | No | [`AiPlayerbot.HireGearAllQuestsAvailable`](../server/settings/hiring.md#aiplayerbothiregearallquestsavailable) | [Recruiter services](commands/roster-and-hiring.md#capital-recruiter-services) |
@@ -54,7 +54,7 @@ New here? Read [Getting Started](getting-started.md) first.
 
 | Feature | On? | Setting | More |
 | :--- | :---: | :--- | :--- |
-| Invite a pool bot into your guild and command it like your own alt | Always | — | [Guild bots](getting-started.md#guild-bots) |
+| Invite a pool bot into your guild and command it like your own alt (hires, your own alts, full guilds and queued bots excluded) | Usually | — | [Guild bots](getting-started.md#guild-bots) |
 | Order guild bots to farm, buy or craft items for the guild bank | Yes | [`AiPlayerbot.AutoDoQuests`](../server/settings/world-population.md#aiplayerbotautodoquests) | [Guild orders](guild-orders.md) |
 
 ### Orders, following and summoning
@@ -130,7 +130,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | Starter outfit for new bots | Yes | [`AiPlayerbot.RandomGearUpgradeEnabled`](../server/settings/world-population.md#aiplayerbotrandomgearupgradeenabled) | [Starter gear](../world/living-world.md#field-kits--equipment-upkeep) |
 | Gear upgrades at level milestones | Yes | [`AiPlayerbot.RandomGearProgression`](../server/settings/world-population.md#aiplayerbotrandomgearprogression) | [Gear](../world/living-world.md#gear-evaluation--upgrades) |
 | Equip better gear they loot | Yes | [`AiPlayerbot.AutoEquipUpgradeLoot`](../server/settings/world-population.md#aiplayerbotautoequipupgradeloot) | [Gear](../world/living-world.md#gear-evaluation--upgrades) |
-| Reputation and PvP items in their gear | No | [`RandomGearAllowReputation`](../server/settings/world-population.md#aiplayerbotrandomgearallowreputation), [`RandomGearAllowPvP`](../server/settings/world-population.md#aiplayerbotrandomgearallowpvp) | [Gear](../world/living-world.md#gear-evaluation--upgrades) |
+| Reputation and PvP items in their gear | No | [`AiPlayerbot.RandomGearAllowReputation`](../server/settings/world-population.md#aiplayerbotrandomgearallowreputation), [`AiPlayerbot.RandomGearAllowPvP`](../server/settings/world-population.md#aiplayerbotrandomgearallowpvp) | [Gear](../world/living-world.md#gear-evaluation--upgrades) |
 | Swift Riding Turtle at level 18 | Yes | [`AiPlayerbot.TurtleMountAtLevel`](../server/settings/world-population.md#aiplayerbotturtlemountatlevel) | [Mounts](../world/living-world.md#mount-rules) |
 | Racial mounts at levels 40 and 60 | Yes | [`AiPlayerbot.LevelUpMounts`](../server/settings/world-population.md#aiplayerbotlevelupmounts) | [Mounts](../world/living-world.md#mount-rules) |
 | Shop, other-race and raid-drop mounts too | No | [`AiPlayerbot.RandomBotShopMounts`](../server/settings/world-population.md#aiplayerbotrandombotshopmounts) | [Mounts](../world/living-world.md#mount-rules) |
@@ -166,9 +166,9 @@ New here? Read [Getting Started](getting-started.md) first.
 | :--- | :---: | :--- | :--- |
 | Pool bots invite you to their group (not while you are `/dnd`) | Yes | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Invites](../world/social.md#grouping--party-invites) |
 | Pool bots group with each other | No | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) | [Invites](../world/social.md#grouping--party-invites) |
-| Pool bots join your guild when invited | Always | — | [Guilds](../world/social.md#guilds) |
+| Pool bots join your guild when invited (hires, your own alts, full guilds and queued bots excluded) | Usually | — | [Guilds](../world/social.md#guilds) |
 | Bots found guilds of their own (switched on, but not seen working on test realms) | Yes | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Guilds](../world/social.md#guilds) |
-| Mages share conjured food and water with the group | Always | — | [Trading](../world/social.md#trading-with-pool-bots) |
+| Companion mages conjure food and water and trade it to group members who have none | Yes | — | [Trading](../world/social.md#trading-with-pool-bots) |
 | Your companions greet players they meet | Yes | [`AiPlayerbot.EnableGreet`](../server/settings/world-population.md#aiplayerbotenablegreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Pool bots greet players too | No | [`AiPlayerbot.RandomBotGreet`](../server/settings/world-population.md#aiplayerbotrandombotgreet) | [Greetings](../world/social.md#greetings--emotes) |
 | Trade with pool bots that are not yours | No | [`AiPlayerbot.PoolBotTradeMode`](../server/settings/world-population.md#aiplayerbotpoolbottrademode) | [Trading](../world/social.md#trading-with-pool-bots) |
@@ -193,7 +193,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | An LFT group walks to the dungeon together | Always | — | [LFT](../world/queues.md#looking-for-turtles-lft-dungeon-autofill) |
 | Pool bots fill battleground queues when players queue | Yes | [`AiPlayerbot.RandomBotBgEnabled`](../server/settings/queues.md#aiplayerbotrandombotbgenabled) | [Battlegrounds](../world/queues.md#battleground-auto-queue-human-demand) |
 | Bot-only Warsong Gulch matches when no player queues | Yes | [`AiPlayerbot.RandomBotBgAutonomous`](../server/settings/queues.md#aiplayerbotrandombotbgautonomous) | [Bot matches](../world/queues.md#autonomous-bot-only-matches) |
-| Your alts join a battleground with you (Join as Group) | Always | — | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
+| Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Usually | [`AiPlayerbot.HireAllowPvP`](../server/settings/hiring.md#aiplayerbothireallowpvp) | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
 | Bots play the objectives in WSG, AB and AV | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
 
 ## Server & Monitoring (Dashboard, Logs)
@@ -219,7 +219,7 @@ For server admins.
 | :--- | :--- |
 | Turn the character you are playing into a bot | Use an alt on your account. [Details](known-limitations.md#blocked--incomplete-features) |
 | Found their own guilds (on, but not seen working) | Invite pool bots into your guild. [Details](../world/social.md#guilds) |
-| Clear most dungeons by themselves: the run leader is work in progress and only a few routes are checked | Lead the dungeon yourself. [Details](known-limitations.md#dungeon-run-leader-work-in-progress) |
+| Clear most instances by themselves: the run leader is work in progress and only a few routes are checked | Lead the instance yourself. [Details](known-limitations.md#dungeon-run-leader-work-in-progress) |
 | A real duel mode: bots accept duels but fight them like any fight | — |
 | Check a herb or ore node before walking to it | Nothing; the bot walks on after finding it empty. [Details](known-limitations.md#blocked--incomplete-features) |
 | Climb steep, many-floored stairs reliably | `.bot summon <Name>` out of combat. [Details](known-limitations.md#known-quirks-and-workarounds) |
