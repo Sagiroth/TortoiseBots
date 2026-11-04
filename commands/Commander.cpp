@@ -8636,6 +8636,9 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         if (Creature* asCreature = other->ToCreature())
             fact.formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(asCreature);
         fact.distLead = other->GetMap() == lead->GetMap() ? lead->GetDistance(other) : 1000.0f;
+        fact.x = other->GetPositionX();
+        fact.y = other->GetPositionY();
+        fact.z = other->GetPositionZ();
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
         fact.evading = other->IsCreature() && static_cast<Creature*>(other)->IsInEvadeMode();
@@ -8673,8 +8676,8 @@ void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBo
     f.engagedRead = true;
 }
 
-// The automatic crowd control's break read (DungeonRun::RunCcBreakTick): the run's own held units that are still in
-// combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
+// The run's own holds read (DungeonRun::RunCcBreakTick, and the own-fight step end): its held units that are still
+// in combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
 // keeps no fight open and is none. The party's own read (partyHits) is the unit's attacker set only, no scan.
 void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
@@ -8719,6 +8722,31 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
         f.ccHeld.push_back(fact);
     }
     f.ccHeldRead = true;
+}
+
+// The fight's own units (DungeonRun::Run::ownFightGuids), each resolved with one object lookup on the run's map, so
+// the own-fight step end has positive evidence of death or despawn instead of a unit's absence from this tick's
+// reads: a pull mob dragged out of the row's radius, one evading out of the engaged read, or a read gap leaves no
+// proof of anything. Not on the map any more: gone; on it and not alive: dead; alive: not gone, wherever it stands.
+// The lead bot off the run's map (a ghost in a regroup) leaves the read unset, and an unread guid never counts as
+// gone. No grid or world scan.
+void ReadOwnFightFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!f.anyInCombat)
+        return;
+    Map* const map = lead->FindMap();
+    if (!map || (slot.run.plan && map->GetId() != slot.run.plan->map))
+        return;
+    for (std::uint64_t const guid : slot.run.ownFightGuids)
+    {
+        OwnUnitFact fact;
+        fact.guid = guid;
+        Unit* const unit = map->GetUnit(::ObjectGuid(guid));
+        fact.state = !unit ? OwnUnitState::Gone : !unit->IsAlive() ? OwnUnitState::Dead : OwnUnitState::Alive;
+        f.ownFightUnits.push_back(fact);
+    }
+    f.ownFightRead = true;
 }
 
 // A party bot is in combat when it or its living pet is (DungeonRun::MemberFact::inCombat, Facts::anyInCombat, and
@@ -11726,8 +11754,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         ReadEngagedUnits(lead, bots, f);
         f.staleCombat = f.engagedUnits.empty();
-        if (f.autoCc)
+        // The run's own holds, automatic or the plan's: a held unit neither attacks nor is attacked, so the
+        // engaged read loses it while the hold lasts (DungeonRun::Facts::ccHeld).
+        if (!slot.run.ccHolds.empty())
             ReadCcBreakFacts(slot, lead, bots, f);
+        // The fight's own units, one object lookup each (DungeonRun::Facts::ownFightUnits).
+        ReadOwnFightFacts(slot, lead, f);
     }
     if (slot.run.plan && !slot.run.plan->killFirst.empty())
     {
