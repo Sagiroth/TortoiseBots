@@ -12744,6 +12744,100 @@ static void TestThePartyJoinKeepsTheBaseFallbacks()
     }
 }
 
+// Rescue fix round 2: the party join classifies the group against the reached rows only (the start step to the
+// current one). A group that stands near a future row of the plan is off the run and is never joined: the join would
+// put the lead bot forward over route content the run has not cleared. The earlier clear points are read first and,
+// all held, the run pauses naming the group; the same group near the same row is joined once the run has reached it.
+static void TestThePartyJoinCountsReachedRowsOnly()
+{
+    DungeonPlan plan;
+    for (int i = 0; i < 210; ++i)
+        plan.steps.push_back(Step(PlanStepKind::Move, 0.0f, 100.0f * static_cast<float>(i), 0.0f));
+    plan.steps.push_back(Step(PlanStepKind::Rest));
+    auto heldAt = [](Facts& f, float y)
+    {
+        f.rescueRead = true;
+        f.rescueReadX = 0.0f;
+        f.rescueReadY = y;
+        f.rescueReadZ = 0.0f;
+        f.rescueReach.clear();
+        StandPackReach mob;
+        mob.x = 0.0f;
+        mob.y = y;
+        mob.z = 0.0f;
+        mob.reachYd = 20.0f;
+        f.rescueReach.push_back(mob);
+    };
+    auto groupAtRow80 = []()
+    {
+        Facts f = StrandFacts(2000.0f, 10000.0f, 0.0f);
+        MemberFact a = Mem("Aaa", 0.0f);
+        a.x = 4.0f;
+        a.y = 8005.0f;
+        a.z = 0.0f;
+        a.yd = 100.0f;
+        MemberFact b = Mem("Bbb", 0.0f);
+        b.x = 6.0f;
+        b.y = 8006.0f;
+        b.z = 0.0f;
+        b.yd = 100.0f;
+        f.members = {f.members[0], a, b};
+        return f;
+    };
+    auto strandedAt = [&plan](std::size_t step)
+    {
+        Run r = Start(&plan, step);
+        r.startStep = 37;
+        r.walkBack = true;
+        r.walkBackIdx = r.walkBackStart = 100;
+        r.strandDue = true;
+        r.strandIdx = 100;
+        r.rescueScanWanted = true;
+        r.rescueScanX = 0.0f;
+        r.rescueScanY = 10000.0f;
+        r.rescueScanZ = 0.0f;
+        return r;
+    };
+    {
+        // The current step is 60 and the group stands near row 80, a future row: no join. The three earlier clear
+        // points are read and held, then the run pauses; no teleport to the group.
+        Facts f = groupAtRow80();
+        Run r = strandedAt(60);
+        heldAt(f, 10000.0f);
+        CHECK(Tick(r, f).empty());
+        CHECK(!r.strandParty);
+        for (float y : {9900.0f, 9800.0f, 9700.0f})
+        {
+            heldAt(f, y);
+            CHECK(Tick(r, f).empty());
+        }
+        for (std::uint32_t i = 0; i < 60 && r.state == State::Running; ++i)
+            CHECK(Tick(r, f).empty());
+        CHECK(r.state == State::Paused);
+        CHECK(!r.strandOn && !r.strandParty);
+        CHECK(r.note.find("the party stands off the plan") != std::string::npos);
+    }
+    {
+        // The same group near the same row, now reached and behind the stranded point (the current step is 100): the
+        // three earlier clear points are read and held, then the join is kept, as in round 1.
+        Facts f = groupAtRow80();
+        Run r = strandedAt(100);
+        heldAt(f, 10000.0f);
+        CHECK(Tick(r, f).empty());
+        CHECK(!r.strandParty);
+        std::string order;
+        for (float y : {9900.0f, 9800.0f, 9700.0f})
+        {
+            heldAt(f, y);
+            order = Tick(r, f);
+        }
+        CHECK(order == "rescue from 2000.0 10000.0 0.0 to 6.0 8006.0 0.0");
+        CHECK(r.strandOn && r.strandParty);
+        CHECK(r.state == State::Running);
+        CHECK(r.note.find("the party (Bbb's spot, 2 out of combat)") != std::string::npos);
+    }
+}
+
 // A fetch with no member out of combat to bring the bot to attempts no teleport, so it spends no try: the member
 // stays queued until an anchor stands free, then the first fetch goes out (a revived healer in a 45 s trash fight was
 // given up for good after three waits of about 15 s).
@@ -33958,6 +34052,7 @@ int main()
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
     TestThePartyJoinIsBoundedByThePlan();
     TestThePartyJoinKeepsTheBaseFallbacks();
+    TestThePartyJoinCountsReachedRowsOnly();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
     TestTheRescueReadFiltersTriggerCreatures();
     TestTheStrandRescueRearmsWhenTheLeadIsMovedAway();

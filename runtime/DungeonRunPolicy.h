@@ -12796,18 +12796,18 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     bool groupFound = !destChosen && held && MemberGroupPoint(f, p.x, p.y, p.z, group);
     // The join is bounded by the plan. A party that stands before the run's start step is never joined: the lead bot
     // would be put back behind the placed run (ZG walk 35: the rescue of step 204 joined a party clustered at step
-    // 17, before the placed start step 37, and it walked back up for about 9 minutes). On a folded route the nearest
-    // row of the whole plan can be an early pass the run never walked, so only a group with no run row (the start
-    // step to the current one) within kSeeYd is before the start; one with a run row as near is joined as before.
-    // With no plan row within kSeeYd the party is off the plan and is not joined either. Between the start step and
-    // the point the lead bot would go to, the earlier clear points are read first and the join is the last option
-    // (the base's join, so a party there never turns into a pause).
+    // 17, before the placed start step 37, and it walked back up for about 9 minutes). The group is classified
+    // against the reached rows only (the start step to the current one): a party whose only nearby rows are future
+    // rows of the plan is off the run and is not joined, since the join would put the lead bot forward over route
+    // content the run has not cleared (on a folded route the nearest row of the whole plan can be an early pass).
+    // With no reached row within kSeeYd the party is off the plan and is not joined either. Between the start step
+    // and the point the lead bot would go to, the earlier clear points are read first and the join is the last
+    // option (the base's join, so a party there never turns into a pause).
     std::string partyOff;
     bool groupBehindPoint = false;
     if (groupFound)
     {
-        std::size_t const groupRow = NearestMoveRow(r, group.x, group.y, group.z,
-            static_cast<std::size_t>(-1), kSeeYd);
+        std::size_t const groupRow = NearestMoveRow(r, group.x, group.y, group.z, r.step + 1, kSeeYd);
         if (groupRow == static_cast<std::size_t>(-1))
         {
             groupFound = false;
