@@ -8185,10 +8185,15 @@ uint32 RunCcImmune(Creature* creature)
 
 // The spawn's respawn delay in seconds (DungeonRun::UnitFact::respawnSec): the run never crowd-controls a unit that
 // comes back within its window (ZG's Sacrificed Trolls, 10 s) and never counts it as a body of the pull. 0 for a
-// unit with no spawn of its own (a player, a pet's fact) or one whose read did not fill it.
+// unit with no spawn of its own (a player, a pet's fact, a temporary summon whose delay is its lifetime) or one
+// whose read did not fill it.
 uint32 RunRespawnSec(Unit* unit)
 {
-    return unit && unit->IsCreature() ? static_cast<Creature*>(unit)->GetRespawnDelay() : 0;
+    using namespace TortoiseBots::DungeonRun;
+    if (!unit || !unit->IsCreature())
+        return 0;
+    Creature* const creature = static_cast<Creature*>(unit);
+    return SpawnRespawnSec(creature->HasStaticDBSpawnData(), creature->GetRespawnDelay());
 }
 
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of

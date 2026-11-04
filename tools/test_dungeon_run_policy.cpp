@@ -33232,6 +33232,29 @@ static void TestAutoCcSkipsFastRespawnUnits()
     }
 }
 
+// A temporary summon's respawn delay is its lifetime (TemporarySummon), not a respawn: Gandling's Risen Guardians
+// (15 s) must keep their crowd control and their place in the pull. Only a spawn of its own carries a respawn delay.
+static void TestAutoCcTemporarySummonWithALifetimeStillCounts()
+{
+    CHECK(SpawnRespawnSec(true, 15) == 15);
+    CHECK(RespawnsQuickly(SpawnRespawnSec(true, 15)));
+    CHECK(SpawnRespawnSec(false, 15) == 0);
+    CHECK(!RespawnsQuickly(SpawnRespawnSec(false, 15)));
+
+    // The 15 s summon as the facts read it (no respawn) is a candidate and a body: the pre-pull mark goes to it.
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    UnitFact guardian = AutoHumanoid(9, 20.0f);
+    guardian.respawnSec = SpawnRespawnSec(false, 15);
+    f.units.push_back(guardian);
+    CHECK(Tick(r, f) == "cc moon 9 Magey polymorph");
+    CHECK(r.ccSent.count(9) == 1);
+}
+
 // The pull's opening: every unit a pre-pull order marked and whose aura is not
 // read gets its order again on the fight's first ticks, at once: no engaged
 // threshold, no 2 s gap. ZG walk 32: no pre-pull mark ever landed, every flow
@@ -33897,6 +33920,7 @@ int main()
     TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
     TestAutoCcSkipsFastRespawnUnits();
+    TestAutoCcTemporarySummonWithALifetimeStillCounts();
     TestAutoCcReappliesTwiceThenStops();
     TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();

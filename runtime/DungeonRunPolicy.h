@@ -890,9 +890,9 @@ struct UnitFact
     // mechanic_immune_mask or a live mechanic immunity against that spell's
     // mechanic): never picked for that spell.
     std::uint32_t ccImmune = 0;
-    // The spawn's respawn delay in seconds (Creature::GetRespawnDelay): 0 for a unit with no spawn of its own or a
-    // read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control target and no body of the
-    // pull the order is for (RespawnsQuickly).
+    // The spawn's respawn delay in seconds (SpawnRespawnSec, from Creature::GetRespawnDelay): 0 for a unit with no
+    // spawn of its own or a read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control
+    // target and no body of the pull the order is for (RespawnsQuickly).
     std::uint32_t respawnSec = 0;
     // Kill-first candidates (Facts::killFirst): in combat with a party member,
     // or summoned / owned (a healing ward) by a unit that is.
@@ -1252,6 +1252,14 @@ constexpr std::uint32_t kRunCcMinRespawnSec = 60;
 inline bool RespawnsQuickly(std::uint32_t respawnSec)
 {
     return respawnSec >= 1 && respawnSec <= kRunCcMinRespawnSec;
+}
+// The respawn delay the run's facts carry: only a unit with a spawn of its own has one. A temporary summon's delay
+// is its lifetime (TemporarySummon), not a respawn, so read as one a 15 s scripted add (Gandling's Risen Guardians,
+// Arlokk's Prowlers, Mandokir's Ohgan) would look like a fast respawn and lose its crowd control and its place in
+// the pull's body count.
+inline std::uint32_t SpawnRespawnSec(bool hasStaticSpawn, std::uint32_t respawnDelay)
+{
+    return hasStaticSpawn ? respawnDelay : 0;
 }
 // A fight kept open only by the run's own holds (RunCcBreakTick) breaks them one at a time: a break order that has
 // not ended its unit's hold in this long no longer holds the fight ceiling off, so a hold the party cannot reach
