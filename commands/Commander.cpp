@@ -1776,6 +1776,12 @@ void UpdateCommanderViews(uint32 diff)
 struct RaidFocusHealer
 {
     ObjectGuid guid;
+    // The tank the layout seated this healer to heal and the seat on it; a
+    // mid-raid joiner's focus target is not the layout's plan.
+    ObjectGuid tank;
+    uint8_t seat = 0;
+    bool layoutSeat = false;
+    std::list<ObjectGuid> assignedTargets;
     bool hadStrategy = false;
     std::list<ObjectGuid> previousTargets;
 };
@@ -2104,9 +2110,11 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
             : TortoiseBots::RaidLayout::Role::Damage;
         member.lead = bot == lead;
+        member.cls = bot->GetClass();
         members.push_back(member);
     }
-    TortoiseBots::RaidLayout::Layout layout = TortoiseBots::RaidLayout::Plan(members);
+    TortoiseBots::RaidLayout::Layout layout =
+        TortoiseBots::RaidLayout::Plan(members, sPlayerbotAIConfig.raidHealerSeatsByClass);
     if (!layout.ok)
     {
         handler->PSendSysMessage("TBM:RAID_LAYOUT|warning|raid layout not applied: %s", ProtocolSafe(layout.error).c_str());
@@ -2209,12 +2217,16 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
             RaidFocusHealer record;
             record.guid = bot->GetObjectGuid();
+            record.tank = tankGuid;
+            record.seat = placement.healsSeat;
+            record.layoutSeat = true;
+            record.assignedTargets = {tankGuid, bot->GetObjectGuid()};
             if (ai && ai->GetAiObjectContext())
             {
                 record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
                 record.previousTargets =
                     ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
-                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, bot->GetObjectGuid()});
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set(record.assignedTargets);
                 ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
             }
             applied.focusHealers.push_back(record);
@@ -2403,6 +2415,25 @@ bool IsRaidFocusHealer(Player* bot)
             return true;
     }
     return false;
+}
+
+RaidTankSeat RaidTankHealerSeat(Player* bot)
+{
+    RaidTankSeat seat;
+    if (!bot)
+        return seat;
+    ObjectGuid const guid = bot->GetObjectGuid();
+    for (auto const& entry : RaidLayouts())
+        for (RaidFocusHealer const& record : entry.second.focusHealers)
+            if (record.layoutSeat && record.guid == guid)
+            {
+                seat.seated = true;
+                seat.tank = record.tank;
+                seat.seat = record.seat;
+                seat.assigned = record.assignedTargets;
+                return seat;
+            }
+    return seat;
 }
 
 static void ClearRaidLayout(uint32 groupId)
