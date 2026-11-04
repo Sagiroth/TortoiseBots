@@ -302,11 +302,10 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     // A needs_aura entry (BossTacticsPolicy.h) is for the carriers of the row's aura alone: a Shade of Jin'do takes no
     // damage from anyone else, and a taunt would only move its damage onto another tank. No explicit-order exception:
     // such a hit does nothing. With the key off, or no row, the target is as valid as before.
-    if (target && player)
+    if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)
     {
         std::uint32_t const requiredAura = GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry());
-        if (AuraGateRefuses(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
-                requiredAura != 0 && player->HasAura(requiredAura)))
+        if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura)))
             return false;
     }
 
