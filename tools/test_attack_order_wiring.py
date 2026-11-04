@@ -50,6 +50,18 @@ class AttackOrderWiringTest(unittest.TestCase):
         self.assertIn("isInFront(bot, target", fn)
         self.assertIn("return false;", fn)
 
+    def test_the_aura_gate_never_hides_the_distance_refusal(self):
+        # A needs_aura target without its aura is refused, but the gate is its own `if` after the refusal chain: an
+        # ordinary creature (no row, so no aura required) past the sight distance is still refused as too far while
+        # the key is on. Chained as an `else if` it would swallow that refusal for every creature.
+        fn = body(ATTACK, "bool AttackAction::IsTargetValid(", "\n}\n")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target->IsCreature()", fn)
+        self.assertNotIn("else if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets", fn)
+        self.assertLess(fn.index("is too far away"), fn.index("is immune to my damage without its aura"))
+        self.assertIn("AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura))", fn)
+        # The bot's own map and the target's entry are the row the gate reads.
+        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry())", fn)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -461,24 +461,6 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target, float maxDista
 
         return false;
     }
-    // A needs_aura entry (BossTacticsPolicy.h) takes no damage from a bot without the row's aura: an explicit order
-    // must not arm the auto-attack either (the target values are gated, a command is not).
-    else if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target->IsCreature())
-    {
-        std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
-        if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura)))
-        {
-            if (verbose)
-            {
-                std::ostringstream msg;
-                msg << target->GetName();
-                msg << " is immune to my damage without its aura";
-                ai->TellPlayerNoFacing(requester, msg.str());
-            }
-
-            return false;
-        }
-    }
     // Background targeting uses the sight distance; an explicit order passes its own
     // wider ceiling (the requester's order range) because the bot walks to the target
     // through the combat reach chain after accepting. The refusal still names the
@@ -494,6 +476,26 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target, float maxDista
         }
 
         return false;
+    }
+
+    // A needs_aura entry (BossTacticsPolicy.h) takes no damage from a bot without the row's aura: an explicit order
+    // must not arm the auto-attack either (the target values are gated, a command is not). Its own refusal, after the
+    // distance check: the gate answers "can I hurt it", not "can I reach it".
+    if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target->IsCreature())
+    {
+        std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+        if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura)))
+        {
+            if (verbose)
+            {
+                std::ostringstream msg;
+                msg << target->GetName();
+                msg << " is immune to my damage without its aura";
+                ai->TellPlayerNoFacing(requester, msg.str());
+            }
+
+            return false;
+        }
     }
 
     return true;
