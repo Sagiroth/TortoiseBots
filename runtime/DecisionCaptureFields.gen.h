@@ -118,7 +118,8 @@ namespace DecisionCapture {
     E(PlanStepKind, ai::PlanStepKind) \
     E(TacticMode, ai::TacticMode)
 
-inline constexpr char kDecisionSchemaText[] = R"TBSCHEMA(struct CorpseMark
+inline constexpr char kDecisionSchemaText[] =
+    R"TBSCHEMA(struct CorpseMark
   guid: std::uint64_t
   x: float
   y: float
@@ -404,7 +405,8 @@ struct MemberFact
   engagedRead: bool
   offPlanMap: bool
   offMapReturnable: bool
-  offMapBlock: MemberFact::OffMapBlock
+)TBSCHEMA"
+    R"TBSCHEMA(  offMapBlock: MemberFact::OffMapBlock
   otherCopy: bool
   losLead: bool
   pathToLead: bool
@@ -660,7 +662,8 @@ struct Run
   lootRestore: int
   lootRestoreTries: std::uint32_t
   lootFfaMs: std::uint32_t
-  missing: std::unordered_set<std::uint32_t>
+)TBSCHEMA"
+    R"TBSCHEMA(  missing: std::unordered_set<std::uint32_t>
   objectsSeen: std::vector<WaitSight>
   goneMissMs: std::uint32_t
   goneMissStep: std::size_t
@@ -899,7 +902,8 @@ struct Run
   strandFromOtherPart: bool
   offMapReturnAt: std::unordered_map<std::string, std::uint64_t>
   offMapReturnStep: std::size_t
-  offMapReturnTries: std::unordered_map<std::string, std::uint32_t>
+)TBSCHEMA"
+    R"TBSCHEMA(  offMapReturnTries: std::unordered_map<std::string, std::uint32_t>
   offMapNotedStep: std::size_t
   offMapNoted: std::unordered_set<std::string>
   rejoinAt: std::unordered_map<std::string, std::uint64_t>
@@ -1168,7 +1172,8 @@ struct WaitSight
   z: float
 struct Member
   dead: bool
-  name: std::string
+)TBSCHEMA"
+    R"TBSCHEMA(  name: std::string
   rez: RezClass
   blocksDruid: bool
   healer: bool
