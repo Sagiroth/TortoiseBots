@@ -36,7 +36,7 @@ static void ReadDungeonPlanRows(DungeonPlanTable& table, PlanLoadCounts& counts,
 {
     std::uint32_t& skippedPlans = counts.skippedPlans;
     if (std::unique_ptr<QueryResult> result{WorldDatabase.Query(
-        "SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first` FROM `ai_dungeon_plan`")})
+        "SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never` FROM `ai_dungeon_plan`")})
     {
         do
         {
@@ -49,12 +49,13 @@ static void ReadDungeonPlanRows(DungeonPlanTable& table, PlanLoadCounts& counts,
                 counts.Note("ai_dungeon_plan '" + plan + "' (map " + std::to_string(fields[1].GetUInt32()) +
                     "): an empty name, map 0 or a second row of the name");
             }
-            else if (!table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString()))
+            else if (!table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString(),
+                         fields[5].GetCppString()))
             {
                 ++counts.badUnits;
-                counts.Note("ai_dungeon_plan '" + plan + "': cc_priority, cc_always or kill_first is not a list of creature entries");
-                sLog.outError("ai_dungeon_plan: plan '%s': cc_priority, cc_always or kill_first is not a list of "
-                    "creature entries; the plan runs without crowd control and kill-first targets", plan.c_str());
+                counts.Note("ai_dungeon_plan '" + plan + "': cc_priority, cc_always, kill_first or cc_never is not a list of creature entries");
+                sLog.outError("ai_dungeon_plan: plan '%s': cc_priority, cc_always, kill_first or cc_never is not a "
+                    "list of creature entries; the plan runs without crowd control and kill-first targets", plan.c_str());
             }
         } while (result->NextRow());
     }
@@ -209,7 +210,7 @@ namespace
     // The six tables of a reload and the columns their loaders read.
     struct ReloadTable { char const* table; char const* columns; };
     constexpr ReloadTable kReloadTables[] = {
-        {"ai_dungeon_plan", "`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`"},
+        {"ai_dungeon_plan", "`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never`"},
         {"ai_dungeon_leg", "`plan`, `leg`, `name`"},
         {"ai_dungeon_step", "`plan`, `leg`, `seq`, `kind`, `entry`, `x`, `y`, `z`, `radius`, `item`, `param`, `flags`, "
             "`timeout_s`, `entries`"},

@@ -86,7 +86,7 @@ namespace ai
         std::uint32_t skippedSteps = 0;
         std::uint32_t skippedBosses = 0;
         std::uint32_t skippedNeeds = 0;      // refused ai_dungeon_leg_need rows
-        std::uint32_t badUnits = 0;          // plans whose cc_priority / cc_always / kill_first did not parse
+        std::uint32_t badUnits = 0;          // plans whose cc_priority / cc_always / kill_first / cc_never did not parse
         std::vector<std::string> refusals;   // the first kNamedRefusals refused rows, in words
         // Rows each query handed the loader (accepted or not): a reload compares them with the table's row count
         // (TableRead), since the core's Query answers null both for an error and for no rows.

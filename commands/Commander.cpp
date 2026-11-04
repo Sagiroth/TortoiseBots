@@ -8155,6 +8155,16 @@ bool HasAnyAura(Unit const* unit, uint32 const (&spells)[N])
     return false;
 }
 
+// The creature's rank is CREATURE_ELITE_NORMAL (DungeonRun::UnitFact::normalRank): a dungeon's trivial trash is no
+// automatic crowd control's candidate and no body of its engaged count (AiPlayerbot.DungeonRunAutoCc). A rare (rank
+// 4) is not normal: the core's IsElite() would call one non-elite, the automatic pick must keep handling it.
+bool RunNormalRank(Unit* unit)
+{
+    Creature* const creature = unit ? unit->ToCreature() : nullptr;
+    CreatureInfo const* const info = creature ? creature->GetCreatureInfo() : nullptr;
+    return info && info->rank == CREATURE_ELITE_NORMAL;
+}
+
 // The run cc families a creature is immune to (DungeonRun::UnitFact::ccImmune):
 // the mechanic of each family's first rank against its creature_template
 // mechanic_immune_mask (Creature::IsImmuneToSpell's test) or a live mechanic
@@ -9024,7 +9034,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 f.leadAttackers.push_back(
-                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker), RunNormalRank(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -9085,6 +9095,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;
@@ -11624,6 +11635,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -11886,6 +11898,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -12459,6 +12472,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;

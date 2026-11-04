@@ -330,8 +330,8 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("CONTROLLED_TOTEMS | CONTROLLED_GUARDIANS", kill)
         self.assertIn("EngagedWithParty(summoner, party);", kill)
         loader = (ROOT / "ai/playerbot/DungeonPlanMgr.cpp").read_text()
-        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first` FROM `ai_dungeon_plan`", loader)
-        self.assertIn("table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString())", loader)
+        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never` FROM `ai_dungeon_plan`", loader)
+        self.assertIn("table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString(),\n                         fields[5].GetCppString())", loader)
 
     def test_auto_cc_is_wired(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()

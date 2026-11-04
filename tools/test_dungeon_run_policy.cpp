@@ -32801,6 +32801,137 @@ static void TestAutoCcSkipsDottedUnits()
     }
 }
 
+// A dungeon's trash is mostly non-elite. A NORMAL-rank unit (a Bloodseeker Bat, a Sacrificed Troll) is no automatic
+// crowd control's candidate, before the pull or in the fight, and no body of the fight's engaged count; the pack's
+// elites (and rares and bosses) are unchanged.
+static void TestAutoCcSkipsNormalRankUnits()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph)};
+    // Eight bodies over the threshold of six: seven are non-elite, the eighth is the pack's elite.
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+    {
+        UnitFact u = AutoHumanoid(guid, 9.0f + static_cast<float>(guid));
+        u.normalRank = guid != 8;
+        f.units.push_back(u);
+    }
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph"); // the elite, never a non-elite body
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.size() == 1 && r.ccSent.count(8) == 1);
+    // In the fight the non-elite bodies do not count: one elite engaged is under the threshold of six.
+    f.anyInCombat = true;
+    for (std::uint64_t guid = 100; guid <= 107; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 15);
+        hit.partyHits = true;
+        hit.normalRank = true;
+        f.partyAttackers.push_back(hit);
+    }
+    f.partyAttackers.push_back(AutoHumanoid(900, 20)); // the elite joiner, nobody on it
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph"); // the pre-pull mark's opening re-send
+    CHECK(Tick(r, f).empty()); // one elite engaged: under the threshold of six
+    CHECK(r.ccSent.count(900) == 0);
+    // Six more elites make the fight over the threshold: the elite joiner is marked, still never a non-elite body.
+    for (std::uint64_t guid = 901; guid <= 906; ++guid)
+    {
+        UnitFact hit = AutoHumanoid(guid, 16);
+        hit.partyHits = true;
+        f.partyAttackers.push_back(hit);
+    }
+    CHECK(Tick(r, f) == "cc square 900 Magetwo polymorph");
+    CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    CHECK(r.ccSent.count(100) == 0);
+    // The lead bot's own non-elite attackers are no bodies of the count either: the tank holds them.
+    Run q = Start(&plan);
+    Facts g = AutoParty(6);
+    g.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60)};
+    g.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+    CHECK(Tick(q, g) == "pullback 1");
+    g.anyInCombat = true;
+    for (std::uint64_t guid = 200; guid <= 207; ++guid)
+        g.leadAttackers.push_back({guid, false, true});
+    g.partyAttackers = {AutoHumanoid(950, 20)}; // the elite joiner
+    CHECK(Tick(q, g).empty());
+    CHECK(g.leadAttackers.size() == 8);
+}
+
+// The plan's cc_never list: an entry on it is never an automatic pick, before the pull or in the fight, and a hold
+// already registered on one is not re-applied. The plan's own picker with the key off is unchanged.
+static void TestAutoCcRespectsPlanCcNever()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact never = AutoHumanoid(2, 20); // farther: the pick would take it without the list
+        never.entry = 200;
+        UnitFact free = AutoHumanoid(3, 12);
+        free.entry = 201;
+        f.units = {free, never};
+        CHECK(Tick(r, f) == "cc moon 3 Magey polymorph");
+        CHECK(r.ccSent.count(2) == 0);
+        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
+        CHECK(r.note.find("no free crowd control fits") != std::string::npos);
+        CHECK(r.ccSent.size() == 1 && r.ccSent.count(2) == 0);
+    }
+    {
+        // In the fight: the never entry is skipped as a candidate, another engager is marked instead.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60), AutoCcMem("Magetwo", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // over the threshold of one
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        UnitFact never = AutoHumanoid(900, 25); // farther: the better pick without the list
+        never.entry = 200;
+        UnitFact free = AutoHumanoid(901, 20);
+        free.entry = 201;
+        f.partyAttackers.push_back(never);
+        f.partyAttackers.push_back(free);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // the pre-pull mark's opening re-send
+        CHECK(Tick(r, f) == "cc square 901 Magetwo polymorph");
+        CHECK(r.ccSent.count(900) == 0);
+    }
+    {
+        // A hold already registered on a listed unit is not re-sent when its aura breaks.
+        Run r = Start(&plan);
+        r.ccHolds[200] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+        r.ccSent.insert(200);
+        r.ccLandedSeen.insert(200);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.anyInCombat = true;
+        UnitFact broken = AutoHumanoid(200, 20);
+        broken.entry = 200;
+        f.partyAttackers = {broken};
+        std::string order;
+        CHECK(!RunCcReapplyTick(r, f, kTickMs, order) && order.empty());
+    }
+    {
+        // The key off: the plan's own picker still takes a listed unit (cc_never is the automatic pick's rule).
+        DungeonPlan listed = CcPlan({200});
+        listed.ccNever = {200};
+        Run r = Start(&listed);
+        Facts f = Party(0);
+        f.members = {CcMem("Magey", CcFamily::Polymorph)};
+        UnitFact u = AutoHumanoid(2, 20);
+        u.entry = 200;
+        f.units = {AutoHumanoid(1, 10), u};
+        CHECK(Tick(r, f) == "cc moon 2 Magey");
+    }
+}
+
 static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
 {
     DungeonPlan plan = CcPlan({});
@@ -33814,6 +33945,8 @@ int main()
     TestAutoCcBanishesADottedDemon();
     TestAutoCcNeverPicksFreezingTrap();
     TestAutoCcSkipsDottedUnits();
+    TestAutoCcSkipsNormalRankUnits();
+    TestAutoCcRespectsPlanCcNever();
     TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
     TestAutoCcSevenMarks();
     TestAutoCcHealersKept();
