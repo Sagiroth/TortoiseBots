@@ -21052,6 +21052,16 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         bool const staleGrace = f.staleCombat && r.staleMs <= kStaleCombatGraceMs;
         if (!staleGrace)
             r.fightMs += dt;
+        // AiPlayerbot.DungeonRunTotemFocus first, before any other tick can spend it: a kill_first totem (the Brain Wash
+        // Totem, a healing ward) dies in 1-2 s, and behind the hp hold, a CC break, the retreat, the auto-CC or the
+        // guard its focus waits a whole second more. A totem focus sends the DPS by guid and leaves the skull on the
+        // boss (IssueKillFirstFocus, FocusMovesSkull).
+        if (f.totemFocus)
+        {
+            const UnitFact* totem = PickKillFirst(r, f);
+            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
+                return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));
+        }
         // A hold's fights are the event (one wave after the other, no pause
         // between): its own timeout bounds them when that is longer.
         // A start step's fight (or a move's) before its hold is the event's too.
@@ -21247,14 +21257,6 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard would never send it anywhere while it stands there.
         if (order.empty() && WedgedSummon(r, f, dt, order))
             return order;
-        // The totem focus goes before the guard (AiPlayerbot.DungeonRunTotemFocus): a kill_first totem dies in 1-2 s,
-        // and a guard order spends the tick. Any other focus waits for the ordinary one below.
-        if (f.totemFocus)
-        {
-            const UnitFact* totem = PickKillFirst(r, f);
-            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
-                return IssueKillFirstFocus(r, *totem);
-        }
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -21266,7 +21268,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
-                order = IssueKillFirstFocus(r, *k);
+                order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);
