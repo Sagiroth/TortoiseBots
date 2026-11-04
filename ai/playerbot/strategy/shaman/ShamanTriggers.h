@@ -586,8 +586,8 @@ namespace ai
         SpiritLinkOnPartyTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "spirit link") {}
         bool IsActive() override
         {
-            // 10min redistribution link: keep one copy group-wide (mirror the
-            // earth-shield dupe guard) and hold it until the tank is low.
+            // 10min redistribution link: keep one copy group-wide
+            // and hold it until the tank is low.
             bool linkUp = false;
             Group* group = bot->GetGroup();
             if (group)
@@ -980,24 +980,6 @@ namespace ai
     {
     public:
         BloodlustTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "bloodlust") {}
-    };
-
-    class PartyTankEarthShieldTrigger : public BuffOnTankTrigger
-    {
-    public:
-        PartyTankEarthShieldTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "earth shield") {}
-
-        bool IsActive() override
-        {
-            Group* group = bot->GetGroup();
-            if (group)
-            {
-                for (Player* member : LiveGroupMembers(group))
-                    if (ai->HasAura("earth shield", member, false, true))
-                        return false;
-            }
-            return BuffOnTankTrigger::IsActive();
-        }
     };
 
     CAN_CAST_TRIGGER(ChainLightningTrigger, "chain lightning");

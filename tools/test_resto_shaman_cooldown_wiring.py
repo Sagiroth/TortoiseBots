@@ -41,6 +41,25 @@ class RestoShamanCooldownWiringTest(unittest.TestCase):
             ("ancestral swiftness heal", "healing wave on party", "ACTION_HIGH + 1"),
             combat)
 
+    def test_no_earth_shield_on_others(self):
+        combat = rows("RestorationShamanStrategy.cpp")
+        self.assertEqual(
+            [r for r in combat if "earth shield" in r[0] or "earth shield" in r[1]], [])
+        context = (SHAMAN / "ShamanAiObjectContext.cpp").read_text()
+        self.assertNotIn("earth shield on party tank", context)
+        self.assertNotIn("earth shield on party", context)
+        triggers = (SHAMAN / "ShamanTriggers.h").read_text()
+        self.assertNotIn("PartyTankEarthShieldTrigger", triggers)
+
+    def test_resto_keeps_water_shield(self):
+        combat = rows("RestorationShamanStrategy.cpp")
+        self.assertIn(
+            ("water shield", "water shield", "ACTION_HIGH"),
+            combat)
+        self.assertIn(
+            ("water shield", "water shield", "ACTION_NORMAL"),
+            combat)
+
 
 if __name__ == "__main__":
     unittest.main()
