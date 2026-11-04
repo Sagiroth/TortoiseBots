@@ -136,6 +136,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot logout`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot, keeping its ownership (hire ends and its character is deleted). |
 | [`.bot hire`](roster-and-hiring.md#bot-hire) | Roster & Hiring | Recruits a mercenary companion at recruiters. |
 | [`.bot hire raid`](roster-and-hiring.md#bot-hire-raid) | Roster & Hiring | Recruits up to 39 companions in one command. |
+| [`.bot role`](roster-and-hiring.md#bot-role) | Roster & Hiring | Configures party role overrides for bots or self. |
 | [`.bot invite`](roster-and-hiring.md#bot-invite) | Roster & Hiring | Invites an online owned bot to your party. |
 | [`.bot uninvite`](roster-and-hiring.md#bot-uninvite) | Roster & Hiring | Removes an owned bot or dismisses a hire from group. |
 | [`.bot summon`](roster-and-hiring.md#bot-summon) | Roster & Hiring | Teleports an owned bot or hire to your location. |
@@ -158,13 +159,14 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot help`](bot-panel.md#bot-help) | Inspection | Prints bot system version header. |
 | [`.bot inv`](bot-panel.md#bot-inv) | Bot Panel | Emits inventory, equipped gear, and money details. |
 | [`.bot professions`](bot-panel.md#bot-professions) | Bot Panel | Emits profession skill values and known/learnable recipes. |
-| [`.bot lootlog`](addon.md#protocol-grammar--semantics) | Bot Panel | Replays the last day of loot rows for controllable party bots. |
+| [`.bot lootlog`](bot-panel.md#bot-lootlog) | Bot Panel | Replays the last day of loot rows for controllable party bots. |
 | [`.bot item <Name> trade`](bot-panel.md#bot-item-trade) | Bot Panel | Opens direct trade window with a bot. |
 | [`.bot item <Name> equip`](bot-panel.md#bot-item-equip) | Bot Panel | Equips an item from the bot's bags into gear slots. |
 | [`.bot item <Name> unequip`](bot-panel.md#bot-item-unequip) | Bot Panel | Moves an equipped item into inventory bags. |
 | [`.bot item <Name> give`](bot-panel.md#bot-item-give) | Bot Panel | Offers a bag item in an open trade window. |
 | [`.bot behavior`](bot-panel.md#bot-behavior) | Bot Panel | Toggles persistent behaviors (loot, AoE, mimic...). |
 | [`.bot totem`](bot-panel.md#bot-totem) | Bot Panel | Configures and drops shaman totem loadouts. |
+| [`.bot command`](whispers.md#command-delegation-proxy--permissions) | Whisper Command | Forwards any whisper command to a bot you control. |
 | [`/w <BotName> trainer`](whispers.md#w--trainer) | Whisper Command | Trains all available class spells at open trainer. |
 | [`/w <BotName> talents`](whispers.md#w--talents) | Whisper Command | Reports spent talent points and allocation tree. |
 | [`/w <BotName> rebuff`](whispers.md#w--rebuff) | Whisper Command | Prompts bot to refresh party buffs out of combat. |
