@@ -7,7 +7,9 @@ about 23 bot-hours at the spot, melee bots at 0 damage). PlayerbotAI's
 IsBeingTeleportedNear() branch now probes the floor with the jump landing's own
 feet probe and starts the jump landing's simulated fall, behind
 AiPlayerbot.TeleportLandingFall (off by default: it changes every near
-teleport).
+teleport). Independently of that key, every acknowledged near teleport drops
+a fall or knockback still in flight: its pending destination would Relocate
+the bot back to where it fell before the teleport when its time expires.
 """
 import pathlib
 import unittest
@@ -44,6 +46,21 @@ class TeleportLandingWiringTest(unittest.TestCase):
         # The fall is the jump landing's, not a bare Relocate: the bot is put down when it ends.
         self.assertIn("SetJumpDestination(", near)
         self.assertIn("SetJumpTime(jump.jumpTimeMs)", near)
+
+    def test_every_near_teleport_drops_a_fall_in_flight(self):
+        fn = body(AI, "void PlayerbotAI::HandleTeleportAck()", "\nvoid PlayerbotAI::Reset(")
+        near = body(fn, "if (bot->IsBeingTeleportedNear())", "else if (bot->IsBeingTeleportedFar())")
+        # With AiPlayerbot.TeleportLandingFall at its default 0 the landing block is skipped, so the clear must sit
+        # before its condition: a pending fall or knockback is dropped by every acknowledged near teleport, or the
+        # old destination Relocates the bot back when jumpTime expires.
+        key = near.index("if (sPlayerbotAIConfig.teleportLandingFall)")
+        self.assertLess(near.index("HandleMoveTeleportAckOpcode(p)"), near.index("jumpTime = 0"))
+        self.assertLess(near.index("jumpTime = 0"), key)
+        self.assertLess(near.index("fallAfterJump = false"), key)
+        self.assertLess(near.index("ResetJumpDestination()"), key)
+        self.assertEqual(near.count("jumpTime = 0"), 1)
+        self.assertEqual(near.count("fallAfterJump = false"), 1)
+        self.assertEqual(near.count("ResetJumpDestination()"), 1)
 
     def test_the_key_is_read_and_documented_off_by_default(self):
         self.assertIn("config.GetBoolDefault(\"AiPlayerbot.TeleportLandingFall\", false)", CONFIG)

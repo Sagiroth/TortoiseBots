@@ -2462,6 +2462,13 @@ void PlayerbotAI::HandleTeleportAck()
 		p << (uint32) time(0); // time - not currently used
         bot->GetSession()->HandleMoveTeleportAckOpcode(p);
 
+        // Every acknowledged near teleport drops a fall or knockback still in flight, with the landing key off too:
+        // its pending destination would Relocate the bot back to where it fell before the teleport when its time
+        // expires.
+        jumpTime = 0;
+        fallAfterJump = false;
+        ResetJumpDestination();
+
         // A near teleport can end in mid-air: Jin'do's Banish 24466 lands a bot 12 yd over the ZG pit floor, and
         // with no client nothing makes it fall, so it hovers there and never paths back. Land it the way the jump
         // landing does: the feet probe and the map's floor (the higher walkable floor wins; a map-only floor only
@@ -2469,12 +2476,6 @@ void PlayerbotAI::HandleTeleportAck()
         // hovers for the fall time plus a second, then lands on the floor.
         if (sPlayerbotAIConfig.teleportLandingFall)
         {
-            // The teleport supersedes any fall or knockback still in flight: its destination would Relocate the bot
-            // back to where it was before. Clear it before the landing is decided, not after.
-            jumpTime = 0;
-            fallAfterJump = false;
-            ResetJumpDestination();
-
             float const destZ = bot->GetPositionZ();
             float mapFloorZ = destZ;
             bot->UpdateAllowedPositionZ(bot->GetPositionX(), bot->GetPositionY(), mapFloorZ);
