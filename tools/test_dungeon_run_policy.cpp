@@ -26640,6 +26640,108 @@ static void TestTankHoldFocusUnchanged()
     CHECK(FocusSkipsBot(true, false, true, false, false));   // and so it stays with the keys off
 }
 
+// T1: a kill_first totem Jin'do summoned (spell 24262, SPELL_EFFECT_SUMMON_WILD) has no owner and no creator guid; only
+// its temporary summon's summoner names him. The grid read adds it, and the totem focus picks it the first tick it
+// stands, with no attackers list involved.
+static void TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick()
+{
+    std::uint64_t const jindo = 500;
+    CHECK(KillFirstOwner(0, 0, jindo) == jindo);      // a wild summon: the summoner alone
+    CHECK(KillFirstOwner(0, 555, jindo) == 555);      // a creator beats it
+    CHECK(KillFirstOwner(444, 555, jindo) == 444);    // an owner beats both
+    CHECK(KillFirstGridTotemOf(jindo, true, true, jindo));
+    CHECK(!KillFirstGridTotemOf(jindo, true, false, jindo)); // not a totem
+    CHECK(!KillFirstGridTotemOf(jindo, true, true, 0));      // no engaged boss
+    CHECK(!KillFirstGridTotemOf(0, true, true, jindo));      // an ownerless unit
+
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = jindo;         // the grid read's owner: the engaged boss
+    totem.ownerEngaged = true;
+    totem.engaged = false;       // in no attackers list
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    CHECK(r.focusGuid == 501);
+    CHECK(r.focusIconGuid == 0); // the skull stays where it is (T5)
+}
+
+// T2: the totem focus runs at the top of the fight branch, so the automatic crowd control (or the hp hold, the guard)
+// never spends the tick first. Key off: today's order, the auto-CC first.
+static void TestTotemFocusFiresBeforeTheAutoCcTick()
+{
+    for (bool key : {true, false})
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0)};
+        plan.killFirst = {15112};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.members = {CcMem("Magey", CcFamily::Polymorph), Mem("Tanky", 0)};
+        f.autoCc = true;
+        f.autoCcAbove = 0;
+        f.anyInCombat = true;
+        f.totemFocus = key;
+        f.partyAttackers = {Typed(900, 100, 12, kCreatureHumanoid), Typed(901, 101, 14, kCreatureHumanoid),
+            Typed(902, 102, 16, kCreatureHumanoid)};
+        UnitFact totem = Unit(501, 15112, 5);
+        totem.creatureType = kCreatureTotem;
+        totem.engaged = true;
+        f.killFirst = {totem};
+        std::string const order = Tick(r, f);
+        if (key)
+            CHECK(order == "focus 501");
+        else
+            CHECK(order.compare(0, 3, "cc ") == 0); // the auto-CC spends the tick, as today
+    }
+}
+
+// T5: under the totem focus the run sends the DPS by guid and leaves the skull on the boss; the key off moves the mark
+// to the totem as before, and the focus' end clears only a mark the run placed.
+static void TestTotemFocusLeavesTheSkullOnTheBoss()
+{
+    CHECK(!FocusMovesSkull(true, true));
+    CHECK(FocusMovesSkull(true, false));
+    CHECK(FocusMovesSkull(false, true));
+    CHECK(FocusMovesSkull(false, false));
+
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    {
+        Run r;
+        r.focusIconGuid = 900; // the boss's skull, placed by an earlier focus
+        CHECK(IssueKillFirstFocus(r, totem, FocusMovesSkull(true, true)) == "focus 501");
+        CHECK(r.focusGuid == 501);
+        CHECK(r.focusIconGuid == 900); // untouched
+        CHECK(r.focusIconClear == 0);
+        DropFocus(r); // the totem died
+        CHECK(r.focusGuid == 0);
+        CHECK(r.focusIconClear == 0); // the boss keeps the skull
+    }
+    {
+        Run r;
+        r.focusIconGuid = 900;
+        CHECK(IssueKillFirstFocus(r, totem, FocusMovesSkull(false, true)) == "focus 501");
+        CHECK(r.focusIconGuid == 501); // today: the skull follows the focus
+        DropFocus(r);
+        CHECK(r.focusIconClear == 501);
+    }
+}
+
+// T6: the fight log's kill_first span lines, exact.
+static void TestKillFirstLogLine()
+{
+    CHECK(KillFirstLogLine("zul_gurub", "seen", 15112, 501, 0) == "TBM:KILLFIRST|zul_gurub|seen|15112|501");
+    CHECK(KillFirstLogLine("", "dead", 14987, 502, 4200) == "TBM:KILLFIRST|-|dead|14987|502|4200");
+    CHECK(KillFirstLogLine("zul_gurub", "gone", 15112, 503, 900) == "TBM:KILLFIRST|zul_gurub|gone|15112|503|900");
+}
+
 // A raid boss fight's healer guard with a ranged dps in reach of the add and the main tank holding the boss.
 static Facts FocusGuardFacts()
 {
@@ -34313,6 +34415,10 @@ int main()
     TestTotemFocusKeyOffJoinsAll();
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
+    TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
+    TestTotemFocusFiresBeforeTheAutoCcTick();
+    TestTotemFocusLeavesTheSkullOnTheBoss();
+    TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();
     TestGuardSkipsAuraGatedShade();

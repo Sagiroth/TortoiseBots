@@ -283,12 +283,16 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;", guard)
         self.assertIn("fact.level = attacker->GetLevel();", guard)
 
-        # Kill-first units come from the bots' cached attackers lists: no grid or world scan (AGENTS.md).
+        # Kill-first units come from the bots' cached attackers lists. The only scan is the totem key's bounded grid
+        # read around an engaged boss (a wild-summoned Brain Wash Totem is in no attackers list).
         self.assertIn("ReadKillFirst(*slot.run.plan, lead, bots, f);", facts)
         kill = body(COMMANDS, "void ReadKillFirst(", "\n}\n")
         self.assertIn('ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "attackers", guids);', kill)
-        for scan in ("GetCreatureListWithEntryInGrid", "Cell::Visit", "VisitAllObjects", "HostileCreaturesAround"):
+        for scan in ("Cell::Visit", "VisitAllObjects", "HostileCreaturesAround"):
             self.assertNotIn(scan, kill)
+        self.assertEqual(kill.count("GetCreatureListWithEntryInGrid"), 1)
+        self.assertIn("if (f.totemFocus && unit->IsCreature() && planBoss(", kill)
+        self.assertIn("GetCreatureListWithEntryInGrid(found, entry, TortoiseBots::DungeonRun::kKillFirstTotemGridYd)", kill)
         # The creatures channelling an aura at an engaged attacker (Hailar's Ritualists, r19-19z37) are
         # read off that attacker's own aura holders, inside the engaged block, and flagged for the policy.
         # Checked on the code with its // comments stripped, so a commented-out line does not pass.
@@ -2079,11 +2083,11 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertIn("return CommanderFocus(handler, order, target, intent, s_runIssuing);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
                       "                totemTarget, totemFocus)", COMMANDS)
-        # The focus order hands the tick to the totem before the guard can spend it.
+        # The focus order hands the tick to the totem before the guard (and now before every other order) can spend it.
         policy = strip_comments(self.POLICY)
         totem = policy.index("if (f.totemFocus)")
         self.assertLess(totem, policy.index("if (CheckGuard(r, f, dt, order))", totem))
-        self.assertIn("return IssueKillFirstFocus(r, *totem);", policy)
+        self.assertIn("return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));", policy)
 
     def test_the_guard_leaves_only_plan_kill_first_totems_to_the_focus(self):
         skip = body(strip_comments(self.POLICY), "inline bool GuardSkipsUnit(", "\n}\n")
