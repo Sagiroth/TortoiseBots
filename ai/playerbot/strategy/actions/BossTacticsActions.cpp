@@ -1514,8 +1514,12 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     if (fight.rows.empty() || !IsFreeDps(ai, bot))
         return nullptr;
 
+    AiObjectContext* context = ai->GetAiObjectContext();
     std::vector<TacticCandidate> candidates;
+    std::vector<Unit*> units;
     candidates.reserve(fight.units.size());
+    units.reserve(fight.units.size());
+    std::unordered_set<std::uint64_t> seen;
     for (Unit* unit : fight.units)
     {
         TacticCandidate c;
@@ -1523,9 +1527,50 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         c.distance = bot->GetDistance(unit);
         c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
         candidates.push_back(c);
+        units.push_back(unit);
+        seen.insert(unit->GetObjectGuid().GetRawValue());
+    }
+    // A kill_first entry the bot's attackers list never shows (a healing ward on the boss, a Shade it cannot see) is
+    // found by a grid search of the entry ("focus rti targets" collapses the attackers list to the raid mark). A grid
+    // hit joins only while it fights itself or through an owner that is a unit of this fight (KillFirstGridEligible).
+    if (sPlayerbotAIConfig.dungeonRunKillFirstGrid)
+    {
+        auto const ownerInFight = [&fight](std::uint64_t owner)
+        {
+            if (!owner)
+                return false;
+            for (Unit* unit : fight.units)
+                if (unit && unit->GetObjectGuid().GetRawValue() == owner)
+                    return true;
+            return false;
+        };
+        std::unordered_set<std::uint32_t> entries;
+        for (const BossTacticRow* row : fight.rows)
+            if (row->kind == BossTacticKind::KillFirst && row->targetEntry != 0)
+                entries.insert(row->targetEntry);
+        for (std::uint32_t const entry : entries)
+        {
+            const std::vector<KillFirstGridUnit> grid = AI_VALUE2(std::vector<KillFirstGridUnit>,
+                "kill first grid units", static_cast<int32>(entry));
+            for (const KillFirstGridUnit& hit : grid)
+            {
+                if (!KillFirstGridEligible(hit.alive, hit.evading, hit.inCombat, ownerInFight(hit.owner)) ||
+                    !seen.insert(hit.guid).second)
+                    continue;
+                Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
+                if (!unit || !unit->IsInWorld() || !unit->IsAlive())
+                    continue;
+                TacticCandidate c;
+                c.entry = hit.entry;
+                c.distance = bot->GetDistance(unit);
+                c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+                candidates.push_back(c);
+                units.push_back(unit);
+            }
+        }
     }
     const int index = PickKillFirst(fight.rows, candidates);
-    return index < 0 ? nullptr : fight.units[index];
+    return index < 0 ? nullptr : units[index];
 }
 
 Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -4027,6 +4072,20 @@ bool BossTacticsSeekAction::Execute(Event& event)
     return true;
 }
 
+namespace
+{
+// Whether the bot may taunt this subject at all: a needs_aura entry is for the carriers of the row's aura (a Shade of
+// Jin'do), and a taunt without it only moves the subject's damage onto another tank (BossTacticsPolicy.h).
+bool TauntAuraGated(Player* bot, Unit* subject)
+{
+    if (!bot || !subject)
+        return false;
+    std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry());
+    return AuraGateRefuses(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
+        requiredAura != 0 && bot->HasAura(requiredAura));
+}
+}
+
 bool BossTacticsSeekTankAction::Execute(Event& event)
 {
     (void)event;
@@ -4040,6 +4099,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     if (task.take)
     {
         hasLast = false;
+        // A needs_aura subject is no taunt target without its aura: the taunt would only move its damage onto another
+        // tank (a Shade of Jin'do).
+        if (TauntAuraGated(bot, task.source))
+            return false;
         // Class-correct taunt (the Gluth swap's list: 1.12 has no paladin taunt). Attack() sticks even when the taunt
         // itself cannot fire yet (cooldown, range).
         const char* taunt = nullptr;
@@ -4251,6 +4314,10 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
         for (Unit* unit : fight.units)
         {
             if (!unit || unit->GetEntry() != TacticSubjectEntry(*row))
+                continue;
+            // A needs_aura subject is no taunt target without the row's aura: skip it before its episode opens, so a
+            // Shade is never taken off a tank by a taunt that could not kill it anyway.
+            if (TauntAuraGated(bot, unit))
                 continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;

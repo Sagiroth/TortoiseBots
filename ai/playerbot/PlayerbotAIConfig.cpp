@@ -134,6 +134,9 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     }
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunAuraTactics = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraTactics", false);
+    dungeonRunAuraGatedTargets = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraGatedTargets", false);
+    dungeonRunKillFirstGrid = config.GetBoolDefault("AiPlayerbot.DungeonRunKillFirstGrid", false);
+    dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
     dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);

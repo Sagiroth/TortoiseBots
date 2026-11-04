@@ -57,6 +57,7 @@ namespace ai
         SeekAura = 16,        // the raid gathers in the cloud of a dying `target_entry` to carry `spell_id`
         PullGate = 17,        // the run leader never pulls the boss while it wears `spell_id` above the stack band
         Spread = 18,          // the ranged raid keeps `param` yd apart while the boss fights
+        NeedsAura = 19,       // only a bot carrying `spell_id` may target `target_entry`
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -160,6 +161,8 @@ namespace ai
             return BossTacticKind::PullGate;
         if (text == "spread")
             return BossTacticKind::Spread;
+        if (text == "needs_aura")
+            return BossTacticKind::NeedsAura;
         return BossTacticKind::None;
     }
 
@@ -169,7 +172,7 @@ namespace ai
         std::uint32_t bossEntry = 0;    // creature whose presence in the fight activates the row
         BossTacticKind kind = BossTacticKind::None;
         std::uint32_t targetEntry = 0;  // creature the row is about; 0 = the boss itself
-        std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell
+        std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell; needs_aura: the aura the bot must carry
         std::uint8_t priority = 0;      // kill_first: lower is killed first
         float param = 0.0f;             // behind, avoid_cast: radius in yards
         // linked_death: the release burn's order, a comma list of the group's entries in `burn_order` (the loader
@@ -213,6 +216,13 @@ namespace ai
         if (row.botAura != 0 && !botHasGateAura)
             return false;
         return true;
+    }
+
+    // Whether a needs_aura row keeps this bot off the unit: the key is on, the unit's entry has a row, and the bot
+    // carries none of the row's aura. One rule for the attack pickers, the taunt picks and the run guard.
+    inline bool AuraGateRefuses(bool keyOn, std::uint32_t requiredAura, bool botHasAura)
+    {
+        return keyOn && requiredAura != 0 && !botHasAura;
     }
 
     // One living unit of a boss entry the fight sees: its max health, current health % and guid.
@@ -364,6 +374,11 @@ namespace ai
             if (row.kind == BossTacticKind::Spread &&
                 (row.targetEntry != 0 || row.param < 5.0f || row.param > 30.0f))
                 return false;
+            // needs_aura: the entry and the aura a bot must carry, and nothing else. The aura is the row's own gate, so
+            // a health band or a bot aura could never be answered, and the kind takes no mode word.
+            if (row.kind == BossTacticKind::NeedsAura &&
+                (row.targetEntry == 0 || row.spellId == 0 || RowGateSet(row) || row.mode != TacticMode::Default))
+                return false;
             // The cycle and spot columns are the seek_aura kind's.
             if (row.kind != BossTacticKind::SeekAura &&
                 (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
@@ -408,6 +423,8 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::NeedsAura)
+                requiredAura_[row.map][row.targetEntry] = row.spellId;
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -511,6 +528,19 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
         }
 
+        // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
+        // unit's, wherever it stands, so the lookup never names the row's boss. 0 before the seal.
+        std::uint32_t RequiredAura(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || requiredAura_.empty())
+                return 0;
+            auto const byMap = requiredAura_.find(map);
+            if (byMap == requiredAura_.end())
+                return 0;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? 0 : it->second;
+        }
+
         // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
         // before the seal.
         bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
@@ -610,6 +640,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
@@ -1995,6 +2026,27 @@ namespace ai
             if (param > best)
                 best = param;
         return best;
+    }
+
+    // One living creature of a kill_first entry within kBossTacticsEngageRange of the bot, as the grid search saw it
+    // (the "kill first grid units" value). The fight decides who is pickable; this is only the search.
+    struct KillFirstGridUnit
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t entry = 0;
+        float distance = 0.0f;   // from the bot
+        bool alive = true;
+        bool evading = false;
+        bool inCombat = false;
+        std::uint64_t owner = 0; // owner, else creator, else the temporary summon's summoner (0: none)
+    };
+
+    // Whether a grid hit of a kill_first entry may join the pick: alive, not running home, and part of the fight itself
+    // or through its owner or summoner (which names a living unit of the fight). Keeps an idle add of the entry
+    // elsewhere on the map out.
+    inline bool KillFirstGridEligible(bool alive, bool evading, bool inCombat, bool ownerOrSummonerInFight)
+    {
+        return alive && !evading && (inCombat || ownerOrSummonerInFight);
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

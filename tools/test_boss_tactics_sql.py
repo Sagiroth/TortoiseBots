@@ -20,7 +20,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
-         "taunt_after_cast", "swap_on_aura", "seek_aura", "pull_gate", "spread"}
+         "taunt_after_cast", "swap_on_aura", "seek_aura", "pull_gate", "spread", "needs_aura"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
@@ -264,6 +264,15 @@ def new_kind_problem(row):
     if kind == "spread":
         if row["target_entry"] or not 5.0 <= row["param"] <= 30.0:
             return "spread with a target or a spacing outside [5, 30]"
+        return None
+    if kind == "needs_aura":
+        # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
+        if not row["target_entry"] or not row["spell_id"]:
+            return "needs_aura without its target or its aura"
+        if row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]:
+            return "a health band or bot aura on needs_aura"
+        if row["tactic_mode"]:
+            return "a mode word on needs_aura"
         return None
     if row["cycle_spell"] or row["cycle_s"] or has_spot:
         return "cycle or spot columns on another kind"
@@ -587,6 +596,49 @@ class BossTacticsSql(unittest.TestCase):
                     spell_id=24321, priority=30, param=4.0, window_s=80.0, cycle_spell=24324,
                     cycle_s=90.0, spot_x=-11802.0, spot_y=-1683.0, spot_z=52.9, hp_max=50)
         self.assertIsNotNone(new_kind_problem(seek))
+
+    def test_needs_aura_row_shape(self):
+        # needs_aura (the Shade of Jin'do): the entry and the aura a bot must carry, and nothing else. The aura is the
+        # row's gate, so a health band or a bot aura column, a mode word, or a missing half of the key is refused.
+        shade = dict(INSERT_COLUMNS, map=309, boss_entry=11380, kind="needs_aura", target_entry=14986, spell_id=24306)
+        self.assertIsNone(new_kind_problem(shade))
+        self.assertIsNotNone(new_kind_problem(dict(shade, spell_id=0)), "needs_aura without its aura")
+        self.assertIsNotNone(new_kind_problem(dict(shade, target_entry=0)), "needs_aura without its target")
+        self.assertIsNotNone(new_kind_problem(dict(shade, bot_aura=24306)), "a bot aura on needs_aura")
+        self.assertIsNotNone(new_kind_problem(dict(shade, hp_max=50)), "a health band on needs_aura")
+        self.assertIsNotNone(new_kind_problem(dict(shade, tactic_mode="now")), "a mode word on needs_aura")
+
+    def test_jindo_rows(self):
+        # 20261105100000_world.sql: the off-tank cover after a Hex or a charm of the tank, and the Shade's aura gate.
+        # The ids are pinned against the core below when TORTOISE_CORE is set; the boss's five older rows stay.
+        name = "20261105100000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Jin'do rows migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        taunt = live.get((309, 11380, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Jin'do taunt_after_cast row is missing")
+        self.assertEqual((1, 10.0, "until_tank", 0, 0),
+                         (taunt["priority"], taunt["param"], taunt["tactic_mode"], taunt["hp_min"], taunt["bot_aura"]),
+                         "the Jin'do taunt_after_cast row drifted")
+        shade = live.get((309, 11380, "needs_aura", 14986, 24306))
+        self.assertIsNotNone(shade, "the Jin'do needs_aura row is missing")
+        self.assertEqual((0, 0.0, "", 0, 0),
+                         (shade["priority"], shade["param"], shade["tactic_mode"], shade["hp_min"], shade["bot_aura"]),
+                         "the Jin'do needs_aura row drifted")
+        for row in (taunt, shade):
+            self.assertIsNone(new_kind_problem(row))
+        for key in ((309, 11380, "kill_first", 14986, 0), (309, 11380, "kill_first", 15112, 0),
+                    (309, 11380, "kill_first", 14987, 0), (309, 11380, "dispel_priority", 0, 24306),
+                    (309, 11380, "dispel_priority", 0, 17172)):
+            self.assertIn(key, live, "the Jin'do rows of 20261103020000 must stay: %s" % (key,))
+        if CORE and os.path.isfile(CORE_SPELLS):
+            templates = {row["entry"] for row in
+                         _core_rows("tw_world_creature_template.sql", "creature_template", ("entry",))}
+            spells = {row["entry"] for row in _core_rows("tw_world_spell_template.sql", "spell_template", ("entry",))}
+            for entry in (14986, 11380):
+                self.assertIn(entry, templates, "Jin'do row entry %s has no creature_template row" % entry)
+            for spell in (24306, 17172):
+                self.assertIn(spell, spells, "Jin'do row spell %s has no spell_template row" % spell)
 
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
@@ -961,6 +1013,16 @@ def _spell_rule_updates(updates_dir):
 
 CORE = os.environ.get("TORTOISE_CORE")
 CORE_SPELLS = os.path.join(CORE or "", "sql", "base", "tw_world_spell_template.sql")
+
+_CORE_ROWS = {}
+
+
+def _core_rows(filename, table, wanted):
+    """One core table, read once per process: the row-level tests outside BossTacticsCoreData share the parse."""
+    key = (filename, table, tuple(wanted))
+    if key not in _CORE_ROWS:
+        _CORE_ROWS[key] = _read_core_table(CORE, filename, table, wanted)
+    return _CORE_ROWS[key]
 
 
 @unittest.skipUnless(CORE and os.path.isfile(CORE_SPELLS), "set TORTOISE_CORE=<tortoise-wow checkout>")

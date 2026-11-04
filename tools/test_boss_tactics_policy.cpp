@@ -2308,6 +2308,63 @@ int main()
         CHECK(WidestSpreadYd({}, 10.0f) == 10.0f);
     }
 
+    // needs_aura (the Shade of Jin'do 14986, Delusions 24306): only a bot carrying the row's aura may target the entry,
+    // wherever it stands. AuraGateRefuses is the one rule the attack pickers, the taunt picks and the run guard read.
+    CHECK(ParseBossTacticKind("needs_aura") == BossTacticKind::NeedsAura); // ParseNeedsAuraKind
+    CHECK(static_cast<int>(BossTacticKind::NeedsAura) == 19);
+    CHECK(AuraGateRefuses(true, 24306, false));   // NeedsAuraRefusesBotWithoutAura
+    CHECK(!AuraGateRefuses(true, 24306, true));   // NeedsAuraAllowsCarrier
+    CHECK(!AuraGateRefuses(false, 24306, false)); // NeedsAuraKeyOffAllowsAll
+    CHECK(!AuraGateRefuses(true, 0, false));      // NeedsAuraNoRowAllowsAll
+    {
+        BossTacticRow shade = Row(309, 11380, BossTacticKind::NeedsAura, 14986, 24306);
+        {
+            BossTacticRow noSpell = shade;
+            noSpell.spellId = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(noSpell));                 // NeedsAuraRowRefusedWithoutSpell
+        }
+        {
+            BossTacticRow noTarget = shade;
+            noTarget.targetEntry = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(noTarget));                // NeedsAuraRowRefusedWithoutTarget
+        }
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(Gated(shade, 0, 100, 24306))); // NeedsAuraRowRefusedWithGate (a bot aura)
+            CHECK(!table.Add(Gated(shade, 20, 100)));       // ... or a health band
+            CHECK(!table.Add(Gated(shade, 0, 90)));
+        }
+        {
+            BossTacticRow withMode = shade;
+            withMode.mode = TacticMode::Now;
+            BossTacticTable table;
+            CHECK(!table.Add(withMode));                // NeedsAuraRowRefusedWithMode
+        }
+        // The lookup is by map and entry, never by the row's boss: a Shade is gated wherever it stands.
+        {
+            BossTacticTable table;
+            CHECK(table.RequiredAura(309, 14986) == 0); // not sealed yet
+            CHECK(table.Add(shade));
+            CHECK(table.Add(Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 1)));
+            table.Seal();
+            CHECK(table.RequiredAura(309, 14986) == 24306);
+            CHECK(table.RequiredAura(309, 15112) == 0);  // an ungated entry
+            CHECK(table.RequiredAura(309, 11380) == 0);  // the boss itself
+            CHECK(table.RequiredAura(531, 14986) == 0);  // another map
+            CHECK(table.NoCcEntries(309).count(14986) == 0); // not a crowd-control exclusion
+        }
+    }
+
+    // The kill_first grid search's eligibility (the Shade/ward focus): alive, not evading, and fighting itself or
+    // through its owner or summoner, which names a unit of the fight.
+    CHECK(KillFirstGridEligible(true, false, false, true));   // KillFirstGridAddsOwnedWard
+    CHECK(KillFirstGridEligible(true, false, true, false));   // ... and one fighting itself
+    CHECK(!KillFirstGridEligible(true, false, false, false)); // KillFirstGridSkipsIdleUnowned
+    CHECK(!KillFirstGridEligible(false, false, true, false)); // dead
+    CHECK(!KillFirstGridEligible(true, true, true, true));    // KillFirstGridSkipsEvading
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

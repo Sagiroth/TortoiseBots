@@ -958,6 +958,15 @@ AiPlayerbot.DungeonRunLinkedDeath = 0
 # 1 - on
 AiPlayerbot.DungeonRunAuraTactics = 0
 
+# A needs_aura row names an entry and the aura a bot must carry: a bot without it never targets, attacks or taunts that unit, and the run guard sends nobody at it.
+AiPlayerbot.DungeonRunAuraGatedTargets = 0
+
+# The kill_first candidates come from a grid search of the row's entries within 40 yd too, not only from each bot's attackers list (which "focus rti targets" collapses to the raid mark).
+AiPlayerbot.DungeonRunKillFirstGrid = 0
+
+# A kill-first focus on a totem is DPS-only, is issued before the run leader's guard, and the guard skips totems.
+AiPlayerbot.DungeonRunTotemFocus = 0
+
 # The use_object boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): one designated
 # bot clicks the ready game object nearest the boss while the row's aura is up or its window has run out, and mode
 # tank_anchor also walks the boss to the object first. With this key off the rows are ignored, so the table
