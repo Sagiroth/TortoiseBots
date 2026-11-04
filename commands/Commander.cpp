@@ -272,6 +272,13 @@ struct DungeonRunSlot
     // The pull row's ring estimate per unit (DungeonRun::PullEstimateCache, ReadPullJoiners): one read a row,
     // refilled into the unit facts on later ticks.
     mutable TortoiseBots::DungeonRun::PullEstimateCache pullEstCache;
+    // A kill_first unit's fight-log span (TBM:KILLFIRST, LogKillFirstSpans): its entry and the ms it was first seen at.
+    struct KillFirstSpan
+    {
+        uint32 entry = 0;
+        uint32 seenMs = 0;
+    };
+    mutable std::unordered_map<uint64, KillFirstSpan> killFirstSeen;
     // A player-led run (`.bot run start ... player`, PlayerLedPolicy.h): its own state beside the run.
     TortoiseBots::PlayerLed::State playerLed;
     // A system run paused by L6 (SystemRun::DecideJoinStep).
@@ -2988,6 +2995,68 @@ bool RunBotAttackOrder(PlayerbotAI* ai, Player* bot, Player* selectionOwner, Obj
     return accepted;
 }
 
+// AiPlayerbot.DungeonRunTotemFocus: one DPS bot on the run's totem focus. It cuts its own current cast or channel first
+// (a Rain of Fire or a Drain Soul channel otherwise finishes before the switch), then takes the attack by guid (the
+// run's skull stays on the boss), then opens with an instant the class has, so the first damage does not wait out a
+// 2.5-3 s nuke's cast. A class without an instant action falls through to its ordinary attack.
+static char const* const kTotemFocusOpeners[] = {"fire blast", "shadowburn", "death coil", "arcane shot"};
+
+// Whether the spell resurrects, the caster itself included: one of its effects is EFFECT_RESURRECT,
+// EFFECT_SELF_RESURRECT or EFFECT_RESURRECT_NEW. The totem focus never cuts one (TotemFocusMayInterrupt): a cut
+// Rebirth is a member lost.
+static bool TotemFocusResurrects(SpellEntry const* info)
+{
+    if (!info)
+        return false;
+    for (int i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
+        if (info->Effect[i] == SPELL_EFFECT_RESURRECT || info->Effect[i] == SPELL_EFFECT_SELF_RESURRECT ||
+            info->Effect[i] == SPELL_EFFECT_RESURRECT_NEW)
+            return true;
+    return false;
+}
+
+// Cuts one current spell slot by the totem focus' rule (TotemFocusMayInterrupt): only a generic cast or a channel, only
+// an offensive cast on a hostile target, and only a spell the fight does not need. A delayed generic spell is left
+// alone, as InterruptNonMeleeSpells left it.
+static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
+{
+    TortoiseBots::DungeonRun::TotemFocusSpell kind;
+    if (slot == CURRENT_GENERIC_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Generic;
+    else if (slot == CURRENT_CHANNELED_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Channeled;
+    else
+        return; // a melee or autorepeat slot (an Auto Shot, a wand's shot) is never cut
+    Spell* const spell = bot->GetCurrentSpell(slot);
+    if (!spell || !spell->m_spellInfo)
+        return;
+    // The cast's own target; a destination-targeted spell (Rain of Fire) carries no unit target, so the bot's
+    // selection stands in for it.
+    Unit* const target = spell->m_targets.getUnitTarget() ? spell->m_targets.getUnitTarget() : bot->GetSelectedUnit();
+    if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
+            TotemFocusResurrects(spell->m_spellInfo), spell->m_spellInfo->IsPositiveSpell(),
+            target && bot->IsHostileTo(target)))
+        return;
+    bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
+}
+
+static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
+{
+    ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
+    // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
+    // and the hearthstone are never cut (TotemFocusMayInterrupt).
+    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL);
+    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL);
+    selectionOwner->SetSelectionGuid(targetGuid);
+    bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
+    if (attacked)
+        for (char const* const opener : kTotemFocusOpeners)
+            if (ExecuteQuietAction(ai, opener, ai::Event("focus totem", "", selectionOwner)))
+                break;
+    ExecuteQuietNextAction(ai, false);
+    return attacked;
+}
+
 } // namespace
 
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
@@ -3155,14 +3224,16 @@ static bool FocusIsTankHoldTarget(Unit* target)
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
     std::string const& intent, bool automatedKillFirst)
 {
-    order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
     // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
-    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot), and it sends the
+    // damage dealers by guid with the skull left where it is: the run's mark draws in every bot that follows it.
     bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
     bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,
         sPlayerbotAIConfig.dungeonRunTotemFocus);
+    if (!totemFocus)
+        order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3178,9 +3249,15 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
                 totemTarget, totemFocus))
             continue;
-        bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
-        bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
-        ExecuteQuietNextAction(ai, true);
+        bool accepted;
+        if (totemFocus)
+            accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());
+        else
+        {
+            bool const set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
+            accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
+            ExecuteQuietNextAction(ai, true);
+        }
         if (accepted)
             ++succeeded;
     }
@@ -8864,6 +8941,35 @@ static bool InLeadGroup(Player* lead, Unit* unit)
     return group && static_cast<Player*>(unit)->GetGroup() == group;
 }
 
+// The visitor of an engaged boss's one bounded grid read (ReadKillFirst): a creature of the plan's kill_first entries
+// within kKillFirstTotemGridYd of that boss (the grid visit reaches whole cells, so the exact bound is checked here
+// too), whose owner (KillFirstOwner) is the boss, alive, in the world and a totem. The entries are a hash set, so one
+// visit reads them all.
+struct KillFirstTotemCheck
+{
+    KillFirstTotemCheck(std::unordered_set<std::uint32_t> const& entries, Creature* boss)
+        : entries(entries), boss(boss), bossRaw(boss->GetObjectGuid().GetRawValue()) {}
+
+    bool operator()(Creature* c)
+    {
+        if (!c || c == boss || !c->IsInWorld() || !entries.count(c->GetEntry()) ||
+            !boss->IsWithinDist(c, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false))
+            return false;
+        std::uint64_t summonerRaw = 0;
+        if (c->IsTemporarySummon())
+            summonerRaw = static_cast<TemporarySummon*>(c)->GetSummonerGuid().GetRawValue();
+        std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(
+            c->GetOwnerGuid().GetRawValue(), c->GetCreatorGuid().GetRawValue(), summonerRaw);
+        return TortoiseBots::DungeonRun::KillFirstGridTotemOf(ownerRaw, c->IsAlive(),
+            c->GetCreatureType() == TortoiseBots::DungeonRun::kCreatureTotem, bossRaw);
+    }
+
+private:
+    std::unordered_set<std::uint32_t> const& entries;
+    Creature* const boss;
+    std::uint64_t const bossRaw;
+};
+
 // The plan's kill_first units of this fight, from the bots' cached
 // "attackers" lists (no scan): each with whether it is engaged with the party
 // and, for a summoned one (a healing ward), whether its owner is. The creatures
@@ -8878,7 +8984,22 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         party.insert(bot->GetObjectGuid().GetRawValue());
     std::unordered_set<uint64> seen;
     std::unordered_set<uint64> auraWalked; // attackers whose aura holders this read walked
+    std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
+    std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // A plan boss (a boss step's entry, or the entry the spawn row first had when a script changed it).
+    auto const planBoss = [&plan](Creature* c)
+    {
+        if (!c)
+            return false;
+        std::uint32_t const entry = c->GetEntry();
+        std::uint32_t const formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(c);
+        for (ai::PlanStep const& step : plan.steps)
+            if (step.kind == ai::PlanStepKind::Boss && step.entry &&
+                (step.entry == entry || step.entry == formOf))
+                return true;
+        return false;
+    };
     auto add = [&](Unit* unit, bool auraOnEngaged)
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
@@ -8902,10 +9023,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         ObjectGuid owner = unit->GetOwnerGuid();
         if (owner.IsEmpty())
             owner = unit->GetCreatorGuid();
-        if (!owner.IsEmpty())
+        std::uint64_t summonerRaw = 0;
+        // A wild summon has no owner and no creator (Jin'do's Brain Wash Totem, spell 24262): its temporary summon's
+        // summoner is the only owner it has, and only the totem focus reads it.
+        if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())
+            summonerRaw = static_cast<TemporarySummon*>(unit)->GetSummonerGuid().GetRawValue();
+        std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(owner.GetRawValue(), 0, summonerRaw);
+        if (ownerRaw)
         {
-            fact.owner = owner.GetRawValue();
-            Unit* summoner = lead->GetMap()->GetUnit(owner);
+            fact.owner = ownerRaw;
+            Unit* summoner = lead->GetMap()->GetUnit(ObjectGuid(ownerRaw));
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
@@ -8925,6 +9052,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             add(unit, false);
             if (EngagedWithParty(unit, party))
             {
+                // AiPlayerbot.DungeonRunTotemFocus: an engaged boss's kill_first totems are read by a grid pass after
+                // this loop (a Brain Wash Totem is a wild summon and in no CONTROLLED_TOTEMS list). The decision is the
+                // policy's (KillFirstGridReadsOwner); the seen set keeps it to one pass per owner per read.
+                if (TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),
+                        unit->IsCreature() && planBoss(static_cast<Creature*>(unit)),
+                        engagedOwnerSeen.count(unit->GetObjectGuid().GetRawValue()) != 0))
+                {
+                    engagedOwnerSeen.insert(unit->GetObjectGuid().GetRawValue());
+                    engagedOwners.push_back(static_cast<Creature*>(unit));
+                }
                 // The totems and guardians of an attacker in this fight, read off
                 // the attacker itself: a Greater Healing Ward the moment it is up,
                 // not when a bot's cached list next takes it in (19z5: one ward was
@@ -8965,6 +9102,66 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
                     }
             }
         }
+    }
+    // AiPlayerbot.DungeonRunTotemFocus: the kill_first totems of an engaged boss in no attackers list (Jin'do's Brain
+    // Wash Totem, spell 24262) are read around the boss, bounded to the plan's entries and kKillFirstTotemGridYd. One
+    // grid visit per engaged boss reads every plan entry at once (KillFirstTotemCheck filters them through a hash
+    // set), so the read costs one bounded visit per boss, not one per boss and plan entry. The totem is a wild summon,
+    // so only its temporary summon's summoner names the boss.
+    if (!engagedOwners.empty())
+    {
+        std::unordered_set<std::uint32_t> const entries(plan.killFirst.begin(), plan.killFirst.end());
+        for (Creature* boss : engagedOwners)
+        {
+            std::list<Creature*> found;
+            KillFirstTotemCheck check(entries, boss);
+            MaNGOS::CreatureListSearcher<KillFirstTotemCheck> searcher(found, check);
+            Cell::VisitGridObjects(boss, searcher, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false);
+            for (Creature* c : found)
+                add(c, false);
+        }
+    }
+}
+
+// A kill_first unit's sighting and death in the server log (TBM:KILLFIRST, DungeonRun::KillFirstLogLine): the line
+// carries the run's lead bot and instance id, so it names its run in a log shared by every run of the server. The
+// frames sample a fight every few seconds, so a totem's lifetime is only measurable from these lines. One line per
+// unit: seen when the read first lists it, dead or gone when it leaves the list dead. A unit still alive but out of
+// the list for a tick (not engaged, out of the boss's grid) keeps its span and is not seen again. World thread, once a
+// second.
+void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts const& f)
+{
+    if (!lead || !lead->IsInWorld() || !slot.run.plan)
+        return;
+    std::uint32_t const now = WorldTimer::getMSTime();
+    std::unordered_set<uint64> live;
+    for (TortoiseBots::DungeonRun::UnitFact const& u : f.killFirst)
+    {
+        live.insert(u.guid);
+        if (slot.killFirstSeen.count(u.guid))
+            continue;
+        slot.killFirstSeen[u.guid] = {u.entry, now};
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), "seen", u.entry, u.guid, 0).c_str());
+    }
+    for (auto it = slot.killFirstSeen.begin(); it != slot.killFirstSeen.end();)
+    {
+        if (live.count(it->first))
+        {
+            ++it;
+            continue;
+        }
+        Unit* unit = lead->GetMap() ? lead->GetMap()->GetUnit(ObjectGuid(it->first)) : nullptr;
+        if (unit && unit->IsAlive())
+        {
+            ++it;
+            continue;
+        }
+        char const* const event = unit ? "dead" : "gone";
+        std::uint32_t const ms = WorldTimer::getMSTimeDiff(it->second.seenMs, now);
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), event, it->second.entry, it->first, ms).c_str());
+        it = slot.killFirstSeen.erase(it);
     }
 }
 
@@ -11487,7 +11684,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // In a fight of a plan with kill_first: those units among what the bots
     // already hold, their own cached "attackers" lists (which carry the
     // attackers' totems and guardians, a healing ward too; read only when
-    // already calculated), resolved by guid. No grid or world scan.
+    // already calculated), resolved by guid. The only scan is the totem key's
+    // bounded grid read of an engaged boss's kill-first units (ReadKillFirst).
     // In combat by the flag, yet nothing hostile is engaged with any bot or its
     // pet: stale (DungeonRun::Facts::staleCombat).
     // The same read lists those units with whether the group can attack each (DungeonRun::Facts::engagedUnits):
@@ -11500,8 +11698,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         if (f.autoCc)
             ReadCcBreakFacts(slot, lead, bots, f);
     }
-    if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
-        ReadKillFirst(*slot.run.plan, lead, bots, f);
+    if (slot.run.plan && !slot.run.plan->killFirst.empty())
+    {
+        if (f.anyInCombat)
+            ReadKillFirst(*slot.run.plan, lead, bots, f);
+        // Also out of combat: a kill-first unit that dies or despawns as the fight ends still gets its closing line,
+        // and a span is never left open into the next fight.
+        LogKillFirstSpans(slot, lead, f);
+    }
     if (f.anyInCombat)
     {
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).

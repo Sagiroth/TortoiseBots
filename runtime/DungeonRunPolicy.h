@@ -1095,6 +1095,9 @@ constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
 // A totem (the Brain Wash Totem 15112, the Powerful Healing Ward 14987): a 1-2 s kill, never a guard's target.
 constexpr std::uint32_t kCreatureTotem = 11;
+// The read around an engaged boss for its kill_first totems: a Brain Wash Totem lands about 5 yd from Jin'do, and a boss
+// never summons one across the room. Bounded, because the read runs once a second.
+constexpr float kKillFirstTotemGridYd = 25.0f;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
 // The run's crowd-control spells, in the order of their reliability: the bot
@@ -3511,9 +3514,27 @@ inline void ClearFightProgress(Run& r)
 // reports success or drop for each.
 inline void DropFocus(Run& r)
 {
+    // Only the focused unit's own skull comes off. A totem focus sends the DPS by guid and moves no mark
+    // (IssueKillFirstFocus, FocusMovesSkull): its skull is another unit's (the boss), which stays while the fight goes
+    // on; its record does too.
+    if (r.focusGuid != 0 && r.focusIconGuid == r.focusGuid)
+    {
+        r.focusIconClear = r.focusIconGuid;
+        r.focusIconGuid = 0;
+    }
+    r.focusGuid = 0;
+}
+
+// The fight is over: the run takes off any skull it still records, even one that was no longer the focus (a totem focus
+// moves no mark, so its record can be the boss's). Left alone it stayed on the unit until the run's own end, across
+// every fight after. Called after DropFocus, so the focus' own skull is already off; the clear goes the same way
+// (Run::focusIconClear, EndRunIcon).
+inline void DropStaleFocusIcon(Run& r)
+{
+    if (r.focusIconGuid == 0)
+        return;
     r.focusIconClear = r.focusIconGuid;
     r.focusIconGuid = 0;
-    r.focusGuid = 0;
 }
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
@@ -10090,6 +10111,54 @@ inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool 
     return automatedKillFirst && totemKeyOn && totemTarget;
 }
 
+// The current-spell slot a bot's cast was read from, as the glue maps CurrentSpellTypes onto it. Under the totem focus
+// only a generic cast and a channel are ever cut; an Auto Shot or a wand's shot is an autorepeat spell and keeps
+// firing.
+enum class TotemFocusSpell : std::uint8_t { Generic, Channeled, Other };
+
+// The hearthstone (an item's cast) and Rebirth, never cut by the totem focus: the first is the bot leaving, the second
+// a member coming back.
+constexpr std::uint32_t kHearthstoneSpell = 8690;
+constexpr std::uint32_t kRebirthSpell = 20484;
+
+template <std::size_t N>
+inline bool SpellIdIn(std::uint32_t spellId, const std::uint32_t (&spells)[N])
+{
+    for (std::uint32_t const id : spells)
+        if (id == spellId)
+            return true;
+    return false;
+}
+
+// Whether the spell is one of the run's crowd-control spells, every rank (kRunCc's families): a cut Polymorph, Shackle,
+// Banish, Sap, Hibernate, freezing trap, Seduction, Repentance, Fear or Scare Beast is a hold the party loses.
+inline bool RunCcSpellId(std::uint32_t spellId)
+{
+    return SpellIdIn(spellId, kPolymorphSpells) || SpellIdIn(spellId, kShackleUndeadSpells) ||
+        SpellIdIn(spellId, kBanishSpells) || SpellIdIn(spellId, kSapSpells) ||
+        SpellIdIn(spellId, kHibernateSpells) || SpellIdIn(spellId, kFreezingTrapSpells) ||
+        SpellIdIn(spellId, kSeductionSpells) || SpellIdIn(spellId, kRepentanceSpells) ||
+        SpellIdIn(spellId, kFearSpells) || SpellIdIn(spellId, kScareBeastSpells);
+}
+
+// The totem focus cuts a damage dealer's own cast or channel before it switches (a Rain of Fire or a Drain Soul
+// channel otherwise finishes before the attack lands). Only a generic cast and a channel are cut (an Auto Shot or a
+// wand's shot keeps firing), and only a cast that is positively offense: a spell that is not beneficial and a current
+// target that is hostile. A heal, shield, buff or defensive cast is never cut, whatever the role casting it (a hybrid
+// healing the tank keeps the heal). Nor a spell the fight depends on: the run's crowd control, a resurrect (Rebirth,
+// or any spell with a resurrect effect) and the hearthstone.
+inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect,
+    bool positiveSpell, bool hostileTarget)
+{
+    if (slot != TotemFocusSpell::Generic && slot != TotemFocusSpell::Channeled)
+        return false;
+    if (positiveSpell || !hostileTarget)
+        return false;
+    if (spellId == kHearthstoneSpell || spellId == kRebirthSpell || resurrectEffect)
+        return false;
+    return !RunCcSpellId(spellId);
+}
+
 // Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
 // like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
 // no order budget spent on it.
@@ -10100,14 +10169,50 @@ inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
 
 // The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
 // skull stays until the new order lands, so it is remembered (FocusOrderRefused).
-inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k)
+// movesSkull false: the order leaves every raid mark where it is (the skull on the boss) and only sends the bots by
+// guid. The totem focus does (FocusMovesSkull): the run's skull draws healers and tanks that never take an order.
+inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkull = true)
 {
-    r.prevFocusIconGuid = r.focusIconGuid;
+    if (movesSkull)
+    {
+        r.prevFocusIconGuid = r.focusIconGuid;
+        r.focusIconGuid = k.guid;
+        r.focusIconClear = 0;
+    }
     r.focusGuid = k.guid;
-    r.focusIconGuid = k.guid;
-    r.focusIconClear = 0;
     r.note = "fighting: kill " + std::to_string(k.entry) + " first";
     return "focus " + std::to_string(k.guid);
+}
+
+// Whether a kill_first focus moves the skull. Under AiPlayerbot.DungeonRunTotemFocus a totem is the DPS' alone and the
+// focus is sent by guid: moving the skull to it pulls in every healer and tank that follows the mark.
+inline bool FocusMovesSkull(bool totemKeyOn, bool totemTarget)
+{
+    return !(totemKeyOn && totemTarget);
+}
+
+// The owner a kill_first unit is read through: its owner, else its creator, else its temporary summon's summoner. The
+// core sets no creator on a SPELL_EFFECT_SUMMON_WILD creature (Jin'do's Brain Wash Totem is effect 41), and only the
+// summoner names the boss that cast it.
+inline std::uint64_t KillFirstOwner(std::uint64_t owner, std::uint64_t creator, std::uint64_t summoner)
+{
+    if (owner)
+        return owner;
+    return creator ? creator : summoner;
+}
+
+// Whether a grid hit is a kill_first totem of the engaged unit: alive, a totem, and its owner (KillFirstOwner) is that
+// engaged unit. The read adds only these, so a totem in no attackers list still joins the fight the tick it stands.
+inline bool KillFirstGridTotemOf(std::uint64_t hitOwner, bool alive, bool totem, std::uint64_t engagedOwner)
+{
+    return alive && totem && engagedOwner != 0 && hitOwner == engagedOwner;
+}
+
+// Whether an engaged unit's grid is read for its kill_first totems (ReadKillFirst's glue): only under the totem focus,
+// only a creature, only a plan boss, and each owner once per read.
+inline bool KillFirstGridReadsOwner(bool totemFocus, bool creature, bool planBoss, bool alreadyRead)
+{
+    return totemFocus && creature && planBoss && !alreadyRead;
 }
 
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
@@ -21244,6 +21349,17 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         bool const staleGrace = f.staleCombat && r.staleMs <= kStaleCombatGraceMs;
         if (!staleGrace)
             r.fightMs += dt;
+        // AiPlayerbot.DungeonRunTotemFocus first, before any other tick can spend it: a kill_first totem (the Brain Wash
+        // Totem, a healing ward) dies in 1-2 s, and behind the hp hold, a CC break, the retreat, the auto-CC or the
+        // guard its focus waits a whole second more. A totem focus sends the DPS by guid and leaves the skull on the
+        // boss (IssueKillFirstFocus, FocusMovesSkull). A retreat in progress keeps the tick: the living walk back first,
+        // not one more totem kill.
+        if (f.totemFocus && !r.retreatOn)
+        {
+            const UnitFact* totem = PickKillFirst(r, f);
+            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
+                return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));
+        }
         // A hold's fights are the event (one wave after the other, no pause
         // between): its own timeout bounds them when that is longer.
         // A start step's fight (or a move's) before its hold is the event's too.
@@ -21439,14 +21555,6 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard would never send it anywhere while it stands there.
         if (order.empty() && WedgedSummon(r, f, dt, order))
             return order;
-        // The totem focus goes before the guard (AiPlayerbot.DungeonRunTotemFocus): a kill_first totem dies in 1-2 s,
-        // and a guard order spends the tick. Any other focus waits for the ordinary one below.
-        if (f.totemFocus)
-        {
-            const UnitFact* totem = PickKillFirst(r, f);
-            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
-                return IssueKillFirstFocus(r, *totem);
-        }
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -21458,7 +21566,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
-                order = IssueKillFirstFocus(r, *k);
+                order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);
@@ -21474,6 +21582,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.eatWaitMs = 0;
         r.pullGuid = 0;
         DropFocus(r);
+        DropStaleFocusIcon(r);
         r.focusRefused.clear();
         r.focusUnstayed = false;
         r.guardMs = 0;
@@ -21899,6 +22008,22 @@ inline std::string PhaseText(const Run& r)
         return std::string(r.fighting ? "fight " : "hold ") + std::to_string(r.eventDown) + "/" +
             std::to_string(r.eventTotal) + " down";
     return PhaseName(r.phase);
+}
+
+// A kill_first unit's sighting or death in the server log:
+//   TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]
+// <lead> is the run's lead bot and <instance> its instance id, so the line names its run in a log shared by every run
+// of the server. <ms> is the time since it was first seen (0: none, a sighting). The frames sample a fight every few
+// seconds, so a totem's lifetime is only measurable from the log.
+inline std::string KillFirstLogLine(const std::string& plan, const std::string& lead, std::uint32_t instance,
+    const char* event, std::uint32_t entry, std::uint64_t guid, std::uint32_t ms)
+{
+    std::string line = std::string("TBM:KILLFIRST|") + (plan.empty() ? "-" : plan) + "|" +
+        (lead.empty() ? "-" : lead) + "|" + std::to_string(instance) + "|" + event + "|" + std::to_string(entry) +
+        "|" + std::to_string(guid);
+    if (ms)
+        line += "|" + std::to_string(ms);
+    return line;
 }
 
 // The status line for the commander:
