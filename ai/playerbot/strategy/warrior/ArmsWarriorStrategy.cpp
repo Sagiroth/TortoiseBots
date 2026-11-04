@@ -424,14 +424,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -439,9 +442,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
@@ -459,14 +463,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -474,9 +481,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
@@ -494,14 +502,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -509,9 +520,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
