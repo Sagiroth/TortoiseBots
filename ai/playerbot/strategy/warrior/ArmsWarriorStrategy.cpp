@@ -15,8 +15,6 @@ public:
         creators["piercing howl"] = &piercing_howl;
         creators["mocking blow"] = &mocking_blow;
         creators["heroic strike"] = &heroic_strike;
-        creators["whirlwind"] = &whirlwind;
-        creators["sweeping strikes"] = &sweeping_strikes;
         creators["sunder armor"] = &sunder_armor;
     }
 
@@ -34,10 +32,6 @@ private:
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
-    ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance for whirlwind");
-
-    ACTION_NODE_P(sweeping_strikes, "sweeping strikes", "battle stance");
-};
 
 ArmsWarriorStrategy::ArmsWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
 {
@@ -202,7 +196,7 @@ void ArmsWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "melee light aoe",
+        "melee medium aoe",
         NextAction::array(0, new NextAction("sweeping strikes", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -259,15 +253,9 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
-    // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
-    // charge/overpower/mocking blow/sweeping strikes/retaliation are all
-    // Battle-locked, and pinning berserker broke every one of them. Whirlwind
-    // keeps its arms-scoped berserker prerequisite node, so it still dances
-    // out and back (donor accepts the same dance); the AoE multipliers keep
-    // managing the sweeping-strikes stance choice on packs.
     triggers.push_back(new TriggerNode(
-        "battle stance",
-        NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
+        "battle stance for arms",
+        NextAction::array(0, new NextAction("battle stance for arms", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",
@@ -440,7 +428,6 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -476,7 +463,6 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -512,7 +498,6 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||

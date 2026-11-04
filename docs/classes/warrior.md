@@ -42,8 +42,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
 
 ### Arms & Fury (Melee DPS)
 - **Arms:**
-  - Fights in Battle Stance, maintaining *Rend*, casting *Mortal Strike* on cooldown and *Overpower* on dodges.
-  - Cleaves packs with *Sweeping Strikes* and *Whirlwind* (dancing to Berserker Stance for Whirlwind). In raids, single-target Whirlwind does not dance unless already in Berserker Stance. *Sweeping Strikes* is never started, and is dropped, beside a mob under the party's crowd control.
+  - Fights in Battle Stance, maintaining *Rend*, casting *Mortal Strike* on cooldown and *Overpower* on dodges. Never swaps stances mid-fight and never casts *Thunder Clap* (a tank-only spell).
+  - Cleaves packs with *Sweeping Strikes* (Battle Stance, 3 or more attackers in melee) and *Whirlwind* (only while already in Berserker Stance). *Sweeping Strikes* is never started, and is dropped, beside a mob under the party's crowd control.
   - Dumps rage with *Master Strike* and uses *Heroic Strike* once rage reaches 40.
 - **Fury:**
   - Fights in Berserker Stance, centering rage spend on *Bloodthirst* and *Whirlwind*. The build takes Dual-Wield Specialization.

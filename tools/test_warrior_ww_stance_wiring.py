@@ -32,10 +32,11 @@ class WwStanceWiringTest(unittest.TestCase):
         self.assertIn("RageAfterStanceSwap", policy)
 
     def test_whirlwind_prereq_is_gated_action(self):
-        # The whirlwind node no longer points at the always-useful plain stance.
+        # Arms DPS no longer dances: no whirlwind node, so no prereq at
+        # all. The shared gated prereq still exists for the Fury path.
         text = (WARRIOR / "ArmsWarriorStrategy.cpp").read_text()
-        self.assertIn('ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance for whirlwind");', text)
         self.assertNotIn('ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance");', text)
+        self.assertNotIn('ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance for whirlwind");', text)
 
     def test_gated_stance_actions_gate_on_post_swap_rage(self):
         actions = (WARRIOR / "WarriorActions.h").read_text()

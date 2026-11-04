@@ -19,6 +19,14 @@ bool BattleStanceTrigger::IsActive()
     return !ai->IsTank(bot) && BuffTrigger::IsActive();
 }
 
+bool BattleStanceForArmsTrigger::IsActive()
+{
+    if (ai->IsTank(bot))
+        return false;
+    return !ai->HasAura("battle stance", bot) && !ai->HasAura("berserker stance", bot) &&
+        !ai->HasAura("defensive stance", bot);
+}
+
 bool DefensiveStanceTrigger::IsActive()
 {
     return ai->IsTank(bot) && BuffTrigger::IsActive();

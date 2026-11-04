@@ -14,6 +14,30 @@ namespace ai
 
     // stances
     BUFF_ACTION_U(CastBattleStanceAction, "battle stance", !ai->IsTank(bot) && CastBuffSpellAction::isUseful());
+    // Combat pin for Arms DPS: holds Battle Stance only while the bot stands
+    // in no stance at all, so it never swaps back mid-fight.
+    class CastBattleStanceForArmsPinAction : public CastBuffSpellAction
+    {
+    public:
+        CastBattleStanceForArmsPinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "battle stance") {}
+        bool isUseful() override
+        {
+            if (ai->IsTank(bot))
+                return false;
+            if (ai->HasAura("battle stance", bot) || ai->HasAura("berserker stance", bot) ||
+                ai->HasAura("defensive stance", bot))
+                return false;
+            return CastBuffSpellAction::isUseful();
+        }
+
+    protected:
+        virtual std::string getName() override { return "battle stance for arms"; }
+    };
+    // Berserker Stance only for a Whirlwind that can actually fire: the
+    // engine runs the prerequisite before isPossible, so a plain stance
+    // node swaps (truncating rage) even when Whirlwind is on cooldown or
+    // unaffordable. This prerequisite carries its own name and only dances
+    // when the spell is off cooldown and the bar holds its cost.
     // Battle Stance only for the Mocking Blow second taunt: the plain battle
     // stance row refuses tanks, so this prerequisite carries its own name and
     // fires only while the mocking blow taunt trigger is active.
@@ -130,9 +154,31 @@ namespace ai
         }
     };
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
-    MELEE_DEBUFF_ACTION_R(CastThunderClapAction, "thunder clap", 8.0f);
-    SNARE_ACTION(CastThunderClapSnareAction, "thunder clap");
-    SNARE_ACTION(CastHamstringAction, "hamstring");
+    class CastThunderClapAction : public CastMeleeDebuffSpellAction
+    {
+    public:
+        CastThunderClapAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "thunder clap")
+        {
+            range = 8.0f;
+        }
+        bool isUseful() override
+        {
+            if (!ai->IsTank(bot))
+                return false;
+            return CastMeleeDebuffSpellAction::isUseful();
+        }
+    };
+    class CastThunderClapSnareAction : public CastSnareSpellAction
+    {
+    public:
+        CastThunderClapSnareAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "thunder clap") {}
+        bool isUseful() override
+        {
+            if (!ai->IsTank(bot))
+                return false;
+            return CastSnareSpellAction::isUseful();
+        }
+    };
     MELEE_ACTION(CastOverpowerAction, "overpower");
     MELEE_ACTION(CastMockingBlowAction, "mocking blow");
     class CastRetaliationAction : public CastBuffSpellAction
@@ -181,6 +227,12 @@ namespace ai
         bool isUseful() override
         {
             if (!CastBuffSpellAction::isUseful())
+                return false;
+            if (ai->IsTank(bot))
+                return false;
+            if (!AI_VALUE2(bool, "trigger active", "melee medium aoe"))
+                return false;
+            if (!ai->HasAura("battle stance", bot))
                 return false;
             return !SweepingStrikesNearCc(ai, bot, CcSweepingStrikesRadius);
         }
@@ -234,7 +286,19 @@ namespace ai
     };
     MELEE_ACTION(CastSlamAction, "slam");
     BUFF_ACTION(CastBerserkerRageAction, "berserker rage");
-    MELEE_ACTION(CastWhirlwindAction, "whirlwind");
+    class CastWhirlwindAction : public CastMeleeSpellAction
+    {
+    public:
+        CastWhirlwindAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "whirlwind") {}
+        bool isUseful() override
+        {
+            if (!CastMeleeSpellAction::isUseful())
+                return false;
+            if (ai->IsTank(bot))
+                return true;
+            return ai->HasAura("berserker stance", bot);
+        }
+    };
     MELEE_INTERRUPT_ACTION(CastPummelAction, "pummel");
     ENEMY_HEALER_ACTION(CastPummelOnEnemyHealerAction, "pummel");
     BUFF_ACTION(CastRecklessnessAction, "recklessness");

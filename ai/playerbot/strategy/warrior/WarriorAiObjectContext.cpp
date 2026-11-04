@@ -141,6 +141,7 @@ namespace ai
                 creators["patchwerk shield slam"] = [](PlayerbotAI* ai) { return new PatchwerkShieldSlamTrigger(ai); };
                 creators["shield bash on enemy healer"] = [](PlayerbotAI* ai) { return new ShieldBashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new BattleStanceTrigger(ai); };
+                creators["battle stance for arms"] = [](PlayerbotAI* ai) { return new BattleStanceForArmsTrigger(ai); };
                 creators["defensive stance"] = [](PlayerbotAI* ai) { return new DefensiveStanceTrigger(ai); };
                 creators["berserker stance"] = [](PlayerbotAI* ai) { return new BerserkerStanceTrigger(ai); };
                 creators["shield block"] = [](PlayerbotAI* ai) { return new ShieldBlockTrigger(ai); };
@@ -198,6 +199,7 @@ namespace ai
                 creators["shield block"] = [](PlayerbotAI* ai) { return new CastShieldBlockAction(ai); };
                 creators["bloodrage"] = [](PlayerbotAI* ai) { return new CastBloodrageAction(ai); };
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new CastBattleStanceAction(ai); };
+                creators["battle stance for arms"] = [](PlayerbotAI* ai) { return new CastBattleStanceForArmsPinAction(ai); };
                 creators["battle stance for mocking blow"] = [](PlayerbotAI* ai) { return new CastBattleStanceForMockingBlowAction(ai); };
                 creators["berserker stance for whirlwind"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceForWhirlwindAction(ai); };
                 creators["berserker stance for pummel"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceForPummelAction(ai); };

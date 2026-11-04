@@ -107,7 +107,7 @@ class WhirlwindRaidDanceWiringTest(unittest.TestCase):
         self.assertIn("ShouldWhirlwindStanceDance(", body)
 
     def test_sweeping_strikes_multipliers_name_the_new_prereq(self):
-        self.assertEqual(self.arms.count('actionName == "berserker stance for whirlwind"'), 3)
+        self.assertEqual(self.arms.count('actionName == "berserker stance for whirlwind"'), 0)
 
 
 class ArmsHowlFallbackWiringTest(unittest.TestCase):
