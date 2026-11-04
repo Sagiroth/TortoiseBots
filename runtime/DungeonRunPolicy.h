@@ -3496,8 +3496,14 @@ inline void ClearFightProgress(Run& r)
 // reports success or drop for each.
 inline void DropFocus(Run& r)
 {
-    r.focusIconClear = r.focusIconGuid;
-    r.focusIconGuid = 0;
+    // Only the focused unit's own skull comes off. A totem focus sends the DPS by guid and moves no mark
+    // (IssueKillFirstFocus, FocusMovesSkull): its skull is another unit's (the boss), which stays; its record does too,
+    // for the run's own end (ClearRunCcIcons).
+    if (r.focusGuid != 0 && r.focusIconGuid == r.focusGuid)
+    {
+        r.focusIconClear = r.focusIconGuid;
+        r.focusIconGuid = 0;
+    }
     r.focusGuid = 0;
 }
 

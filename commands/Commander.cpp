@@ -2994,6 +2994,25 @@ bool RunBotAttackOrder(PlayerbotAI* ai, Player* bot, Player* selectionOwner, Obj
     return accepted;
 }
 
+// AiPlayerbot.DungeonRunTotemFocus: one DPS bot on the run's totem focus. It cuts its current cast or channel first (a
+// Rain of Fire or a Drain Soul channel otherwise finishes before the switch), then takes the attack by guid (the run's
+// skull stays on the boss), then opens with an instant the class has, so the first damage does not wait out a 2.5-3 s
+// nuke's cast. A class without an instant action falls through to its ordinary attack.
+static char const* const kTotemFocusOpeners[] = {"fire blast", "shadowburn", "death coil", "arcane shot"};
+static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
+{
+    ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
+    bot->InterruptNonMeleeSpells(false);
+    selectionOwner->SetSelectionGuid(targetGuid);
+    bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
+    if (attacked)
+        for (char const* const opener : kTotemFocusOpeners)
+            if (ExecuteQuietAction(ai, opener, ai::Event("focus totem", "", selectionOwner)))
+                break;
+    ExecuteQuietNextAction(ai, false);
+    return attacked;
+}
+
 } // namespace
 
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
@@ -3161,14 +3180,16 @@ static bool FocusIsTankHoldTarget(Unit* target)
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
     std::string const& intent, bool automatedKillFirst)
 {
-    order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
     // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
-    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot), and it sends the
+    // damage dealers by guid with the skull left where it is: the run's mark draws in every bot that follows it.
     bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
     bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,
         sPlayerbotAIConfig.dungeonRunTotemFocus);
+    if (!totemFocus)
+        order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3184,9 +3205,15 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
                 totemTarget, totemFocus))
             continue;
-        bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
-        bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
-        ExecuteQuietNextAction(ai, true);
+        bool accepted;
+        if (totemFocus)
+            accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());
+        else
+        {
+            bool const set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
+            accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
+            ExecuteQuietNextAction(ai, true);
+        }
         if (accepted)
             ++succeeded;
     }
