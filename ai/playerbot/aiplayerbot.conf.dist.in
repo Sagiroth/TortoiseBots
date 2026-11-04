@@ -1043,8 +1043,9 @@ AiPlayerbot.DungeonRunRaidHealerGuard = 0
 # with 1 the seats go by class instead of member order. The raid seats (the raid keeps a third of its healers,
 # rounded up, off the tanks) take a group healer first (priest, then druid, then shaman); the main-tank seats take
 # the next healers (any class, one the raid seats do not hold back first, so a paladin lands on a tank); the
-# off-tank seats take whoever is left. A tank healer whose tank and itself are all at or above
-# AiPlayerbot.AlmostFullHealth may heal any raid member below 70% instead of standing on its seat.
+# off-tank seats take whoever is left. A tank healer (any healer with focus heal targets, bound or not) whose tank
+# and itself are all at or above AiPlayerbot.AlmostFullHealth may heal any group member below 70% instead of standing
+# on its seat.
 # 0 - off: seats by member order, the tank healers keep their focus targets (Default)
 # 1 - on
 AiPlayerbot.RaidHealerSeatsByClass = 0

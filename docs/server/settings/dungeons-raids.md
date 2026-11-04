@@ -603,16 +603,16 @@ A raid's adds on healers (boss and trash fights): sent to the raid's ranged dps,
 </details>
 ### `AiPlayerbot.RaidHealerSeatsByClass`
 A raid binding's healer seats go by class instead of member order, and a tank healer with nobody to heal on its seat helps the raid.
-**Default:** `0` · **Values:** `0` off (member order; tank healers keep their focus targets), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+**Default:** `0` · **Values:** `0` off (member order; tank healers keep their focus targets), `1` on · **Restart:** not needed (`.reload config` applies it; a raid already bound keeps its seats until it is bound again)
 
 <details>
 <summary>How it works in detail</summary>
 
-**Healer seats by class:** only read with `AiPlayerbot.DungeonRunRaid = 1`, when a raid binding applies its layout:
+**Healer seats by class:** the seats are only read with `AiPlayerbot.DungeonRunRaid = 1`, when a raid binding applies its layout:
 - the raid seats (the raid keeps a third of its healers, rounded up, off the tanks) take a group healer first: priest, then druid, then shaman, then any other healer
 - the main-tank seats take the next healers, any class; a healer the raid seats do not hold back (a paladin) comes before a remaining group healer, so the fixed priest, priest, paladin hire puts the paladin on a main tank and keeps a priest on the raid
 - the off-tank seats take whoever is left
-- a tank healer whose tank and itself are all at or above `AiPlayerbot.AlmostFullHealth` may heal any raid member below 70%
+- a tank healer (any healer with focus heal targets, bound or not) whose tank and itself are all at or above `AiPlayerbot.AlmostFullHealth` may heal any group member below 70%
 - with `0` the seats are handed out in member order, as before
 
 </details>
