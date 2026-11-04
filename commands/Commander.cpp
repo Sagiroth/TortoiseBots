@@ -8839,7 +8839,9 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         if (owner.IsEmpty())
             owner = unit->GetCreatorGuid();
         std::uint64_t summonerRaw = 0;
-        if (unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())
+        // A wild summon has no owner and no creator (Jin'do's Brain Wash Totem, spell 24262): its temporary summon's
+        // summoner is the only owner it has, and only the totem focus reads it.
+        if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())
             summonerRaw = static_cast<TemporarySummon*>(unit)->GetSummonerGuid().GetRawValue();
         std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(owner.GetRawValue(), 0, summonerRaw);
         if (ownerRaw)

@@ -30,6 +30,9 @@ class TotemFocusWiringTest(unittest.TestCase):
     def test_read_scans_the_boss_for_a_wild_summoned_totem(self):
         fn = body(COMMANDER, "void ReadKillFirst(ai::DungeonPlan const& plan")
         self.assertIn("if (f.totemFocus && unit->IsCreature() && planBoss(", fn)
+        # The summoner fallback is the totem read's alone.
+        self.assertIn(
+            "if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())", fn)
         self.assertIn("GetCreatureListWithEntryInGrid(found, entry, TortoiseBots::DungeonRun::kKillFirstTotemGridYd)",
             fn)
         # 24262 sets no creator guid: the temporary summon's summoner is the boss.
