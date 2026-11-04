@@ -57,6 +57,8 @@ DISPLAY_FILES = ("runtime/ObservabilityEmitter.cpp",)
 # Members read into PlayerbotAIConfig that no engine code consumes yet.
 # One line of player words why reading it is still the better choice.
 ALLOWLIST = {
+    # Every Zul'Gurub Hakkar key has a consumer now, so nothing is listed. A key read before its consumer
+    # lands gets a line here with the reason, and the line goes when the consumer lands.
 }
 
 DISPLAY_ONLY_ALLOWLIST = {}

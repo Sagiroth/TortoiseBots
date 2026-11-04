@@ -20,7 +20,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
-         "taunt_after_cast", "swap_on_aura"}
+         "taunt_after_cast", "swap_on_aura", "seek_aura", "pull_gate", "spread"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
@@ -33,17 +33,19 @@ MODE_WORDS = {
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
-          "hp_min", "hp_max", "bot_aura", "tactic_mode", "window_s")
+          "hp_min", "hp_max", "bot_aura", "tactic_mode", "window_s", "cycle_spell", "cycle_s", "spot_x", "spot_y",
+          "spot_z")
 INSERT_COLUMNS = {
     "map": 0, "boss_entry": 0, "kind": "", "target_entry": 0, "spell_id": 0, "priority": 0, "param": 0.0,
     "burn_order": None, "comment": "", "hp_min": 0, "hp_max": 100, "bot_aura": 0, "tactic_mode": "",
-    "window_s": 7.0,
+    "window_s": 7.0, "cycle_spell": 0, "cycle_s": 0.0, "spot_x": 0.0, "spot_y": 0.0, "spot_z": 0.0,
 }
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
     r"(?: AND `kind` = '(\w+)')?"
-    r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?;?$"
+    r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?"
+    r"(?: AND `hp_min` = (\d+) AND `hp_max` = (\d+))?;?$"
 )
 DELETE_LINE = re.compile(r"DELETE\s+FROM\s+`?ai_boss_tactic`?(?=\s|;|$)", re.IGNORECASE)
 INSERT = re.compile(
@@ -79,6 +81,10 @@ def _row_dict(name, columns, tuple_text):
     row["bot_aura"] = int(row["bot_aura"] or 0)
     row["tactic_mode"] = row["tactic_mode"] or ""
     row["window_s"] = 7.0 if row["window_s"] is None else float(row["window_s"])
+    row["cycle_spell"] = int(row["cycle_spell"] or 0)
+    row["cycle_s"] = float(row["cycle_s"] or 0.0)
+    for column in ("spot_x", "spot_y", "spot_z"):
+        row[column] = float(row[column] or 0.0)
     return row
 
 
@@ -178,7 +184,7 @@ def _matches(row, wanted):
 
 
 def delete_scope(match):
-    """(map, bosses, single entry, kind, target, spell) of a parsed DELETE, each None when absent."""
+    """(map, bosses, single entry, kind, target, spell, hp_min, hp_max) of a parsed DELETE, None when absent."""
     return (
         int(match.group(1)),
         {int(entry) for entry in match.group(2).split(",")} if match.group(2) else None,
@@ -186,12 +192,14 @@ def delete_scope(match):
         match.group(4),
         int(match.group(5)) if match.group(5) else None,
         int(match.group(6)) if match.group(6) else None,
+        int(match.group(7)) if match.group(7) else None,
+        int(match.group(8)) if match.group(8) else None,
     )
 
 
 def delete_covers(scope, key):
-    """Whether the parsed DELETE removes one (map, boss_entry, kind, target_entry, spell_id) key."""
-    map_id, bosses, entry, kind, target, spell = scope
+    """Whether the parsed DELETE removes one (map, boss_entry, kind, target_entry, spell_id[, hp_min, hp_max]) key."""
+    map_id, bosses, entry, kind, target, spell, hp_min, hp_max = scope
     if key[0] != map_id:
         return False
     if entry is not None and key[1] != entry:
@@ -203,6 +211,8 @@ def delete_covers(scope, key):
     if target is not None and key[3] != target:
         return False
     if spell is not None and key[4] != spell:
+        return False
+    if hp_min is not None and (len(key) < 7 or key[5] != hp_min or key[6] != hp_max):
         return False
     return True
 
@@ -217,7 +227,7 @@ def effective_rows():
             continue
         _name, match = payload
         scope = delete_scope(match)
-        for key in [key for key in live if delete_covers(scope, key[:5])]:
+        for key in [key for key in live if delete_covers(scope, key)]:
             del live[key]
     rows = list(live.values())
     for _name, changes, wanted in migration_updates():
@@ -229,6 +239,37 @@ def effective_rows():
     return rows
 
 
+def new_kind_problem(row):
+    """BossTacticTable::Add's refusals of a seek_aura, pull_gate or spread row, or None for a usable one."""
+    kind = row["kind"]
+    has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
+    if kind in ("seek_aura", "pull_gate", "spread") and (row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
+        return "a health band or bot aura on a kind no fight scan asks"
+    if kind == "seek_aura":
+        if not row["target_entry"] or not row["spell_id"] or not row["cycle_spell"] or not has_spot:
+            return "seek_aura without its source, its aura, its cycle spell or its spot"
+        if not 0.0 < row["param"] <= 10.0:
+            return "seek_aura gather radius outside (0, 10]"
+        if row["priority"] > 99:
+            return "seek_aura hold percent above 99"
+        if not 0.0 < row["cycle_s"] <= 600.0:
+            return "seek_aura cycle length outside (0, 600]"
+        if not 0.0 < row["window_s"] <= row["cycle_s"]:
+            return "seek_aura window outside (0, cycle]"
+        return None
+    if kind == "pull_gate":
+        if row["target_entry"] or not row["spell_id"] or not 0.0 < row["param"] <= 300.0:
+            return "pull_gate with a target, without a spell or with a hold outside (0, 300]"
+        return None
+    if kind == "spread":
+        if row["target_entry"] or not 5.0 <= row["param"] <= 30.0:
+            return "spread with a target or a spacing outside [5, 30]"
+        return None
+    if row["cycle_spell"] or row["cycle_s"] or has_spot:
+        return "cycle or spot columns on another kind"
+    return None
+
+
 class BossTacticsSql(unittest.TestCase):
     def test_rows_exist(self):
         self.assertTrue(migration_rows(), "no ai_boss_tactic rows found")
@@ -236,7 +277,7 @@ class BossTacticsSql(unittest.TestCase):
     def test_rows_are_loadable(self):
         for row in effective_rows():
             name, map_id, boss, kind, target, spell, priority, param, burn_order = row[:9]
-            hp_min, hp_max, bot_aura, mode, window_s = row[9:]
+            hp_min, hp_max, bot_aura, mode, window_s = row[9:14]
             where = "%s boss %s kind %s" % (name, boss, kind)
             self.assertIn(kind, KINDS, where)
             self.assertGreater(int(map_id), 0, where)
@@ -284,6 +325,8 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "swap_on_aura":
                 self.assertGreater(int(spell), 0, where)        # the aura the tanks swap on
                 self.assertGreaterEqual(int(priority), 2, where)  # at least two tanks in the rotation
+            problem = new_kind_problem(_payload_dict(row))
+            self.assertIsNone(problem, "%s: %s" % (where, problem))
 
     def test_primary_keys_are_unique(self):
         # In boot order: an INSERT may not repeat a key that is still live, and a DELETE frees the keys it removes
@@ -299,7 +342,7 @@ class BossTacticsSql(unittest.TestCase):
                 continue
             _name, match = payload
             scope = delete_scope(match)
-            seen = {key for key in seen if not delete_covers(scope, key[:5])}
+            seen = {key for key in seen if not delete_covers(scope, key)}
 
     def test_deletes_are_map_scoped(self):
         for path in migration_paths():
@@ -463,6 +506,87 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("(309, 11382, 'dps_hold_after', 0, 24314, 0, 4, 0, 'until_tank', ", text)
         self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
         self.assertEqual(1, text.count("(309, 11382, 'dps_hold_after'"))
+    def test_hakkar_mechanics_schema(self):
+        # 20261104010000: the seek_aura row's cycle clock and the spot its source is held at. Idempotent, after
+        # window_s; the defaults leave every row written before it unchanged.
+        path = os.path.join(ROOT, "data/sql/world/20261104010000_world.sql")
+        self.assertTrue(os.path.isfile(path), "the hakkar mechanics schema migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for column, definition in (
+            ("cycle_spell", "int unsigned NOT NULL DEFAULT 0"),
+            ("cycle_s", "float NOT NULL DEFAULT 0"),
+            ("spot_x", "float NOT NULL DEFAULT 0"),
+            ("spot_y", "float NOT NULL DEFAULT 0"),
+            ("spot_z", "float NOT NULL DEFAULT 0"),
+        ):
+            self.assertIn("ADD COLUMN `%s` %s" % (column, definition), text)
+            self.assertIn("COLUMN_NAME = '%s'" % column, text)
+        for row in effective_rows():
+            if row[0] < "20261104010000_world.sql":
+                self.assertEqual((0, 0.0, 0.0, 0.0, 0.0), row[14:19],
+                                 "%s carries a cycle or spot unexpectedly" % (row[0],))
+
+    def test_hakkar_rows(self):
+        # The four rows of 20261104020000_world.sql. The core ids are pinned in BossTacticsCoreData below; here the
+        # live table shape is, so a wrong number or a delete that reaches too far fails.
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        seek = live.get((309, 14834, "seek_aura", 11357, 24321))
+        self.assertIsNotNone(seek, "the Hakkar seek_aura row is missing")
+        self.assertEqual((30, 4.0, 80.0, 24324, 90.0, -11802.0, -1683.0, 52.9),
+                         (seek["priority"], seek["param"], seek["window_s"], seek["cycle_spell"],
+                          seek["cycle_s"], seek["spot_x"], seek["spot_y"], seek["spot_z"]),
+                         "the Hakkar seek_aura row drifted")
+        gate = live.get((309, 14834, "pull_gate", 0, 24692))
+        self.assertIsNotNone(gate, "the Hakkar pull_gate row is missing")
+        self.assertEqual((0, 30.0, 0), (gate["priority"], gate["param"], gate["cycle_spell"]),
+                         "the Hakkar pull_gate row drifted")
+        spread = live.get((309, 14834, "spread", 0, 24328))
+        self.assertIsNotNone(spread, "the Hakkar spread row is missing")
+        self.assertEqual(12.0, spread["param"], "the Hakkar spread row drifted")
+        taunt = live.get((309, 14834, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Hakkar taunt_after_cast row is missing")
+        self.assertEqual((1, 10.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
+                         "the Hakkar taunt_after_cast row drifted")
+        for row in (seek, gate, spread, taunt):
+            self.assertIsNone(new_kind_problem(row))
+        # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
+        for spell in (24321, 24687, 24688):
+            self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
+
+    def test_seek_aura_row_without_cycle_spell_refused(self):
+        seek = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="seek_aura", target_entry=11357,
+                    spell_id=24321, priority=30, param=4.0, window_s=80.0, cycle_s=90.0,
+                    spot_x=-11802.0, spot_y=-1683.0, spot_z=52.9)
+        self.assertIsNotNone(new_kind_problem(seek))
+        seek["cycle_spell"] = 24324
+        self.assertIsNone(new_kind_problem(seek))
+
+    def test_pull_gate_row_with_target_refused(self):
+        gate = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="pull_gate", target_entry=11357,
+                    spell_id=24692, param=30.0)
+        self.assertIsNotNone(new_kind_problem(gate))
+        gate["target_entry"] = 0
+        self.assertIsNone(new_kind_problem(gate))
+
+    def test_spread_row_param_below_five_refused(self):
+        spread = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="spread", spell_id=24328, param=4.9)
+        self.assertIsNotNone(new_kind_problem(spread))
+        spread["param"] = 5.0
+        self.assertIsNone(new_kind_problem(spread))
+
+    def test_cycle_columns_on_other_kind_refused(self):
+        interrupt = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="interrupt", spell_id=24324,
+                         cycle_spell=24324)
+        self.assertIsNotNone(new_kind_problem(interrupt))
+        interrupt["cycle_spell"] = 0
+        self.assertIsNone(new_kind_problem(interrupt))
+
+    def test_gate_on_seek_aura_refused(self):
+        seek = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="seek_aura", target_entry=11357,
+                    spell_id=24321, priority=30, param=4.0, window_s=80.0, cycle_spell=24324,
+                    cycle_s=90.0, spot_x=-11802.0, spot_y=-1683.0, spot_z=52.9, hp_max=50)
+        self.assertIsNotNone(new_kind_problem(seek))
 
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
@@ -842,8 +966,9 @@ CORE_SPELLS = os.path.join(CORE or "", "sql", "base", "tw_world_spell_template.s
 @unittest.skipUnless(CORE and os.path.isfile(CORE_SPELLS), "set TORTOISE_CORE=<tortoise-wow checkout>")
 class BossTacticsCoreData(unittest.TestCase):
     SPELL_COLUMNS = ("entry", "attributesEx", "castingTimeIndex", "interruptFlags",
-                     "channelInterruptFlags", "preventionType", "dispel",
-                     "effect1", "effect2", "effect3", "effectImplicitTargetA1", "effectImplicitTargetA2",
+                     "channelInterruptFlags", "preventionType", "dispel", "stackAmount",
+                     "effect1", "effect2", "effect3", "effectTriggerSpell1", "effectTriggerSpell2",
+                     "effectTriggerSpell3", "effectImplicitTargetA1", "effectImplicitTargetA2",
                      "effectImplicitTargetA3", "effectApplyAuraName1", "effectApplyAuraName2",
                      "effectApplyAuraName3")
     # Creatures the core puts on a map without a creature row: the summon that makes them.
@@ -977,6 +1102,62 @@ class BossTacticsCoreData(unittest.TestCase):
                 problems.append("map %s boss %s spell %s: castingTimeIndex %s and attributesEx 0x%x, neither a cast "
                                 "nor a channel" % (map_id, boss, spell, info["castingTimeIndex"], info["attributesEx"]))
         self.assertEqual([], problems, "avoid_cast rows the scan cannot see:\n" + "\n".join(problems))
+
+    def test_seek_aura_rows_name_a_source_cloud(self):
+        # A seek_aura row's aura has to come out of the source's death: the trigger spell of an effect-27 persistent
+        # area aura cast by one of the target's EventAI death scripts (the Son of Hakkar 11357's event 1135701 runs
+        # script 1135701, which casts 24320, effect 27, trigger 24321). The 24320 branch of SpellEffects is dead code,
+        # so this EventAI path is the only source of the cloud.
+        events = _read_core_table(CORE, "tw_world_creature_ai_events.sql", "creature_ai_events",
+                                  ("id", "creature_id", "event_type", "action1_script", "action2_script",
+                                   "action3_script"))
+        scripts = _read_core_table(CORE, "tw_world_creature_ai_scripts.sql", "creature_ai_scripts",
+                                   ("id", "command", "datalong"))
+        problems = []
+        for row in effective_rows():
+            if row[3] != "seek_aura":
+                continue
+            where = "map %s boss %s source %s aura %s" % (row[1], row[2], row[4], row[5])
+            script_ids = set()
+            for event in events:
+                if event.get("creature_id") != int(row[4]) or event.get("event_type") != 6:
+                    continue
+                for index in (1, 2, 3):
+                    if event.get("action%d_script" % index):
+                        script_ids.add(event["action%d_script" % index])
+            found = False
+            for script in scripts:
+                if script.get("id") not in script_ids or script.get("command") != 15:
+                    continue
+                info = self.spells.get(script.get("datalong"))
+                if not info:
+                    continue
+                for index in (1, 2, 3):
+                    if (info.get("effect%d" % index) == 27 and
+                            info.get("effectTriggerSpell%d" % index) == int(row[5])):
+                        found = True
+                        break
+            if not found:
+                problems.append("%s: no death script of the source casts an effect-27 spell triggering the aura"
+                                % where)
+        self.assertEqual([], problems, "seek_aura rows the source cannot produce:\n" + "\n".join(problems))
+
+    def test_new_kind_spells_exist(self):
+        # The seek_aura clock's spell is a core spell, and the pull gate's stake spell carries more than one stack: a
+        # single-stack aura could never sit above the band a row allows.
+        problems = []
+        for row in effective_rows():
+            where = "map %s boss %s kind %s" % (row[1], row[2], row[3])
+            if row[3] == "seek_aura" and row[14] not in self.spells:
+                problems.append("%s: cycle_spell %s has no spell_template row" % (where, row[14]))
+            if row[3] == "pull_gate":
+                info = self.spells.get(int(row[5]))
+                if info is None:
+                    problems.append("%s: spell %s has no spell_template row" % (where, row[5]))
+                elif info["stackAmount"] <= 1:
+                    problems.append("%s: spell %s has stackAmount %s, so the gate could never bind"
+                                    % (where, row[5], info["stackAmount"]))
+        self.assertEqual([], problems, "new kind spells the core does not answer:\n" + "\n".join(problems))
 
     def test_boss_and_target_entries_exist(self):
         for row in effective_rows():

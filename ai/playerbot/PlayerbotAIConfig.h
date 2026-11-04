@@ -622,6 +622,18 @@ public:
     // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
     // rows are ignored, so the table behaves exactly as before the kind (default off).
     bool dungeonRunUseObject = false;
+    // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
+    // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
+    bool dungeonRunSeekAura = false;
+    // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
+    // its stack band, then ends the run): off, the rows are ignored (default off).
+    bool dungeonRunPullGate = false;
+    // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
+    // ignored (default off).
+    bool dungeonRunBossSpread = false;
+    // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
+    // charmed bot behaves as before (default off).
+    bool dungeonRunCharmYield = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party

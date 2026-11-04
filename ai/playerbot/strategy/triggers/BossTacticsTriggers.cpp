@@ -198,3 +198,39 @@ bool BossTacticsObjectAnchorTrigger::IsActive()
         return false;
     return FindBossUseObjectAnchor(ai, bot).valid;
 }
+
+bool BossTacticsSeekTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossSeek(ai, bot).valid;
+}
+
+bool BossTacticsSeekTankTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossSeekTank(ai, bot).valid;
+}
+
+bool BossTacticsSeekKillTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    Unit* pick = FindBossSeekKill(ai, bot);
+    if (!pick)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE(Unit*, "current target") != pick;
+}
+
+bool BossTacticsTauntAfterTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // The kind is the aura-tactics key's own (ScanBossTactics drops its rows otherwise), and the map flag keeps every
+    // other map at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    return FindBossTauntAfter(ai, bot, ScanBossTactics(ai, bot)).valid;
+}

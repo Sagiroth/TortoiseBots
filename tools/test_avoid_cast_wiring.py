@@ -628,7 +628,8 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # linked_death row (per-map flags, like HasAvoidCastMap): the gate precedes ScanBossTactics, and it is not the
         # any-row HasMap.
         self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
-        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds)", fn)
+        self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && "
+                      "!seeksRow)", fn)
         self.assertNotIn("HasMap(bot->GetMapId())",
                          fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))
@@ -804,7 +805,8 @@ class HoldKillIsLogged(unittest.TestCase):
 
     def test_every_multiplier_zero_logs_its_veto(self):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        self.assertEqual(fn.count("LogHoldKillVeto("), 6)
+        # Six clauses and the seek_aura one, which logs its own veto kind ("seek").
+        self.assertEqual(fn.count("LogHoldKillVeto("), 7)
         self.assertIn('const char* const veto = dpsAssist || tankAssist || singleTarget ? "assist"', fn)
         self.assertIn(': aoe || cleaveToggle ? "aoe"', fn)
         self.assertIn(': attackerDebuff ? "dot"', fn)

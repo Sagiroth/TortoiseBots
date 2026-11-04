@@ -6,6 +6,7 @@
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/actions/PatchwerkSafety.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/policy/combat/MealGatePolicy.h"
 #include "playerbot/policy/dungeon/ReturnHoldPolicy.h"
 #include "playerbot/playerbot.h"
@@ -2329,6 +2330,13 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
+        return;
+
+    // A creature that charms the bot (Hakkar's Cause Insanity 24327) is driving it: the core calls SetControlledBy and
+    // keeps this AI installed, so anything this AI decided would fight the charmer's control. Yield the whole update.
+    // A player charmer keeps the old behaviour (the core gives it a PlayerControlledAI of its own).
+    if (ai::CreatureCharmYields(sPlayerbotAIConfig.dungeonRunCharmYield, !bot->GetCharmerGuid().IsEmpty(),
+            bot->GetCharmerGuid().IsPlayer()))
         return;
 
     // Observation only (see BotDiagnostics.h): no action, value or movement is touched.
