@@ -180,4 +180,22 @@ namespace ai
         BossTacticsTauntAfterTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics taunt after", 1) {}
         bool IsActive() override;
     };
+
+    // A burn_mana row's boss is in the fight at or above the row's start % of mana and this bot is one of the row's
+    // burners (FindBossBurnMana): it casts its longest drain spell on the boss.
+    class BossTacticsBurnManaTrigger : public Trigger
+    {
+    public:
+        BossTacticsBurnManaTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics burn mana", 1) {}
+        bool IsActive() override;
+    };
+
+    // This melee bot's current target is held by a ranged_only row (the subject stands the row's gap above it): it
+    // drops the target for the adds.
+    class BossTacticsRangedOnlyTrigger : public Trigger
+    {
+    public:
+        BossTacticsRangedOnlyTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics ranged only", 1) {}
+        bool IsActive() override;
+    };
 }

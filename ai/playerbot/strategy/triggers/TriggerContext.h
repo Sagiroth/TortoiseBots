@@ -348,6 +348,8 @@ namespace ai
             creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectTrigger(ai); };
             creators["boss tactics tank swap"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapTrigger(ai); };
             creators["boss tactics tank swap hold"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapHoldTrigger(ai); };
+            creators["boss tactics burn mana"] = [](PlayerbotAI* ai) { return new BossTacticsBurnManaTrigger(ai); };
+            creators["boss tactics ranged only"] = [](PlayerbotAI* ai) { return new BossTacticsRangedOnlyTrigger(ai); };
             creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorTrigger(ai); };
             creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTrigger(ai); };
             creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankTrigger(ai); };
