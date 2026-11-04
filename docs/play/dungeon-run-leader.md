@@ -180,6 +180,7 @@ The run protects itself with these rules:
 - It retries a refused gather once and then skips it.
 - It summons a straggler at the gather ceiling (30 s, 60 s on regroup), once per bot per step.
 - It first walks a straggler by path and summons it when it is still out.
+- It never summons or teleports a member back to a lead bot that stands off the floor: the landing fix's feet probe finds no walkable ground under it (a near teleport can leave it hovering in mid-air, as Jin'do's Banish does), so the lead bot's own landing or rescue comes first and the party is not brought to it.
 - It runs a member with attackers back to the party as a passive follower within 120 yd.
 - It pauses once on a missing item and then skips the dependent steps.
 - It still treats a boss that changed entry mid-fight as the boss.

@@ -88,6 +88,7 @@
 #include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
+#include "../runtime/policy/movement/TeleportLandingPolicy.h" // the feet probe an off-floor lead bot is read with
 #include "CreatureGroups.h"
 #include "Group/CreatureLinkingMgr.h"
 #include "Maps/InstanceData.h"
@@ -11455,6 +11456,24 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // A lead bot off the floor is no summon point: Banish 24466 leaves a bot 12.3 yd over the ZG pit floor and, with no
+    // client, nothing makes it fall; the summon then parked the party beside it. Read with the teleport landing's own
+    // feet probe (DungeonRun::LeadOffFloor); a map without the mesh cannot judge, so the flag stays clear.
+    {
+        bool probeFound = false;
+        float probeZ = lead->GetPositionZ();
+        ai::WorldPosition feet(lead->GetMapId(), lead->GetPositionX(), lead->GetPositionY(),
+            lead->GetPositionZ() - ai::TeleportLandingPolicy::kFeetProbeDepth);
+        bool const mmapLoaded = feet.isMmapLoaded(lead->GetInstanceId());
+        if (mmapLoaded && feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
+                ai::TeleportLandingPolicy::kFeetProbeDepth, lead->GetInstanceId()))
+        {
+            probeZ = feet.getZ();
+            probeFound = true;
+        }
+        f.leadOffFloor = mmapLoaded &&
+            TortoiseBots::DungeonRun::LeadOffFloor(lead->GetPositionZ(), probeFound, probeZ);
+    }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
     // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
     // the canal at -11944.3 -1353.9 62.3 and the run stranded there).

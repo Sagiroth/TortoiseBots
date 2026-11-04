@@ -21073,6 +21073,103 @@ static void TestNoSummonTowardALeadInAnotherPart()
     CHECK(SummonRevived(d, f, order) && order == "summon Fyran");
 }
 
+// Jin'do: a lead bot off the floor is no summon point. Banish 24466 leaves a bot hovering at z 90 over the ZG pit
+// floor (77.68) and, with no client, nothing makes it fall; the run leader used to summon the party to it (ZG walk 38
+// Rhan at 117 s, the whole raid after the fight). The landing fix's feet probe cannot reach a floor 12.3 yd down, so
+// LeadOffFloor is set and no summon or teleport return goes toward the lead bot: its own landing and rescue handle it.
+static void TestNoSummonOntoALeadOffTheFloor()
+{
+    // The probe's answer: a floor at the feet is on the floor, one more than kOffFloorYd under them, or none in the
+    // probe's box, is off it.
+    CHECK(!LeadOffFloor(77.68f, true, 77.68f));
+    CHECK(!LeadOffFloor(77.68f, true, 75.5f));
+    CHECK(LeadOffFloor(90.0f, true, 86.0f));
+    CHECK(LeadOffFloor(90.0f, false, 90.0f)); // the pit floor 12.3 yd down is outside the landing probe's box
+
+    // The walk of ZG walk 38: the lead bot hovers at z 90 over the pit floor, Rhan stands 68 yd away on that floor.
+    auto offFloorFacts = [](bool offFloor)
+    {
+        Facts f = Party(0);
+        f.total = 3;
+        f.alive = 3;
+        f.raid.on = true;
+        f.leadZ = 90.0f;
+        f.leadOffFloor = offFloor;
+        f.members = {Mem("Tanky", 0.0f), Mem("Healer", 8.0f), Mem("Rhan", 68.0f, -11.3f)};
+        f.maxMemberYd = 68.0f;
+        return f;
+    };
+
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        Facts f = offFloorFacts(true);
+        r.still["Rhan"].ms = 420000; // still there the whole fight
+        std::string order;
+        CHECK(!WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.wedgedSummoned.empty() && r.wedgedSummons == 0); // not spent: it can go once the lead bot lands
+        // The same member, with the lead bot on the pit floor: the summon goes out as before.
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        r2.still["Rhan"].ms = 420000;
+        std::string order2;
+        CHECK(WedgedSummon(r2, on, kTickMs, order2) && order2 == "summon Rhan");
+    }
+    {
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = offFloorFacts(true);
+        r.still["Rhan"].ms = kStillMs;
+        std::string order;
+        CHECK(!SummonStraggler(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty());
+        // On the floor, the gather's own summon is unchanged.
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        r2.still["Rhan"].ms = kStillMs;
+        std::string order2;
+        CHECK(SummonStraggler(r2, on, order2) && order2 == "summon Rhan");
+    }
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        BeginRegroup(r);
+        r.regroupMs = kStuckSummonMs;
+        r.still["Rhan"].ms = kStuckSummonMs;
+        Facts f = offFloorFacts(true);
+        std::string order;
+        CHECK(!SummonStuckInRegroup(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty());
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        BeginRegroup(r2);
+        r2.regroupMs = kStuckSummonMs;
+        r2.still["Rhan"].ms = kStuckSummonMs;
+        std::string order2;
+        CHECK(SummonStuckInRegroup(r2, on, order2) && order2 == "summon Rhan");
+    }
+    {
+        // The teleport return's anchor: never the lead bot's own spot while it is off the floor; the nearest member
+        // out of combat is the anchor instead.
+        Facts f = offFloorFacts(true);
+        ai::ApproachPoint point;
+        std::string why;
+        std::vector<std::string> const due = {"Rhan"};
+        CHECK(FarReturnPoint(f, due, point, why));
+        CHECK(point.x == 8.0f); // Healer
+        Facts on = offFloorFacts(false);
+        CHECK(FarReturnPoint(on, due, point, why) && point.x == 0.0f); // the lead bot's own spot
+    }
+}
+
 // The island hop never starts for a lead bot in another part: the pause says why.
 static void TestNoIslandHopForALeadInAnotherPart()
 {
@@ -35318,6 +35415,7 @@ int main()
     TestOtherPartBusyResumesIntoTheRescue();
     TestIslandEscapeInOtherPartRescues();
     TestNoSummonTowardALeadInAnotherPart();
+    TestNoSummonOntoALeadOffTheFloor();
     TestNoIslandHopForALeadInAnotherPart();
     TestScarletLibraryR20Replay();
     TestRevivedBotSummonedBeforeWalking();

@@ -278,6 +278,7 @@
 - Fixed the test speed's party hold pausing a run when `cmd move` refused the hold on the lead bot's own spot (a swim under a ledge): the walk goes on.
 - New table `ai_boss_stand` (boss stand sets: where bots of a role stand while a boss is at a place, optionally only while it casts a spell), created empty by `20261101075500_world.sql`; Venoxis is its first user.
 - Zul'Gurub: the ranged and the healers spread out around High Priest Venoxis (22-23 yards from the spot he fights from, at least 11 yards apart, checked so he is always 15-30 yards away wherever he stands while they hold position) instead of stacking under him, so his chaining Holy Wrath no longer reaches the casters — the last walk lost nine bots in one second to it — and his Holy Fire joins the interrupt list in place of the useless Renew entry.
+- Fixed: a dungeon or raid run no longer summons the party to its leader while the leader stands in mid-air with no floor under it. Jin'do's Banish left the lead hovering 12 yards over the Zul'Gurub pit, and the next summon put a second bot there; the summons and teleport returns now wait for the lead's own landing or rescue (the run's existing rescue, no new key).
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.

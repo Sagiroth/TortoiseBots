@@ -1550,6 +1550,9 @@ struct Facts
     std::vector<OwnUnitFact> ownFightUnits;
     bool ownFightRead = false;
     float leadX = 0.0f, leadY = 0.0f, leadZ = 0.0f;
+    // The lead bot stands off the floor (LeadOffFloor): the glue reads it with the teleport landing's feet probe. A
+    // summon or a teleport return drops a member at the lead bot's own position, so none goes there while it is set.
+    bool leadOffFloor = false;
     bool leadMoving = false;           // the lead bot is moving now (Unit::IsMoving): an exact point's proof waits
     // The walk after a rest (Run::restWalkDue): the lead bot is in a rest state (a meal or drink aura up, or not
     // standing), or casting a spell (a heal, a buff: never cut, the walk waits for the cast to end).
@@ -4294,6 +4297,29 @@ inline void PauseOtherPart(Run& r, const Facts& f, OtherPartBlock why)
     r.otherPartResumeRescue = resumeRescues;
 }
 
+// The lead bot's summon point: a near teleport can end in mid-air (Jin'do's Banish 24466 lands a bot 12.3 yd over the
+// ZG pit floor) and a bot has no client to make it fall, so it hovers there. `probeFound`/`probeZ` are the teleport
+// landing's own feet probe under the lead bot (centred kFeetProbeDepth below its feet and kFeetProbeRange wide, so
+// only ground at or under it is found): no walkable polygon in that box, or ground more than kOffFloorYd under its
+// feet, and the lead bot stands off the floor. The map's floor is not read here: a summon drops the member at the lead
+// bot's exact position, and a spot the mesh does not know is one the party cannot walk away from.
+constexpr float kOffFloorYd = 3.0f;
+inline bool LeadOffFloor(float leadZ, bool probeFound, float probeZ)
+{
+    return !probeFound || leadZ - probeZ > kOffFloorYd;
+}
+
+// Whether a member may be brought to the lead bot now, with the note when not: a summon puts it at the lead bot's
+// feet, so a lead bot off the floor would only gain a second stuck bot. `name` is the member the order was about; the
+// lead bot's own landing and rescue paths take it from the floor it stands over.
+inline bool SummonLeadFloorOk(Run& r, const Facts& f, const std::string& name)
+{
+    if (!f.leadOffFloor)
+        return true;
+    r.note = "the lead bot has no floor under it: " + name + " is not summoned to it";
+    return false;
+}
+
 // A gather's ceiling: the farthest straggler, a bot more than kSummonYd from
 // the lead bot (or kStragglerDzYd up or down), or one that stands still more
 // than kGatherYd away, that stands still now
@@ -4347,6 +4373,8 @@ inline bool SummonStraggler(Run& r, const Facts& f, std::string& order, bool sti
     }
     SampleMembers(r, f);
     if (!pick)
+        return false;
+    if (!SummonLeadFloorOk(r, f, pick->name))
         return false;
     MarkSummoned(r, pick->name);
     order = "summon " + pick->name;
@@ -4478,6 +4506,8 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
     }
     else
     {
+        if (!SummonLeadFloorOk(r, f, pick->name))
+            return false;
         MarkSummoned(r, pick->name);
         order = "summon " + pick->name;
         r.note = "gather: " + pick->name + " still " + Num(pick->yd) + " yd from the lead bot " +
@@ -4604,14 +4634,15 @@ inline int FetchPoint(const Facts& f, ai::ApproachPoint& point, bool& clear)
 }
 
 // Where a fetched member is brought back (FarReturnTick): never alone onto a point live hostiles hold. The lead bot's
-// own spot while it lives and is out of combat (FetchPoint moves it off the reach of a pack not pulled yet), else the
-// nearest living member out of combat (a real standing position). False: no such member — the member holds where it is
-// until the party regroups (a revived bot teleported into a fight dies again, and the next fetch finds nobody).
+// own spot while it lives, is out of combat and stands on the floor (FetchPoint moves it off the reach of a pack not
+// pulled yet; a lead bot off the floor is no anchor), else the nearest living member out of combat (a real standing
+// position). False: no such member — the member holds where it is until the party regroups (a revived bot teleported
+// into a fight dies again, and the next fetch finds nobody).
 inline bool FarReturnPoint(const Facts& f, const std::vector<std::string>& due, ai::ApproachPoint& point,
     std::string& why)
 {
     why.clear();
-    if (f.leadAlive && !f.leadInCombat)
+    if (f.leadAlive && !f.leadInCombat && !f.leadOffFloor)
     {
         bool clear = true;
         int const at = FetchPoint(f, point, clear);
@@ -4738,6 +4769,8 @@ inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string&
     }
     if (!pick)
         return false;
+    if (!SummonLeadFloorOk(r, f, pick->name))
+        return false;
     order = "summon " + pick->name;
     MarkSummoned(r, pick->name);
     ++r.runawaySummons;
@@ -4790,6 +4823,8 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
         }
     }
     if (!pick)
+        return false;
+    if (!SummonLeadFloorOk(r, f, pick->name))
         return false;
     bool const fetched = FetchFar(r, f, *pick) && QueueFetch(r, pick->name);
     if (!fetched)
@@ -4884,6 +4919,11 @@ inline void GatherCeiling(Run& r, const Facts& f, std::string& order, const std:
         {
             if (!farthest->inCombat && !farthest->attackers && DirectSummonAllowed(r, farthest->name))
             {
+                if (!SummonLeadFloorOk(r, f, farthest->name))
+                {
+                    EnterPhase(r, Phase::Gather);
+                    return;
+                }
                 MarkSummoned(r, farthest->name);
                 order = "summon " + farthest->name;
                 r.note = "gather: " + farthest->name + " is not with the lead bot before a direct step (" +
@@ -4913,6 +4953,11 @@ inline void GatherCeiling(Run& r, const Facts& f, std::string& order, const std:
         }
         if (!farthest->inCombat && !farthest->attackers)
         {
+            if (!SummonLeadFloorOk(r, f, farthest->name))
+            {
+                EnterPhase(r, Phase::Gather);
+                return;
+            }
             MarkSummoned(r, farthest->name);
             order = "summon " + farthest->name;
             r.note = "gather: " + farthest->name + " stands " + Num(farthest->yd) + " yd from the lead bot and " +
@@ -4968,6 +5013,8 @@ inline bool SummonStuckInRegroup(Run& r, const Facts& f, std::string& order)
             pick = &m;
     }
     if (!pick)
+        return false;
+    if (!SummonLeadFloorOk(r, f, pick->name))
         return false;
     MarkSummoned(r, pick->name);
     order = "summon " + pick->name;
@@ -5089,6 +5136,8 @@ inline bool SummonRevived(Run& r, const Facts& f, std::string& order)
             pick = &m;
     }
     if (!pick)
+        return false;
+    if (!SummonLeadFloorOk(r, f, pick->name))
         return false;
     MarkSummoned(r, pick->name);
     HoldForReturn(r, pick->name);
@@ -13022,6 +13071,8 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
                     busy = &m;
                 continue;
             }
+            if (!SummonLeadFloorOk(r, f, m.name))
+                return true; // the left-behind bots wait: the lead bot's own landing comes first
             r.strandSummoned[m.name] = 0;
             ++r.strandSummonTries[m.name];
             MarkSummoned(r, m.name);
@@ -19387,6 +19438,8 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
         if (mark != r.heldSummons.end() && (mark->second.pending || mark->second.refusals >= kHeldSummonTries))
             continue; // sent, its answer not in yet, or given up: it stays held
         std::string const name = *it;
+        if (!SummonLeadFloorOk(r, f, name))
+            return true; // it stays held: the lead bot has no floor to bring it to right now
         Run::HeldSummon& summon = r.heldSummons[name];
         summon.ms = r.runMs;
         summon.pending = true;
@@ -22006,7 +22059,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // one too (Run::hold); the wait below then sees it through HoldView, which
     // shows the bot being waited for. It stays held until it arrives, so a
     // refused or timed-out summon leaves it held where it was.
-    if (!r.summonDue.empty() && !FrozenMember(f, r.summonDue))
+    if (!r.summonDue.empty() && !FrozenMember(f, r.summonDue) && SummonLeadFloorOk(r, f, r.summonDue))
     {
         order = "summon " + r.summonDue;
         r.summonWait = r.summonDue;
