@@ -30,7 +30,7 @@ namespace ai
     {
         for (Guid const& guid : candidates)
         {
-            auto const* const unit = getUnit(guid);
+            auto* const unit = getUnit(guid);
             if (!unit || !alive(unit) || !sameMap(unit, mapId))
                 continue;
             if (distance(unit, x, y, z) > radius)
