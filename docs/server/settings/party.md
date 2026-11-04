@@ -78,11 +78,11 @@ Prevents follower bots from running through unpulled monster packs when trailing
 <details>
 <summary>How it works in detail</summary>
 
-Inside a dungeon or raid instance, while the bot is not in combat (aggro: the radius in which monsters attack), a bot whose leader is more than 30 yards ahead calculates its own travel path along the route. The leader may be fighting: a bot far behind still stops before the packs on its way to that fight (the pack the leader fights is already in combat and never holds the bot).
+Inside a dungeon or raid instance, while the bot is not in combat, a bot whose leader is more than 30 yards ahead calculates its own travel path along the route. The leader may be fighting: a bot far behind still stops before the packs on its way to that fight (the pack the leader fights is already in combat and never holds the bot).
 
 If an unpulled hostile creature stands along that path, the bot stops 3 yards outside the creature aggro radius and holds its position rather than running through. The bot whispers its master once per pack (at most every 30 seconds): `Pack in the way: <name>. Waiting here - pull it or come back for me.`
 
-While holding, the bot does not eat or drink. It resumes moving once the pack is defeated, when the route changes, or when the leader returns within 25 yards. Only creatures visible to the bot count, and paths are rechecked once per second. This check is suspended while the bot or the leader is on a transport.
+While holding, the follow action keeps the bot standing there. It resumes moving once the pack is defeated, when the route changes, or when the leader returns within 25 yards. Only creatures on the bot's sight list count, and paths are rechecked once per second. This check is suspended while the bot or the leader is on a transport.
 
 </details>
 
@@ -104,7 +104,7 @@ Idle party bots arrange themselves in the chosen geometric formation relative to
 - `arrow`: arrowhead formation with role groups staged in depth behind the leader's facing direction.
 - `queue`: single-file column trailing behind the leader.
 
-Bots walk into their slot once when a formation is set or changed, and once each time the leader stops moving. After that they stand still and follow the leader normally, so an idle party does not shuffle.
+Bots then stand in their slot and follow the leader normally.
 
 Individual bots can be assigned custom formations during gameplay using the [`.bot formation`](../../play/commands/party-actions.md#bot-formation) command.
 
@@ -134,7 +134,7 @@ Allows non-staff players to use the free instant summon action to teleport bots 
 
 When enabled, players without GM permissions can execute the in-chat summon action to teleport party bots straight to them.
 
-Without this setting, bots must travel physically, use meeting stones, or rely on innkeeper travel mechanics. This setting does not affect `.bot summon <Name>`, which always works for owned and hired bots.
+Without this setting, bots must travel physically, use meeting stones, or rely on innkeeper travel mechanics. This setting leaves `.bot summon <Name>` with its own ownership and state checks.
 
 </details>
 
@@ -200,7 +200,7 @@ Opens `.autogear` — which gears a real player the way a spawned bot gets geare
 `.autogear` equips a real player with items picked from the same gear pool, scoring and level/quality limits a spawned bot of the same level receives. It only upgrades: replaced items go to the target's bags, or to their own mailbox when the bags are full.
 
 - `0` (default): only GameMasters can run `.autogear`, on any real online player including themselves.
-- `1`: every player can run `.autogear` on themselves only. Naming another player is refused, and the command stays free with no cooldown.
+- `1`: every player can run `.autogear` on themselves only. Naming another player is refused.
 
 This flag never changes bot gearing: owned bots keep `.bot autogear`, controlled by [`AiPlayerbot.OwnedBotAutogearEnabled`](#aiplayerbotownedbotautogearenabled). Characters on a Turtle challenge mode (Hardcore, Slow & Steady, ...) are GM-only for `.autogear` whatever this flag is set to.
 
@@ -213,7 +213,7 @@ Automatically teleports an owned bot or hired companion to the leader when accep
 <details>
 <summary>How it works in detail</summary>
 
-When an owned bot or hired companion accepts an invitation into your group while located far away (beyond sight distance on the same map), it immediately teleports to your location.
+When an owned bot or hired companion accepts an invitation into your group while located far away (beyond sight distance on the same map), it queues an async summon to your location. Cross-map joins stay manual.
 
 This rule applies only to owned bots and hired mercenaries, never to random pool bots. Additional conditions (combat, death, and cooldowns) are governed by the companion summon settings below.
 
@@ -233,13 +233,13 @@ When set to `0`, active combat blocks the instant teleport upon group join.
 </details>
 
 ### `AiPlayerbot.OwnedBotSummonAllowMasterDead`
-Controls whether group accept summoning can fire while the group leader is dead. Enable if you want bots to arrive at your corpse.
+Controls whether group accept summoning can fire while the group leader is dead.
 **Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-When set to `1`, group accept summoning teleports the bot to the leader corpse location even while the leader is waiting to release or running back as a ghost.
+When set to `1`, group accept summoning teleports the bot even while the leader is dead.
 
 When set to `0`, the leader must be alive for group accept summoning to trigger.
 
@@ -252,9 +252,7 @@ Controls whether group accept summoning can teleport an invited bot that is curr
 <details>
 <summary>How it works in detail</summary>
 
-When set to `1`, dead bots are teleported to the group leader upon joining the party.
-
-Teleporting a dead bot leaves it as a corpse at the destination unless `AiPlayerbot.OwnedBotSummonRevive` is also enabled.
+A dead bot is refused without a teleport unless `AiPlayerbot.OwnedBotSummonRevive` also resurrects it first.
 
 </details>
 
@@ -298,15 +296,15 @@ Repeated uninvite and invite cycles within this window refuse the automatic tele
 </details>
 
 ### `AiPlayerbot.RollBadItemsWithPlayer`
-Forces party bots to roll Need on dungeon loot if their corresponding equipment slot is empty or severely under-leveled.
+Rolls Need on filler-classed (BAD_EQUIP) equipment anywhere.
 **Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-When enabled, party bots roll Need on equipment drops when their own corresponding equipment slot is empty or significantly below the item power.
+When enabled, bots roll Need on equipment the item scoring classes as filler for their slot, anywhere it drops.
 
-Genuine upgrades are Needed regardless of this flag; in all cases, bots wait for humans to roll and step down to Greed if any human rolls Need on the item.
+Genuine upgrades are Needed regardless of this flag. Pool bots and alts wait for humans to roll and step down to Greed if any human rolls Need; hires with an active master roll at once, and autonomous alt-bots without a master only Greed or Pass.
 
 </details>
 
@@ -319,7 +317,7 @@ Allows owned alts brought into the world to continue playing autonomously when r
 
 When enabled (`1`), an owned alt brought in with `.bot add` that leaves the owner party continues playing in the world as an autonomous alt-bot.
 
-It adopts random pool leisure and progression strategies while retaining player-protection rules, occupying one pool bot slot. It remains active until dismissed with `.bot remove`, re-invited, or logged into by the player. When disabled (`0`), a kicked alt remains an idle companion.
+It adopts random pool leisure and progression strategies, occupying one pool bot slot. It remains active until dismissed with `.bot remove`, re-invited, or logged into by the player. When disabled (`0`), a kicked alt remains an idle companion.
 
 </details>
 
@@ -345,7 +343,7 @@ Enables summoning owned companion bots while the player master is near an innkee
 
 Allows players to summon their owned companion bots when standing within sight distance (`AiPlayerbot.SightDistance`, 60 yd default) of any innkeeper NPC, in addition to standard meeting stone summon locations. The bot (or player) must carry a Hearthstone and its hearthstone cooldown must be ready.
 
-Set to `0` if you want companion bot summoning restricted solely to dungeon meeting stones and explicit summon commands.
+Set to `0` if you want companion bot summoning restricted to meeting stones in range and explicit summon commands.
 
 </details>
 
@@ -396,6 +394,6 @@ Configures the cheat mask applied to player-owned bots and alts. Available cheat
 - `taxi`: Unlocks all flight paths.
 - `quest`: Quests complete immediately.
 
-Masterless random pool bots use [`AiPlayerbot.RndBotCheats`](world-population.md#aiplayerbotrndbotcheats) instead. Hired companions are also random-flagged, so they read `RndBotCheats` except for maintenance, autogear, and group-accept summoning, which accept active hires.
+Masterless random pool bots use [`AiPlayerbot.RndBotCheats`](world-population.md#aiplayerbotrndbotcheats) instead. Hired companions are also random-flagged, so they read `RndBotCheats` except for maintenance, autogear, and group-accept summoning, which accept active hires. Autonomous alt-bots also get the `item` cheat.
 
 </details>

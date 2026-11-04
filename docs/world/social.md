@@ -2,7 +2,7 @@
 id: world-social
 title: Social interaction & guilds
 category: world
-summary: How bots greet players, form groups, create autonomous guilds, and trade items.
+summary: How bots greet players, invite them to groups, join guilds, and trade items.
 tags: [world, social, groups, guilds, trading, greetings]
 relates_to:
   - world-living-world
@@ -12,11 +12,11 @@ relates_to:
 
 # Social interaction & guilds
 
-This page describes how autonomous bots interact socially with players and other bots, form groups, create guilds, and trade items. Social and population settings are configured in `aiplayerbot.conf`; see [World population & immersion settings](../server/settings/world-population.md).
+This page describes how pool bots greet players, invite them to groups, join guilds and trade. Social and population settings live in `aiplayerbot.conf`; see [World population & immersion settings](../server/settings/world-population.md).
 
 ## Greetings & emotes
 
-In the open world and towns, bots add immersion by acknowledging passing players:
+In the open world and towns, bots acknowledge passing players:
 
 - **Greeting players:** A bot passing a human player greets them with a friendly text emote (once per encounter while the player stays in sight; leaving and returning counts as a new meeting). By default only bots with a live real-player master greet; pool-wide greeting is opt-in ([`AiPlayerbot.RandomBotGreet`](../server/settings/world-population.md#aiplayerbotrandombotgreet)).
 - **Bot-to-bot silence:** Bots never greet other bots. With hundreds of bots active in shared zones, bot-to-bot greetings would flood local chat channels.
@@ -25,52 +25,22 @@ In the open world and towns, bots add immersion by acknowledging passing players
 
 ## Grouping & party invites
 
-Autonomous pool bots can participate in cooperative grouping:
-
-| Feature | Behavior | Control |
+| What happens | Details | Setting |
 | :--- | :--- | :--- |
-| **Inviting solo players** | Bots invite nearby un-grouped players within spell range and two levels (same-map, no teleport). | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) |
-| **Bot-to-bot parties** | Disabled by default; pool bots stay solo to avoid leashing each other into idle follow chains. | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) |
-| **Elite & boss veto** | Bots only veto pulls if actively about to leave (bags over 80% full with a sellable stock in the overworld). | See [Dungeons & raids](../play/dungeons-and-raids.md). |
-| **Conjured item sharing** | Mages trade conjured food and water to group members who lack them (give-food/give-water triggers). | See [Sustenance](living-world.md#sustenance--resting). |
+| **Bots invite you** | Some pool bots (the ones that like to lead groups) invite a nearby player who is not in a group, is within two levels of them and stands within about spell range. Set `/dnd` and they stop inviting you. | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) (on) |
+| **Bots group with each other** | Off by default: pool bots quest alone, because bot leaders used to drag their followers around in useless follow chains. | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) (off) |
+| **Food and water** | A mage in your group conjures food and water and trades it to members who have none (water only to mana users). Sharing through the trade window is on by default; giving a conjured item needs the giver to have mana to spare. | On by default |
 
-<details>
-<summary>Player invites & DND in detail</summary>
+A pool bot in your group stays with the fight: it only leaves an elite or boss pull when its bags are nearly full (over 80%) and it is about to walk to a vendor, and it never leaves a dungeon or raid to visit a vendor.
 
-When [`AiPlayerbot.RandomBotInvitePlayer = 1`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) is active, an autonomous bot questing or grinding in the open world offers a party invite to a nearby un-grouped player within spell range and two levels (ownerless alts of active players are skipped).
+<a id="autonomous-guild-formation"></a>
+## Guilds
 
-If you prefer to play solo without interruptions, set your chat status to `/dnd`. Bots detect the `/dnd` status flag and skip outgoing party invitations to that player.
-
-</details>
-
-<details>
-<summary>Bot-to-bot grouping & follow dynamics in detail</summary>
-
-Controlled by [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby). When disabled, pool bots decline invitations from other pool bots and quest independently. This prevents bot leaders from leashing followers into unproductive travel loops.
-
-Enabling the setting allows organic grouping among bots, where they band together to take on difficult elite quests and group objectives.
-
-</details>
-
-<details>
-<summary>Instance stability & vendor trips during party play in detail</summary>
-
-In an active group, elite and boss pulls are protected against disruption. A bot leaves the pull only when it is about to head to a vendor (bags over 80% full with sellable stock in the open world); boss fights additionally require more than three group members.
-
-Inside dungeons or raids, the vendor purpose never fires (the trip need is overworld-only), so bots never leave the instance to visit a vendor. Party members remain focused on the instance until the group finishes or disbands.
-
-</details>
-
-## Autonomous guild formation
-
-Bots establish player-like social organizations across the realm:
-
-- **Guild charters & petition signing:** Unguilded bots with a non-solo grouper and guilder type travel to petitioner NPCs, purchase a Guild Charter for 1000 copper, and solicit signatures from nearby unguilded bots in sight range. Bots approached for a signature decline when already guilded, invited, hired, or an autonomous alt outside the owner's account.
-- **Guild founding:** Once the core's required signature count is collected, the bot registers the charter, names the guild `<BotName>'s Guild`, and displays the guild tag above members' heads.
-- **Member recruitment & caps:** Founded guilds actively invite both unguilded bots and interested human players to join. Bots leave guilds that exceed 1000 members or their preferred size; the guild-management invite path also refuses full guilds at [`AiPlayerbot.GuildMaxBotLimit`](../server/settings/world-population.md#aiplayerbotguildmaxbotlimit) (default `1000`).
-- **Whisper guild management:** Human players in bot guilds can issue direct roster commands by whispering bot officers and guild leaders (`guild invite`, `guild join`, `guild leave`, `guild promote`, `guild demote`, `guild leader`, `guild remove`; see [Whisper Commands](../play/commands/whispers.md#guild-management)).
-- **Configuration:** Guild creation is controlled by [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild).
-- **Reset protection:** A pool reset aborts when a bot-led guild contains even one human player, so the reset never disbands player guilds. For details, see [Pool reset safety guarantees](../server/bot-pool.md#safety-guarantees--multi-phase-execution).
+- **Invite bots to your guild:** a pool bot accepts a normal guild invite (`/ginvite <name>`) when it has no guild. Hired companions always refuse. Your own alts that play on their own (alt-bots) accept only invites from your account (GMs can also invite them). Bots in your guild can then take [guild orders](../play/guild-orders.md).
+- **Bots founding their own guilds:** the code for it is there and switched on ([`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild)): a bot buys a guild charter, collects signatures from other bots and names the guild `<BotName>'s Guild`. On test realms with 1000 bots this did not happen in practice (no charter was bought), so do not expect bot guilds to appear.
+- **Bots stay in your guild:** a pool bot leaves a guild with a real player in it only when the guild reaches 1000 members. Bots do not invite anyone into a guild that already has [`AiPlayerbot.GuildMaxBotLimit`](../server/settings/world-population.md#aiplayerbotguildmaxbotlimit) (1000) members.
+- **Guild whispers:** the owner of a bot (or a GM) can whisper it `guild invite <name>`, `guild join`, `guild leave`, `guild promote <name>`, `guild demote <name>`, `guild leader <name>` and `guild remove <name>`; inviting, promoting, demoting and removing need the bot to hold the matching rank right, passing leadership needs the bot to be guild leader, and joining or leaving need no rank right. Other players cannot. See [Whisper Commands](../play/commands/whispers.md#guild-management).
+- **Pool resets keep player guilds:** a pool reset stops when a guild led by a bot has even one real player in it. See [Pool reset safety](../server/bot-pool.md#safety-guarantees--multi-phase-execution).
 
 ## Trading with pool bots
 
