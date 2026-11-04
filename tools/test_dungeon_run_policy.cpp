@@ -26339,6 +26339,34 @@ static void TestGuardSkipsTotemWithKey()
     }
 }
 
+// The totem focus is a dungeon run's key too: in a party dungeon (no raid rules) the guard leaves a kill_first totem
+// alone the same way, and picks an ordinary totem up with the key off.
+static void TestGuardSkipsTotemInDungeon()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {15112})};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    Tick(r, f); // on the move point: the pull step next
+    CHECK(r.step == 1);
+    f.anyInCombat = true;
+    UnitFact totem = Hitter(50101, 15112, 18, true);
+    totem.creatureType = 11;
+    f.partyAttackers = {totem};
+    f.totemFocus = true;
+    CHECK(GuardPick(f, 0.0f, &r, &r) == nullptr);
+    for (int k = 0; k < 5; ++k)
+        CHECK(Tick(r, f).empty());
+    // The key off: the same totem is a loose add on the healer and the guard's.
+    Run k0 = Start(&plan);
+    Facts g = f;
+    g.totemFocus = false;
+    CHECK(GuardPick(g, 0.0f, &k0, &k0) == &g.partyAttackers[0]);
+}
+
 // A needs_aura unit (the Shade of Jin'do) takes damage only from a Delusions carrier: the guard sends no ranged dps at
 // it, and with the key off it does, as today.
 static void TestGuardSkipsAuraGatedShade()
@@ -33929,6 +33957,7 @@ int main()
     TestTotemFocusKeyOffJoinsAll();
     TestTankHoldFocusUnchanged();
     TestGuardSkipsTotemWithKey();
+    TestGuardSkipsTotemInDungeon();
     TestGuardSkipsAuraGatedShade();
     TestTotemFocusBeatsGuard();
     TestCharmedMemberIsNoRunFact();
