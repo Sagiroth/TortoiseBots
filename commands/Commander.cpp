@@ -8417,8 +8417,8 @@ void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBo
     f.engagedRead = true;
 }
 
-// The automatic crowd control's break read (DungeonRun::RunCcBreakTick): the run's own held units that are still in
-// combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
+// The run's own holds read (DungeonRun::RunCcBreakTick, and the own-fight step end): its held units that are still
+// in combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
 // keeps no fight open and is none. The party's own read (partyHits) is the unit's attacker set only, no scan.
 void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
@@ -11334,7 +11334,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         ReadEngagedUnits(lead, bots, f);
         f.staleCombat = f.engagedUnits.empty();
-        if (f.autoCc)
+        // The run's own holds, automatic or the plan's: a held unit neither attacks nor is attacked, so the
+        // engaged read loses it while the hold lasts (DungeonRun::Facts::ccHeld).
+        if (!slot.run.ccHolds.empty())
             ReadCcBreakFacts(slot, lead, bots, f);
     }
     if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())

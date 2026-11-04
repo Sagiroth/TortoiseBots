@@ -162,7 +162,7 @@ The run protects itself with these rules:
 - It gathers the party before a pull and pulls only what is near.
 - It guards from the stand, attacking mobs that hit the party.
 - It never pulls what a later step owns.
-- It ends a pull or boss step once that step's own units are dead and lets the walk go on, even while unrelated mobs (respawning trash, a patrol that walked in) still fight: those are fought by the bots' ordinary combat and do not hold the step to the fight ceiling.
+- It ends a pull or boss step past the 180 s fight ceiling once that step's own units are dead (and none of the row is still held by the run's own crowd control) and lets the walk go on, even while unrelated mobs (respawning trash, a patrol that walked in) still fight: those are fought by the bots' ordinary combat and do not hold the step. Younger fights, a combat flag with nothing engaged, and a row with its own units left keep the rules as before.
 - It judges no unseen pack or boss, only what the lead bot sees within 60 yd.
 - A healer on stay is held 9 yd behind the tank and heals only.
 - A reaching pull ends once any creature has a party victim.

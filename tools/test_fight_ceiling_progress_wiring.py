@@ -40,7 +40,7 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
         self.assertLess(read.index("fact.health = other->GetHealth();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.maxHealth = other->GetMaxHealth();"), read.index("out.push_back(fact);"))
-        # Where it stands feeds the own-fight read (FightOwnsUnit's later-row claim).
+        # Where it stands feeds the own-fight read (LaterStepOwnsEngagedUnit's claim).
         self.assertLess(read.index("fact.x = other->GetPositionX();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.y = other->GetPositionY();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.z = other->GetPositionZ();"), read.index("out.push_back(fact);"))

@@ -861,7 +861,7 @@ struct UnitFact
     float distLead = 0.0f;
     float x = 0.0f, y = 0.0f; // hold units and patrollers: where it stands (HoldStands: the side the event comes from);
                               // a raid boss fight's attackers: where the add stands (RaidHealerGuard's nearest dps);
-                              // engaged units: where it stands (FightOwnsUnit's later-row claim)
+                              // engaged units: where it stands (LaterStepOwnsEngagedUnit's claim)
     float z = 0.0f;           // ... patrollers (OwnedByLaterStep); step units: the unit's real height (the passed-boss pause)
     bool hostile = true;     // not friendly to the party (hostile or neutral): it may be pulled
     bool stealthed = false;
@@ -1901,9 +1901,9 @@ struct Facts
     // (UnitFact::auraGated).
     bool totemFocus = false;
     bool auraGatedTargets = false;
-    // Automatic crowd control, a fight kept open only by the run's holds (RunCcBreakTick): the run's own held units
-    // that are still in combat, read from its holds (one object lookup each, no scan). ccHeldRead false: not read
-    // (the key is off, or the party is out of combat).
+    // The run's own held units that are still in combat, read from its holds, automatic or the plan's (one object
+    // lookup each, no scan): a fight kept open only by them (RunCcBreakTick), and a row no cleared one while a hold
+    // lasts (the own-fight step end). ccHeldRead false: not read (no hold, or the party is out of combat).
     std::vector<UnitFact> ccHeld;
     bool ccHeldRead = false;
     // The glue's terrain read at a point: true when the point is in or under liquid at its own z (the core's
@@ -2076,14 +2076,18 @@ struct Run
     std::uint32_t fightMs = 0;
     std::uint32_t staleMs = 0;          // all the time in this fight the combat flag stood with nothing hostile engaged (Facts::staleCombat)
     std::uint32_t staleRunMs = 0;       // ... and the time it has stood so without a break
-    // The guids of the run's own units engaged at some point in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit)
-    // and the step whose own units were among them. Once none of them is engaged any more the step's end and its
-    // fight ceiling read the fight as over, though unrelated units (respawning trash, a patrol) still fight: those are
-    // the bots' own combat's, not the step's. A pull or boss step goes on so only for its own step (a cleared row:
-    // a later pull never goes out from inside another fight); a walk goes on for the fight's own units. A fight that
-    // never engaged one of them keeps the old rules. Cleared with the combat.
+    // The guids of the run's own units engaged at some point in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit,
+    // and the units the run holds: Facts::ccHeld) and the step whose own units were among them. Past the fight ceiling,
+    // with none of them engaged any more, a pull or boss step that its own end rule clears, and a walk, go on though
+    // unrelated units (respawning trash, a patrol) still fight: those are the bots' own combat's, not the step's
+    // (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run
+    // paused 14 min later at the 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty
+    // engaged read, and with no own unit seen, the fight block keeps today's rules, a wipe's included. Cleared with
+    // the combat.
     std::unordered_set<std::uint64_t> ownFightGuids;
     std::size_t ownFightStep = static_cast<std::size_t>(-1);
+    bool ownFightCleared = false; // the own fight ended over the ceiling and the combat went on: the rows after it do too
+    bool fightReentry = false;    // that end left the combat running: the next fight-block entry keeps the fight's start
     std::uint32_t restRepeatMs = 0;
     // The last point the run itself walked the party to (a move, an approach
     // hop, a stand point): a gather goes back there when a fight left the lead
@@ -20633,6 +20637,8 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.staleRunMs = 0;
         r.ownFightGuids.clear(); // the fight is over: the next one reads its own units afresh
         r.ownFightStep = static_cast<std::size_t>(-1);
+        r.ownFightCleared = false;
+        r.fightReentry = false;
     }
     else if (f.staleCombat)
     {
@@ -21007,14 +21013,18 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // Fight on: the straggler pull's tries are over (its attack drew the pack, or another fight came in).
     if (f.anyInCombat)
         ResetStragglerPull(r);
-    // The fight's own units: the current pull or boss row's (its read lists, the pack its pull took) and a later
-    // row's, remembered for the fight. Once none of them is engaged any more, and one of them was, the step is over
-    // for the run: unrelated units that still fight (respawning trash, a patrol) are the bots' own combat's and
-    // neither hold the step nor run its ceiling (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every
-    // 10 s beside a cleared pull row, and the run paused 14 min later at the 180 s ceiling with 20 dead).
-    // A pull or boss step goes on so only for its own step (the cleared row this fight was); a walk goes on for the
-    // fight's own units wherever they were. A fight that never engaged one of them keeps today's rules, a patrol met
-    // on the way included, and so does a wipe: its regroup and stop caps stay the fight block's.
+    // The fight's own units: the current pull or boss row's (its read lists, the pack its pull took), a later row's,
+    // and the units the run holds (Facts::ccHeld), remembered for the fight. Only past the 180 s ceiling, with one
+    // of them seen and none engaged any more, the step is over for the run: unrelated units that still fight
+    // (respawning trash, a patrol) are the bots' own combat's and neither hold the step nor run its ceiling (ZG walk
+    // 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run paused
+    // 14 min later at the 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty
+    // engaged read, the fight block keeps today's rules: a fresh pull, a read gap and the flag wait it out.
+    // A pull or boss step goes on so only for its own step and only once its own end rule clears it (a later pull
+    // never goes out from inside another fight); a walk goes on for the fight's own units. A fight that never
+    // engaged one of them keeps the rules, a patrol met on the way included, and so does a wipe: its regroup and
+    // stop caps stay the fight block's. The combat that is once read so goes on for the rows after it too
+    // (ownFightCleared), until the combat drops.
     bool ownEngaged = false;
     if (f.anyInCombat && f.engagedRead)
     {
@@ -21028,14 +21038,33 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             else if (LaterStepOwnsEngagedUnit(r, f, u))
                 r.ownFightGuids.insert(u.guid);
         }
+        // A unit of the run's own crowd control stands in the fight (one object lookup a hold) but neither attacks
+        // nor is attacked: it drops out of the engaged read, and the row is no cleared one while the hold lasts.
+        if (f.ccHeldRead)
+            for (const UnitFact& u : f.ccHeld)
+            {
+                if (!u.guid)
+                    continue;
+                if (StepOwnEngagedUnit(r, f, u))
+                    r.ownFightStep = r.step;
+                r.ownFightGuids.insert(u.guid);
+                ownEngaged = true;
+            }
         for (const UnitFact& u : f.engagedUnits)
             ownEngaged = ownEngaged || r.ownFightGuids.count(u.guid) != 0;
     }
-    bool const overForStep = (s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss)
-        ? r.ownFightStep == r.step
-        : (s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
-    bool const ownFightOver = f.anyInCombat && f.engagedRead && !r.ownFightGuids.empty() && !ownEngaged && !wipe &&
-        overForStep;
+    bool const ownFightRow = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss;
+    bool const overForStep = ownFightRow ? r.ownFightStep == r.step
+                                         : (s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
+    bool const ownFightOver = f.anyInCombat && f.engagedRead && !f.staleCombat && !f.engagedUnits.empty() &&
+        !r.ownFightGuids.empty() && !ownEngaged && !wipe && overForStep &&
+        (r.ownFightCleared || r.fightMs > kFightCapMs) &&
+        (!ownFightRow || FightStepEnd(r, f, *s) != FightEnd::NotYet);
+    if (ownFightOver)
+    {
+        r.ownFightCleared = true;
+        r.fightReentry = true;
+    }
     // Fights are the bots' own; the run only bounds them.
     if (f.anyInCombat && !objectDone && !ownFightOver)
     {
@@ -21065,27 +21094,35 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (!r.fighting)
         {
             r.fighting = true;
-            r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
-            r.ccOpenOrders = 0;
-            r.ccOpenSent.clear();
-            r.ccOpenPrepull.clear();
-            for (auto const& hold : r.ccHolds)
-                r.ccOpenPrepull.insert(hold.first);
-            r.restWalkDue = false; // a fight is on: the walk after the rest is over
-            r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
-            EndBigWalk(r);        // ... and so is the big pack's stand walk gate
-            r.fightMs = 0;
-            r.raidBossFight = false;
-            r.ccBreakGuid = 0;
-            r.ccBreakMs = 0;
-            r.ccBreakSeen.clear();
-            r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
-            r.linkedDeaths.clear();
-            r.linkedNotePct = -1;
-            r.linkedState = Run::LinkedState::None;
-            r.linkedStateNote.clear();
-            r.linkedEvents.clear();
-            DropHopWaiver(r);
+            // The start belongs to the combat, not to each row it runs on: the own-fight step end above leaves the
+            // combat running onto the next row, and re-entering the block there must not open the same fight again
+            // (the opening's marks, the linked_death group, the clock).
+            if (r.fightReentry)
+                r.fightReentry = false;
+            else
+            {
+                r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
+                r.ccOpenOrders = 0;
+                r.ccOpenSent.clear();
+                r.ccOpenPrepull.clear();
+                for (auto const& hold : r.ccHolds)
+                    r.ccOpenPrepull.insert(hold.first);
+                r.restWalkDue = false; // a fight is on: the walk after the rest is over
+                r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
+                EndBigWalk(r);        // ... and so is the big pack's stand walk gate
+                r.fightMs = 0;
+                r.raidBossFight = false;
+                r.ccBreakGuid = 0;
+                r.ccBreakMs = 0;
+                r.ccBreakSeen.clear();
+                r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
+                r.linkedDeaths.clear();
+                r.linkedNotePct = -1;
+                r.linkedState = Run::LinkedState::None;
+                r.linkedStateNote.clear();
+                r.linkedEvents.clear();
+                DropHopWaiver(r);
+            }
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
         // period; past it the fight ceiling runs again, so a flag that never
@@ -21492,10 +21529,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             return order;
         }
     }
-    // A rest is out of combat anyway: while unrelated units still fight the fight that is over for the step
-    // (ownFightOver), the rest waits for the combat to drop rather than holding the step's next walk 60 s.
-    if (r.phase == Phase::Begin && !f.anyInCombat &&
-        (r.restDue || (s->kind == PlanStepKind::Rest && !r.stepRested)))
+    if (r.phase == Phase::Begin && (r.restDue || (s->kind == PlanStepKind::Rest && !r.stepRested)))
     {
         bool const forced = s->kind == PlanStepKind::Rest && !r.stepRested;
         r.restDue = false;

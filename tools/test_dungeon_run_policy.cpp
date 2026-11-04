@@ -33396,7 +33396,8 @@ static void TestNewPullIsNotBypassedByTheEarlierFight()
     for (int i = 0; i < 10 && order.empty(); ++i)
         order = Tick(r, f);
     CHECK(order == "pullback 257");
-    // The first row's own pack comes in and dies; the pit's respawns fight on and the row clears.
+    // The first row's own pack comes in and dies; the pit's respawns fight on and the row clears (past the ceiling:
+    // that is the only point the own-fight step end fires).
     f.anyInCombat = true;
     f.engagedRead = true;
     f.engagedUnits = {Unit(0x101, 14825, 8)};
@@ -33404,6 +33405,7 @@ static void TestNewPullIsNotBypassedByTheEarlierFight()
     CHECK(Tick(r, f).empty());
     f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.step == 1 && r.state == State::Running);
     // The walk goes on (its fight's own units were the cleared row's) ...
@@ -33420,6 +33422,267 @@ static void TestNewPullIsNotBypassedByTheEarlierFight()
     Tick(r, f);
     CHECK(r.state == State::Paused && r.step == 2);
     CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The own-fight step end's probes: each of these keeps the fight block's rules (the step ends only once the fight
+// is past the ceiling and the row is cleared).
+//
+// Probe A: a pull row with a second own unit not yet pulled; the first dies while unrelated units fight. The row is
+// not cleared (its other unit still stands), so the fight block keeps the step.
+static void TestNewOwnUnitNotYetPulledDoesNotEndTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    UnitFact b = Unit(0x102, 14825, 45);
+    b.x = 45.0f;
+    b.y = 30.0f;
+    f.units = {a, b};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // `a` dies; `b` still stands, not pulled yet, and unrelated units fight on.
+    f.units = {b};
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    for (int i = 0; i < 8; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+}
+
+// Probe B: the own unit drops out of the engaged read for a tick (fled, evading, a read gap) while unrelated units
+// fight: younger than the ceiling, the fight is not the step's over.
+static void TestOwnUnitReadGapDoesNotEndTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    for (int i = 0; i < 5; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+}
+
+// Probe C: the own pack dies and the combat flag lingers with nothing engaged (a stale flag), or unrelated units
+// fight, while the party is low: the step is not ended before the ceiling, and the rest after the fight is the same
+// as on the base (the walk does not start with the healer at 10 %).
+static void TestOwnFightHoldsAndTheRestRunsAfterIt(bool stale)
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.minHealerManaPct = 10;
+    f.minHealthPct = 30;
+    if (stale)
+    {
+        f.engagedUnits.clear();
+        f.staleCombat = true;
+    }
+    else
+        f.engagedUnits = {Unit(0x900, 14826, 10)};
+    for (int i = 0; i < 4; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+    // The combat drops: the fight ends as on the base and the party rests before the walk.
+    f.anyInCombat = false;
+    f.staleCombat = false;
+    f.engagedUnits.clear();
+    CHECK(Tick(r, f) == "rest");
+    CHECK(r.phase == Phase::Rest && r.step == 0);
+}
+
+// The cleared pull past the ceiling still rests before the next walk when the party needs it (the 14-minute stall
+// left the healer at 10 %): the step end does not skip the post-fight rest.
+static void TestClearedPullPastTheCeilingStillRests()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.minHealerManaPct = 10;
+    f.minHealthPct = 30;
+    r.fightMs = kFightCapMs + 5000;
+    CHECK(Tick(r, f) == "rest");
+    CHECK(r.phase == Phase::Rest && r.step == 0);
+}
+
+// Past the ceiling, the row's own end rule must still call it cleared: an own unit of the row still standing (not
+// pulled yet) is no cleared row, whatever the engaged read says.
+static void TestOwnUnitNotYetPulledKeepsTheStepPastTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    UnitFact b = Unit(0x102, 14825, 45);
+    b.x = 45.0f;
+    b.y = 30.0f;
+    f.units = {a, b};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units = {b};
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The same past the ceiling for a read gap: the own unit still stands (the row's lists hold it) though the engaged
+// read lost it for a tick.
+static void TestOwnUnitReadGapKeepsTheStepPastTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A unit the run itself holds (a cc mark) stands in the fight though it drops out of the engaged read: the row is
+// no cleared one while the hold lasts.
+static void TestHeldOwnUnitKeepsTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The pack's last unit is held: the engaged read has only the pit's respawns, the run's own hold has it.
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ccHeldRead = true;
+    f.ccHeld = {a};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The fight's start (the opening's marks, the linked_death group, its clock) is the combat's, not the row's: the
+// own-fight step end leaves the combat on, and the next row's re-entry does not start the same fight over.
+static void TestMidFightReEntryKeepsTheFightStart()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    CHECK(Tick(r, f).empty()); // the fight starts: its setup runs once
+    CHECK(r.fighting);
+    r.ccOpenSent.insert(0x777);
+    r.ccOpenPrepull.insert(0x777);
+    // The own pack dies and the step ends past the ceiling; the same combat goes on on the walk row.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    // The walk's own unit is engaged again: the fight block re-enters mid-fight.
+    r.fightMs = 5000;
+    f.engagedUnits = {a};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.fighting);
+    CHECK(r.ccOpenSent.count(0x777) == 1);
+    CHECK(r.ccOpenPrepull.count(0x777) == 1);
+    CHECK(r.fightMs == 5000 + kTickMs);
 }
 
 static void TestHealerGuardSkipsCcHolders()
@@ -33787,6 +34050,15 @@ int main()
     TestLaterRowsUnitKeepsItsFight();
     TestWipeOverUnrelatedUnitsKeepsTheRegroup();
     TestNewPullIsNotBypassedByTheEarlierFight();
+    TestNewOwnUnitNotYetPulledDoesNotEndTheFight();
+    TestOwnUnitReadGapDoesNotEndTheFight();
+    TestOwnFightHoldsAndTheRestRunsAfterIt(true);
+    TestOwnFightHoldsAndTheRestRunsAfterIt(false);
+    TestClearedPullPastTheCeilingStillRests();
+    TestOwnUnitNotYetPulledKeepsTheStepPastTheCeiling();
+    TestOwnUnitReadGapKeepsTheStepPastTheCeiling();
+    TestHeldOwnUnitKeepsTheFight();
+    TestMidFightReEntryKeepsTheFightStart();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();
