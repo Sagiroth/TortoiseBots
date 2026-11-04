@@ -1,5 +1,135 @@
 # Changelog
 
+## v1.15.1 (2026-11-03)
+
+### Bots & Setup
+- Bots now work as soon as you install the module, with no extra setting to switch them on. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- Prefer a server with no bots? Set AiPlayerbot.Enabled to 0 to keep the module installed but idle. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- The dashboard feed is on by default too, and it only sends data to your own machine. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+- Bots now take a smaller share of server processing time, which keeps busy servers smoother. [#1500](https://github.com/Sagiroth/TortoiseBots/pull/1500)
+
+### Raids & Dungeons
+- Dungeon runs can now handle crowd control for you; it stays switched off until you enable it. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Boss fight tactics can now check for more kinds of effects active on a boss. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Bots that are revived now come back to the group instead of being left behind. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Bots following you spread out properly instead of bunching up behind you. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+- Ground cloud effects now behave correctly around bots. [#1494](https://github.com/Sagiroth/TortoiseBots/pull/1494)
+
+### Guild & Economy
+- Farm orders now list only things bots can actually gather or loot from creatures. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Craft orders now list only items a profession makes, so class skills like Healthstones are gone. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Buy orders now list materials and crafted goods. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+- Recipes and random-drop gear no longer show up in orders bots could never fill. [#1498](https://github.com/Sagiroth/TortoiseBots/pull/1498)
+
+---
+
+## v1.15.0 (2026-11-03)
+
+### Classes & Combat
+- Holy paladins now help with damage when the group is safe. [#1359](https://github.com/Sagiroth/TortoiseBots/pull/1359)
+- Restoration druids keep healing between 20% and 70% health. [#1313](https://github.com/Sagiroth/TortoiseBots/pull/1313) [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+- Balance druids switch to melee at 5% mana and return to casting at 30%. [#1469](https://github.com/Sagiroth/TortoiseBots/pull/1469)
+- Bots no longer waste casts on damage a target is immune to. [#1354](https://github.com/Sagiroth/TortoiseBots/pull/1354)
+- Bots now fight fair fights better: mages use cheap frost before wands, avoid elite camps, stop leash chases and cloth wearers flee sooner. [#1436](https://github.com/Sagiroth/TortoiseBots/pull/1436)
+- Bots run from a lone monster six or more levels above them. [#1435](https://github.com/Sagiroth/TortoiseBots/pull/1435)
+- Bots use proper mana potions and respect real item cooldowns. [#1470](https://github.com/Sagiroth/TortoiseBots/pull/1470)
+
+### Bots, Followers & Summons
+- Party bots follow a moving leader before buffing or drinking. [#1431](https://github.com/Sagiroth/TortoiseBots/pull/1431)
+- Bots keep a picked travel trip instead of choosing a new one every few seconds. [#1432](https://github.com/Sagiroth/TortoiseBots/pull/1432)
+- Bots stop retrying buffs while mounted and buff after dismounting. [#1434](https://github.com/Sagiroth/TortoiseBots/pull/1434)
+- Bots no longer stay stuck in combat when nothing is fighting them. [#1363](https://github.com/Sagiroth/TortoiseBots/pull/1363)
+- Dead bots run back to their corpse and use the spirit healer only after three failed runs. [#1471](https://github.com/Sagiroth/TortoiseBots/pull/1471)
+- Party alts now run instead of walking for other players. [#1312](https://github.com/Sagiroth/TortoiseBots/pull/1312) [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+- A bot is summoned beside its summoner only when the game finds a floor there. [#1323](https://github.com/Sagiroth/TortoiseBots/pull/1323)
+
+### Raids & Dungeons
+- Kresh in Wailing Caverns and Corpsemuncher in Karazhan Crypt are now tracked dungeon bosses. [#1308](https://github.com/Sagiroth/TortoiseBots/pull/1308)
+- Serpentis's adds and Verdan in Wailing Caverns are now boss encounters. [#1322](https://github.com/Sagiroth/TortoiseBots/pull/1322)
+- Dragonmaw Retreat has new stands and a pull order around Searistrasz's patrol. [#1357](https://github.com/Sagiroth/TortoiseBots/pull/1357)
+- Run leaders can bind a raid of 6 to 40 bots with `.bot commander bind <LeadBot> raid`; off by default (`AiPlayerbot.DungeonRunRaid`). [#1337](https://github.com/Sagiroth/TortoiseBots/pull/1337)
+- A bound raid commander can hire a 40th bot into the raid. [#1355](https://github.com/Sagiroth/TortoiseBots/pull/1355)
+- A hire still on its way when the raid is bound stays in the raid. [#1379](https://github.com/Sagiroth/TortoiseBots/pull/1379)
+- Run leaders get an `until` stop, main-tank help for off-tanks, off-tank trash handling, runaway summons and commander-led raid entry. [#1341](https://github.com/Sagiroth/TortoiseBots/pull/1341)
+- A fight-start hold keeps damage dealers back for 2-3 seconds before the tank pulls. [#1335](https://github.com/Sagiroth/TortoiseBots/pull/1335)
+- A pull counts as cleared only when its whole pack is gone, and a raid stops after repeated near wipes. [#1353](https://github.com/Sagiroth/TortoiseBots/pull/1353)
+- Pulls can wait for a patrol before the tank pulls. [#1396](https://github.com/Sagiroth/TortoiseBots/pull/1396)
+- Raid boss fight rules are behind `AiPlayerbot.DungeonRunRaidBossRules` (off by default): boss fights last longer, and deaths do not pause while the boss still loses health. [#1361](https://github.com/Sagiroth/TortoiseBots/pull/1361)
+- A raid main tank now joins a fight that breaks out behind it on a walk. [#1381](https://github.com/Sagiroth/TortoiseBots/pull/1381)
+- Raid fixes add stand clearance behind `AiPlayerbot.DungeonRunStandClearance` (off by default), crowd control before pulls, Zul'Farrak holds, stuck-bot rescue and main-tank idle handling. [#1477](https://github.com/Sagiroth/TortoiseBots/pull/1477)
+- The dashboard adds a Raids tab, run totals and underperformer checks. [#1477](https://github.com/Sagiroth/TortoiseBots/pull/1477)
+- New off-by-default raid tools estimate how many mobs will join a pull, handle Thekal's linked death and stop a run by its id. [#1488](https://github.com/Sagiroth/TortoiseBots/pull/1488)
+- Fankriss and Patchwerk have opt-in raid roles, and general raid fixes are in. [#1489](https://github.com/Sagiroth/TortoiseBots/pull/1489)
+- Viscidus has an opt-in freeze, shatter, glob and toxin strategy. [#1487](https://github.com/Sagiroth/TortoiseBots/pull/1487)
+- Zul'Gurub raid fixes cover Mad Servants, ground clouds, Venoxis seats and early stands. [#1463](https://github.com/Sagiroth/TortoiseBots/pull/1463)
+- Bots walk out of a listed self-centred cast, starting with the Zul'Gurub Bat Rider. [#1360](https://github.com/Sagiroth/TortoiseBots/pull/1360)
+- Grimlok's Chain Bolt interrupt row is gone because it could never land. [#1321](https://github.com/Sagiroth/TortoiseBots/pull/1321)
+- A bot in another copy of the same dungeon is rejoined, not summoned. [#1334](https://github.com/Sagiroth/TortoiseBots/pull/1334)
+- Survivors held where the lead bot fell are summoned to it, one at a time. [#1336](https://github.com/Sagiroth/TortoiseBots/pull/1336)
+
+### Raid Plans
+- Run leader routes are in for AQ40, Blackwing Lair, Emerald Sanctum, both Karazhan Halls, Molten Core, Naxxramas, Timbermaw Hold and Zul'Gurub. [#1325](https://github.com/Sagiroth/TortoiseBots/pull/1325) [#1326](https://github.com/Sagiroth/TortoiseBots/pull/1326) [#1327](https://github.com/Sagiroth/TortoiseBots/pull/1327) [#1328](https://github.com/Sagiroth/TortoiseBots/pull/1328) [#1329](https://github.com/Sagiroth/TortoiseBots/pull/1329) [#1330](https://github.com/Sagiroth/TortoiseBots/pull/1330) [#1331](https://github.com/Sagiroth/TortoiseBots/pull/1331) [#1332](https://github.com/Sagiroth/TortoiseBots/pull/1332) [#1333](https://github.com/Sagiroth/TortoiseBots/pull/1333) [#1347](https://github.com/Sagiroth/TortoiseBots/pull/1347)
+- Ruins of Ahn'Qiraj also has a run leader route with eight legs and the Rajaxx event hold. [#1324](https://github.com/Sagiroth/TortoiseBots/pull/1324)
+
+### Loot & Items
+- Bots now take their own quest items, quest source items and reserved quest copies correctly. [#1346](https://github.com/Sagiroth/TortoiseBots/pull/1346)
+
+### Guild Orders
+- Guild members can order a guild bot to farm, buy or craft items with `.bot order`, and the bot brings them to the guild bank or mails them to the guild master. [#1309](https://github.com/Sagiroth/TortoiseBots/pull/1309)
+- A guild bot short of a reagent checks bags, mail, guild bank and auction house before farming or asking another bot. [#1399](https://github.com/Sagiroth/TortoiseBots/pull/1399)
+- Guild bots can ask each other for materials, and sub-orders can go three levels deep. [#1399](https://github.com/Sagiroth/TortoiseBots/pull/1399)
+- Guild orders keep sourcing other reagents while one waits, only send bots to vendors when a sale frees bags, and use the nearest farm zone. [#1475](https://github.com/Sagiroth/TortoiseBots/pull/1475)
+- Guild orders keep step history, support sub-orders, report their state truthfully and source all reagents a recipe tree needs. [#1475](https://github.com/Sagiroth/TortoiseBots/pull/1475)
+- The auction leg gives up at once when nothing fits, or after 120 seconds when the auctioneer is unreachable. [#1483](https://github.com/Sagiroth/TortoiseBots/pull/1483)
+- Auction relisting now claims a mail before taking it, so nothing is taken twice after a restart. [#1476](https://github.com/Sagiroth/TortoiseBots/pull/1476)
+- Guild order logs now show each supply step and which order it belongs to. [#1443](https://github.com/Sagiroth/TortoiseBots/pull/1443)
+
+### World & Economy
+- Bots now learn profession specializations such as Goblin and Gnomish engineering, blacksmith, leatherworker and jewelcrafter. [#1437](https://github.com/Sagiroth/TortoiseBots/pull/1437)
+- World objects now behave correctly. [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+
+### Dashboard
+- The dashboard has a combat fights store, raid card and run controls. [#1340](https://github.com/Sagiroth/TortoiseBots/pull/1340)
+- The Fight debugger shows raid fights, history, death recaps, timeline, replay and aggro lanes. [#1342](https://github.com/Sagiroth/TortoiseBots/pull/1342)
+- Onyxia's Deep Breath shows on the raid map and replay with a lane and countdown. [#1343](https://github.com/Sagiroth/TortoiseBots/pull/1343)
+- The boss panel shows boss auras and flags, party debuffs, mind control and named casts with targets. [#1344](https://github.com/Sagiroth/TortoiseBots/pull/1344)
+- Boss data is in for AQ40 and its remaining bosses, AQ20, Molten Core, Blackwing Lair and Naxxramas. [#1345](https://github.com/Sagiroth/TortoiseBots/pull/1345) [#1387](https://github.com/Sagiroth/TortoiseBots/pull/1387) [#1388](https://github.com/Sagiroth/TortoiseBots/pull/1388) [#1380](https://github.com/Sagiroth/TortoiseBots/pull/1380) [#1382](https://github.com/Sagiroth/TortoiseBots/pull/1382) [#1386](https://github.com/Sagiroth/TortoiseBots/pull/1386)
+- Boss data is in for Upper and Lower Karazhan, Timbermaw Hold and Emerald Sanctum. [#1391](https://github.com/Sagiroth/TortoiseBots/pull/1391) [#1390](https://github.com/Sagiroth/TortoiseBots/pull/1390) [#1392](https://github.com/Sagiroth/TortoiseBots/pull/1392) [#1393](https://github.com/Sagiroth/TortoiseBots/pull/1393)
+- Boss data is in for Blackrock Depths, Lower Blackrock Spire, Zul'Farrak, Sunken Temple and Upper Blackrock Spire. [#1394](https://github.com/Sagiroth/TortoiseBots/pull/1394) [#1395](https://github.com/Sagiroth/TortoiseBots/pull/1395) [#1389](https://github.com/Sagiroth/TortoiseBots/pull/1389) [#1398](https://github.com/Sagiroth/TortoiseBots/pull/1398)
+- Raid 229 now shows as Upper Blackrock Spire. [#1421](https://github.com/Sagiroth/TortoiseBots/pull/1421)
+- The raid Coverage tab shows how bots answer each boss ability. [#1352](https://github.com/Sagiroth/TortoiseBots/pull/1352)
+- Raid dots glide on walks instead of stepping back, and the boss panel shows more details for each boss effect. [#1351](https://github.com/Sagiroth/TortoiseBots/pull/1351)
+- The Fight debugger shows run controls under the raid frames. [#1383](https://github.com/Sagiroth/TortoiseBots/pull/1383)
+- The Fight debugger keeps live events under the map and stops the page scrolling up during a fight. [#1366](https://github.com/Sagiroth/TortoiseBots/pull/1366)
+- A raid fight is graded PROBLEM only when there is a real problem. [#1365](https://github.com/Sagiroth/TortoiseBots/pull/1365)
+- Raid frames keep one tile height, so debuffs no longer cover the bot's name. [#1364](https://github.com/Sagiroth/TortoiseBots/pull/1364)
+- A Spirit of Redemption death names the real killer, and deaths after an enemy cast show in the Fight debugger. [#1362](https://github.com/Sagiroth/TortoiseBots/pull/1362)
+- The Tonight view no longer sends an empty day to the history call. [#1349](https://github.com/Sagiroth/TortoiseBots/pull/1349)
+- The dashboard has a Guild orders tab and a guild filter on Bots that works for offline members. [#1481](https://github.com/Sagiroth/TortoiseBots/pull/1481)
+- The dashboard can drop recorded data unless it is started with `-accept-replay`. [#1356](https://github.com/Sagiroth/TortoiseBots/pull/1356)
+- More boss data and dashboard fixes arrived in a large batch. [#1400](https://github.com/Sagiroth/TortoiseBots/pull/1400) [#1401](https://github.com/Sagiroth/TortoiseBots/pull/1401) [#1402](https://github.com/Sagiroth/TortoiseBots/pull/1402) [#1403](https://github.com/Sagiroth/TortoiseBots/pull/1403) [#1404](https://github.com/Sagiroth/TortoiseBots/pull/1404) [#1405](https://github.com/Sagiroth/TortoiseBots/pull/1405) [#1406](https://github.com/Sagiroth/TortoiseBots/pull/1406) [#1407](https://github.com/Sagiroth/TortoiseBots/pull/1407) [#1408](https://github.com/Sagiroth/TortoiseBots/pull/1408) [#1409](https://github.com/Sagiroth/TortoiseBots/pull/1409) [#1410](https://github.com/Sagiroth/TortoiseBots/pull/1410) [#1411](https://github.com/Sagiroth/TortoiseBots/pull/1411) [#1412](https://github.com/Sagiroth/TortoiseBots/pull/1412) [#1413](https://github.com/Sagiroth/TortoiseBots/pull/1413) [#1414](https://github.com/Sagiroth/TortoiseBots/pull/1414) [#1415](https://github.com/Sagiroth/TortoiseBots/pull/1415) [#1416](https://github.com/Sagiroth/TortoiseBots/pull/1416) [#1417](https://github.com/Sagiroth/TortoiseBots/pull/1417) [#1418](https://github.com/Sagiroth/TortoiseBots/pull/1418) [#1419](https://github.com/Sagiroth/TortoiseBots/pull/1419) [#1420](https://github.com/Sagiroth/TortoiseBots/pull/1420) [#1421](https://github.com/Sagiroth/TortoiseBots/pull/1421) [#1422](https://github.com/Sagiroth/TortoiseBots/pull/1422) [#1423](https://github.com/Sagiroth/TortoiseBots/pull/1423) [#1424](https://github.com/Sagiroth/TortoiseBots/pull/1424) [#1425](https://github.com/Sagiroth/TortoiseBots/pull/1425) [#1426](https://github.com/Sagiroth/TortoiseBots/pull/1426) [#1427](https://github.com/Sagiroth/TortoiseBots/pull/1427) [#1428](https://github.com/Sagiroth/TortoiseBots/pull/1428) [#1429](https://github.com/Sagiroth/TortoiseBots/pull/1429) [#1430](https://github.com/Sagiroth/TortoiseBots/pull/1430)
+
+### Commands & Chat
+- GameMasters can gear a bot or a commander's bound group with `.bot gear ... tier` and presets. [#1338](https://github.com/Sagiroth/TortoiseBots/pull/1338)
+- GameMasters can use `.bot run` for a commander and a dashboard relay. [#1338](https://github.com/Sagiroth/TortoiseBots/pull/1338)
+- `.bot sell` and `.bot downtime` now work. [#1314](https://github.com/Sagiroth/TortoiseBots/pull/1314) [#1316](https://github.com/Sagiroth/TortoiseBots/pull/1316) [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+- `debug move` no longer crashes the server at the 100-marker cap. [#1319](https://github.com/Sagiroth/TortoiseBots/pull/1319)
+- When a bot talks to an NPC, the text now appears in the player's own language. [#1472](https://github.com/Sagiroth/TortoiseBots/pull/1472)
+- Bots no longer chat on their own or answer players with canned lines. [#1474](https://github.com/Sagiroth/TortoiseBots/pull/1474)
+
+### Settings
+- Settings that did nothing now work. [#1315](https://github.com/Sagiroth/TortoiseBots/pull/1315) [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+- Fresh servers no longer show a false database error at startup. [#1310](https://github.com/Sagiroth/TortoiseBots/pull/1310) [#1317](https://github.com/Sagiroth/TortoiseBots/pull/1317)
+- Eight defaults changed, including automatic trainer spells, catch-up mounting and an action log for commanded bots. [#1491](https://github.com/Sagiroth/TortoiseBots/pull/1491)
+
+### Behind the scenes
+- Docs now cover off-spec healing and damage, and the guild orders guide is rewritten. [#1358](https://github.com/Sagiroth/TortoiseBots/pull/1358) [#1492](https://github.com/Sagiroth/TortoiseBots/pull/1492) [#1348](https://github.com/Sagiroth/TortoiseBots/pull/1348)
+- Tests and checks were updated for raid regroup, Viscidus and the dashboard's guild orders tab. [#1350](https://github.com/Sagiroth/TortoiseBots/pull/1350) [#1490](https://github.com/Sagiroth/TortoiseBots/pull/1490) [#1482](https://github.com/Sagiroth/TortoiseBots/pull/1482)
+- Windows builds are fixed after a variable name clash. [#1493](https://github.com/Sagiroth/TortoiseBots/pull/1493) [#1495](https://github.com/Sagiroth/TortoiseBots/pull/1495)
+- Conflicting pull requests were merged in batches to keep development moving. [#1347](https://github.com/Sagiroth/TortoiseBots/pull/1347) [#1397](https://github.com/Sagiroth/TortoiseBots/pull/1397) [#1398](https://github.com/Sagiroth/TortoiseBots/pull/1398) [#1433](https://github.com/Sagiroth/TortoiseBots/pull/1433)
+
+---
+
 ## Unreleased
 
 ### Configuration

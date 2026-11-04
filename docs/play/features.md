@@ -217,10 +217,7 @@ For server admins.
 
 | Missing | What to do instead |
 | :--- | :--- |
-| Turn the character you are playing into a bot | Use an alt on your account. [Details](known-limitations.md#blocked--incomplete-features) |
-| Found their own guilds (on, but not seen working) | Invite pool bots into your guild. [Details](../world/social.md#guilds) |
 | Clear most instances by themselves: the run leader is work in progress and only a few routes are checked | Lead the instance yourself. [Details](known-limitations.md#dungeon-run-leader-work-in-progress) |
 | A real duel mode: bots accept duels but fight them like any fight | — |
 | Check a herb or ore node before walking to it | Nothing; the bot walks on after finding it empty. [Details](known-limitations.md#blocked--incomplete-features) |
 | Climb steep, many-floored stairs reliably | `.bot summon <Name>` out of combat. [Details](known-limitations.md#known-quirks-and-workarounds) |
-| Expansion features: Death Knights, glyphs, vehicles, Outland, multi-tab guild banks | Not planned. [Details](known-limitations.md#explicit-non-goals) |

@@ -1,3 +1,4 @@
+#include "BotGearService.h"
 #include "CharacterCleanup.h"
 
 #include "../host/ModuleLog.h"
@@ -208,6 +209,11 @@ void DeleteCharacterPets(uint32 guidLow)
 
 void DeleteCharacterEverywhere(uint32 guidLow, uint32 accountId)
 {
+    // A `.bot gear` pin keys on the character guid; the guid is recycled, so
+    // a new character must never inherit the old pin. Dismiss clears it on
+    // the live path; this is the backstop for pool resets, GM deletes and
+    // startup recovery. World-thread-owned map, same as the callers.
+    BotGearService::Instance().UnpinBot(guidLow);
     // Pets before the character, database before cache: the pool's pet-number
     // oracle above must never see a number that the table still holds.
     DeleteCharacterPets(guidLow);

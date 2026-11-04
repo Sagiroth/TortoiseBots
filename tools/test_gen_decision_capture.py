@@ -146,11 +146,14 @@ class GeneratorTest(unittest.TestCase):
 
     def test_header_hash_is_fnv1a_of_the_schema_text(self):
         header = (ROOT / "runtime" / "DecisionCaptureFields.gen.h").read_text(encoding="utf-8")
-        text = re.search(r'kDecisionSchemaText\[\] = R"TBSCHEMA\((.*)\)TBSCHEMA";', header, re.DOTALL)
+        chunks = re.findall(r'R"TBSCHEMA\((.*?)\)TBSCHEMA"(;?)', header, re.DOTALL)
+        literals = [chunk for chunk, _tail in chunks]
+        self.assertGreaterEqual(len(literals), 2, "schema literal must stay split for MSVC C2026")
+        for chunk in literals:
+            self.assertLessEqual(len(chunk.encode("utf-8")), 7000, "schema chunk too big for MSVC C2026")
         digest = re.search(r'kDecisionSchemaHash\[\] = "([0-9a-f]{16})";', header)
-        self.assertIsNotNone(text)
         self.assertIsNotNone(digest)
-        self.assertEqual("%016x" % gen.fnv1a64(text.group(1)), digest.group(1))
+        self.assertEqual("%016x" % gen.fnv1a64("".join(literals)), digest.group(1))
 
     def test_privacy_allowlist_is_complete(self):
         model = gen.load_model()
