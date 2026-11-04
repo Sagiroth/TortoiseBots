@@ -12,13 +12,13 @@ relates_to:
 
 # Observability Dashboard & Telemetry
 
-TortoiseBots includes an optional real-time observability service located in `tools/observability`. When disabled, telemetry has zero overhead; once enabled, the game server emits non-blocking UDP status datagrams to a standalone daemon that hosts a web management dashboard and a Prometheus metrics endpoint.
+The observability service is an optional standalone program that shows what the bot population is doing: a web dashboard with a live map, plus a Prometheus metrics endpoint. The game server sends it status updates as non-blocking UDP datagrams. Telemetry has zero overhead while turned off.
 
-For configuration keys controlling telemetry emission, see [Logging & diagnostic settings](settings/logging.md).
+For the settings that control it, see [Logging & diagnostic settings](settings/logging.md).
 
 ## Architecture
 
-The observability stack consists of a lightweight C++ emitter in the game server and an external Go telemetry daemon:
+A small C++ emitter in the game server sends UDP datagrams (default port 9195) to an external Go daemon in `tools/observability`. The daemon serves the dashboard and metrics:
 
 ```text
 Game Server (TortoiseBots C++)
@@ -27,15 +27,15 @@ Game Server (TortoiseBots C++)
     ▼
 Go Observability Daemon (tools/observability)
     │
-    ├──► Prometheus Metrics HTTP Endpoint (:8095/metrics)
-    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/commanders)
-    ├──► Live stream (/api/v1/live: Server-Sent Events with positions and fight events as they happen)
-    └──► Embedded Web SPA Dashboard (:8095/dashboard)
+    ├──► Web Dashboard (:8095/dashboard)
+    ├──► Prometheus Metrics (:8095/metrics)
+    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, ...)
+    └──► Live stream (/api/v1/live: Server-Sent Events with positions and fight events)
 ```
 
 ## Quick Setup
 
-The dashboard is a separate small program that runs next to your server. You do not need to build it: every daily release has a ready file for Windows (`tortoise-observability-windows-amd64.exe`) and Linux (`tortoise-observability-linux-amd64`).
+The dashboard is a separate small program that runs next to your server. Every daily release has a ready file for Windows (`tortoise-observability-windows-amd64.exe`) and Linux (`tortoise-observability-linux-amd64`).
 
 What you need before you start:
 
@@ -45,7 +45,7 @@ What you need before you start:
 
 ### The easy way: the start script (recommended)
 
-The script finds the newest release, downloads the program, reads the database login from your `mangosd.conf`, turns on telemetry in `aiplayerbot.conf` and starts the dashboard. The scripts are in the `tools/observability` folder of the TortoiseBots module (if you built the module into the core, that is `modules/TortoiseBots/tools/observability`).
+The script finds the newest release, downloads the program, reads the database login from your `mangosd.conf`, turns on telemetry in `aiplayerbot.conf`, and starts the dashboard. The scripts are in the `tools/observability` folder of the TortoiseBots module.
 
 **Windows** — open PowerShell in the TortoiseBots folder and run:
 
@@ -53,7 +53,7 @@ The script finds the newest release, downloads the program, reads the database l
 powershell -ExecutionPolicy Bypass -File .\tools\observability\run-dashboard.ps1 -MangosdConf C:\path\to\mangosd.conf
 ```
 
-`-ExecutionPolicy Bypass` only lets this one script run; without it Windows may say "running scripts is disabled on this system".
+`-ExecutionPolicy Bypass` applies to this one script run. Without it, Windows may refuse with "running scripts is disabled on this system".
 
 **Linux** — in the TortoiseBots folder:
 
@@ -66,7 +66,7 @@ Then:
 1. **Restart `mangosd` once**, so it picks up the telemetry setting the script turned on. Without that you can sign in, but the dashboard stays empty.
 2. Open `http://localhost:8095` in your browser and sign in with your GM account.
 
-The program keeps running in the background. Its log is `dashboard.log` next to the script (on Windows also `dashboard.err.log`). Running the script again while the dashboard is up does nothing; stop the dashboard first if you want to update it.
+The program keeps running in the background. Its log is `dashboard.log` next to the script (on Windows also `dashboard.err.log`). Running the script again while the dashboard is up does nothing: stop the dashboard first if you want to update it.
 
 ### The manual way: run the program yourself
 
@@ -75,7 +75,7 @@ Only use this if the script does not work for you.
 1. Download the file for your system from the [latest release](https://github.com/Sagiroth/TortoiseBots/releases/latest).
 2. In `aiplayerbot.conf` set `AiPlayerbot.Observability = 1` and restart `mangosd` (more options in [Logging settings](settings/logging.md#aiplayerbotobservability)).
 3. Find the `LoginDatabase.Info` line in `mangosd.conf`. It looks like `"127.0.0.1;3306;mangos;mangos;tw_logon"`: host, port, user, password, database name.
-4. Start the program with those values. If you start it without them (for example by double-clicking it), it tries user `mangos` with password `mangos` and database `tw_logon`. When your server uses something else, sign-in fails.
+4. Start the program with those values. If you start it without them (for example by double-clicking it), it assumes user `mangos` with password `mangos` and database `tw_logon`. When your server uses something else, sign-in fails.
 
 **Windows** (Command Prompt or PowerShell, in the folder with the file):
 
@@ -96,8 +96,8 @@ chmod +x tortoise-observability-linux-amd64
 
 **"invalid username or password"** usually means the dashboard cannot read your database, not that your password is wrong. The dashboard shows the same message for every sign-in problem. Check, in this order:
 
-1. **Database login.** Did you start the program yourself? Then pass the values from `LoginDatabase.Info` as shown above, or use the start script.
-2. **Too many tries.** After 5 failed sign-ins the dashboard blocks you for 5 minutes. Restart the program (or wait) before you try again.
+1. **Database login.** If you started the program yourself, pass the values from `LoginDatabase.Info` as shown above, or use the start script.
+2. **Too many tries.** After 5 failed sign-ins from your address, the dashboard blocks it for 5 minutes. Restart the program (or wait) before you try again.
 3. **GM rank.** The account needs rank 2 or higher. In the server console: `account set gmlevel <name> 3`, then sign in again.
 4. **Same realm.** The account must exist on the server whose `mangosd.conf` you used.
 
@@ -107,164 +107,95 @@ chmod +x tortoise-observability-linux-amd64
 
 ### Running from source
 
-Developers with Go installed can run it straight from the checkout:
+With Go installed, run it straight from the checkout:
 
 ```bash
 cd tools/observability
-go run cmd/server/main.go --http-port 8095 --udp-port 9195
+go run ./cmd/server --http-port 8095 --udp-port 9195
 ```
 
 ## Web Dashboard Features
 
-The web interface provides real-time operational visibility into your realm's bot population:
-
 | Tab | Key Questions Answered | Primary Features |
 | :--- | :--- | :--- |
 | **Overview** | Is the server healthy? | Active population, world tick rate, population graphs, and state census. |
-| **Bots** | Who is online and what are they doing? | Complete roster list, filterable by level, class, spec, gold, average item level (`iLvl`), or guild (`guild:name` in the search box, or the sortable **Guild** column; also shown in the bot detail view, dash when guildless). |
+| **Bots** | Who is online and what are they doing? | Roster list, filterable by level, class, spec, gold, average item level, or guild. |
 | **Map** | Where is the fleet distributed? | 2D world and zone map with player and bot markers and breadcrumb paths. |
-| **Commanders** | Who is leading bot groups? | Party health bars, tactical warnings, commander orders, and fight status. |
-| **Progress** | Are bots levelling up smoothly? | XP per hour KPIs, level-up timelines, and average gear item level by level band. |
-| **Activity** | What events have occurred? | Real-time feed of completed quests, rare loot drops, gathered nodes, and kills. |
-| **Dungeons** | What dungeon runs are active? | Live view of active dungeon copies with bots, member health, and player badges. |
-| **Raids** | What raid runs are active? | Live view of active raid copies by group, no binding needed: leaders, offline members, live combat window, fight links. |
-| **Dungeon runs** | How do the dungeon runs go? | Success rate, clear and boss kill times, wipes and deaths per dungeon, read from the run trace summaries; optional Overview strip. |
-| **Agent maps** | What did a turtle-agent test run do? | Developer tool for turtle-agent test runs. Hidden unless the daemon is given a maps folder. |
+| **Commanders** | Who is leading bot groups? | Party health bars, tactical warnings, commander orders, and live fight view. |
+| **Dungeon runs** | How are the dungeon runs going? | Success rate, clear and boss kill times, wipes and deaths per dungeon, read from the run trace summaries. |
+| **Dungeons** | What dungeon runs are active? | Live view of active dungeon copies with bots: member health and player badges. |
+| **Raids** | What raid runs are active? | Live view of active raid copies by group, no binding needed. |
+| **Raid coverage** | Which boss abilities can the bots answer? | Which raid boss abilities have a coded answer, and which gaps are still open. |
+| **Progress** | Are bots levelling up smoothly? | XP per hour, level-up timelines, and average gear item level by level band. |
+| **Activity** | What events have occurred? | Feed of completed quests, rare loot drops, gathered nodes, and kills. |
+| **Guild orders** | What are guild bots doing? | Who works on what, where it goes, and what it gathered. |
 | **Auction House** | What is currently on the market? | Searchable catalog of all active auction listings posted by bots and players. |
+| **Agent maps** | What did a turtle-agent test run do? | Test run maps. Hidden unless the daemon is given a maps folder. |
 | **Issues** | Which bots are stuck or in trouble? | Tracked navigation stalls, long deaths, and unreachable combat targets. |
-| **Server** | What settings are active? | Live server rates, active configuration flags, and one-click diagnostic reports. |
+| **Server** | What settings are active? | Live server rates, active configuration flags, and diagnostic reports. |
 
-### State Census Semantics
+### State Census
 
-On the Overview tab, bots are categorized into three operational states:
-- **Busy:** Standing still while performing actions (casting, looting, resting to eat/drink, fight or XP gain in last 60 seconds, or moving within the last 45 seconds).
-- **Stalled:** Stationary for 45+ seconds with an active destination, cycling actions without progress, or no fight/XP in 60 seconds while pursuing travel.
-- **Idle:** No movement, cast, action, loot, or combat target for 45+ seconds.
+On the Overview tab, bots are grouped into three states:
+
+- **Busy:** standing still but doing real work (loot, cast, eat, or movement in the last 45 s).
+- **Stalled:** standing still for 45+ s with only a travel target or action-name changes, no progress.
+- **Idle:** no activity for 45+ s, doing nothing.
 
 ### Bot Profile Inspector
 
-Clicking any bot name or map marker opens a slide-over profile panel that inspects character data directly from the database:
-- **Overview:** Vital stats, current location, active strategy flags, and group status.
-- **Gear & Stats:** Paperdoll equipment view, average item level (`iLvl`), and item quality distribution.
-- **Talents:** Visual 7-tier talent trees with DBC layout.
-- **Spells:** Distinguishes runtime learned spells from default starting spells granted by race/class.
-- **Professions:** Profession skill ranks with their trade spells.
-- **Skills:** Weapon, armor, language, and other skill ranks.
-- **Bags & Containers:** Inventory slots and bag contents.
-- **Activity History:** Recent kills, quest completions, and loot transactions.
+Clicking any bot name or map marker opens a slide-over profile panel that reads character data from the database:
+
+- **Overview:** vital stats, current location, active strategy flags, and group status.
+- **Gear & Stats:** paperdoll equipment view, average item level, and item quality distribution.
+- **Talents:** talent trees with DBC layout.
+- **Spells:** learned spells versus default starting spells granted by race/class.
+- **Professions:** profession skill ranks with their trade spells.
+- **Skills:** weapon, armor, language, and other skill ranks.
+- **Bags & Containers:** inventory slots and bag contents.
+- **Activity History:** recent kills, quest completions, and loot transactions.
 
 ### Dungeons Tab
 
-The **Dungeons** tab provides a dedicated live overview of all active dungeon runs containing bots (raid copies live on the Raids tab):
+The **Dungeons** tab shows every active dungeon run that has bots in it, grouped by instance copy so concurrent runs of the same dungeon stay separate. Real players in bot parties get a distinct badge.
 
-- **Instance Isolation:** Groups bots by active instance copy (`(map, instance)` pair), distinctly separating multiple concurrent runs of the same dungeon.
-- **Player Highlighting:** Real players in bot parties are visually distinguished with a distinct badge and gold ring indicator.
-- **Live Run View:** Selecting an active run presents an interactive instance map rendering bot positions and vital health/power bars. The first living tank is the run's lead: the map anchors on it and draws its mark and path.
-- **Mobs and Targets (`DUNGEON_MOBS`):** A module that sends the `DUNGEON_MOBS` datagram (issue #1101; additive, no protocol version bump) adds the mobs the party's bots have seen, each mob's target and every bot's own target; the run's map draws them through the **Enemies**, **Critters**, **Threat colours and lines** and **Target, heal and crowd-control lines** layers (see [Commanders maps](#commanders-maps)). The module caps a run at 24 mobs in a party and 48 in a raid (fewer when many runs are live), and the card says `N of M mobs shown` when the list was cut. Mobs of a copy that leaves the instance vanish within about 8 seconds. `AiPlayerbot.ObservabilityDungeonMobs = 1` (default) turns the feed on, but only while `AiPlayerbot.Observability = 1`; with either off the maps keep working and those layers stay greyed with "it needs the newer module". A mob entry joins a run by map + instance id; when the roster reports no instance at all (a module from before #895), it joins by map plus a shared member guid, never by map alone, and only when exactly one run on that map matches.
-- **Power Bars:** Each member row draws its power bar from the roster's `power`/`max_power`/`power_type`, exactly like the Bots tab, so a module that reports no power and a dead member show none.
+Selecting a run shows a live view: an interactive map with bot positions and health bars. The first living tank is the run's lead: the map anchors on it and draws its mark and path.
+
+The Dungeons tab lists dungeon copies; raid copies live on the Raids tab. Raid groups without a commander binding also appear on the Raids tab.
 
 ### Raids Tab
 
-The **Raids** tab lists every raid map copy that holds a bot, with or without a commander bind: the instance, the groups inside it, each group's rows (roster fields, plus a name and an offline marker for members not online), the map and the mobs from `DUNGEON_MOBS`, and a link to a bound group's Commanders card. A run is a raid when a member's roster row carries `"raid":true` (the module's map is a raid map, the core's own map type) or its `DUNGEON_MOBS` entry does; the Dungeons tab then lists only the other runs.
-
-- **Groups:** One card per group with the leader, offline members and the live combat window. The party, map and fights reuse the Commanders renderers unchanged: subgroup blocks, threat and deaths panels, and `mountFightPanel` under the group key.
-- **Observed vs roster only:** A live `RAIDS` report marks the group `observed` (leader, offline members, fight numbers); without one the card says `roster only` (the server sends no RAIDS: `AiPlayerbot.ObservabilityRaids = 0`). A bound group shows `bound · <commander>` linking to its Commanders card and carries the run line; fights are the same list under the commander name.
-- **Ungrouped:** Units of the copy with no group read as one muted "Not in a group" block.
-- **Known limit:** past 40 raid groups the module rotates which groups it reports, so the tab cycles through them instead of showing all at once.
-- **Polling:** The page refetches `/api/v1/raids` on each snapshot only while the tab is on screen and the last `raids` event is older than 5 s, else once per 30 s. The WebSocket hub broadcasts `raids` after every applied RAIDS datagram.
+The **Raids** tab lists every raid map copy that holds a bot, with or without a commander binding: the instance, the groups inside it, each group's rows (with a name and an offline marker for members not online), the map, and a link to a bound group's Commanders card.
 
 ### Commanders Maps
 
-Every Commanders card and Dungeons run draws a live map of its party.
+Every Commanders card and Dungeons run draws a live map of its party, with a **Map layers** panel that chooses what every map draws (map picture, party, enemies, lines and run). The choice is kept in this browser.
 
-- **Map layers:** A collapsible **Map layers** panel above the cards chooses what every map draws. The choice is one setting for all cards and both tabs, kept in this browser (`localStorage` key `tbdash.mapLayers.v3`; a saved v2 or v1 choice is migrated once, a merged layer is on when any of its old switches was), with a **Reset to defaults** button. Eighteen rows in five groups: **Map** (map picture, grid and scale bar, zone names), **Party** (bots and lead mark, health bars and status icons, lead path, other members' paths, healer range ring and commander line), **Enemies** (enemies = hostile + neutral, critters, enemy names and boss marker, threat colours and lines, aggro range), **Lines and run** (target/heal/crowd-control lines, run events, stalls and refused orders, run timer and boss checklist) and **Objects** (doors, chests, levers, altars and gongs). Enemies, their names and the threat colours and lines are on by default; other members' paths, the healer ring, critters, aggro range, the action lines, stalls and objects are off. A layer is greyed out only when none of the data it merges is there, with the reason beside it; its saved choice is kept for when the data arrives. Each row's tooltip explains it.
-- **Boss direction and spell areas:** A boss or elite enemy also reports where it faces and the cast it is running, with the spell's own area when it has one (a cone in front, a cone behind, or a straight line through the room, such as a Deep Breath lane), so the card can draw which way the boss looks, a casting bar and the ground its spell will hit. The area comes from a table of spell ids shipped with the module, not from the boss's name; a spell the table does not know draws no area. These fields ride the existing reports (no extra traffic) and the fight replay keeps them frame by frame. See [`tools/observability/README.md`](../../tools/observability/README.md) for the field names.
-- **Enemies on a Commanders card:** When a card's party is one of the Dungeons runs (same map and a shared bot), the card draws the union by guid of the commander feed's mobs and the run's `DUNGEON_MOBS` list, so it shows every enemy the run knows rather than the feed's 24; the commander feed wins on the fields it carries (threat and targets), and the card says `N of M enemies shown` when the run's list was cut. A card with no matching run draws only the commander feed.
-- **Map pictures (`--map-dir` / `TBDASH_MAP_DIR`):** With a folder of pictures written by `turtle-agent minimap-extract` from your own client, the maps draw the game's map under the party. Every map offers the same three pictures in this order: **World map** (one entry per floor, the default), **Minimap** and **Navmesh**. A picture the folder lacks is still listed, disabled as e.g. `Minimap (none)` with its reason as the tooltip; a stored choice of a missing picture falls back to the World map and the line under the picker says why. An optional `<map id>.status.json` in the folder (at most 64 KiB, never served) gives the reason per picture, e.g. `{"minimap":{"reason":"no WMO minimap yet"}}`; without it built-in reasons are used (indoor dungeon: no minimap; extractor run without `--mmaps`: no navmesh; no `WorldMapArea` row: no world map). With no picture at all the picker is hidden and the **Map picture** layer is greyed. These are extracted game assets: never commit them.
+With a folder of map pictures from your own client (see [Map Artwork Generation](#map-artwork-generation)), the maps draw the game's map under the party. Without pictures, the map shows a note instead while bot position markers keep working.
 
-### Dungeon runs Tab
+### Dungeon Runs Tab
 
-The **Dungeon runs** tab (`#/dungeon-runs`) shows how the dungeon runs go, per dungeon: runs, success rate (full clears of the runs that finished), best and median clear time, the kill time of each boss per run (the best of each boss highlighted), wipes and deaths per run, the same numbers by server build and by driver (model and effort, self-reported), and a wipe and death map (a cross for a wipe, a dot for a death, coloured by run) on the same map pictures as the Commanders tab. Build and driver filters narrow every number on the tab. The data comes from the run trace summaries (`.bot trace`, [`run-trace.md`](run-trace.md)) in the folder `TBDASH_TRACE_DIR` (or `--trace-dir`) names, by default the usual `logs/traces` next to the dashboard; with no folder or no runs the tab says so and how to turn tracing on. The Overview has an optional strip, off until its "Dungeon runs" box is ticked, with the last run of each dungeon: result, time and the difference to the best clear. Outcome, boss times and wipe positions need the fields of issue #986 in the summary; a summary without them still counts as a run with outcome "unknown".
+The **Dungeon runs** tab (`#/dungeon-runs`) shows how the traced dungeon runs go, per dungeon: runs, success rate (full clears of the runs that finished), best and median clear time, the kill time of each boss per run, wipes and deaths per run, and the same numbers by server build and by driver. Build and driver filters narrow every number on the tab. The data comes from the run trace summaries (`.bot trace`, [run-trace.md](run-trace.md)) in the folder the daemon was given.
 
 It is not the live **Dungeons** tab above: that one shows the instance copies bots are in right now, this one the finished (and running) traced runs.
 
-<details>
-<summary>Dungeon runs API</summary>
-
-`GET /api/v1/dungeon-runs` — per-dungeon summaries read from the run trace folder (`meta`, `hint`, `facets`, `dungeons[]`); optional `build`, `driver` and `mode` filters. `GET /api/v1/dungeon-runs/<map>/runs` — the runs of one map, newest first, with the boss columns, wipes and deaths; the same filters and `limit` (default 200, at most 1000). GET only, same login as the other endpoints, no database access: the folder is indexed once at start-up and re-checked every `TBDASH_TRACE_SCAN_SEC` seconds (default 10). Field list: [`tools/observability/README.md`](../../tools/observability/README.md).
-
-</details>
-
-### Run Leader Runs on the Commanders Tab
-
-**A run leader's run ("observe").** A party that clears a dungeon plan by itself (`.bot run`, see [Dungeon Run Leader](../play/dungeon-run-leader.md)) is a card like any other, with an `observe` badge (`observe · paused` when it stopped), its plan, step and section in the card's second line (`uldaman · step 78/205 · ancient stone keeper · pull · rest`, or `step 78/205 · <the plan step's own description>` when the plan row carries a comment; hover for the note and the time of the last change), and a `Run paused: <reason>` warning, so a stuck run shows its reason. It needs a module that sends the run (`run` in the `COMMANDERS` report); an older one shows the party without it.
-
-**Raid layout.** A bound raid whose group the module laid out (`.bot commander bind ... raid`) shows one `Layout` row above its subgroup blocks: the main tank, the off-tanks, each tank healer as `healer -> tank` and the raid healers. It needs the layout in the `COMMANDERS` report (`layout`); an older module or a group that was never laid out shows no row.
-
-**Run steps** (a party the run leader clears, "observe"): the plan's steps for the current section - a dashed route (grey = done, blue = ahead), numbered circles for pulls and bosses (green = cleared, yellow = the step it is on, struck out = skipped), a crown and name for bosses, icons for loot, doors, rituals and stops - need a module that sends `run.plan_steps`; an older one leaves the layer greyed.
-
-**Bosses** (owner request 2026-10-21): every known boss of the dungeon a card shows was drawn at its spawn point all the time, with its name - a gold crown while it lived, a grey crown with a tick and the name struck through once killed, an outlined crown when not seen - and the run line counted `bosses 3 / 8 killed` of the run's bosses (the ones the plan names; the others are listed in its tooltip), with `bosses –` on a dungeon map where nothing was known. The module sends the list with each boss's state in that party's own instance (`bosses` in the `COMMANDERS` report); without it the page falls back to the plan's boss steps, the bosses in sight and the kills it saw.
-
-### Underperforming bots (Fight debugger)
-
-Inside the Fight debugger card, under everything else and closed by default, **Underperforming bots** lists the bots a run flagged and says why. It is one view for every class and role and for parties and raids of 5 to 40: no boss, map or spell-id constant takes part.
-
-- **One row per listed bot:** name (click it for the gear and profile), class and talent spec, role, and its numbers next to what a median peer in the same role did in the same fights: damage per second (dps), healing per second (healers) or casts per second (tanks, because the fight data carries no threat), then casts per second, deaths, the skill rate for tanks whose class has a spell-count-zero rule (Sunder Armor, Maul/Swipe; shown, never flagged), how many fights flagged it, the reasons as chips (a rule id and its fight count, or the peer comparison in words), a short likely cause, and up to eight fight links (the boss name, or the step) that open that fight on its local night.
-- **The reasons:** the daemon's own warning rules (`combat.Judge`, so a rules change shows here at once), a bot whose main number is below half (yellow) or a quarter (red) of its role peers' median over at least three peer fights, low activity (casts per second below 40% of the peers) and frequent deaths. A red or a yellow rule warning lists a bot, but only in a fight it is judged in (the same alive-time rule as the numbers, so the flagged count never passes the judged count; a bot that died at once cannot be listed by a rule); a role with no peers (the only tank or healer of a five-man) gets no peer comparison, only its rules.
-- **The window:** a live card asks for the current binding (since it began; the last two hours when the module did not report a bound time), a history card for the current local night; a night picked on the rail is a local night too, with the page's zone and the 06:00 rollover, exactly as the fight history lists nights (`night=`, `tz=` and `rollover=` in the request, the UTC day when the zone is unknown). The run picker's first option is the whole window - *This run* on a live card, *Whole night* on a history card; *Last run* and each run of the window narrow the answer to one run. A run is one session of fights: a new run starts when the fight's session changes or the gap from the previous fight's end is over 15 minutes; a supervisor restart inside a run stays one run. The pick is dropped when the window changes (another night, another card, live to history, a new binding), so it never points at a run of the window before it.
-- **Not measured:** range, line of sight and mana are not in the fight data, so causes come from casts, damage, healing and deaths only.
-- **Known limits:** a bot is one row per guid and role, so a bot whose role changed inside the window lists twice (the header counts it once); the window picks fights by their start, a fight is never split across two nights; a live window is the whole binding since it began, which can hold fights from before the current session (the run picker narrows it); the peer medians need same-role peers judged in the same fight, so they compare within one fight and not across the night; a window over `max_fights` keeps its newest fights only, and the page says so.
-
-The limits served with every answer:
-
-| Name | Value | Meaning |
-|---|---|---|
-| `min_judged_s` | 20 | a fight shorter than this is not used for the peer numbers |
-| `min_alive_s` | 10 | a bot alive less than this in a fight is not judged in it |
-| `min_peers` | 2 | role peers a healer or dps needs in a fight for a peer median |
-| `min_tank_peers` | 1 | the same for tanks (a five-man has one tank, so no tank peers there) |
-| `min_fights` | 3 | peer fights a bot needs before a peer reason may list it |
-| `yellow_ratio` | 0.5 | bot / peer below this: yellow |
-| `red_ratio` | 0.25 | below this: red |
-| `idle_ratio` | 0.4 | casts per second below this share of the peers: low activity |
-| `death_ratio` | 2 | deaths at least this many times the peers' expected deaths |
-| `min_deaths` | 3 | ... and at least this many: yellow |
-| `early_death_share` | 0.5 | cause line when the bot died before half the fight in at least this share of its flagged fights |
-| `run_gap_s` | 900 | a longer gap between fights starts a new run |
-| `max_fights` | 500 | fights read per request, the newest kept (`truncated` says so) |
-| `max_fight_refs` | 20 | fight links per bot, newest first |
-| `spell_list_cap` | 12 | a bot with this many listed spells has a cut list (no skill rate) |
-
-`GET /api/v1/combat/underperformers?commander=<name>&(day=<YYYY-MM-DD>|night=<YYYY-MM-DD>&tz=<IANA zone>[&rollover=0-12]|since=<unix s>[&until=<unix s>])[&run=all|last|<i>]` answers `commander`, `since`, `until`, `run`, `fights`, `judged`, `truncated`, `runs` (each `since`, `until`, `fights`, `plan`, `legs`, `session`), `limits`, `bots` and `ok`; `run=all` (the default) is the whole window, and a run pick narrows the fights to that run's session and time bounds but `runs` still lists the whole window, and the answer's `since`/`until` become the run's. Each `bot` carries `you` (its own rates over the peer fights, the same fights as `peers` and the ratio), `you_all` (the same rates over every judged fight) and `fight_refs`, each of which carries the fight's `start` and no day: the page turns the start into the fight's local night to open. `night` is the same local night the fight history lists (tz and the 06:00 rollover, `X-TZ-Fallback: utc` and the night read as a UTC day when the zone is unknown); `day` stays one UTC day. Every number that cannot be computed is `null`, never NaN. A bad parameter answers 400 with `{"error": "..."}`; the route needs the normal GM login.
-
 ### Agent Maps Tab
 
-This tab is a developer tool for [turtle-agent](https://github.com/pjerra/turtle-agent), the headless test client used to test bots in dungeons. If you do not run turtle-agent, you will never see it and can skip this section.
+This tab is a tool for [turtle-agent](https://github.com/pjerra/turtle-agent), the headless test client used to test bots in dungeons. If you do not run turtle-agent, you will never see it and can skip this section.
 
-The **Agent maps** tab shows the run maps that `turtle-agent map` writes: one SVG per run (`run.svg`, or `run-f1.svg`, `run-f2.svg` when the run spans floors) and, with `--html`, a self-contained `run.html` replay next to it. Click a file to view it inline.
+The **Agent maps** tab shows the run maps that `turtle-agent map` writes: one SVG per run, with an optional self-contained HTML replay next to it. Click a file to view it inline.
 
-The tab is off by default. Start the daemon with `--agent-maps-dir DIR` (or `TBDASH_AGENT_MAPS_DIR=DIR`) to turn it on; without it the tab stays hidden and its API answers 404.
-
-<details>
-<summary>What it serves and the security limits</summary>
-
-- Lists the newest 200 `.svg`/`.html` files directly in the folder, newest first, with type, size and modified time. Hidden files, sub-folders and every other extension are not served. A served map is capped at 32 MiB.
-- Read-only: nothing is uploaded, written or deleted. The list and the files sit behind the normal GM login, and file names are always shown as text.
-- A replay runs in a sandboxed frame: it may run its own inline script, but it has no same-origin access and a `default-src 'none'` content security policy blocks every network request.
-- A symlink is followed only to a regular file directly inside the folder. The daemon re-checks the folder before every list and open and refuses if it no longer resolves to the directory it started with.
-- **Known limits:** keep the folder and every directory above it writable only by the operator. Files are opened by pathname, so someone who can rename the folder or an ancestor and put a symlink in its place can race a request between the check and the open (closing this needs Go 1.24 `os.Root` or Linux `openat2`; the dashboard is pinned to Go 1.22). A hard link inside the folder to a file outside it is served, so leave `fs.protected_hardlinks` at its default (`1`).
-
-</details>
+The tab is off by default. Start the daemon with an agent maps folder to turn it on. Without it the tab stays hidden.
 
 ## Issue Tracking & Stalls
 
-The service monitors persistent problems and groups them into episodes on the **Issues** tab:
+The service tracks persistent problems and groups them into episodes on the **Issues** tab:
 
-- **Stuck Navigation (`STUCK`):** A bot remains in a moving state but its physical coordinates stay frozen for 60+ seconds.
-- **Prolonged Death (`DEAD_LONG`):** A dead bot remains a ghost without releasing or reviving for more than 2 minutes.
-- **Unreachable Target (`UNREACHABLE_TARGET`):** A bot attempts to engage a hostile target that is >45 yards away or out of line of sight for 10 seconds.
-- **Anti-Flapping Filter:** Episodes must persist past an age gate (default 5 minutes; `UNREACHABLE_TARGET` surfaces after 2 minutes) before alerting, preventing transient pathing pauses from cluttering alerts.
-- **Restart Blackout:** `DEAD_LONG` alerts are suppressed for the first 5 minutes following a game server restart.
+- **Stuck Navigation (`STUCK`):** a bot remains in a moving state but its position stays frozen for 60+ seconds.
+- **Prolonged Death (`DEAD_LONG`):** a dead bot remains a ghost without releasing or reviving for more than 2 minutes.
+- **Unreachable Target (`UNREACHABLE_TARGET`):** a bot tries to engage a hostile target that is far away (over 45 yards) or out of line of sight for 10 seconds.
+- **Anti-flapping filter:** episodes must persist past an age gate (default 5 minutes; `UNREACHABLE_TARGET` surfaces after 2 minutes) before alerting, so transient pathing pauses do not clutter alerts.
+- **Restart blackout:** `DEAD_LONG` alerts are suppressed for the first 5 minutes following a game server restart.
 
 ## Telemetry APIs & Metrics
 
@@ -272,72 +203,33 @@ The service monitors persistent problems and groups them into episodes on the **
 
 The daemon exports Prometheus metrics at `http://localhost:8095/metrics` for scraping by Prometheus and Grafana:
 
-- `tortoisebots_active_count{class,role}`: Number of active bots grouped by class and role.
-- `tortoisebots_state_ratio{state}`: Ratio of time spent in each operational state over rolling windows.
-- `tortoisebots_grinding_xp_per_hour_total`: Collective XP gain rate across the bot pool.
-- `tortoisebots_issues_active{type}`: Current count of active issue episodes by type.
-- `tortoisebots_anomalies_total{type}`: Cumulative anomalies and loop triggers encountered.
-- `tortoisebots_snapshots_total`: Number of telemetry roster snapshots ingested.
+- `tortoisebots_active_count{class,role}`: number of active bots grouped by class and role.
+- `tortoisebots_state_ratio{state}`: ratio of time spent in each operational state over rolling windows.
+- `tortoisebots_grinding_xp_per_hour_total`: collective XP gain rate across the bot pool.
+- `tortoisebots_issues_active{type}`: current count of active issue episodes by type.
+- `tortoisebots_anomalies_total{type}`: cumulative anomalies and loop triggers encountered.
+- `tortoisebots_snapshots_total`: number of telemetry roster snapshots ingested.
 
 ### Selected JSON REST Endpoints
 
-The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
+The daemon provides admin-relevant HTTP REST endpoints under `/api/v1` (login required, same GM rank as the dashboard):
 
-- `GET /api/v1/status`: Daemon health, connected game server status, and pool population summary.
-- `GET /api/v1/bots`: Complete bot fleet state, coordinates, active strategies, and gear summaries.
-- `GET /api/v1/armory/bots`: Searchable roster summary for the bot armory inspector.
-- `GET /api/v1/armory/bot/{guid}`: Detailed character profile, paperdoll gear, talents, and inventory.
-- `GET /api/v1/issues`: Active and historical navigation and combat stall episodes.
-- `GET /api/v1/commanders`: Active remote commander bindings, party member positions, and recent orders.
-- `GET /api/v1/commanders/trails`: Historic movement trails and paths for active commanders.
-- `GET /api/v1/dungeons`: Live view of active dungeon copies with member states and player indicators; from a module that sends `DUNGEON_MOBS`, each run also carries `mobs`, `mobs_map` and `mobs_total`, and each member `id` and `target`.
-- `GET /api/v1/raids`: Live view of active raid copies: one run per copy, groups by group id with leader, offline members and live combat window, ungrouped units apart; `live` says a RAIDS datagram arrived inside 12 s. `WS /api/v1/stream` event `raids` carries the same view.
-- `GET /api/v1/dungeon-runs`, `GET /api/v1/dungeon-runs/<map>/runs`: Run trace summaries per dungeon and the runs of one map (the Dungeon runs tab).
-- `GET /api/v1/maps/<map id>`: The three picture slots of a map in display order (`kind` worldmap/minimap/navmesh, `floor`, `label`, `available`; a missing slot carries `reason`, an available one `name`, `source`, `url` and the rectangle `x`/`y`/`w`/`h` it covers). Answers 200 also for a map without pictures; 404 only when no map folder is configured.
-- `GET /api/v1/mapfiles/<name>`: One available map picture (`.png`) or its placement (`.json`) from the map folder.
-- `GET /api/v1/activity`, `/activity/loot`, `/activity/quests`: Real-time feed of bot actions, items, and quests.
-- `GET /api/v1/grinding`: Detailed grinding analytics, XP rates, and kill distributions.
-- `GET /api/v1/history`: Timeline snapshots of historical bot counts and states.
-- `GET /api/v1/server-info`: Server version metadata, active rates, and configuration status.
-- `GET /api/v1/anomalies/totals`: Cumulative session totals for anomalies and action loops.
-- `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
-- `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history. Each fight (live or finished) carries `boss_phase` and `boss_phase_entry`: the fight's boss phase (1 + the entry changes the module saw of his unit) and the entry he reads now, so the Fights panel and the debugger show `phase N (entry E)` after the boss name when N > 1 - a boss a script changes mid-fight keeps being the boss, e.g. Zul'Gurub's Thekal 14599 turning into 14509.
-- `GET /api/v1/combat/history/days?commander=` (add `tz`, e.g. `Europe/Oslo`, and the optional `rollover` hour, default 6), `GET /api/v1/combat/history?commander=` with `day=` (one UTC day) or `night=` (with `tz`: one local night), `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's nights, one night's fights, and the same pack across runs. Without `tz` the days and list answer the old UTC day rows, so old clients keep working.
-- `GET /api/v1/combat/run-totals?commander=&session=`: one run's finished fights summed per bot (damage, healing, overheal, taken, casts, deaths, the Tank table's Sunder and taunt counts, and each bot's summed fight time), from the fights the daemon remembers plus the history files. Only fights of that commander's run (that game session) are summed; at most 500 fights are summed and a cut answers the header `X-More: 1`. The daemon opens only the run's history rows, newest first, skipping rows already in memory and fights without per-bot numbers (a live row, an ended fight not yet filed). The answer is held per run for 10 s; a run with no fight still live and no new fight in 10 minutes stays cached until a newer fight lands. Runs are capped at 256 cached entries with least-recently-used eviction, and a session with no fights is not cached. Commander and session are required, a bad one is a 400.
-- Both fight lists (`/combat/fights` and `/combat/history`) take optional paging and filter params; without them they answer as before. `limit=N` (at most 500) cuts the list, put in start-descending then key-ascending order first, and answers the header `X-More: 1` when rows were left out (a `since` or `before` without `limit` is capped at 500 the same way); `before=<start>[,<key>]` lists only older fights (pass the last row's `start,key` to get the next page); `since=<start>` only fights from that unix second on; `boss=1`, `deaths=1` and `outcome=kill,wipe` filter. With `since` or `before` the history list may leave out `day` and then spans every stored day. A bad param is a 400.
-- `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
-- `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
-- `WS /api/v1/stream`: Real-time WebSocket event feed streaming live bot updates to connected clients.
+- `GET /api/v1/status`: daemon health, connected game server status, and pool population summary.
+- `GET /api/v1/bots`: complete bot fleet state, coordinates, active strategies, and gear summaries.
+- `GET /api/v1/armory/bots`: searchable roster summary for the bot profile inspector.
+- `GET /api/v1/armory/bot/{guid}`: detailed character profile, paperdoll gear, talents, and inventory.
+- `GET /api/v1/issues`: active and historical navigation and combat stall episodes.
+- `GET /api/v1/commanders`: active commander bindings, party member positions, and recent orders.
+- `GET /api/v1/dungeons`: live view of active dungeon copies with member states and player indicators.
+- `GET /api/v1/raids`: live view of active raid copies by group.
+- `GET /api/v1/dungeon-runs`, `GET /api/v1/dungeon-runs/<map>/runs`: run trace summaries per dungeon and the runs of one map.
+- `GET /api/v1/activity`, `/activity/loot`, `/activity/quests`: feed of bot actions, items, and quests.
+- `GET /api/v1/auctions`: listings currently posted on the auction house by bots and players.
+- `WS /api/v1/stream`: real-time event feed streaming live bot updates to connected clients.
 
 Activity counters are periodically saved to `activity-state.json` so statistics persist across daemon restarts.
 
-The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits, within ten seconds: a world-database lookup still running at that point is abandoned, and the log names the fights it left unwritten. A line that cannot be written whole is cut back off the file, and when even that fails the night continues in `<YYYY-MM-DD>-1.jsonl`.
-
-The oldest stored night may be partial: expired day files are deleted while a night spans two of them.
-
-### The fights rail (Fight debugger)
-
-The Fight debugger's rail on a Commanders card lists the fights of Tonight (or a chosen night), oldest first:
-
-All times on the dashboard are shown in your browser's local time, and nights roll over at 06:00: a fight at 02:17 belongs to the previous evening's night.
-
-- **Default view:** boss fights, wipes, fights with any death and fights that are not clean (a rule the daemon fired, or an opened fight whose checks warn or fail) are full cards; two or more clean trash fights in a row (same leg and run) fold into one line such as "Leg 2 · 12 trash pulls, 0 deaths", which opens in place. The fold that holds the selected fight opens by itself; a fold the reader opened stays open when a new pull joins it.
-- **Show all fights:** the box over the rail lists every fight of the night as a card, as the rail did before. The choice is kept per viewer in this browser (for the page only where the browser blocks storage). A read-only history card never folds.
-- **Paging:** Tonight shows the bound run plus the last 2 hours (the list's `since`); **Load older fights** at the top asks the history for the next 50 before the oldest row shown, across days. Once an older page is loaded the window start stops sliding for that night, so no fight falls between the pages and the window. With Show all fights on, Tonight is the whole of today again.
-- **Pack labels:** "Pack N" counts inside the fight's day and run over the rows the rail holds. For an earlier run that the 2-hour window cuts, the numbers count from the window's first fight and shift as the window slides; Load older or Show all fights gives the run's own numbers.
-- **Details on demand:** a fight's detail (`/combat/fight/<key>`, 4-35 KB) is fetched only when it is opened (a click, a pack row, the URL, or the debugger's own pick of the worst fight by its summary: a wipe, then deaths, then fired rules), and kept in a per-commander cache. Cards without a detail show their summary's word (wipe, deaths, check or no deaths, in italics); the full checks, damage numbers, engaged mob name and the per-death marks come when the fight is opened. The run strip marks a fight's deaths with one counted mark until it is opened. The header's "N of M fights need a look" counts by summary (a wipe or a death), so opening fights never changes it.
-- **Redraws:** the rail repaints by key every 2 s; only the cards whose summary changed are rebuilt.
-- **This fight | Total:** the switch above the role tables shows the picked fight's own numbers or the run's sums. A run is one game session, and the session id is the server's start in unix seconds, so Total's title reads "Total · N fights since <server start, local time>" (with "(newest 500 fights)" when the daemon cut the answer at its cap). Total fetches run-totals for the session parsed from the picked fight's key (commander, session, id), so a fight the rail does not hold still sums its own run; the answer is held per commander per session for 10 s. It renders the same Tanks, Healers and Damage tables: DPS and HPS over each bot's own fight time, Over % over the run's healing, plus Taken, Casts, the summed death count, Sunder and taunts. The header's raid dps and hps chips follow the switch (the run's sums over its fight time, with a fight count). The checks and timeline below still judge the picked fight and say so ("Checks for <fight>"). The choice is kept per viewer in this browser. The live table and live chips keep the rolling 10 s window and have no switch.
-- **Live events** sit at the top of the right column, beside the map and above the Tanks table; between 761 and 1180 px wide they go under the map, and on a phone they stack under the map above the role tables.
-
-<details>
-<summary>Agent maps API details</summary>
-
-`GET /api/v1/agent-maps` returns `{"files":[{"name","size","mtime","kind"}...],"max_files":200,"max_file_size":33554432}`. `kind` is `svg` or `html`; `mtime` is unix seconds. Only regular `.svg`/`.html` files directly in the folder are listed (hidden files, sub-folders and symlinks that resolve outside are left out). The routes exist only when the daemon runs with `--agent-maps-dir DIR` (env `TBDASH_AGENT_MAPS_DIR`); unset, they are not registered and answer 404, which the page uses to keep the tab hidden. Both routes require the normal GM login.
-
-`GET /api/v1/agent-maps/files/<name>` serves `.svg` as `image/svg+xml` and `.html` as `text/html; charset=utf-8`. Both carry `X-Content-Type-Options: nosniff`, `Cache-Control: no-cache` and a restrictive `Content-Security-Policy` (`default-src 'none'`, no `connect-src`/`frame-src`/external fetch). The HTML policy also allows the replay's own inline script and style and adds `sandbox allow-scripts` (no `allow-same-origin`), so the replay runs in an opaque origin that cannot read the dashboard's cookies or DOM. A name with a separator, backslash, NUL, control character, leading dot, encoded traversal (`%2e%2e`, `%2f`, `%5c`, `%00`) or any extension other than `.svg`/`.html` is 404; a file over 32 MiB is 413. GET and HEAD only.
-
-</details>
+For the fight debugger, fight history, agent maps, and per-endpoint field lists, see [`tools/observability/README.md`](../../tools/observability/README.md).
 
 ## Pool KPI Report (`tools/pool_kpi_report.py`)
 
@@ -354,6 +246,7 @@ python3 tools/pool_kpi_report.py \
 Additional flags include `--db-cmd` (database query command), `--save-baseline` (saving output baseline files), `--out` (writing the Markdown report), and `--anomaly-totals-json` for recording anomaly counters.
 
 The script generates a Markdown summary evaluating:
+
 - Bot level progression and median XP gain rates.
 - Deaths per minute and prolonged-ghost counts.
 - Zone migration fit: whether bots advance to level-appropriate zones as they outgrow starter areas.
@@ -369,4 +262,4 @@ python3 tools/observability/scripts/gen_zone_maps.py \
   --out tools/observability/maps
 ```
 
-The `--out` path feeds the Map tab; Commander map views use the folder configured via `--map-dir` or the `TBDASH_MAP_DIR` environment variable. If map images are absent, the Map tab displays a note instead of the picture while bot position markers continue to function normally.
+The `--out` path feeds the Map tab. Commander map views use the folder configured via `--map-dir` or the `TBDASH_MAP_DIR` environment variable. If map images are absent, the Map tab displays a note instead of the picture while bot position markers continue to function normally.
