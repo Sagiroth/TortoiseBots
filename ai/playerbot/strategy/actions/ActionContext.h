@@ -376,6 +376,7 @@ namespace ai
             creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeAction(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };
             creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectAction(ai); };
+            creators["boss tactics tank swap"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapAction(ai); };
             creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };

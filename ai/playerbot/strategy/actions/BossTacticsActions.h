@@ -390,4 +390,33 @@ namespace ai
         bool isPossible() override;
         bool Execute(Event& event) override;
     };
+
+    // The swap_on_aura kind's other-tank side: the tank of the row's rotation that takes the boss at the row's stack
+    // count (TankSwapPolicy.h). `valid` is true only for that tank, and only for a swap the row calls for now.
+    struct BossTankSwapTask
+    {
+        bool valid = false;
+        Unit* boss = nullptr;
+        Unit* victim = nullptr;  // the tank the boss is on, one of the rotation
+        const BossTacticRow* row = nullptr;
+        int victimIndex = -1;    // its place in the raid tank order
+        int botIndex = -1;       // the bot's place (the one that takes over)
+        int victimStacks = 0;
+    };
+    BossTankSwapTask FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // Whether the fight's swap record names `bot` as the tank the last swap moved off `boss`: it holds its threat
+    // abilities and its taunts while TankSwapStandsDown says so (the record's window, its own stacks, or both).
+    bool TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, int stacks);
+
+    // Records the swap the bot just did (the boss came to it, the old tank stood down) and writes the
+    // `BossTacticsTankSwap` row (taunt=<boss guid>, stacks=<n>, from=<guid>).
+    void NoteBossTankSwapCast(PlayerbotAI* ai, Player* bot, const BossTankSwapTask& task);
+
+    class BossTacticsTankSwapAction : public AttackAction
+    {
+    public:
+        BossTacticsTankSwapAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics tank swap") {}
+        bool Execute(Event& event) override;
+    };
 }

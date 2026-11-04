@@ -65,6 +65,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics object anchor",
         NextAction::array(0, new NextAction("boss tactics object anchor", ACTION_HIGH + 5), NULL)));
 
+    // A swap_on_aura row is at its stack count on the tank the boss is on and this bot is the next rotation tank: the
+    // taunt goes out at once. Below every EMERGENCY row, so a survival move still wins; above the rotation, which
+    // would otherwise keep the stacked tank building threat.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(
@@ -119,6 +126,11 @@ void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "boss tactics flee",
         NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
+
+    // The swap's taunt runs there as well: a tank's cast would sleep through the combat engine while the stacks tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",

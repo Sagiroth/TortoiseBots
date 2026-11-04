@@ -192,6 +192,17 @@ bool BossTacticsUseObjectTrigger::IsActive()
     return FindBossUseObject(ai, bot).valid;
 }
 
+bool BossTacticsTankSwapTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Both keys gate the kind: it is one of the six aura kinds, and it changes what the tanks do mid-fight.
+    if (!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
+        !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    return FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot)).valid;
+}
+
 bool BossTacticsObjectAnchorTrigger::IsActive()
 {
     if (!Ready(ai, bot))

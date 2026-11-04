@@ -447,6 +447,15 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
         self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
 
+    def test_kurinnaxx_mortal_wound_swap_row_is_live(self):
+        # The tank swap (swap_on_aura): Kurinnaxx's Mortal Wound 25646 at 5 stacks, a rotation of two tanks (the main
+        # tank and off-tank 1). The C++ consumer is behind AiPlayerbot.DungeonRunTankSwap; the row itself is data.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): row for row in effective_rows()}
+        row = live.get((509, 15348, "swap_on_aura", 0, 25646))
+        self.assertIsNotNone(row, "the Kurinnaxx swap_on_aura row is gone")
+        self.assertEqual(2, int(row[6]), "the rotation is two tanks")
+        self.assertEqual(5.0, float(row[7]), "the swap fires at 5 Mortal Wound stacks")
+
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
         # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees
@@ -896,9 +905,10 @@ class BossTacticsCoreData(unittest.TestCase):
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
 
     def test_aura_tactic_spells_exist(self):
-        # Every spell a new-kind row names exists in spell_template: a dispel_priority aura, a freeze/flee aura, a
-        # dps_hold_after trigger or a kill_first target's spell id (0 for the target rows).
-        aura_kinds = ("dispel_priority", "freeze_on_aura", "flee_on_aura", "dps_hold_after")
+        # Every spell a new-kind row names exists in spell_template: a dispel_priority aura, a freeze/flee aura, the
+        # aura a dps_hold_after row triggers on, a swap_on_aura stack source or a kill_first target's spell id (0 for
+        # the target rows).
+        aura_kinds = ("dispel_priority", "freeze_on_aura", "flee_on_aura", "dps_hold_after", "swap_on_aura")
         problems = []
         for row in effective_rows():
             if row[3] not in aura_kinds or not int(row[5]):

@@ -622,6 +622,10 @@ public:
     // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
     // rows are ignored, so the table behaves exactly as before the kind (default off).
     bool dungeonRunUseObject = false;
+    // The swap_on_aura boss-tactic kind (the tanks of the row's rotation trade the boss at a stack count, and the
+    // swapped-off tank holds its threat): on, the rows are read (its own key on top of the aura-tactics and tactics
+    // gates). Off, the rows are ignored, so the table behaves exactly as before the kind (default off).
+    bool dungeonRunTankSwap = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party

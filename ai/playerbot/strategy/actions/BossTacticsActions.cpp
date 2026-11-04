@@ -17,6 +17,8 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
+#include "playerbot/policy/raid/TankSwapPolicy.h"
+#include "playerbot/EbonrocSwapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 #include "ChooseTargetActions.h"
@@ -1496,10 +1498,244 @@ bool BossTacticsLinkedDeathAction::Execute(Event& event)
     return Attack(bot, pick);
 }
 
+namespace
+{
+// The swap record: one per (map instance, boss, row aura), shared by every bot of the instance (the
+// g_useObjectRecords pattern). It holds the tank the last swap moved off the boss and when, so the swapped-off tank
+// holds its threat and every bot decides from the same history. A mutex guards it: the trigger, the action and the
+// hold multiplier of every bot reach it.
+struct TankSwapRecord
+{
+    std::uint32_t swappedAtMs = 0;
+    std::uint64_t fromGuid = 0;
+    std::uint64_t toGuid = 0;
+    int stacks = 0;
+};
+
+std::mutex g_tankSwapMutex;
+std::map<std::tuple<std::uint32_t, std::uint64_t, std::uint32_t>, TankSwapRecord> g_tankSwapRecords;
+
+// A record older than this belongs to a fight that is over (the stand-down window is far shorter).
+const std::uint32_t kTankSwapRecordIdleMs = 60000;
+
+using TankSwapKey = std::tuple<std::uint32_t, std::uint64_t, std::uint32_t>;
+
+TankSwapKey TankSwapRecordKey(Unit* boss, const BossTacticRow& row)
+{
+    return TankSwapKey(boss->GetInstanceId(), boss->GetObjectGuid().GetRawValue(), row.spellId);
+}
+
+// Drops the records of fights that ended. Called with g_tankSwapMutex held.
+void SweepTankSwapRecords(std::uint32_t nowMs)
+{
+    for (auto it = g_tankSwapRecords.begin(); it != g_tankSwapRecords.end();)
+        it = nowMs - it->second.swappedAtMs > kTankSwapRecordIdleMs ? g_tankSwapRecords.erase(it) : std::next(it);
+}
+
+// The row's aura stacks a unit carries: the swap counts the row's own spell, the same one Fankriss's Mortal Wound
+// swap reads.
+int AuraStacks(Unit* unit, std::uint32_t spellId)
+{
+    Aura* aura = unit ? unit->GetAura(spellId, EFFECT_INDEX_0) : nullptr;
+    return aura ? static_cast<int>(aura->GetStackAmount()) : 0;
+}
+
+// The boss a swap_on_aura row is about, among the fight's units: alive (the scan's list) and fighting.
+Unit* SwapBoss(const BossTacticsFight& fight, const BossTacticRow& row)
+{
+    for (Unit* unit : fight.units)
+    {
+        if (unit->GetEntry() == row.bossEntry && unit->IsInCombat())
+            return unit;
+    }
+    return nullptr;
+}
+
+// The tank's taunt, first castable wins: Taunt (warrior), Growl (druid), Righteous Defense where the server's data
+// gives the paladin one. Null when this bot has none ready on the boss.
+const char* CastableTaunt(PlayerbotAI* ai, Unit* target)
+{
+    static const char* const kTaunts[] = { "taunt", "growl", "righteous defense" };
+    for (const char* name : kTaunts)
+    {
+        if (ai->HasSpell(name) && ai->CanCastSpell(name, target))
+            return name;
+    }
+    return nullptr;
+}
+
+// The actions the swapped-off tank leaves alone: its threat builders and every taunt. Auto-attack, defensive
+// cooldowns and the rest of the rotation keep running.
+bool IsTankSwapHoldAction(const std::string& name)
+{
+    return name == "sunder armor" || name == "revenge" || name == "heroic strike" ||
+        EbonrocTauntAction(name);
+}
+
+// Whether the hold multiplier stands an action down for a swapped-off tank.
+bool TankSwapHold(PlayerbotAI* ai, Player* bot, Action* action)
+{
+    if (!action || !IsTankSwapHoldAction(action->getName()))
+        return false;
+    if (!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return false;
+    if (!PlayerbotAI::IsTank(bot) || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    // The record is written for the boss the swap happened on: the bot's own current target has to be that boss.
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (!current || !current->IsInCombat())
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::SwapOnAura || row->bossEntry != current->GetEntry())
+            continue;
+        if (TankSwapHoldsTank(bot, current, *row, AuraStacks(bot, row->spellId)))
+            return true;
+    }
+    return false;
+}
+}  // namespace
+
+BossTankSwapTask ai::FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    BossTankSwapTask task;
+    // Both keys gate the kind: it is one of the six aura kinds, and it changes what the tanks do mid-fight.
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics)
+        return task;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return task;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
+        return task;
+    // The rotation is the raid tank order; the row's priority is its size. Without two living tanks there is nobody
+    // to swap to.
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.tanks.size() < 2 || roles.botIndex < 0)
+        return task;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::SwapOnAura)
+            continue;
+        Unit* boss = SwapBoss(fight, *row);
+        if (!boss)
+            continue;
+        // Only the tank the boss is on is swapped off: a non-tank victim (a threat wipe, an evade reset) is not the
+        // mechanic the row is for.
+        Unit* victimUnit = boss->GetVictim();
+        if (!victimUnit || !victimUnit->IsPlayer())
+            continue;
+        Player* victim = static_cast<Player*>(victimUnit);
+        const std::vector<Player*>::const_iterator at =
+            std::find(roles.tanks.begin(), roles.tanks.end(), victim);
+        if (at == roles.tanks.end())
+            continue;
+        const int victimIndex = static_cast<int>(at - roles.tanks.begin());
+        const std::size_t rotation = std::min<std::size_t>(row->priority, roles.tanks.size());
+        if (static_cast<std::size_t>(victimIndex) >= rotation ||
+            static_cast<std::size_t>(roles.botIndex) >= rotation)
+            continue;
+        std::vector<int> stacks(rotation);
+        std::vector<bool> alive(rotation);
+        std::vector<bool> inRange(rotation);
+        for (std::size_t i = 0; i < rotation; ++i)
+        {
+            Player* tank = roles.tanks[i];
+            alive[i] = tank && sServerFacade.IsAlive(tank);
+            stacks[i] = AuraStacks(tank, row->spellId);
+            inRange[i] = alive[i] && tank->IsInMap(bot) &&
+                tank->GetDistance(boss) <= kTankSwapCandidateYd;
+        }
+        const int victimStacks = AuraStacks(victim, row->spellId);
+        const int wanted = TankSwapWanted(victimIndex, victimStacks, static_cast<int>(row->param),
+                                          stacks, alive, inRange);
+        if (wanted != roles.botIndex)
+            continue;
+        task.valid = true;
+        task.boss = boss;
+        task.victim = victim;
+        task.row = row;
+        task.victimIndex = victimIndex;
+        task.botIndex = roles.botIndex;
+        task.victimStacks = victimStacks;
+        return task;
+    }
+    return task;
+}
+
+bool ai::TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, int stacks)
+{
+    if (!bot || !boss)
+        return false;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_tankSwapMutex);
+    auto it = g_tankSwapRecords.find(TankSwapRecordKey(boss, row));
+    if (it == g_tankSwapRecords.end())
+        return false;
+    const TankSwapRecord& record = it->second;
+    if (record.fromGuid != bot->GetObjectGuid().GetRawValue())
+        return false;
+    return TankSwapStandsDown(true, stacks, nowMs - record.swappedAtMs);
+}
+
+void ai::NoteBossTankSwapCast(PlayerbotAI* ai, Player* bot, const BossTankSwapTask& task)
+{
+    if (!ai || !bot || !task.valid || !task.boss || !task.victim || !task.row)
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_tankSwapMutex);
+        SweepTankSwapRecords(nowMs);
+        TankSwapRecord& record = g_tankSwapRecords[TankSwapRecordKey(task.boss, *task.row)];
+        record.swappedAtMs = nowMs;
+        record.fromGuid = task.victim->GetObjectGuid().GetRawValue();
+        record.toGuid = bot->GetObjectGuid().GetRawValue();
+        record.stacks = task.victimStacks;
+    }
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[96];
+    snprintf(info1, sizeof(info1), "taunt=%llu,stacks=%d",
+             static_cast<unsigned long long>(task.boss->GetObjectGuid().GetRawValue()), task.victimStacks);
+    char info2[48];
+    snprintf(info2, sizeof(info2), "from=%llu",
+             static_cast<unsigned long long>(task.victim->GetObjectGuid().GetRawValue()));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankSwap", info1, info2);
+}
+
+bool BossTacticsTankSwapAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTankSwapTask task = FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot));
+    if (!task.valid || !task.boss)
+        return false;
+    const char* const taunt = CastableTaunt(ai, task.boss);
+    if (!taunt)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (AI_VALUE(Unit*, "current target") != task.boss)
+    {
+        // The taunt only sets selection: without the attack first the rotation keeps hitting the other target and the
+        // boss snaps back to the stacked tank.
+        if (Attack(bot, task.boss) && !ai->CanCastSpell(taunt, task.boss))
+            return true;
+    }
+    if (!ai->CanCastSpell(taunt, task.boss) || !ai->CastSpell(taunt, task.boss))
+        return false;
+    NoteBossTankSwapCast(ai, bot, task);
+    return true;
+}
+
 float BossTacticsHoldMultiplier::GetValue(Action* action)
 {
     if (!action)
         return 1.0f;
+    // The tank a swap_on_aura swap moved off the boss holds its threat builders and its taunts (the record's window,
+    // or until its own stacks are gone, whichever comes first).
+    if (TankSwapHold(ai, bot, action))
+        return 0.0f;
     const bool dpsAssist = dynamic_cast<DpsAssistAction*>(action) != nullptr;
     const bool tankAssist = dynamic_cast<TankAssistAction*>(action) != nullptr;
     const bool aoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;

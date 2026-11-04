@@ -121,6 +121,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A swap_on_aura row is at its stack count on the tank the boss is on and this bot is the next rotation tank:
+    // it taunts the boss off (both DungeonRun keys and the row's own rules gate it).
+    class BossTacticsTankSwapTrigger : public Trigger
+    {
+    public:
+        BossTacticsTankSwapTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics tank swap", 1) {}
+        bool IsActive() override;
+    };
+
     // This tank is the one the boss is on and the boss stands too far from the row's object: the walk over starts.
     class BossTacticsObjectAnchorTrigger : public Trigger
     {
