@@ -20,7 +20,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
-         "taunt_after_cast", "swap_on_aura", "seek_aura", "pull_gate", "spread"}
+         "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
@@ -30,6 +30,7 @@ MODE_WORDS = {
     "flee_on_aura": {"away", "to_tank"},
     "dps_hold_after": {"engage", "blink", "until_tank"},
     "taunt_after_cast": {"engage", "blink", "until_tank"},
+    "use_object": {"tank_anchor"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -98,9 +99,9 @@ def _payload_dict(payload):
     return dict(zip(FIELDS, payload))
 
 
-def migration_statements():
+def migration_statements(paths=None):
     """Yield ("insert", payload) and ("delete", (name, match)) in file and statement order."""
-    for path in migration_paths():
+    for path in (migration_paths() if paths is None else paths):
         name = os.path.basename(path)
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
@@ -125,10 +126,10 @@ def migration_rows():
     return [row for kind, row in migration_statements() if kind == "insert"]
 
 
-def migration_updates():
+def migration_updates(paths=None):
     """The scoped `UPDATE ai_boss_tactic SET ... WHERE ...` statements the replay applies, in file order."""
     updates = []
-    for path in migration_paths():
+    for path in (migration_paths() if paths is None else paths):
         name = os.path.basename(path)
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
@@ -217,10 +218,13 @@ def delete_covers(scope, key):
     return True
 
 
-def effective_rows():
-    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it, plus the scoped UPDATEs."""
+def effective_rows(paths=None):
+    """The rows a boot ends up with: every INSERT, minus the DELETEs that follow it, plus the scoped UPDATEs.
+
+    `paths` replays only those migration files, in the order given (default: every file, in name order).
+    """
     live = {}
-    for kind, payload in migration_statements():
+    for kind, payload in migration_statements(paths):
         if kind == "insert":
             # The key includes the health band, so one boss carries the same kind once per band.
             live[(payload[1], payload[2], payload[3], payload[4], payload[5], payload[9], payload[10])] = payload
@@ -230,7 +234,7 @@ def effective_rows():
         for key in [key for key in live if delete_covers(scope, key)]:
             del live[key]
     rows = list(live.values())
-    for _name, changes, wanted in migration_updates():
+    for _name, changes, wanted in migration_updates(paths):
         for index, payload in enumerate(rows):
             row = _payload_dict(payload)
             if _matches(row, wanted):
@@ -325,6 +329,13 @@ class BossTacticsSql(unittest.TestCase):
             if kind == "swap_on_aura":
                 self.assertGreater(int(spell), 0, where)        # the aura the tanks swap on
                 self.assertGreaterEqual(int(priority), 2, where)  # at least two tanks in the rotation
+            if kind == "use_object":
+                self.assertGreater(int(target), 0, where)       # the game object to click
+                self.assertLessEqual(int(priority), 2, where)   # the clicker role: free DPS, healer, non-tank
+                self.assertGreater(float(param), 0.0, where)   # the boss-to-object range in yards
+                self.assertLessEqual(float(param), 60.0, where)
+                self.assertTrue(float(window_s) == 0.0 or float(window_s) >= 10.0, where)
+                self.assertTrue(int(spell) > 0 or float(window_s) > 0.0, where)
             problem = new_kind_problem(_payload_dict(row))
             self.assertIsNone(problem, "%s: %s" % (where, problem))
 
@@ -752,6 +763,167 @@ class BossTacticsSql(unittest.TestCase):
         live = {key for key in live if not delete_covers(scope, key)}
         self.assertEqual(live, {(309, 14599, "kill_first", 11361, 0)})
 
+    def test_aq20_step_one_rows_are_live(self):
+        # Walk-30 fixes, step 1 (20261104150000_world.sql): the rows of the kinds
+        # that already have a consumer. burn_mana and ranged_only go in a later
+        # migration with their C++, so the loader never skips them. Poison
+        # Stinger 25748 has no row: preventionType 2, not SILENCE (1), so the
+        # core cannot interrupt it (SpellEffects.cpp:3389-3393).
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        ossirian = live.get((509, 15339, "use_object", 180619, 25176))
+        self.assertIsNotNone(ossirian, "the Ossirian crystal use_object row is missing")
+        self.assertEqual(38.0, ossirian["window_s"], "the crystal window is not 38 s")
+        self.assertEqual("tank_anchor", ossirian["tactic_mode"], "the crystal row lost tank_anchor")
+        self.assertEqual(180619, ossirian["target_entry"])
+        self.assertEqual(25176, ossirian["spell_id"])
+        self.assertEqual((0, 25.0), (ossirian["priority"], ossirian["param"]))
+        expected = {
+            (509, 15348, "swap_on_aura", 0, 25646): (2, 5.0, "", 0, 100),
+            (509, 15339, "taunt_after_cast", 0, 0): (1, 4.0, "until_tank", 0, 100),
+            (509, 15339, "dispel_priority", 0, 25195): (1, 0.0, "now", 0, 100),
+            (509, 15340, "kill_first", 15527, 0): (1, 0.0, "", 0, 100),
+            (509, 15369, "kill_first", 15934, 0): (2, 0.0, "", 0, 100),
+            # Ayamiss lands and wipes every player's threat at 70 % (boss_ayamiss.cpp:217-224). Taunt is melee range
+            # (spell 355 rangeIndex 2), so the air phase above it must not spend the row: the band opens it only at
+            # or below 70 %.
+            (509, 15369, "taunt_after_cast", 0, 0): (0, 4.0, "until_tank", 0, 70),
+            (509, 15324, "linked_death", 15324, 0): (1, 5.0, "", 0, 100),
+        }
+        for key, want in expected.items():
+            self.assertIn(key, live, "missing AQ20 step-1 row %s" % (key,))
+            row = live[key]
+            self.assertEqual(want, (row["priority"], row["param"], row["tactic_mode"], row["hp_min"], row["hp_max"]),
+                             "AQ20 row %s drifted" % (key,))
+            self.assertIsNone(new_kind_problem(row))
+        glad = live[(509, 15324, "linked_death", 15324, 0)]
+        self.assertEqual(7.0, glad["window_s"])
+        self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
+
+    def test_aq20_step_one_keeps_the_ayamiss_larva_row(self):
+        # 20261104150000 re-inserts Ayamiss's hornet row 15934 (kill_first). Its DELETE used to match every kill_first
+        # of boss 15369, so it also removed the larva row 15555 from 20261028120000 and bots stopped killing larvae
+        # first. Each DELETE of this file may remove only keys this file inserts; re-applying the file is a no-op.
+        first = os.path.join(ROOT, "data/sql/world/20261028120000_world.sql")
+        step = os.path.join(ROOT, "data/sql/world/20261104150000_world.sql")
+
+        def key(row):
+            return (row[1], row[2], row[3], row[4], row[5], row[9], row[10])
+
+        before = {key(row) for row in effective_rows([first])}
+        self.assertIn((509, 15369, "kill_first", 15555, 0, 0, 100), before, "the larva row is not in 20261028120000")
+        own = {key(payload) for kind, payload in migration_statements([step]) if kind == "insert"}
+        for kind, payload in migration_statements([step]):
+            if kind != "delete":
+                continue
+            _name, match = payload
+            scope = delete_scope(match)
+            removed = {k for k in before if delete_covers(scope, k)}
+            self.assertLessEqual(removed, own,
+                                 "the DELETE `%s` removes rows this file does not insert"
+                                 % match.string.strip())
+
+        once = effective_rows([first, step])
+        live = {key(row) for row in once}
+        self.assertIn((509, 15369, "kill_first", 15555, 0, 0, 100), live, "the larva row is gone")
+        self.assertIn((509, 15369, "kill_first", 15934, 0, 0, 100), live, "the hornet row is gone")
+        twice = effective_rows([first, step, step])
+        self.assertEqual(set(once), set(twice), "re-applying 20261104150000 changes the live rows")
+
+
+    def test_migrations_remove_only_rows_they_replace(self):
+        # Every data/sql/world migration's DELETE on ai_boss_tactic removes only rows the same file re-inserts.
+        # A re-export sorted after an earlier file (the old-style full-boss plan DELETE) would silently drop a
+        # live row it never replaces; a fix that removes a bad row names its replacement, or no replacement when
+        # the core cannot use it. Apply all migrations in order on an empty schema and fail on a row an earlier
+        # file inserted that disappears without the same file inserting its key.
+        # Intent removals the core audit asked for (a kick the core cannot stop, so no replacement exists):
+        #   map 822 boss 63133 spell 3143, map 820 boss 62771 spell 36732 (20261020082925);
+        #   map 70 boss 4854 spell 8292 (20261029150000);
+        #   map 309 boss 14507 spell 23895, boss 14834 spell 24324, map 409 boss 12119 spell 20604,
+        #   map 531 bosses 15275/15276 spell 7393, map 532 boss 61224 spell 57094 (20261101234600).
+        # Renew 23895's replacement (Holy Fire 23860) lives one file later (20261101080000).
+        allowed = {
+            (822, 63133, "interrupt", 0, 3143, 0, 100),
+            (820, 62782, "interrupt", 62771, 36732, 0, 100),
+            (70, 4854, "interrupt", 0, 8292, 0, 100),
+            (309, 14507, "interrupt", 0, 23895, 0, 100),
+            (309, 14834, "interrupt", 0, 24324, 0, 100),
+            (409, 12118, "interrupt", 12119, 20604, 0, 100),
+            (531, 15275, "interrupt", 0, 7393, 0, 100),
+            (531, 15276, "interrupt", 0, 7393, 0, 100),
+            (532, 61224, "interrupt", 0, 57094, 0, 100),
+        }
+
+        def key(row):
+            return (row[1], row[2], row[3], row[4], row[5], row[9], row[10])
+
+        live = {}
+        for path in migration_paths():
+            name = os.path.basename(path)
+            own = {key(payload) for kind, payload in migration_statements([path]) if kind == "insert"}
+            for kind, payload in migration_statements([path]):
+                if kind != "delete":
+                    continue
+                _name, match = payload
+                scope = delete_scope(match)
+                removed = {live_key for live_key in live if delete_covers(scope, live_key)}
+                dropped = {live_key for live_key in removed - own if live_key not in allowed}
+                self.assertFalse(dropped, "%s DELETE `%s` removes live rows it does not re-insert: %s"
+                                 % (name, match.string.strip(), sorted(dropped)))
+                for live_key in removed:
+                    del live[live_key]
+            for own_key in own:
+                live[own_key] = name
+
+    def test_stand_migrations_remove_only_rows_they_replace(self):
+        # Same rule as above for ai_boss_stand, keyed by its primary key
+        # (map, boss_entry, anchor, role, window_spell, side, seq). Only
+        # 20261101080000 writes the table so far; its DELETE names the same
+        # (309, 14507) boss it inserts, so a future re-export cannot silently
+        # drop another boss's seats.
+        stand_delete = re.compile(
+            r"^DELETE FROM `ai_boss_stand` WHERE `map` = (\d+)"
+            r"(?: AND `boss_entry` = (\d+))?;?$"
+        )
+
+        def stand_key(columns, tuple_text):
+            values = _selected_values(tuple_text, set(range(len(columns))))
+            row = dict(zip(columns, (values[i] for i in range(len(columns)))))
+            return (int(row["map"]), int(row["boss_entry"]), int(row["anchor"]),
+                    str(row["role"]).strip("'"), int(row["window_spell"]),
+                    int(row["side"]), int(row["seq"]))
+
+        live = {}
+        for path in migration_paths():
+            name = os.path.basename(path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            if "`ai_boss_stand`" not in text:
+                continue
+            own = set()
+            deletes = []
+            for statement in _sql_statements(text):
+                line = statement.strip()
+                if line.startswith("INSERT INTO `ai_boss_stand`"):
+                    columns = [c.strip().strip("`") for c in line.split("(", 1)[1].split(")", 1)[0].split(",")]
+                    values = line.split("VALUES", 1)[1]
+                    for tuple_text in _tuples(values):
+                        own.add(stand_key(columns, tuple_text))
+                elif line.startswith("DELETE FROM `ai_boss_stand`"):
+                    match = stand_delete.match(line)
+                    self.assertIsNotNone(match, "unparsable stand DELETE in %s: %s" % (name, line))
+                    deletes.append((int(match.group(1)), int(match.group(2)) if match.group(2) else None))
+            for map_id, boss in deletes:
+                removed = {stand_row for stand_row in live
+                           if stand_row[0] == map_id and (boss is None or stand_row[1] == boss)}
+                dropped = removed - own
+                self.assertFalse(dropped, "%s stand DELETE (map %s boss %s) removes seats it does not re-insert: %s"
+                                 % (name, map_id, boss, sorted(dropped)))
+                for stand_row in removed:
+                    del live[stand_row]
+            for own_row in own:
+                live[own_row] = name
+
 
 def _sql_statements(text):
     """Split a dump into statements: comments dropped, quotes and escapes respected."""
@@ -1163,7 +1335,7 @@ class BossTacticsCoreData(unittest.TestCase):
         for row in effective_rows():
             where = "map %s boss %s kind %s" % (row[1], row[2], row[3])
             self.assertIn(int(row[2]), self.templates, "%s: boss_entry has no creature_template row" % where)
-            if int(row[4]):
+            if int(row[4]) and row[3] != "use_object":
                 self.assertIn(int(row[4]), self.templates, "%s: target_entry %s has no creature_template row" % (where, row[4]))
 
     def test_bosses_spawn_on_their_map(self):
