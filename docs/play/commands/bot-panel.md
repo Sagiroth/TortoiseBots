@@ -11,6 +11,8 @@ relates_to:
 
 # Bot Panel & Inspection Commands
 
+<a id="bot-panel-commands"></a><a id="bot-inv"></a><a id="bot-behavior"></a><a id="behaviour-switches"></a><a id="npc-errands"></a>
+
 TortoiseBots includes a structured command interface for inspecting companion vitals, managing equipped gear and inventory bags, and adjusting runtime behavior toggles. These commands power the in-game bot panel in [TortoiseBotsManager](addon.md#tortoisebotsmanager-addon-tbm) and can also be executed directly via chat.
 
 ## Summary
@@ -23,7 +25,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot trace`](#bot-trace) | `start <run_id> [party\|bot <Name>] [driver=...]` / `stop [<run_id>]` / `status` | Opt-in run recorder (`AiPlayerbot.RunTrace.Enabled`). |
 | [`.bot lease`](#bot-lease) | `[status]` | Reports autonomous activity leases and active timers. |
 | [`.bot version`](#bot-version) | None | Displays module version, protocol string, and author credits. |
-| [`.bot features`](#bot-features) | None | Lists the server's player-facing switches and their values. |
+| [`.bot features`](#bot-features) | `[all <text>]` | Lists the server's player-facing switches and their values. |
 | [`.bot help`](#bot-help) | None | Prints the current bot system version header. |
 | [`.bot inv`](#bot-inv) | `<Name>` | Emits detailed inventory, equipped gear, and coin count. |
 | [`.bot professions`](#bot-professions) | `<Name>` | Emits profession skills, known recipes, and learnable recipes. |
@@ -78,7 +80,16 @@ Opt-in recorder for tests and tuning: it writes what a party's bots did during o
 | `.bot trace stop [<run_id>]` | Ends the run (with a run id, only that run's trace: another run's id answers `other-run` and nothing is stopped); the end record and the summary are written a moment later (a `start` in that moment is refused: `finishing`). Only a GameMaster or the player who started it (`forbidden`); `not-running` without one. ACK: `TBM:ACTION_ACK|trace stop|stopped|1|<run_id>`. |
 | `.bot trace status` | Prints the running run's id, scope, elapsed time, record counts, bytes written and lines dropped; the id and scope only to a GameMaster and the player who started it (anyone else sees that a run is going, with an empty run id). ACK: `TBM:ACTION_ACK|trace status|running\|finishing\|idle|<0\|1>|<run_id>`. |
 
-The permission is re-checked every frame, so bots of someone else who join your party are not recorded. A run ends on its own when the size cap is reached, when the party has had no bots you may record for 10 s (also when you log out), when the feature or the bot AI is switched off or at server shutdown; the summary says why (`end_reason`).
+### `.bot lootlog`
+
+Replays loot rows for the controllable bots in your party (owned alts and hired companions): the last 24 hours, newest piece first, up to 40 rows per reply.
+
+```text
+.bot lootlog [cursor]
+```
+
+Send the returned cursor back for the next page. A money row carries the copper amount; `expired` means the piece it pointed at was pruned, so start over without a cursor.
+
 
 ### `.bot lease`
 
@@ -148,7 +159,7 @@ Emits structured protocol records:
   - `e`: The bot can equip the item.
   - `eu`: The item is an equip upgrade (the `u` flag only appears together with `e`, never alone).
   - `b`: The item cannot be traded to you right now.
-  - `-`: None / standard item.
+  - Combined flags are possible (for example `eb`): read each letter on its own.
 - `TBM:INV_END|<bot>|<freeSlots>|<totalSlots>`: Concludes stream with bag capacity.
 
 </details>
@@ -167,9 +178,12 @@ Lists a bot's professions with skill values, the recipes it knows, and the recip
 Emits structured protocol records:
 - `TBM:PROF_BEGIN|<bot>`: Starts one bot's reply.
 - `TBM:PROF|<skillId>|<value>|<max>`: One profession with its skill, including Cooking, First Aid and Fishing.
-- `TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>|<order>`: One known recipe. Each skill step is the skill where that colour starts, so the addon colours it for the bot's current skill; item `0` means an enchant or another spell with no made item. `<order>` is `ok` when the recipe may be ordered as Craft, else the reason (`enchant` for enchants, `bound` for items bound when picked up, `needsprofession` for items that need a profession to use, `cooldown` for long-cooldown recipes); old addons ignore the extra field.
+- `TBM:RECIPE|<skillId>|<spellId>|<itemId or 0>|<orange>|<yellow>|<green>|<grey>|<order>`: One known recipe.
+  - Each skill step is the skill where that colour starts.
+  - Item `0` means an enchant or another spell with no made item.
+  - `<order>` is `ok` when the recipe may be ordered as Craft, else the reason (`enchant`, `bound`, `needsprofession`, `cooldown`).
 - `TBM:RECIPE_MISSING|<skillId>|<spellId>|<itemId or 0>|<reqSkill>|<recipeItemId or 0>`: One recipe of a profession the bot has that it does not know yet and could learn at its current rank. `recipeItemId` is the item that teaches it (`0` when only a trainer teaches it).
-- `TBM:PROF_END|<bot>|<recipeCount>|<missingCount>`: Ends the reply; the addon keeps it only when both counts match.
+- `TBM:PROF_END|<bot>|<recipeCount>|<missingCount>`: Ends the reply with both counts.
 
 </details>
 ### `.bot item <Name> trade` <a id="bot-item-trade"></a>
@@ -200,7 +214,7 @@ Instructs the bot to remove an equipped item and place it into its inventory bag
 .bot item <CharacterName> unequip <bag> <slot>
 ```
 
-Equipped items use bag index `255` and slot indices `0` through `18`. Fails with `failed` if the bot's inventory bags are full. On success, a refreshed inventory snapshot follows.
+Equipped items use bag index `255` with slot `0` through `18` (the worn-gear numbers shown by `.bot inv`). Unequipping fails with `failed` if the bot's inventory bags are full. On success, a refreshed inventory snapshot follows.
 
 ### `.bot item <Name> give` <a id="bot-item-give"></a>
 
@@ -210,7 +224,7 @@ Places an item from the bot's inventory into an active trade window with the pla
 .bot item <CharacterName> give <bag> <slot>
 ```
 
-If no trade window is currently open, the bot opens one and returns a `pending` status; repeat the command once the window shows (the addon does this automatically). Items the core would refuse in trade are refused upfront (`no-trade`) because the core would cancel the entire trade.
+If no trade window is currently open, the bot opens one and returns a `pending` status; repeat the command once the window shows. Items the core would refuse in trade are refused upfront (`no-trade`) because the core would cancel the entire trade.
 
 <details>
 <summary>Action Protocol Replies</summary>
@@ -245,8 +259,8 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 - `boost`: Offensive cooldown usage (for example warrior *Death Wish* or mage *Arcane Power*).
 - `threat`: Threat back-off that eases off when the bot nears the tank's threat.
 - `potions`: Automatic consumption of healing and mana potions through the reaction engine.
-- `spread`: Opt-in tactical spacing to avoid stacking in combat (not the default raid survival spread).
-- `mimic`: Mimics consumable usage out of combat (food, drink, elixirs, flasks, and scrolls). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
+- `spread`: Opt-in tactical spacing to avoid stacking in combat.
+- `mimic`: Mimics consumable usage out of combat (food, elixirs, flasks, scrolls, and more, but not plain water). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
 
 </details>
 
@@ -255,8 +269,8 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 Configures and manages shaman totem loadouts and casting policies.
 
 ```text
-.bot totem <bot|party|raid> <slot> <totem name|auto|none>
-.bot totem <bot|party|raid> mode <auto|prepull|manual>
+.bot totem <bot|party|raid> <earth|fire|water|air> <totem name|auto|none>
+.bot totem <bot|party|raid> mode <auto|prepull|pre-pull|manual>
 .bot totem <bot|party|raid> drop
 .bot totem <bot|party|raid> status
 ```
@@ -270,7 +284,7 @@ Configures and manages shaman totem loadouts and casting policies.
   - `prepull` (or `pre-pull`): The same rule as `auto`, kept as an explicit choice: drops totems out of combat when combat is imminent and refreshes them in combat.
   - `manual`: Suppresses automatic drops; totems are dropped only via `.bot totem drop` or explicit strategies.
 - **Immediate Drop:** `.bot totem <scope> drop` queues the configured totems now, in or out of combat.
-- **Recall and Modes:** *Totemic Recall* refunds a standing set once the bot and its group are out of combat. Because the automatic drops are quiet out of combat (they only fire in combat or the pre-pull window), the recalled set stays recalled until the next fight — the refund waits only while the pre-pull window is open or *Mana Tide Totem* is down.
+- **Recall:** *Totemic Recall* refunds a standing set once the bot and its group are out of combat. The refund waits while the pre-pull window is open or *Mana Tide Totem* is down.
 - **Status Query:** `.bot totem <bot|party|raid> status` reports current loadout and mode via `TBM:TOTEM` records followed by a trailing `TBM:ACTION_ACK|totem status|<scope>|<n>|-`.
 
 </details>
