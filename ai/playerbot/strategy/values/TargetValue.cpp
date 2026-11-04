@@ -297,17 +297,17 @@ bool CcGuard::CcInRunningArea(Spell const* spell)
     uint32 mapId = bot->GetMapId();
     if (atTarget)
     {
-        // Where the effect runs: on the unit a chain jumped from, else the
-        // ground destination the cast was given.
-        if (Unit* const target = spell->m_targets.getUnitTarget())
+        // Where the effect runs: the ground destination the cast was given, or
+        // the unit a chain jumps from (a chain has no destination).
+        if (spell->m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
+            spell->m_targets.getDestination(x, y, z);
+        else if (Unit* const target = spell->m_targets.getUnitTarget())
         {
             x = target->GetPositionX();
             y = target->GetPositionY();
             z = target->GetPositionZ();
             mapId = target->GetMapId();
         }
-        else
-            spell->m_targets.getDestination(x, y, z);
     }
     return BreakableCcNear(x, y, z, mapId, radius);
 }
