@@ -2,7 +2,7 @@
 id: play-boss-tactics
 title: Boss Tactics Table
 category: play
-summary: The per-boss tactics table (ai_boss_tactic) and the opt-in "boss tactics" strategy that applies it - row format, activation rule, supported kinds, the Uldaman rows and how to add a boss.
+summary: The per-boss tactics table (ai_boss_tactic), the stand sets (ai_boss_stand) and the opt-in boss tactics strategy that applies them.
 tags: [guide, dungeon, boss, tactics, uldaman, configuration, commander]
 relates_to:
   - play-dungeons-and-raids
@@ -13,250 +13,221 @@ relates_to:
 
 # Boss Tactics Table
 
-> Work in progress. These features are not officially released and not supported yet. Enable them at your own risk. Until the official release, bug reports and feedback about them are not handled through the issue tracker; contact Hypeer directly.
+> Work in progress: this feature is still being built and tested.
 
-A boss fight has a few mechanics that generic combat AI cannot know: which spell to interrupt, which add to kill first, where not to stand. This page describes the data table that holds them, the strategy that applies them, and the first content (Uldaman up to Ironaya, plus the Obsidian Sentinel).
+A boss fight has a few mechanics that generic combat cannot know: which spell to interrupt, which add to kill first, where not to stand. This page describes the data table that holds them and the strategy that applies them.
 
 It is **off by default**. A normal player's bots play exactly as before.
 
-
-> **Interrupt rule (corrected 2026-10-20):** the core stops a cast only when the spell has preventionType silence (1) AND, for a generic cast, interruptFlags with the damage bit 0x02 (SpellEffects.cpp, Spell::EffectInterruptCast), plus castingTimeIndex > 1. Earlier phases checked castingTimeIndex and flag bits only; the audit in pjerra/turtle-agent#246 removed the rows that failed (Tan'sha 3143, Shalk's add 36732, and on 2026-10-29 Grimlok's Chain Bolt 8292).
-
 ## When it is active
 
-The `boss tactics` strategy is added to a bot by the `enter boss tactics` trigger of the `dungeon` strategy (re-checked every 5 ticks, like the per-dungeon strategies) when all of these hold:
+The `boss tactics` strategy is added to a bot by the `enter boss tactics` trigger of the `dungeon` strategy (re-checked every 5 ticks) when all of these hold:
 
-1. the bot is on a map that has at least one row in `ai_boss_tactic`, and
-2. either `AiPlayerbot.DungeonTactics = 1` (the server owner opted in; default `0`), **or** the bot is in a bound group (`.bot commander bind`: a remote bind needs `AiPlayerbot.RemoteCommander = 1`, an `inparty` bind needs only `AiPlayerbot.DungeonSelfClear = 1`; the run leader needs only the run leader gate).
+- the bot is on a map that has a row in `ai_boss_tactic` OR `ai_boss_stand` (a stand set alone arms it), and
+- either `AiPlayerbot.DungeonTactics = 1` (server owner opt-in; default `0`), or the bot is in a bound group:
+  - a remote bind needs `AiPlayerbot.RemoteCommander = 1`,
+  - an `inparty` bind needs `AiPlayerbot.DungeonSelfClear = 1`.
 
-When the bot leaves the map, or the key is switched off and the bot is no longer in a bound group, `leave boss tactics` removes it again. The gate is `BossTacticsWanted` in `ai/playerbot/BossTacticsPolicy.h`.
+`leave boss tactics` removes it when the bot is on a map without rows (not while teleporting or loading), or when the key is off and the bot is no longer in a bound group. The gate is `BossTacticsWanted`.
 
-Why the commander binding counts: those runs are the ones that exist to clear a dungeon with bots, and a commander cannot give interrupt or kill-order orders fast enough. Why the key stays `0`: the tactics change how bots play (a bot may leave its target to kill an add, or step out of a boss's front), and the project rule is that new automation ships off by default.
+Commander-bound groups use it because commanders cannot give interrupt and kill orders fast enough. The key stays `0` because it changes how bots play.
 
-The `linked_death` kind is off even with the tactics on until `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`, `.reload config` applies it). It changes every free DPS bot's target pick, so it ships as its own opt-in; the rows may exist in the table meanwhile and are simply not read by the pickers. See [Dungeons & raids](../server/settings/dungeons-raids.md#aiplayerbotdungeonrunlinkeddeath).
+Two extra opt-ins:
+
+- `linked_death` needs `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`). Rows exist but are unread while it is off.
+- Aura rows need `AiPlayerbot.DungeonRunAuraTactics = 1` (default `0`). These are `dps_hold_after`, `dispel_priority`, `flee_on_aura`, `freeze_on_aura`, `taunt_after_cast`, `swap_on_aura`.
 
 ## The table
 
-`ai_boss_tactic`, created and filled by `data/sql/world/*_world.sql` migrations. It is read once at startup into a cache (one pass, `ai/playerbot/BossTacticsMgr.cpp`); nothing reads the database per tick. A change needs a restart.
+`ai_boss_tactic` is created and filled by `data/sql/world/*_world.sql` migrations. It is read at startup into a cache, one pass, nothing per tick.
+
+- `ai_boss_tactic` is also re-read by `.bot run reloadplans` (no restart needed for it).
+- `ai_boss_stand` is startup-only (restart needed).
 
 | Column | Meaning |
 | :--- | :--- |
-| `map` | Map id (Uldaman is 70). |
+| `map` | Map id. |
 | `boss_entry` | Creature entry whose presence among the bots' attackers activates the row. |
-| `kind` | `interrupt`, `kill_first`, `behind`, `avoid_cast`, `tank_hold`, `hold_kill`, `one_at_a_time` or `linked_death` (below). |
-| `target_entry` | The creature the row is about; `0` means the boss itself. A `hold_kill` row inverts that: its `boss_entry` is the creature the DPS leave alone and its `target_entry` is the blocker, the unit whose living count holds them off. A `one_at_a_time` row has `target_entry` 0: its `boss_entry` is the entry the DPS pace. A `linked_death` row lists one partner in it, its `boss_entry` being the group's anchor. |
-| `spell_id` | `interrupt`: the spell to interrupt (the cast in progress); `avoid_cast`: the cast or channel to walk out of. |
-| `priority` | `kill_first`: lower is killed first; `hold_kill`: the budget, how many blockers may live before the DPS stop (`0` = not one more); `linked_death`: the group id, so one map can carry several groups. |
-| `param` | `behind`: yards around the boss in which its front is kept clear; `avoid_cast`: yards around the caster bots leave (the blast radius plus a margin); `linked_death`: the hold percent (`0`–`100` exclusive of `0`, e.g. `2.0`). |
-| `burn_order` | `linked_death` only: the group's members in the order the raid kills them once the hold is released, a comma list of creature entries (`11347,11348,14599`). Empty: the ordinary released pick (the lowest health). A group's rows must carry the same list; the loader reads the first non-empty one. |
-| `comment` | Free text; where the row came from. |
+| `kind` | See Kinds below. |
+| `target_entry` | The creature the row is about; `0` means the boss itself. `hold_kill` is inverted: `boss_entry` is the spared entry and `target_entry` is the blocker. `one_at_a_time` uses target `0` and `boss_entry` is the paced entry. `linked_death` lists one partner per row and `boss_entry` is the anchor. |
+| `spell_id` | `interrupt` / `avoid_cast` spell. |
+| `priority` | `kill_first`: lower dies first. `hold_kill`: budget, how many blockers may live before DPS stop (`0` = not one more). `linked_death`: group id. |
+| `param` | `behind`: yards of front kept clear. `avoid_cast`: yards left. `linked_death`: hold percent, 0-100 exclusive of 0. `dps_hold_after`: hold seconds, 0-30. |
+| `burn_order` | `linked_death` only: kill order once released. First non-empty wins. |
+| `hp_min` / `hp_max` / `bot_aura` / `mode` | Row gates, where read. |
+| `comment` | Free text. |
 
-The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, an `avoid_cast` without a spell or a radius, a `tank_hold` with a `target_entry`, a `hold_kill` without a `target_entry`, an `one_at_a_time` with a `target_entry`, a `linked_death` without a `target_entry` or with a `param` outside `(0, 100]`, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time. A `hold_kill` row names the blocker in its `target_entry`, so one without it is refused. With `TORTOISE_CORE=~/tortoise-wow` set, the same test also checks every live `interrupt` row against the core's data: that the spell exists and the core's interrupt rule can stop it, that the boss and target templates exist, and that the boss spawns on its map; without the variable those checks are skipped.
+The true primary key is `(map, boss_entry, kind, target_entry, spell_id, hp_min, hp_max)`.
+
+The loader skips unusable rows and logs the count: unknown kind, interrupt without spell, behind without radius, avoid without spell or radius, tank_hold with target_entry, hold_kill without target_entry, one_at_a_time with target_entry, linked_death without target_entry or param outside (0,100], duplicate key.
 
 ### Kinds
 
 | Kind | What bots do | Who |
 | :--- | :--- | :--- |
-| `interrupt` | While a creature in the fight (`target_entry`, or the boss) casts `spell_id`, a bot that knows an interrupt and has it ready in range uses it: *Pummel*, *Shield Bash*, *Kick*, *Counterspell* or *Earth Shock*, first castable wins. The class interrupts that already fire on the bot's current target are unchanged. | any bot with an interrupt |
-| `kill_first` | Takes the listed creature as its target before anything else; among several listed creatures the lowest `priority` goes first, the nearer one breaks a tie, nothing further than 40 yd is picked. While on that target the generic assist and AoE rows do not pull it back to the boss. | DPS only; never tanks or healers; an explicit `attack` order from a player wins |
-| `hold_kill` | Paces a kill. DPS bots leave the row's `boss_entry` alone while more than `priority` living creatures of its `target_entry` stand within 50 yd of the bot — a grid search counting a creature while it fights or while it can never fight at all, so the unselectable portal counts and a loose Voidwalker that has not woken yet does not. The `dps target` and `dps aoe target` pickers skip such an entry for a free DPS bot as well, so with nothing unheld left the bot has no target and waits. A bot already on such an entry takes the `kill_first` pick if there is one, else the nearest creature it may attack by the `kill_first` rules (attackable, within 40 yd, not held), else it stops attacking and drops the pick, so the assist rows re-pick once the blocker is dead. A DPS AoE row is held too while a held entry's creature stands within 10 yd of the bot's current target, since the AoE would kill the few together and spawn their blockers together. Since the walk-22 audit that 10 yd rule also holds a bot off any area cast (a class AoE, a thrown grenade, a sapper charge) whose target or whose own feet lie that close to a held creature, and off an on-attacker DoT whose target is held: for every bot that is not a tank or a healer, an explicit `attack` order included, because such a bot stands in the same pile. | DPS only; never tanks or healers; an explicit `attack` order from a player wins |
-| `one_at_a_time` | All DPS kill one living unit of `boss_entry` at a time. The pick is the lowest-health unit of that entry that is in combat, the lowest guid on a tie, read by every bot from the same cached grid search (the fight's own living, fighting units of the entry within 50 yd, a crowd-controlled one included; never the bot's `attackers` list, which `focus rti targets` collapses to the raid mark), so the raid converges on one without a vote and without a blocker to wait for (unlike `hold_kill`); a crowd-controlled or evading unit is never the pick (it still counts as a held unit for the area veto, so a sheeped Servant 5 yd from a cast vetoes it), and with nothing of the entry fighting yet nothing is paced, so the first unit engaged becomes the pick. Every other unit of the entry waits, and an explicit `attack` order does not exempt a bot: an ordered bot whose target is a non-pick falls through to the pick like everyone else. The same 10 yd area/DoT veto as `hold_kill` applies (the DoT veto when the cast's own target is held, the area veto when a held unit stands within 10 yd of the cast's target or of the bot). `target_entry` is refused by the loader, and `spell_id`, `priority` and `param` are unused. | DPS only; never tanks or healers |
-| `linked_death` | A group that must die together (councils, twins, resurrecting trios). The rows of one `(boss_entry, priority)` key are the group: the `boss_entry` is the anchor and each `target_entry` a partner. Its members are the group entries' living, fighting units within 50 yd of the bot (a grid search, never the raid mark's collapsed `attackers` list, so `focus rti targets` cannot hide a member). While more than one member lives, a free DPS bot takes the living member with the **highest health fraction** instead of the tank's victim or the lowest-health pick, so the raid spreads its damage and the members stay level. A member at or below `param` % is **held**: it is never the pick, the AoE density leaves it out, and an area cast or DoT that would reach it (within 10 yd of the action's target, or the bot for a self-centred blast) is stood down, while another living member stands above `param` %. The veto ends with the hold, so AoE is allowed again once the group is released. Once every living member is at or below `param` % the group is **released**: the release burn follows the row's `burn_order` (all DPS on the first living member of the list, then the next), so the encounter's raiser chain dies in the order that keeps its window open; a group without an order keeps the old released pick (the lowest). The release is **latched**: once a known member dies while the release is armed (every member any bot has seen living is at or below `param` % within the last 5 s, whichever bot saw it; a healthy one seen since, or one not seen for 5 s, keeps it unarmed), a heal or a freshly raised member above `param` % does not re-hold the group, and the burn runs on until all members are dead or the group's window passes (15 s for Thekal, 7 s by default). An evade resets the whole state — every known member's latest sighting from any bot out of combat at full health within the last 5 s, or no sighting for 30 s — so the next pull arms on its own guids even when no single bot saw the whole group idle at once. A tank's own area actions (Thunder Clap, Consecration, Swipe) and the passive cleave toggles (Sweeping Strikes, Blade Flurry) are vetoed too while a held member is in reach, and a free DPS bot whose current target is a held member stops attacking instead of nuking it (DoTs already ticking keep ticking: only new casts are vetoed). While the key is on the run leader's raid guard also leaves the group's members alone, like a plan boss: an `attack <guid> <bot>` order is explicit and outranks the pick, so one ordered bot would kill that member alone. A bot already on another member switches to the equalise pick (`boss tactics linked death`), and the picker outranks the tank's victim, so the run leader's guard pickups move one tank, not the raid. On top of the tactics gate it needs `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`). | DPS only; never tanks or healers; an explicit `attack` order wins, and a raid mark wins unless it names a held member (then the equalise pick stands) |
-| `behind` | A bot that stands within `param` yd of the boss, in its front half, steps to a point 120 degrees off its facing at the same distance (the same geometry as the generic rear flank). | everyone except the bot the boss is attacking |
-| `avoid_cast` | While a creature in the fight (`target_entry`, or the row's entry itself, trash included) casts `spell_id`, a bot whose centre is within `param` yd of it (3D) walks to a point 2 yd past that radius. The spell may be a channel as well as a cast: the scan reads the caster's channel slot too, so a row for a channelled blast works, and with a row for each slot the wider radius wins. The points lie on that ring, straight out and 45, 90 and 135 degrees to either side; a point whose straight line from the bot would take it closer to the caster than it stands, or through another listed cast, is dropped, and the rest are tried shortest walk first, skipping one whose ground lies in a listed cast or that the bot cannot see. The walk runs on the reaction engine (which acts while the bot is mid-cast) and on the combat and non-combat engines, also for a bot the run holds on a stay or in a pull's join window, and for a held bot out of combat itself while its group has attackers. A bot with no usable point does nothing and keeps its cast; otherwise its own cast is broken once the walk is under way. Until the cast ends or the caster dies, every move whose destination stands in a listed cast (a reach, a chase, a heal walk or a follow to a unit in it, a walk back to a stay spot in it) is held, so a bot does not walk straight back in; then the normal moves take it back. It outranks the generic step out of a ground effect. With `bot_events.csv` in `AiPlayerbot.AllowedLogFiles` (the default) each bot writes one `BossTacticsAvoidCast` row per cast: `caster=<entry>:<guid low>,spell=<id>` and `dist=<yd to the caster before the move>,radius=<yd>,dest=<yd of the point taken, or none>,stopped=<1 if it broke its own cast>,walk=<started, deferred (the mover took the point but no walk started), or none>`. Pair it with an `interrupt` row when a kick can stop the spell. | everyone except a tank the caster is attacking; a tank also stays for a caster with a `tank_hold` row, but only the tank whose own current target (or, while its AttackAction is held, `tank target`) is that caster and only while the caster is on a non-tank (any other tank, and any bot when the caster is on nobody, leaves) |
-| `tank_hold` | Opt-in per caster, and it carries no column of its own: `boss_entry` (with `target_entry` 0 — the loader rejects a tank_hold row with a nonzero `target_entry`, so the blast lookup and the loose-add pickup stay keyed by the same entry) names a creature whose `avoid_cast` blast a tank may stay in. A tank whose own current target — or, for a channelling caster, whose `tank target` (the cast hold freezes the AttackAction that would set "current target") — is that caster keeps it in its blast (no walk-out, no cast hold) while the caster is on a non-tank, so it can take or keep the caster; the loose-add ranking also prefers a `tank_hold` caster on a non-tank, but only while the bot runs `boss tactics` in combat, and it outranks the explicit main tank's habit of staying on its current target (so even the raid's main tank leaves its Servant for such a pickup), and a raid mark (`rti`) on such a caster yields to a `tank_hold` pickup standing nearer to the tank than the mark. A `focus` order on a creature with a `tank_hold` row is given to the DPS and the healers only: the tanks keep their own pick (the row's loose adds, e.g. the Voidwalkers on the healers) instead of both joining the focus, and every other focus target arms them as before. Every other tank leaves like anyone else, and a caster with no row keeps a tank in only when the caster is on the tank itself. It is meant for a caster that punishes an untanked state (a ZG Mad Voidwalker, whose blast walks its target out of melee and triggers the raid-killing shock); a caster whose blast only kills whoever is in it (the Gurubashi Bat Rider) gets no row. | a tank already on the caster |
+| `interrupt` | A bot with a ready interrupt in range uses it: Pummel, Shield Bash, Kick, Counterspell, Earth Shock, first castable wins. Class interrupts on the current target are unchanged. | Any bot with an interrupt |
+| `kill_first` | Takes the listed creature before anything else. Lowest priority first, nearer breaks ties, nothing past 40 yd. Generic assist and AoE do not pull back. An explicit attack order wins. | DPS only, never tanks or healers |
+| `hold_kill` | DPS leave `boss_entry` alone while more than `priority` living blockers stand within 50 yd. Pickers skip the held entry. A bot already on it takes the `kill_first` pick if there is one, else the nearest attackable within 40 yd, else stops. | DPS |
+| `one_at_a_time` | All DPS kill one living unit of the entry at a time: lowest-health fighting unit, lowest guid breaks ties. CC and evading units are never picked. | DPS |
+| `linked_death` | The group must die together. Free DPS take the highest-health-fraction living member within 50 yd. A member at or below `param` % is held: never picked, AoE leaves it out, area and DoT casts are vetoed. Burn order applies once released. | Free DPS |
+| `behind` | Within `param` yd in the front half, step 120 degrees off the boss facing at the same distance. | Everyone except tanks and the bot the boss attacks |
+| `avoid_cast` | Within `param` yd 3D of the caster (channel slot included), walk to 2 yd past the radius on ring points, shortest walk first. | Everyone the row covers |
+| `tank_hold` | Opt-in per caster, `target_entry` 0. A tank whose target is that caster stays in the blast, keeps it, and is the preferred pickup. | Tanks |
+| `dps_hold_after` * | Hold DPS after the trigger, `param` seconds. | DPS; needs `DungeonRunAuraTactics = 1` |
+| `dispel_priority` * | Ranks aura removal. | Dispensers; needs `DungeonRunAuraTactics = 1` |
+| `flee_on_aura` * | The carrier leaves the group. | Carrier; needs `DungeonRunAuraTactics = 1` |
+| `freeze_on_aura` * | The carrier holds all actions but freeze. | Carrier; needs `DungeonRunAuraTactics = 1` |
+| `taunt_after_cast` * | Taunt on the trigger. | Tanks; needs `DungeonRunAuraTactics = 1` |
+| `swap_on_aura` * | Tank rotation. | Tanks; needs `DungeonRunAuraTactics = 1` |
 
-Not in the table yet, and why: tank swap and re-grab (Ironaya's *Knock Away*), dispel priorities, spread and ground-effect avoidance. The generic raid hazard, spread and dispel code already covers part of it, and each of these needs a live fight to tune before it gets a kind. Adding one means a new `BossTacticKind`, a scan function and an action next to the existing kinds.
+\* Needs `AiPlayerbot.DungeonRunAuraTactics = 1`.
 
-## Uldaman rows (map 70)
+Not yet covered: tank swap and re-grab tuning, spread, ground-effect avoidance. Generic code covers part of it.
 
-Every creature and spell was read from Turtle's own data (`tortoise-wow`: `creature_template`, `creature_spells`, `creature_ai_events`/`creature_ai_scripts`, `spell_template`, `src/scripts/dungeons/uldaman`), not from another core's tables.
+## Shipped rows
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Revelosh (6910) | `interrupt` Chain Lightning 16006 and 15117 | Spell list 69100 casts 16006 (first at 8-13 s, then every 18-25 s) and a Lightning Bolt 15801 filler; the template's `spell_id1` is 15117. Only Chain Lightning is listed so interrupts are not burnt on the filler. |
-| Baelog 6906, Eric "The Swift" 6907, Olaf 6908 | `kill_first` Baelog (1), Eric (2), Olaf (3), under all three entries | Baelog is the only dwarf with a ranged attack (*Shoot* 15620) and flees at 15 % health (event 690601); Eric opens with *Rushing Charge* 6268; Olaf has the most health (5867) and the *Shield Slam* stun 8242. The order is a judgement from that data, not something the core states. |
-| Ironaya (7228) | `behind`, 10 yd, spell 8374 | `boss_ironaya` casts *Arcing Smash* 8374 on herself every 13 s; it is a cone (effect target 24) with radius index 8, which is the *War Stomp* radius (8 yd by its tooltip; the client DBC was not available, so 8 yd plus a 2 yd margin). Her *Knock Away* 10101 below 50 % health wipes the victim's threat and is not handled yet. |
-| Obsidian Sentinel (7023) | `kill_first` Obsidian Shard 7209 | EventAI events 702301-702304 cast *Summon Obsidian Shard* 10061 (creature 7209) and *Splintered Obsidian* 10072 at 80, 60, 40 and 20 % health. |
-| Grimlok (4854) | `interrupt` Lightning Bolt 9532 (the `interrupt` Chain Bolt 8292 row was removed 2026-10-29: interruptFlags 0x9 lacks the damage bit 0x02, a kick cannot stop it) | Spell list 48540 casts Chain Bolt 8292 (castingTimeIndex 19, interruptFlags 9) and Lightning Bolt 9532 (castingTimeIndex 14, interruptFlags 15), both silence-prevented (preventionType 1); only 9532 carries the kick bits. Shrink 11892 gets no row (not in the plan interrupt list); Tremor Totem 8143 is instant (castingTimeIndex 1). |
+Boss name first, then the rows that fire for it. No row means the boss has no tactics yet.
 
-What needs a live check (not verified in game): the Lost Dwarves order and whether the three can be pulled apart, that 10 yd is right for the Arcing Smash cone, that the interrupt fires in time on Chain Lightning.
+### Uldaman (70)
 
-## Deadmines rows (map 36)
+| Boss | Rows |
+| :--- | :--- |
+| Revelosh | `interrupt` Chain Lightning |
+| Baelog, Eric, Olaf | `kill_first` order Baelog (1), Eric (2), Olaf (3) |
+| Ironaya | `behind` 10 yd (Knock Away unhandled) |
+| Obsidian Sentinel | `kill_first` Shard |
+| Grimlok | `interrupt` Lightning Bolt 9532 |
 
-Every creature and spell was read from Turtle's own data (`tortoise-wow`: `creature_template`, `creature_spells`, `creature_ai_events`/`creature_ai_scripts`, `spell_template`), not from another core's tables.
+### Deadmines (36)
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Jared Voss (61961) | `interrupt` Poison Cloud 3815 | Spell list 180300 casts Poison Cloud 3815 (7-7 s first, every 16-26 s), a cast (castingTimeIndex 4) that leaves a periodic-damage cloud centred on the caster (target type 22, self); the other three list spells (Poison 13298, Withering Poison 13884, Poisonous Stab 7357) are instant (castingTimeIndex 1), so they are not listed. EventAI is say-on-aggro/death only (2200058/2200059). |
-| Masterpiece Harvester (61963) | no row | No spell list, no C++ script; EventAI is only say-on-aggro/death (2200054/2200055). Unimplemented in the core. |
-| Captain Greenskin (647) | `interrupt` Poisoned Harpoon 5208 | Spell list 6470 (and inline `spell_id2`) casts Poisoned Harpoon 5208 (castingTimeIndex 5), silence-prevented with the kick bits (interruptFlags 15). Cleave 15584 is instant (castingTimeIndex 1). No ai_name. |
+| Boss | Rows |
+| :--- | :--- |
+| Voss | `interrupt` Poison Cloud |
+| Harvester | none |
+| Greenskin | `interrupt` Poisoned Harpoon |
 
-What needs a live check (not verified in game): that the Poison Cloud cast is actually interruptible in time at its cadence.
+### Wailing Caverns (43)
 
-## Wailing Caverns rows (map 43)
+| Boss | Rows |
+| :--- | :--- |
+| Zandara | `interrupt` Chain Lightning, Gust of Wind |
+| Vangros | none |
+| Serpentis | `interrupt` Healing Touch, Sleep, Lightning Bolt |
+| Cobrahn | `interrupt` Druid Slumber, Lightning Bolt, Healing Touch |
+| Pythas | `interrupt` Healing Touch, Sleep, Lightning Bolt |
+| Skum | `interrupt` Chained Bolt |
+| Mutanus | `interrupt` Naralex Nightmare |
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Zandara Windhoof (61968) | `interrupt` Chain Lightning 15659 and Gust of Wind 6982 | Spell list 180306 casts Chain Lightning 15659 (every 10 s, castingTimeIndex 14) and Gust of Wind 6982 (4-4 s first, every 11-14 s, castingTimeIndex 5), an AoE stun (effectApplyAura 12). EventAI is say-on-aggro/death only (2200062/2200063). |
-| Vangros (61965) | no row | Spell list 180303 casts Crush Armor 21055 and Knock Away 18670, both instant (castingTimeIndex 1, interruptFlags 0); Knock Away is a single-target threat-drop, not a frontal cone. No ai_name or script. |
-| Lord Serpentis (3673) | `interrupt` Healing Touch 6778, Sleep 700 and Lightning Bolt 9532 | Spell list 36730 casts Healing Touch 6778 (castingTimeIndex 22), Sleep 700 (castingTimeIndex 16) and Lightning Bolt 9532 (castingTimeIndex 14), all silence-prevented with the kick bits (interruptFlags 15). |
-| Lord Cobrahn (3669) | `interrupt` Druid Slumber 8040, Lightning Bolt 9532 and Healing Touch 5187 | Druid-form spell list 36690 casts Druid Slumber 8040 (castingTimeIndex 19) and Lightning Bolt 9532 (castingTimeIndex 14); Healing Touch 5187 is the plan list third spell (castingTimeIndex 20, interruptFlags 15, preventionType 1). |
-| Lord Pythas (3670) | `interrupt` Healing Touch 5187, Sleep 700 and Lightning Bolt 9532 | Spell list 36700 casts Healing Touch 5187 (castingTimeIndex 20), Sleep 700 (castingTimeIndex 16) and Lightning Bolt 9532 (castingTimeIndex 14), all silence-prevented with the kick bits. Thunderclap 8147 is instant (castingTimeIndex 1). |
-| Skum (3674) | `interrupt` Chained Bolt 6254 | No spell list; Chained Bolt 6254 is the inline `spell_id1`, a real cast (castingTimeIndex 23), silence-prevented with the kick bits. |
-| Mutanus the Devourer (3654) | `interrupt` Naralex Nightmare 7967 | Spell list 36540 casts Naralex Nightmare 7967 (first at 8-12 s, every 18-25 s, castingTimeIndex 5), silence-prevented with the kick bits. Terrify 7399 is instant (castingTimeIndex 1). |
+### Frostmane Hollow (822)
 
-What needs a live check (not verified in game): that the interrupts fire in time on the 11-14 s Gust of Wind window.
+| Boss | Rows |
+| :--- | :--- |
+| Kan'za | `interrupt` Frostbolt |
+| Tan'sha | none |
+| Hailar | `interrupt` Frostbolt |
+| Ubukaz | none (Ritualists unhandled: passive, never in attacker list, needs a code change, no row) |
 
-## Frostmane Hollow rows (map 822)
+### Windhorn Canyon (820)
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Kan'za the Seer (63129) | `interrupt` Frostbolt 837 | Spell list 63129 casts Blizzard 6141 (a channel) and Frostbolt 837 (5-10 s first, every 6-10 s), a real cast (castingTimeIndex 24, cast time table not in the repo; treated as a real cast because interruptFlags 15, damage + slow). Blizzard 6141 has no row: the interrupt scan reads CURRENT_GENERIC_SPELL only, so channels are never seen. EventAI is aggro-line only (6312901). |
-| Tan'sha the Sleek (63133) | no row (was `interrupt` Glacial Roar 3143, removed 2026-10-20: preventionType 0, a kick cannot stop it) | Spell list 63133 casts Glacial Roar 3143 (20-21 s first, every 17-24 s, castingTimeIndex 4, preventionType 0), an AoE damage + stun (effectApplyAura 12, radius index 8). Her EventAI Intimidating Shout 19134 at 50% health is instant. |
-| Hailar the Frigid (63130) | `interrupt` Frostbolt 8406 | The script (`boss_hailar_the_frigid`) only says lines and drives the ritualists; his casts come from spell list 63130 (Frostbolt 8406, 1-3 s first, every 15-20 s, castingTimeIndex 14, and Flash Freeze 16803 every 24-28 s, an instant AoE stun, so no row). |
-| Battlemaster Ubukaz (63131) | no row | EventAI, no spell list; only an aggro line (6313102) and Enrage 28131 at 25% health (6313101, self-buff, instant). |
+| Boss | Rows |
+| :--- | :--- |
+| Stormhoof | `interrupt` Corruption |
+| Shalk | `interrupt` Flame of Shalk |
+| Vortalus | `interrupt` Gust of Wind |
+| Ahgk'tos | none (no covered cast) |
+| Pathun | none (no covered cast) |
+| Narlgom | none (no covered cast) |
+| Walgan | none (no covered cast) |
+| Rotag | none (passive and immune, never targetable) |
 
-Hailar has no `kill_first` row for the Frostmane Ritualists: the ritualists (entry 36519, `npc_frostmane_ritualist`) heal Hailar with Frostmane Ritual 41592 (`boss_hailar_the_frigid.cpp:118`) but are `REACT_PASSIVE`, ignore attacks (`boss_hailar_the_frigid.cpp:75,87-97`) and never enter the bots' attacker list, so the scan almost never sees them. This needs a code change to the scan (a source of nearby creatures of `target_entry` not in combat) before a `kill_first` row can work.
+### Gilneas City (815)
 
-What needs a live check (not verified in game): that interrupting Hailar's Frostbolt is worth the global, and that Poison Cloud and the two Frostmane stuns are interruptible in time at their cadences.
+| Boss | Rows |
+| :--- | :--- |
+| Greymane | `interrupt` Fear |
+| Ragetooth | `interrupt` Howl of Terror, Shadow Bolt |
+| Sutherland | `interrupt` Smite, Mind Blast, Fireball |
+| Greystone | `interrupt` Holy Fire |
+| Holtz, Dustivan, Mortimer | none |
 
-## Windhorn Canyon rows (map 820)
+### Karazhan Crypt (800)
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Prophet Stormhoof (62781) | `interrupt` Corruption 11672 | Spell list 62781 casts Corruption 11672 (2-3 s first, every 17-22 s, castingTimeIndex 16, interruptFlags 15, periodic-damage aura 3). Curse of Agony 11712 and Wail of Souls 57748 are instant. EventAI is aggro/50 %/death lines only. |
-| Chieftain Shalk Blackwind (62782) | `interrupt` Flame of Shalk 41121 (the `interrupt` Bloodguard Ritual 36732 row on the add 62771 was removed 2026-10-20: preventionType 0, a kick cannot stop it) | Spell list 62782 casts Flame of Shalk 41121 (11-13 s first, every 32-47 s, castingTimeIndex 5, interruptFlags 15, periodic fire damage plus a healing debuff, radius index 22); Berserker Charge 19471 is instant. At 50 % health the script summons one Blackwind Bloodguard (62771) and attack-starts it on a random attacker (`src/scripts/dungeons/windhorn_canyon/windhorn_canyon.cpp:37-46`), so the add is on the bots' attacker list; the add's EventAI event 6277101 casts Bloodguard Ritual 36732 at its own 50 % health (castingTimeIndex 171, interruptFlags 15, preventionType 0, cast on self). |
-| Ambassador Vortalus (62783) | `interrupt` Gust of Wind 6982 | Spell list 62783 casts Gust of Wind 6982 (4-5 s first, every 14-19 s, castingTimeIndex 5, interruptFlags 31), an AoE stun (aura 12, radius index 8); Chain Lightning 22355 is instant, and the EventAI cast Engulfing Vortex 36578 at 50 % health (6278301) is instant too. |
-| Ahgk'tos the Pure (62778) | no row | Spell list 62778 is all instant: Lightning Cloud 23105 (ground area), Lightning Shield 945 (self) and Wing Flap 12882 (a frontal cone knock back, implicit target 24, radius index 13 — no `behind` row because the client SpellRadius table is not in the repo, so no yard value can be given). The creature has EventAI assigned but no EventAI rows and no C++ script. |
-| Pathun Duskhide (62779) | no row | Spell list 62779: Kodo Stomp 6266 and Demoralizing Shout 11554 are instant; the only cast is Hooked Net 14030 (castingTimeIndex 3) with interruptFlags 9, without the kick bit. EventAI is an aggro/50 %/death line plus a threat reset at 50 % health (6277901, `MODIFY_THREAT`). |
-| Bonespeaker Narlgom (62780) | no row | No spell list at all (`spell_list_id` 0 and no `creature_spells` row for the entry). The script (`boss_bonespeaker_narlgom.cpp`) casts Bone Armor 11445 (instant), Rain of Fire 57747 (a channel: channelInterruptFlags 31788) and Summon Rotag 42004 (castingTimeIndex 6 but interruptFlags 9, no kick bit). |
-| Walgan Bloodcaller (62784) | no row | Spell list 62784: Cleave 16044 (instant, radius index 0, so no `behind` row) and War Stomp 16727 (instant, self-centred stun). EventAI Enrage 28131 at 15 % health (6278401) is instant. |
+| Boss | Rows |
+| :--- | :--- |
+| Enkhraz | `interrupt` Fear, Freeze |
+| Corpsemuncher | `interrupt` Acid Spit |
+| Andreon | `interrupt` Mind Blast |
+| Marrowspike, Hivaxxis, Gort | none |
 
-Two things about the data shape are worth knowing when these rows are revisited. First, six of the seven lists are attached by a separate migration, not by the row that creates the creature: `UPDATE creature_template SET spell_list_id = entry ...` in `sql/database_updates/world/20260608174707_world.sql`, and Narlgom (62780) has no list at all — reading only the `creature_template` REPLACE from the May file would suggest every Windhorn boss casts nothing. Second, no `behind` row exists for this instance: the cleaves (Walgan 16044, plus Raxxieth and Marrowspike in other instances) have radius index 0, and the only cone (Ahgk'tos Wing Flap 12882, radius index 13) has no yard value in the repo.
+### Crescent Grove (802)
 
-Champion Rotag (62785) gets no `kill_first` row although Bonespeaker Narlgom summons him at 50 % health: his script (`npc_champion_rotag`) is `REACT_PASSIVE`, overrides `AttackStart` to do nothing, stops combat on every update and the template is `UNIT_FLAG_IMMUNE_TO_PLAYER` (unit_flags 33024), so he never enters the bots' attacker list and can never be targeted. The summon itself is not a kill-first case either: the bloodguard is targetable (faction 16, no blocking flag, attack-started by the script) but it is a single 2.8 k health add whose only special mechanic is the ritual covered by the row above, and generic assist already kills it.
+| Boss | Rows |
+| :--- | :--- |
+| A'lathea | `interrupt` Starfire |
+| Ranathos | `interrupt` Wrath, Entangling Roots, Regrowth |
+| Raxxieth | `interrupt` Shadow Bolt, Flamestrike |
+| Engryss, Fenektis | none |
 
-What needs a live check (not verified in game): whether Shalk's Flame of Shalk lands on players at all (the script polls for that aura to strip it when a player goes underwater, `windhorn_canyon.cpp:62`) and whether kicking the Bloodguard's ritual is worth the global.
+### Zul'Farrak (209)
 
-## Gilneas City rows (map 815)
+| Boss | Rows |
+| :--- | :--- |
+| Velratha | `interrupt` Healing Wave, Shadow Bolt Volley |
+| Sezzziz | `interrupt` Heal, Renew |
+| Antusul | `interrupt` Flash Heal, Healing Ward of Antusul, Healing Ward; `kill_first` Servant |
+| Ukorz, Ruuzlu | none (cleaves, no yard value) |
+| Zumrah ward | none (totem never in attacker list) |
+| Zumrah, Gahz'rilla, Theka, Nekrum | no row |
 
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Genn Greymane (61418) | `interrupt` Fear 22678 | Spell list 180166 (not run: the script never calls the base AI update; it casts Drain Life, Mortal Strike and Curse of Agony itself, `instance_gilneas_city.cpp:197/206/217`) has only Drain Life 17620 (a channel: castingTimeIndex 1 with channelInterruptFlags 31788), Mortal Strike 21551 and Curse of Agony 11711, both instant. The script casts Fear 22678 once below 50 % health (`instance_gilneas_city.cpp:230`, castingTimeIndex 16, interruptFlags 15). |
-| Packmaster Ragetooth (61420) | `interrupt` Howl of Terror 5484 and Shadow Bolt 11660 | Spell list 180168: Howl of Terror 5484 (first at 0 s, every 30 s, castingTimeIndex 5, interruptFlags 15) is an AoE fear (aura 7, radius index 13); Shadow Bolt 11660 (2-2 s first, every 12 s, castingTimeIndex 14, interruptFlags 15). |
-| Judge Sutherland (61421) | `interrupt` Smite 6060, Mind Blast 10945, Fireball 8402 | Spell list 180169: castingTimeIndex 19, 16 and 22, all with interruptFlags 15; every 6, 10 and 8 s. Blast Wave 13019 is instant. |
-| Marshal Magnus Greystone (61423) | `interrupt` Holy Fire 17142 | Spell list 180171: Holy Fire 17142 (every 25 s, castingTimeIndex 6, interruptFlags 15) damages and applies a periodic-damage aura (aura 3). Slam 11605 is a cast (castingTimeIndex 20) but its interruptFlags is 8, without the kick bit; Sunder Armor 8380 is instant. |
-| Matthias Holtz (61419) | no row | Spell list 180167 and EventAI: Hooked Net 13608 is a cast (castingTimeIndex 3) but with interruptFlags 9, without the kick bit; Fire Blast 8413 (list 180167, castingTimeIndex 1) and Multi-Shot 2643 (EventAI 2200030) are instant. |
-| Dustivan Blackcowl (61422) | no row | Spell list 180170 is Rupture 15583 and Rend 11574, both instant; EventAI casts Evasion 5277 and Gouge 12540 (2200031/2200032), both instant. |
-| Regent-Lord Mortimer Harlow (61264) | no row | The script (`boss_lord_mortimer.cpp:41,53,63`) casts Holy Strike 2495, Consecration 20924 and Blast Wave 13021, all instant (castingTimeIndex 1). No spell list. |
+### Scholomance (289)
 
-Mortimer and Celia Harlow (61263) come as a pair (`docs/play/dungeon-reference.md`), but Celia is not in the phase 0 survey and gets no row here.
+| Boss | Rows |
+| :--- | :--- |
+| Vectus | `kill_first` Marduk; `interrupt` Flamestrike |
+| Marduk | `kill_first` self (Marduk's party-wide shadow first) |
 
-What needs a live check (not verified in game): that the interrupts fire in time on Sutherland's 6 s Smite and Greystone's 25 s Holy Fire, and whether the Fear at 50 % is worth a kick a bot may have spent earlier.
+### Zul'Gurub (309)
 
-## Karazhan Crypt rows (map 800)
-
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Archlich Enkhraz (91916) | `interrupt` Fear 12096 and Freeze 18763 | Spell list 201002: Fear 12096 (first at 12-17 s, every 15-16 s, castingTimeIndex 16, interruptFlags 15) and Freeze 18763 (first at 4-9 s, every 8-14 s, castingTimeIndex 22, interruptFlags 15). Chill Nova 18099 is instant; Consuming Shadows 17715 is a channel (channelInterruptFlags 31788). |
-| Corpsemuncher (91917) | `interrupt` Acid Spit 25052 | Spell list 201051: Acid Spit 25052 (first at 1 s, every 4 s, castingTimeIndex 14, interruptFlags 15). Sweep 26103 (castingTimeIndex 16, interruptFlags 31) is a knock back around the caster (effectImplicitTargetA 22, effect 98), not a frontal cone, so it gets no `behind` row. |
-| Commander Andreon (91919) | `interrupt` Mind Blast 26048 | Spell list 180104: Mind Blast 26048 (first at 3-4 s, every 45 s, castingTimeIndex 16, interruptFlags 15). Banshee Curse 16867 (cast on self, instant) and Mortal Strike 15708 (instant) get no row, and the template's inline spell_id2 5884 is not cast. |
-| Marrowspike (91920) | no row | Spell list 201052 is all instant: Cleave 15579 (castingTimeIndex 1 and no radius index, so no `behind` row), War Stomp 16727 (self-centred 8 yd stun) and Knock Away 10101. |
-| Hivaxxis (91929) | no row | Spell list 201053 is all instant: Web Spray 12252, Paralyzing Poison 3609 and Poison Mind 19469 (castingTimeIndex 1). |
-| Guard Captain Gort (92935) | no row | Spell list 111210 has one spell, Banshee Curse 16867, instant. No C++ script, and the inline spell_id2 5884 is not cast. |
-
-Alarus (91928, summoned by the rune event, listed as the crypt's end boss in `docs/play/dungeon-reference.md`) is not in the phase 0 survey and gets no row in this migration.
-
-What needs a live check (not verified in game): the cast cadence of Fear and Freeze (the list delays are 4-17 s) and whether the 4 s Acid Spit is worth interrupting at all.
-
-## Crescent Grove rows (map 802)
-
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| High Priestess A'lathea (92108) | `interrupt` Starfire 25298 | Spell list 201059: Starfire 25298 (first at 1 s, every 5 s, castingTimeIndex 22, interruptFlags 15). Moonfire 23380 is instant; the inline spell_id4 9613 is not cast. |
-| Keeper Ranathos (92109) | `interrupt` Wrath 6780, Entangling Roots 11922, Regrowth 8941 | Spell list 201060: Wrath 6780 (first at 1 s, every 2 s, castingTimeIndex 5, interruptFlags 15), Entangling Roots 11922 (every 15-20 s, castingTimeIndex 16, interruptFlags 15, aura 26) and Regrowth 8941 (every 28 s, castingTimeIndex 5, interruptFlags 15), a self-heal (cast target 0, aura 8). |
-| Master Raxxieth (92110) | `interrupt` Shadow Bolt 12471 and Flamestrike 12468 | Spell list 201061: both every 12 s, castingTimeIndex 14, interruptFlags 15; Flamestrike is aimed at a random attacker other than the top one (cast target 5). Cleave 15579 is instant and has no radius index, so no `behind` row. |
-| Grovetender Engryss (92107) | no row | Spell list 201058 is all instant: Strike 12057, Knock Away 10101 and Rejuvenation 9839 (a friendly heal, cast target 15). EventAI is a say line only (2200008). |
-| Fenektis the Deceiver (92111) | no row | Spell list 201062 is all instant: Poisonous Stab 7357, Sinister Strike 15667 and Blade Flurry 13877. |
-
-What needs a live check (not verified in game): whether interrupting Ranathos' 2 s Wrath spam starves the kick for Entangling Roots and Regrowth, and whether the 5 s Starfire is interruptible in time.
-
-## Zul'Farrak rows (map 209)
-
-Rows added 2026-10-20 (`data/sql/world/20261020083400_world.sql`), read from `tortoise-wow` 5d79486. All three bosses carry their list through `creature_template.spell_list_id`; the cast-time rule is the same as above (no SpellCastTimes.dbc, so `castingTimeIndex` above 1 plus the kick bits in `interruptFlags`).
-
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Hydromancer Velratha (7795) | `interrupt` Healing Wave 12491, Shadow Bolt Volley 15245 | Spell list 77950 (also inline `spell_id1-4`): Healing Wave 12491 (first at 0 s, every 9-22 s, castingTimeIndex 14, interruptFlags 15, heal, cast target 15) and Shadow Bolt Volley 15245 (first at 5-10 s, every 17-22 s, castingTimeIndex 14, interruptFlags 15, radius index 10). Ward of Zumrah 11086 (every 13-28 s) is instant (castingTimeIndex 1, interruptFlags 0) and gets no row. Shadow Bolt 12739 is a real cast (castingTimeIndex 14, interruptFlags 15) but is deliberately not listed: its repeat timer is 2 s at 90 %, and `FindBossInterrupt` takes the first listed spell in progress with no priority, so it would eat the kick before the 9-22 s heal (the same reason as Revelosh's Lightning Bolt filler and Sezzziz's Shadow Bolt 15537). |
-| Shadowpriest Sezzziz (7275) | `interrupt` Heal 12039 and Renew 8362 | Spell list 72750: Heal 12039 (first at 0 s, every 14-25 s, castingTimeIndex 14, interruptFlags 15, cast target 15) and Renew 8362 (every 28-35 s, castingTimeIndex 5, interruptFlags 15, cast target 15, aura 8). Renew is a real cast, not an instant (the phase 1b brief had assumed instant); the re-verification settled it. Psychic Scream 13704 (every 22-32 s) is instant (castingTimeIndex 1, interruptFlags 8, radius index 14). Shadow Bolt 15537 (repeat timer 2-4 s, castingTimeIndex 14) is the filler bolt and gets no row, so kicks are kept for the two heals. EventAI only has the 15 % flee event 727501. |
-| Antusul (8127) | `interrupt` Flash Heal 10915, Healing Wave of Antusul 11895, Healing Ward 11899; `kill_first` Servant of Antusul 8156, priority 1 | Spell list 81270 and EventAI: Flash Heal 10915 (script 812709 at or below 60 % health, every 17-20 s, castingTimeIndex 16, interruptFlags 15); Healing Wave of Antusul 11895 (scripts 812708 at or below 30 % every 12 s and 812707 once at 20 %, castingTimeIndex 4, interruptFlags 15); Healing Ward 11899 (a random action of event 812704, scripts 812724/812725, first at 11.6 s then every 13.3-21.7 s, castingTimeIndex 5, interruptFlags 15, effect 87 summons Greater Healing Ward 8179). All three are silence-prevented (preventionType 1), so the interrupt stops the cast and no heal or ward happens. Earthgrab Totem 8376 (the other random action, script 812724, castingTimeIndex 3, interruptFlags 13, preventionType 0) gets no row: 13 is 0x0D and lacks `SPELL_INTERRUPT_FLAG_DAMAGE` (0x02), which `EffectInterruptCast` requires for a generic cast (`src/game/Spells/SpellEffects.cpp:3392`), so a kick would not stop it. The servant: events 812705/812706 cast Antusul Minion 11894 at 75 % and 25 % health (effect 42, `effectMiscValue1` 8156; one then two servants); 8156 is faction 107, unit_flags 0, no EventAI and no script, so it is reasoned to join the fight and the attackers list, not traced. The row is active while Antusul is among the attackers, which is when the servants appear. |
-| Chief Ukorz Sandscalp (7267) and Ruuzlu (7797) | no row | Ukorz (list 72670) casts Cleave 15496 first at 6-20 s then every 8-19 s; Ruuzlu (list 77970) casts it first at 7-12 s then every 7-18 s. Cleave is effect 58 on a unit target (implicit target 6), radius index 0 and no radius in the spell text, so no yard value exists for a `behind` row. Ukorz also casts Wide Slash 11837 (first at 12-16 s, then every 7-24 s), a cone (implicit target 24) with radius index 13, but the client SpellRadius table is not in the repo (same reason as Ahgk'tos Wing Flap in Windhorn). Ruuzlu casts no other spell; both open with Berserker Stance 7366 on themselves (instant). |
-| Witch Doctor Zumrah (7271) | no row for Ward of Zumrah 7785 | The ward is a ScriptedAI totem (`src/scripts/dungeons/zulfarrak/zulfarrak.cpp:605-632`) that casts Skeleton of Zumrah 11088 every 5 s and does not attack in that script; it is reasoned (not traced) that it never enters the bots' attacker list, so a boss-tactics `kill_first` row could not pick it. The Zul'Farrak run-leader plan already names 7785 in its own `kill_first` column; the migration does not duplicate it. |
-
-Not covered yet, though they have qualifying casts (a real cast and the 0x02 interrupt bit): Zumrah 7271 (spell list 72710: Shadow Bolt 12739, Shadow Bolt Volley 15245, Healing Wave 12491), Gahz'rilla 7273 (spell list 72730: Icicle 11131, castingTimeIndex 16, and Freeze Solid 11836, castingTimeIndex 19, both interruptFlags 15), Theka the Martyr 7272 (spell list 72720) and Nekrum Gutchewer 7796 (spell list 77960), both with Fevered Plague 8600 (castingTimeIndex 30, interruptFlags 31). They need their own rows before those fights can rely on interrupts.
-
-What needs a live check (not verified in game): that the kicks land on Velratha's 9-22 s Healing Wave and Sezzziz's heals, that Antusul's Flash Heal/Healing Wave/Healing Ward casts are interrupted in time, and that the DPS bots switch to the servants in both waves before the boss dies.
-
-
-## Scholomance rows (map 289)
-
-Rows added 2026-10-24 (`data/sql/world/20261024153900_world.sql`), read from `tortoise-wow` 5d79486. Map 289 had no rows before, so the `boss tactics` strategy now also activates for a bound party on map 289; only these two bosses have rows.
-
-| Boss (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Vectus (10432) | `kill_first` Marduk Blackpool 10433, priority 1; `interrupt` Flamestrike 18399 | One creature group (`creature_groups` (48805,48806,0,0,2), flags 2 `OPTION_AGGRO_TOGETHER`): Vectus and Marduk aggro together with no distance limit, so the boss row fights both. Marduk first: his Defiling Aura 17695 (EventAI 1043302, on aggro; aura 133, -100 shadow resistance on enemies, radius index 10) and Shadow Bolt Volley 17228 (spell list 104330, every 6-14 s, instant, radius index 10) reach the whole party and the aura amplifies the Volley, while Vectus' Blast Wave 16046 (instant, around himself) and melee hit the tank and the melee only; Marduk also has less health (22970 vs 24420). Interrupt: Flamestrike 18399 every 30 s (castingTimeIndex 14, preventionType 1, interruptFlags 15, so kickable by the boss-tactics rule); Blast Wave 16046 is instant and gets no row, and there is no `behind` row (no frontal cone). |
-| Marduk Blackpool (10433) | `kill_first` Marduk Blackpool 10433, priority 1 | Same row under Marduk: it is active while only he is on the attacker list. No interrupt row (Shadow Bolt Volley 17228 and Cleave 15284 are instant; Shadow Shield 12040 is self-cast). |
-
-Kill order reason: the whole-party shadow damage of Marduk (Volley plus aura, hitting even the 4.1k hp priest) runs longer if Vectus dies first. No CC on either (both undead, immune masks; the plan's `cc_priority` never applies to a boss row).
-
-What needs a live check: that Marduk dies first with Vectus on the tank, that Flamestrike is kicked in time.
-
-## Zul'Gurub rows (map 309)
-
-Row added 2026-10-30 (`data/sql/world/20261030160000_world.sql`), read from `tortoise-wow` 5d79486; the Venoxis-leg rows added 2026-11-01 (`data/sql/world/20261101020000_world.sql`), the Mad Voidwalker `tank_hold` row the same day (`data/sql/world/20261101040000_world.sql`), and the Mad Servant `hold_kill` pacing rows the same day (`data/sql/world/20261101050000_world.sql`), followed by its `one_at_a_time` row and the area/DoT veto the same day (`data/sql/world/20261101070000_world.sql`), and High Priest Venoxis's `interrupt` row the same day (`data/sql/world/20261101080000_world.sql`, which also seats his casters apart). The Thekal `linked_death` rows are `data/sql/world/20261102200000_world.sql`; `data/sql/world/20261102210000_world.sql` adds their burn order and 2 % hold and Lor'Khan's Greater Heal `interrupt` row. The boss rows of map 309 come from the run plan migrations.
-
-| Creature (entry) | Row | Data behind it |
-| :--- | :--- | :--- |
-| Gurubashi Bat Rider (14750) | `avoid_cast` Unstable Concoction 24024, 13 yd | `npc_guru_bat_riderAI` (`boss_jeklik.cpp`) casts it on itself once, below 40 % health, after turning fear-immune: a 3 s cast (castingTimeIndex 14), 4375-5625 fire damage to every enemy within 10 yd (radius index 13), then it kills itself. The core hits a player whose centre is within 10 yd in 3D, so the row keeps 10 + 3. No `interrupt` row: preventionType 0 and interruptFlags 9 (no damage bit), and the template is immune to stun, knockout and silence (mechanic_immune_mask 1019952979), so nothing a bot has stops the cast. Two live walks lost 6-11 of 19 tier-1 bots within 5 s of a rider dropping to 30-45 %. |
-| Mad Voidwalker (15146) | `avoid_cast` Consuming Shadows 24614, 8 yd | EventAI 1514601 (its target within 5 yd, every 4-8 s) channels it for 15 s (attributesEx 0x40); the channel triggers 24615 every second, 400 shadow to every enemy within radius index 8 = 5 yd of the voidwalker. The raid-killer is its instant Shadow Shock 24616 (15 yd, level-scaled ~1000-1200 shadow): EventAI 1514602 casts it when the Voidwalker's target is 6-40 yd away, so walking the target out of the channel and leaving it there shocks the raid (walk 20). A `tank_hold` row added 2026-11-01 (`data/sql/world/20261101040000_world.sql`) lets a tank hold it: the tank whose current target — or, for a channelling caster whose AttackAction the cast hold freezes, whose `tank target` — is the voidwalker stays in the 8 yd blast while the channel is on a non-tank, and the loose-add choice prefers a `tank_hold` caster that is on a non-tank, so the tank takes it and stays in. The tank that has or picks the Voidwalker as its target stays in and takes it; until the tank has aggro the healer still walks out, so a Shadow Shock can still land in that window (live check: does the tank get aggro before the healer clears 6 yd — no taunt is added). Without the row a tank holds only a caster that is on the tank itself. channelInterruptFlags 0x7c2c holds the interrupt bit, but the row is avoid_cast because nothing makes a non-tank leave: the kicks were landing already. `param` is 5 + 3. The creature is summoned, not spawned: a dying Mad Servant 15111 leaves a Portal of Madness 15141 whose 24620 triggers 24622, two voidwalkers on the corpse. No `kill_first` row: the plan's Servants-first order and a voidwalkers-first order pull in opposite directions and the walks give no evidence for either; the pacing that keeps them from spawning eight at once sits on the Servant row below. Needs a live check that non-tanks leave the 8 yd for the whole channel and come back after. |
-| Mad Servant (15111) | `interrupt` Flamestrike 24612; `hold_kill` 15146 and 15141, budget 0; `one_at_a_time` | Spell list 151110 casts Fireball 24611 (castingTimeIndex 3, the War Stomp cast) and Flamestrike 24612 (castingTimeIndex 5, interruptFlags 15, preventionType 1): 1157-1343 fire to every enemy within radius index 8 = 5 yd of its target point plus an 8 s burning ground. Only Flamestrike is listed: a 0.5 s Fireball is rarely caught by the scan, and the first-castable-wins scan would spend the kicks Flamestrike needs (class interrupts on the current target already kick Fireballs). On death it casts Portal of Madness 24621 (EventAI 1511103), the summon above. The two `hold_kill` rows added 2026-11-01 (`data/sql/world/20261101050000_world.sql`) pace the kills: no DPS on a Servant while a Mad Voidwalker 15146 or a Portal of Madness 15141 lives, so the pair of Voidwalkers a death leaves is cleared before the next Servant dies. Walk 21: D's four Servants died within 16 s, eight Voidwalkers spawned together inside the raid and 7 bots died in the next 2 s, while every fight with at most 4 alive went well. `priority` 0 is the budget (`no dps while one lives`); 2 is the fallback if the pacing's roughly 230 s for D+A (about 70 s today) drains the healers. The cost is that the untouched Servants keep casting Fireball at the tanks, and the Flamestrike kicks above keep interrupting them. Walk 22 showed what the budget alone cannot do: at the pull no Voidwalker exists yet, so 3-4 Servants of a wave get engaged, the free DPS split over 2-3 of them, the first died 11-17 s in with the others at 18-75 % and each of those lost another 10-30 % per frame to class AoE and grenades thrown at the Voidwalkers standing in the pile, to DoTs that ticked on after the hold, and to focus-ordered bots the hold exempted. The `one_at_a_time` row added 2026-11-01 (`data/sql/world/20261101070000_world.sql`) sends every DPS to one Servant (lowest health, lowest guid on a tie) and the same migration's veto keeps area damage and attacker DoTs off every held or waiting Servant for every bot that is not a tank or a healer. |
-| High Priest Venoxis (14507) | `interrupt` Holy Fire 23860 | `boss_venoxis.cpp:216-222` casts it on the victim every 8-12 s in phase 1: castingTimeIndex 22, interruptFlags 15 (the damage bit), preventionType 1, so a class kick stops it. It replaces the Renew 23895 row of `20261028110000_world.sql`, which could never land (Renew is instant, castingTimeIndex 1). Holy Fire was not what lost walk 22's three wipes at this boss — the casters stood inside the melee clump and one Holy Wrath 23979 chain killed nine bots in a second — so the same migration seats the ranged and the healers in `ai_boss_stand`: 22-23 yd from his fight spot and 11 yd apart, checked against the whole disk the boss may stand in while the stand is up (a 7 yd radius around that spot), so he is always 15-30 yd from every seat. |
-| High Priest Thekal (14599), Zealot Lor'Khan (11347), Zealot Zath (11348) | `linked_death` 11347 and 11348, group id (`priority`) 1, `param` 2.0, burn order `11347,11348,14599`; Lor'Khan `interrupt` Greater Heal 24208 | `boss_thekal.cpp`: when one of the three dies while another lives, `Thekal_GetUnitThatCanRez` picks a living sibling and the corpse is raised to **full health** `RESSURECT_TIMER` 7000 ms later by `DoRessurectUnit` (`SetHealth(max)`), with a second chance 8 s after that if the chosen raiser died first; only three corpses inside the window kill phase 1. Walk 27 C (34 min 34 s and 20 min 3 s runs) counted 44 and 32 restorations: the raid followed the tank's victim (15-19 of 20 bots) and killed the three one at a time while the leftover stood at 9-93 %. The trio's pool is 325 540 hp and the measured raid damage 2.2-3.0 k dps, so a hold at 10 % leaves 33 k hp and needs 11-15 s (outside the timer) while 2 % leaves ~6.5 k hp and needs 2-3 s (inside it). The death order matters: `Thekal_GetUnitThatCanRez` returns the first living of Lor'Khan -> Zath -> Thekal, so a corpse raised by a sibling that dies before its 7 s check gets the 8 s fallback (15 s from the first death), while a first corpse whose raiser stays alive is raised at 7 s. The burn order is that raiser chain: Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal. The plan's `boss.first` order is not read by the raid leader, and killing one first is exactly the failure, hence the equalise/hold/burn kind rather than a kill order. Lor'Khan's Greater Heal 24208 (12 s, lowest friendly under 9500 hp) is an `interrupt` row so the last few percent of a member do not keep getting healed. |
-
-What needs a live check: that the melee and healers leave the 13 yd before the 3 s cast ends, that the blast hits nobody but the tank, that the melee come back to their target after it, and that the paced D+A fight (at most 2 Voidwalkers alive, no frame with 4 or more) stays inside 150-260 s with healer mana above 20 % at the end. With `one_at_a_time` in, watch the `BossTacticsHoldKill` rows in `bot_events.csv` (one per bot per 5 s, the action's and the multiplier's rows in separate buckets so neither hides the other: the action's `held=`/`blockers=`/`to=` pick and the multiplier's `veto=assist|aoe|area|dot|sole`) and the frame rows: Servant deaths at least 20 s apart, at most 3 Voidwalkers alive at once, no area cast landing while a held Servant stands within 10 yd of its target. At Venoxis, check that no phase-1 frame holds a healer or a ranged bot within 15 yd of the boss, that no death recap carries a Holy Wrath chain hit of 3.2k or more, and that two of three arrivals kill him with six dead or fewer. At Thekal with `AiPlayerbot.DungeonRunLinkedDeath = 1`, check that the run line shows `fighting: linked 14599/11347/11348 at N %` (the linked note in `run.log`), that phase 1 lasts at most 4 min, and that all three die in one frame of `frames.jsonl` with no restoration after the hold point.
+| Boss | Rows |
+| :--- | :--- |
+| Bat Rider | `avoid_cast` Unstable Concoction 13 yd (no interrupt: uninterruptible) |
+| Voidwalker | `avoid_cast` Consuming Shadows 8 yd; `tank_hold` row |
+| Mad Servant | `interrupt` Flamestrike; `hold_kill` budget 0; `one_at_a_time` |
+| Venoxis | `interrupt` Holy Fire; ranged and healer stand set |
+| Thekal, Lor'Khan, Zath | `linked_death` group, hold 2 %, burn order Zealots then Thekal; Lor'Khan `interrupt` Greater Heal |
 
 ## Known limits
 
-- Recurring threat-reset holds need a cast trigger (follow-up). A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, once per fight. The Mandokir Threatening Gaze and Hakkar Cause Insanity rows were removed (`data/sql/world/20261103020000_world.sql`) for that reason. Cause Insanity 24327 is instant (castingTimeIndex 1) and lands on a player, which the hold's cast/aura edge cannot see on the boss. Threatening Gaze 24314 is a real cast (castingTimeIndex 5), so a keyed row for Mandokir alone is the likely first follow-up.
+Recurring threat-reset holds need a cast trigger. Mandokir and Hakkar rows were removed for that reason.
 
-## Stand sets (`ai_boss_stand`)
+## Stand sets
 
-A stand set says where bots of a role stand while a boss is at a place and casting a spell. It is its own table, read once at startup (`LoadBossStands`, `ai/playerbot/BossStandMgr.cpp`, called next to the tactics loader); unlike the tactics it is not part of `.bot run reloadplans`, so a change needs a restart. It only acts for a bot with the `boss tactics` strategy armed (the same gate as the rows above); the strategy is armed on a map that has a row in either table, so a stand set does not need an `ai_boss_tactic` row. The table is created (empty) by `data/sql/world/20261101075500_world.sql`; each boss's rows come in that boss's own migration (High Priest Venoxis: `20261101080000_world.sql`).
+Own table `ai_boss_stand`, startup-only (restart needed). The strategy arms on a map with a row in either table.
 
 | Column | Meaning |
 | :--- | :--- |
-| `map`, `boss_entry` | Which boss. |
-| `anchor`, `anchor_x`, `anchor_y`, `anchor_r` | A place the boss stops at; the boss is "at" it within `anchor_r` yd (2D). Rows of one `anchor` id share the three numbers. |
-| `role` | `ranged`, `healer` or `melee` (a tank counts as melee, a healer as a healer before it counts as ranged). |
-| `window_spell` | `0`: always. Else the rows apply only while the boss is casting this spell (read from its current cast). |
-| `aura` | `0`: none. Else the boss has to wear this aura. |
-| `side`, `seq` | The side of the boss's lane a point lies on (0 or 1) and its order there. |
-| `x`, `y`, `z` | The point. The module puts z back on the ground before a move: a move whose z is off the floor is silently ignored. |
-| `dx`, `dy`, `slots` | The point seats up to `slots` bots in a line, 9 yd apart (Fireball's splash is 8 yd), in the direction `dx dy`; `0 0` is straight out from the anchor. |
-| `window_signal` | How the window opens: `cast` (default; the boss is casting `window_spell`, read from its current spell) or `stopped_no_target` (the boss wears the row's `aura`, stands still and has no target: the state a **triggered** cast leaves; a triggered spell never shows as the boss's current spell, so a cast-signal row would never open). A `stopped_no_target` row needs an `aura` and a `window_spell`. |
-| `hold_ms`, `release_anchor` | A seat taken in a window outlives the cast: up to `hold_ms` after it (default 8000, bounded to 1000-15000 so a row cannot park bots) or until the boss is within the radius of anchor `release_anchor` (the lane's far end; `0` none; it has to name an anchor of the same boss), whichever comes first. |
+| `map` / `boss_entry` | Where and whose fight. |
+| `anchor` | Fight spot plus `x y r`: the boss at it within `r`. |
+| `role` | `ranged`, `healer`, or `melee`. Tanks count as melee; healers seat first. |
+| `window_spell` | `0` means always. |
+| `aura` | Aura gating the stand. |
+| `side` + `seq` / `x y z` | Seat position. `z` is put back on the ground. |
+| `dx dy` | Slots: a line of seats 9 yd apart. |
+| `window_signal` | `cast` or `stopped_no_target`: still, targetless, with aura. |
+| `hold_ms` | Default 8000, range 1000-15000, or until `release_anchor`. |
+| `release_anchor` | Anchor that ends the stand. |
 
-The primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. A row the loader cannot use is skipped with a log line: unknown role, a zero map or boss, no `anchor_r`, a side above 1, `slots` outside 1-8, a `release_anchor` equal to the anchor, a `hold_ms` outside 1000-15000, an anchor id with two places, a second row of the key. When the table is sealed, a boss whose `release_anchor` names an anchor none of its rows holds is refused as a whole (every row of that boss dropped, one log line), so a half-valid set never runs.
+Primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. Unusable rows are skipped with a log; a bad `release_anchor` for a boss drops that boss's set.
 
-How a bot picks its seat: the bots of the group with the same role (and the strategy armed) that take part are seated in id order from the same positions, so each bot reaches the same plan. A bot takes part when it is on the boss's threat list (or is its victim) within 80 yd of the anchor, or already holds a stand for that boss and anchor; a bot elsewhere in the instance, or one the boss is not fighting, reserves no seat, and a bot that does not take part gets none. A bot takes the side of the lane it stands on: the sign of the cross product of the lane (anchor to `release_anchor`) with the vector from the anchor to the bot, side 0 being the positive one (with no `release_anchor` the side of the nearest point stands in; within half a yard of the lane line a tie goes to the side with fewer bots). It then takes the nearest point of that side with a free seat. It never crosses the lane for a seat: with no seat free on its own side it gets nothing and plays as before. When no row applies (other place, other spell, other role, no aura) nothing changes for any bot.
-
-How it combines with the rest: while a row seats the bot, the stand action (`boss tactics stand`, `ACTION_EMERGENCY`) walks it to the seat once (it puts the seat's z back on the ground, probing from 4 yd above the higher of the row's z and the bot's own, since a far seat's floor can lie above the row's; it stops a running cast unless the bot is already within 6 yd of the seat; a seat the mover refuses three times in a row is given up and the bot is treated as unseated), the caster reach (`reach spell`) and the heal walk (`reach party member to heal`) do nothing, and the `dragon flank` and `raid spread` reactions stand down. The seat is held past the cast (a cast whose effect sweeps a lane keeps hitting for seconds after it): the bot keeps it until `hold_ms` have passed since the window was last open or the boss is within the radius of the `release_anchor`; during the hold the reach still does nothing (the bot may cast from its seat if the boss is in range); a bot that has not arrived at its seat by then is still walked to it. After the hold the reach resumes from wherever the bot stands, with no walk back. A new window (the next cast, at any anchor) seats the bot from that anchor again. The hold is kept per bot in memory.
+Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat.
 
 ## Adding a boss
 
-1. Read the boss from the core: `creature_template` (`spell_list_id`, `ai_name`), `creature_spells`, the `creature_ai_events`/`creature_ai_scripts` rows or the `src/scripts` boss file, and `spell_template` for each spell. Do not use another core's ids.
-2. Add the rows in a **new** migration `data/sql/world/YYYYMMDDHHMMSS_world.sql` (idempotent: `DELETE` the map's rows, `INSERT` them again). Never edit an applied migration.
-3. Run `TORTOISE_CORE=<tortoise-wow checkout> python3 tools/test_boss_tactics_sql.py` (the core checks must run, not skip: the output must say `Ran 18 tests` with no `skipped`; and `python3 tools/test_boss_stand_sql.py` for stand rows), then check it in game with `AiPlayerbot.DungeonTactics = 1` or a commander binding and a boss pull.
+- Read the boss from the core: creature template, spells, events, scripts, spell template. Use Turtle ids only.
+- Add rows in a NEW migration `data/sql/world/YYYYMMDDHHMMSS_world.sql` (idempotent; never edit an applied one).
+- Run the SQL tests with the core checkout set: `tools/test_boss_tactics_sql.py`, `tools/test_boss_stand_sql.py`.
+- Check in game with `DungeonTactics = 1` or a commander binding, then a boss pull.
 
-Behaviour is based on the mod-playerbots per-map raid strategy pattern, reimplemented as data (no donor code; the source is named in its PR).
+## Not yet verified live
+
+Uldaman, Deadmines, Wailing Caverns, Frostmane Hollow, Windhorn Canyon, Gilneas City, Karazhan Crypt, Crescent Grove, Zul'Farrak, Scholomance, Zul'Gurub: none of the rows above are verified in game yet.
