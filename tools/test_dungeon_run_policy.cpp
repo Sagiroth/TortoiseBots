@@ -26735,6 +26735,31 @@ static void TestTotemFocusLeavesTheSkullOnTheBoss()
 }
 
 // T6: the fight log's kill_first span lines, exact.
+// H1: the totem focus cuts only the damage dealer's own generic cast or channel, and never a spell the fight needs:
+// a run crowd-control spell, a resurrect (Rebirth or any spell with a resurrect effect) or the hearthstone. An Auto
+// Shot or a wand's shot is an autorepeat spell and is never cut.
+static void TestTotemFocusMayInterrupt()
+{
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false));     // Fireball
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false));   // a Drain Life channel
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 118, false));    // Polymorph
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 12826, false));  // ... another rank
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 9484, false));   // Shackle Undead
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 710, false));    // Banish
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 6770, false));   // Sap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2637, false));   // Hibernate
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1499, false));   // Freezing Trap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 6358, false)); // Seduction (a channel)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20066, false));  // Repentance
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 5782, false));   // Fear
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1513, false));   // Scare Beast
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 8690, false));   // Hearthstone
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20484, false));  // Rebirth
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true));    // any resurrect effect
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false));       // Auto Shot
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false));     // Shoot (a wand's shot)
+}
+
 static void TestKillFirstLogLine()
 {
     CHECK(KillFirstLogLine("zul_gurub", "seen", 15112, 501, 0) == "TBM:KILLFIRST|zul_gurub|seen|15112|501");
@@ -34418,6 +34443,7 @@ int main()
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
     TestTotemFocusFiresBeforeTheAutoCcTick();
     TestTotemFocusLeavesTheSkullOnTheBoss();
+    TestTotemFocusMayInterrupt();
     TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();

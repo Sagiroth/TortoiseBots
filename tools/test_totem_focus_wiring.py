@@ -6,8 +6,10 @@ AiPlayerbot.DungeonRunTotemFocus, because Jin'do's Brain Wash Totem (spell 24262
 owner and no creator guid, so only the temporary summon's summoner names him, and no CONTROLLED_TOTEMS list holds it.
 T2: the totem focus sits at the top of TickBody's fight branch, before HpHeldTick, the CC break, the retreat, CheckCc
 and the automatic crowd control, so none of them spends its tick.
-T3/T5: CommanderFocus sends the DPS by guid (`attack my target`) with no SetTargetIcon, interrupts the current cast
-first and opens with an instant; the policy's IssueKillFirstFocus then leaves Run::focusIconGuid alone.
+T3/T5: CommanderFocus sends the DPS by guid (`attack my target`) with no SetTargetIcon, cuts only its own generic cast
+or channel through the policy's TotemFocusMayInterrupt first (never an Auto Shot, a wand's shot, a run crowd-control
+spell, a resurrect or the hearthstone) and opens with an instant; the policy's IssueKillFirstFocus then leaves
+Run::focusIconGuid alone.
 T4: the kill-first trigger checks every second under the key, every two seconds otherwise.
 """
 import pathlib
@@ -59,10 +61,16 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn("if (!totemFocus)\n        order.group->SetTargetIcon(", fn)
         self.assertIn("accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());", fn)
         helper = body(COMMANDER, "static bool TotemFocusBot(PlayerbotAI* ai")
-        self.assertLess(helper.index("bot->InterruptNonMeleeSpells(false)"),
+        self.assertNotIn("InterruptNonMeleeSpells", helper)
+        self.assertLess(helper.index("TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL)"),
             helper.index('ExecuteQuietAction(ai, "attack my target"'))
+        self.assertIn("TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL)", helper)
         self.assertIn('"fire blast", "shadowburn", "death coil", "arcane shot"', COMMANDER)
         self.assertIn("kTotemFocusOpeners", helper)
+        cut = body(COMMANDER, "static void TotemFocusCutSlot(Player* bot")
+        self.assertIn("TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind", cut)
+        self.assertIn("bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL)", cut)
+
 
     def test_kill_first_spans_close_out_of_combat(self):
         i = COMMANDER.index("if (slot.run.plan && !slot.run.plan->killFirst.empty())")

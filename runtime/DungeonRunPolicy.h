@@ -10073,6 +10073,49 @@ inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool 
     return automatedKillFirst && totemKeyOn && totemTarget;
 }
 
+// The current-spell slot a bot's cast was read from, as the glue maps CurrentSpellTypes onto it. Under the totem focus
+// only a generic cast and a channel are ever cut; an Auto Shot or a wand's shot is an autorepeat spell and keeps
+// firing.
+enum class TotemFocusSpell : std::uint8_t { Generic, Channeled, Other };
+
+// The hearthstone (an item's cast) and Rebirth, never cut by the totem focus: the first is the bot leaving, the second
+// a member coming back.
+constexpr std::uint32_t kHearthstoneSpell = 8690;
+constexpr std::uint32_t kRebirthSpell = 20484;
+
+template <std::size_t N>
+inline bool SpellIdIn(std::uint32_t spellId, const std::uint32_t (&spells)[N])
+{
+    for (std::uint32_t const id : spells)
+        if (id == spellId)
+            return true;
+    return false;
+}
+
+// Whether the spell is one of the run's crowd-control spells, every rank (kRunCc's families): a cut Polymorph, Shackle,
+// Banish, Sap, Hibernate, freezing trap, Seduction, Repentance, Fear or Scare Beast is a hold the party loses.
+inline bool RunCcSpellId(std::uint32_t spellId)
+{
+    return SpellIdIn(spellId, kPolymorphSpells) || SpellIdIn(spellId, kShackleUndeadSpells) ||
+        SpellIdIn(spellId, kBanishSpells) || SpellIdIn(spellId, kSapSpells) ||
+        SpellIdIn(spellId, kHibernateSpells) || SpellIdIn(spellId, kFreezingTrapSpells) ||
+        SpellIdIn(spellId, kSeductionSpells) || SpellIdIn(spellId, kRepentanceSpells) ||
+        SpellIdIn(spellId, kFearSpells) || SpellIdIn(spellId, kScareBeastSpells);
+}
+
+// The totem focus cuts a damage dealer's own cast or channel before it switches (a Rain of Fire or a Drain Soul
+// channel otherwise finishes before the attack lands). Only a generic cast and a channel are cut (an Auto Shot or a
+// wand's shot keeps firing), and never a spell the fight depends on: the run's crowd control, a resurrect (Rebirth, or
+// any spell with a resurrect effect) and the hearthstone.
+inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect)
+{
+    if (slot != TotemFocusSpell::Generic && slot != TotemFocusSpell::Channeled)
+        return false;
+    if (spellId == kHearthstoneSpell || spellId == kRebirthSpell || resurrectEffect)
+        return false;
+    return !RunCcSpellId(spellId);
+}
+
 // Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
 // like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
 // no order budget spent on it.

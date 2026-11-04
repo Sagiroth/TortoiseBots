@@ -2994,15 +2994,53 @@ bool RunBotAttackOrder(PlayerbotAI* ai, Player* bot, Player* selectionOwner, Obj
     return accepted;
 }
 
-// AiPlayerbot.DungeonRunTotemFocus: one DPS bot on the run's totem focus. It cuts its current cast or channel first (a
-// Rain of Fire or a Drain Soul channel otherwise finishes before the switch), then takes the attack by guid (the run's
-// skull stays on the boss), then opens with an instant the class has, so the first damage does not wait out a 2.5-3 s
-// nuke's cast. A class without an instant action falls through to its ordinary attack.
+// AiPlayerbot.DungeonRunTotemFocus: one DPS bot on the run's totem focus. It cuts its own current cast or channel first
+// (a Rain of Fire or a Drain Soul channel otherwise finishes before the switch), then takes the attack by guid (the
+// run's skull stays on the boss), then opens with an instant the class has, so the first damage does not wait out a
+// 2.5-3 s nuke's cast. A class without an instant action falls through to its ordinary attack.
 static char const* const kTotemFocusOpeners[] = {"fire blast", "shadowburn", "death coil", "arcane shot"};
+
+// Whether the spell resurrects, the caster itself included: one of its effects is EFFECT_RESURRECT,
+// EFFECT_SELF_RESURRECT or EFFECT_RESURRECT_NEW. The totem focus never cuts one (TotemFocusMayInterrupt): a cut
+// Rebirth is a member lost.
+static bool TotemFocusResurrects(SpellEntry const* info)
+{
+    if (!info)
+        return false;
+    for (int i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
+        if (info->Effect[i] == SPELL_EFFECT_RESURRECT || info->Effect[i] == SPELL_EFFECT_SELF_RESURRECT ||
+            info->Effect[i] == SPELL_EFFECT_RESURRECT_NEW)
+            return true;
+    return false;
+}
+
+// Cuts one current spell slot by the totem focus' rule (TotemFocusMayInterrupt): only a generic cast or a channel, and
+// only a spell the fight does not need. A delayed generic spell is left alone, as InterruptNonMeleeSpells left it.
+static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
+{
+    TortoiseBots::DungeonRun::TotemFocusSpell kind;
+    if (slot == CURRENT_GENERIC_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Generic;
+    else if (slot == CURRENT_CHANNELED_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Channeled;
+    else
+        return; // a melee or autorepeat slot (an Auto Shot, a wand's shot) is never cut
+    Spell* const spell = bot->GetCurrentSpell(slot);
+    if (!spell || !spell->m_spellInfo)
+        return;
+    if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
+            TotemFocusResurrects(spell->m_spellInfo)))
+        return;
+    bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
+}
+
 static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
 {
     ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
-    bot->InterruptNonMeleeSpells(false);
+    // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
+    // and the hearthstone are never cut (TotemFocusMayInterrupt).
+    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL);
+    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL);
     selectionOwner->SetSelectionGuid(targetGuid);
     bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
     if (attacked)
