@@ -104,7 +104,7 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertLess(tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"),
                         tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"))
         self.assertLess(tick.index("DropUnattackableCombat(lead, bots, slot.run.combatDrops, slot.run.combatDropWedged);"),
-                        tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
+                        tick.index("bool accepted = IssueRunOrder(commander, order, answer,"))
         drop = body(CODE, "void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("if (!bot->IsAlive() || !bot->IsInWorld() ||", drop)
         self.assertIn("ReadMemberEngaged(lead, judge, bot, now);", drop)

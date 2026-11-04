@@ -72,6 +72,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunSeekAura`](#aiplayerbotdungeonrunseekaura) | `0` | `1`: the boss tactics keep their `seek_aura` rows — the raid gathers in a dying source's cloud before the boss's cycle spell lands (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
+| [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
 | [`AiPlayerbot.RunTeleportReturnYd`](#aiplayerbotrunteleportreturnyd) | `0` (recommended `120`) | A party bot the run brings back from farther than this (yards) is teleported to the lead bot with its combat dropped, never summoned by portal or left to walk back; `0` off. |
 | [`AiPlayerbot.DungeonReviveHoldYd`](#aiplayerbotdungeonreviveholdyd) | `0` (recommended `100`) | A run's bot revived farther than this (yards) from the lead bot, and every bot the run is bringing back, stands still until it arrives (60 s at most); `0` off. |
 | [`AiPlayerbot.DungeonRunWalkBackAfterWonFight`](#aiplayerbotdungeonrunwalkbackafterwonfight) | `0` | `1` walks the tank and party back to the stand after every guarded fight (the old way); `0` goes on from where the tank stands once the pack is cleared. |
@@ -822,6 +823,25 @@ Whether the run leader teleports a stuck walk back's lead bot (and a placed run'
 - between the start step and the target point, earlier clear points are tried first; joining the party is the last option, and it never turns into a pause
 - a placed run's lead bot behind the start step is teleported to a safe point on the way it came
 - out of combat only, once a step; left-behind party is summoned only out of combat
+
+</details>
+
+### `AiPlayerbot.DungeonRunDryWalk`
+Whether the run leader keeps its own route picks off deep water instead of swimming through it.
+**Default:** `0` · **Values:** `0` the core's path, water included, `1` a ground-only way where one reaches the point · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Dry walk:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- the core's own player path may cross deep water on its surface, so an approach hop or a firing stand picked on it can land in the water; the core's straight swim chord can then hold the lead bot against a bank
+- with `1`, the run leader asks the navmesh for a ground-only path (deep water, magma and slime left out; wading kept) and picks its approach hops and its firing stand there
+- the walk-back shortcut is not re-pathed: its straight swim chord is refused as no navmesh route, so the walk back replays the plan's points; the leg-on-path read and the too-far legs are unchanged
+- when the walk's own way would swim after the lead bot leaves its own water, it goes in dry legs first: 8-40 yd along the dry path, at most 24 a walk, each at a point with no deep water at it and with a dry core path of its own
+- the point itself must be dry and the dry way at most 3 times the way the run would walk; otherwise the old behaviour runs unchanged, so intended swims still work
+- a point in deep water keeps the core's swim chord, also for a walk-back point: a straggler standing in deep water is walked to as before, and a firing stand for a pack in the water may stand in it
+- a straggler whose own point is dry but whose way would swim has no path that ends at the point: its pull moves to the next tank and can pause the run
+- a lead bot more than 25 yd from any ground polygon gets no dry path; followers still use their own paths
 
 </details>
 

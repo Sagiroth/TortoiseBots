@@ -200,6 +200,7 @@ The run protects itself with these rules:
 
 Retreat at 2 dead is opt-in with `AiPlayerbot.DungeonRunRetreatAt2Dead = 1` (default `0`), see the [dungeon and raid settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonrunretreatat2dead).
 Walk back to the stand after every guarded fight is opt-in with `AiPlayerbot.DungeonRunWalkBackAfterWonFight = 1` (default `0`). A stuck walk back is rescued by default with `AiPlayerbot.DungeonRunWalkBackRescue = 1` (default `1`).
+The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), see the [dungeon and raid settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonrundrywalk): the lead bot's approach hops and firing stands come from a ground-only navmesh path, a walk-back shortcut's swim chord is refused so the walk back replays the plan's points, and a walk whose own way would swim after leaving its pool goes in dry legs first, so the party no longer swims into a pool it cannot leave. A point in deep water keeps the old way: an intended swim, a wet firing stand for a pack in the water, and a straggler standing in water are unchanged; a dry straggler whose way would swim is not pulled and its pull can pause the run.
 
 ### Combat reads
 
