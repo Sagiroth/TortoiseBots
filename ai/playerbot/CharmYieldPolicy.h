@@ -4,10 +4,12 @@
 // actions the raid must not put on such a member. Tested in tools/test_charm_yield_policy.cpp; callers pass plain
 // numbers, so this header stays free of core includes.
 //
-// Why a creature's charm is different from a player's: the core's charm handler (SpellAuras.cpp HandleModCharm) gives a
-// player charmer a PlayerControlledAI of its own, while a creature charmer leaves the bot's PlayerbotAI installed and
-// only calls SetControlledBy. Without the yield both AIs drive the same player. ServerFacade::IsCharmed cannot answer
-// it: its MANGOS branch counts player charmers only, and other callers depend on that.
+// Why a creature's charm is different from a player's: the core's charm handler (SpellAuras.cpp HandleModCharm)
+// installs a PlayerControlledAI as i_AI for both (SetControlledBy, Player.cpp:23109-23113, for a creature; a direct
+// `new` for a player) and never replaces the bot's PlayerbotAI, so without the yield both AIs drive the same player.
+// The key stays creature-only: the dungeon rows are creature charms (Hakkar's Cause Insanity 24327), a player's mind
+// control is a PvP case outside them. ServerFacade::IsCharmed cannot answer it: its MANGOS branch counts player
+// charmers only, and other callers depend on that.
 
 #include <cstdint>
 

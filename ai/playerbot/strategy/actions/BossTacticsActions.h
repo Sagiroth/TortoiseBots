@@ -415,8 +415,19 @@ namespace ai
         bool gathering = false;     // a source stands at the spot and the gather is under way
         bool gatherReady = false;
         int missing = 0;            // seekers still outside the gather radius
+        // The latest accepted siphon's dose counts, read one second after the sighting: not group members carrying the
+        // dummy aura 24323 (dosed) and 24322 (not). siphonCycle 0: none read yet.
+        std::uint32_t siphonCycle = 0;
+        int siphonDosed = 0;
+        int siphonUndosed = 0;
     };
     bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
+
+    // The seek_aura fight records' handoff across `.bot run reloadplans`: records whose stable row identity still
+    // exists in the new tactic table with the same cycle spell, cycle length and dose window keep their engage, last
+    // siphon and window; records of removed or retimed rows are dropped. The old table may then be freed (the records
+    // copy every column they read and keep no row pointer).
+    void ReconcileSeekFightState(const BossTacticTable& next);
 
     // What this bot does about the row right now: walk into the row's cloud (the source already died), or walk to the
     // gather around the dying source. `phase` is the log's own word (cloud / gather / hold).
@@ -444,6 +455,10 @@ namespace ai
     SeekTask FindBossSeek(PlayerbotAI* ai, Player* bot);
     // Whether the bot is in a seek phase right now: the move hold and the raid spread stand-down read it.
     bool BossSeeking(PlayerbotAI* ai, Player* bot);
+
+    // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
+    // off. False on every other bot, row or target.
+    bool IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit);
 
     // Whether `dyn` is a seek_aura row's cloud: the aura itself, or the trigger spell of its persistent area effect.
     // The ground-hazard readers skip it while the row is live, so the raid stands in the poison on purpose.

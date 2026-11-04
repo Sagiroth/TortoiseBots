@@ -85,6 +85,7 @@
 #include "../runtime/PlayerLedPolicy.h"
 #include "../ai/playerbot/DungeonPlanMgr.h"
 #include "../ai/playerbot/BossTacticsMgr.h"
+#include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "CreatureGroups.h"
@@ -11464,6 +11465,31 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     // this scan found alive.
                     if (bossEntry && f.bossGateStacks < 0)
                         ReadBossPullGate(*step, lead, creature, f);
+                    if (bossEntry)
+                    {
+                        // Hakkar's run-line facts (D8, spec §3.2): his health, the enrage aura, and the seek clock's
+                        // latest siphon. Read once per tick off the living plan boss.
+                        if (f.bossHpPct < 0)
+                            f.bossHpPct = static_cast<int>(creature->GetHealthPercent());
+                        if (lead->GetMapId() == 309 && creature->GetEntry() == TortoiseBots::DungeonRun::kHakkarEntry)
+                        {
+                            // The enrage aura is a note-only fact, so it is read with the seek key off too.
+                            if (creature->GetSpellAuraHolder(TortoiseBots::DungeonRun::kHakkarBerserkSpell))
+                                f.bossBerserk = true;
+                            if (!f.seekClockRead && sPlayerbotAIConfig.dungeonRunSeekAura)
+                            {
+                                f.seekClockRead = true;
+                                ai::SeekCycleView view;
+                                if (ai::SeekCycleSnapshot(lead->GetInstanceId(),
+                                                          creature->GetObjectGuid().GetRawValue(), view))
+                                {
+                                    f.seekSiphonCycle = view.siphonCycle;
+                                    f.seekSiphonDosed = view.siphonDosed;
+                                    f.seekSiphonUndosed = view.siphonUndosed;
+                                }
+                            }
+                        }
+                    }
                     PullReadIn read;
                     bool residue = false;
                     if (pullStep)

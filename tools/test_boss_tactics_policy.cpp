@@ -708,6 +708,26 @@ int main()
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
         CHECK(PickNearestUnheld(active, { Cand(15146, 5.0f, false) }, countOf(15146, 0)) == -1);
+        // A seek_aura source the row holds is not a hold_kill entry: the extra argument skips it too, so a drop never
+        // re-picks another Son (H2).
+        const std::vector<TacticCandidate> sons = { Cand(11357, 3.0f), Cand(11359, 9.0f) };
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0)) == 0);
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0), 11357) == 1);
+    }
+
+    // A seek_aura row's dose window has to be shorter than its cycle (spec §4's open interval): equal is refused.
+    {
+        BossTacticRow row = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        row.cycleSpell = 24324;
+        row.cycleSec = 90.0f;
+        row.spotX = -11802.0f;
+        row.spotY = -1683.0f;
+        row.spotZ = 52.9f;
+        row.windowSec = 90.0f;
+        BossTacticTable table;
+        CHECK(!table.Add(row));
+        row.windowSec = 89.9f;
+        CHECK(table.Add(row));
     }
 
     // "a Mad Servant that is not the sole pick is held with no Voidwalker alive": a one_at_a_time row paces an entry by
@@ -2233,6 +2253,15 @@ int main()
         CHECK(table.Add(bossItself));
         BossTacticRow gaze = Row(309, 11382, BossTacticKind::FreezeOnAura, 0, 24314);
         CHECK(table.Add(gaze));
+        // A seek_aura source is dragged to the spot and burned there: a CC'd Son cannot be dragged (M4).
+        BossTacticRow seekSource = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        seekSource.cycleSpell = 24324;
+        seekSource.cycleSec = 90.0f;
+        seekSource.spotX = -11802.0f;
+        seekSource.spotY = -1683.0f;
+        seekSource.spotZ = 52.9f;
+        seekSource.windowSec = 80.0f;
+        CHECK(table.Add(seekSource));
         // Before the seal a reader sees nothing.
         CHECK(table.NoCcEntries(309).empty() && table.FreezeAuras(309).empty());
         table.Seal();
@@ -2240,7 +2269,10 @@ int main()
         CHECK(table.NoCcEntries(309).count(15163) == 1);  // Nightmare Illusion
         CHECK(table.NoCcEntries(309).count(11348) == 1);  // the linked_death partner
         CHECK(table.NoCcEntries(309).count(14834) == 1);  // a targetless kill_first is its boss entry
-        CHECK(table.NoCcEntries(309).size() == 4);
+        CHECK(table.NoCcEntries(309).count(11357) == 1);  // the seek_aura source (Son of Hakkar)
+        CHECK(table.NoCcEntries(309).size() == 5);
+        CHECK(table.SeekTargets(309).count(11357) == 1);  // the third off-tank's pickup rule reads it
+        CHECK(table.SeekTargets(531).empty());
         CHECK(table.NoCcEntries(531).empty());            // another map's rows are not smeared in
         CHECK(table.FreezeAuras(309).size() == 1 && table.FreezeAuras(309)[0] == 24314);
         CHECK(table.FreezeAuras(531).empty());
@@ -2268,6 +2300,37 @@ int main()
         CHECK(!TauntAfterDue(true, 10000, 10000, false)); // the deadline passed
         CHECK(!TauntAfterDue(false, 1, 10000, false));    // no episode
         CHECK(!TauntAfterDue(true, 1, 10000, true));      // the assigned tank already has it
+
+        // A creature-charmed tank yields its AI, so the until_tank order counts it as gone (M5).
+        CHECK(TauntAfterTankUsable(false, false));
+        CHECK(TauntAfterTankUsable(true, true));          // a player MC leaves the bot's AI in the core, not gone
+        CHECK(!TauntAfterTankUsable(true, false));        // a creature's charm
+
+        // The episode's state machine: the rising edge opens it, the deadline turns a non-tank into one miss, a tank
+        // has it back as regained, and a spent charm does not reopen before a tank does.
+        {
+            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, false, 0, 10000, false);
+            CHECK(edge.starts && edge.open && !edge.spent && edge.step == TauntEpisodeStep::Due);
+            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, false, 5000, 10000, false);
+            CHECK(!due.starts && due.open && due.step == TauntEpisodeStep::Due);
+            // The assigned tank has it back: the episode ends, the next charm starts clean.
+            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, false, 5000, 10000, true);
+            CHECK(!assigned.open && !assigned.spent && assigned.step == TauntEpisodeStep::Regained);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, false, 10000, 10000, false);
+            CHECK(!miss.open && miss.spent && miss.step == TauntEpisodeStep::Miss);
+            TauntEpisodeRead spent = TauntEpisodeTick(true, false, false, true, 0, 10000, false);
+            CHECK(!spent.starts && !spent.open && spent.spent && spent.step == TauntEpisodeStep::None);
+            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, false, 4000, 10000, false);
+            CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
+            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, false, 4000, 10000, false);
+            CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // The widest live spread row wins, never narrower than the fallback.
+        CHECK(WidestSpreadYd({10.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({10.0f, 12.0f, 11.0f}, 10.0f) == 12.0f);
+        CHECK(WidestSpreadYd({6.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({}, 10.0f) == 10.0f);
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

@@ -517,6 +517,12 @@ constexpr std::uint32_t kFightHardCapMs = 1800000;
 // kBossFightCapMs: the community's Onyxia kills ran 408-806 s, and a raid loses members routinely (FightProgressTick:
 // while the fight still loses hp, a death in the window does not pause it; the raid's wipe level catches a real loss).
 constexpr std::uint32_t kRaidBossFightCapMs = 1200000;
+// Hakkar the Soulflayer (Zul'Gurub 14834): Berserk 27680 lands at 600 s after his engage (boss_hakkar.cpp:56,217-225),
+// so the run line warns at 540 s and again when the aura is seen. The seek_aura clock's siphon notes are the run
+// leader's read of SeekCycleSnapshot (spec §3.2).
+constexpr std::uint32_t kHakkarEntry = 14834;
+constexpr std::uint32_t kHakkarBerserkSpell = 27680;
+constexpr std::uint32_t kHakkarBerserkSoonMs = 540000;
 constexpr std::uint32_t kCeilingQuietMs = 5000; // a ceiling pause whose party stays out of combat this long goes on by itself
 constexpr std::uint32_t kLeadBackSettleMs = 5000; // a lead bot back on the plan's map this long resumes its off-map pause
 constexpr std::uint32_t kPlayerHoldBackSettleMs = 5000; // a player back with the party this long resumes his hold pause
@@ -1711,6 +1717,16 @@ struct Facts
     std::uint32_t bossGateMax = 0;
     float bossGateHoldS = 0.0f;
     std::string bossGatePriests;
+    // The living plan boss's health %, and whether it wears the enrage aura (Hakkar's Berserk 27680): the boss step's
+    // run line reports the enrage once at 540 s and once when it lands (kHakkarBerserkSpell).
+    int bossHpPct = -1;
+    bool bossBerserk = false;
+    // The seek_aura clock's latest siphon (SeekCycleSnapshot, read once per tick): the cycle the counts belong to, and
+    // the raid members that were dosed then (24323) and were not (24322). The run line reports each cycle once.
+    bool seekClockRead = false;
+    std::uint32_t seekSiphonCycle = 0;
+    int seekSiphonDosed = 0;
+    int seekSiphonUndosed = 0;
     int objectState = -1;               // wait_object, hold done by object: 0 ready, 1 active, 2 active_alt; -1 not found
     // wait_object: the -1 above is an authoritative "not there": the lead bot is alive and in the world on the plan's map,
     // the step's point lies within AiPlayerbot.ReactDistance of it (the by-entry search covers only that) and the point's
@@ -2143,6 +2159,11 @@ struct Run
     // the row's hold over; at the row's seconds the run ends.
     std::uint32_t bossGateHeldMs = 0;
     bool bossSeenAlive = false;     // a boss step: the boss was among the step's living units
+    // The run line's Hakkar notes (Facts::bossHpPct/bossBerserk/seekSiphon*): each is written once, the enrage at 540 s
+    // and when the aura lands, the siphon once per cycle (kHakkarEntry, kHakkarBerserkSpell).
+    bool bossBerserkSoonNoted = false;
+    bool bossBerserkNoted = false;
+    std::uint32_t siphonNotedCycle = 0;
     // The boss steps' entries a fight engaged on an earlier step (IsStepBoss, on any step): his own boss step then
     // starts with bossSeenAlive true, so his corpse near the lead bot counts as boss down even though that step's own
     // read never saw him alive (the r1 walk fought Thekal on the move step before his boss step). Never
@@ -3500,6 +3521,10 @@ inline void ResetStep(Run& r)
     r.fruitlessPulls = 0;
     r.bossWaitMs = 0;
     r.bossGateHeldMs = 0; // the pull gate's hold counts this step's ticks
+    // The run line's Hakkar notes belong to the fight: a step change or a resume starts them over.
+    r.bossBerserkSoonNoted = false;
+    r.bossBerserkNoted = false;
+    r.siphonNotedCycle = 0;
     // A boss of this step engaged on an earlier step (Run::bossFoughtEarly) was fought already: this step starts as
     // if he had been seen alive here, so his corpse near the lead bot is boss down.
     const PlanStep* const resetStep = Current(r);
@@ -17910,7 +17935,9 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // one of the pick-ups (guardOrders).
         const UnitFact* arrival = EngageTarget(r, f);
         // A gated boss is no engage's target either: the gate's hold runs here too (the run ends at its seconds), and
-        // no order goes out while it holds.
+        // no order goes out while it holds. Accepted: this path only runs inside a fight, which a pull the gate let
+        // through already started (priests alive, a wipe either way), and ending the run at the row's seconds is the
+        // gate's answer; every other guard order waits those seconds out.
         if (arrival && BossGateTick(r, f, arrival->entry, dt))
             return true;
         if (arrival && arrival->guid != r.engageGuid && r.engageOrders < kGuardOrdersPerFight &&
@@ -20941,6 +20968,28 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
+        // Hakkar's own clock, on his boss step: the enrage is a one-time warning at 540 s (Berserk 27680 lands at
+        // 600 s) and a second note when the aura is on him, and each accepted Blood Siphon's dose counts are reported
+        // once (SeekCycleSnapshot's read, Facts::seekSiphon*). Appended, so the line keeps the death counts above.
+        if (s->kind == PlanStepKind::Boss && s->entry == kHakkarEntry)
+        {
+            if (!r.bossBerserkSoonNoted && r.fightMs >= kHakkarBerserkSoonMs && f.bossHpPct >= 0)
+            {
+                r.note += "; Hakkar berserk in 60 s (" + std::to_string(f.bossHpPct) + " %)";
+                r.bossBerserkSoonNoted = true;
+            }
+            if (!r.bossBerserkNoted && f.bossBerserk)
+            {
+                r.note += "; Hakkar berserk (" + std::to_string(kHakkarBerserkSpell) + ")";
+                r.bossBerserkNoted = true;
+            }
+        }
+        if (f.seekSiphonCycle != 0 && f.seekSiphonCycle != r.siphonNotedCycle)
+        {
+            r.note += "; Hakkar siphon " + std::to_string(f.seekSiphonCycle) + ": " +
+                std::to_string(f.seekSiphonDosed) + " dosed, " + std::to_string(f.seekSiphonUndosed) + " not";
+            r.siphonNotedCycle = f.seekSiphonCycle;
+        }
         // A linked_death group of the boss step: the tactic stays in the run line while it runs, appended to what the
         // line already says rather than replacing it. The line moves at most once per 5 % of the highest living member
         // (the bracket alone is compared, never the whole text), and once more when a member's death was recorded, so
