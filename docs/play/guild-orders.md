@@ -27,16 +27,17 @@ Before you start, you need three things:
 Example: 20 Copper Ore from a bot:
 
 1. Open the addon (`/tbm`), go to the **Guild** tab, press **Order** next to the bot. Search for "copper ore", pick the Farm order and set the amount to 20. From chat, the same order is `.bot order <BotName> farm <item link or id> 20`.
-2. The bot checks its own bags and mailbox, looks at the auction house, then walks to a nearby zone it can reach and farms ore until it has 20.
-3. When the 20 are together, it walks to a guild banker and deposits them into the guild bank. If the bank refuses the deposit, it mails them to the guild master instead.
-4. `.bot order list` shows the progress as `12/20` while it runs, and you get live updates as it changes. A finished order shows `done` (or `mailed`).
+2. Before you press Send, the window shows a preview of what the bot will do: what it already has, what it will farm and where, what it may buy, what it asks other guild bots for, what you must send, a rough time and the gold cap. From chat, the same preview is `.bot order <BotName> preview farm <item link or id> 20`.
+3. The bot checks its own bags and mailbox, looks at the auction house, then walks to a nearby zone it can reach and farms ore until it has 20.
+4. When the 20 are together, it walks to a guild banker and deposits them into the guild bank. If the bank refuses the deposit, it mails them to the guild master instead.
+5. `.bot order list` shows the progress as `12/20` while it runs, and you get live updates as it changes. A finished order shows `done` (or `mailed`).
 
 ## Order types
 
 | Order | What the bot does |
 | :--- | :--- |
 | Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item. Works the nearest planned zone on its own continent that it can walk to. A zone with no reachable spots is left alone for a while. |
-| Buy | Checks its bags and mailbox, then buys on the auction house (own gold first, guild gold within your cap). Farms whatever is still missing. Bought items arrive by mail. |
+| Buy | Checks its bags and mailbox, then buys on the auction house (own gold first, guild gold within your cap). Farms whatever is still missing. Bought items arrive by mail. Needs [`AiPlayerbot.GuildOrderPlayerBuy`](../server/settings/guild-orders.md#aiplayerbotguildorderplayerbuy) = 1 (off by default): a player's Buy order is refused without it. |
 | Craft | Gets each missing material (see below), crafts what it can itself, and asks other guild bots to make or farm the rest. |
 
 Recipe tools stay available as long as [`AiPlayerbot.CraftToolsAlways`](../server/settings/guild-orders.md#aiplayerbotcrafttoolsalways) is on (the default). A missing tool (Arclight Spanner, Blacksmith Hammer and the like) appears in the bags when the bot crafts. Bots never sell or auction tools.
@@ -175,6 +176,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel
+.bot order <BotName> preview <farm|craft> <item link or id> <amount>
 .bot order <BotName> steps
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>

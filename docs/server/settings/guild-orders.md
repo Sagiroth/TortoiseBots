@@ -19,6 +19,7 @@ These settings control how orders use the guild bank and sub-orders between guil
 | :--- | :---: | :--- |
 | [`AiPlayerbot.GuildOrderBankWithdraw`](#aiplayerbotguildorderbankwithdraw) | `1` | Lets orders withdraw only the missing item or reagent count from the guild bank before shopping or farming. |
 | [`AiPlayerbot.GuildOrderBankGold`](#aiplayerbotguildorderbankgold) | `1` | Lets orders cover an auction purchase with guild bank money after spending the bot's own gold. |
+| [`AiPlayerbot.GuildOrderPlayerBuy`](#aiplayerbotguildorderplayerbuy) | `0` | Lets players give Buy orders for finished goods from the auction house. |
 | [`AiPlayerbot.GuildOrderSubOrders`](#aiplayerbotguildordersuborders) | `1` | Lets orders ask another guild bot to make or farm a missing item. |
 | [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-order branches may nest. |
 | [`AiPlayerbot.GuildOrderAuctionVisits`](#aiplayerbotguildorderauctionvisits) | `3` | How many arrived auction-house trips without reaching an auctioneer move the order leg on. |
@@ -37,6 +38,13 @@ Allows guild orders to use guild bank money to cover an auction house purchase a
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 An order's optional `gold=<copper>` cap limits its total guild bank withdrawals. If omitted, there is no order cap, except caps set for the item branch. Use `gold=0` to forbid guild bank money for the order. The core guild bank checks money access and records each withdrawal.
+
+### `AiPlayerbot.GuildOrderPlayerBuy`
+
+Lets players give Buy orders for finished goods from the auction house (`.bot order <bot> buy ...`, and the Buy option in the addon order window).
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+When off, a player's Buy order is refused and the addon hides Buy. Farm and craft orders still buy materials on the auction house themselves while they work, the way they do today.
 
 ### `AiPlayerbot.GuildOrderSubOrders`
 
