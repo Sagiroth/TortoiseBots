@@ -58,7 +58,7 @@ const ctx = {
   Glide: G, LiveView,
   performance: { now: () => nowMs },
   refreshGate: RefreshRate.createGate(2, env),
-  state: { activeTab: "commanders", wsConnected: true, commanders: { list: [] } },
+  state: { activeTab: "commanders", wsConnected: true, commanders: { list: [] }, raids: { binds: [] } },
   cmdGlide: {},
   cmdSched: { mark: () => {} },
   cmdLiveEvents: {}, CMD_LIVE_EVENT_MAX: 12,

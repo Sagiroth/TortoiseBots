@@ -4,7 +4,7 @@ max_line_length = false
 unused_args = false
 globals = { "TT" }
 read_globals = {
-    "GetCurrTime", "GetUnitGUID", "GetObjectGUID", "GetPlayerGUID", "GetPlayerByGUID",
+    "GetCurrTime", "GetUnitGUID", "GetObjectGUID", "GetPlayerGUID", "GetPlayerByGUID", "GetPlayerByName",
     "GetMapById", "CreateLuaEvent", "RemoveEventById", "RegisterPlayerEvent",
     "RegisterServerEvent", "CharDBQuery", "WorldDBQuery",
 }

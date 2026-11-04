@@ -101,6 +101,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Bot pool management](server/bot-pool.md) | Managed pool registry, account structures, and safe pool reset procedures. |
 | [Observability dashboard](server/dashboard.md) | Real-time web dashboard, 2D live map, Prometheus metrics, and issue tracker. |
 | [Run trace](server/run-trace.md) | Opt-in recorder of a party's run (`.bot trace`), the `bt-trace` v1 schema, and the offline scorer. |
+| [Decision capture](server/decision-capture.md) | Opt-in recorder of every run-leader decision, the `tb-decision-capture` format, and the replay fixture workflow. |
 | [Party settings](server/settings/party.md) | Follow distances, summon rules, alt-bot persistence, and loot rolling. |
 | [Hiring settings](server/settings/hiring.md) | Mercenary hiring fees, recruiter quests, gear tiers, and world buffs. |
 | [Class behavior settings](server/settings/class-behaviour.md) | AI flags for Aspect of the Viper, Judgements, threat drops, and demon choices. |

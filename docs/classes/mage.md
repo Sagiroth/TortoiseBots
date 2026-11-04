@@ -33,6 +33,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 - Weaves *Cone of Cold* against 2 or more enemies at ranged scan, cast only inside 10 yards while facing the target.
 - Activates *Cold Snap* when any Frost cooldown (*Frost Nova*, *Cone of Cold*, *Ice Barrier*, *Ice Block*, *Frost Ward*) is spent.
 - Area spells (*Blizzard*, *Flamestrike*, *Cone of Cold*) pause during [party threat back-off](overview.md#shared-bot-behaviors) if holding 50% or more tank threat.
+- Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window); a running *Blizzard* is cancelled when a mob under the party's crowd control stands in it.
 
 ### Fire Mage
 - Casts *Fireball* as primary filler and weaves *Scorch* to maintain Fire Vulnerability debuffs (refreshing before the 7-second expiry).

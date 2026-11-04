@@ -16,6 +16,7 @@
 #include "../runtime/ObservabilityEmitter.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/RunTrace.h"
+#include "../runtime/DecisionCapture.h"
 #include "BotChatAdapter.h"
 #include "BotPacketAdapter.h"
 #include "HireRecruiterScript.h"
@@ -236,6 +237,7 @@ void BotHostAdapter::OnUpdate(uint32 diff)
         // A run trace still going ends here ("disabled"); with none, this is
         // its usual one atomic load.
         RunTraceService::Instance().Update(diff);
+        DecisionCaptureService::Instance().Update();
         return;
     }
 
@@ -265,12 +267,15 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     BotCommands::CleanupRunGivenItemsTick();
     // Opt-in run trace (one atomic load per tick while no run is active).
     RunTraceService::Instance().Update(diff);
+    // Decision capture: reaps the segment writers a finished capture left.
+    DecisionCaptureService::Instance().Update();
 }
 
 void BotHostAdapter::OnShutdown()
 {
     BotLfgService::Instance().Shutdown();
     RunTraceService::Instance().Shutdown();
+    DecisionCaptureService::Instance().Shutdown();
     ObservabilityEmitter::Instance().Shutdown();
     BattlegroundQueueService::Instance().Shutdown();
     BotCommandQueue::Instance().Clear();

@@ -24,8 +24,8 @@
       lead: leader ? leader.name : "",
       online: true,
       bound: !!g.bound,
-      raidCommander: g.commander || "",
       run: g.run || null,
+      layout: g.layout || null,
       raidRun: r,
       bots: members.map((m) => {
         const bot = {
@@ -38,6 +38,18 @@
         };
         if (m.id) bot.id = m.id;
         if (m.target) bot.target = m.target;
+        if (m.st != null) bot.st = m.st;
+        if (m.act != null) bot.act = m.act;
+        if (m.res != null) bot.res = m.res;
+        if (m.cast != null) bot.cast = m.cast;
+        if (m.ctgt != null) bot.ctgt = m.ctgt;
+        if (m.cc != null) bot.cc = m.cc;
+        if (m.rest != null) bot.rest = m.rest;
+        if (m.mv != null) bot.mv = m.mv;
+        if (m.tname != null) bot.tname = m.tname;
+        if (m.rdy != null) bot.rdy = m.rdy;
+        if (m.db != null) bot.db = m.db;
+        if (m.mc != null) bot.mc = m.mc;
         return bot;
       }),
     };
@@ -73,6 +85,28 @@
     return "idle";
   }
 
+  // The target's name for a party row: the mob's name when the bind's mob
+  // list names the target guid, else the activity's own target name (G1's
+  // extras), else the raw guid.
+  function targetName(bind, bot) {
+    const b = bot || {};
+    const mobs = (bind && Array.isArray(bind.mobs)) ? bind.mobs : [];
+    if (b.target) {
+      const mob = mobs.find((m) => m && m.id === b.target);
+      if (mob && mob.name) return mob.name;
+    }
+    if (b.tname) return b.tname;
+    return b.target || '';
+  }
+
+  // The fight the inline sections show: newest finished, else the live one
+  // behind cmdFightsCache, else null.
+  function newestFight(bind, fightsCache) {
+    const list = fightsCache && fightsCache[bind && bind.commander] && fightsCache[bind.commander].list;
+    if (!Array.isArray(list) || !list.length) return null;
+    return list[0] || null;
+  }
+
   // The raid dps/hps summed over the combat window's bots.
   function windowTotals(combat) {
     let dps = 0, hps = 0;
@@ -83,7 +117,7 @@
     return { dps, hps };
   }
 
-  const RaidView = { bindOf, listRows, stateWord, windowTotals };
+  const RaidView = { bindOf, listRows, stateWord, windowTotals, targetName, newestFight };
 
   if (typeof module !== "undefined" && module.exports) module.exports = RaidView;
   else root.RaidView = RaidView;

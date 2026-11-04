@@ -2,6 +2,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIPackets.h"
 #include "../../runtime/RemoteCommanderTasks.h"
+#include "../../runtime/policy/infra/DeferredDeliveryPolicy.h"
 #include "strategy/actions/MovementActions.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/TargetValue.h"
@@ -144,6 +145,13 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 {
     //if (packet.empty())
     //    return;
+
+    // A bot between maps (far teleport not acked yet) has no map for the
+    // handlers below that read it: the cast result looks its target up and the
+    // knock-back reads terrain. The drain holds such a packet, but a packet
+    // handed over on the world thread reaches this function directly.
+    if (TortoiseBots::DeferredDelivery::ReadsBotMap(packet.getOpcode()) && !bot->FindMap())
+        return;
 
 	// Issue #844: a case here that does not end in botOutgoingPacketHandlers
 	// (AddPacket) must also be added to the hand-kept extras list in

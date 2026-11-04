@@ -168,6 +168,8 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTrace.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTraceWriter.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/DecisionCapture.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/DecisionCaptureFiles.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotActivityLease.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotNameService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/CharacterCleanup.cpp"

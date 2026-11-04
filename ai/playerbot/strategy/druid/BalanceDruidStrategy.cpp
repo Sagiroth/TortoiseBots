@@ -107,6 +107,12 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "nature eclipse",
         NextAction::array(0, new NextAction("wrath", ACTION_HIGH + 3), NULL)));
 
+    // A unit under the party's crowd control inside the hurricane breaks the
+    // hold on its next tick: stop the channel above the pack cast.
+    triggers.push_back(new TriggerNode(
+        "hurricane channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 4), NULL)));
+
     // Hurricane is the balance pack cast: 3+ attackers in spell range.
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",

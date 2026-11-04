@@ -103,6 +103,17 @@ public:
     template <class Find, class Run, class ReportDropped>
     size_t Drain(Find find, Run run, ReportDropped reportDropped)
     {
+        return Drain(find, run, reportDropped,
+            [](auto, PendingBotCommand const&) { return false; });
+    }
+
+    // As above, but `shouldDefer` keeps a command for the next drain when it
+    // returns true: the command's bot is still waiting on earlier chat or
+    // packets, so running it now would overtake them. Deferred commands keep
+    // their arrival order ahead of commands queued while the drain ran.
+    template <class Find, class Run, class ReportDropped, class ShouldDefer>
+    size_t Drain(Find find, Run run, ReportDropped reportDropped, ShouldDefer shouldDefer)
+    {
         std::vector<PendingBotCommand> batch;
         std::unordered_map<uint64_t, DroppedBotCommands> dropped;
         {
@@ -112,14 +123,30 @@ public:
             m_pendingPerRequester.clear();
         }
 
+        std::vector<PendingBotCommand> deferred;
         size_t executed = 0;
         for (PendingBotCommand const& command : batch)
         {
             auto requester = find(command.requesterGuid);
             if (!requester)
                 continue;
+            if (shouldDefer(requester, command))
+            {
+                deferred.push_back(command);
+                continue;
+            }
             run(requester, command);
             ++executed;
+        }
+
+        if (!deferred.empty())
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            deferred.insert(deferred.end(), m_pending.begin(), m_pending.end());
+            m_pending.swap(deferred);
+            m_pendingPerRequester.clear();
+            for (PendingBotCommand const& command : m_pending)
+                ++m_pendingPerRequester[command.requesterGuid];
         }
 
         for (auto const& entry : dropped)

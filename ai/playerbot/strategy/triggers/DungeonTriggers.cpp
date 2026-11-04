@@ -489,11 +489,17 @@ bool RaidSpreadNeededTrigger::IsActive()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
+    // A seek_aura row is walking the bot into a cloud or to the gather: the step-out would undo the walk.
+    if (BossSeeking(ai, bot))
+        return false;
     // Generic combat spread (donor "combat formation move" without the opt-in
     // disperse knob): only while fighting, so idle/questing stacking is free.
     Unit* target = GetTarget();
     if (!target)
         return false;
+    // A live spread row widens the spacing and outranks a stay: the run holds the ranged bots on their spots, and the
+    // row's splash (Hakkar's Corrupted Blood) still has to be answered there.
+    bool const spreadLive = BossSpreadLive(ai, bot);
     // Explicit orders win: a bot told to hug a spot (stay/follow/attack/pull
     // anchors, wait-for-attack, grind) holds it; spread never overrides.
     // Owned/hired bots are exempt via live master OR owner record, so an
@@ -502,7 +508,7 @@ bool RaidSpreadNeededTrigger::IsActive()
     // raid survival and applies to companions too.
     if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
         ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
@@ -513,13 +519,14 @@ bool RaidSpreadNeededTrigger::IsActive()
     Group* group = bot->GetGroup();
     if (!group)
         return false;
+    float const spreadYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     for (Player* member : LiveGroupMembers(group))
     {
         if (!member || member == bot || !sServerFacade.IsAlive(member))
             continue;
         if (member->GetMapId() != bot->GetMapId())
             continue;
-        if (sServerFacade.getDistance2d(bot, member) < 10.0f)
+        if (sServerFacade.getDistance2d(bot, member) < spreadYd)
             return true;
     }
     return false;

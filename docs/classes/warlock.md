@@ -42,7 +42,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses, damage-over-time 
 - Defaults to *Curse of the Elements* once trained, *Curse of Agony* before that (gated by the spellbook, no level check in the bot). The curse outranks *Immolate*, so the curse — not Immolate — lands first.
 - Delivers burst damage using *Conflagrate* (only while Immolate ticks with 7 seconds or less left) and *Shadowburn*.
 - Casts *Shadow Bolt* as primary nuke and channels *Rain of Fire* on packs of 3 or more clustered enemies. *Shadowburn* fires through the shared warlock rotation on dying targets.
-- Cancels *Rain of Fire* channels if fewer than 2 enemies remain in the target area.
+- Cancels *Rain of Fire* channels if fewer than 2 enemies remain in the target area, or a mob under the party's crowd control stands in it.
 
 <details>
 <summary>Soul Shard harvest and Life Tap safety</summary>

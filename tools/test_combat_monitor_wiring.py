@@ -75,6 +75,8 @@ class CombatMonitorWiringTest(unittest.TestCase):
         cast = body(code, "CombatMonitorCastAdapter::OnSpellCast(", "\n}\n")
         self.assertIn("IsTriggered()", cast)
         self.assertLess(cast.index("IsTriggered()"), cast.index("OnCast("))
+        self.assertIn("IsTurtleHealSpell(", cast)
+        self.assertLess(cast.index("IsTurtleHealSpell("), cast.index("OnCast("))
         heal = body(code, "CombatMonitorUnitAdapter::OnHeal(", "\n}\n")
         self.assertIn("GetMaxHealth()", heal)
         self.assertIn("GetHealth()", heal)

@@ -345,6 +345,14 @@ namespace ai
             creators["boss tactics freeze"] = [](PlayerbotAI* ai) { return new BossTacticsFreezeTrigger(ai); };
             creators["boss tactics flee"] = [](PlayerbotAI* ai) { return new BossTacticsFleeTrigger(ai); };
             creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandTrigger(ai); };
+            creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectTrigger(ai); };
+            creators["boss tactics tank swap"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapTrigger(ai); };
+            creators["boss tactics tank swap hold"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapHoldTrigger(ai); };
+            creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorTrigger(ai); };
+            creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTrigger(ai); };
+            creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankTrigger(ai); };
+            creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillTrigger(ai); };
+            creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterTrigger(ai); };
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };

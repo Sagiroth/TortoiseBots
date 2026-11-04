@@ -56,8 +56,9 @@ class BossRowWiring(unittest.TestCase):
         boss_guard = fn[fn.index("if (bossOnly)"):
                         fn.index("Unit* unit = SeenHostile(bot, guid);")]
         flat = canon(boss_guard)
+        # The lookup reads the bot's map with FindMap (a mapless bot yields null, never an assert).
         lookup = re.search(
-            r"Map\*(\w+)=bot->GetMap\(\);Unit\*(\w+)=\1\?(\1->GetUnit\(guid\)):nullptr;",
+            r"Map\*(\w+)=bot->FindMap\(\);Unit\*(\w+)=\1\?(\1->GetUnit\(guid\)):nullptr;",
             flat)
         self.assertIsNotNone(lookup, boss_guard)
         unit_var = lookup.group(2)

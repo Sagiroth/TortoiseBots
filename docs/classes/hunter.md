@@ -29,7 +29,7 @@ Hunters deliver consistent ranged physical damage, pet management, crowd control
 - Fires *Aimed Shot* (Marksmanship, once trained, within range) or *Arcane Shot* on cooldown.
 - Uses *Steady Shot* as a filler timed to fit inside the Auto Shot swing window.
 - Uses *Multi-Shot* only when the splash around the target catches a second fighting enemy, and never into a crowd-controlled mob standing beside it.
-- Channels *Volley* against grouped mobs, cancelling the channel if fewer than 2 mobs remain in the area.
+- Channels *Volley* against grouped mobs, cancelling the channel if fewer than 2 mobs remain in the area or a mob under the party's crowd control stands in it.
 - Multi-Shot and Volley respect [party threat back-off](overview.md#shared-bot-behaviors) when holding 50% or more of the tank's threat.
 - Keeps *Serpent Sting* ticking on high-health targets (skipping targets near death).
 - Replaces Serpent Sting with *Viper Sting* when the hunter's mana is below 50% and the target has mana (10% or more); manual `sting viper` or `sting serpent` orders override this gate.

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/FankrissGauntletPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleTargetsValue.h"
@@ -297,6 +298,16 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     // would otherwise stay a possible target for as long as the creature is away from home.
     if (target && target->IsCreature() && static_cast<Creature*>(target)->IsInEvadeMode())
         return false;
+
+    // A needs_aura entry (BossTacticsPolicy.h) is for the carriers of the row's aura alone: a Shade of Jin'do takes no
+    // damage from anyone else, and a taunt would only move its damage onto another tank. No explicit-order exception:
+    // such a hit does nothing. With the key off, or no row, the target is as valid as before.
+    if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)
+    {
+        std::uint32_t const requiredAura = GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry());
+        if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura)))
+            return false;
+    }
 
     // Chases stop at ledges (owner decision 2026-10-23): a bot of an active
     // dungeon run lets a runner below a cliff (or with no complete way to it)

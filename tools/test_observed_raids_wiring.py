@@ -144,7 +144,8 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         fill = definition(code, "void FillLiveUnitSnapshot(")
         self.assertIn("IsRaid()", fill, "the flag is the core's map type")
         line = next(line for line in fill.splitlines() if "raidMap" in line)
-        self.assertIn("GetMap()->IsRaid()", line)
+        self.assertIn("map && map->IsRaid()", line, "a null map (no map yet) is not a raid map")
+        self.assertIn("Map const* map = unit->FindMap();", fill)
         self.assertNotIn(".size()", line, "never a member-count rule")
         writer = definition(code, "void ObservabilityEmitter::EmitSnapshotCycle(")
         at = writer.index('\\"raid\\":true')
@@ -158,6 +159,70 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("bool observabilityRaids = false;", CONFIG_H)
         self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaids", false)', CONFIG_CPP)
         self.assertIn("AiPlayerbot.ObservabilityRaids", LOGGING)
+
+    def test_detail_key_is_shipped_off_and_gated(self):
+        # The G2 key ships off in both templates and gates the detail feed with the same two-file rule; the detail is
+        # appended at the END of the group object. The collection throttles the expensive read to every 5 s and repeats
+        # the cached detail between refreshes, so the emitter ships it on every cycle.
+        self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", CONF)
+        self.assertIn("AiPlayerbot.ObservabilityRaidsDetail = 0", AI_CONF)
+        self.assertIn("bool observabilityRaidsDetail = false;", CONFIG_H)
+        self.assertIn('GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false)', CONFIG_CPP)
+        self.assertIn("ObservabilityFlag::Feed m_raidsDetail;", EMITTER_H)
+        self.assertIn("bool RaidsDetailEnabled()", EMITTER_H)
+        emit = strip_comments(EMITTER)
+        self.assertIn("m_raidsDetail.Read(", emit)
+        collect = definition(strip_comments(OBSERVED), "void CollectObservedRaids(")
+        self.assertIn("FillRaidDetail(", collect)
+        detail = strip_comments(OBSERVED)
+        self.assertIn("RaidsDetailEnabled()", detail)
+        self.assertIn("kDetailCadenceMs", detail)
+        self.assertIn("info.detail = cache.entries;", detail)
+
+    def test_bound_telemetry_passes_the_binding_set(self):
+        # The bound COMMANDERS path passes its binding-wide exclusion set to the debuff read: a negative aura another
+        # binding bot or the commander cast on the bot is friendly, not the boss's. The unbound raid detail passes no
+        # friendly set and builds the exclusion from the bot's own group only.
+        header = (ROOT / "commands" / "BotCommands.h").read_text()
+        self.assertIn("FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,", header)
+        self.assertIn("std::unordered_set<uint32_t> const& friendlyLow", header)
+        bound = definition(strip_comments(COMMANDER), "static void FillCommanderMapData(")
+        self.assertIn("memberLow = bindingLow;", bound)
+        self.assertIn("FillRaidBotDebuffs(bot, extra, memberLow)", bound)
+        unbound = definition(strip_comments(OBSERVED), "void FillRaidDetail(")
+        self.assertIn("FillRaidBotDebuffs(bot, extra)", unbound)
+        self.assertNotIn("friendlyLow", unbound)
+
+    def test_detail_cache_is_pruned_and_bot_only(self):
+        # The G2 detail is the bots' own: a group that disbanded or left the
+        # raid maps drops its cache entry, a group with nothing to report is
+        # still cached for the cadence, and a real player's auras are not read.
+        code = strip_comments(OBSERVED)
+        collect = definition(code, "void CollectObservedRaids(")
+        self.assertIn("DetailCaches().erase(cache)", collect)
+        detail = definition(code, "void FillRaidDetail(")
+        self.assertIn("cache.read && now - cache.atMs < kDetailCadenceMs", detail)
+        self.assertIn("!PlayerbotAIStorage::Instance().GetAI(bot)", detail)
+
+    def test_raid_rotation_state_is_reset_on_start_and_stop(self):
+        # A re-initialization must not resume a previous session's rotation or
+        # keep its trim log (the fields are read at the RAIDS send).
+        code = strip_comments(EMITTER)
+        for name in ("void ObservabilityEmitter::Initialize()", "void ObservabilityEmitter::Shutdown()"):
+            fn = definition(code, name)
+            self.assertIn("m_raidOffset = 0;", fn, name)
+            self.assertIn("m_raidTrimLoggedAt.clear();", fn, name)
+
+    def test_emitter_keeps_the_cached_detail_between_refreshes(self):
+        # The collection fills the G2 detail itself at most every 5 s and repeats the cached read between refreshes, so
+        # the emitter ships it on every cycle: readiness, cooldown, debuff and mind-control data must survive the
+        # cycles the collection did not refresh. The emitter must not clear the detail after collecting.
+        emit = definition(strip_comments(EMITTER), "void ObservabilityEmitter::EmitRaids(")
+        self.assertIn("m_raidProvider(bots, players, m_raidGroups);", emit)
+        self.assertNotIn("group.detail.clear()", emit)
+        self.assertNotIn("m_raidDetailTimerMs", emit)
+        self.assertNotIn("m_raidDetailTimerMs", EMITTER_H)
+        self.assertIn("kDetailCadenceMs", strip_comments(OBSERVED))
 
     def test_both_config_files_gate_the_flag(self):
         # AiPlayerbot.ObservabilityRaids is set in aiplayerbot.conf and in the world config, and a feed is on only while
@@ -186,8 +251,8 @@ class ObservedRaidsWiringTest(unittest.TestCase):
         self.assertIn("LoadObservabilityRaids();", init)
 
     def test_no_creature_entry_literals(self):
-        # The boss pick reads ranks and flags from the core, never a hard-coded entry.
-        numbers = re.findall(r"\b\d{4,5}\b", strip_comments(OBSERVED))
+        # The boss pick reads ranks and flags from the core, never a hard-coded entry (5000 is the 5 s detail cadence).
+        numbers = [n for n in re.findall(r"\b\d{4,5}\b", strip_comments(OBSERVED)) if n != "5000"]
         self.assertEqual(numbers, [], numbers)
 
 

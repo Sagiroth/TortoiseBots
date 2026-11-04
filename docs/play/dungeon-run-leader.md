@@ -217,6 +217,9 @@ The rest gate runs after every fight and before every step.
 It rests a living bot under 80% health, a healer under 50% mana, or other mana under 35% mana until 90% health, 80% healer mana, or 60% other mana, or for 60 s, and checks again every 20 s.
 With `AiPlayerbot.DungeonRunLightRest = 1` (default `1`), before a plain pull or with no fight ahead it starts only under 60% health, 35% healer mana, or 25% other mana, and ends at 75% health, 60% healer mana, or 45% other mana.
 With `AiPlayerbot.DungeonRunFightForward = 1` (default `1`), the next pack within 30 yd is pulled from where the tank stands.
+- With `AiPlayerbot.DungeonRunStragglerPull = 1` (default `0`), a waited-for unit that never comes is walked to and pulled by the acting tank instead of pausing the run.
+- A fight held open only by the run's own crowd control is broken one held unit at a time, without re-applying the hold.
+- A charmed group member is never a fight's unit: orders at it are refused and the reads leave it out.
 
 ### Aggro estimate
 
@@ -230,7 +233,11 @@ Related opt-ins, one line each:
 - `AiPlayerbot.DungeonRunStandClearance`: a firing stand is refused when another living pack can reach it, so stands keep clear of other packs.
 - `AiPlayerbot.DungeonRunStandPullPreCc`: the plan's marks go out at the last approach point outside the pack's wake reach, before the walk in wakes it.
 - `AiPlayerbot.DungeonRunStandDiscipline`: the plan's own stand is the only stand a pull fires from, and tanks and melee are waited for there.
-- `AiPlayerbot.DungeonRunAutoCc`: marks crowd control from what the raid has when the pack is over the body count, with `AiPlayerbot.DungeonRunAutoCcAbove` (default 6) setting it.
+- `AiPlayerbot.DungeonRunAutoCc`: marks crowd control from what the raid has when the pack is over the body count, with `AiPlayerbot.DungeonRunAutoCcAbove` (default 6) setting it. A fight held open only by the run's own crowd control is broken one held unit at a time, without re-applying the hold. A charmed group member is never a fight's unit: orders at it are refused and the reads leave it out.
+
+### Totem focus
+
+Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it with the damage dealers alone, before the guard, and the guard leaves it alone.
 
 ### Events
 
@@ -294,3 +301,4 @@ Not supported:
 - Per-leg `rest` is unsupported.
 - `companions_loot` is unsupported.
 - `area_trigger` is exported with a warning but never runs.
+With `AiPlayerbot.DecisionCapture.Enabled = 1` (off by default, test servers only) every tick's facts, run and order are also written to a rotating capture: see [Decision capture](../server/decision-capture.md).

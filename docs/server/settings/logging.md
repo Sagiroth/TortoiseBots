@@ -40,6 +40,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.RunTrace.MaxFileMb`](#aiplayerbotruntracemaxfilemb) | `64` | Size cap of one run trace file in megabytes. |
 | [`AiPlayerbot.ObservabilityDungeonMobs`](#aiplayerbotobservabilitydungeonmobs) | `1` | Sends the mobs, threat and target lines of every dungeon run to the dashboard's Dungeons tab. |
 | [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) | `0` | Sends the raid groups of every raid map copy (leader, offline members, live fight window) to the dashboard's Raids tab without a commander bind. |
+| [`AiPlayerbot.ObservabilityRaidsDetail`](#aiplayerbotobservabilityraidsdetail) | `0` | Appends the ready check and the boss debuffs to the raid groups (sent at most every 5 s). |
 | [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) | `1` | Streams the bound groups' fight events (deaths, pulls, taunts, interrupts, casts, kill/wipe) to the dashboard as they happen. |
 | [`AiPlayerbot.ObservabilityRealtime.Events`](#aiplayerbotobservabilityrealtimeevents) | `1` | Turns the fight-event stream on or off without touching the rest of the realtime feed. |
 | [`AiPlayerbot.ObservabilityRealtime.EventGapMs`](#aiplayerbotobservabilityrealtimeeventgapms) | `250` | Minimum milliseconds between two event datagrams of one commander (100..2000). |
@@ -291,6 +292,20 @@ This key adds, on top of the roster and `DUNGEON_MOBS` lines:
 - turning the flag off with `.reload config` closes the open fight (marked unfinished) and sends `"raids":[]` once
 
 </details>
+
+### `AiPlayerbot.ObservabilityRaidsDetail`
+Appends the ready check and the boss debuffs to the raid groups of the dashboard's Raids tab.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts while [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) is on (both config files).
+
+- The ready check (buffs, consumables, key cooldowns) and the boss debuffs of every online member ride a `detail` array at the END of each `RAIDS` group object, keyed by member guid. It comes after the window, so a dashboard that does not know the key ignores the tail.
+- The collection reads the same per-bot data the bound path reads (ready cache, aura holders), at most every 5 s. Cycles between two detail reads repeat the last read.
+- With the key off the card says "detail off (AiPlayerbot.ObservabilityRaidsDetail)".
+
 
 ### `AiPlayerbot.ObservabilityRealtime`
 Streams a commander group's fight events to the dashboard as they happen.

@@ -955,6 +955,25 @@ type DungeonMember struct {
 	// have online (an offline member of the group). Never set from a roster
 	// row.
 	Offline bool `json:"offline,omitempty"`
+	// Activity, from the bound COMMANDERS binding when one stands on the
+	// group (G1): the same fields a CommanderBot carries, so the raid party
+	// rows and hover boxes read "doing" without a RAIDS datagram change.
+	State2     string `json:"st,omitempty"`
+	Action     string `json:"act,omitempty"`
+	Result     string `json:"res,omitempty"`
+	Cast       string `json:"cast,omitempty"`
+	CastTarget string `json:"ctgt,omitempty"`
+	CC         string `json:"cc,omitempty"`
+	Rest       string `json:"rest,omitempty"`
+	Moving     bool   `json:"mv,omitempty"`
+	TargetName string `json:"tname,omitempty"`
+	// Raid detail (G2, AiPlayerbot.ObservabilityRaidsDetail): the boss
+	// debuffs on the bot and its mind-control flag, from a module that
+	// reports them; absent otherwise.
+	Debuffs []CommanderAura `json:"db,omitempty"`
+	MC      int             `json:"mc,omitempty"`
+	// The ready check's facts (G2 detail): absent without the detail feed.
+	Ready *CommanderReady `json:"rdy,omitempty"`
 }
 
 // RaidMemberRef is one member of a group as the RAIDS datagram reports it:
@@ -968,23 +987,34 @@ type RaidMemberRef struct {
 	Offline bool   `json:"off,omitempty"`
 }
 
+// RaidDetailEntry is one member's G2 detail (ready check + boss debuffs),
+// appended at the END of the RAIDS group object behind
+// AiPlayerbot.ObservabilityRaidsDetail (sent at most every 5 s).
+type RaidDetailEntry struct {
+	GUID    uint32          `json:"g"`
+	Ready   *CommanderReady `json:"rdy,omitempty"`
+	Debuffs []CommanderAura `json:"db,omitempty"`
+	MC      int             `json:"mc,omitempty"`
+}
+
 // RaidGroupRow is one group of a RAIDS datagram: the group id, the fight key
 // (raid#<group> unbound, the commander's name when bound), the instance, the
 // leader, the offline members and the live combat window. Trimmed names the
 // ladder section dropped to fit the part cap.
 type RaidGroupRow struct {
-	Group      uint32           `json:"group"`
-	Key        string           `json:"key"`
-	Map        uint32           `json:"map"`
-	Instance   uint32           `json:"instance"`
-	RaidGroup  bool             `json:"rg"`
-	Leader     string           `json:"leader"`
-	LeaderGUID uint32           `json:"leader_guid"`
-	Commander  string           `json:"commander,omitempty"`
-	Members    []RaidMemberRef  `json:"members"`
-	More       int              `json:"more,omitempty"`
-	Combat     *CommanderCombat `json:"combat,omitempty"`
-	Trimmed    string           `json:"trimmed,omitempty"`
+	Group      uint32            `json:"group"`
+	Key        string            `json:"key"`
+	Map        uint32            `json:"map"`
+	Instance   uint32            `json:"instance"`
+	RaidGroup  bool              `json:"rg"`
+	Leader     string            `json:"leader"`
+	LeaderGUID uint32            `json:"leader_guid"`
+	Commander  string            `json:"commander,omitempty"`
+	Members    []RaidMemberRef   `json:"members"`
+	More       int               `json:"more,omitempty"`
+	Combat     *CommanderCombat  `json:"combat,omitempty"`
+	Detail     []RaidDetailEntry `json:"detail,omitempty"`
+	Trimmed    string            `json:"trimmed,omitempty"`
 }
 
 // RaidsPayload is the RAIDS datagram: the standing raid-map groups the
@@ -1005,19 +1035,21 @@ type RaidsPayload struct {
 // RaidGroupView is one raid group inside a raid run: the RAIDS row joined
 // with the roster members and the binding of the group when bound.
 type RaidGroupView struct {
-	Group      uint32           `json:"group"`
-	Key        string           `json:"key"`
-	RaidGroup  bool             `json:"rg"`
-	Leader     string           `json:"leader,omitempty"`
-	LeaderGUID uint32           `json:"leader_guid,omitempty"`
-	Bound      bool             `json:"bound,omitempty"`
-	Commander  string           `json:"commander,omitempty"`
-	Run        *CommanderRun    `json:"run,omitempty"`
-	Observed   bool             `json:"observed,omitempty"`
-	More       int              `json:"more,omitempty"`
-	Members    []DungeonMember  `json:"members"`
-	Combat     *CommanderCombat `json:"combat,omitempty"`
-	Trimmed    string           `json:"trimmed,omitempty"`
+	Group      uint32            `json:"group"`
+	Key        string            `json:"key"`
+	RaidGroup  bool              `json:"rg"`
+	Leader     string            `json:"leader,omitempty"`
+	LeaderGUID uint32            `json:"leader_guid,omitempty"`
+	Bound      bool              `json:"bound,omitempty"`
+	Commander  string            `json:"commander,omitempty"`
+	Run        *CommanderRun     `json:"run,omitempty"`
+	Layout     *CommanderLayout  `json:"layout,omitempty"`
+	Observed   bool              `json:"observed,omitempty"`
+	More       int               `json:"more,omitempty"`
+	Members    []DungeonMember   `json:"members"`
+	Combat     *CommanderCombat  `json:"combat,omitempty"`
+	Detail     []RaidDetailEntry `json:"detail,omitempty"`
+	Trimmed    string            `json:"trimmed,omitempty"`
 }
 
 // RaidRun is one live raid instance copy (map + instance id).

@@ -816,11 +816,16 @@ func main() {
 				binds = append(binds, b)
 			}
 		}
+		// Raid fight keys (G1): an open raid card asks for its group's fight
+		// key, which has no COMMANDERS binding. The snapshot carries the
+		// raid rows so the card's map draws positions at once.
+		raids := store.RaidRows(asked)
 		data, err := json.Marshal(struct {
 			Commanders []model.CommanderBinding `json:"commanders"`
 			Live       []combat.FightSummary    `json:"live"`
 			UpdatedAt  int64                    `json:"updated_at"`
-		}{binds, combatStore.LiveRows(commanders), view.UpdatedAt})
+			Raids      []model.RaidGroupRow     `json:"raids,omitempty"`
+		}{binds, combatStore.LiveRows(commanders), view.UpdatedAt, raids})
 		if err != nil {
 			return nil
 		}

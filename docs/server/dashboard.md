@@ -166,6 +166,12 @@ The Dungeons tab lists dungeon copies; raid copies live on the Raids tab. Raid g
 ### Raids Tab
 
 The **Raids** tab lists every raid map copy that holds a bot, with or without a commander binding: the instance, the groups inside it, each group's rows (with a name and an offline marker for members not online), the map, and a link to a bound group's Commanders card.
++
+- **Groups:** one card per group with the leader, offline members and the live combat window. The party, map and fights reuse the Commanders views: subgroup blocks, the live per-bot window, the This fight | Total role tables, the run totals, the Underperforming bots section, and threat and deaths panels. Controls stay hidden: the card says "controls need a bound commander".
+- **Observed vs roster only:** a live `RAIDS` report marks the group `observed` (leader, offline members, fight numbers). Without one the card says `roster only` (the server sends no RAIDS: `AiPlayerbot.ObservabilityRaids = 0`). A bound group shows `bound · <commander>` linking to its Commanders card and carries the run line. With the detail key off (`AiPlayerbot.ObservabilityRaidsDetail = 0`) the ready and debuff sections say "detail off".
+- **Live strip:** the open group's card follows its fight on the live stream, so fight events arrive as they happen and the map glides between the 2 s reports.
+- **Ungrouped:** units of the copy with no group read as one muted "Not in a group" block.
+- **Known limit:** past 40 raid groups the module rotates which groups it reports, so the tab cycles through them instead of showing all at once.
 
 ### Commanders Maps
 

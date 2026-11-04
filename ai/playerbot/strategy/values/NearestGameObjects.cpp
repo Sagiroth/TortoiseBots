@@ -3,6 +3,7 @@
 #include "NearestGameObjects.h"
 
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -217,9 +218,15 @@ private:
 // caster's cloud (a player, its pet or its charm) is skipped: the proactive
 // step-out and the melee hold serve PvE ground effects, the open world and PvP
 // against players are unchanged.
-void PushDynObjHazard(Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out, bool creatureCastersOnly)
+void PushDynObjHazard(PlayerbotAI* ai, Player* bot, DynamicObject* dyn, std::vector<AoeHazardCircle>& out,
+                      bool creatureCastersOnly)
 {
     if (!dyn || !dyn->IsInWorld())
+        return;
+    // A seek_aura row's cloud is the one ground effect the raid stands in on purpose: the poison it carries is the
+    // fight's dose, and every reader of this list (the step-out, the drag, the move hold, the landing tests) must let
+    // the bots into it.
+    if (IsSoughtCloudFor(ai, bot, dyn))
         return;
     SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
     if (!spellProto)
@@ -345,7 +352,7 @@ void ai::CollectDamagingDynObjHazards(PlayerbotAI* ai, Player* bot, std::vector<
         return;
     AiObjectContext* context = ai->GetAiObjectContext();
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
-        PushDynObjHazard(bot, map->GetDynamicObject(guid), out, creatureCastersOnly);
+        PushDynObjHazard(ai, bot, map->GetDynamicObject(guid), out, creatureCastersOnly);
 }
 
 void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, float y, float z,
@@ -373,7 +380,7 @@ void ai::CollectDamagingDynObjHazardsAt(PlayerbotAI* ai, Player* bot, float x, f
     WorldObjectListSearcher<DynObjsNearPointCheck> searcher(targets, u_check);
     Cell::VisitGridObjects(x, y, map, searcher, kTrapScanRangeYd, true);
     for (WorldObject* wo : targets)
-        PushDynObjHazard(bot, static_cast<DynamicObject*>(wo), out, creatureCastersOnly);
+        PushDynObjHazard(ai, bot, static_cast<DynamicObject*>(wo), out, creatureCastersOnly);
 }
 
 std::list<ObjectGuid> NearestDamagingTrapsValue::Calculate()

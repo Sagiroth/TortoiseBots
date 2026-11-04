@@ -32,7 +32,7 @@ class ApproachStandWiringTest(unittest.TestCase):
     def test_glue_searches_the_stand_when_asked(self):
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         i = tick.index("if (slot.run.approachStandWanted)")
-        self.assertLess(tick.index(": TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), i)
+        self.assertLess(tick.index("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), i)
         self.assertLess(i, tick.index("if (!order.empty())"))
         block = tick[i:tick.index("if (!order.empty())", i)]
         self.assertIn("ApproachStandSearch(lead, slot.run, *step, facts.team, sx, sy, sz);", block)
@@ -108,7 +108,7 @@ class WalkBackTargetWiringTest(unittest.TestCase):
         cleared = fn.index("std::size_t const cleared = LastClearedFight(r, f.team, last);")
         self.assertLess(hole, cleared)
         # The straight target is the last point or a clear one before it (StraightWalkBackTarget, 2026-10-23).
-        self.assertLess(cleared, fn.index("std::size_t const target = StraightWalkBackTarget(r, f.team, last);"))
+        self.assertLess(cleared, fn.index("std::size_t const target = StraightWalkBackTarget(r, f.team, last, &f);"))
         self.assertLess(cleared, fn.index("r.walkBack = true;\n    r.walkBackDirect = true;\n    r.walkBackIdx = target;"))
         self.assertIn("!r.notCleared.count(i)", body(POLICY, "inline std::size_t LastClearedFight(", "\n}\n"))
 

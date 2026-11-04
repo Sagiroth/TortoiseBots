@@ -5,6 +5,16 @@
 
 namespace ai
 {
+    // Sweeping Strikes is up and a protected enemy (a sheeped mob, a held CC mark,
+    // a CC mark whose CC bot is ready) stands in its reach: the next swing would
+    // copy onto it (CcCancelSwingSplashBuff).
+    class SweepingStrikesNearCcTrigger : public Trigger
+    {
+    public:
+        SweepingStrikesNearCcTrigger(PlayerbotAI* ai) : Trigger(ai, "sweeping strikes near cc") {}
+        bool IsActive() override;
+    };
+
     BUFF_TRIGGER_A(BattleStanceTrigger, "battle stance");
     BUFF_TRIGGER_A(DefensiveStanceTrigger, "defensive stance");
     BUFF_TRIGGER_A(BerserkerStanceTrigger, "berserker stance");

@@ -54,7 +54,7 @@ Druids fulfill Tank, Healer, Melee DPS, or Ranged Caster roles using flexible sh
 
 ### Balance (Ranged DPS)
 - Maintains *Moonkin Form* (when talented) and attacks from range with *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
-- Casts *Hurricane* against packs of 3 or more clustered enemies.
+- Casts *Hurricane* against packs of 3 or more clustered enemies, cancelling the channel when a mob under the party's crowd control stands in it.
 - When mana falls to 5% or less, walks into melee and auto-attacks in caster or Moonkin form (no Bear or Cat Form needed), saving regenerated mana; returns to ranged casting at 30% mana. A cast in progress finishes first. Turn it off with `co -oom melee` (`co +oom melee` to turn it back on).
 - Honors [party threat back-off](overview.md#shared-bot-behaviors), pausing AoE spells if holding 50% or more of tank threat.
 - Off-heals wounded allies (*Regrowth*, *Healing Touch* by wound band) per [off-healing rules](overview.md#shared-bot-behaviors).
