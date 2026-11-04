@@ -4081,9 +4081,11 @@ bool TauntAuraGated(Player* bot, Unit* subject)
 {
     if (!bot || !subject)
         return false;
+    // The key is read first: with it off no row is looked up at all.
+    if (!sPlayerbotAIConfig.dungeonRunAuraGatedTargets)
+        return false;
     std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry());
-    return AuraGateRefuses(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
-        requiredAura != 0 && bot->HasAura(requiredAura));
+    return AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura));
 }
 }
 

@@ -1004,6 +1004,8 @@ class AuraGateAndKillFirstGridWiring(unittest.TestCase):
     def test_both_taunt_picks_leave_a_gated_subject_alone(self):
         gate = body(ACTIONS, "bool TauntAuraGated(")
         self.assertIn("sPlayerbotAIConfig.dungeonRunAuraGatedTargets", gate)
+        self.assertLess(gate.index("sPlayerbotAIConfig.dungeonRunAuraGatedTargets"),
+                        gate.index("GetBossTactics().RequiredAura("))
         self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry())", gate)
         self.assertIn("AuraGateRefuses(", gate)
         # The seek taunt and the taunt-after-cast pick both ask before any order goes out.
