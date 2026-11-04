@@ -22,7 +22,7 @@ It sends at most one order per second, with the same checks as the commander's o
 
 ### Reloading the plans (`.bot run reloadplans`)
 
-Only a GameMaster can reload the plans (in game, on the console, over remote access, or over SOAP), and it works with the run leader off.
+Only a GameMaster can reload the plans (in game, on the console, over remote access, or over SOAP), and it works with the run leader off. The gate is account security `SEC_GAMEMASTER`, which is `SEC_DEVELOPER`, which is **3** on this core (player 0, observer 1, moderator 2, developer 3, administrator 4, console 6).
 It re-reads `ai_dungeon_plan`, `ai_dungeon_leg`, `ai_dungeon_step`, `ai_dungeon_boss`, and `ai_boss_tactic`, and swaps the new set in only when every row passes.
 A refused row, a missing plan, a failed query, or a table that changed while it was read keeps the old set.
 A run in progress keeps the plan it started with.
@@ -64,7 +64,7 @@ One row is one thing to do, run in `(leg, seq)` order with primary key `(plan, l
 | `radius` | Yards, by kind, at most 100. |
 | `item` | Item entry, by kind, `0` for none. |
 | `param` | By kind: `wait_object` state to wait for, `ritual` bot count (`0` = 3), `gossip` menu option (1-15), `hold` done value. |
-| `flags` | `1` ambush, `2` Alliance, `4` Horde; `64` exact waypoint on `move`; `256` gone-is-done on `loot`, `open`, and `wait_object`; `512` dead-is-done on `gossip`; `8` data, `16` object state, `32` encounter state, `16384` reset-to-gossip, and `32768` dead-gossip-ok on `hold`; `2048` living-creature proof on `open_proof`. |
+| `flags` | `1` ambush, `2` Alliance, `4` Horde; `64` exact waypoint on `move`; `256` gone-is-done on `loot`, `open`, and `wait_object`; `512` dead-is-done on `gossip`; `8` data, `16` object state, `32` encounter state, `16384` reset-to-gossip, and `32768` dead-gossip-ok on `hold`; `2048` living-creature proof on `open_proof`; `1024` on `pull` never defers unreachable but pauses instead; `4096` on `boss` ends skipped not paused when out of reach; `8192` pulls from the prior move stand. |
 | `timeout_s` | `0` means 60, at most 600 s, and hold steps up to 1800 s. |
 | `entries` | Comma creature entry list, at most 16, by kind. |
 | `comment` | Free text. |
@@ -75,21 +75,21 @@ Defaults by kind: pull radius `0` means 15, boss radius `0` means 30, hold radiu
 `open_proof` needs a proof radius over 0 and at most 20.
 `use_on` reads no flag or param.
 
-The loader skips rows it cannot use and names them in the server log: an unknown kind, a `pull` without entries, a `boss`, `loot`, `open`, `use_item`, `wait_object`, `ritual`, `gossip`, or `use_on` without `entry`, a `gossip` with `param` outside 1-15, a `use_on` without `item` or without a point, a negative or over-100 radius, a `wait_clear` without a radius, a timeout over the cap, a `wait_object` state above 2, or the exact flag on a non-`move` step.
+The loader skips rows it cannot use and names them in the server log: an unknown kind, a `pull` without entries, a `boss`, `loot`, `open`, `use_item`, `wait_object`, `ritual`, `gossip`, or `use_on` without `entry`, a `gossip` with `param` outside 1-15 or any flag but 512, a `use_on` with any flag or param, a `use_on` without `item` or without a point, a negative or over-100 radius, a `wait_clear` without a radius, a timeout over the cap, a `wait_object` state above 2, a stand pull with `param` over 60, a pull with `item` over 80, an `open_proof` with proof equal to entry, with `param` or timeout set, or with 2048 misused, or the exact flag on a non-`move` step.
 
 ### Step kinds
 
 | Kind | Columns used | What it means |
 | :--- | :--- | :--- |
-| `move` | Point, exact flag 64 | Walks the navmesh to the point, and with flag 64 the lead bot must stand on the point (1.5 yd, still 2 s) before the next step. |
-| `move_direct` | Point | Walks a straight line over a navmesh gap. |
+| `move` | Point, exact flag 64, entry | Walks the navmesh to the point, `entry` fires that area trigger once, and with flag 64 the lead bot must stand on the point (1.5 yd, still 2 s) before the next step. |
+| `move_direct` | Point, entry | Walks a straight line over a navmesh gap, `entry` fires that area trigger once. |
 | `move_hop_exact` | Point | Direct hop launched from the exact point before it, only on proof. |
-| `pull` | Centre, radius, entries | Every living unit of `entries` within `radius` of the centre, with flag 1 for a stealthed pack. |
-| `boss` | Entries first, then boss entry | Kills `entries` in order, then the boss entry. |
+| `pull` | Centre, radius, entries, param, item | Every living unit of `entries` within `radius` of the centre, with flag 1 for a stealthed pack, flag 8192 pulls from the prior move stand with `param` as patrol-clear yards and `item` as body-count ceiling. |
+| `boss` | Entries first, then boss entry | Kills `entries` in order, then the boss entry, with flag 4096 ending skipped not paused when out of reach. |
 | `loot` | Entry, near point, item | Loots and the item must be in the bags after, with flag 256 counting gone as done. |
-| `open` | Entry, near point, item | Uses the object with the item its lock needs, with flag 256 counting gone as done. |
+| `open` | Entry, near point, item, param | Uses the object with the item its lock needs, `param` is a second item in the same bags, with flag 256 counting gone as done. |
 | `open_proof` | Object plus separate proof entry and radius | Uses the object and finishes when the proof stands near the point, with flag 2048 for a living-creature proof. |
-| `use_item` | Entry, item | Uses the item from the bags and the made item must appear. |
+| `use_item` | Entry, item, param | Uses the item from the bags and the made item must appear, `param` is a second item in the same bags. |
 | `use_on` | Object, near point (required), item | The carrier's item is used ON the object. |
 | `wait_object` | Entry, near point, state, timeout | Waits until the object reads the wanted state, with flag 256 counting gone as done. |
 | `wait_clear` | Point, radius, timeout | Waits until no living hostile stands in the radius, and past the timeout bystanders on another floor finish it with a note. |
@@ -105,6 +105,7 @@ Whisper the leader `inv` to join.
 You get the invite when you share its faction, sit inside its level band, and your class and talents fit the open role (damage fits everything, while tank or healer needs the class plus leaning talents unless you spent fewer than 10 talent points).
 Otherwise the leader answers once with one refusal line: group full, someone else joining, leave your group, wrong level band, wrong role, hardcore refused, or invite fell through.
 One player is invited at a time, the invite waits 60 s (`kInviteHoldMs`), and once the slot is taken the posts stop.
+- `AiPlayerbot.BotLfgMaxGroups` caps bot LFG groups.
 
 ## Run leader
 
@@ -116,10 +117,19 @@ The run leads the bound party and nobody else's, and the commands and status lin
 - `until boss|step|leg` ends the run before that boss, step, or leg instead of running to the end.
 - `AiPlayerbot.DungeonRunMaxMinutes` (default 180, `0` for none) ends a run that has lasted that long with a note, and paused time counts.
 
+- `.bot run stop [reason]` keeps the reason in the end note.
+
+### Test speed
+
+`start ... speed=<1.0-3.0>` is a GameMaster bot-only test speed: it walks faster between fights and drops back to 1.0 in a fight, pull, rest, event, or near a pack.
+
 ### Console and LFG control
 
-- A GameMaster `run system` drives its own bot-only binding, which needs `DungeonSelfClear` plus bot LFG groups.
+- `.bot run for <Commander> <verb>`: a GameMaster (in game, console, remote, or SOAP) drives another commander's run (`start`, `pause`, `resume`, `skip`, `stop`, `status`) as that commander, with that commander's binding; the answers go to the caller. A start never carries the player-led word. See [Run leader](commands/commander.md#run-leader-bot-run).
+- A GameMaster `run system` drives its own bot-only binding, which needs `DungeonSelfClear` plus bot LFG groups: `system bind [<Bot>...] | cmd <order> | start | pause | resume | skip | stop | status | unbind`.
 - A GameMaster `run lfg` lists, forms, fills, and disbands bot LFG groups.
+- `.bot run here` names the nearest plan on your map.
+- `.bot run mode` shows bot-led vs player-led.
 
 ### How it plays
 
@@ -128,6 +138,7 @@ Fights use the bots' own combat AI plus the bound party's boss tactics (see [bos
 
 | Step | What the run does |
 | :--- | :--- |
+| Walks | Approach stands ring 15-25 yd, defer-off-floor packs, split too-far in 120 yd legs, walk back stops at the last cleared fight; island hops off twice per step, stranded rescue teleports once per step, 3-miss rewind; a direct step needs its own ground-and-height gather test; movement counts as walk progress up to 120 s. |
 | `move`, `move_direct` | Done within 3 yd, or within 6 yd after 3 s stalled (12 s for `move_direct`), where 6 yd is measured on the ground plane when within 4.5 yd of height and in 3D beyond that. |
 | `pull` | Walks in hops toward the centre until within 60 yd, gathers the party within 20 yd (30 s), then sends pullback, where a pull with no fight in 25 s is retried once and then that unit is passed, and a unit surviving 3 pulled fights is left as out of reach. |
 | `boss` | Runs like a pull in kill order, pulls a neutral boss and leaves only a friendly one alone, needs the boss's death in sight (a dead unit in the step radius plus 60 yd, or within 60 yd of the lead bot once seen alive), and waits `timeout_s` for an absent boss before pausing. |
@@ -149,8 +160,12 @@ The tighten uses at most 3 moves onto the point, pauses when no proof comes with
 The run protects itself with these rules:
 
 - It gathers the party before a pull and pulls only what is near.
+- It guards from the stand, attacking mobs that hit the party.
 - It never pulls what a later step owns.
 - It judges no unseen pack or boss, only what the lead bot sees within 60 yd.
+- A healer on stay is held 9 yd behind the tank and heals only.
+- A reaching pull ends once any creature has a party victim.
+- A big pack (8+ joiners) stand walk is watched every tick.
 - It regroups by itself after 3 dead or a wipe, within the fight ceiling of 180 s (420 s on a boss), by reviving the party, gathering it, and walking back.
 - It waits for every fallen member until that bot is back alive within 20 yd of the lead bot.
 - It recovers a lead bot that is back at the entrance alone by regrouping on it and walking back over the plan's own points.
@@ -169,11 +184,32 @@ The run protects itself with these rules:
 - It still treats a boss that changed entry mid-fight as the boss.
 - It rejoins a bot stuck in another copy of the dungeon or raid instance, at most 3 times per step and 15 s apart.
 - It uses the raid boss fight ceiling of 1200 s with `AiPlayerbot.DungeonRunRaidBossRules = 1` (default `0`).
+- With `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`), linked deaths run the die-together tactic with a `fighting: linked` line.
 - It bounds every wait (gather 30 s, summon 10 s, walk back 90 s, pull 25 s, fight 180 s and boss 420 s, ritual answer 5 s, rest 60 s, task 90 s, step 300 s out of combat, and at most 20 pulls per step).
 - It pauses at ceilings and nothing loops forever.
 - It applies the player-led and real-player rules below.
+- Orders are bots-only, offline holds, a player hold lasts 5 min, and summon/revive never pause.
+- A rest walk is resent once when the lead gains under 2 yd in 3 s.
+- A patroller within 30 yd past the radius is waited up to 60 s.
+
+- `AiPlayerbot.DungeonRunAutoCcRisky = 1` (default `0`) adds the risky fear families, only with room to run.
+- `AiPlayerbot.DungeonRunNearWipeStopParty` gives parties the near-wipe stop too (raid default).
+- `AiPlayerbot.DungeonRunPackClearMarginYd` (default 10) is the pack-clear band, and `AiPlayerbot.DungeonRunPackClearRepulls` (default 3) the repulls before pausing.
+- `AiPlayerbot.DungeonRunRaidHealerGuard = 1` (default `0`) sends a healer-guard at a loose add on a healer.
 
 Retreat at 2 dead is opt-in with `AiPlayerbot.DungeonRunRetreatAt2Dead = 1` (default `0`), see the [dungeon and raid settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonrunretreatat2dead).
+Walk back to the stand after every guarded fight is opt-in with `AiPlayerbot.DungeonRunWalkBackAfterWonFight = 1` (default `0`). A stuck walk back is rescued by default with `AiPlayerbot.DungeonRunWalkBackRescue = 1` (default `1`).
+
+### Combat reads
+
+- A stale flag gets 20 s grace, then the ceiling runs.
+- An unattackable-only fight is let go, with no ceiling.
+- Charmed and fake-death units read as cannot-attack.
+- A game-event-gated boss is skipped, not paused.
+- Off-plan-map bots never hold fights, and bots never leave the plan map by follow, flee, or trigger.
+- A raid wedges a member by summon, never on a boss or plan boss.
+- An alive-by-spot-but-unpulled boss pauses at once with distance and height.
+- Health progress holds the ceiling, a 1-hp/1%-held unit is watched.
 
 ### Rest gate
 
@@ -202,6 +238,9 @@ A scripted event is a start (`ritual`, `open`, `use_item`, `gossip`, or `use_on`
 The hold walks the party to the spot, stands there, sends no pulls of its own, and fights what comes, with ranged and healer stands kept and the party walked back when the lead bot drifts over 8 yd off the spot.
 It finishes by flag `8` when the instance data reads `param` (with flag `32` reading encounter states 0/1/2/3, failing on 2 or reset, and on 30 s with no start), by flag `16` when the object within 30 yd reads `param`, and otherwise when all its units are dead after one was seen awake (ending 10 s after an all-dead hold whose units died before it).
 `timeout_s` bounds every hold, and a failed event goes back to its start step and pauses.
+- A hold places the party, returns on fall, regroups on pause, self-resumes, and fails when it cannot start.
+- `reset_to_gossip` re-arms once then pauses at gossip, and `dead_gossip_ok` ends when none is hostile if the start NPC was dead.
+
 
 | Event | Start | End |
 | :--- | :--- | :--- |
@@ -227,6 +266,7 @@ The party leader starts `.bot run start [plan] [from ...] player [tank <Bot>]` f
 The player walks and the run leader pulls near him (within `AiPlayerbot.DungeonRunPlayerLedPullYd`, default 40).
 Player orders never pause the run (only pause and stop do).
 Staying away from the dungeon or raid instance for over `AiPlayerbot.DungeonRunPlayerLedAwayMinutes` (default 10) stops the run.
+- Orders are move, fight, or control; the step is the adopted fight else the nearest pull within 40 yd on the same floor and team; object steps gate on their leg order.
 
 ### Raids
 
@@ -234,6 +274,8 @@ A raid bind takes 6-40 bots from your own raid, with you taken out and the lead-
 It applies the raid layout at the start and restores it at the end.
 Gather and wipe rules scale to raid size.
 A near-wipe stops the run with `AiPlayerbot.DungeonRunNearWipeStop = 2` and `AiPlayerbot.DungeonRunNearWipeStopMinutes = 10`, pausing after the fight.
+- It runs `AiPlayerbot.DungeonRunRaid = 1` for the raid bind.
+- Offline bots stay out of the counts, and leash/direct steps wait for every bot.
 
 ### Plans on the server
 
@@ -248,3 +290,7 @@ Not supported:
 - Avoid boxes are unknown.
 - `gm_cross` steps are unsupported.
 - Open-water moves are unsupported.
+- Plan `skip` is unsupported.
+- Per-leg `rest` is unsupported.
+- `companions_loot` is unsupported.
+- `area_trigger` is exported with a warning but never runs.

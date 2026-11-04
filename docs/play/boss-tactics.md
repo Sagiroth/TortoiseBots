@@ -36,6 +36,7 @@ Two extra opt-ins:
 
 - `linked_death` needs `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`). Rows exist but are unread while it is off.
 - Aura rows need `AiPlayerbot.DungeonRunAuraTactics = 1` (default `0`). These are `dps_hold_after`, `dispel_priority`, `flee_on_aura`, `freeze_on_aura`, `taunt_after_cast`, `swap_on_aura`.
+- `.reload config` re-reads both keys without a restart.
 
 ## The table
 
@@ -65,14 +66,14 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 
 | Kind | What bots do | Who |
 | :--- | :--- | :--- |
-| `interrupt` | A bot with a ready interrupt in range uses it: Pummel, Shield Bash, Kick, Counterspell, Earth Shock, first castable wins. Class interrupts on the current target are unchanged. | Any bot with an interrupt |
+| `interrupt` | A bot with a ready interrupt in range uses it: Pummel, Shield Bash, Kick, Counterspell, Earth Shock, first castable wins. Class interrupts on the current target are unchanged. Generic slot then channel slot, wider radius wins. | Any bot with an interrupt |
 | `kill_first` | Takes the listed creature before anything else. Lowest priority first, nearer breaks ties, nothing past 40 yd. Generic assist and AoE do not pull back. An explicit attack order wins. | DPS only, never tanks or healers |
-| `hold_kill` | DPS leave `boss_entry` alone while more than `priority` living blockers stand within 50 yd. Pickers skip the held entry. A bot already on it takes the `kill_first` pick if there is one, else the nearest attackable within 40 yd, else stops. | DPS |
+| `hold_kill` | DPS leave `boss_entry` alone while more than `priority` living blockers stand within 50 yd. Pickers skip the held entry. A bot already on it takes the `kill_first` pick if there is one, else the nearest attackable within 40 yd, else stops. The grid search counts a fighting or blocked creature, so the portal counts while an unwoken add does not. | DPS |
 | `one_at_a_time` | All DPS kill one living unit of the entry at a time: lowest-health fighting unit, lowest guid breaks ties. CC and evading units are never picked. | DPS |
-| `linked_death` | The group must die together. Free DPS take the highest-health-fraction living member within 50 yd. A member at or below `param` % is held: never picked, AoE leaves it out, area and DoT casts are vetoed. Burn order applies once released. | Free DPS |
+| `linked_death` | The group must die together. Free DPS take the highest-health-fraction living member within 50 yd. A member at or below `param` % is held: never picked, AoE leaves it out, area and DoT casts are vetoed. Burn order applies once released. Release latches with `window_s` once armed (5 s, default 7 s); evade resets it. | Free DPS |
 | `behind` | Within `param` yd in the front half, step 120 degrees off the boss facing at the same distance. | Everyone except tanks and the bot the boss attacks |
-| `avoid_cast` | Within `param` yd 3D of the caster (channel slot included), walk to 2 yd past the radius on ring points, shortest walk first. | Everyone the row covers |
-| `tank_hold` | Opt-in per caster, `target_entry` 0. A tank whose target is that caster stays in the blast, keeps it, and is the preferred pickup. | Tanks |
+| `avoid_cast` | Within `param` yd 3D of the caster (channel slot included), walk to 2 yd past the radius on ring points, shortest walk first. Listed blasts hold reach, chase, heal, follow, and stay-back moves until the cast ends or the caster dies. | Everyone the row covers |
+| `tank_hold` | Opt-in per caster, `target_entry` 0. A tank whose target is that caster stays in the blast, keeps it, and is the preferred pickup. Only its own caster's blast, and only while that caster is on a non-tank; the pickup outranks the raid mark when nearer. | Tanks |
 | `dps_hold_after` * | Hold DPS after the trigger, `param` seconds. | DPS; needs `DungeonRunAuraTactics = 1` |
 | `dispel_priority` * | Ranks aura removal. | Dispensers; needs `DungeonRunAuraTactics = 1` |
 | `flee_on_aura` * | The carrier leaves the group. | Carrier; needs `DungeonRunAuraTactics = 1` |
@@ -81,6 +82,7 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 | `swap_on_aura` * | Tank rotation. | Tanks; needs `DungeonRunAuraTactics = 1` |
 
 \* Needs `AiPlayerbot.DungeonRunAuraTactics = 1`.
+Notes: sole and linked picks use the fight-wide cached grid search, never the bot's own attacker list. A held member vetoes area and DoT casts within 10 yd (`kHoldKillAoeNearYd`), even for an explicitly ordered non-tank or healer, and tanks' own area actions and passive cleaves are vetoed near a held member while ticking DoTs keep ticking. The raid mark falls through a held member to the equalise pick.
 
 Not yet covered: tank swap and re-grab tuning, spread, ground-effect avoidance. Generic code covers part of it.
 
@@ -177,7 +179,8 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Antusul | `interrupt` Flash Heal, Healing Ward of Antusul, Healing Ward; `kill_first` Servant |
 | Ukorz, Ruuzlu | none (cleaves, no yard value) |
 | Zumrah ward | none (totem never in attacker list) |
-| Zumrah, Gahz'rilla, Theka, Nekrum | no row |
+| Gahz'rilla | `interrupt` Icicle 11131, Freeze Solid 11836 |
+| Zumrah, Theka, Nekrum | no row |
 
 ### Scholomance (289)
 
@@ -212,14 +215,14 @@ Own table `ai_boss_stand`, startup-only (restart needed). The strategy arms on a
 | `window_spell` | `0` means always. |
 | `aura` | Aura gating the stand. |
 | `side` + `seq` / `x y z` | Seat position. `z` is put back on the ground. |
-| `dx dy` | Slots: a line of seats 9 yd apart. |
-| `window_signal` | `cast` or `stopped_no_target`: still, targetless, with aura. |
+| `dx dy` | Slots 1-8 (default 5): a line of seats 9 yd apart. |
+| `window_signal` | `cast` or `stopped_no_target`: still, targetless, with aura. `stopped_no_target` needs `aura` plus `window_spell`. |
 | `hold_ms` | Default 8000, range 1000-15000, or until `release_anchor`. |
 | `release_anchor` | Anchor that ends the stand. |
 
 Primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. Unusable rows are skipped with a log; a bad `release_anchor` for a boss drops that boss's set.
 
-Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat.
+Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat. After 3 refusals the seat is given up and reach or dodge takes over; seated bots suppress reach-spell, heal walk, dragon flank, and raid spread.
 
 ## Adding a boss
 
