@@ -8868,10 +8868,15 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             if (EngagedWithParty(unit, party))
             {
                 // AiPlayerbot.DungeonRunTotemFocus: an engaged boss's kill_first totems are read by a grid pass after
-                // this loop (a Brain Wash Totem is a wild summon and in no CONTROLLED_TOTEMS list).
-                if (f.totemFocus && unit->IsCreature() && planBoss(static_cast<Creature*>(unit)) &&
-                    engagedOwnerSeen.insert(unit->GetObjectGuid().GetRawValue()).second)
+                // this loop (a Brain Wash Totem is a wild summon and in no CONTROLLED_TOTEMS list). The decision is the
+                // policy's (KillFirstGridReadsOwner); the seen set keeps it to one pass per owner per read.
+                if (TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),
+                        unit->IsCreature() && planBoss(static_cast<Creature*>(unit)),
+                        engagedOwnerSeen.count(unit->GetObjectGuid().GetRawValue()) != 0))
+                {
+                    engagedOwnerSeen.insert(unit->GetObjectGuid().GetRawValue());
                     engagedOwners.push_back(static_cast<Creature*>(unit));
+                }
                 // The totems and guardians of an attacker in this fight, read off
                 // the attacker itself: a Greater Healing Ward the moment it is up,
                 // not when a bot's cached list next takes it in (19z5: one ward was

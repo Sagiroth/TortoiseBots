@@ -29,7 +29,7 @@ def body(text, start, end="\n}\n"):
 class TotemFocusWiringTest(unittest.TestCase):
     def test_read_scans_the_boss_for_a_wild_summoned_totem(self):
         fn = body(COMMANDER, "void ReadKillFirst(ai::DungeonPlan const& plan")
-        self.assertIn("if (f.totemFocus && unit->IsCreature() && planBoss(", fn)
+        self.assertIn("TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),", fn)
         # The summoner fallback is the totem read's alone.
         self.assertIn(
             "if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())", fn)

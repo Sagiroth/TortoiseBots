@@ -291,7 +291,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         for scan in ("Cell::Visit", "VisitAllObjects", "HostileCreaturesAround"):
             self.assertNotIn(scan, kill)
         self.assertEqual(kill.count("GetCreatureListWithEntryInGrid"), 1)
-        self.assertIn("if (f.totemFocus && unit->IsCreature() && planBoss(", kill)
+        self.assertIn("TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),", kill)
         self.assertIn("GetCreatureListWithEntryInGrid(found, entry, TortoiseBots::DungeonRun::kKillFirstTotemGridYd)", kill)
         # The creatures channelling an aura at an engaged attacker (Hailar's Ritualists, r19-19z37) are
         # read off that attacker's own aura holders, inside the engaged block, and flagged for the policy.

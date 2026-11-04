@@ -26821,6 +26821,17 @@ static void TestStaleFocusSkullComesOffWhenTheFightEnds()
     CHECK(r.focusGuid == 0 && r.focusIconGuid == 0 && r.focusIconClear == 30);
 }
 
+// L3: the grid read's own decision: only under the totem focus, only a creature, only a plan boss, and each owner once
+// per read.
+static void TestKillFirstGridReadsOwner()
+{
+    CHECK(KillFirstGridReadsOwner(true, true, true, false));
+    CHECK(!KillFirstGridReadsOwner(false, true, true, false));  // the key off
+    CHECK(!KillFirstGridReadsOwner(true, false, true, false));  // not a creature
+    CHECK(!KillFirstGridReadsOwner(true, true, false, false));  // not a plan boss
+    CHECK(!KillFirstGridReadsOwner(true, true, true, true));    // already read this tick
+}
+
 // T6: the server log's kill_first span lines, exact.
 static void TestKillFirstLogLine()
 {
@@ -34510,6 +34521,7 @@ int main()
     TestTotemFocusMayInterrupt();
     TestTotemFocusYieldsToTheRetreat();
     TestStaleFocusSkullComesOffWhenTheFightEnds();
+    TestKillFirstGridReadsOwner();
     TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();

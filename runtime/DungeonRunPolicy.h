@@ -10177,6 +10177,13 @@ inline bool KillFirstGridTotemOf(std::uint64_t hitOwner, bool alive, bool totem,
     return alive && totem && engagedOwner != 0 && hitOwner == engagedOwner;
 }
 
+// Whether an engaged unit's grid is read for its kill_first totems (ReadKillFirst's glue): only under the totem focus,
+// only a creature, only a plan boss, and each owner once per read.
+inline bool KillFirstGridReadsOwner(bool totemFocus, bool creature, bool planBoss, bool alreadyRead)
+{
+    return totemFocus && creature && planBoss && !alreadyRead;
+}
+
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
 // crowd-controlled one). The unit already focused stays against units of its own rank
 // (2b); only a better rank, or its death, cc or refusal, moves the focus. On a pull or move step (KillFirstBounded) only one
