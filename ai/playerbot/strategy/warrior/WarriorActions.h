@@ -132,8 +132,9 @@ namespace ai
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
     // Thunder Clap is a rage trap in the Arms swing cycle (Mortal
     // Strike/Overpower/Sweeping Strikes out-damage it), so grouped PvE Arms
-    // skips it. Fury keeps the row, and so do solo and PvP Arms: dual-wield
-    // spreads the debuff for free and a masterless bot has no tank covering it.
+    // DPS leaves it to the tank. Fury keeps the row, and so do solo and
+    // PvP/BG Arms: a solo bot has no tank covering the debuff, and in PvP
+    // the snare matters more than the swing cycle.
     class CastThunderClapAction : public CastMeleeDebuffSpellAction
     {
     public:
@@ -143,10 +144,11 @@ namespace ai
         }
         bool isUseful() override
         {
-            if (!ai->IsTank(bot) &&
-                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT) &&
-                !ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
-                ai->HasActivePlayerMaster())
+            Group* group = bot->GetGroup();
+            if (ShouldSkipThunderClapForArms(ai->IsTank(bot),
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT),
+                group && !group->isBGGroup(),
+                bot->InBattleGround() || ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT)))
                 return false;
             return CastMeleeDebuffSpellAction::isUseful();
         }
@@ -157,10 +159,11 @@ namespace ai
         CastThunderClapSnareAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "thunder clap") {}
         bool isUseful() override
         {
-            if (!ai->IsTank(bot) &&
-                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT) &&
-                !ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
-                ai->HasActivePlayerMaster())
+            Group* group = bot->GetGroup();
+            if (ShouldSkipThunderClapForArms(ai->IsTank(bot),
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT),
+                group && !group->isBGGroup(),
+                bot->InBattleGround() || ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT)))
                 return false;
             return CastSnareSpellAction::isUseful();
         }

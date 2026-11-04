@@ -70,14 +70,14 @@ def prereqs(text):
 
 
 class ArmsDpsNoWasteWiringTest(unittest.TestCase):
-    def test_thunder_clap_refuses_grouped_pve_arms(self):
+    def test_thunder_clap_uses_grouped_pve_gate(self):
         actions = ACTIONS.read_text()
         for cls in ("class CastThunderClapAction", "class CastThunderClapSnareAction"):
             body = class_body(actions, cls)
-            self.assertIn("IsTank(bot)", body)
-            self.assertIn('"arms"', body)
-            self.assertIn('"pvp"', body)
-            self.assertIn("HasActivePlayerMaster", body)
+            self.assertIn("ShouldSkipThunderClapForArms", body)
+            self.assertIn("GetGroup()", body)
+            self.assertIn("InBattleGround()", body)
+            self.assertNotIn("HasActivePlayerMaster", body)
 
     def test_protection_keeps_thunder_clap(self):
         combat = rows(method_body(PROT, "ProtectionWarriorStrategy", "InitCombatTriggers"))
