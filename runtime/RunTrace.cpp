@@ -179,7 +179,7 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
 {
     if (guid.IsEmpty() || guid == bot->GetObjectGuid())
         return nullptr;
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     Unit* unit = map ? map->GetUnit(guid) : nullptr;
     if (!unit || !unit->IsInWorld() || !unit->IsAlive())
         return nullptr;
@@ -585,7 +585,7 @@ void RunTraceService::RefreshContext()
     Player* anchor = ObjectAccessor::FindPlayer(ObjectGuid(anchorGuid_));
     if (!anchor)
         return;
-    if (Map* map = anchor->GetMap())
+    if (Map* map = anchor->FindMap())
         if (map->IsDungeon())
             digest_.NoteDungeon(map->GetId());
     if (!context_)
@@ -623,11 +623,12 @@ void RunTraceService::CheckBossKills(std::vector<Player*> const& bots)
         // The map the boss stands in: that of a bot in the same instance.
         Map* map = nullptr;
         for (Player* bot : bots)
-            if (bot->GetMapId() == it->second.map && bot->GetInstanceId() == it->second.instance && bot->GetMap())
-            {
-                map = bot->GetMap();
+        {
+            if (bot->GetMapId() != it->second.map || bot->GetInstanceId() != it->second.instance)
+                continue;
+            if ((map = bot->FindMap()))
                 break;
-            }
+        }
         Unit* unit = map ? map->GetUnit(ObjectGuid(it->first)) : nullptr;
         if (unit && unit->IsInWorld() && !unit->IsAlive())
         {
@@ -805,10 +806,11 @@ void RunTraceService::Sample()
         s.casting = CurrentSpellId(bot);
         s.moving = sServerFacade.isMoving(bot);
         s.fire = HarmfulGroundAura(bot);
-        if (!target.IsEmpty() && bot->GetMap())
-            if (Unit* targetUnit = bot->GetMap()->GetUnit(target))
-                if (targetUnit != bot && targetUnit->IsInWorld() && !sServerFacade.IsFriendlyTo(targetUnit, bot))
-                    s.facing = FacingDegrees(bot, targetUnit);
+        if (!target.IsEmpty())
+            if (Map* map = bot->FindMap())
+                if (Unit* targetUnit = map->GetUnit(target))
+                    if (targetUnit != bot && targetUnit->IsInWorld() && !sServerFacade.IsFriendlyTo(targetUnit, bot))
+                        s.facing = FacingDegrees(bot, targetUnit);
         if (ai)
         {
             if (ai::Engine* engine = ai->GetCurrentEngine())

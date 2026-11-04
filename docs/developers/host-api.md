@@ -363,16 +363,25 @@ per-bot FIFO keyed by the bot's raw guid (`runtime/WorldThreadQueue.h`), and
 resolving each guid again, so a bot whose AI is gone by then is skipped. A hook
 that runs on the world thread itself (marked at the top of every
 `BotHostAdapter::OnUpdate`, before the command drain,
-`WorldThreadMark`) still calls the AI at once, as it cannot race the deletion.
+`WorldThreadMark`) cannot race the deletion, so it hands the packet to the AI at once
+unless the bot is between maps or already has a held backlog (`DeliverNowOrHold`: the
+same gate as the drain, so a newer packet never overtakes an older held one).
 Only opcodes an AI handles are copied (`PlayerbotAI::Handles*Opcode`, built from
-the same table the AI registers its handlers from).
+the same table the AI registers its handlers from). An item whose bot is between
+maps when the drain runs (not in world, or a far teleport the bot update has not
+acked yet) is not handed to the AI: the drain keeps it for the next tick and
+drops it after three such ticks, except the handlers that read the bot's map
+(cast result, spell failure, spell delay, knock-back), which are dropped at once
+(`runtime/policy/infra/DeferredDeliveryPolicy.h`, whose opcode values the adapter
+checks against the core's at compile time). A bot whose far teleport is acked
+later in the same tick therefore cannot meet a map-reading handler off its map.
 
 | Entry | Threads | What it does now |
 | --- | --- | --- |
 | `CanPacketSend`, headless session, `SMSG_MESSAGECHAT` | any (AsyncPackets, ChannelBroadcaster, map, world) | copies the packet (chat types the AI reacts to only) into the per-bot chat FIFO, also on the world thread; the drain runs `HandleBotOutgoingPacket`, so party / whisper commands and chat state change on the world thread, in arrival order per bot, at most one tick later; over 64 per bot per tick are dropped. Not copied [#846](https://github.com/Sagiroth/TortoiseBots/issues/846), `runtime/BotChatGate.h`: any line for a bot whose `AllowActivity()` is false (activity throttling only), and any line other than party chat or a whisper for a bot that is not recording chat (the AI reads only its orders there) — published by each AI's update on change |
 | `CanPacketSend`, headless session, other handled opcodes (invites, loot, quest updates, cast results, spell failure / delay, knockback, ...) | any; the spell / knockback cases come from the bot's map thread or the world thread | world thread: `HandleBotOutgoingPacket` at once. Otherwise: the bot guid from `PlayerbotAIStorage::GetBotGuid` (pointer comparison, no `Player` dereference), a copy into the per-bot packet FIFO, `HandleBotOutgoingPacket` in the drain; over 256 per bot per tick are dropped. A map-thread packet is handled before any further map update, so the AI sees the same game state |
 | `CanPacketSend`, network master session | any | bot guids from `BotManager::GetBotGuidsForMasterAnyThread` (a master -> bot view published under a lock at the end of every `OnWorldUpdate`, at most one tick stale); world thread: `HandleMasterOutgoingPacket` at once; otherwise one shared copy queued for every bot, handed over in the drain |
-| `CanPacketReceive` / `DispatchMasterIncoming` | world, map or AsyncPackets | same view and the same world-thread-inline / queue-elsewhere split, `HandleMasterIncomingPacket` |
+| `CanPacketReceive` / `DispatchMasterIncoming` | world, map or AsyncPackets | same view and the same world-thread-gate (`DeliverNowOrHold`, `PacketRoute::MasterIncoming`) / queue-elsewhere split, `HandleMasterIncomingPacket` |
 | `CanPacketReceive` / `MaybeSendMimicSummary` (`CMSG_USE_ITEM`) | the master's map thread (`PACKET_PROCESS_MAP`) | same view; reads AI strategy flags and whispers directly: the world thread waits in `MapManager::Update` while map threads run, so no AI is updated or deleted meanwhile |
 
 Both caps drop silently in play; since [#846](https://github.com/Sagiroth/TortoiseBots/issues/846) the end-of-tick drain logs
@@ -508,6 +517,7 @@ action aoe [on|off]
 commander bind <LeadBot> [<Bot>...] [inparty] | unbind | status | view on|off  # remote commander [#884](https://github.com/Sagiroth/TortoiseBots/issues/884), AiPlayerbot.RemoteCommander, default off
 cmd attack|pull|pullback <guid> [seconds] | cc <mark> <guid> [bot] [family] | focus <guid> | move <x> <y> <z> | stay | follow | rest | revive <bot> | summon <bot>  # orders to the bound group; ACK/ERR intent "cmd <verb>"
 inv <bot>  # TBM:INV_BEGIN/INV_EQ/INV_ITEM/INV_END inventory snapshot
+professions <bot>  # TBM:PROF_BEGIN/PROF/RECIPE/RECIPE_MISSING/PROF_END profession snapshot (RECIPE carries an order field: ok/enchant/bound/needsprofession/cooldown)
 item <bot> trade | equip|unequip|give <bag> <slot>  # item order by server bag/slot; ACK/ERR intent "item <op>"
 behavior <bot> <loot|aoe|autocc|savemana|boost|threat|potions> <on|off>  # allowlisted per-bot strategy toggle; ACK + TBM:BOTSTATE line
 follow

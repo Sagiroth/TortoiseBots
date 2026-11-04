@@ -16,7 +16,7 @@ int main()
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
     }
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoListing); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::Cooldown); ++i)
     {
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));

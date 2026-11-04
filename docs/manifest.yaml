@@ -127,7 +127,7 @@ nodes:
   - id: play-dungeon-run-leader
     path: play/dungeon-run-leader.md
     category: play
-    summary: The opt-in run leader (.bot run, AiPlayerbot.DungeonSelfClear) that lets a bound party clear a dungeon plan by itself, its safety rules, supported steps and the keys its doors need, and the plan tables turtle-agent's exporter fills.
+    summary: The run leader (.bot run, AiPlayerbot.DungeonSelfClear, on by default, work in progress) that lets a bound party clear a dungeon plan by itself, its safety rules, supported steps and the keys its doors need, and the plan tables turtle-agent's exporter fills.
   - id: play-boss-tactics
     path: play/boss-tactics.md
     category: play
@@ -224,6 +224,10 @@ nodes:
     path: server/run-trace.md
     category: server
     summary: Record what a party of bots did during one run as a bt-trace v1 JSONL file plus a per-run summary, and score it offline.
+  - id: server-decision-capture
+    path: server/decision-capture.md
+    category: server
+    summary: Record every run-leader decision with the facts behind it, cut a live failure into a replay fixture, and keep it as a regression test.
 
   # Developers
   - id: developers

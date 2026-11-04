@@ -1571,7 +1571,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                         // Dungeon groups run the LFT role kit, not the open
                         // world: grind/travel/tfish/rpg wander inside the
                         // instance otherwise (Issue #218).
-                        bool const inInstance = player->GetMap() && (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid());
+                        bool const inInstance = player->FindMap() && (player->FindMap()->IsDungeon() || player->FindMap()->IsRaid());
                         // What the guard drops from the list below is what
                         // leaving the instance gives back
                         // (ApplyInstanceGuardOnMapChange): the out-param records
@@ -1668,7 +1668,7 @@ Engine* AiFactory::createNonCombatEngine(Player* player, PlayerbotAI* const faca
 
 std::string AiFactory::InstanceSafeNonCombatStrategies(Player* player, std::string const& strategies, uint8* withheld)
 {
-    if (!player || !player->GetMap() || !(player->GetMap()->IsDungeon() || player->GetMap()->IsRaid()))
+    if (!player || !player->FindMap() || !(player->FindMap()->IsDungeon() || player->FindMap()->IsRaid()))
         return strategies;
 
     // Issue #218: inside an instance the party kit stays in charge. Drop the
@@ -1704,7 +1704,7 @@ std::string AiFactory::InstanceSafeNonCombatStrategies(Player* player, std::stri
 
 void AiFactory::ApplyInstanceGuardOnMapChange(Player* player, PlayerbotAI* ai)
 {
-    if (!player || !ai || !player->GetMap() || player->InBattleGround())
+    if (!player || !ai || !player->FindMap() || player->InBattleGround())
         return;
 
     // A commander's release inside a dungeon kept the bot's open-world kit

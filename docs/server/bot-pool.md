@@ -2,7 +2,7 @@
 id: server-bot-pool
 title: Managing & Resetting the Bot Pool
 category: server
-summary: How the managed pool registry works, adopting legacy accounts, and safely resetting autonomous pool characters.
+summary: How the managed pool registry identifies pool accounts, adopting legacy accounts, and safely resetting autonomous pool characters.
 tags: [server, pool, reset, admin, database, registry]
 relates_to:
   - server-settings-world-population
@@ -12,84 +12,88 @@ relates_to:
 
 # Managing & Resetting the Bot Pool
 
-TortoiseBots maintains an autonomous population of random pool bots that level, wander, run dungeons, and trade across the realm. This document explains how the managed account registry identifies pool bots, how administrators adopt existing accounts, and how to safely rebuild the bot pool without risking player characters.
+Pool bots are autonomous characters that level, wander, run dungeons, and trade. Player characters and owned alts are never part of the pool. This page covers how the server tells them apart, how to adopt legacy bot accounts, and how to rebuild the pool.
 
-For configuration settings governing pool size and creation limits, see [World population settings](settings/world-population.md).
+For pool size and creation settings, see [World population settings](settings/world-population.md).
 
 ## The Managed Pool Registry
 
-To guarantee player safety, TortoiseBots uses a strict account registry to identify pool accounts. An account is treated as part of the managed pool **only** if it has an explicit registry record.
+An account counts as a pool account **only** if it has a record in the registry table. The registry is the character-database table that tracks managed pool accounts.
 
-- **Account Prefix Separation:** The [`AiPlayerbot.RandomBotAccountPrefix`](settings/world-population.md#aiplayerbotrandombotaccountprefix) setting is used to name newly created bot accounts and to scan legacy accounts for adoption. A matching prefix alone never authorizes character deletion.
-- **Pre-Execution Validation:** Every registered pool account is validated against the login database (both account ID and username) before any destructive action can run.
-- **Player Account Isolation:** Personal player accounts and owned alts are never registered in the pool registry. Even if a player account shares a name similar to a bot prefix, it cannot be modified or deleted by pool maintenance.
+- **Prefix is not ownership.** [`AiPlayerbot.RandomBotAccountPrefix`](settings/world-population.md#aiplayerbotrandombotaccountprefix) names new bot accounts and finds legacy candidates. A matching prefix alone never authorizes deletion.
+- **Validation before deletion.** Every registered account is checked against the login database (account ID and username) before anything destructive runs. A renamed or missing account fails validation instead of being deleted.
+- **Player accounts stay out.** Personal accounts and owned alts are never registered, even if a name looks like a bot prefix.
 
 ## Adopting Legacy Bot Accounts
 
-If you are upgrading an older server installation where bot accounts were created by earlier systems, those accounts must be explicitly enrolled into the registry before they can be managed or reset. At startup, the server logs an error if accounts match the random-bot prefix but are not registered in the managed pool registry, noting they are ignored by the pool and never reset until enrolled via `bot pool adopt preview` at the server console.
+Servers upgraded from older systems may have bot accounts that were never registered. At startup the server logs an error for accounts that match the bot prefix but are not registered. They are ignored by the pool until adopted.
 
-Adoption is available **only at the server console**:
+Adoption runs **only at the server console**:
 
-1. At the server console, preview candidate accounts using [`bot pool adopt preview`](admin-commands.md#bot-pool-adopt-preview). Adoption preview also reports the challenge expiry (5 minutes).
-2. Review the list of accounts found matching the prefix. The command generates a unique challenge token derived from the exact previewed account set; any change before confirmation invalidates it.
-3. Confirm adoption using the exact challenge token via [`bot pool adopt confirm <challenge>`](admin-commands.md#bot-pool-adopt-confirm).
-4. Verify enrollment by checking pool status via [`bot pool status`](admin-commands.md#bot-pool-status).
+1. Preview candidates with [`bot pool adopt preview`](admin-commands.md#bot-pool-adopt-preview). The output lists matching accounts and gives a confirmation token, valid for 5 minutes.
+2. Review the list. The token is derived from the exact previewed set: any change before confirming invalidates it.
+3. Confirm with [`bot pool adopt confirm <challenge>`](admin-commands.md#bot-pool-adopt-confirm).
+4. Check enrollment with [`bot pool status`](admin-commands.md#bot-pool-status).
 
-Adoption only registers accounts in the `tortoise_bots_pool_account` registry table. It never deletes, renames, or modifies any characters or accounts. See [Admin Commands](admin-commands.md#bot-pool-status).
+Confirming is idempotent: already-registered accounts are counted, not errored. Adoption only adds registry rows. It never deletes, renames, or modifies characters or accounts.
 
 ## Resetting the Managed Bot Pool
 
-Changes to fresh-character level seeding, starter gear rules, class talent specs, or profession seeding only apply to newly generated bots. To completely rebuild the world pool — keeping the existing login accounts while deleting every managed character so auto-create can regenerate them — you configure a one-shot generation reset. Resetting additionally requires `AiPlayerbot.RandomBotAutoCreate = 1`; without auto-create the reset is refused so the world is never left unpopulated.
+Use a reset when fresh-character rules change (level seeding, starter gear, talent or profession seeding) and you want every pool character regenerated. The reset deletes all managed characters but keeps the login accounts, so auto-create refills the pool with new characters.
 
-The pool reset runs **only during initial world startup** on the world thread:
-- The command `.reload config` will never start a pool reset.
-- No live in-game reset command exists. A running server world is never mutated during active play.
+Resetting needs `AiPlayerbot.RandomBotAutoCreate = 1`. Without auto-create the reset is refused, so the world is never left empty.
+
+The reset runs **only during world startup**, one step per world tick:
+
+- `.reload config` never starts a reset.
+- No live in-game reset command exists. A running world is never mutated.
 
 ### Reset Modes
 
-Configure [`AiPlayerbot.RandomBotPoolReset`](settings/world-population.md#aiplayerbotrandombotpoolreset) in `aiplayerbot.conf`:
+Set [`AiPlayerbot.RandomBotPoolReset`](settings/world-population.md#aiplayerbotrandombotpoolreset) in `aiplayerbot.conf`:
 
 | Setting Value | Behavior |
 | :--- | :--- |
-| `off` | Never reset automatically. Default and recommended production setting. |
-| `once:<token>` | Resets on next startup only if `<token>` differs from the last completed token. The token must be 1-128 printable, non-space ASCII characters. |
-| `always` | Resets on every server startup. Development only; wipes progression on restart and never overwrites a stored one-shot token. |
-| *(invalid)* | Any other string (including `once:` with no token) logs an error and aborts the reset safely. |
+| `off` | Never reset. Default and recommended for live servers. |
+| `once:<token>` | Reset on next startup only, if `<token>` differs from the last completed token. The token is 1-128 printable, non-space characters. |
+| `always` | Reset on every startup. Development only: wipes progression on each restart. Never overwrites a stored one-shot token. |
+| *(anything else)* | Logs an error and aborts the reset. `once:` with no token counts as invalid. |
 
 ### Step-by-Step Reset Workflow
 
-Follow these steps to rebuild the bot pool on an active realm:
-
-1. **Back up the character database:** Always create a database backup before performing maintenance.
-2. **Start the server with reset disabled:** Ensure `AiPlayerbot.RandomBotPoolReset = off` in `aiplayerbot.conf`.
-3. **Check current pool status:** Run [`bot pool status`](admin-commands.md#bot-pool-status) (at the console or GM in-game; GM in-game requires GameMaster privileges) to view active accounts.
-4. **Adopt legacy accounts if needed:** If upgrading an older database, run [`bot pool adopt preview`](admin-commands.md#bot-pool-adopt-preview) (console only) followed by [`bot pool adopt confirm <challenge>`](admin-commands.md#bot-pool-adopt-confirm) (console only).
-5. **Confirm registered accounts:** Run [`bot pool accounts`](admin-commands.md#bot-pool-accounts) (console only) to verify managed account counts.
-6. **Stop the server cleanly:** Shut down `mangosd` normally.
-7. **Set a new generation token:** Edit `aiplayerbot.conf`:
+1. **Back up the character database.**
+2. Start the server with `AiPlayerbot.RandomBotPoolReset = off`.
+3. Check the pool with [`bot pool status`](admin-commands.md#bot-pool-status) (server console, or in-game as a GameMaster).
+4. If upgrading an old database, adopt legacy accounts first ([preview](admin-commands.md#bot-pool-adopt-preview), then [confirm](admin-commands.md#bot-pool-adopt-confirm), both console only).
+5. Confirm managed accounts with [`bot pool accounts`](admin-commands.md#bot-pool-accounts) (console only).
+6. Stop `mangosd` cleanly.
+7. Edit `aiplayerbot.conf`:
    ```ini
    AiPlayerbot.RandomBotPoolReset = once:fresh-build-01
    AiPlayerbot.RandomBotAutoCreate = 1
    ```
-8. **Start the server:** Monitor `Server.log` during startup for pool reset progress.
-9. **Verify clean rebuild:** Run [`bot pool status`](admin-commands.md#bot-pool-status). Auto-create refills the empty pool toward the configured target between `MinRandomBots` and `MaxRandomBots` (see [`MinRandomBots / MaxRandomBots`](settings/world-population.md#aiplayerbotminrandombots--maxrandombots)).
-10. **Leave the token in place:** The token can remain in the configuration file; since it matches the completed generation, it will not run again on future restarts. If the server stops mid-reset, the uncompleted generation is not recorded and the reset resumes on the next startup.
+8. Start the server and watch `Server.log` for reset progress.
+9. Verify the rebuild with [`bot pool status`](admin-commands.md#bot-pool-status). Auto-create refills the pool toward the target between `MinRandomBots` and `MaxRandomBots`.
+10. Leave the token in place. Since it matches the completed generation, it will not run again. If the server stops mid-reset, the unfinished generation is not recorded and the reset resumes on next startup.
 
 ### What a Reset Intentionally Deletes
 
-When a reset executes, the following pool bot data is permanently removed:
-- Character levels, equipment, inventory, bank storage, quests, and profession progression for pool bots (via core character deletion).
-- Characters and module rows for pool accounts: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, character transmogs, guild claims, and guild orders. Guild-adopted (claimed) bots are excluded from the deletion snapshot and survive. Pinned bots on managed accounts are deleted with the pool; pinned resolution only looks names up, so a deleted pinned name does not come back by itself (auto-create generates new randomly-named characters).
-- Hired mercenaries riding pool accounts (their in-memory hire state is forgotten and their ledger rows deleted with the character).
-- Guilds composed exclusively of pool bots (deleted as a side effect of core character deletion once every member is gone).
-- Active auction listings posted by pool bots. Active bidders receive full mail refunds prior to listing deletion (hardcore characters excepted). If any bidder cannot be resolved, the reset stops before the listing is deleted.
-- An empty managed set is a verified no-op: the generation is still recorded, so a token cannot silently wipe a pool that auto-create builds afterwards.
+- Character progress for pool bots: levels, equipment, inventory, bank, quests, professions (deleted through core character deletion).
+- Module rows tied to those characters: AI state, custom strategies, ownership, hire ledger, armory snapshots, hire-unlock kills, transmogs, unclaimed guild claims, guild orders.
+- Hired mercenaries riding pool accounts: their hire state is forgotten and ledger rows go with the character.
+- Guilds made up only of pool bots, as a side effect of deleting every member.
+- Active auction listings posted by pool bots, after refunding bidders by mail. Hardcore bidders follow core rules and are not refunded. If a bidder cannot be resolved, the reset stops before deleting the listing.
 
-Login accounts themselves are **never deleted**. The server retains the registered pool accounts; auto-create recreates level 1 characters on them, and each fresh bot is then level-seeded on its first login to a random level between `AiPlayerbot.RandomBotStartLevelMin` and `RandomBotStartLevelMax` (defaults `5` and `60`).
+What survives or is guaranteed:
+
+- **Login accounts are never deleted.** The server keeps them. Auto-create makes level 1 characters on them, and each fresh bot is level-seeded on first login to a random level between `AiPlayerbot.RandomBotStartLevelMin` and `RandomBotStartLevelMax` (defaults `5` and `60`).
+- **Claimed bots survive.** A pool bot that accepted your guild invite (claimed) is excluded from the deletion set.
+- **Pinned names do not resurrect.** Pinned bots on managed accounts are deleted with the pool. Pinned resolution looks names up, so a deleted pinned name does not come back by itself; auto-create picks new random names.
+- **An empty pool is a verified no-op.** The generation is still recorded, so a token cannot silently wipe a pool that auto-create builds afterwards.
 
 ### Safety Guarantees & Multi-Phase Execution
 
-The startup reset engine operates in distinct safety phases to prevent data loss or server corruption:
+The startup reset runs in safety phases:
 
 ```mermaid
 flowchart TD
@@ -103,11 +107,11 @@ flowchart TD
 <details>
 <summary>Detailed safety invariants and auction settlement</summary>
 
-- **Session Draining:** Pool bot headless sessions are drained and disconnected before deletion starts. If any bot session fails to disconnect within 120 seconds, the reset fails immediately without deleting characters.
-- **Human Session Protection:** If a player logs into a pool character, the reset detects the human network session and aborts before any further deletion (a preflight abort happens before anything is deleted, and a mid-reset login stops the reset without deleting that character).
-- **Pre-Settlement Auction Refunds:** In the auction phase, every active listing posted by a pool bot is inspected through core auction managers, one character per world tick. Active bidders are mailed full refunds before any characters are removed. Hardcore bidders follow core rules and are not refunded. If any bidder cannot be resolved, the reset stops immediately and leaves the listing untouched.
-- **Guild Member Protection:** During plan-time preflight, planning inspects guilds led by pool characters before anything is deleted. If a pool bot leads a guild that contains even one member outside the managed pool, the reset aborts and logs the guild name, leader, and offending member.
-- **Atomic Progress Recording:** The new token is committed to `tortoise_bots_pool_state` only after all managed characters are deleted and verified. If the server terminates mid-reset, the uncompleted reset resumes on the next startup.
-- **Module Maintenance Lock:** While a reset is running, if a reset encounters an error, or if the registry cannot be validated, the pool stays unavailable: pool auto-creation, pool logins, pinned resolution, hiring, and battleground bot selection remain locked until resolved.
+- **Session draining.** Pool bot sessions are disconnected before deletion starts. If a bot session fails to disconnect within 120 seconds, the reset fails without deleting characters.
+- **Human session protection.** If a player logs into a pool character, the reset aborts before deleting that character: a preflight abort happens before anything is deleted, and a mid-reset login stops the reset.
+- **Auction refunds first.** Each listing posted by a pool bot is settled one character per world tick. Active bidders get full refunds by mail before any character is removed. If a bidder cannot be resolved, the reset stops and leaves the listing untouched.
+- **Guild protection.** Before anything is deleted, the reset checks guilds led by pool characters. If a pool-led guild has even one member outside the managed pool, the reset aborts and logs the guild name, leader, and offending member.
+- **Token recorded last.** The new token is stored only after all managed characters are deleted and verified. If the server stops mid-reset, the next startup resumes it.
+- **Maintenance lock.** While a reset is running, failed, or the registry cannot be validated, the pool stays unavailable: auto-creation, pool logins, pinned resolution, hiring, and battleground bot selection stay locked until it resolves.
 
 </details>

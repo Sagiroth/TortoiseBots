@@ -97,9 +97,13 @@ class BotGearWiringTest(unittest.TestCase):
         self.assertIn('outcome.skip = "not-in-world";', svc)
         self.assertIn('outcome.skip = "no-ai";', svc)
 
-    def test_logout_drops_the_pin(self):
+    def test_pin_survives_logout_and_ends_on_dismiss_or_delete(self):
         mgr = (ROOT / "runtime/BotManager.cpp").read_text()
-        self.assertIn("BotGearService::Instance().OnBotLogout(", mgr)
+        self.assertNotIn("BotGearService::Instance().OnBotLogout(", mgr)
+        hire = (ROOT / "runtime/HireLifecycle.cpp").read_text()
+        self.assertIn("BotGearService::Instance().UnpinBot(", hire)
+        cleanup = (ROOT / "runtime/CharacterCleanup.cpp").read_text()
+        self.assertIn("BotGearService::Instance().UnpinBot(", cleanup)
 
     def test_config_default_matches_header(self):
         self.assertIn('AiPlayerbot.BotGearPresets', CONFIG)

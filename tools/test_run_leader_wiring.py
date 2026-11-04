@@ -31,7 +31,7 @@ def body(text, start, end):
 
 class RunLeaderWiringTest(unittest.TestCase):
     def test_refusal_reports_the_order_as_sent(self):
-        self.assertIn(": TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", COMMANDS)
+        self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", COMMANDS)
         self.assertIn("bool const accepted = IssueRunOrder(commander, order, answer,\n"
                       "            TortoiseBots::DungeonRun::IsGatherOrder(it->second.run, order), &captured);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer", COMMANDS)
@@ -50,12 +50,21 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertNotIn("step.kind = ParsePlanStepKind(", loader)
 
     def test_cmd_move_checks_the_lead_distance(self):
-        self.assertIn("facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);", COMMANDS)
-        self.assertIn("RemoteCommander::MoveVerdict verdict = RemoteCommander::CheckMove(facts);", COMMANDS)
+        # The distance and the verdict live in the shared check (CheckLeadMove),
+        # which `cmd move` hands the lead bot's own spot as the origin.
+        self.assertIn("Vector3 const origin(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ());",
+                      COMMANDS)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("RemoteCommander::LeadMoveFacts(originPoint, point,", check)
+        self.assertIn("check.verdict = RemoteCommander::CheckMove(check.facts);", check)
 
     def test_only_the_run_leaders_gather_gets_the_lead_spot_pass(self):
-        # A player's `cmd move` never sets it: only IssueRunOrder, for the run's own gather.
-        self.assertIn("facts.leadSpotGather = s_runIssuing && s_runGather;", COMMANDS)
+        # A player's `cmd move` never sets it: only IssueRunOrder, for the run's own gather, and
+        # the check only takes it from a run order (`fromRunLeader` is s_runIssuing at the call).
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("fromRunLeader && s_runGather, fromRunLeader);", check)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
         issue = body(COMMANDS, "bool IssueRunOrder(", "\n}\n")
         self.assertIn("s_runGather = gather;", issue)
         self.assertIn("s_runGather = false;", issue)
@@ -368,7 +377,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertLess(check, policy.index("if (RunAutoCcFightTick(r, f, *s, dt, order))"))
         # The trigger gates the pre-pull mark on the threshold, and only the row's own pack is a candidate.
         self.assertIn("std::uint32_t const threshold = RunAutoCcThreshold(s, f);", policy)
-        self.assertIn("bool const over = bodies > marked && bodies - marked > threshold;", policy)
+        self.assertIn("bool const over = CcBodiesOpen(r, f, bodies) > threshold;", policy)
         self.assertIn("busy = RunCcHolders(r, f);", policy)
         # The seven marks with the key on, the plan's four key off.
         self.assertIn('constexpr const char* kRunCcMarksAuto[] = {"moon", "square", "diamond", "triangle", "star", "circle", "cross"};', policy)
@@ -522,7 +531,8 @@ class RunLeaderWiringTest(unittest.TestCase):
 
     def test_live_fixes_2026_10_16_are_wired(self):
         # 1. `cmd move` takes the floor at or below the point before a surface above it (a low ceiling).
-        move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
+        # The snap lives in the shared check `cmd move` and `.bot scout path` both use.
+        move = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
         self.assertIn("RemoteCommander::ChooseFloorZ(point.z, belowZ,", move)
         # 1b. Karazhan Crypt kc316 step 292: a water point is not lifted out of the water onto a surface the
         # lead bot cannot reach. The glue reads the point's liquid (the swim line's own test) only when the
@@ -545,18 +555,18 @@ class RunLeaderWiringTest(unittest.TestCase):
                 close_at = i
                 break
         rare = above[open_at:close_at + 1]  # the rare branch's own block, brace-matched
-        self.assertIn("waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);", rare)
-        self.assertIn("raisedPath.calculate(point.x, point.y, aboveZ, false);", rare)
+        self.assertIn("waterSwimmable = terrain->IsSwimmable(point.x, point.y, point.z);", rare)
+        self.assertIn("raisedPath.calculate(origin, Vector3(point.x, point.y, aboveZ), false);", rare)
         # ... and only for a swimmable water point (a shallow one keeps the old rule without a path query).
         self.assertIn("if (waterSwimmable)\n", rare)
-        self.assertLess(rare.index("if (waterSwimmable)\n"), rare.index("PathFinder raisedPath(lead);"))
-        self.assertIn("raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);",
+        self.assertLess(rare.index("if (waterSwimmable)\n"), rare.index("PathFinder raisedPath(mover);"))
+        self.assertIn("raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atOrigin);",
                       rare)
         # The raised point's path query happens nowhere else: once in the function, inside the rare branch.
-        self.assertEqual(move.count("PathFinder raisedPath(lead);"), 1)
+        self.assertEqual(move.count("PathFinder raisedPath(mover);"), 1)
         self.assertEqual(move.count("WaterSnapAsksPath("), 1)
-        self.assertLess(move.index("if (RemoteCommander::WaterSnapAsksPath("), move.index("PathFinder raisedPath(lead);"))
-        self.assertLess(move.index("PathFinder raisedPath(lead);"), move.index("float const snapped = RemoteCommander::ChooseFloorZ("))
+        self.assertLess(move.index("if (RemoteCommander::WaterSnapAsksPath("), move.index("PathFinder raisedPath(mover);"))
+        self.assertLess(move.index("PathFinder raisedPath(mover);"), move.index("float const snapped = RemoteCommander::ChooseFloorZ("))
         self.assertIn('#include "../ai/playerbot/SwimPathPolicy.h"', COMMANDS)
         # 2. A follower off the lead bot's line walks its own; the refusal still names the bot for the summon.
         direct = body(COMMANDS, "static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,\n"
@@ -616,10 +626,11 @@ class RunLeaderWiringTest(unittest.TestCase):
 
 
     def test_small_batch_2026_10_17_is_wired(self):
-        # 1. `cmd move` hands the policy how far the path's end is from the lead bot (an incomplete path that goes nowhere).
-        move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
-        self.assertIn("facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);", move)
-        self.assertIn("facts.fromRunLeader = s_runIssuing;", move)
+        # 1. `cmd move` hands the policy how far the path's end is from the lead bot (an incomplete path that goes
+        # nowhere): the shared check does it, and `cmd move` makes it the run leader's own flag (fromRunLeader).
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);", check)
+        self.assertIn("CheckLeadMove(lead, origin, request.point, s_runIssuing)", COMMANDS)
         # 2. The run's time limit ends the run with its own note; `run stop` takes a reason.
         tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")
         self.assertIn("RunTimeLimitReached(slot.elapsedMs, sPlayerbotAIConfig.dungeonRunMaxMinutes)", tick)
@@ -2043,6 +2054,72 @@ class DeadGossipOkWiringTest(unittest.TestCase):
         self.assertIn("r.startNpcDeadStep == EventStartStep(r)", check)
         self.assertIn("u.hostile", check)
         self.assertIn("no unit of it is hostile", check)
+
+
+class RunFactKeyWiringTest(unittest.TestCase):
+    """The totem focus and the aura-gated targets are run facts read every tick, and a charmed group member is never
+    one of them on either glue path."""
+
+    POLICY = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+
+    def test_the_names_are_pure_policy(self):
+        policy = strip_comments(self.POLICY)
+        skip = body(policy, "inline bool RunFactSkipsMember(", "\n}\n")
+        self.assertIn("return isPlayer && inLeadGroup;", skip)
+        focus = body(policy, "inline bool FocusSkipsBot(", "\n}\n")
+        self.assertIn("if (totemKeyOn && totemTarget)", focus)
+        self.assertIn("return isTank || isHealer;", focus)
+        self.assertIn("return tankHoldTarget && isTank;", focus)
+
+    def test_the_totem_focus_reads_the_key_and_goes_before_the_guard(self):
+        self.assertIn("f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;", COMMANDS)
+        # Only the run leader's own order is automated: a player's explicit focus passes false and arms every bot.
+        self.assertIn("bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,\n"
+                      "        sPlayerbotAIConfig.dungeonRunTotemFocus);", COMMANDS)
+        self.assertIn("return CommanderFocus(handler, order, target, intent, s_runIssuing);", COMMANDS)
+        self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
+                      "                totemTarget, totemFocus)", COMMANDS)
+        # The focus order hands the tick to the totem before the guard can spend it.
+        policy = strip_comments(self.POLICY)
+        totem = policy.index("if (f.totemFocus)")
+        self.assertLess(totem, policy.index("if (CheckGuard(r, f, dt, order))", totem))
+        self.assertIn("return IssueKillFirstFocus(r, *totem);", policy)
+
+    def test_the_guard_leaves_only_plan_kill_first_totems_to_the_focus(self):
+        skip = body(strip_comments(self.POLICY), "inline bool GuardSkipsUnit(", "\n}\n")
+        self.assertIn("f.auraGatedTargets && u.auraGated", skip)
+        self.assertIn("f.totemFocus && u.creatureType == kCreatureTotem", skip)
+        self.assertIn("plan && plan->KillFirstRank(u.entry) >= 0", skip)
+        # Every live guard site passes the run's own plan.
+        self.assertEqual(skip.count("plan->KillFirstRank"), 1)
+        self.assertNotRegex(skip, r"GuardSkipsUnit\(f,")
+        self.assertEqual(self.POLICY.count("GuardSkipsUnit(r.plan, f, u)"), 8)
+        # GuardPick has no run parameter of its own: it takes the plan off the run it is filtering by.
+        pick = body(strip_comments(self.POLICY), "inline const UnitFact* GuardPick(", "\n}\n")
+        self.assertIn("capped && capped->plan ? capped->plan : (ccRun ? ccRun->plan : nullptr)", pick)
+        self.assertIn("GuardSkipsUnit(plan, f, u)", pick)
+
+    def test_the_aura_gated_fact_is_read_under_the_key(self):
+        self.assertIn("f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;", COMMANDS)
+        # Both glue paths fill it: the mobs on a bot, and the mobs on a real player.
+        self.assertEqual(COMMANDS.count("fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), "
+                                        "fact.entry) != 0;"), 2)
+        self.assertEqual(COMMANDS.count("if (f.auraGatedTargets)"), 2)
+
+    def test_a_charmed_member_is_no_fact_on_every_path(self):
+        self.assertIn("RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit))", COMMANDS)        # kill_first read
+        self.assertIn("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))", COMMANDS)  # both attacker reads
+        self.assertEqual(COMMANDS.count("TortoiseBots::DungeonRun::RunFactSkipsMember("), 4)
+        # The lead bot's own attacker list (the auto-CC's count) skips them as the guard reads do.
+        guard = strip_comments(body(COMMANDS, "void ReadGuardFacts(", "\n}\n"))
+        lead = guard[guard.index("std::unordered_set<uint64> seenLead;"):]
+        lead = lead[:lead.index("f.leadAttackers.push_back(")]
+        self.assertIn("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))", lead)
+        # The real players' attackers path carries the same skip, and the aura gate next to it.
+        players = strip_comments(body(COMMANDS, "void AddPlayerAttackers(", "\n}\n"))
+        self.assertLess(players.index("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))"),
+                        players.index("TortoiseBots::DungeonRun::UnitFact fact;"))
+        self.assertIn("if (f.auraGatedTargets)\n                fact.auraGated =", players)
 
 
 if __name__ == "__main__":

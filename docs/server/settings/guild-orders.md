@@ -18,13 +18,13 @@ These settings control how orders use the guild bank and sub-orders between guil
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
 | [`AiPlayerbot.GuildOrderBankWithdraw`](#aiplayerbotguildorderbankwithdraw) | `1` | Lets orders withdraw only the missing item or reagent count from the guild bank before shopping or farming. |
-| [`AiPlayerbot.GuildOrderBankGold`](#aiplayerbotguildorderbankgold) | `1` | Lets orders withdraw the shortfall from guild bank money after using the bot's own gold. |
+| [`AiPlayerbot.GuildOrderBankGold`](#aiplayerbotguildorderbankgold) | `1` | Lets orders cover an auction purchase with guild bank money after spending the bot's own gold. |
+| [`AiPlayerbot.GuildOrderPlayerBuy`](#aiplayerbotguildorderplayerbuy) | `0` | Lets players give Buy orders for finished goods from the auction house. |
 | [`AiPlayerbot.GuildOrderSubOrders`](#aiplayerbotguildordersuborders) | `1` | Lets orders ask another guild bot to make or farm a missing item. |
-| [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-orders may nest. |
-| [`AiPlayerbot.GuildOrderAuctionVisits`](#aiplayerbotguildorderauctionvisits) | `3` | How many arrived auction-house visits without reaching an auctioneer move the order leg on. |
+| [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-order branches may nest. |
+| [`AiPlayerbot.GuildOrderAuctionVisits`](#aiplayerbotguildorderauctionvisits) | `3` | How many arrived auction-house trips without reaching an auctioneer move the order leg on. |
 | [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
-| [`AiPlayerbot.CraftToolsAlways`](#aiplayerbotcrafttoolsalways) | `1` | Bots always have the tools their recipes need and never sell them. |
-
+| [`AiPlayerbot.CraftToolsAlways`](#aiplayerbotcrafttoolsalways) | `1` | Bots always have the tools their recipes need and never sell or auction them. |
 ### `AiPlayerbot.GuildOrderBankWithdraw`
 
 Allows guild orders to take only the missing item or crafting material count from accessible guild bank tabs.
@@ -37,14 +37,21 @@ When off, orders skip the guild bank item step and continue to the auction house
 Allows guild orders to use guild bank money to cover an auction house purchase after the bot's own gold.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
-An order's optional `gold=<copper>` cap limits its total guild bank withdrawals. If omitted, there is no order cap. The core guild bank checks money access and records each withdrawal.
+An order's optional `gold=<copper>` cap limits its total guild bank withdrawals. If omitted, there is no order cap, except caps set for the item branch. Use `gold=0` to forbid guild bank money for the order. The core guild bank checks money access and records each withdrawal.
+
+### `AiPlayerbot.GuildOrderPlayerBuy`
+
+Lets players give Buy orders for finished goods from the auction house (`.bot order <bot> buy ...`, and the Buy option in the addon order window).
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+When off, a player's Buy order is refused and the addon hides Buy. Farm and craft orders still buy materials on the auction house themselves while they work, the way they do today.
 
 ### `AiPlayerbot.GuildOrderSubOrders`
 
 Allows working orders to place sub-orders on other guild bots when the ordering bot can neither make nor farm a missing item.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
-When off, the supply step reports no candidate and the item lands on the parent's need list instead.
+When off, the supply step reports no candidate and the item lands on the parent's need list instead. Reagents any vendor sells without a stock limit are bought by the crafter and never delegated.
 
 ### `AiPlayerbot.GuildOrderAuctionVisits`
 

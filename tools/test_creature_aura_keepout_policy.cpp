@@ -66,7 +66,28 @@ int main()
         CHECK(CreatureAuraMaxHazardRadiusOnMap(533) == 11.0f);
         CHECK(CreatureAuraMaxHazardRadiusOnMap(1) == 0.0f); // no snapshot visit on a map without a row
     }
-    std::cout << "  [PASS] Living Poison (Naxxramas): aura-less row, 5 yd Explode, 10 yd keep-out\n";
+    // Ruins of Ahn'Qiraj, Sand Vortex 15428 (boss_ossirian.cpp): two summoned at
+    // aggro, wandering 55 yd, carrying Sand Storm 25160, which triggers Harsh
+    // Winds 25161 (-87 % speed, silence) at EffectRadiusIndex 8 (5 yd). Not
+    // tank-exempt: a slowed tank cannot anchor the boss to a crystal.
+    {
+        CreatureAuraKeepout const* vortex = FindCreatureAuraKeepout(509, 15428);
+        CHECK(vortex != nullptr);
+        CHECK(vortex->auraSpellId == 25160);
+        CHECK(vortex->pulseRadius == 5.0f);
+        CHECK(vortex->keepoutRadius == 8.0f);
+        CHECK(vortex->tankExempt == false);
+        CHECK(FindCreatureAuraKeepout(509, 15429) == nullptr); // other entry
+        CHECK(FindCreatureAuraKeepout(0, 15428) == nullptr);  // other map
+        CHECK(FindCreatureAuraKeepout(531, 15428) == nullptr); // temple, not ruins
+        // A row with an aura needs it to count as live.
+        CHECK(!CreatureAuraKeepoutMarkedLive(*vortex, false));
+        CHECK(CreatureAuraKeepoutMarkedLive(*vortex, true));
+        CHECK(InsideCreatureAuraKeepout(*vortex, 8.0f));
+        CHECK(!InsideCreatureAuraKeepout(*vortex, 8.1f));
+        CHECK(CreatureAuraHazardRadius(*vortex) == 9.0f);
+    }
+    std::cout << "  [PASS] Sand Vortex (Ruins of Ahn'Qiraj): 5 yd Harsh Winds, 8 yd keep-out, no tank pass\n";
 
     // Codex review of #1038: a step-out with no landing spot. The sludge backs
     // off 2 s; the lethal row retries on the next tick and steps straight away.

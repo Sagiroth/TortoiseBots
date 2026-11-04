@@ -20,7 +20,8 @@ public:
 
     // World thread, first thing every tick (BotHostAdapter::OnUpdate, before
     // the command drain): records this thread as the world thread, so packet
-    // hooks running on it hand packets to the AI at once (issue #844).
+    // hooks running on it hand packets to the AI at once (issue #844), or hold
+    // them behind the bot's backlog / between maps.
     static void MarkWorldThread();
     // World thread only (BotHostAdapter::OnUpdate, before the bot update):
     // hands the packets queued by the hooks since the last tick to the bots'
@@ -30,6 +31,11 @@ public:
     // runs them up to each command first). `endOfTick` also reports what the
     // per-bot caps dropped.
     static void DrainDeferredPackets(uint64_t before, bool endOfTick = false);
+    // World thread: true when any bot of this master holds a packet or chat
+    // line queued before `before` (a command's sequence number). The command
+    // drain uses it to run that `.bot` command after the items it would
+    // overtake, never before them; a newer held item does not hold it back.
+    static bool HasHeldPacketsBefore(uint64_t masterGuid, uint64_t before);
     // World thread, at shutdown: forget queued packets.
     static void ClearDeferredPackets();
 

@@ -213,7 +213,9 @@ public:
     // AiPlayerbot.ObservabilityRaids on an enabled emitter: the RAIDS datagram and the observed-raid combat sampler. Both
     // config files must allow it (ObservabilityFlag::Feed), re-read on `.reload config`.
     bool RaidsEnabled() const { return m_enabled && m_raids.enabled; }
-
+    // AiPlayerbot.ObservabilityRaidsDetail on an enabled emitter: the G2 detail (ready check, boss debuffs) appended at
+    // the END of the RAIDS group objects, at most every 5 s. 0 in either keeps it off.
+    bool RaidsDetailEnabled() const { return RaidsEnabled() && m_raidsDetail.enabled; }
 private:
     ObservabilityEmitter();
     ~ObservabilityEmitter();
@@ -256,6 +258,9 @@ private:
     bool m_raidsSent = false;        // the last RAIDS datagram listed at least one group
     size_t m_raidOffset = 0;         // rotation start when more than kMaxRaidGroupsPerCycle groups stand
     std::unordered_map<uint32_t, int64_t> m_raidTrimLoggedAt; // group id -> unix seconds its trim was last logged
+    // Raids tab detail (ready check, boss debuffs): both config files' AiPlayerbot.ObservabilityRaidsDetail, sent at
+    // most every 5 s. 0 in either keeps it off while the RAIDS line above still flows.
+    ObservabilityFlag::Feed m_raidsDetail;
     // COMMANDERS datagram: one per snapshot cycle while a binding stands, and
     // one empty list when the last binding ends. Nothing otherwise.
     void EmitCommanders();

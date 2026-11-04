@@ -35,14 +35,14 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | Stop bots from breaking crowd control like Polymorph | [Crowd control discipline](play/commands/party-actions.md#bot-action-cc) |
 | Direct my party to interrupt enemy spellcasters | [Interrupt command](play/commands/party-actions.md#bot-action-interrupt) |
 | Hire a mercenary companion or full raid roster at an inn or capital recruiter | [Hiring mercenaries](play/commands/roster-and-hiring.md#capital-recruiter-services) |
-| Learn spells automatically at a class trainer | [Trainer whisper](play/commands/whispers.md#w--trainer) |
+| Train my own alts at a class trainer | [Trainer whisper](play/commands/whispers.md#w--trainer) |
 | Inspect bot equipment, bags, trade windows, or combat stats | [Bot panel](play/commands/bot-panel.md#bot-panel-commands) |
-| Check tactics, kill orders, and mechanics for 5-man dungeons | [Dungeon reference](play/dungeon-reference.md) |
+| Look up kill orders and mechanics for 5-man dungeons (a reference for you, not bot behaviour) | [Dungeon reference](play/dungeon-reference.md) |
 | Handle wipe recovery and run back to the instance | [Wipe recovery](play/dungeons-and-raids.md#wipe-recovery--instance-navigation) |
 | Level my companion alts automatically with my character | [Sync alt level](server/settings/party.md#aiplayerbotsyncaltleveltomaster) |
 | Fill missing tank or healer roles in dungeon finder queues | [LFT autofill](world/queues.md#looking-for-turtles-lft-dungeon-autofill) |
 | Send a guild bot to farm, buy or craft items for the guild bank | [Guild orders](play/guild-orders.md) |
-| Enable bot trading and purchasing on the Auction House | [Living AH](world/economy.md#living-auction-house) |
+| See how bots sell and buy on the Auction House | [Living AH](world/economy.md#living-auction-house) |
 | Blacklist or override an item price on the Auction House | [Admin commands](server/admin-commands.md#autonomous-auction-house-administration-bot-ah--ahbot) |
 | Summon lost or stuck companion bots | [Summon alts](play/commands/roster-and-hiring.md#bot-summon) |
 | Understand Turtle WoW custom spells and abilities | [Class AI](classes/overview.md) |
@@ -66,8 +66,8 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Whisper commands](play/commands/whispers.md) | Quick one-to-one bot orders grouped by combat, rest, trade, and town. |
 | [Addon (TortoiseBotsManager)](play/commands/addon.md) | In-game UI guide and silent addon communication protocol. |
 | [Dungeon and raid tactics](play/dungeons-and-raids.md) | Pull mechanics, boss tactics, hazard evasion, wipe runs, and loot rules. |
-| [Dungeon reference](play/dungeon-reference.md) | Kill orders, creature IDs, pooled rares, and events for 18 dungeons. |
-| [Dungeon run leader](play/dungeon-run-leader.md) | Opt-in `.bot run`: a bound party clears a stored dungeon plan by itself; plan tables and safety rules. |
+| [Dungeon reference](play/dungeon-reference.md) | Kill orders, creature IDs, pooled rares, and events for 18 dungeons (reference for you; bots do not read it). |
+| [Dungeon run leader](play/dungeon-run-leader.md) | `.bot run` (on by default, work in progress): a bound party walks a stored dungeon route by itself; route tables and safety rules. |
 | [Boss tactics table](play/boss-tactics.md) | Opt-in per-boss rows (`ai_boss_tactic`): interrupts, kill order, stay behind. |
 | [Known limitations](play/known-limitations.md) | Engine limits, deliberate non-goals, targeting rules, and known quirks. |
 | [Glossary](play/glossary.md) | Abbreviations and TortoiseBots terms in plain words. |
@@ -87,7 +87,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | Page | What you find there |
 | :--- | :--- |
 | [Living world](world/living-world.md) | Autonomous questing, grinding, level seeding, gear upkeep, and travel. |
-| [Social](world/social.md) | Solo player invites, autonomous guilds, greetings, and player trading. |
+| [Social](world/social.md) | Group invites, getting bots into your guild, greetings, and player trading. |
 | [Queues and matchmaking](world/queues.md) | Looking for Turtles dungeon autofill and PvP battleground matchmaking. |
 | [Economy](world/economy.md) | Autonomous auction house market, vendor trips, repairs, and gold flow. |
 
@@ -101,6 +101,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Bot pool management](server/bot-pool.md) | Managed pool registry, account structures, and safe pool reset procedures. |
 | [Observability dashboard](server/dashboard.md) | Real-time web dashboard, 2D live map, Prometheus metrics, and issue tracker. |
 | [Run trace](server/run-trace.md) | Opt-in recorder of a party's run (`.bot trace`), the `bt-trace` v1 schema, and the offline scorer. |
+| [Decision capture](server/decision-capture.md) | Opt-in recorder of every run-leader decision, the `tb-decision-capture` format, and the replay fixture workflow. |
 | [Party settings](server/settings/party.md) | Follow distances, summon rules, alt-bot persistence, and loot rolling. |
 | [Hiring settings](server/settings/hiring.md) | Mercenary hiring fees, recruiter quests, gear tiers, and world buffs. |
 | [Class behavior settings](server/settings/class-behaviour.md) | AI flags for Aspect of the Viper, Judgements, threat drops, and demon choices. |

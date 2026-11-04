@@ -193,6 +193,9 @@ public:
     // Spec dash-raids-tab: the RAIDS datagram and the observed-raid combat sampler (leader, offline members and the live
     // fight window of unbound raid groups); only acts while observability is on, off by default.
     bool observabilityRaids = false;
+    // Raids tab detail (ready check, boss debuffs): appended at the END of the RAIDS line behind
+    // AiPlayerbot.ObservabilityRaidsDetail, sent at most every 5 s. Off by default.
+    bool observabilityRaidsDetail = false;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
     uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)
@@ -510,6 +513,24 @@ public:
     bool runTraceGmOnly = true;
     // Size cap of one trace file, in MiB (1..1024); the trace stops when reached.
     uint32 runTraceMaxFileMb = 64;
+    // Decision capture (docs/server/decision-capture.md): a running run leader's
+    // every policy tick is written to a rotating JSONL capture, so a live
+    // failure can become a replay fixture. Off by default; test servers only.
+    bool decisionCapture = false;
+    // Output folder; relative paths are under LogsDir.
+    std::string decisionCaptureDir = "decisions";
+    // One segment rotates past this many MiB (1..256).
+    uint32 decisionCaptureSegmentMiB = 32;
+    // A capture's segments past this many MiB are deleted oldest first
+    // (SegmentMiB..4096).
+    uint32 decisionCaptureCaptureMiB = 512;
+    // The whole folder past this many MiB drops its oldest ended captures
+    // (CaptureMiB..65536).
+    uint32 decisionCaptureTotalMiB = 4096;
+    // A larger record becomes a stub (64..4096 KiB).
+    uint32 decisionCaptureRecordKiB = 512;
+    // A full keyframe every this many records (1..600).
+    uint32 decisionCaptureKeyframeEvery = 60;
     // Issue #1012: creature entries a commanded bot may talk to with `.bot cmd
     // gossip` (AiPlayerbot.BotGossipNpcs). Empty by default: the order is off.
     std::set<uint32> botGossipNpcs;
@@ -597,6 +618,36 @@ public:
     // key on top of the tactics gate). Off, the six kinds are ignored and a gated row is closed, so the table behaves
     // exactly as before them (BossTacticsPolicy.h RowGateOpen; default off).
     bool dungeonRunAuraTactics = false;
+    // The needs_aura boss-tactic kind (a bot without the row's aura never targets that unit, and the run guard sends
+    // nobody at it): on, the rows are read; off, the rows load but nothing reads them (its own key on top of the
+    // tactics gate; default off).
+    bool dungeonRunAuraGatedTargets = false;
+    // The boss-tactic kill_first candidates come from a grid search too, not only from the bot's own attackers list:
+    // off, the candidates are the fight's units as today (its own key; default off).
+    bool dungeonRunKillFirstGrid = false;
+    // A kill-first focus on a totem is DPS-only and goes out before the guard, and the guard skips totems: off, the
+    // focus sends every bot and the guard picks totems, as today (its own key; default off).
+    bool dungeonRunTotemFocus = false;
+    // The use_object boss-tactic kind (one bot clicks the ready game object nearest the boss; mode tank_anchor also
+    // walks the boss over): on, the fight scan keeps the rows (its own key on top of the tactics gate). Off, the
+    // rows are ignored, so the table behaves exactly as before the kind (default off).
+    bool dungeonRunUseObject = false;
+    // The swap_on_aura boss-tactic kind (the tanks of the row's rotation trade the boss at a stack count, and the
+    // swapped-off tank holds its threat): on, the rows are read (its own key on top of the aura-tactics and tactics
+    // gates). Off, the rows are ignored, so the table behaves exactly as before the kind (default off).
+    bool dungeonRunTankSwap = false;
+    // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
+    // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
+    bool dungeonRunSeekAura = false;
+    // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
+    // its stack band, then ends the run): off, the rows are ignored (default off).
+    bool dungeonRunPullGate = false;
+    // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
+    // ignored (default off).
+    bool dungeonRunBossSpread = false;
+    // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
+    // charmed bot behaves as before (default off).
+    bool dungeonRunCharmYield = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
@@ -613,6 +664,11 @@ public:
     float dungeonRunPackClearMarginYd;
     // ... and how many residue pulls a step may send before it pauses.
     uint32 dungeonRunPackClearRepulls;
+    // The run leader's straggler pull: a unit a pull step or stand-pull row waits for that did not come (a spawn-owned
+    // patroller, a patrol of the row) is walked to and pulled by the acting tank (the lead bot, else the off-tank
+    // holding the main tank role) instead of the pause, when the way to it keeps clear of another pack
+    // (DungeonRunPolicy.h StragglerPullTick; default off).
+    bool dungeonRunStragglerPull = false;
     // The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the revive after either) within
     // dungeonRunNearWipeStopMinutes of running time pause the run once the fight is over. 0: off.
     uint32 dungeonRunNearWipeStop;
@@ -719,6 +775,7 @@ public:
     bool guildOrderBankWithdraw;
     bool craftToolsAlways;
     bool guildOrderBankGold;
+    bool guildOrderPlayerBuy;
     bool guildOrderSubOrders;
     uint32_t guildOrderSubOrderDepth;
     // Guild bank access for guild bots: every bot in a guild with a real

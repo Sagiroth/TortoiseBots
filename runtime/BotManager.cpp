@@ -10,7 +10,6 @@
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
 #include "DowntimeService.h"
-#include "BotGearService.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -1300,10 +1299,9 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
         DetachOwnedBots(player);
     }
     else
-    {
+        // The `.bot gear` pin survives logout/relog (it ends on a new
+        // `.bot gear` pass, dismiss, or character deletion).
         AltBotService::Instance().OnBotLogout(player);
-        BotGearService::Instance().OnBotLogout(player->GetObjectGuid().GetCounter());
-    }
     TortoiseBots::DowntimeService::OnBotLogout(player);
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())

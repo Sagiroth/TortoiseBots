@@ -139,10 +139,29 @@ static void TestLookup()
     CHECK(first && again && first->itemId == again->itemId && first->itemId == 1002);
 }
 
+// A bot's own premade path picks its kit; the role decides only when the path
+// cannot be read. Menu option 0 is the tank spec, so a DPS warrior must not
+// resolve to it.
+static void TestOwnSpecKey()
+{
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassWarrior, "fury", kHireRoleDps)) == "fury");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassWarrior, "arms", kHireRoleDps)) == "arms");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassWarrior, "protection", kHireRoleTank)) == "protection");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassPaladin, "holy", kHireRoleHealer)) == "holy");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassDruid, "restoration", kHireRoleHealer)) == "restoration");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassDruid, "feral", kHireRoleTank)) == "bear");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassDruid, "feral", kHireRoleDps)) == "cat");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassWarrior, nullptr, kHireRoleDps)) == "arms");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassWarrior, "", kHireRoleDps)) == "arms");
+    CHECK(std::string(ResolveHireGearKeyForPath(kHireClassPaladin, "nonsense", kHireRoleHealer)) == "holy");
+    CHECK(ResolveHireGearKeyForPath(6, "fury", kHireRoleDps) == nullptr);
+}
+
 int main()
 {
     TestSpecKeys();
     TestRoleFallback();
+    TestOwnSpecKey();
     TestEffectiveTier();
     TestEligibility();
     TestLookup();

@@ -173,6 +173,135 @@ int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
 
+    // The three Hakkar kinds. A seek_aura row carries the source, the aura, the cycle clock and the spot the source is
+    // held at; the loader refuses a row that cannot answer the seek rules, and the cycle columns belong to that kind.
+    {
+        BossTacticRow seek = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        seek.cycleSec = 90.0f;
+        seek.windowSec = 80.0f;
+        seek.spotX = -11802.0f;
+        seek.spotY = -1683.0f;
+        seek.spotZ = 52.9f;
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(seek));                 // no cycle_spell
+            seek.cycleSpell = 24324;
+            CHECK(table.Add(seek));
+        }
+        {
+            BossTacticRow noSpot = seek;
+            noSpot.spotX = noSpot.spotY = noSpot.spotZ = 0.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(noSpot));               // no spot
+            CHECK(!noSpot.HasSpot());
+            CHECK(seek.HasSpot());
+        }
+        {
+            BossTacticRow badParam = seek;
+            badParam.param = 10.5f;
+            BossTacticTable table;
+            CHECK(!table.Add(badParam));             // gather radius above 10 yd
+            badParam.param = 0.0f;
+            CHECK(!table.Add(badParam));
+        }
+        {
+            BossTacticRow highPriority = seek;
+            highPriority.priority = 100;
+            BossTacticTable table;
+            CHECK(!table.Add(highPriority));         // hold percent above 99
+        }
+        {
+            BossTacticRow slowCycle = seek;
+            slowCycle.cycleSec = 0.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(slowCycle));            // the cycle length is the window's ceiling
+            slowCycle.cycleSec = 601.0f;
+            CHECK(!table.Add(slowCycle));
+            slowCycle.cycleSec = 90.0f;
+            slowCycle.windowSec = 90.5f;
+            CHECK(!table.Add(slowCycle));            // the window cannot outlast the cycle
+        }
+
+        // A pull gate names the boss itself (target_entry 0), its stake spell and the seconds the run waits.
+        BossTacticRow gate = Row(309, 14834, BossTacticKind::PullGate, 0, 24692, 0, 30.0f);
+        {
+            BossTacticRow withTarget = gate;
+            withTarget.targetEntry = 11357;
+            BossTacticTable table;
+            CHECK(!table.Add(withTarget));
+            CHECK(table.Add(gate));
+        }
+        {
+            BossTacticRow noSpell = gate;
+            noSpell.spellId = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(noSpell));
+            noSpell.spellId = 24692;
+            noSpell.param = 301.0f;
+            CHECK(!table.Add(noSpell));
+            noSpell.param = 0.0f;
+            CHECK(!table.Add(noSpell));
+        }
+
+        // The spread row is a spacing in yards, 5 to 30, and names no target.
+        BossTacticRow spread = Row(309, 14834, BossTacticKind::Spread, 0, 24328, 0, 12.0f);
+        {
+            BossTacticRow narrow = spread;
+            narrow.param = 4.9f;
+            BossTacticTable table;
+            CHECK(!table.Add(narrow));
+            narrow.param = 30.5f;
+            CHECK(!table.Add(narrow));
+            narrow.param = 5.0f;
+            CHECK(table.Add(narrow));
+        }
+        {
+            BossTacticRow withTarget = spread;
+            withTarget.targetEntry = 11357;
+            BossTacticTable table;
+            CHECK(!table.Add(withTarget));
+        }
+
+        // The cycle and spot columns belong to seek_aura alone.
+        {
+            BossTacticRow interrupt = Row(309, 14834, BossTacticKind::Interrupt, 0, 24324);
+            interrupt.cycleSpell = 24324;
+            BossTacticTable table;
+            CHECK(!table.Add(interrupt));
+            interrupt.cycleSpell = 0;
+            interrupt.cycleSec = 90.0f;
+            CHECK(!table.Add(interrupt));
+            interrupt.cycleSec = 0.0f;
+            interrupt.spotZ = 52.9f;
+            CHECK(!table.Add(interrupt));
+            interrupt.spotZ = 0.0f;
+            CHECK(table.Add(interrupt));
+        }
+
+        // A gate is a fight-scan question, and the run leader's own kinds are not asked (a pull gate is already the
+        // run-shape decision).
+        {
+            BossTacticRow gated = Gated(seek, 0, 50);
+            BossTacticTable table;
+            CHECK(!table.Add(gated));
+        }
+
+        // Before the seal the kind maps read empty; after it, each map's own kinds are flagged.
+        {
+            BossTacticTable table;
+            CHECK(table.Add(seek));
+            CHECK(table.Add(gate));
+            CHECK(table.Add(spread));
+            CHECK(!table.HasSeekAuraMap(309) && !table.HasPullGateMap(309) && !table.HasSpreadMap(309));
+            table.Seal();
+            CHECK(table.HasSeekAuraMap(309));
+            CHECK(table.HasPullGateMap(309));
+            CHECK(table.HasSpreadMap(309));
+            CHECK(!table.HasSeekAuraMap(531));
+            CHECK(!table.HasSpreadMap(531));
+        }
+    }
+
     // Kind text: exactly the lowercase spellings the table holds.
     CHECK(ParseBossTacticKind("interrupt") == BossTacticKind::Interrupt);
     CHECK(ParseBossTacticKind("kill_first") == BossTacticKind::KillFirst);
@@ -202,6 +331,14 @@ int main()
     CHECK(static_cast<int>(BossTacticKind::FreezeOnAura) == 12);
     CHECK(static_cast<int>(BossTacticKind::TauntAfterCast) == 13);
     CHECK(static_cast<int>(BossTacticKind::SwapOnAura) == 14);
+    CHECK(ParseBossTacticKind("use_object") == BossTacticKind::UseObject);
+    CHECK(static_cast<int>(BossTacticKind::UseObject) == 15);
+    CHECK(ParseBossTacticKind("seek_aura") == BossTacticKind::SeekAura);
+    CHECK(ParseBossTacticKind("pull_gate") == BossTacticKind::PullGate);
+    CHECK(ParseBossTacticKind("spread") == BossTacticKind::Spread);
+    CHECK(static_cast<int>(BossTacticKind::SeekAura) == 16);
+    CHECK(static_cast<int>(BossTacticKind::PullGate) == 17);
+    CHECK(static_cast<int>(BossTacticKind::Spread) == 18);
 
     // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
@@ -214,6 +351,10 @@ int main()
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "blink") == TacticMode::Blink);
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "until_tank") == TacticMode::UntilTank);
     CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "until_tank") == TacticMode::UntilTank);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "tank_anchor") == TacticMode::TankAnchor);
+    CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "tank_anchor") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::UseObject, "never") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "to_tank") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::DpsHoldAfter, "clear") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::FleeOnAura, "never") == TacticMode::Invalid);
@@ -379,6 +520,51 @@ int main()
         CHECK(!table.Add(noWindow));
     }
 
+    // Loader: a use_object row names the clicked object, a clicker role of free DPS, healer or non-tank, a boss
+    // range of 0-60 yd, and a window of 0 or at least 10 s on top of an aura trigger. The column default of 7 s is
+    // refused, so a row must state its own window.
+    {
+        BossTacticTable table;
+        auto useObject = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, float param, float window)
+        {
+            BossTacticRow row = Row(509, 15339, BossTacticKind::UseObject, target, spell, priority, param);
+            row.windowSec = window;
+            return row;
+        };
+        CHECK(!table.Add(useObject(0, 25176, 0, 25.0f, 38.0f)));       // no object
+        CHECK(!table.Add(useObject(180619, 25176, 0, 25.0f, 7.0f)));   // the column default: too short
+        CHECK(!table.Add(useObject(180619, 0, 0, 25.0f, 0.0f)));       // neither aura nor timer
+        CHECK(!table.Add(useObject(180619, 25176, 3, 25.0f, 38.0f)));  // no such role
+        CHECK(!table.Add(useObject(180619, 25176, 0, 0.0f, 38.0f)));
+        CHECK(!table.Add(useObject(180619, 25176, 0, 61.0f, 38.0f)));
+        CHECK(table.Add(useObject(180619, 25176, 0, 25.0f, 38.0f)));
+        CHECK(!table.Add(useObject(180619, 25176, 0, 25.0f, 38.0f)));  // same key
+        CHECK(table.Size() == 1);
+        CHECK(!table.HasUseObjectMap(509));                            // not sealed yet
+        table.Seal();
+        CHECK(table.HasUseObjectMap(509));
+        CHECK(!table.HasUseObjectMap(309));
+        CHECK(table.HasKindFor(509, 15339, BossTacticKind::UseObject));
+        CHECK(!table.HasKindFor(509, 15339, BossTacticKind::Interrupt));
+        CHECK(!table.HasKindFor(509, 15341, BossTacticKind::UseObject));
+        CHECK(!table.HasKindFor(309, 14599, BossTacticKind::UseObject));
+    }
+
+    // Loader: tank_anchor is the use_object mode word, and a foreign word is Invalid.
+    {
+        BossTacticTable table;
+        BossTacticRow anchored = Row(509, 15339, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f);
+        anchored.windowSec = 0.0f;  // an aura-only row: no timer
+        anchored.mode = ParseTacticMode(anchored.kind, "tank_anchor");
+        CHECK(anchored.mode == TacticMode::TankAnchor);
+        CHECK(table.Add(anchored));
+        BossTacticRow never = Row(509, 15340, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f);
+        never.windowSec = 38.0f;
+        never.mode = ParseTacticMode(never.kind, "never");             // a foreign word
+        CHECK(never.mode == TacticMode::Invalid);
+        CHECK(!table.Add(never));
+    }
+
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
     CHECK(!BossTacticsWanted(false, false, true));   // default install, normal player's bots: unchanged
     CHECK(BossTacticsWanted(true, false, true));     // AiPlayerbot.DungeonTactics = 1
@@ -390,6 +576,7 @@ int main()
     // Subject: the row's target, or the boss itself.
     CHECK(TacticSubjectEntry(Row(70, 7023, BossTacticKind::KillFirst, 7209)) == 7209);
     CHECK(TacticSubjectEntry(Row(70, 6910, BossTacticKind::Interrupt, 0, 16006)) == 6910);
+    CHECK(TacticSubjectEntry(Row(509, 15339, BossTacticKind::UseObject, 180619, 25176, 0, 25.0f)) == 15339);
 
     // Interrupt matching: spell and caster both have to match; only interrupt rows count.
     {
@@ -521,6 +708,26 @@ int main()
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
         CHECK(PickNearestUnheld(active, { Cand(15146, 5.0f, false) }, countOf(15146, 0)) == -1);
+        // A seek_aura source the row holds is not a hold_kill entry: the extra argument skips it too, so a drop never
+        // re-picks another Son (H2).
+        const std::vector<TacticCandidate> sons = { Cand(11357, 3.0f), Cand(11359, 9.0f) };
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0)) == 0);
+        CHECK(PickNearestUnheld(active, sons, countOf(15146, 0), 11357) == 1);
+    }
+
+    // A seek_aura row's dose window has to be shorter than its cycle (spec §4's open interval): equal is refused.
+    {
+        BossTacticRow row = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        row.cycleSpell = 24324;
+        row.cycleSec = 90.0f;
+        row.spotX = -11802.0f;
+        row.spotY = -1683.0f;
+        row.spotZ = 52.9f;
+        row.windowSec = 90.0f;
+        BossTacticTable table;
+        CHECK(!table.Add(row));
+        row.windowSec = 89.9f;
+        CHECK(table.Add(row));
     }
 
     // "a Mad Servant that is not the sole pick is held with no Voidwalker alive": a one_at_a_time row paces an entry by
@@ -942,6 +1149,31 @@ int main()
         CHECK(table.LinkedDeathGroups(309)[0].group == 1);
         CHECK(table.LinkedDeathGroups(309)[1].group == 2);
     }
+    // A same-entry pair (the two Qiraji Gladiators 15324 in one hall): the rows' anchor is the entry the pair
+    // shares. Two living units of that entry at 80 % and 60 %: the pick is the 80 % one; both at 5 % or under:
+    // released, and the released pick burns the lowest.
+    std::vector<BossTacticRow> glad = {
+        Row(509, 15324, BossTacticKind::LinkedDeath, 15324, 0, 1, 5.0f),
+    };
+    glad[0].windowSec = 7.0f;
+    const ActiveBossRows gladRows = Active(glad);
+    {
+        LinkedDeathGroup group;
+        CHECK(FindLinkedDeathGroup(gladRows, 15324, group));
+        CHECK(group.bossEntry == 15324);
+        CHECK(group.groupId == 1);
+        CHECK(group.entries.size() == 1);
+        CHECK(group.entries[0] == 15324);
+        std::vector<LinkedMember> members = { Linked(1, 80, true, 15324), Linked(2, 60, true, 15324) };
+        CHECK(!LinkedDeathReleased(group.param, members));
+        CHECK(PickLinkedDeath(group.param, members) == 0);  // the highest: 80 %
+        members = { Linked(1, 60, true, 15324), Linked(2, 80, true, 15324) };
+        CHECK(PickLinkedDeath(group.param, members) == 1);  // the highest now
+        members = { Linked(1, 5, true, 15324), Linked(2, 4, true, 15324) };
+        CHECK(LinkedDeathReleased(group.param, members));
+        CHECK(PickLinkedDeathTarget(true, true, gladRows, 15324, members) == -1);
+    }
+
 
     // The group: the anchor and every partner its rows list, resolved from either. Its burn order is the raiser chain:
     // Lor'Khan (raised by Zath), then Zath (raised by Thekal), then Thekal.
@@ -2021,6 +2253,15 @@ int main()
         CHECK(table.Add(bossItself));
         BossTacticRow gaze = Row(309, 11382, BossTacticKind::FreezeOnAura, 0, 24314);
         CHECK(table.Add(gaze));
+        // A seek_aura source is dragged to the spot and burned there: a CC'd Son cannot be dragged (M4).
+        BossTacticRow seekSource = Row(309, 14834, BossTacticKind::SeekAura, 11357, 24321, 30, 4.0f);
+        seekSource.cycleSpell = 24324;
+        seekSource.cycleSec = 90.0f;
+        seekSource.spotX = -11802.0f;
+        seekSource.spotY = -1683.0f;
+        seekSource.spotZ = 52.9f;
+        seekSource.windowSec = 80.0f;
+        CHECK(table.Add(seekSource));
         // Before the seal a reader sees nothing.
         CHECK(table.NoCcEntries(309).empty() && table.FreezeAuras(309).empty());
         table.Seal();
@@ -2028,11 +2269,128 @@ int main()
         CHECK(table.NoCcEntries(309).count(15163) == 1);  // Nightmare Illusion
         CHECK(table.NoCcEntries(309).count(11348) == 1);  // the linked_death partner
         CHECK(table.NoCcEntries(309).count(14834) == 1);  // a targetless kill_first is its boss entry
-        CHECK(table.NoCcEntries(309).size() == 4);
+        CHECK(table.NoCcEntries(309).count(11357) == 1);  // the seek_aura source (Son of Hakkar)
+        CHECK(table.NoCcEntries(309).size() == 5);
+        CHECK(table.SeekTargets(309).count(11357) == 1);  // the third off-tank's pickup rule reads it
+        CHECK(table.SeekTargets(531).empty());
         CHECK(table.NoCcEntries(531).empty());            // another map's rows are not smeared in
         CHECK(table.FreezeAuras(309).size() == 1 && table.FreezeAuras(309)[0] == 24314);
         CHECK(table.FreezeAuras(531).empty());
     }
+
+    // TauntAfterTankIndexWraps / TauntAfterDue (taunt_after_cast, mode until_tank): a row names the tank that takes the
+    // subject back after its victim stops being a tank. The index is the first ALIVE tank at or after the row's
+    // `priority`, wrapping to the front; the deadline runs from the rising edge and nothing is taken back while the
+    // victim is the assigned tank.
+    {
+        const std::vector<bool> gap = { true, false, true };
+        CHECK(TauntAfterTankIndex(gap, 1) == 2);          // no wrap: the dead first off-tank keeps the job
+        const std::vector<bool> onlyLast = { false, false, true };
+        CHECK(TauntAfterTankIndex(onlyLast, 2) == 2);
+        const std::vector<bool> onlyFirst = { true, false, false };
+        CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);    // wraps
+        CHECK(TauntAfterTankIndex(onlyFirst, 0) == 0);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{}, 0) == -1);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{ false, false }, 1) == -1);
+        CHECK(TauntAfterTankIndex(onlyFirst, -1) == -1);
+
+        CHECK(TauntAfterDue(true, 0, 10000, false));      // the rising edge itself
+        CHECK(TauntAfterDue(true, 1, 10000, false));
+        CHECK(TauntAfterDue(true, 9999, 10000, false));
+        CHECK(!TauntAfterDue(true, 10000, 10000, false)); // the deadline passed
+        CHECK(!TauntAfterDue(false, 1, 10000, false));    // no episode
+        CHECK(!TauntAfterDue(true, 1, 10000, true));      // the assigned tank already has it
+
+        // A creature-charmed tank yields its AI, so the until_tank order counts it as gone (M5).
+        CHECK(TauntAfterTankUsable(false, false));
+        CHECK(TauntAfterTankUsable(true, true));          // a player MC leaves the bot's AI in the core, not gone
+        CHECK(!TauntAfterTankUsable(true, false));        // a creature's charm
+
+        // The episode's state machine: the rising edge opens it, the deadline turns a non-tank into one miss, a tank
+        // has it back as regained, and a spent charm does not reopen before a tank does.
+        {
+            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, false, 0, 10000, false);
+            CHECK(edge.starts && edge.open && !edge.spent && edge.step == TauntEpisodeStep::Due);
+            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, false, 5000, 10000, false);
+            CHECK(!due.starts && due.open && due.step == TauntEpisodeStep::Due);
+            // The assigned tank has it back: the episode ends, the next charm starts clean.
+            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, false, 5000, 10000, true);
+            CHECK(!assigned.open && !assigned.spent && assigned.step == TauntEpisodeStep::Regained);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, false, 10000, 10000, false);
+            CHECK(!miss.open && miss.spent && miss.step == TauntEpisodeStep::Miss);
+            TauntEpisodeRead spent = TauntEpisodeTick(true, false, false, true, 0, 10000, false);
+            CHECK(!spent.starts && !spent.open && spent.spent && spent.step == TauntEpisodeStep::None);
+            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, false, 4000, 10000, false);
+            CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
+            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, false, 4000, 10000, false);
+            CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // The widest live spread row wins, never narrower than the fallback.
+        CHECK(WidestSpreadYd({10.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({10.0f, 12.0f, 11.0f}, 10.0f) == 12.0f);
+        CHECK(WidestSpreadYd({6.0f}, 10.0f) == 10.0f);
+        CHECK(WidestSpreadYd({}, 10.0f) == 10.0f);
+    }
+
+    // needs_aura (the Shade of Jin'do 14986, Delusions 24306): only a bot carrying the row's aura may target the entry,
+    // wherever it stands. AuraGateRefuses is the one rule the attack pickers, the taunt picks and the run guard read.
+    CHECK(ParseBossTacticKind("needs_aura") == BossTacticKind::NeedsAura); // ParseNeedsAuraKind
+    CHECK(static_cast<int>(BossTacticKind::NeedsAura) == 19);
+    CHECK(AuraGateRefuses(true, 24306, false));   // NeedsAuraRefusesBotWithoutAura
+    CHECK(!AuraGateRefuses(true, 24306, true));   // NeedsAuraAllowsCarrier
+    CHECK(!AuraGateRefuses(false, 24306, false)); // NeedsAuraKeyOffAllowsAll
+    CHECK(!AuraGateRefuses(true, 0, false));      // NeedsAuraNoRowAllowsAll
+    {
+        BossTacticRow shade = Row(309, 11380, BossTacticKind::NeedsAura, 14986, 24306);
+        {
+            BossTacticRow noSpell = shade;
+            noSpell.spellId = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(noSpell));                 // NeedsAuraRowRefusedWithoutSpell
+        }
+        {
+            BossTacticRow noTarget = shade;
+            noTarget.targetEntry = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(noTarget));                // NeedsAuraRowRefusedWithoutTarget
+        }
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(Gated(shade, 0, 100, 24306))); // NeedsAuraRowRefusedWithGate (a bot aura)
+            CHECK(!table.Add(Gated(shade, 20, 100)));       // ... or a health band
+            CHECK(!table.Add(Gated(shade, 0, 90)));
+        }
+        {
+            BossTacticRow withMode = shade;
+            withMode.mode = TacticMode::Now;
+            BossTacticTable table;
+            CHECK(!table.Add(withMode));                // NeedsAuraRowRefusedWithMode
+        }
+        // The lookup is by map and entry, never by the row's boss: a Shade is gated wherever it stands.
+        {
+            BossTacticTable table;
+            CHECK(table.RequiredAura(309, 14986) == 0); // not sealed yet
+            CHECK(table.Add(shade));
+            CHECK(table.Add(Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 1)));
+            table.Seal();
+            CHECK(table.RequiredAura(309, 14986) == 24306);
+            CHECK(table.RequiredAura(309, 15112) == 0);  // an ungated entry
+            CHECK(table.RequiredAura(309, 11380) == 0);  // the boss itself
+            CHECK(table.RequiredAura(531, 14986) == 0);  // another map
+            CHECK(table.NoCcEntries(309).count(14986) == 0); // not a crowd-control exclusion
+        }
+    }
+
+    // The kill_first grid search's eligibility (the Shade/ward focus): alive, not evading, and part of our fight -- a
+    // victim of ours, one of ours holding it, or the owner or summoner naming a unit of the fight. Being in combat is
+    // no ticket in by itself: a creature of the entry brawling with an NPC or a player outside the group stays out.
+    CHECK(KillFirstGridEligible(true, false, false, false, true));  // KillFirstGridAddsOwnedWard
+    CHECK(KillFirstGridEligible(true, false, true, false, false));  // KillFirstGridAddsOneOnAMember
+    CHECK(KillFirstGridEligible(true, false, false, true, false));  // ... and one the group holds
+    CHECK(!KillFirstGridEligible(true, false, false, false, false)); // KillFirstGridSkipsForeignFight
+    CHECK(!KillFirstGridEligible(false, false, true, false, false)); // dead
+    CHECK(!KillFirstGridEligible(true, true, true, true, true));    // KillFirstGridSkipsEvading
 
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;

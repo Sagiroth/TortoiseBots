@@ -52,11 +52,61 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics flee",
         NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
 
+    // A use_object row designates one bot to click its game object: a click is as time-critical as an interrupt (the
+    // weakness lands 5 s after it), so it sits above the target picks and below freeze, flee and avoid_cast. The same
+    // action walks the clicker in from the row's lead.
+    triggers.push_back(new TriggerNode(
+        "boss tactics use object",
+        NextAction::array(0, new NextAction("boss tactics use object", ACTION_INTERRUPT + 2), NULL)));
+
+    // Mode tank_anchor: the tank the boss is on walks it to the object. Above the tank's reach and face rows, below
+    // every EMERGENCY row, so a survival move still wins.
+    triggers.push_back(new TriggerNode(
+        "boss tactics object anchor",
+        NextAction::array(0, new NextAction("boss tactics object anchor", ACTION_HIGH + 5), NULL)));
+
+    // A swap_on_aura row is at its stack count on the tank the boss is on and this bot is the next rotation tank: the
+    // taunt goes out at once. Below every EMERGENCY row, so a survival move still wins; above the rotation, which
+    // would otherwise keep the stacked tank building threat.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
+    // The tank a swap moved off still stands on the boss: it drops the boss at once. Above the rotation (whose boss
+    // actions the hold multiplier stands down anyway) and below every defensive cooldown, so a shield wall or a last
+    // stand still wins the tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
+    // taunt_after_cast (mode until_tank, Hakkar's Cause Insanity): the row's off-tank takes the boss back once its
+    // victim is no tank. Above the target picks, below the survival rows: a taunt is worth nothing to a dead tank.
+    triggers.push_back(new TriggerNode(
+        "boss tactics taunt after",
+        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
         NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+    // A seek_aura row has a cloud to stand in or a gather to reach: the walk in wins over the target picks and the
+    // stay walk, and only the freeze and the two walk-outs outrank it. It runs from the reaction engine too (a held
+    // bot, a bot in a pull's join window), because the poison's cloud lives 3 s.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek",
+        NextAction::array(0, new NextAction("boss tactics seek", ACTION_EMERGENCY + 5), NULL)));
+
+    // The second off-tank's source: take it back, pull one, drag it to the spot. Above the tank's reach and face rows.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek tank",
+        NextAction::array(0, new NextAction("boss tactics seek tank", ACTION_HIGH + 6), NULL)));
+
+    // A free DPS bot's source: the pre-damage down to the hold percent, then the burn once the gather is ready (the
+    // kill_first slot's priority; the two never both apply on one boss).
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek kill",
+        NextAction::array(0, new NextAction("boss tactics seek kill", ACTION_HIGH + 2), NULL)));
+
     // A stand set applies (ai_boss_stand): the walk to the seat comes before every cast and heal, the way the
     // reactive Deep Breath dodge does.
     triggers.push_back(new TriggerNode(
@@ -107,9 +157,25 @@ void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
         "boss tactics flee",
         NextAction::array(0, new NextAction("boss tactics flee", ACTION_EMERGENCY + 6), NULL)));
 
+    // The swap's taunt runs there as well: a tank's cast would sleep through the combat engine while the stacks tick.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap",
+        NextAction::array(0, new NextAction("boss tactics tank swap", ACTION_EMERGENCY + 4), NULL)));
+
+    // The stand-down's drop runs there too: the combat engine sleeps through the bot's own cast.
+    triggers.push_back(new TriggerNode(
+        "boss tactics tank swap hold",
+        NextAction::array(0, new NextAction("boss tactics tank swap hold", ACTION_HIGH + 5), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
         NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+
+    // The walk into the poison, from the reaction engine as well: a bot held by a stay, by "wait for attack" or by
+    // its own cast still has to reach the cloud the source left.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek",
+        NextAction::array(0, new NextAction("boss tactics seek", ACTION_EMERGENCY + 5), NULL)));
 }
 
 void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
@@ -118,6 +184,7 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsSeekHoldMultiplier(ai));
 }
 
 // The hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the

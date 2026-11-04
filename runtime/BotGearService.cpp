@@ -11,6 +11,8 @@
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/RandomItemMgr.h"
+#include "../ai/playerbot/RandomBotFacade.h"
+#include "../ai/playerbot/strategy/actions/ChangeTalentsAction.h"
 #include "../host/ModuleLog.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -150,7 +152,7 @@ uint32_t BotGearService::PinnedCap(uint32_t guidLow) const
     return it != m_pinned.end() ? it->second.ilvlCap : 0;
 }
 
-void BotGearService::OnBotLogout(uint32_t guidLow)
+void BotGearService::UnpinBot(uint32_t guidLow)
 {
     m_pinned.erase(guidLow);
 }
@@ -257,7 +259,13 @@ void BotGearService::Update(uint32_t /*diff*/)
             m_job.result.bots.push_back(outcome);
             continue;
         }
-        char const* specKey = ResolveHireGearSpecKey(bot->GetClass(), 0, role);
+        // The bot's own talent spec picks the kit, as the respec path does. Menu option 0 is the tank
+        // spec for warrior, paladin and druid, so it must not stand in for a DPS or healer spec.
+        uint32_t const specNo = sRandomBotFacade.GetValue(bot->GetGUIDLow(), "specNo");
+        std::string const pathName = specNo > 0
+            ? ChangeTalentsAction::GetPremadePathName(bot->GetClass(), static_cast<int>(specNo - 1))
+            : std::string();
+        char const* specKey = ResolveHireGearKeyForPath(bot->GetClass(), pathName.c_str(), role);
         bool const hasKit = m_job.args.tier > 0 && specKey &&
             HireGearCache::Instance().HasSetFor(bot->GetClass(), specKey, m_job.args.tier);
         if (m_job.args.tier > 0 && !hasKit)

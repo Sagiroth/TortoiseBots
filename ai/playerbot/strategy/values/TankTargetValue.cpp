@@ -10,6 +10,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/MainTankPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
@@ -181,6 +182,10 @@ public:
     bool IsBetter(Unit* newUnit, Unit* oldUnit)
     {
         Player* bot = ai->GetBot();
+        // The third off-tank keeps the seek_aura source it drags: the source follows it to the spot, and a loose add
+        // switching the tank off would leave the Son on the healer (M3).
+        if (oldUnit && ::ai::IsSeekSourceForTankPickup(ai, bot, oldUnit))
+            return false;
         // A loose add a tank_hold row lists, on a non-tank, outranks the explicit main tank's stickiness below (a ZG
         // Mad Voidwalker shocks the raid while a non-tank holds it): only when exactly one of the two candidates is
         // such a pickup, so a tank holding its pickup keeps it. Without the row or the strategy both are false and the

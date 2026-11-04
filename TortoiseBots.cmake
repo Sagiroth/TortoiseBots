@@ -168,6 +168,8 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTrace.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTraceWriter.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/DecisionCapture.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/DecisionCaptureFiles.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotActivityLease.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotNameService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/CharacterCleanup.cpp"
@@ -202,6 +204,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/Hire.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Upkeep.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Inventory.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/Professions.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Party.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Totem.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Action.cpp"
@@ -212,6 +215,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"
     "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Order.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/OrderPreview.cpp"
     "${TORTOISEBOTS_ROOT}/commands/OrderSearch.cpp")
 
   # These are the module-owned runtime and mature AI foundations. The donor

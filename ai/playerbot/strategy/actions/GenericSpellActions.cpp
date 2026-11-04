@@ -14,6 +14,8 @@
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/actions/EnemyAreaSpell.h"
+#include "playerbot/strategy/values/PeriodicDamageAura.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/strategy/values/MountValues.h"
@@ -34,68 +36,27 @@ namespace
 // a mob in damage-breakable CC within the blast, the caster's own CC mark
 // while it will still CC it, or a held CC mark (under a CC cast bar or in
 // its hold window) - for instant, chained and lingering areas alike. The
-// shape comes from the spell data (both implicit targets: Frost
-// Nova and Thunder Clap name the enemy area in target B): caster-centred
-// areas and cones use the caster (a cone is checked as a full circle),
-// ground/dest areas and chains the spell target. Single-target spells never
-// enter the loop over attackers, so the cost stays on area casts.
+// shape is EnemyAreaOf (EnemyAreaSpell.h), the same helper the running
+// channel's cancel reads: caster-centred areas and cones use the caster (a
+// cone is checked as a full circle), ground/dest areas and chains the spell
+// target. The crowd-controlled scan is CcGuard::BreakableCcInArea, which reads
+// "possible targets no los": a mob under CC carries no threat and is missing
+// from "attackers", so the start guard must not see less than the cancel does.
 bool BreaksCcInArea(PlayerbotAI* ai, Player* bot, SpellEntry const* info, Unit* spellTarget)
 {
     if (!info || !spellTarget)
         return false;
 
-    bool area = false;
     bool atTarget = false;
     float radius = 0.0f;
-    for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
-    {
-        uint32 const targetA = info->EffectImplicitTargetA[i];
-        uint32 const targetB = info->EffectImplicitTargetB[i];
-        uint32 const enemyArea =
-            (targetA == TARGET_ENUM_UNITS_ENEMY_AOE_AT_SRC_LOC || targetA == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC ||
-             targetA == TARGET_ENUM_UNITS_ENEMY_IN_CONE_24 || targetA == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC ||
-             targetA == TARGET_ENUM_UNITS_ENEMY_WITHIN_CASTER_RANGE) ? targetA :
-            (targetB == TARGET_ENUM_UNITS_ENEMY_AOE_AT_SRC_LOC || targetB == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC ||
-             targetB == TARGET_ENUM_UNITS_ENEMY_IN_CONE_24 || targetB == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC ||
-             targetB == TARGET_ENUM_UNITS_ENEMY_WITHIN_CASTER_RANGE) ? targetB : 0;
-
-        float effectRadius = 0.0f;
-        if (SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(info->EffectRadiusIndex[i]))
-            effectRadius = radiusEntry->Radius;
-
-        if (enemyArea)
-        {
-            area = true;
-            // Dest/ground areas land on the spell target unless the dest is
-            // the caster itself (Consecration: A = caster dest, B = area).
-            if ((enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC || enemyArea == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC) &&
-                targetA != TARGET_LOCATION_CASTER_SRC && targetA != TARGET_LOCATION_CASTER_DEST)
-                atTarget = true;
-            if (effectRadius <= 0.0f)
-                if (SpellRangeEntry const* rangeEntry = sSpellRangeStore.LookupEntry(info->rangeIndex))
-                    effectRadius = rangeEntry->maxRange;
-        }
-        else if (targetA == TARGET_UNIT_ENEMY && info->EffectChainTarget[i] > 1)
-        {
-            // Chains (Cleave, Chain Lightning, Multi-Shot) jump from the target.
-            area = true;
-            atTarget = true;
-            effectRadius = std::max(effectRadius, info->DmgClass == SPELL_DAMAGE_CLASS_MELEE ?
-                float(ATTACK_DISTANCE) : float(CHAIN_SPELL_JUMP_RADIUS));
-        }
-        else
-            continue;
-
-        radius = std::max(radius, effectRadius);
-    }
-
-    if (!area)
+    if (!EnemyAreaOf(info, atTarget, radius) || radius <= 0.0f)
         return false;
 
     // Instant areas and chains spare a held mark too (CcAreaSpellBlocked):
     // build 13 had the tank on the Moon mob inside its hold.
     CcGuard ccGuard(ai);
-    return ccGuard.ProtectedEnemyNear(atTarget ? static_cast<WorldObject*>(spellTarget) : bot, radius, true);
+    return ccGuard.BreakableCcInArea(info, spellTarget) ||
+        ccGuard.ProtectedEnemyNear(atTarget ? static_cast<WorldObject*>(spellTarget) : bot, radius, true);
 }
 
 bool CanInterruptCurrentSpell(Spell const* spell)
@@ -623,6 +584,45 @@ bool CastAuraSpellAction::isUseful()
     }
     return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr,
         aura ? aura->GetAuraDuration() : 0, aura ? aura->GetAuraMaxDuration() : 0);
+}
+
+namespace
+{
+    // Whether the spell applies a periodic damage aura: only a DoT's ticks break a crowd control.
+    bool SpellAppliesPeriodicDamage(uint32 spellId)
+    {
+        SpellEntry const* const info = sServerFacade.LookupSpellInfo(spellId);
+        if (!info)
+            return false;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
+                return true;
+        return false;
+    }
+
+    // A DoT cast at the bot's current target: no periodic damage while that target is a CC mark or under
+    // damage-breakable CC, or the tick breaks the hold the moment it lands (CcDotCastAllowed). The caster's rotation
+    // used to keep Corruption, Immolate or Serpent Sting on its target after the mark went out.
+    bool DotCastAtTarget(PlayerbotAI* ai, Unit* target, uint32 spellId)
+    {
+        if (!ai || !target || !SpellAppliesPeriodicDamage(spellId))
+            return true;
+        CcGuard ccGuard(ai);
+        bool const ccMarkOrControlled = sPlayerbotAIConfig.dungeonRunAutoCc &&
+            (ccGuard.IsCcMarkedUnit(target) || ccGuard.IsCrowdControlledUnit(target));
+        return CcDotCastAllowed(true, sPlayerbotAIConfig.dungeonRunAutoCc, ccGuard.IsHeldCcMark(target),
+            ccMarkOrControlled);
+    }
+}
+
+bool CastMeleeDebuffSpellAction::isUseful()
+{
+    return DotCastAtTarget(ai, GetTarget(), GetSpellID()) && CastAuraSpellAction::isUseful();
+}
+
+bool CastRangedDebuffSpellAction::isUseful()
+{
+    return DotCastAtTarget(ai, GetTarget(), GetSpellID()) && CastAuraSpellAction::isUseful();
 }
 
 bool CastBuffSpellAction::isUseful()

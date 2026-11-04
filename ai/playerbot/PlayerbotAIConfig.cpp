@@ -14,6 +14,7 @@
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/DecisionCaptureLimits.h"
 #include "../../runtime/GossipOrderPolicy.h"
 #include <cerrno>
 #include <cstring>
@@ -133,6 +134,15 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     }
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunAuraTactics = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraTactics", false);
+    dungeonRunAuraGatedTargets = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraGatedTargets", false);
+    dungeonRunKillFirstGrid = config.GetBoolDefault("AiPlayerbot.DungeonRunKillFirstGrid", false);
+    dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
+    dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
+    dungeonRunTankSwap = config.GetBoolDefault("AiPlayerbot.DungeonRunTankSwap", false);
+    dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
+    dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
+    dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
+    dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
@@ -144,6 +154,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
         config.GetFloatDefault("AiPlayerbot.DungeonRunPackClearMarginYd", 10.0f)));
     dungeonRunPackClearRepulls = static_cast<uint32>(std::min(10, std::max(1,
         config.GetIntDefault("AiPlayerbot.DungeonRunPackClearRepulls", 3))));
+    dungeonRunStragglerPull = config.GetBoolDefault("AiPlayerbot.DungeonRunStragglerPull", false);
     dungeonRunNearWipeStop = static_cast<uint32>(std::min(10, std::max(0,
         config.GetIntDefault("AiPlayerbot.DungeonRunNearWipeStop", 2))));
     dungeonRunNearWipeStopMinutes = static_cast<uint32>(std::min(60, std::max(1,
@@ -184,6 +195,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
 void PlayerbotAIConfig::LoadObservabilityRaids()
 {
     observabilityRaids = config.GetBoolDefault("AiPlayerbot.ObservabilityRaids", false);
+    observabilityRaidsDetail = config.GetBoolDefault("AiPlayerbot.ObservabilityRaidsDetail", false);
 }
 
 bool PlayerbotAIConfig::ReloadDungeonRunKeys()
@@ -733,6 +745,19 @@ bool PlayerbotAIConfig::Initialize()
     runTraceMaxFileMb = TortoiseBots::RunTrace::ClampMaxFileMb(
         config.GetIntDefault("AiPlayerbot.RunTrace.MaxFileMb",
             static_cast<int>(TortoiseBots::RunTrace::kDefaultMaxFileMb)));
+    // Decision capture (opt-in, test servers): see docs/server/decision-capture.md.
+    decisionCapture = config.GetBoolDefault("AiPlayerbot.DecisionCapture.Enabled", false);
+    decisionCaptureDir = config.GetStringDefault("AiPlayerbot.DecisionCapture.Dir", "decisions");
+    decisionCaptureSegmentMiB = TortoiseBots::DecisionCapture::ClampSegmentMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.SegmentMiB", 32));
+    decisionCaptureCaptureMiB = TortoiseBots::DecisionCapture::ClampCaptureMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.CaptureMiB", 512), decisionCaptureSegmentMiB);
+    decisionCaptureTotalMiB = TortoiseBots::DecisionCapture::ClampTotalMiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.TotalMiB", 4096), decisionCaptureCaptureMiB);
+    decisionCaptureRecordKiB = TortoiseBots::DecisionCapture::ClampRecordKiB(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.RecordKiB", 512));
+    decisionCaptureKeyframeEvery = TortoiseBots::DecisionCapture::ClampKeyframeEvery(
+        config.GetIntDefault("AiPlayerbot.DecisionCapture.KeyframeEvery", 60));
     {
         // Issue #1012: the NPCs `.bot cmd gossip` may talk to. Empty (the default) = off.
         std::string const gossipText = config.GetStringDefault("AiPlayerbot.BotGossipNpcs", "");
@@ -950,6 +975,7 @@ bool PlayerbotAIConfig::Initialize()
     guildOrderBankWithdraw = config.GetBoolDefault("AiPlayerbot.GuildOrderBankWithdraw", true);
     craftToolsAlways = config.GetBoolDefault("AiPlayerbot.CraftToolsAlways", true);
     guildOrderBankGold = config.GetBoolDefault("AiPlayerbot.GuildOrderBankGold", true);
+    guildOrderPlayerBuy = config.GetBoolDefault("AiPlayerbot.GuildOrderPlayerBuy", false);
     guildOrderSubOrders = config.GetBoolDefault("AiPlayerbot.GuildOrderSubOrders", true);
     uint32_t depth = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderSubOrderDepth", 3));
     guildOrderSubOrderDepth = (depth < 1 || depth > 16) ? 3 : depth;
@@ -1006,7 +1032,7 @@ bool PlayerbotAIConfig::Initialize()
 
     botAcceptDuelMinimumLevel = config.GetIntDefault("AiPlayerbot.BotAcceptDuelMinimumLevel", 10);
 
-    randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", true);
+    randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", false);
 
     boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", true);
     raidFollowWedge = config.GetBoolDefault("AiPlayerbot.RaidFollowWedge", false);

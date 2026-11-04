@@ -57,6 +57,13 @@ inline bool AlwaysListed(std::string const& spell)
            spell == "Auto Shot" || spell == "Hunter's Mark";
 }
 
+// Turtle custom heal spells the DBC does not mark as heals (a script effect, not HEAL or PERIODIC_HEAL), so the
+// effect test misses their casts. Holy Shock's heal rank is a HEAL effect already and needs no entry.
+inline bool IsTurtleHealSpell(uint32_t spellId)
+{
+    return spellId == 51743;   // Flash of Light
+}
+
 // Debuff keys of the raid recon (L15), by the aura's spell name and stacks; empty when not tracked.
 inline std::vector<std::string> DebuffKeys(std::string const& spellName, uint32_t stacks)
 {

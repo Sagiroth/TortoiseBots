@@ -25,7 +25,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
     // The core's Query hands over a raw QueryResult* the caller frees (src/shared/Database/Database.h).
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `burn_order`, "
-        "`hp_min`, `hp_max`, `bot_aura`, `tactic_mode`, `window_s` FROM `ai_boss_tactic`"));
+        "`hp_min`, `hp_max`, `bot_aura`, `tactic_mode`, `window_s`, `cycle_spell`, `cycle_s`, `spot_x`, `spot_y`, "
+        "`spot_z` FROM `ai_boss_tactic`"));
     if (result)
     {
         do
@@ -46,6 +47,11 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
             row.botAura = fields[10].GetUInt32();
             row.mode = ParseTacticMode(row.kind, fields[11].GetCppString());
             row.windowSec = fields[12].GetFloat();
+            row.cycleSpell = fields[13].GetUInt32();
+            row.cycleSec = fields[14].GetFloat();
+            row.spotX = fields[15].GetFloat();
+            row.spotY = fields[16].GetFloat();
+            row.spotZ = fields[17].GetFloat();
             // A linked_death group's burn order: comma-separated creature entries, in the order the group dies.
             // Every other kind leaves the column empty (the shipped default).
             if (row.kind == BossTacticKind::LinkedDeath)
@@ -78,7 +84,9 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
                     "or boss, a key column it cannot use, a health band outside 0-100, a gate on a kind read straight "
                     "from the table, a mode word its kind does not take, an avoid_cast without a spell or a radius, "
                     "another kind's missing or out-of-range spell or param, a linked_death window that is not positive, "
-                    "or a second row of the key)", row.map,
+                    "a use_object without a target, a clicker role above 2, a boss range outside 0-60, a window that is "
+                    "neither 0 nor at least 10 s, a row with neither aura nor timer, a seek_aura, pull_gate or spread "
+                    "row it cannot use, a cycle or spot column on another kind, or a second row of the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
         } while (result->NextRow());

@@ -33,7 +33,7 @@ HireUnlockKillAdapter::HireUnlockKillAdapter()
 // Horseman death still has a living member, so no credit yet.
 static bool IsLastHorsemanStanding(Creature* killed)
 {
-    if (!killed || !killed->GetMap())
+    if (!killed || !killed->FindMap())
         return false;
     std::vector<uint32_t> members(
         kHireUnlockFourHorsemen, kHireUnlockFourHorsemen + 4);

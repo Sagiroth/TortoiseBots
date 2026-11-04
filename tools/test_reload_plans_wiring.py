@@ -98,7 +98,8 @@ class ReloadPlansWiring(unittest.TestCase):
         self.assertEqual(TACTICS.count("WorldDatabase.Query("), 1)
         # the decision is the tested commit, into the holders the getters read
         self.assertIn("CommitPlanReload(DungeonPlanHolder(), std::move(next), counts, BossTacticsHolder(), "
-                      "std::move(nextTactics),\n        skippedTactics, reads, inUse);", reload)
+                      "std::move(nextTactics),\n        skippedTactics, reads, inUse, &ai::ReconcileSeekFightState);",
+                      reload)
         self.assertIn("return DungeonPlanHolder().Current();", body(MGR, "DungeonPlanTable& ai::GetDungeonPlans()"))
         self.assertIn("return BossTacticsHolder().Current();", body(TACTICS, "BossTacticTable& ai::GetBossTactics()"))
         # never reloads before the startup load sealed the set

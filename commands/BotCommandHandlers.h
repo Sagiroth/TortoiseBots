@@ -17,6 +17,7 @@ bool HandleAhBot(ChatHandler* handler, char const* args);
 bool HandleAction(ChatHandler* handler, char const* args);
 bool HandleCommander(ChatHandler* handler, char const* args);
 bool HandleCommanderOrder(ChatHandler* handler, char const* args);
+bool HandleScout(ChatHandler* handler, char const* args);
 bool HandleTrace(ChatHandler* handler, char const* args);
 bool HandleDungeonRun(ChatHandler* handler, char const* args);
 uint64 BindSystemParty(Player* lead, std::vector<Player*> const& joiners, std::string& code, std::string& message);
@@ -75,6 +76,10 @@ bool HandleOrder(ChatHandler* handler, char const* args);
 // then hands over the order type token and the search text.
 bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std::string const& type,
                        std::string const& text);
+// `.bot order <bot> preview`: read-only, needs the bot online; the order
+// command resolves the bot and the tokens, then hands them over.
+bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string const& botName,
+    std::string const& type, std::string const& item, std::string const& amount);
 bool HandleLootLog(ChatHandler* handler, char const* args);
 bool HandleRepair(ChatHandler* handler, char const* args);
 bool HandleSell(ChatHandler* handler, char const* args);
@@ -87,6 +92,7 @@ bool HandleLearn(ChatHandler* handler, char const* args);
 bool HandleTrade(ChatHandler* handler, char const* args);
 bool HandleMatureCommand(ChatHandler* handler, char const* args);
 bool HandleInventory(ChatHandler* handler, char const* args);
+bool HandleProfessions(ChatHandler* handler, char const* args);
 bool HandleItem(ChatHandler* handler, char const* args);
 bool HandleBehavior(ChatHandler* handler, char const* args);
 bool HandleTotem(ChatHandler* handler, char const* args);

@@ -8,6 +8,7 @@
 #include "../runtime/BotLfgService.h"
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/RunReleaseHold.h"
+#include "../runtime/DecisionCapture.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/AltBotPolicy.h"
@@ -40,6 +41,7 @@
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
 #include "../ai/playerbot/strategy/values/AttackersValue.h"
+#include "../ai/playerbot/strategy/values/PeriodicDamageAura.h"
 #include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/strategy/values/LastMovementValue.h"
@@ -83,6 +85,7 @@
 #include "../runtime/PlayerLedPolicy.h"
 #include "../ai/playerbot/DungeonPlanMgr.h"
 #include "../ai/playerbot/BossTacticsMgr.h"
+#include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "CreatureGroups.h"
@@ -789,11 +792,13 @@ void EraseRunSlot(uint64_t commanderRaw)
     if (it == DungeonRuns().end())
         return;
     TakeRunItems(it->second, 0);
+    TortoiseBots::DecisionCaptureService::Instance().End(commanderRaw, "slot released");
     DungeonRuns().erase(it);
 }
 // Every run slot at once (no commander bound any more, the module's clear): the given items go back first.
 void EraseAllRunSlots()
 {
+    TortoiseBots::DecisionCaptureService::Instance().EndAll("all slots released");
     for (auto& entry : DungeonRuns())
         TakeRunItems(entry.second, 0);
     DungeonRuns().clear();
@@ -1505,7 +1510,7 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
 {
     if (guid.IsEmpty() || guid == bot->GetObjectGuid())
         return nullptr;
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     Unit* unit = map ? map->GetUnit(guid) : nullptr;
     if (!unit || !unit->IsInWorld() || !unit->IsAlive())
         return nullptr;
@@ -1541,7 +1546,7 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
         // lists repeat is dropped here before any unit lookup.
         if (std::find(nonBosses.begin(), nonBosses.end(), guid) != nonBosses.end())
             return;
-        Map* map = bot->GetMap();
+        Map* map = bot->FindMap();
         Unit* seen = map ? map->GetUnit(guid) : nullptr;
         // A guid that does not resolve here (a stale list, another instance
         // copy) says nothing about the unit; only this occurrence is skipped.
@@ -3144,13 +3149,19 @@ static bool FocusIsTankHoldTarget(Unit* target)
 }
 
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
-// group, every bot attacks its Skull target.
+// group, every bot attacks its Skull target. `automatedKillFirst`: the run leader's own kill-first order (an order the
+// run issued), the only focus the totem key may make DPS-only; a player's explicit focus arms every bot.
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
-    std::string const& intent)
+    std::string const& intent, bool automatedKillFirst)
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
+    // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
+    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
+    bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,
+        sPlayerbotAIConfig.dungeonRunTotemFocus);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3163,7 +3174,8 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
         // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
         // whole party (the run leader counts on every focus order doing that).
-        if (dpsOnly && ai->IsTank(bot))
+        if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
+                totemTarget, totemFocus))
             continue;
         bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
         bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
@@ -3212,6 +3224,152 @@ static_assert(TortoiseBots::DungeonRun::kStallDirectMaxYd == RemoteCommander::kD
     TortoiseBots::DungeonRun::kStallDirectMaxVertical == RemoteCommander::kDirectMaxVertical,
     "a stalled walk's direct move keeps the direct step's limits");
 
+// The run leader's move rules in one place: the floor snap of a move point, the
+// path from `origin`, and CheckMove. CommanderMove sends the lead bot with it;
+// `.bot scout path` asks the same question from any start and moves nobody, so
+// the scout and the run leader cannot drift apart.
+struct LeadMoveCheck
+{
+    RemoteCommander::MovePoint point;      // after the floor snap
+    RemoteCommander::MoveFacts facts;
+    RemoteCommander::MoveVerdict verdict = RemoteCommander::MoveVerdict::Ok;
+    uint32 rawPathType = 0;                // path.getPathType(), all bits
+    float actualEnd[3] = {0, 0, 0};
+    float length = 0.0f;                   // sum of the path's segments
+    bool startSwim = false, endSwim = false; // Terrain::IsSwimmable at origin / the snapped point
+    bool snapped = false, keptInWater = false;
+    float waterLevel = 0.0f;               // the kept-in-water message's numbers
+    float raisedZ = 0.0f;
+    uint32 raisedPathType = 0;
+};
+
+static LeadMoveCheck CheckLeadMove(Unit* mover, Vector3 const& origin, RemoteCommander::MovePoint point,
+    bool fromRunLeader)
+{
+    LeadMoveCheck check;
+    TerrainInfo const* terrain = mover->GetMap()->GetTerrain();
+    // The scout reads these two (the run leader's move check ignores them).
+    check.startSwim = terrain->IsSwimmable(origin.x, origin.y, origin.z);
+
+    // Snap the point to the map floor at its x,y (a point a few yd under the
+    // floor has no navmesh poly within the path finder's reach: NOPATH). The
+    // floor at or just below the point comes first, so a low ceiling above it
+    // is never taken for the floor (RemoteCommander::ChooseFloorZ).
+    if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z + RemoteCommander::kFloorSnapRange))
+    {
+        float const belowZ = mover->GetMap()->GetHeight(point.x, point.y, point.z, true,
+            RemoteCommander::kFloorBelowBand + RemoteCommander::kFloorBelowHeadroom);
+        float aboveZ = INVALID_HEIGHT;
+        // A point in water is not lifted out of it onto a surface the lead bot cannot reach (Karazhan Crypt
+        // kc316 step 292; RemoteCommander::WaterSnapAsksPath). Its liquid is read only when the search from
+        // above counts, with the swim line's own test (all liquids, water or ocean by type flags, in or under
+        // the surface: SwimPathPolicy.h). Only in the rare case (that floor would lift a water point out of
+        // the water) is the core asked for the mover's path to the raised point and whether the water
+        // point is swimmable: a pier the lead bot has a path onto keeps the old snap.
+        bool pointInWater = false;
+        float waterLevel = 0.0f;
+        bool waterSwimmable = false;
+        bool raisedReachable = true;
+        uint32 raisedPathType = 0;
+        if (!RemoteCommander::FloorBelowUsable(point.z, belowZ, belowZ > INVALID_HEIGHT))
+        {
+            aboveZ = mover->GetMap()->GetHeight(point.x, point.y,
+                point.z + RemoteCommander::kFloorSnapRange, true,
+                2.0f * RemoteCommander::kFloorSnapRange);
+            if (aboveZ > INVALID_HEIGHT)
+            {
+                GridMapLiquidData liquid{};
+                uint32 const status = static_cast<uint32>(terrain->getLiquidStatus(point.x,
+                    point.y, point.z, ai::kSwimLiquidRequest, &liquid));
+                pointInWater = ai::SwimSampleInWater(status, status != LIQUID_MAP_NO_WATER ? liquid.type_flags : 0);
+                waterLevel = liquid.level;
+            }
+            if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ, belowZ > INVALID_HEIGHT, aboveZ,
+                    aboveZ > INVALID_HEIGHT, pointInWater, waterLevel))
+            {
+                waterSwimmable = terrain->IsSwimmable(point.x, point.y, point.z);
+                if (waterSwimmable)
+                {
+                    float const rx = point.x - origin.x;
+                    float const ry = point.y - origin.y;
+                    float const rz = aboveZ - origin.z;
+                    bool const atOrigin = RemoteCommander::IsAtLead(std::sqrt(rx * rx + ry * ry + rz * rz));
+                    float raisedEndOffset = 0.0f;
+                    if (!atOrigin)
+                    {
+                        PathFinder raisedPath(mover);
+                        raisedPath.calculate(origin, Vector3(point.x, point.y, aboveZ), false);
+                        raisedPathType = static_cast<uint32>(raisedPath.getPathType());
+                        Vector3 const raisedEnd = raisedPath.getActualEndPosition();
+                        float const ex = raisedEnd.x - point.x;
+                        float const ey = raisedEnd.y - point.y;
+                        float const ez = raisedEnd.z - aboveZ;
+                        raisedEndOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+                    }
+                    raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atOrigin);
+                }
+            }
+        }
+        float const snapped = RemoteCommander::ChooseFloorZ(point.z, belowZ, belowZ > INVALID_HEIGHT,
+            aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);
+        if (snapped == point.z && !raisedReachable && waterSwimmable)
+        {
+            check.keptInWater = true;
+            check.waterLevel = waterLevel;
+            check.raisedZ = aboveZ;
+            check.raisedPathType = raisedPathType;
+        }
+        if (snapped != point.z)
+        {
+            point.z = snapped;
+            check.snapped = true;
+        }
+    }
+    check.point = point;
+    // "Hold here": no path is asked for, and the point itself is the end.
+    check.actualEnd[0] = point.x;
+    check.actualEnd[1] = point.y;
+    check.actualEnd[2] = point.z;
+    check.endSwim = terrain->IsSwimmable(point.x, point.y, point.z);
+
+    RemoteCommander::MovePoint originPoint;
+    originPoint.x = origin.x;
+    originPoint.y = origin.y;
+    originPoint.z = origin.z;
+    // leadSpotGather is the run leader's gather on the lead bot's own spot:
+    // fromRunLeader is s_runIssuing at the callers, so this is CommanderMove's
+    // old s_runIssuing && s_runGather exactly.
+    check.facts = RemoteCommander::LeadMoveFacts(originPoint, point, 0, 0.0f, -1.0f,
+        sPlayerbotAIConfig.reactDistance, fromRunLeader && s_runGather, fromRunLeader);
+    // The mover already stands on the point ("hold here"): the path finder
+    // answers NOPATH for a zero-length path, so skip it; CheckMove accepts it.
+    if (!RemoteCommander::IsAtLead(check.facts.distanceFromLead))
+    {
+        PathFinder path(mover);
+        path.calculate(origin, Vector3(point.x, point.y, point.z), false);
+        check.rawPathType = static_cast<uint32>(path.getPathType());
+        check.facts.pathType = check.rawPathType;
+        Vector3 const end = path.getActualEndPosition();
+        check.actualEnd[0] = end.x;
+        check.actualEnd[1] = end.y;
+        check.actualEnd[2] = end.z;
+        float const ex = end.x - point.x;
+        float const ey = end.y - point.y;
+        float const ez = end.z - point.z;
+        check.facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+        float const lx = end.x - origin.x;
+        float const ly = end.y - origin.y;
+        float const lz = end.z - origin.z;
+        check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
+        // PathInfo::Length asserts a non-empty path; a shortcut path always has
+        // two points, a refused one may have none.
+        if (path.getPath().size() >= 2)
+            check.length = path.Length();
+    }
+    check.verdict = RemoteCommander::CheckMove(check.facts);
+    return check;
+}
+
 static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std::string const& args,
     std::string const& intent)
 {
@@ -3227,7 +3385,6 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         request.direct ? "a direct move point" : "a move point");
     if (request.direct)
         return CommanderMoveDirect(handler, order, request.point, intent);
-    RemoteCommander::MovePoint point = request.point;
     Player* lead = order.lead;
     if (!lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported())
     {
@@ -3241,109 +3398,25 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         return true;
     }
 
-    // Snap the point to the map floor at its x,y (a point a few yd under the
-    // floor has no navmesh poly within the path finder's reach: NOPATH). The
-    // floor at or just below the point comes first, so a low ceiling above it
-    // is never taken for the floor (RemoteCommander::ChooseFloorZ).
-    if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z + RemoteCommander::kFloorSnapRange))
-    {
-        float const belowZ = lead->GetMap()->GetHeight(point.x, point.y, point.z, true,
-            RemoteCommander::kFloorBelowBand + RemoteCommander::kFloorBelowHeadroom);
-        float aboveZ = INVALID_HEIGHT;
-        // A point in water is not lifted out of it onto a surface the lead bot cannot reach (Karazhan Crypt
-        // kc316 step 292; RemoteCommander::WaterSnapAsksPath). Its liquid is read only when the search from
-        // above counts, with the swim line's own test (all liquids, water or ocean by type flags, in or under
-        // the surface: SwimPathPolicy.h). Only in the rare case (that floor would lift a water point out of
-        // the water) is the core asked for the lead bot's path to the raised point and whether the water
-        // point is swimmable: a pier the lead bot has a path onto keeps the old snap.
-        bool pointInWater = false;
-        float waterLevel = 0.0f;
-        bool waterSwimmable = false;
-        bool raisedReachable = true;
-        uint32 raisedPathType = 0;
-        if (!RemoteCommander::FloorBelowUsable(point.z, belowZ, belowZ > INVALID_HEIGHT))
-        {
-            aboveZ = lead->GetMap()->GetHeight(point.x, point.y,
-                point.z + RemoteCommander::kFloorSnapRange, true,
-                2.0f * RemoteCommander::kFloorSnapRange);
-            if (aboveZ > INVALID_HEIGHT)
-            {
-                GridMapLiquidData liquid{};
-                uint32 const status = static_cast<uint32>(lead->GetMap()->GetTerrain()->getLiquidStatus(point.x,
-                    point.y, point.z, ai::kSwimLiquidRequest, &liquid));
-                pointInWater = ai::SwimSampleInWater(status, status != LIQUID_MAP_NO_WATER ? liquid.type_flags : 0);
-                waterLevel = liquid.level;
-            }
-            if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ, belowZ > INVALID_HEIGHT, aboveZ,
-                    aboveZ > INVALID_HEIGHT, pointInWater, waterLevel))
-            {
-                waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);
-                if (waterSwimmable)
-                {
-                    float const rx = point.x - lead->GetPositionX();
-                    float const ry = point.y - lead->GetPositionY();
-                    float const rz = aboveZ - lead->GetPositionZ();
-                    bool const atLead = RemoteCommander::IsAtLead(std::sqrt(rx * rx + ry * ry + rz * rz));
-                    float raisedEndOffset = 0.0f;
-                    if (!atLead)
-                    {
-                        PathFinder raisedPath(lead);
-                        raisedPath.calculate(point.x, point.y, aboveZ, false);
-                        raisedPathType = static_cast<uint32>(raisedPath.getPathType());
-                        Vector3 const raisedEnd = raisedPath.getActualEndPosition();
-                        float const ex = raisedEnd.x - point.x;
-                        float const ey = raisedEnd.y - point.y;
-                        float const ez = raisedEnd.z - aboveZ;
-                        raisedEndOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
-                    }
-                    raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);
-                }
-            }
-        }
-        float const snapped = RemoteCommander::ChooseFloorZ(point.z, belowZ, belowZ > INVALID_HEIGHT,
-            aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);
-        if (snapped == point.z && !raisedReachable && waterSwimmable)
-            handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
-                "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, waterLevel, aboveZ, raisedPathType);
-        if (snapped != point.z)
-        {
-            point.z = snapped;
-            handler->PSendSysMessage("Move point snapped to the floor: %.1f %.1f %.1f",
-                point.x, point.y, point.z);
-        }
-    }
+    Vector3 const origin(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ());
+    LeadMoveCheck const check = CheckLeadMove(lead, origin, request.point, s_runIssuing);
+    RemoteCommander::MovePoint const& point = check.point;
+    if (check.keptInWater)
+        handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
+            "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, check.waterLevel, check.raisedZ,
+            check.raisedPathType);
+    if (check.snapped)
+        handler->PSendSysMessage("Move point snapped to the floor: %.1f %.1f %.1f",
+            point.x, point.y, point.z);
 
-    float const dx = point.x - lead->GetPositionX();
-    float const dy = point.y - lead->GetPositionY();
-    float const dz = point.z - lead->GetPositionZ();
-    RemoteCommander::MoveFacts facts;
-    facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);
-    facts.maxDistance = sPlayerbotAIConfig.reactDistance;
-    facts.leadSpotGather = s_runIssuing && s_runGather;
-    facts.fromRunLeader = s_runIssuing;
-    // The lead bot already stands on the point ("hold here"): the path finder
-    // answers NOPATH for a zero-length path, so skip it; CheckMove accepts it.
-    if (!RemoteCommander::IsAtLead(facts.distanceFromLead))
+    RemoteCommander::MoveFacts const& facts = check.facts;
+    // The run leader's stuck note: the path type its own move's check saw.
+    if (s_runOrderCapture.active && !RemoteCommander::IsAtLead(facts.distanceFromLead))
     {
-        PathFinder path(lead);
-        path.calculate(point.x, point.y, point.z, false);
-        facts.pathType = static_cast<uint32>(path.getPathType());
-        if (s_runOrderCapture.active)
-        {
-            s_runOrderCapture.movePathRead = true;
-            s_runOrderCapture.movePathType = facts.pathType;
-        }
-        Vector3 const end = path.getActualEndPosition();
-        float const ex = end.x - point.x;
-        float const ey = end.y - point.y;
-        float const ez = end.z - point.z;
-        facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
-        float const lx = end.x - lead->GetPositionX();
-        float const ly = end.y - lead->GetPositionY();
-        float const lz = end.z - lead->GetPositionZ();
-        facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
+        s_runOrderCapture.movePathRead = true;
+        s_runOrderCapture.movePathType = facts.pathType;
     }
-    RemoteCommander::MoveVerdict verdict = RemoteCommander::CheckMove(facts);
+    RemoteCommander::MoveVerdict const verdict = check.verdict;
     if (verdict != RemoteCommander::MoveVerdict::Ok)
     {
         std::string message;
@@ -3381,6 +3454,95 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
             followers.push_back(bot);
     uint32 following = FormUpOnLead(order.commander, lead, followers, false);
     SendActionAck(handler, intent, "party", following + 1, lead->GetName());
+    return true;
+}
+
+// `.bot scout` (plan-scout spec 4.2): GM-only test tooling for a plan walk. It
+// hires, binds, moves and orders no bot; the only world change is the caller's
+// own move for `walk`. The scout's driver runs it on a test server only.
+bool HandleScout(ChatHandler* handler, char const* args)
+{
+    std::string const intent = "scout";
+    Player* caller = Requester(handler);
+    if (!caller || !caller->GetSession() || caller->GetSession()->GetSecurity() < SEC_GAMEMASTER ||
+        !caller->IsGameMaster())
+    {
+        SendActionError(handler, intent, "gm-only", "Only a Game Master with GM mode on may use the scout.");
+        return true;
+    }
+    if (!caller->IsInWorld())
+    {
+        SendActionError(handler, intent, "requester", "You must be in-game.");
+        return true;
+    }
+    RemoteCommander::ScoutArgs request;
+    if (!RemoteCommander::ParseScoutArgs(args ? args : "", request))
+    {
+        SendActionError(handler, intent, "invalid",
+            "Usage: .bot scout cfg|where #<id> / path #<id> <x> <y> <z> [from <fx> <fy> <fz>] / walk #<id> <x> <y> <z>");
+        return true;
+    }
+    if (request.form == RemoteCommander::ScoutForm::Cfg)
+    {
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutCfgLine(request.id,
+            sPlayerbotAIConfig.reactDistance, sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO),
+            sWorld.getConfig(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS)).c_str());
+        return true;
+    }
+    if (request.form == RemoteCommander::ScoutForm::Where)
+    {
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutPosLine(request.id,
+            caller->GetPositionX(), caller->GetPositionY(), caller->GetPositionZ(),
+            caller->IsMoving(), caller->IsInWater(), caller->IsSwimming()).c_str());
+        return true;
+    }
+
+    Vector3 const origin(caller->GetPositionX(), caller->GetPositionY(), caller->GetPositionZ());
+    if (request.form == RemoteCommander::ScoutForm::Path)
+    {
+        Vector3 start = origin;
+        if (request.hasFrom)
+            start = Vector3(request.from.x, request.from.y, request.from.z);
+        // The point and the start are on the caller's map (the command names no
+        // map: the scout's GM stands in the plan's dungeon).
+        if (!MaNGOS::IsValidMapCoord(start.x, start.y, start.z) ||
+            !MaNGOS::IsValidMapCoord(request.point.x, request.point.y, request.point.z))
+        {
+            SendActionError(handler, intent, "wrong-map",
+                "The point or the start is outside the map's coordinate bounds: the scout paths on the caller's map only.");
+            return true;
+        }
+        LeadMoveCheck const check = CheckLeadMove(caller, start, request.point, true);
+        handler->PSendSysMessage("%s", RemoteCommander::ScoutPathLine(request.id, check.verdict,
+            check.rawPathType, check.length, check.actualEnd, check.facts.endOffset, check.point.z,
+            check.startSwim, check.endSwim).c_str());
+        return true;
+    }
+
+    // Walk: the option set the bots' own mover ends a path with
+    // (MovementActions.cpp MoveTo2 -> DispatchMovement), on the headless GM.
+    // The GM's spot and the point are checked against the core's map bound
+    // before any pathfinding or movement (the same check `path` makes).
+    if (!MaNGOS::IsValidMapCoord(origin.x, origin.y, origin.z) ||
+        !MaNGOS::IsValidMapCoord(request.point.x, request.point.y, request.point.z))
+    {
+        SendActionError(handler, intent, "wrong-map",
+            "The point or your position is outside the map's coordinate bounds: the scout walks on the caller's map only.");
+        return true;
+    }
+    uint32 pathType = 0;
+    float const dx = request.point.x - origin.x;
+    float const dy = request.point.y - origin.y;
+    float const dz = request.point.z - origin.z;
+    if (!RemoteCommander::IsAtLead(std::sqrt(dx * dx + dy * dy + dz * dz)))
+    {
+        PathFinder path(caller);
+        path.calculate(origin, Vector3(request.point.x, request.point.y, request.point.z), false);
+        pathType = static_cast<uint32>(path.getPathType());
+    }
+    caller->GetMotionMaster()->MovePoint(0, request.point.x, request.point.y, request.point.z,
+        MOVE_RUN_MODE | MOVE_PATHFINDING);
+    handler->PSendSysMessage("%s", RemoteCommander::ScoutWalkLine(request.id, pathType).c_str());
     return true;
 }
 
@@ -6262,6 +6424,20 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                         ai::Event("revive", "release", order.commander));
                     bool const running = ExecuteQuietAction(memberAi, "corpse run",
                         ai::Event("revive", "corpse run", order.commander));
+                    // A headless bot's release only schedules the graveyard
+                    // repop, and the core fires it when its movement acks
+                    // settle, seconds later. A resurrect in between leaves the
+                    // flag set, and the repop then far-teleports a living bot
+                    // out of the instance. Run it now, while the bot is still
+                    // a corpse: in a dungeon a managed bot comes back at the
+                    // entrance, so nothing was lost by not waiting.
+                    // A far teleport already under way (a corpse run that
+                    // started first) repops there already: a second
+                    // TeleportTo would be issued for the same graveyard.
+                    if ((released || running) && !member->IsAlive() &&
+                        IsLiveHeadlessBot(member, memberRecord) && !member->IsBeingTeleportedFar() &&
+                        member->IsInWorld() && member->FindMap())
+                        member->RepopAtGraveyard();
                     if (released || running)
                         ++revived;
                 }
@@ -6402,7 +6578,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         if (verb == "attack")
             return CommanderAttack(handler, order, target, intent, attackBot);
         if (verb == "focus")
-            return CommanderFocus(handler, order, target, intent);
+            return CommanderFocus(handler, order, target, intent, s_runIssuing);
         SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Pull);
         BotCommandContext context = CommanderContext(order, target);
         // Player-led: the run's tank (the one named at the start, else the first tank-role bot) pulls, whoever else
@@ -6832,6 +7008,86 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
         f.shortcutRead = true;
         f.shortcutFor = run.shortcutWanted;
         f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way);
+    }
+
+}
+
+// The straggler pull's way (DungeonRun::StragglerPullTick): the acting tank's navmesh path to the point it was sent
+// to, and the first living hostile of another pack the way passes within its own aggro reach plus the margin of. One
+// path and one grid search, only on a try's first tick (the read the policy asked for). Read with the lead bot dead
+// too: the tank that holds the main tank role is the one that goes (an off-tank). For the attack's read the way ends
+// at the unit's LIVE position: a patrol walks its loop, and the attack walks the tank from its loop point to where
+// the patrol stands now, not to the point the tank already stands on.
+void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!run.stragglerPathWanted || !lead || !lead->IsInWorld() || !run.plan)
+        return;
+    std::uint64_t const wanted = run.stragglerPathWanted;
+    f.stragglerPathRead = true;
+    f.stragglerPathFor = wanted;
+    f.stragglerPathTank = run.stragglerTank;
+    f.stragglerPathToUnit = run.stragglerAttackPath;
+    Player* tank = run.stragglerTank.empty() ? lead : FindOnlineByName(run.stragglerTank);
+    if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->GetMapId() != lead->GetMapId())
+        return;
+    float targetX = run.stragglerX, targetY = run.stragglerY, targetZ = run.stragglerZ;
+    if (run.stragglerAttackPath)
+    {
+        Unit* const unit = lead->GetMap() ? lead->GetMap()->GetUnit(::ObjectGuid(wanted)) : nullptr;
+        if (!unit || !unit->IsAlive())
+            return; // gone from the world read: no way to it
+        targetX = unit->GetPositionX();
+        targetY = unit->GetPositionY();
+        targetZ = unit->GetPositionZ();
+    }
+    std::vector<PathPoint> way;
+    if (!DirectNavPath(tank, targetX, targetY, targetZ, way))
+        return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
+    float length = 0.0f;
+    for (std::size_t i = 1; i < way.size(); ++i)
+        length += ai::PlanDistance(way[i - 1].x, way[i - 1].y, way[i - 1].z, way[i].x, way[i].y, way[i].z);
+    if (length > kBotWalkMaxPathYd)
+        return; // too long a way round for a pull: as no way (the longest such walk the glue walks a bot)
+    f.stragglerPathOk = true;
+    ai::PlanStep const* const step = run.step < run.plan->steps.size() ? &run.plan->steps[run.step] : nullptr;
+    std::list<Unit*> around;
+    HostileCreaturesAround(tank, std::min(length + 60.0f, 200.0f), around);
+    float closest = -1.0f;
+    for (Unit* unit : around)
+    {
+        if (!unit->IsAlive() || unit->IsInCombat() || unit->GetObjectGuid().GetRawValue() == wanted)
+            continue;
+        Creature* const creature = unit->ToCreature();
+        if (!creature)
+            continue;
+        // The step's own pack is no other pack: its entries within its radius, and its boss.
+        bool own = false;
+        if (step)
+            for (std::uint32_t entry : step->entries)
+                own = own || (creature->GetEntry() == entry &&
+                    ai::PlanDistance(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                        step->x, step->y, step->z) <= step->radius);
+        own = own || (step && step->entry && creature->GetEntry() == step->entry);
+        if (own)
+            continue;
+        float gapYd = -1.0f;
+        for (std::size_t i = 1; i < way.size(); ++i)
+        {
+            float const d = SegmentDistance(way[i - 1], way[i], creature->GetPositionX(),
+                creature->GetPositionY(), creature->GetPositionZ());
+            gapYd = gapYd < 0.0f || d < gapYd ? d : gapYd;
+        }
+        float const reach = creature->GetAttackDistance(tank) + kStragglerPullAggroMarginYd;
+        if (gapYd < 0.0f || gapYd > reach)
+            continue;
+        if (closest < 0.0f || gapYd < closest)
+        {
+            closest = gapYd;
+            f.stragglerPathBlockEntry = creature->GetEntry();
+            f.stragglerPathBlockYd = gapYd;
+            f.stragglerPathBlockReachYd = reach;
+        }
     }
 }
 
@@ -7938,6 +8194,68 @@ bool RunCcHeld(Unit const* unit)
         HasAnyAura(unit, kRepentanceSpells) || HasAnyAura(unit, kFearSpells) || HasAnyAura(unit, kScareBeastSpells);
 }
 
+// The time left on the run crowd control on it (DungeonRun::UnitFact::ccRemainMs): the soonest-ending aura of the
+// families above, 0 when none is read (a permanent or unread hold). The run breaks the hold that ends first.
+uint32 RunCcRemainingMs(Unit* unit)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!unit)
+        return 0;
+    uint32 remain = 0;
+    auto const soonest = [&](uint32 spell)
+    {
+        Aura* const aura = unit->GetAura(spell, EFFECT_INDEX_0);
+        if (!aura)
+            return;
+        int32 const ms = aura->GetAuraDuration();
+        if (ms > 0 && (!remain || static_cast<uint32>(ms) < remain))
+            remain = static_cast<uint32>(ms);
+    };
+    for (uint32 spell : kPolymorphSpells)
+        soonest(spell);
+    for (uint32 spell : kShackleUndeadSpells)
+        soonest(spell);
+    for (uint32 spell : kBanishSpells)
+        soonest(spell);
+    for (uint32 spell : kSapSpells)
+        soonest(spell);
+    for (uint32 spell : kHibernateSpells)
+        soonest(spell);
+    for (uint32 spell : kFreezingTrapAuras)
+        soonest(spell);
+    for (uint32 spell : kSeductionSpells)
+        soonest(spell);
+    for (uint32 spell : kRepentanceSpells)
+        soonest(spell);
+    for (uint32 spell : kFearSpells)
+        soonest(spell);
+    for (uint32 spell : kScareBeastSpells)
+        soonest(spell);
+    return remain;
+}
+
+// A periodic damage aura from the party is on it: a bot or player of the lead bot's group, or the pet of one
+// (DungeonRun::UnitFact::partyDots). The automatic crowd control leaves a dotted unit alone, since its ticks break
+// the hold the moment it lands. An aura an enemy cast is no reason to skip the unit.
+bool PartyDotOn(Unit* unit, Player* lead)
+{
+    if (!unit || !lead)
+        return false;
+    Group* const group = lead->GetGroup();
+    auto const inParty = [&](Unit* caster)
+    {
+        if (!caster)
+            return false;
+        Player* const owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+        return owner && (owner == lead || (group && group->IsMember(owner->GetObjectGuid())));
+    };
+    for (uint32 const type : ai::kPeriodicDamageAuraTypes)
+        for (Aura const* aura : unit->GetAurasByType(static_cast<AuraType>(type)))
+            if (aura && inParty(aura->GetCaster()))
+                return true;
+    return false;
+}
+
 // In this fight: a party bot is its victim or attacks it.
 bool EngagedWithParty(Unit* unit, std::unordered_set<uint64> const& party)
 {
@@ -8062,6 +8380,8 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
         fact.evading = other->IsCreature() && static_cast<Creature*>(other)->IsInEvadeMode();
+        fact.polymorphed = RunCcHeld(other);
+        fact.ccRemainMs = fact.polymorphed ? RunCcRemainingMs(other) : 0;
         fact.health = other->GetHealth();
         fact.maxHealth = other->GetMaxHealth();
         fact.partyHits = ep && ep->victims.count(fact.guid) != 0;
@@ -8092,6 +8412,54 @@ void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBo
                 ReadEngagedWith(lead, judge, pet, seen, f.engagedUnits, &ep);
         }
     f.engagedRead = true;
+}
+
+// The automatic crowd control's break read (DungeonRun::RunCcBreakTick): the run's own held units that are still in
+// combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
+// keeps no fight open and is none. The party's own read (partyHits) is the unit's attacker set only, no scan.
+void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->FindMap();
+    if (!map)
+        return;
+    Player* const judge = RunJudge(lead, bots);
+    std::unordered_set<uint64> party;
+    for (Player* bot : bots)
+    {
+        if (!bot || bot->FindMap() != map)
+            continue;
+        party.insert(bot->GetObjectGuid().GetRawValue());
+        if (Pet* const pet = bot->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                party.insert(pet->GetObjectGuid().GetRawValue());
+    }
+    for (auto const& hold : slot.run.ccHolds)
+    {
+        Unit* const unit = map->GetUnit(::ObjectGuid(hold.first));
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, lead) ||
+            !RunCcHeld(unit))
+            continue;
+        UnitFact fact;
+        fact.guid = hold.first;
+        fact.entry = unit->GetEntry();
+        fact.distLead = lead->GetDistance(unit);
+        fact.hostile = true;
+        fact.polymorphed = true;
+        fact.attackable = GroupCanAttack(judge, unit);
+        fact.health = unit->GetHealth();
+        fact.maxHealth = unit->GetMaxHealth();
+        fact.ccRemainMs = RunCcRemainingMs(unit);
+        for (Unit* attacker : unit->GetAttackers())
+            if (attacker && party.count(attacker->GetObjectGuid().GetRawValue()))
+            {
+                fact.partyHits = true;
+                break;
+            }
+        f.ccHeld.push_back(fact);
+    }
+    f.ccHeldRead = true;
 }
 
 // A party bot is in combat when it or its living pet is (DungeonRun::MemberFact::inCombat, Facts::anyInCombat, and
@@ -8335,6 +8703,16 @@ void DropUnattackableCombat(Player* lead, std::vector<Player*> const& bots, std:
     }
 }
 
+// Whether a unit is a player of the lead bot's group: a charmed group member fights the party as a hostile, but every
+// order at it is refused ("a bot or a member of the group"), so the run leader never makes a fact of it.
+static bool InLeadGroup(Player* lead, Unit* unit)
+{
+    if (!lead || !unit || !unit->IsPlayer())
+        return false;
+    Group* group = lead->GetGroup();
+    return group && static_cast<Player*>(unit)->GetGroup() == group;
+}
+
 // The plan's kill_first units of this fight, from the bots' cached
 // "attackers" lists (no scan): each with whether it is engaged with the party
 // and, for a summoned one (a healing ward), whether its owner is. The creatures
@@ -8354,11 +8732,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
             return;
+        // A charmed group member is no fact of the fight: every order at it is refused, and the tick it spends
+        // is the focus' own.
+        if (TortoiseBots::DungeonRun::RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit)))
+            return;
         if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, lead))
             return;
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = unit->GetObjectGuid().GetRawValue();
         fact.entry = unit->GetEntry();
+        fact.creatureType = unit->GetCreatureType(); // the totem focus reads a type-11 unit (DungeonRunPolicy.h)
         fact.distLead = lead->GetDistance(unit);
         fact.stealthed = IsStealthed(unit);
         fact.evading = unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode();
@@ -8632,11 +9015,13 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             f.leadHasAttacker = true;
         }
         // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
-        // in melee reach above is only EngageTarget's pick).
+        // in melee reach above is only EngageTarget's pick). A charmed group member is no fact of the fight, as in
+        // the read below: every order at it is refused.
         std::unordered_set<uint64> seenLead;
         for (Unit* attacker : lead->GetAttackers())
             if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
                 !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 f.leadAttackers.push_back(
                     {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
@@ -8675,6 +9060,10 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
+            // A charmed group member is no fact of the fight: every order at it is refused, so it would only spend
+            // the guard's budget and the focus' tick.
+            if (TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)))
+                continue;
             float const mobYd = anchor->GetDistance(attacker);
             bool const inParty = toParty && seen.insert(attacker->GetObjectGuid().GetRawValue()).second;
             bool const inWalk = toWalk && mobYd > TortoiseBots::DungeonRun::kGuardYd &&
@@ -8693,6 +9082,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.z = attacker->GetPositionZ();
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
@@ -8708,6 +9098,9 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
             fact.victimTank = tankVictim;
+            // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
+            if (f.auraGatedTargets)
+                fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
             if ((raidBoss || raidTrashOffTanks) && !petVictim)
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
@@ -8935,6 +9328,57 @@ Creature* OwnBossSpawnCreature(Player* lead, ai::PlanStep const& step)
     uint32 const own = OwnBossSpawnLow(lead->GetMapId(), step);
     CreatureData const* data = own ? sObjectMgr.GetCreatureData(own) : nullptr;
     return data ? map->GetCreature(data->GetObjectGuid(own)) : nullptr;
+}
+
+// The Zul'Gurub High Priests whose instance state is not DONE, by name: the pull gate's note names them, so a walk
+// report says why Hakkar is not pulled. The core's instance_zulgurub keeps one state per priest (zulgurub.h's
+// TYPE_ARLOKK 1, TYPE_JEKLIK 2, TYPE_VENOXIS 3, TYPE_MARLI 4, TYPE_THEKAL 6; the same five the saved instance data
+// lists first, in this order). Empty for another map or an instance no script owns.
+std::string ZulGurubPriestsAlive(Player* lead)
+{
+    Map* map = lead->GetMap();
+    InstanceData* data = map ? map->GetInstanceData() : nullptr;
+    if (!data || lead->GetMapId() != 309)
+        return std::string();
+    static const struct { uint32 state; char const* name; } priests[] = {
+        {1, "Arlokk"}, {2, "Jeklik"}, {3, "Venoxis"}, {4, "Mar'li"}, {6, "Thekal"}};
+    std::string out;
+    for (auto const& p : priests)
+    {
+        if (data->GetData(p.state) == 3) // DONE (ScriptedInstance.h)
+            continue;
+        if (!out.empty())
+            out += ", ";
+        out += p.name;
+    }
+    return out;
+}
+
+// The pull gate's read (DungeonRun::Facts::bossGate*, AiPlayerbot.DungeonRunPullGate): a boss step whose boss carries a
+// pull_gate row reads the row's stake aura off the living creature — its stacks, the band and the hold — plus the note's
+// list of the living High Priests. DungeonRun::BossPullGated then never pulls the boss while the aura is up, and the
+// run ends at the row's seconds (Zul'Gurub walk 33 pulled Hakkar with five Hakkar Power 24692 stacks and died in 25-36
+// s). One aura lookup per boss per tick; no row (or the key off) leaves the facts unread.
+void ReadBossPullGate(ai::PlanStep const& step, Player* lead, Creature* boss, TortoiseBots::DungeonRun::Facts& f)
+{
+    if (!sPlayerbotAIConfig.dungeonRunPullGate || !step.entry || !boss || !boss->IsAlive())
+        return;
+    const std::vector<ai::BossTacticRow>* rows = ai::GetBossTactics().Rows(lead->GetMapId(), step.entry);
+    if (!rows)
+        return;
+    for (ai::BossTacticRow const& row : *rows)
+    {
+        if (row.kind != ai::BossTacticKind::PullGate)
+            continue;
+        SpellAuraHolder* holder = boss->GetSpellAuraHolder(row.spellId);
+        f.bossGateStacks = holder ? static_cast<int32>(holder->GetStackAmount()) : 0;
+        f.bossGateSpell = row.spellId;
+        f.bossGateMax = row.priority;
+        f.bossGateHoldS = row.param;
+        f.bossSearchAliveEntry = boss->GetEntry(); // the entry the scan's units read (a script's changed form too)
+        f.bossGatePriests = ZulGurubPriestsAlive(lead);
+        return;
+    }
 }
 
 // A boss step's instance search (DungeonRun::Facts::bossSearch*), on the tick after the policy asked for it
@@ -10348,6 +10792,70 @@ void ReadPullPacks(Map* map, std::vector<TortoiseBots::DungeonRun::UnitFact>& un
     }
 }
 
+// The rescue teleport's read of a plan point (DungeonRun::LiveHostileNearPoint), only while the run asks for it
+// (Run::rescueScanWanted): the living, not evading hostile creatures within kRescueScanYd of the point, with their
+// aggro reach at the party's lowest level. One bounded grid visit around the point, never a load.
+namespace
+{
+// The read's own filters (RescueHostileHolds): the same shape as the fetch read's, so a trigger NPC the group cannot
+// attack, one that never aggros, a summoned thing or one a storey up or down is no live hostile holding the point.
+struct RescueHostileNear
+{
+    Player* lead;
+    float x, y, z, range;
+    bool operator()(Unit* unit) const
+    {
+        if (!unit || !unit->IsCreature() || !unit->IsAlive())
+            return false;
+        Creature* const creature = static_cast<Creature*>(unit);
+        float const dx = unit->GetPositionX() - x, dy = unit->GetPositionY() - y;
+        return TortoiseBots::DungeonRun::RescueHostileHolds(unit->GetPositionZ() - z, std::sqrt(dx * dx + dy * dy),
+            range, creature->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO),
+            creature->HasFlag(UNIT_FIELD_FLAGS,
+                UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_NOT_SELECTABLE),
+            creature->IsInEvadeMode(), !unit->GetOwnerGuid().IsEmpty(), lead->IsHostileTo(unit));
+    }
+};
+}
+
+static void ReadRescueFacts(Player* lead, std::vector<Player*> const& bots, float x, float y, float z,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    uint32 lowest = lead->GetLevel();
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && bot->GetMap() == map && bot->GetLevel() < lowest)
+            lowest = bot->GetLevel();
+    float const rate = sWorld.getConfig(CONFIG_FLOAT_RATE_CREATURE_AGGRO);
+    std::list<Unit*> found;
+    RescueHostileNear check{ lead, x, y, z, kRescueScanYd };
+    MaNGOS::UnitListSearcher<RescueHostileNear> searcher(found, check);
+    Cell::VisitAllObjects(x, y, map, searcher, kRescueScanYd, true);
+    for (Unit* unit : found)
+    {
+        Creature* const creature = unit->ToCreature();
+        if (!creature)
+            continue;
+        ai::AggroMob mob;
+        mob.level = creature->GetLevel();
+        mob.detectionYd = creature->GetDetectionRange();
+        StandPackReach reach;
+        reach.entry = creature->GetEntry();
+        reach.x = creature->GetPositionX();
+        reach.y = creature->GetPositionY();
+        reach.z = creature->GetPositionZ();
+        reach.reachYd = ai::AggroRadius(mob, lowest, rate);
+        f.rescueReach.push_back(reach);
+    }
+    f.rescueRead = true;
+    f.rescueReadX = x;
+    f.rescueReadY = y;
+    f.rescueReadZ = z;
+}
+
 // The teleport return's read of the lead bot's ground (DungeonRun::FetchPoint), only while the run asks for it
 // (Run::fetchReadWanted): the living hostile creatures within kFetchScanYd that are in no fight, with their aggro
 // reach at the party's lowest level, and points on rings around the lead bot (kFetchRingsYd x kFetchRingSteps), on
@@ -10405,6 +10913,39 @@ static void ReadFetchFacts(Player* lead, std::vector<Player*> const& bots, Torto
     f.fetchRead = true;
 }
 
+// The loop a creature walks (its waypoint path, closed) and one full cycle's time at its walk speed
+// (DungeonRun::StragglerPullTick: a patrol is waited for one loop at most). Read only with
+// AiPlayerbot.DungeonRunStragglerPull on, on a stand-pull row's read: one map lookup per patroller a tick, no more.
+void ReadPatrolLoop(Creature* creature, TortoiseBots::DungeonRun::UnitFact& unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunStragglerPull)
+        return;
+    // A formation follower walks its leader's loop (PatrolWalker): its own entry has no waypoint path.
+    Creature* const walker = PatrolWalker(creature);
+    WaypointPath const* const loop = walker ? sWaypointMgr.GetDefaultPath(walker->GetEntry(), walker->GetGUIDLow())
+                                            : nullptr;
+    if (!loop)
+        return;
+    float loopYd = 0.0f;
+    for (auto const& node : *loop)
+    {
+        ai::ApproachPoint point;
+        point.x = node.second.x;
+        point.y = node.second.y;
+        point.z = node.second.z;
+        if (!unit.loop.empty())
+            loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+                point.x, point.y, point.z);
+        unit.loop.push_back(point);
+    }
+    if (unit.loop.size() > 1)
+        loopYd += ai::PlanDistance(unit.loop.back().x, unit.loop.back().y, unit.loop.back().z,
+            unit.loop.front().x, unit.loop.front().y, unit.loop.front().z);
+    float const speed = creature->GetSpeed(MOVE_WALK);
+    if (loopYd > 0.0f && speed > 0.1f)
+        unit.cycleMs = static_cast<std::uint32_t>(loopYd / speed * 1000.0f + 0.5f);
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
@@ -10417,6 +10958,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // The pack-cleared gate (DungeonRun::ClassifyPullRead): read every tick, so a reload switches it mid-run.
     f.packClearMarginYd = sPlayerbotAIConfig.dungeonRunPackClearMarginYd;
     f.packClearRepulls = sPlayerbotAIConfig.dungeonRunPackClearRepulls;
+    // The straggler pull (DungeonRun::StragglerPullTick): a unit the step waits for is pulled by the tank instead of
+    // the pause. Read every tick, like the gate's keys.
+    f.stragglerPull = sPlayerbotAIConfig.dungeonRunStragglerPull;
     // The pull stand (DungeonRun::HoldForShot): off, no sight ray, range or stand is read.
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The stand's clearance (DungeonRun::PullStandRuleOn): it owns an authored stand-pull step's stand rule.
@@ -10435,6 +10979,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.bossTacticNoCc = ai::GetBossTactics().NoCcEntries(lead->GetMapId());
     f.autoCcRisky = f.autoCc && sPlayerbotAIConfig.dungeonRunAutoCcRisky;
     f.autoCcAbove = sPlayerbotAIConfig.dungeonRunAutoCcAbove;
+    // The totem focus and the aura-gated targets (FocusSkipsBot, GuardSkipsUnit): read every tick, so a reload switches
+    // them mid-run.
+    f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
+    f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
@@ -10443,6 +10991,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // The teleport return and the stand-still hold (DungeonRun::FarReturnTick, ai::ReturnHoldPolicy).
     f.teleportReturnYd = sPlayerbotAIConfig.runTeleportReturnYd;
     f.reviveHoldYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
+    // The rescue teleport's read of its point (StrandedTeleportTick): the live hostiles that hold it.
+    if (slot.run.rescueScanWanted && lead->IsAlive() && lead->IsInWorld())
+        ReadRescueFacts(lead, bots, slot.run.rescueScanX, slot.run.rescueScanY, slot.run.rescueScanZ, f);
     if (slot.run.fetchReadWanted && lead->IsAlive() && lead->IsInWorld())
         ReadFetchFacts(lead, bots, f);
     f.fightForward = sPlayerbotAIConfig.dungeonRunFightForward;
@@ -10468,6 +11019,15 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
+    // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
+    // the canal at -11944.3 -1353.9 62.3 and the run stranded there).
+    if (Map* const map = lead->GetMap())
+        f.pointLiquid = [map](float x, float y, float z)
+        {
+            GridMapLiquidStatus const status = map->GetTerrain()->getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, nullptr);
+            return status == LIQUID_MAP_IN_WATER || status == LIQUID_MAP_UNDER_WATER;
+        };
     f.leadMoving = lead->IsMoving(); // an exact waypoint's stand-still proof (DungeonRunPolicy.h ExactWalkTo)
     // The walk after a rest (DungeonRun::RestWalkResendDue): a rest state confirms the stall, a cast defers it.
     f.leadResting = HasMealAura(lead) || lead->GetStandState() != UNIT_STAND_STATE_STAND;
@@ -10771,6 +11331,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         ReadEngagedUnits(lead, bots, f);
         f.staleCombat = f.engagedUnits.empty();
+        if (f.autoCc)
+            ReadCcBreakFacts(slot, lead, bots, f);
     }
     if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
         ReadKillFirst(*slot.run.plan, lead, bots, f);
@@ -10908,6 +11470,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.losLead = lead->IsWithinLOSInMap(creature);
                     unit.formation = RunFormationOf(creature);
                     unit.patrols = RunWalksPatrol(creature);
+                    ReadPatrolLoop(creature, unit);
                     unit.attackable = GroupCanAttack(judge, creature);
                     unit.stealthed = IsStealthed(creature);
                 }
@@ -10949,6 +11512,35 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                             bossCorpseFromSpot = fromPoint;
                         }
                         continue;
+                    }
+                    // The pull gate (ReadBossPullGate): the boss's own stake aura, once per tick, off the creature
+                    // this scan found alive.
+                    if (bossEntry && f.bossGateStacks < 0)
+                        ReadBossPullGate(*step, lead, creature, f);
+                    if (bossEntry)
+                    {
+                        // Hakkar's run-line facts (D8, spec §3.2): his health, the enrage aura, and the seek clock's
+                        // latest siphon. Read once per tick off the living plan boss.
+                        if (f.bossHpPct < 0)
+                            f.bossHpPct = static_cast<int>(creature->GetHealthPercent());
+                        if (lead->GetMapId() == 309 && creature->GetEntry() == TortoiseBots::DungeonRun::kHakkarEntry)
+                        {
+                            // The enrage aura is a note-only fact, so it is read with the seek key off too.
+                            if (creature->GetSpellAuraHolder(TortoiseBots::DungeonRun::kHakkarBerserkSpell))
+                                f.bossBerserk = true;
+                            if (!f.seekClockRead && sPlayerbotAIConfig.dungeonRunSeekAura)
+                            {
+                                f.seekClockRead = true;
+                                ai::SeekCycleView view;
+                                if (ai::SeekCycleSnapshot(lead->GetInstanceId(),
+                                                          creature->GetObjectGuid().GetRawValue(), view))
+                                {
+                                    f.seekSiphonCycle = view.siphonCycle;
+                                    f.seekSiphonDosed = view.siphonDosed;
+                                    f.seekSiphonUndosed = view.siphonUndosed;
+                                }
+                            }
+                        }
                     }
                     PullReadIn read;
                     bool residue = false;
@@ -11029,6 +11621,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
+                    unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11045,6 +11638,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.y = creature->GetPositionY();
                         unit.formation = RunFormationOf(creature); // its pack, only a stand-pull row's own read
                         unit.patrols = RunWalksPatrol(creature);
+                        ReadPatrolLoop(creature, unit);
                         unit.spawnOwned = SpawnOwned(read, step->radius); // the pack's formations (ScopeStandPullFacts)
                     }
                     if (residue)
@@ -11054,6 +11648,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.distSpot = read.fromPoint2d;
                         unit.spawnOwned = SpawnOwned(read, step->radius);
                         unit.spawnYd = read.spawnYd;
+                        ReadPatrolLoop(creature, unit);
                         // Residue only by the flier rule: left at the re-pull cap, not paused for (ZG walk 5).
                         unit.aloft = read.airborne && read.airborneSameFloor && std::fabs(read.dz) > kPackResidueZYd;
                         f.packResidue.push_back(unit);
@@ -11288,6 +11883,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     unit.polymorphed = RunCcHeld(creature);
+                    unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
@@ -11418,6 +12014,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     if (f.leadIsland && lead->IsAlive())
         f.goodSpotCut = GoodSpotCutOff(lead, slot.run);
     ReadTimeSinkWays(slot, lead, f);
+    ReadStragglerWay(lead, slot.run, f);
     ReadPullStand(slot, lead, bots, f);
     ReadStandPullHold(slot, lead, bots, f);
     // The ring estimate's look-ahead (AiPlayerbot.DungeonRunAggroWalkRing), on the row before a pull.
@@ -11849,14 +12446,22 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
                 !seen.insert(attacker->GetObjectGuid().GetRawValue()).second ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
+            // A charmed group member is no fact of the fight, as on the bot path: every order at it is refused, so it
+            // would only spend the guard's budget and the auto-CC's count.
+            if (TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)))
+                continue;
             TortoiseBots::DungeonRun::UnitFact fact;
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
             fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
+            fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
+            if (f.auraGatedTargets)
+                fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;
@@ -12420,9 +13025,17 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
                     botAi->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Set(0);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
-    std::string const order = slot.playerLed.on
-        ? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)
-        : TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+    std::string order;
+    if (slot.playerLed.on)
+        order = TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt);
+    else
+    {
+        // Decision capture (off unless enabled): the facts exactly as the tick
+        // reads them and the run right before it, then what it ordered.
+        TortoiseBots::DecisionCaptureService::Instance().BeforeTick(commanderRaw, slot.run, facts, dt);
+        order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);
+        TortoiseBots::DecisionCaptureService::Instance().AfterTick(commanderRaw, slot.run, order);
+    }
     // The linked_death state changes of this tick (hold, release armed, released, reset): one bot_events.csv row each,
     // from the lead bot, the same gate as the boss tactics rows. The queue is taken every tick, logged or not.
     if (std::vector<TortoiseBots::DungeonRun::Run::LinkedEvent> const linkedEvents =
@@ -13851,6 +14464,20 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
             slot.playerLed.tank = lead->GetName();
         DungeonRunSlot& stored = DungeonRuns()[commanderRaw] = slot;
         RebuildRunGroups(); // one index rebuild per start (BotAreaTriggerWiringTest pins this adjacency)
+        // Decision capture (off unless enabled): the capture exists before the
+        // first tick of the run, and the start line below names it. A
+        // player-led run ticks through PlayerLed::Tick, which it does not record.
+        std::string captureId;
+        if (!slot.playerLed.on)
+        {
+            std::uint64_t const captureNowMs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            captureId = TortoiseBots::DecisionCaptureService::Instance().Begin(
+                commanderRaw, commander->GetName(), plan->name, captureNowMs);
+            if (captureId.empty())
+                if (std::string const& why = TortoiseBots::DecisionCaptureService::Instance().lastError(); !why.empty())
+                    TB_LOG_BASIC("TortoiseBots: decision capture for %s not started: %s", commander->GetName(), why.c_str());
+        }
         // Item-leg skip: give after the slot exists; the warning rides the start note.
         stored.giveRun = startPlan.giveRun;
         {
@@ -13866,9 +14493,12 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         }
         playerLedGuard.commanderRaw = 0; // started: the binding stays with the run
         s_dungeonRunMs = 0;
-        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s at step %u%s", commander->GetName(), plan->name.c_str(),
+        std::string const captureSuffix =
+            captureId.empty() ? std::string() : " (decision capture " + captureId + ")";
+        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s at step %u%s%s", commander->GetName(), plan->name.c_str(),
             static_cast<uint32>(startStep + 1),
-            stored.run.testSpeed > 1.0f ? (" at " + TortoiseBots::DungeonRun::SpeedLabel(stored.run)).c_str() : "");
+            stored.run.testSpeed > 1.0f ? (" at " + TortoiseBots::DungeonRun::SpeedLabel(stored.run)).c_str() : "",
+            captureSuffix.c_str());
         if (startStep > 0)
         {
             std::string const& legName = plan->LegName(plan->steps[startStep].leg);
@@ -14243,12 +14873,26 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
         creature && creature->IsInEvadeMode());
 }
 
-// The boss debuffs one bound bot carries and whether it is charmed: the negative auras from outside its own group, read off
-// the bot's holders it already has. memberLow: the low guids of every player of the bot's group and of the binding, so a
-// debuff the group cast on itself is not the boss's work.
-static void FillBotDebuffs(Player* bot, std::unordered_set<uint32> const& memberLow,
-    CommanderTelemetry::BotExtra& extra)
+// The boss debuffs one bot carries and whether it is charmed: the negative auras from outside its own group, read off
+// the bot's holders it already has. The group-only read builds the exclusion set from the bot and its group; the
+// overload below unions the caller's friendly-caster set first, so a debuff the wider party cast on itself is not the
+// boss's work.
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra)
 {
+    std::unordered_set<uint32_t> const none;
+    FillRaidBotDebuffs(bot, extra, none);
+}
+
+void FillRaidBotDebuffs(Player* bot, CommanderTelemetry::BotExtra& extra,
+    std::unordered_set<uint32_t> const& friendlyLow)
+{
+    std::unordered_set<uint32_t> memberLow;
+    memberLow.reserve(friendlyLow.size() + 41);
+    memberLow.insert(friendlyLow.begin(), friendlyLow.end());
+    memberLow.insert(bot->GetGUIDLow());
+    if (Group* group = bot->GetGroup())
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            memberLow.insert(slot.guid.GetCounter());
     std::vector<CommanderTelemetry::AuraRead> reads;
     for (auto const& entry : bot->GetSpellAuraHolderMap())
     {
@@ -14665,6 +15309,13 @@ static void ReadReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uin
     ApplyReadyCache(entry, extra);
 }
 
+// The G2 raid detail shares the bound path's ready read (same cache, same
+// cadence) without a binding.
+void ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
+{
+    ReadReadyFacts(bot, extra, nowMs);
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -14773,7 +15424,7 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (member.target && map)
             if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
                 extra.targetName = target->GetName();
-        FillBotDebuffs(bot, memberLow, extra);
+        TortoiseBots::BotCommands::FillRaidBotDebuffs(bot, extra, memberLow);
         ReadReadyFacts(bot, extra, WorldTimer::getMSTime());
         ref.botExtras.push_back(std::move(extra));
     }

@@ -76,9 +76,14 @@ class MoveFailNoteWiringTest(unittest.TestCase):
         self.assertIn("return moved;", fn)
 
     def test_commander_move_hands_over_its_path_type(self):
+        # The path type is read in the shared check (CheckLeadMove) and captured by
+        # `cmd move` only when it asked for a path (not "hold here").
+        check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
+        self.assertIn("check.rawPathType = static_cast<uint32>(path.getPathType());", check)
+        self.assertIn("check.facts.pathType = check.rawPathType;", check)
         fn = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
-        self.assertIn("facts.pathType = static_cast<uint32>(path.getPathType());\n        if (s_runOrderCapture.active)\n        {\n"
-                      "            s_runOrderCapture.movePathRead = true;\n            s_runOrderCapture.movePathType = facts.pathType;", fn)
+        self.assertIn("if (s_runOrderCapture.active && !RemoteCommander::IsAtLead(facts.distanceFromLead))\n    {\n"
+                      "        s_runOrderCapture.movePathRead = true;\n        s_runOrderCapture.movePathType = facts.pathType;", fn)
         issue = body(COMMANDS, "bool IssueRunOrder(", "\n}\n")
         self.assertIn("if (captured)\n        *captured = got;", issue)
         self.assertIn("TortoiseBots::DungeonRun::IsGatherOrder(it->second.run, order), &captured);", COMMANDS)

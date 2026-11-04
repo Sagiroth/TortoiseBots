@@ -106,8 +106,33 @@ namespace ai
         // (IsCcBotReadyFor), at any combat time, while other enemies are
         // left. Only Blade Flurry's cancel uses it (CcCancelBladeFlurry).
         bool ReadyCcMarkNear(WorldObject* center, float radius);
+        // A periodic damage aura from the group is on `unit`: a member's, a
+        // player's or the pet of one. Its ticks break a crowd control the
+        // moment it lands, so the run's automatic crowd control never marks
+        // such a unit and its CC bot never casts on it (an enemy's aura is no
+        // reason to skip it).
+        bool PartyDotOn(Unit* unit);
+        // The two halves of the DoT rule (CcDotTargetAllowed): a CC mark (the
+        // group's Moon, a member's "rti cc", a bot's "rti cc target"), and
+        // crowd control right now.
+        bool IsCcMarkedUnit(Unit* unit);
+        bool IsCrowdControlledUnit(Unit* unit);
+        // A unit under the group's damage-breakable crowd control stands inside
+        // the area of the running channel or ground effect `spell`: it is
+        // cancelled (the spell's cast-start guard only saw the area before the
+        // sheep landed). The area's centre and radius come from the spell data.
+        bool CcInRunningArea(Spell const* spell);
+        // The same scan for the spell data alone: the cast-start guard reads it
+        // before a channel starts, so start and cancel never disagree (a
+        // crowd-controlled unit attacks nobody and is missing from "attackers").
+        // The area is centred on `spellTarget` (a ground area or a chain) or on
+        // this bot (a caster-centred area).
+        bool BreakableCcInArea(SpellEntry const* info, Unit* spellTarget);
 
     private:
+        // "possible targets no los" around one point: the list a
+        // crowd-controlled unit stays in while it attacks nobody.
+        bool BreakableCcNear(float x, float y, float z, uint32 mapId, float radius);
         bool OnlyMarksLeftCached();
         int onlyMarksLeft;
     };
