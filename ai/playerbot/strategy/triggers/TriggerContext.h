@@ -250,6 +250,7 @@ namespace ai
 
             creators["mounted"] = [](PlayerbotAI* ai) { return new IsMountedTrigger(ai); };
             creators["rooted"] = [](PlayerbotAI* ai) { return new RootedTrigger(ai); };
+            creators["tank rooted"] = [](PlayerbotAI* ai) { return new TankRootedTrigger(ai); };
             creators["party member rooted"] = [](PlayerbotAI* ai) { return new PartyMemberRootedTrigger(ai); };
             creators["feared"] = [](PlayerbotAI* ai) { return new FearedTrigger(ai); };
             creators["charmed"] = [](PlayerbotAI* ai) { return new CharmedTrigger(ai); };

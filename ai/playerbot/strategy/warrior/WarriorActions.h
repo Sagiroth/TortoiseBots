@@ -130,8 +130,44 @@ namespace ai
         }
     };
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
-    MELEE_DEBUFF_ACTION_R(CastThunderClapAction, "thunder clap", 8.0f);
-    SNARE_ACTION(CastThunderClapSnareAction, "thunder clap");
+    // Thunder Clap is a rage trap in the Arms swing cycle (Mortal
+    // Strike/Overpower/Sweeping Strikes out-damage it), so grouped PvE Arms
+    // DPS leaves it to the tank. Fury keeps the row, and so do solo and
+    // PvP/BG Arms: a solo bot has no tank covering the debuff, and in PvP
+    // the snare matters more than the swing cycle.
+    class CastThunderClapAction : public CastMeleeDebuffSpellAction
+    {
+    public:
+        CastThunderClapAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "thunder clap")
+        {
+            range = 8.0f;
+        }
+        bool isUseful() override
+        {
+            Group* group = bot->GetGroup();
+            if (ShouldSkipThunderClapForArms(ai->IsTank(bot),
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT),
+                group && !group->isBGGroup(),
+                bot->InBattleGround() || ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT)))
+                return false;
+            return CastMeleeDebuffSpellAction::isUseful();
+        }
+    };
+    class CastThunderClapSnareAction : public CastSnareSpellAction
+    {
+    public:
+        CastThunderClapSnareAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "thunder clap") {}
+        bool isUseful() override
+        {
+            Group* group = bot->GetGroup();
+            if (ShouldSkipThunderClapForArms(ai->IsTank(bot),
+                ai->HasStrategy("arms", BotState::BOT_STATE_COMBAT),
+                group && !group->isBGGroup(),
+                bot->InBattleGround() || ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT)))
+                return false;
+            return CastSnareSpellAction::isUseful();
+        }
+    };
     SNARE_ACTION(CastHamstringAction, "hamstring");
     MELEE_ACTION(CastOverpowerAction, "overpower");
     MELEE_ACTION(CastMockingBlowAction, "mocking blow");
@@ -181,6 +217,12 @@ namespace ai
         bool isUseful() override
         {
             if (!CastBuffSpellAction::isUseful())
+                return false;
+            if (ai->IsTank(bot))
+                return false;
+            if (!AI_VALUE2(bool, "trigger active", "melee medium aoe"))
+                return false;
+            if (!ai->HasAura("battle stance", bot))
                 return false;
             return !SweepingStrikesNearCc(ai, bot, CcSweepingStrikesRadius);
         }
@@ -234,7 +276,19 @@ namespace ai
     };
     MELEE_ACTION(CastSlamAction, "slam");
     BUFF_ACTION(CastBerserkerRageAction, "berserker rage");
-    MELEE_ACTION(CastWhirlwindAction, "whirlwind");
+    class CastWhirlwindAction : public CastMeleeSpellAction
+    {
+    public:
+        CastWhirlwindAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "whirlwind") {}
+        bool isUseful() override
+        {
+            if (!CastMeleeSpellAction::isUseful())
+                return false;
+            if (ai->IsTank(bot))
+                return true;
+            return ai->HasAura("berserker stance", bot);
+        }
+    };
     MELEE_INTERRUPT_ACTION(CastPummelAction, "pummel");
     ENEMY_HEALER_ACTION(CastPummelOnEnemyHealerAction, "pummel");
     BUFF_ACTION(CastRecklessnessAction, "recklessness");
