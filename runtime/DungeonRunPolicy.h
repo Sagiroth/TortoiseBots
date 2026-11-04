@@ -11185,6 +11185,23 @@ inline bool ApproachStandFound(Run& r, const Facts& f, bool found, float x, floa
         " yd from it the lead bot has a path to (the lead bot " +
         Num(ai::PlanDistance(f.leadX, f.leadY, f.leadZ, s->x, s->y, s->z)) + " yd from it" +
         (r.approachBestYd > 0.0f ? ", the approach hops got no nearer than " + Num(r.approachBestYd) + " yd" : "") + ")";
+    // None found and the lead bot's own spot is a navmesh island (the glue's reading: every ring candidate came back
+    // NOPATH from its start polygon): not the pack's floor, so no pause: hop it off first, then the pull reads its
+    // stand afresh from the mesh the hop ends on. Past the hops' caps the hop pauses and names the island
+    // (IslandEscape), never this floor.
+    if (none && f.leadIsland)
+    {
+        r.approachStand = 0;
+        r.approachStandStep = static_cast<std::size_t>(-1);
+        r.refusedPullStandStep = static_cast<std::size_t>(-1);
+        r.approachStandWhy.clear();
+        ResetShotStand(r);          // "no firing stand found" set the unit's tries to the cap
+        r.islandSuspect = true;     // FightStep's check hops it off (IslandConfirmed: islandSuspect is the second sign)
+        EnterPhase(r, Phase::Begin);
+        r.note = "the lead bot stands on a navmesh island at " + Num(f.leadX) + " " + Num(f.leadY) + " " +
+            Num(f.leadZ) + " (no path from it to any stand near " + pack + "): hopped off it first";
+        return false;
+    }
     // A pull that may be deferred (DeferUnreachablePack): no hops again after a resume's
     // search found none, no pause: deferred (or, on its retry, skipped).
     if (none && DeferUnreachablePack(r, *s, (resumedSearch ? std::string("resumed: ") : std::string()) +
@@ -14353,6 +14370,15 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         }
     }
 
+    // The stand search found none with the lead bot on a navmesh island (ApproachStandFound): hop it off before any
+    // pull, or the pack in sight is pulled from the island and refused again. IslandConfirmed takes islandSuspect as
+    // the second sign, so the hop runs on the tick after the answer, with no new reading.
+    if (r.islandSuspect && r.phase != Phase::Walk && !r.escapeOn && IslandConfirmed(r, f, s.x, s.y, s.z))
+    {
+        IslandEscape(r, f, s.x, s.y, s.z, std::string(s.kind == PlanStepKind::Boss ? "the boss" : "the pack") +
+            " at " + StepPoint(s), order);
+        return;
+    }
     // A pullback refused for the tank's firing position asked the approach stand with the pack in sight
     // (PullbackRefusedUnreachable): its search (answered by the glue after this tick) and its walk run here, not a
     // new pull of the same unit from the same spot.

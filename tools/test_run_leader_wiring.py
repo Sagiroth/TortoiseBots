@@ -1502,7 +1502,7 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
                "        slot.run.deferLog.clear();\n    }")
         self.assertIn(log, tick)
         self.assertLess(tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"), tick.index(log))
-        self.assertLess(tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, facts, found, sx, sy, sz);"),
+        self.assertLess(tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, answer, found, sx, sy, sz);"),
                         tick.index(log))
 
     def test_an_approach_with_no_way_goes_through_the_stand_search(self):
@@ -1535,10 +1535,29 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         # The FightStep hook exists because the glue answers the stand search before it issues the order and hands a refusal
         # to OrderRefused (a stand asked by a refusal is answered on the next sync): pin that order.
         tick = body(strip_comments(COMMANDS), "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
-        self.assertLess(tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, facts, found, sx, sy, sz);"),
+        self.assertLess(tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, answer, found, sx, sy, sz);"),
                         tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
         self.assertLess(tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"),
                         tick.index("TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer + legNote +"))
+
+    def test_a_stand_search_that_finds_none_carries_the_lead_way(self):
+        # scarlet_graveyard step 32: with the pack in sight, every stand candidate came back NOPATH from the lead
+        # bot's start polygon (a navmesh island) and the run paused "not reachable from this floor". The glue reads
+        # the lead bot's own way to the step point into a copy of the facts when the search found nothing, and the
+        # policy's island branch (ApproachStandFound, DungeonRun::IslandEscape via FightStep) hops it off first.
+        tick = body(strip_comments(COMMANDS), "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
+        search = tick.index("ApproachStandSearch(lead, slot.run, *step, facts.team, sx, sy, sz);")
+        copy = tick.index("TortoiseBots::DungeonRun::Facts answer = facts;")
+        self.assertLess(search, copy)
+        self.assertIn("if (!found && step && lead->IsAlive() && lead->IsInWorld())", tick)
+        way = "NoteLeadWay(path, lead, step->x, step->y, step->z, answer);"
+        self.assertIn(way, tick)
+        self.assertLess(copy, tick.index(way))
+        self.assertIn("PathFinder path(lead);\n            path.calculate(step->x, step->y, step->z, false);\n"
+                      "            NoteLeadWay(path, lead, step->x, step->y, step->z, answer);", tick)
+        # The answer is the copy: the policy's island branch must not see the live facts' empty reading.
+        self.assertLess(tick.index(way),
+                        tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, answer, found, sx, sy, sz);"))
 
     def test_runs_ended_early_list_their_deferred_packs(self):
         # The Opus/Codex review of 6566f84d: a run stopped early (.bot run stop, the time limit, the key switched
