@@ -75,8 +75,17 @@ BLESSING_INITS = {
 class HolyPaladinCombatWasteWiringTest(unittest.TestCase):
     def test_holy_blessing_combat_has_no_rebuff_rows(self):
         for cls in HOLY_BLESSING_CLASSES:
-            combat = rows(method_body(HOLY, cls, "InitCombatTriggers"))
-            self.assertEqual(combat, [], "%s must not re-buff in combat" % cls)
+            combat = method_body(HOLY, cls, "InitCombatTriggers")
+            self.assertEqual(rows(combat), [], "%s must not re-buff in combat" % cls)
+            # rows() only sees direct TriggerNode rows: a re-added
+            # `PaladinBlessing*::InitCombatTriggers` parent call would
+            # inherit the buff rows at runtime while this body looks empty.
+            # The Holy chain call itself is fine (its base adds no rows).
+            for parent in ("PaladinBlessingPveStrategy::InitCombatTriggers",
+                           "PaladinBlessingPvpStrategy::InitCombatTriggers",
+                           "PaladinBlessingRaidStrategy::InitCombatTriggers"):
+                self.assertNotIn(parent, combat,
+                                 "%s must not call back into %s" % (cls, parent))
 
     def test_holy_blessing_noncombat_still_buffs(self):
         for cls, base in BLESSING_INITS.items():
