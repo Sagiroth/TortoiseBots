@@ -25,6 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
 POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
+STATE_POLICY = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 TACTICS_POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
@@ -140,10 +141,14 @@ class FightStateWiring(unittest.TestCase):
         state = body(ACTIONS, "namespace\n{\n// The seek_aura fight state", "\n// A record nobody evaluated")
         self.assertIn("std::mutex g_seekMutex;", state)
         # The key is the row's primary key, never its address: a reload frees the old table.
-        self.assertIn("using SeekRecordKey = std::tuple<", state)
-        self.assertNotIn("const BossTacticRow*>", state)
-        self.assertIn("std::map<SeekRecordKey, SeekCycleRecord>", state)
+        self.assertIn("using SeekRecordKey = std::tuple<", STATE_POLICY)
+        self.assertIn("using SeekRecordMap = std::map<SeekRecordKey, SeekCycleRecord>;", STATE_POLICY)
+        record = body(STATE_POLICY, "struct SeekCycleRecord", "\n    };")
+        self.assertNotIn("BossTacticRow", record)
+        self.assertIn("SeekRecordMap g_seekRecords;", state)
+        self.assertNotIn("g_seekRecords.clear()", ACTIONS)
         self.assertIn("record.cycleMs = cycleMs;", ACTIONS)
+        self.assertIn("record.cycleSpell = row->cycleSpell;", ACTIONS)
         self.assertIn("kSeekRecordIdleMs = 120000", ACTIONS)
         self.assertIn("nowMs - it->second.lastSeenMs > kSeekRecordIdleMs", ACTIONS)
         # The clock: the engage, the accepted siphon and the gather latch.
@@ -152,6 +157,14 @@ class FightStateWiring(unittest.TestCase):
         # The latch: a heal on the Son after the gather was ready does not hold it again.
         self.assertIn("record.ready = record.ready || SeekGatherReady(record.missing, record.gatherStartMs, nowMs, "
                       "forceBurn);", ACTIONS)
+
+    def test_the_reload_keeps_a_live_record_and_drops_a_retimed_one(self):
+        # The reload reconciles before the old table is retired (CommitPlanReload's callback), against the new rows.
+        self.assertIn("ReconcileSeekRecords(g_seekRecords, next);", ACTIONS)
+        self.assertIn("void ai::ReconcileSeekFightState(const BossTacticTable& next)", ACTIONS)
+        self.assertIn("SeekRecordSurvivesReload(it->second, *row)", STATE_POLICY)
+        self.assertIn("record.cycleSpell == row.cycleSpell", STATE_POLICY)
+        self.assertIn("beforeInstall(*nextTactics);", (ROOT / "ai/playerbot/DungeonPlanReloadPolicy.h").read_text())
 
     def test_the_evade_erases_the_record(self):
         read = body(ACTIONS, "bool ReadSeekFight(")

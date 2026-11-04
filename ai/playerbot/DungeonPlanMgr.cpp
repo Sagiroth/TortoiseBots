@@ -256,7 +256,7 @@ PlanReloadReport ai::ReloadDungeonPlans(std::vector<DungeonPlan const*> const& i
     report.summary = PlanLoadSummary(*next, counts);
     report.tacticRows = uint32(nextTactics->Size());
     report.outcome = CommitPlanReload(DungeonPlanHolder(), std::move(next), counts, BossTacticsHolder(), std::move(nextTactics),
-        skippedTactics, reads, inUse, &ai::PurgeSeekFightState);
+        skippedTactics, reads, inUse, &ai::ReconcileSeekFightState);
     if (report.outcome.swapped)
         sLog.outString(">> %s, %u boss tactic rows (reloaded by .bot run reloadplans)", report.summary.c_str(), report.tacticRows);
     else

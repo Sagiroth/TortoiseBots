@@ -423,9 +423,11 @@ namespace ai
     };
     bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
 
-    // Drops every seek_aura fight record before `.bot run reloadplans` frees the old tactic table: the records' keys
-    // are stable row identities and their clock is copied, but a reload is a new fight's start.
-    void PurgeSeekFightState();
+    // The seek_aura fight records' handoff across `.bot run reloadplans`: records whose stable row identity still
+    // exists in the new tactic table with the same cycle spell, cycle length and dose window keep their engage, last
+    // siphon and window; records of removed or retimed rows are dropped. The old table may then be freed (the records
+    // copy every column they read and keep no row pointer).
+    void ReconcileSeekFightState(const BossTacticTable& next);
 
     // What this bot does about the row right now: walk into the row's cloud (the source already died), or walk to the
     // gather around the dying source. `phase` is the log's own word (cloud / gather / hold).

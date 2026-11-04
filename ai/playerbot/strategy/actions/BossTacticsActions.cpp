@@ -15,6 +15,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/SeekAuraPolicy.h"
+#include "playerbot/SeekFightStatePolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -827,41 +828,9 @@ namespace
 {
 // The seek_aura fight state: one record per (map instance, boss, row), shared by every bot of the instance (the
 // use_object record's pattern). The cycle clock, the gather's latch and the siphon row's bookkeeping live here, so
-// every bot's decision is made from the same numbers.
-struct SeekCycleRecord
-{
-    std::uint32_t engageMs = 0;     // the first sighting of the boss in combat with a victim
-    std::uint32_t lastCycleMs = 0;  // the last accepted cycle spell sighting (0: none)
-    std::uint32_t lastSeenMs = 0;
-    // The row's own clock, copied at every read: the record outlives a `.bot run reloadplans` (the row pointer does
-    // not), and SeekCycleSnapshot reads the due time without a row.
-    std::uint32_t cycleMs = 0;
-    std::uint32_t leadMs = 0;
-    std::uint64_t gatherSourceGuid = 0;
-    std::uint32_t gatherStartMs = 0;
-    bool ready = false;
-    std::uint32_t cycleNo = 0;
-    int missing = 0;
-    std::uint32_t siphonAtMs = 0;   // the dosed/undosed count is due then (0: none pending)
-    std::uint32_t siphonCycle = 0;
-    int siphonDosed = 0;
-    int siphonUndosed = 0;
-};
-
-// The stable identity of a row: the table's primary key (map, boss, kind, target, spell, band), never its address.
-// A record is read by the run leader (SeekCycleSnapshot) while a reload may free the old table, so nothing in it may
-// dereference the row it came from.
-using SeekRecordKey = std::tuple<std::uint32_t, std::uint64_t, std::uint32_t, std::uint8_t, std::uint32_t,
-                                 std::uint32_t, std::uint8_t, std::uint8_t>;
-
-SeekRecordKey SeekRecordKeyOf(std::uint32_t instanceId, std::uint64_t bossGuid, const BossTacticRow& row)
-{
-    return std::make_tuple(instanceId, bossGuid, row.bossEntry, static_cast<std::uint8_t>(row.kind),
-                           row.targetEntry, row.spellId, row.hpMin, row.hpMax);
-}
-
+// every bot's decision is made from the same numbers. The record and its reload handoff are in SeekFightStatePolicy.h.
 std::mutex g_seekMutex;
-std::map<SeekRecordKey, SeekCycleRecord> g_seekRecords;
+SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
 // The siphon count runs one second after the sighting, far inside the 8 s the dummy aura lasts.
@@ -1054,8 +1023,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     if (!row || !boss)
         return false;
     const std::uint32_t nowMs = WorldTimer::getMSTime();
-    const std::uint32_t cycleMs = static_cast<std::uint32_t>(row->cycleSec * 1000.0f + 0.5f);
-    const std::uint32_t leadMs = static_cast<std::uint32_t>(row->windowSec * 1000.0f + 0.5f);
+    const std::uint32_t cycleMs = SeekSecondsToMs(row->cycleSec);
+    const std::uint32_t leadMs = SeekSecondsToMs(row->windowSec);
     const float holdPct = static_cast<float>(row->priority);
     const SeekRecordKey key = SeekRecordKeyOf(bot->GetInstanceId(), boss->GetObjectGuid().GetRawValue(), *row);
     std::uint32_t dueMs = 0;
@@ -1078,6 +1047,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         record.lastSeenMs = nowMs;
         record.cycleMs = cycleMs;
         record.leadMs = leadMs;
+        record.cycleSpell = row->cycleSpell;
         gatherGuid = record.gatherSourceGuid;
         // An evade: the boss out of combat at full health (boss_hakkar.cpp:137-145 leaves the fight that way). The
         // clock starts over at the next engage.
@@ -1262,14 +1232,14 @@ Unit* SeekSourceInAction(Player* bot, Action* action, const SeekFight& state, Un
 }
 }  // namespace
 
-void ai::PurgeSeekFightState()
+void ai::ReconcileSeekFightState(const BossTacticTable& next)
 {
     // The reload path calls this before BossTacticsHolder().Install frees the old table: the records copy every column
-    // they read, so nothing dangles, but a new table is a new fight's clock and gather.
+    // they read, so nothing dangles. A record survives while its row is still in the new table with the same cycle
+    // spell, cycle length and window; a removed or retimed row drops it. Keeping the rest leaves the fight's engage,
+    // last siphon and dose window untouched, so a reload between two siphons does not restart the poison cycle.
     std::lock_guard<std::mutex> lock(g_seekMutex);
-    g_seekRecords.clear();
-    std::lock_guard<std::mutex> logLock(g_seekLogMutex);
-    g_seekLog.clear();
+    ReconcileSeekRecords(g_seekRecords, next);
 }
 
 bool ai::IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn)
