@@ -252,9 +252,14 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
+    // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
+    // charge/overpower/mocking blow/sweeping strikes/retaliation are all
+    // Battle-locked. Pummel and Intercept dance out through their gated
+    // berserker nodes and this row swaps back after; the AoE multipliers
+    // keep holding spenders while Sweeping Strikes is ready on a pack.
     triggers.push_back(new TriggerNode(
-        "battle stance for arms",
-        NextAction::array(0, new NextAction("battle stance for arms", ACTION_NORMAL), NULL)));
+        "battle stance",
+        NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",

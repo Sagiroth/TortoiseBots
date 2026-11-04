@@ -16,12 +16,6 @@ namespace ai
     };
 
     BUFF_TRIGGER_A(BattleStanceTrigger, "battle stance");
-    class BattleStanceForArmsTrigger : public Trigger
-    {
-    public:
-        BattleStanceForArmsTrigger(PlayerbotAI* ai) : Trigger(ai, "battle stance for arms") {}
-        bool IsActive() override;
-    };
     BUFF_TRIGGER_A(DefensiveStanceTrigger, "defensive stance");
     BUFF_TRIGGER_A(BerserkerStanceTrigger, "berserker stance");
     BUFF_TRIGGER_A(ShieldBlockTrigger, "shield block");

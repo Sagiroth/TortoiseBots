@@ -14,30 +14,6 @@ namespace ai
 
     // stances
     BUFF_ACTION_U(CastBattleStanceAction, "battle stance", !ai->IsTank(bot) && CastBuffSpellAction::isUseful());
-    // Combat pin for Arms DPS: holds Battle Stance only while the bot stands
-    // in no stance at all, so it never swaps back mid-fight.
-    class CastBattleStanceForArmsPinAction : public CastBuffSpellAction
-    {
-    public:
-        CastBattleStanceForArmsPinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "battle stance") {}
-        bool isUseful() override
-        {
-            if (ai->IsTank(bot))
-                return false;
-            if (ai->HasAura("battle stance", bot) || ai->HasAura("berserker stance", bot) ||
-                ai->HasAura("defensive stance", bot))
-                return false;
-            return CastBuffSpellAction::isUseful();
-        }
-
-    protected:
-        virtual std::string getName() override { return "battle stance for arms"; }
-    };
-    // Berserker Stance only for a Whirlwind that can actually fire: the
-    // engine runs the prerequisite before isPossible, so a plain stance
-    // node swaps (truncating rage) even when Whirlwind is on cooldown or
-    // unaffordable. This prerequisite carries its own name and only dances
-    // when the spell is off cooldown and the bar holds its cost.
     // Battle Stance only for the Mocking Blow second taunt: the plain battle
     // stance row refuses tanks, so this prerequisite carries its own name and
     // fires only while the mocking blow taunt trigger is active.
