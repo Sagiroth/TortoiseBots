@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+using ai::FocusListIsLayoutAssignment;
 using ai::HealablePet;
 using ai::HealableTarget;
 using ai::RaidAssistCandidate;
@@ -81,6 +82,22 @@ static void TestAssistNeedsSightAndRange()
     CHECK(!RaidAssistCandidate(true, true, false, 10.0f));
 }
 
+// The layout owns a seat's focus list only while it is exactly the assigned
+// set: a player who extends it (or drops a member) keeps the tank healer but
+// the seat no longer helps the raid.
+static void TestFocusListMustBeTheLayoutAssignment()
+{
+    std::vector<std::uint64_t> const tankHealer = {11, 22}; // the tank, the healer itself
+    CHECK(FocusListIsLayoutAssignment(tankHealer, tankHealer));
+    CHECK(FocusListIsLayoutAssignment({22, 11}, tankHealer));
+    CHECK(!FocusListIsLayoutAssignment({11, 22, 33}, tankHealer)); // a member added
+    CHECK(!FocusListIsLayoutAssignment({11}, tankHealer));         // the healer itself dropped
+    CHECK(!FocusListIsLayoutAssignment({33, 22}, tankHealer));     // tank replaced
+    CHECK(!FocusListIsLayoutAssignment({11, 11}, tankHealer));     // the healer's guid stolen for a duplicate
+    CHECK(!FocusListIsLayoutAssignment({}, tankHealer));
+    CHECK(!FocusListIsLayoutAssignment({}, {}));                   // no layout seat, nothing owned
+}
+
 int main()
 {
     std::printf("Starting TortoiseBots heal target policy tests...\n");
@@ -91,6 +108,7 @@ int main()
     TestOnlyASecondTankSeatHelps();
     TestQuietTankSeat();
     TestAssistNeedsSightAndRange();
+    TestFocusListMustBeTheLayoutAssignment();
     std::printf("  [PASS] %d checks\n", checks);
     return 0;
 }

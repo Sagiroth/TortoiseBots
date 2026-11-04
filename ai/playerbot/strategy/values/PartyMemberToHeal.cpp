@@ -167,7 +167,8 @@ Unit* PartyMemberToHeal::Calculate()
     bool const focused = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
     // The layout seat this healer took (a mid-raid joiner's focus list is not
     // one) and whether its tank is quiet: only a quiet second seat on the tank
-    // may help the raid, so the tank keeps its first healer.
+    // may help the raid, so the tank keeps its first healer. A player who
+    // edits the focus list keeps the tank healer but loses the raid assist.
     bool quietSeat = false;
     if (focused && sPlayerbotAIConfig.raidTankHealerAssist)
     {
@@ -175,13 +176,18 @@ Unit* PartyMemberToHeal::Calculate()
             TortoiseBots::BotCommands::RaidTankHealerSeat(bot);
         std::list<ObjectGuid> const focus =
             ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
-        bool owned = !focus.empty();
+        std::vector<uint64_t> focusRaw;
+        focusRaw.reserve(focus.size());
         for (ObjectGuid const& guid : focus)
-            if (!ai->GetUnit(guid))
-                owned = false;
-        bool const listsTank = std::find(focus.begin(), focus.end(), seat.tank) != focus.end();
-        Unit* tank = seat.seated ? ai->GetUnit(seat.tank) : nullptr;
-        if (owned && listsTank && tank)
+            focusRaw.push_back(guid.GetRawValue());
+        std::vector<uint64_t> assignedRaw;
+        assignedRaw.reserve(seat.assigned.size());
+        for (ObjectGuid const& guid : seat.assigned)
+            assignedRaw.push_back(guid.GetRawValue());
+        Unit* tank = seat.seated && FocusListIsLayoutAssignment(focusRaw, assignedRaw)
+            ? ai->GetUnit(seat.tank)
+            : nullptr;
+        if (tank)
         {
             uint32 const incoming = getIncomingdamage(tank);
             float const effective = tank->GetMaxHealth()

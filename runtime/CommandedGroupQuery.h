@@ -10,6 +10,7 @@
 #include "ObjectGuid.h"
 
 #include <cstdint>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,9 @@ struct RaidTankSeat
     bool seated = false;
     ObjectGuid tank;
     uint8_t seat = 0;
+    // The focus list the layout set for this healer; a player's edit of it
+    // (anything added or dropped) no longer matches.
+    std::list<ObjectGuid> assigned;
 };
 RaidTankSeat RaidTankHealerSeat(Player* bot);
 

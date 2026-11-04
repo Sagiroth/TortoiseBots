@@ -627,6 +627,7 @@ A tank healer seated by a raid binding's layout helps the raid while its tank ha
 <summary>How it works in detail</summary>
 
 **Quiet seat assist:** only read with `AiPlayerbot.DungeonRunRaid = 1`, and only for a tank healer the bind's layout seated (a player-set focus list outside the layout and a mid-raid joiner do not get it):
+- the healer's focus list is still exactly the layout's (the tank and the healer itself); a player who adds or drops a member keeps the tank healer but the seat no longer helps the raid
 - the healer's tank is found and alive, is not fighting a boss (an `ai_dungeon_boss` row or a plan boss step, or a world boss), and its health after the damage it is taking is at or above 90%
 - only the tank's second (or later) seat may leave; the first seat never does, so the tank keeps one healer
 - it then treats any group member below 70% that is in sight and inside heal range; it never walks into sight for one

@@ -1054,7 +1054,8 @@ AiPlayerbot.RaidHealerSeatsByClass = 0
 # AiPlayerbot.DungeonRunRaid = 1). Only the tank's second (or later) seat may leave, so the tank keeps its first
 # healer, and only while the tank is found, alive, not fighting a boss, and at or above 90% health after the damage
 # it is taking. The healer then treats a group member below 70% that is in sight and inside heal range; it never
-# walks into sight for one. A player-set focus list outside the layout, and a mid-raid joiner, do not get it.
+# walks into sight for one. A player-set focus list outside the layout, a mid-raid joiner, and a layout healer
+# whose focus list a player edited (anything added or dropped) do not get it.
 # .reload config applies it at once.
 # 0 - off: the tank healers keep their focus targets (Default)
 # 1 - on

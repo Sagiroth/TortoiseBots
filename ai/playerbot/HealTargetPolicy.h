@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 // Alive gates for the branches of "party member to heal" that the player
 // loop's own alive test does not reach. "Below full health" is not a life
@@ -34,6 +37,22 @@ namespace ai
     inline bool TankSeatMayAssist(std::uint8_t seat)
     {
         return seat >= 1;
+    }
+
+    // The layout owns a seat's focus list while the list is exactly what the
+    // layout assigned (the tank, and the healer itself when the layout adds
+    // it): a player who adds or drops a member keeps the tank healer, but the
+    // seat is the player's and never helps the raid. An empty assignment is
+    // no assignment.
+    inline bool FocusListIsLayoutAssignment(std::vector<std::uint64_t> const& focus,
+                                            std::vector<std::uint64_t> const& assigned)
+    {
+        if (assigned.empty() || focus.size() != assigned.size())
+            return false;
+        for (std::uint64_t const guid : assigned)
+            if (std::find(focus.begin(), focus.end(), guid) == focus.end())
+                return false;
+        return true;
     }
 
     // A quiet tank seat: the healer took a seat from a bound raid's layout
