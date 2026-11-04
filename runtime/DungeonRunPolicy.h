@@ -1089,6 +1089,9 @@ constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
 // A totem (the Brain Wash Totem 15112, the Powerful Healing Ward 14987): a 1-2 s kill, never a guard's target.
 constexpr std::uint32_t kCreatureTotem = 11;
+// The read around an engaged boss for its kill_first totems: a Brain Wash Totem lands about 5 yd from Jin'do, and a boss
+// never summons one across the room. Bounded, because the read runs once a second.
+constexpr float kKillFirstTotemGridYd = 25.0f;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
 // The run's crowd-control spells, in the order of their reliability: the bot
@@ -10074,14 +10077,43 @@ inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
 
 // The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
 // skull stays until the new order lands, so it is remembered (FocusOrderRefused).
-inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k)
+// movesSkull false: the order leaves every raid mark where it is (the skull on the boss) and only sends the bots by
+// guid. The totem focus does (FocusMovesSkull): the run's skull draws healers and tanks that never take an order.
+inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkull = true)
 {
-    r.prevFocusIconGuid = r.focusIconGuid;
+    if (movesSkull)
+    {
+        r.prevFocusIconGuid = r.focusIconGuid;
+        r.focusIconGuid = k.guid;
+        r.focusIconClear = 0;
+    }
     r.focusGuid = k.guid;
-    r.focusIconGuid = k.guid;
-    r.focusIconClear = 0;
     r.note = "fighting: kill " + std::to_string(k.entry) + " first";
     return "focus " + std::to_string(k.guid);
+}
+
+// Whether a kill_first focus moves the skull. Under AiPlayerbot.DungeonRunTotemFocus a totem is the DPS' alone and the
+// focus is sent by guid: moving the skull to it pulls in every healer and tank that follows the mark.
+inline bool FocusMovesSkull(bool totemKeyOn, bool totemTarget)
+{
+    return !(totemKeyOn && totemTarget);
+}
+
+// The owner a kill_first unit is read through: its owner, else its creator, else its temporary summon's summoner. The
+// core sets no creator on a SPELL_EFFECT_SUMMON_WILD creature (Jin'do's Brain Wash Totem is effect 41), and only the
+// summoner names the boss that cast it.
+inline std::uint64_t KillFirstOwner(std::uint64_t owner, std::uint64_t creator, std::uint64_t summoner)
+{
+    if (owner)
+        return owner;
+    return creator ? creator : summoner;
+}
+
+// Whether a grid hit is a kill_first totem of the engaged unit: alive, a totem, and its owner (KillFirstOwner) is that
+// engaged unit. The read adds only these, so a totem in no attackers list still joins the fight the tick it stands.
+inline bool KillFirstGridTotemOf(std::uint64_t hitOwner, bool alive, bool totem, std::uint64_t engagedOwner)
+{
+    return alive && totem && engagedOwner != 0 && hitOwner == engagedOwner;
 }
 
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
@@ -21675,6 +21707,20 @@ inline std::string PhaseText(const Run& r)
         return std::string(r.fighting ? "fight " : "hold ") + std::to_string(r.eventDown) + "/" +
             std::to_string(r.eventTotal) + " down";
     return PhaseName(r.phase);
+}
+
+// A kill_first unit's sighting or death in the fight log:
+//   TBM:KILLFIRST|<plan>|<seen|dead|gone>|<entry>|<guid>[|<ms>]
+// <ms> is the time since it was first seen (0: none, a sighting). The frames sample a fight every few seconds, so a
+// totem's lifetime is only measurable from the log.
+inline std::string KillFirstLogLine(const std::string& plan, const char* event, std::uint32_t entry,
+    std::uint64_t guid, std::uint32_t ms)
+{
+    std::string line = std::string("TBM:KILLFIRST|") + (plan.empty() ? "-" : plan) + "|" + event + "|" +
+        std::to_string(entry) + "|" + std::to_string(guid);
+    if (ms)
+        line += "|" + std::to_string(ms);
+    return line;
 }
 
 // The status line for the commander:

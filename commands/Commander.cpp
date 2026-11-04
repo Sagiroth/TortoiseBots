@@ -271,6 +271,13 @@ struct DungeonRunSlot
     // The pull row's ring estimate per unit (DungeonRun::PullEstimateCache, ReadPullJoiners): one read a row,
     // refilled into the unit facts on later ticks.
     mutable TortoiseBots::DungeonRun::PullEstimateCache pullEstCache;
+    // A kill_first unit's fight-log span (TBM:KILLFIRST, LogKillFirstSpans): its entry and the ms it was first seen at.
+    struct KillFirstSpan
+    {
+        uint32 entry = 0;
+        uint32 seenMs = 0;
+    };
+    mutable std::unordered_map<uint64, KillFirstSpan> killFirstSeen;
     // A player-led run (`.bot run start ... player`, PlayerLedPolicy.h): its own state beside the run.
     TortoiseBots::PlayerLed::State playerLed;
     // A system run paused by L6 (SystemRun::DecideJoinStep).
@@ -8727,7 +8734,22 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         party.insert(bot->GetObjectGuid().GetRawValue());
     std::unordered_set<uint64> seen;
     std::unordered_set<uint64> auraWalked; // attackers whose aura holders this read walked
+    std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
+    std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // A plan boss (a boss step's entry, or the entry the spawn row first had when a script changed it).
+    auto const planBoss = [&plan](Creature* c)
+    {
+        if (!c)
+            return false;
+        std::uint32_t const entry = c->GetEntry();
+        std::uint32_t const formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(c);
+        for (ai::PlanStep const& step : plan.steps)
+            if (step.kind == ai::PlanStepKind::Boss && step.entry &&
+                (step.entry == entry || step.entry == formOf))
+                return true;
+        return false;
+    };
     auto add = [&](Unit* unit, bool auraOnEngaged)
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
@@ -8751,10 +8773,14 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         ObjectGuid owner = unit->GetOwnerGuid();
         if (owner.IsEmpty())
             owner = unit->GetCreatorGuid();
-        if (!owner.IsEmpty())
+        std::uint64_t summonerRaw = 0;
+        if (unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())
+            summonerRaw = static_cast<TemporarySummon*>(unit)->GetSummonerGuid().GetRawValue();
+        std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(owner.GetRawValue(), 0, summonerRaw);
+        if (ownerRaw)
         {
-            fact.owner = owner.GetRawValue();
-            Unit* summoner = lead->GetMap()->GetUnit(owner);
+            fact.owner = ownerRaw;
+            Unit* summoner = lead->GetMap()->GetUnit(ObjectGuid(ownerRaw));
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
@@ -8774,6 +8800,11 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             add(unit, false);
             if (EngagedWithParty(unit, party))
             {
+                // AiPlayerbot.DungeonRunTotemFocus: an engaged boss's kill_first totems are read by a grid pass after
+                // this loop (a Brain Wash Totem is a wild summon and in no CONTROLLED_TOTEMS list).
+                if (f.totemFocus && unit->IsCreature() && planBoss(static_cast<Creature*>(unit)) &&
+                    engagedOwnerSeen.insert(unit->GetObjectGuid().GetRawValue()).second)
+                    engagedOwners.push_back(static_cast<Creature*>(unit));
                 // The totems and guardians of an attacker in this fight, read off
                 // the attacker itself: a Greater Healing Ward the moment it is up,
                 // not when a bot's cached list next takes it in (19z5: one ward was
@@ -8814,6 +8845,70 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
                     }
             }
         }
+    }
+    // AiPlayerbot.DungeonRunTotemFocus: the kill_first totems of an engaged boss in no attackers list (Jin'do's Brain
+    // Wash Totem, spell 24262) are read around the boss, bounded to the plan's entries and kKillFirstTotemGridYd. The
+    // totem is a wild summon, so only its temporary summon's summoner names the boss.
+    for (Creature* boss : engagedOwners)
+        for (std::uint32_t const entry : plan.killFirst)
+        {
+            std::list<Creature*> found;
+            boss->GetCreatureListWithEntryInGrid(found, entry, TortoiseBots::DungeonRun::kKillFirstTotemGridYd);
+            for (Creature* c : found)
+            {
+                if (!c || c == boss || !c->IsAlive() || !c->IsInWorld())
+                    continue;
+                std::uint64_t summonerRaw = 0;
+                if (c->IsTemporarySummon())
+                    summonerRaw = static_cast<TemporarySummon*>(c)->GetSummonerGuid().GetRawValue();
+                std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(
+                    c->GetOwnerGuid().GetRawValue(), c->GetCreatorGuid().GetRawValue(), summonerRaw);
+                if (!TortoiseBots::DungeonRun::KillFirstGridTotemOf(ownerRaw, true,
+                        c->GetCreatureType() == TortoiseBots::DungeonRun::kCreatureTotem,
+                        boss->GetObjectGuid().GetRawValue()))
+                    continue;
+                add(c, false);
+            }
+        }
+}
+
+// A kill_first unit's sighting and death in the fight log (TBM:KILLFIRST, DungeonRun::KillFirstLogLine): the frames
+// sample a fight every few seconds, so a totem's lifetime is only measurable from these lines. One line per unit: seen
+// when the read first lists it, dead or gone when it leaves the list dead. A unit still alive but out of the list for
+// a tick (not engaged, out of the boss's grid) keeps its span and is not seen again. World thread, once a second.
+void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts const& f)
+{
+    if (!lead || !lead->IsInWorld() || !slot.run.plan)
+        return;
+    std::uint32_t const now = WorldTimer::getMSTime();
+    std::unordered_set<uint64> live;
+    for (TortoiseBots::DungeonRun::UnitFact const& u : f.killFirst)
+    {
+        live.insert(u.guid);
+        if (slot.killFirstSeen.count(u.guid))
+            continue;
+        slot.killFirstSeen[u.guid] = {u.entry, now};
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, "seen", u.entry, u.guid, 0)
+            .c_str());
+    }
+    for (auto it = slot.killFirstSeen.begin(); it != slot.killFirstSeen.end();)
+    {
+        if (live.count(it->first))
+        {
+            ++it;
+            continue;
+        }
+        Unit* unit = lead->GetMap() ? lead->GetMap()->GetUnit(ObjectGuid(it->first)) : nullptr;
+        if (unit && unit->IsAlive())
+        {
+            ++it;
+            continue;
+        }
+        char const* const event = unit ? "dead" : "gone";
+        std::uint32_t const ms = WorldTimer::getMSTimeDiff(it->second.seenMs, now);
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, event, it->second.entry,
+            it->first, ms).c_str());
+        it = slot.killFirstSeen.erase(it);
     }
 }
 
@@ -11335,7 +11430,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             ReadCcBreakFacts(slot, lead, bots, f);
     }
     if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
+    {
         ReadKillFirst(*slot.run.plan, lead, bots, f);
+        LogKillFirstSpans(slot, lead, f);
+    }
     if (f.anyInCombat)
     {
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
