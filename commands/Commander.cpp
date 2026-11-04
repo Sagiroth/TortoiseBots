@@ -10144,7 +10144,7 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
     bool blocked = false;
     ShotStand best;
     ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
-        [&f, clearance, dryWalk = f.dryWalk, map](ShotStand const& candidate)
+        [&f, clearance, dryWalk = f.dryWalk, map, &seesOther](ShotStand const& candidate)
         {
             if (dryWalk && map->GetTerrain()->IsSwimmable(candidate.x, candidate.y, candidate.z))
                 return false;
