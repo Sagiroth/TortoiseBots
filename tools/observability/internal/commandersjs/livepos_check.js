@@ -30,7 +30,7 @@ Object.assign(ctx, {
   Glide, LiveView,
   performance: { now: () => nowMs },
   refreshGate: { interval: () => 1 },
-  state: { commanders: { list: [bind] }, wsConnected: true },
+  state: { commanders: { list: [bind] }, raids: { binds: [] }, wsConnected: true },
   cmdGlide: {},
   cmdFindBind: () => bind,
   cmdSched: { mark: (k) => marks.push(k) },

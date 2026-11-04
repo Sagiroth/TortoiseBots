@@ -47,6 +47,7 @@ command and the reply carries `"id":"<id>"`. Guids are hex strings
 | `.tt q floor [x y [z]]` | floor under the caller (or at x y within 40 yd), searched down from the caller's z like `.gps` FloorZ; `top` = surface from the sky (null indoors); `multi` true on two-level spots |
 | `.tt q units [r] [x y z] [all] [dead] [e=<entry>] [au=<id,...>]` | creatures within r (2D, default 40, max 100) of the point: hp, combat, victim, current cast `cs` and channel `ch` with targets, DB guid, rank, home; `au=` looks those aura ids up: caster guid and `chan` (the caster channels that spell at this unit) |
 | `.tt q unit <0xGUID> [au=...]` | one unit by guid; refuses a guid whose entry does not match |
+| `.tt q los <x> <y> <z> <0xGUID>...` | line of sight (1-8 guids) from an eye 2 yd above the point to each unit: `g`, `in` (`IsWithinLoS`), `d` (3D yd from the point); an absent or bad guid answers its own `err` (`not_found`, `bad_guid`), and a sight read the core cannot make answers `los_failed`, never "not in sight". Used by the plan scout to tell whether a pack can be seen from a stand |
 | `.tt q gos [r] [x y z] [e=<entry>]` | game objects: `st` GO state (0 open/active, 1 closed/ready, 2 alt), loot state, spawned |
 | `.tt q group` | the caller's group: map, position, hp, combat, height above the floor under each |
 | `.tt q inst` | map/instance, players; `saved` = last saved instance data string (unsafe methods) |
@@ -58,8 +59,9 @@ command and the reply carries `"id":"<id>"`. Guids are hex strings
 
 ### Tests
 
-`sh check.sh` runs `luac -p`, luacheck and `tests/mock_window_test.lua` (plain Lua with fake
-players and creatures: dz window, skip filter, the friendly rule and its refusals). It does not
+`sh check.sh` runs `luac -p`, luacheck and the mock tests in `tests/` (plain Lua with fake
+players and creatures: `mock_window_test.lua` for the dz window, skip filter, the friendly rule and
+its refusals; `mock_los_test.lua` for `q los`'s shape, limits and eye height). They do not
 need a server; a live check is still the final proof.
 
 ### Limits worth knowing

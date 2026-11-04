@@ -130,6 +130,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot cmd state`](commander.md#bot-cmd-state) | Remote Commander | Queries current state of a world game object. |
 | [`.bot run`](../dungeon-run-leader.md#run-leader) | Remote Commander | Starts, pauses and stops a dungeon run of the bound party. |
 | [`.bot trace`](../../server/run-trace.md#start-stop-status) | Remote Commander | Records a party run as a trace file plus a summary. |
+| [`.bot scout`](commander.md#bot-scout-gm-test-tooling) | Remote Commander | GM test tooling: the run leader's own path check, a probe walk and the GM's position. |
 | [`.bot roster`](roster-and-hiring.md#bot-roster) | Roster & Hiring | Emits snapshot of owned alts and CC assignments. |
 | [`.bot add`](roster-and-hiring.md#bot-add) | Roster & Hiring | Logs in an owned alt character as a bot. |
 | [`.bot remove`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot or dismisses a hired companion. |

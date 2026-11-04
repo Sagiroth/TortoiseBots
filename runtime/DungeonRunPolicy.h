@@ -517,6 +517,12 @@ constexpr std::uint32_t kFightHardCapMs = 1800000;
 // kBossFightCapMs: the community's Onyxia kills ran 408-806 s, and a raid loses members routinely (FightProgressTick:
 // while the fight still loses hp, a death in the window does not pause it; the raid's wipe level catches a real loss).
 constexpr std::uint32_t kRaidBossFightCapMs = 1200000;
+// Hakkar the Soulflayer (Zul'Gurub 14834): Berserk 27680 lands at 600 s after his engage (boss_hakkar.cpp:56,217-225),
+// so the run line warns at 540 s and again when the aura is seen. The seek_aura clock's siphon notes are the run
+// leader's read of SeekCycleSnapshot (spec §3.2).
+constexpr std::uint32_t kHakkarEntry = 14834;
+constexpr std::uint32_t kHakkarBerserkSpell = 27680;
+constexpr std::uint32_t kHakkarBerserkSoonMs = 540000;
 constexpr std::uint32_t kCeilingQuietMs = 5000; // a ceiling pause whose party stays out of combat this long goes on by itself
 constexpr std::uint32_t kLeadBackSettleMs = 5000; // a lead bot back on the plan's map this long resumes its off-map pause
 constexpr std::uint32_t kPlayerHoldBackSettleMs = 5000; // a player back with the party this long resumes his hold pause
@@ -601,6 +607,20 @@ constexpr std::uint32_t kHpHeldMs = 60000;
 // the patrol was decided whether it came alone or into the Keeper's fight.
 constexpr std::uint32_t kPatrolWaitMs = 60000;    // ... waited for this long at most (a shorter timeout_s of the step caps it)
 constexpr float kPatrolSeeYd = 30.0f;             // the glue reads patrollers of the step's entries this far outside its radius
+// The straggler pull (AiPlayerbot.DungeonRunStragglerPull): a pack unit or a patrol the step waits for that did not
+// come is pulled by the acting tank instead of the pause. Each try's walk in and pull, and the clearance the walk
+// keeps off another not-yet-pulled pack's aggro reach (the pack's own reach plus this).
+constexpr std::uint32_t kStragglerPullMs = 45000;
+constexpr float kStragglerPullAggroMarginYd = 5.0f;
+// The way is re-read right before a movement order and every this often while the tank walks or waits (a pack that
+// comes into the way after the first read aborts that tank's try, as a blocked way does).
+constexpr std::uint32_t kStragglerRecheckMs = 2000;
+// A patrol is pulled from its loop point only once the patrol comes within this reach of it: the tank then walks at
+// the unit from the point, so the way is short. Attacking while the patrol stands on the far side of its loop sent
+// the tank across the whole loop, through packs the way check never saw.
+constexpr float kStragglerPatrolReachYd = 8.0f;
+// A stand-pull pull row's patrol is waited for one full loop at most when the glue could not read the loop's time.
+constexpr std::uint32_t kPatrolPullCycleMs = 90000;
 // The pack-cleared gate (AiPlayerbot.DungeonRunPackClearMarginYd): a pull step
 // is done only when no unit of its entries is left in the band around its
 // radius, and a unit that spawned inside the radius belongs to the step
@@ -848,6 +868,9 @@ struct UnitFact
     // A run crowd-control aura is on it, any family (kRunCc's auras; the name
     // is from when the run had only Polymorph).
     bool polymorphed = false;
+    // The time left on the run cc read on it (the soonest-ending aura of kRunCc's spells), when the glue read
+    // it: RunCcBreakTick breaks the hold that ends first. 0: not read (the oldest hold goes then).
+    std::uint32_t ccRemainMs = 0;
     // Automatic crowd control (Facts::autoCc): a mana user (caster or healer)
     // goes before a melee unit, and its level bounds which bot may take it
     // (kRunCcMaxLevelOver). fleeRoomYd: for a fear family, the 3D distance to
@@ -872,6 +895,9 @@ struct UnitFact
     // is in no combat itself.
     bool auraOnEngaged = false;
     bool victimHealer = false; // its victim is a healer (Facts::partyAttackers, and a hold's units)
+    // Its entry carries a needs_aura row (BossTacticsPolicy.h): only a carrier of the row's aura may touch it. The
+    // guard leaves it alone while Facts::auraGatedTargets is on.
+    bool auraGated = false;
     bool victimLead = false;   // a hold's units: its victim is the lead bot (the tank holds it)
     // Facts::partyAttackers only: its victim is a living tank other than the lead bot (an off-tank holds it).
     bool victimTank = false;
@@ -895,6 +921,10 @@ struct UnitFact
     // Residue only by the flier rule (PullReadIn::airborne over the centre's floor, above kPackResidueZYd): a flier the
     // re-pulls did not bring down is left for the step at the re-pull cap, not paused for (PackResidueTick).
     bool aloft = false;
+    // A periodic damage aura from the party (a bot, a player, or a pet) is on it: its ticks break a crowd control the
+    // moment it lands, so the automatic crowd control never picks the unit (ZG walk 32: 767 Corruption and 550 Curse of
+    // Agony casts in the wipe fights, the joiners dotted before their mark went out).
+    bool partyDots = false;
     // Pull step units only, when Facts::joinerCeiling is set: how many other
     // creatures an estimate (ai::EstimateAggro) says come if this one is pulled.
     std::uint32_t joiners = 0;
@@ -932,6 +962,10 @@ struct UnitFact
     // where the row makes the master's aggro wake them. A pull draws these with its target; every other
     // creature that joins it is a joiner (Run::joinerPack).
     std::vector<std::uint64_t> packGuids;
+    // A patroller (Facts::patrollers): the loop it walks (sWaypointMgr's path for its walker, closed), and one full
+    // cycle's time at its walk speed, rounded up (0: not read: the run then waits kPatrolPullCycleMs).
+    std::vector<ai::ApproachPoint> loop;
+    std::uint32_t cycleMs = 0;
 };
 
 // The pack a pull step takes, as the firing stand's clearance reads it (AiPlayerbot.DungeonRunStandClearance): the
@@ -1053,6 +1087,8 @@ constexpr std::uint32_t kCreatureUndead = 6;
 constexpr std::uint32_t kCreatureHumanoid = 7;
 constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
+// A totem (the Brain Wash Totem 15112, the Powerful Healing Ward 14987): a 1-2 s kill, never a guard's target.
+constexpr std::uint32_t kCreatureTotem = 11;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
 // The run's crowd-control spells, in the order of their reliability: the bot
@@ -1101,22 +1137,31 @@ struct RunCcSpell
     bool prePull;        // only on a unit out of combat, by a bot out of combat, before the pull (Sap)
     Tier tier;
     bool autoOnly;       // only with Facts::autoCc: the four plan families stay byte-identical key off
+    // The automatic crowd control may pick it. Freezing Trap never: a trap
+    // freezes only a mob that walks over it, and a joiner chewing a healer does
+    // not (ZG walk 32: 54 in-fight trap orders, none landed, each one a spent
+    // mark and a spent 2 s gap). The class's own trap row still fires on a mark
+    // a player or the plan put on a unit.
+    bool autoPick;       // false: never an automatic pick
 };
 constexpr RunCcSpell kRunCc[] = {
     {CcFamily::Polymorph, "Polymorph", "polymorphed",
         CreatureBit(kCreatureHumanoid) | CreatureBit(kCreatureBeast) | CreatureBit(kCreatureCritter), false,
-        RunCcSpell::Tier::A, false},
-    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false, RunCcSpell::Tier::A, false},
+        RunCcSpell::Tier::A, false, true},
+    {CcFamily::Shackle, "Shackle Undead", "shackled", CreatureBit(kCreatureUndead), false, RunCcSpell::Tier::A, false,
+        true},
     {CcFamily::Banish, "Banish", "banished", CreatureBit(kCreatureDemon) | CreatureBit(kCreatureElemental), false,
-        RunCcSpell::Tier::A, false},
+        RunCcSpell::Tier::A, false, true},
     {CcFamily::Hibernate, "Hibernate", "hibernating",
-        CreatureBit(kCreatureBeast) | CreatureBit(kCreatureDragonkin), false, RunCcSpell::Tier::A, true},
-    {CcFamily::Seduction, "Seduction", "seduced", CreatureBit(kCreatureHumanoid), false, RunCcSpell::Tier::A, true},
-    {CcFamily::FreezingTrap, "Freezing Trap", "frozen", 0xFFFFu, false, RunCcSpell::Tier::A, true},
-    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true, RunCcSpell::Tier::A, false},
-    {CcFamily::Repentance, "Repentance", "repenting", 0xFFFFu, false, RunCcSpell::Tier::S, true},
-    {CcFamily::ScareBeast, "Scare Beast", "feared", CreatureBit(kCreatureBeast), false, RunCcSpell::Tier::R, true},
-    {CcFamily::Fear, "Fear", "feared", 0xFFFFu, false, RunCcSpell::Tier::R, true},
+        CreatureBit(kCreatureBeast) | CreatureBit(kCreatureDragonkin), false, RunCcSpell::Tier::A, true, true},
+    {CcFamily::Seduction, "Seduction", "seduced", CreatureBit(kCreatureHumanoid), false, RunCcSpell::Tier::A, true,
+        true},
+    {CcFamily::FreezingTrap, "Freezing Trap", "frozen", 0xFFFFu, false, RunCcSpell::Tier::A, true, false},
+    {CcFamily::Sap, "Sap", "sapped", CreatureBit(kCreatureHumanoid), true, RunCcSpell::Tier::A, false, true},
+    {CcFamily::Repentance, "Repentance", "repenting", 0xFFFFu, false, RunCcSpell::Tier::S, true, true},
+    {CcFamily::ScareBeast, "Scare Beast", "feared", CreatureBit(kCreatureBeast), false, RunCcSpell::Tier::R, true,
+        true},
+    {CcFamily::Fear, "Fear", "feared", 0xFFFFu, false, RunCcSpell::Tier::R, true, true},
 };
 
 inline const RunCcSpell* RunCcOf(CcFamily family)
@@ -1180,9 +1225,20 @@ constexpr float kRunCcFleeRoomYd = 35.0f;
 constexpr std::uint32_t kRunCcMaxLevelOver = 3;
 constexpr std::uint32_t kRunCcHealersKept = 4;
 constexpr std::uint32_t kRunCcFightGapMs = 2000;
+// The fight's opening: this long after it began (and at most kRunCcOpenOrders
+// joiner orders) the auto crowd control sends without kRunCcFightGapMs, and
+// every pre-pull mark whose aura is not read gets its order again
+// (RunAutoCcPrePullOpenTick). A fight the party walked into starts over the
+// threshold, so the first orders are the ones that save the healers.
+constexpr std::uint32_t kRunCcOpenWindowMs = 5000;
+constexpr std::uint32_t kRunCcOpenOrders = 3;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
+// A fight kept open only by the run's own holds (RunCcBreakTick) breaks them one at a time: a break order that has
+// not ended its unit's hold in this long no longer holds the fight ceiling off, so a hold the party cannot reach
+// still ends in the usual pause instead of a stall.
+constexpr std::uint32_t kCcBreakWaitMs = 20000;
 // A Sap goes out before the pull, which waits this long for its aura (the
 // rogue stealths and walks to the mob), then goes without it.
 constexpr std::uint32_t kSapWaitMs = 15000;
@@ -1499,6 +1555,12 @@ struct Facts
     // The teleport return's read of the lead bot's ground (Run::fetchReadWanted): the unpulled hostiles around it
     // with their aggro reach, and points around it on its floor in its sight, nearest first (FetchPoint).
     bool fetchRead = false;
+    // The rescue teleport's read of a plan point (Run::rescueScanWanted): the living, not evading hostile creatures
+    // within kRescueScanYd of the point, with their aggro reach (LiveHostileNearPoint). A rescue never teleports the
+    // lead bot alone onto a point this read holds.
+    bool rescueRead = false;
+    float rescueReadX = 0.0f, rescueReadY = 0.0f, rescueReadZ = 0.0f; // ... the point it answered for
+    std::vector<StandPackReach> rescueReach;
     std::vector<StandPackReach> fetchReach;
     std::vector<ai::ApproachPoint> fetchSpots;
     // AiPlayerbot.DungeonRunFightForward (default 1): FightForwardTick may leave the moves to a close pack out.
@@ -1591,6 +1653,23 @@ struct Facts
                                        // centre's floor at any height (ClassifyPullRead)
     float packClearMarginYd = 0.0f;    // the key, read every tick (a reload switches it mid-run)
     std::uint32_t packClearRepulls = 0; // AiPlayerbot.DungeonRunPackClearRepulls
+    // AiPlayerbot.DungeonRunStragglerPull: a unit the step waits for that did not come is pulled by the acting tank
+    // (StragglerPullTick) instead of the pause.
+    bool stragglerPull = false;
+    // ... the walk of the tank to the unit or to the patrol's loop point (Run::stragglerPathWanted), read by the glue
+    // on the tick after the policy asked (again right before movement and every kStragglerRecheckMs during the pull): a
+    // path that ends at the point, and the first living hostile of another pack it passes within its aggro reach plus
+    // kStragglerPullAggroMarginYd of (its entry, how far and that reach; 0: none).
+    bool stragglerPathRead = false;
+    std::uint64_t stragglerPathFor = 0;
+    std::string stragglerPathTank; // ... and the tank whose walk it is
+    // ... the point it ends at: false the walk point the tank was sent to, true the unit's live position (a patrol's
+    // attack). A read of the other one is not an answer to the current request.
+    bool stragglerPathToUnit = false;
+    bool stragglerPathOk = false;
+    std::uint32_t stragglerPathBlockEntry = 0;
+    float stragglerPathBlockYd = 0.0f;
+    float stragglerPathBlockReachYd = 0.0f;
     UnitFact packNearestLeft;           // nearest (3D) living unit of the entries the read listed nowhere (guid 0: none)
     PullReadIn packNearestLeftRead;     // ... its read (2D, 3D, dz, airborne): the note says why it is no residue
     std::vector<UnitFact> hopUnits;     // move: living hostile units within kHopPullYd of the point, not owned by a later step
@@ -1640,6 +1719,26 @@ struct Facts
     std::string bossSearchEventName;
     std::uint64_t bossSearchCorpseGuid = 0;
     float bossSearchCorpseX = 0.0f, bossSearchCorpseY = 0.0f, bossSearchCorpseZ = 0.0f;
+    // The boss step's pull gate (ai_boss_tactic's pull_gate row, AiPlayerbot.DungeonRunPullGate): the living boss wears
+    // `bossGateSpell` with `bossGateStacks` stacks (the glue's read of the aura; -1: no gate, the key off, no row, or
+    // the boss not seen alive). More than `bossGateMax` holds the pull, and after `bossGateHoldS` s the run ends (see
+    // BossPullGated). bossGatePriests is the glue's display list of the living High Priests off the instance data: the
+    // gate's note names them (empty: none read).
+    std::int32_t bossGateStacks = -1;
+    std::uint32_t bossGateSpell = 0;
+    std::uint32_t bossGateMax = 0;
+    float bossGateHoldS = 0.0f;
+    std::string bossGatePriests;
+    // The living plan boss's health %, and whether it wears the enrage aura (Hakkar's Berserk 27680): the boss step's
+    // run line reports the enrage once at 540 s and once when it lands (kHakkarBerserkSpell).
+    int bossHpPct = -1;
+    bool bossBerserk = false;
+    // The seek_aura clock's latest siphon (SeekCycleSnapshot, read once per tick): the cycle the counts belong to, and
+    // the raid members that were dosed then (24323) and were not (24322). The run line reports each cycle once.
+    bool seekClockRead = false;
+    std::uint32_t seekSiphonCycle = 0;
+    int seekSiphonDosed = 0;
+    int seekSiphonUndosed = 0;
     int objectState = -1;               // wait_object, hold done by object: 0 ready, 1 active, 2 active_alt; -1 not found
     // wait_object: the -1 above is an authoritative "not there": the lead bot is alive and in the world on the plan's map,
     // the step's point lies within AiPlayerbot.ReactDistance of it (the by-entry search covers only that) and the point's
@@ -1796,7 +1895,30 @@ struct Facts
     bool autoCcRisky = false;
     std::uint32_t autoCcAbove = 6;
     std::uint64_t leadTargetGuid = 0;
+    // AiPlayerbot.DungeonRunTotemFocus: a kill_first totem (creature type 11) is DPS-only and its focus goes out before
+    // the guard, and the guard skips totems. AiPlayerbot.DungeonRunAuraGatedTargets: the guard skips an aura-gated unit
+    // (UnitFact::auraGated).
+    bool totemFocus = false;
+    bool auraGatedTargets = false;
+    // Automatic crowd control, a fight kept open only by the run's holds (RunCcBreakTick): the run's own held units
+    // that are still in combat, read from its holds (one object lookup each, no scan). ccHeldRead false: not read
+    // (the key is off, or the party is out of combat).
+    std::vector<UnitFact> ccHeld;
+    bool ccHeldRead = false;
+    // The glue's terrain read at a point: true when the point is in or under liquid at its own z (the core's
+    // TerrainInfo liquid status, water, ocean, slime or magma). Every rescue, strand and return point picker
+    // refuses such a point: a walk through water reads as dry ground and strands the lead bot. Null: unread, no
+    // point is liquid (the old behaviour).
+    std::function<bool(float, float, float)> pointLiquid;
 };
+
+// The glue's liquid read at a point (Facts::pointLiquid): true when the point is in or under liquid at its own z.
+// No rescue, strand or return point may be one (a walk through water reads as dry ground and strands the lead bot).
+// Unread (no callback, a test without the read): no point is liquid, the old behaviour.
+inline bool PointInLiquid(const Facts* f, float x, float y, float z)
+{
+    return f && f->pointLiquid && f->pointLiquid(x, y, z);
+}
 
 // A member the run may not move: a bot carrying a freeze_on_aura row's aura is held still by the tactics themselves
 // (every one of its actions is multiplied to 0), and a run order walks it anyway (ExecuteAction applies no multiplier),
@@ -2049,7 +2171,16 @@ struct Run
     std::size_t openAtLastPull = 0;
     std::uint32_t fruitlessPulls = 0;
     std::uint32_t bossWaitMs = 0;   // a boss step: time at the spot with the boss neither alive nor dead in sight
+    // The pull gate's hold (Facts::bossGate*, BossPullGated): time the boss step spends held off a boss that wears its
+    // stake aura above the allowed stacks. ResetStep clears it, so a step change (or a resume of the same step) starts
+    // the row's hold over; at the row's seconds the run ends.
+    std::uint32_t bossGateHeldMs = 0;
     bool bossSeenAlive = false;     // a boss step: the boss was among the step's living units
+    // The run line's Hakkar notes (Facts::bossHpPct/bossBerserk/seekSiphon*): each is written once, the enrage at 540 s
+    // and when the aura lands, the siphon once per cycle (kHakkarEntry, kHakkarBerserkSpell).
+    bool bossBerserkSoonNoted = false;
+    bool bossBerserkNoted = false;
+    std::uint32_t siphonNotedCycle = 0;
     // The boss steps' entries a fight engaged on an earlier step (IsStepBoss, on any step): his own boss step then
     // starts with bossSeenAlive true, so his corpse near the lead bot counts as boss down even though that step's own
     // read never saw him alive (the r1 walk fought Thekal on the move step before his boss step). Never
@@ -2093,6 +2224,30 @@ struct Run
     // pullback refused unreachable; PackResidueTick: a flier the re-pulls did not bring down). Named in the clear note.
     std::unordered_map<std::uint64_t, std::string> residueOutOfReach;
     std::unordered_set<std::uint64_t> patrolSeen; // ... the patrollers this step saw (a pass of one is remembered run-wide)
+    // The straggler pull (AiPlayerbot.DungeonRunStragglerPull, StragglerPullTick): the unit the acting tank goes for,
+    // the tank, the try in progress (1 the acting tank, 2 the off-tank's), the tanks already tried, the try's clock,
+    // the point it walks to first (a patrol's loop point; the unit itself otherwise), whether that walk went out and
+    // whether the attack did, the glue's pending read of the walk and the clock of the last clearance read, and the
+    // refusal that ended a try.
+    std::uint64_t stragglerGuid = 0;
+    std::string stragglerTank;
+    std::uint8_t stragglerTry = 0;
+    std::unordered_set<std::string> stragglerTried;
+    std::uint32_t stragglerMs = 0;
+    std::uint32_t stragglerRecheckMs = 0;
+    float stragglerX = 0.0f, stragglerY = 0.0f, stragglerZ = 0.0f;
+    bool stragglerWalkSent = false;
+    bool stragglerAttackSent = false;
+    // The glue's way read is for the attack: to the unit's live position, not to the point the tank walked to (a
+    // patrol walks its loop; the attack goes at where it stands now).
+    bool stragglerAttackPath = false;
+    std::uint64_t stragglerPathWanted = 0;
+    std::string stragglerOrder;
+    std::string stragglerFail;
+    // The caller's pause line, set when its try begins: its base (the reason goes in) and the advice after it.
+    std::string stragglerPause;
+    std::string stragglerAdvice;
+    bool stragglerLost = false; // an order of it was refused: the try moves to the next tank (or pauses)
     // A big pack's stand walk (BigPackWalkGate): the walk's unit, stand and
     // joiner count; the hold for the party, its time, and whether its ceiling
     // was spent (the walk then goes on without the gate).
@@ -2263,11 +2418,31 @@ struct Run
         std::uint32_t tries = 0;
         std::uint64_t lastMs = 0;
         float x = 0.0f, y = 0.0f, z = 0.0f;
+        // The time waited with no member out of combat to bring the bot to: no teleport is attempted then, so no
+        // try is spent (its own clock bounds the wait's note, never the queue).
+        std::uint32_t waitMs = 0;
     };
     std::map<std::string, FetchState> fetch;
     std::set<std::string> fetchGaveUp;
     bool fetchOn = false;
     bool fetchReadWanted = false;
+    // The rescue teleport's read of the point it is armed for (a rescue never sends the lead bot alone onto a point
+    // live hostiles hold): the glue reads the living hostiles around (rescueScanX/Y/Z) on the tick after the request,
+    // Facts::rescueRead, and StrandedTeleportTick refuses the point then. Cleared when the rescue is sent or reset.
+    bool rescueScanWanted = false;
+    float rescueScanX = 0.0f, rescueScanY = 0.0f, rescueScanZ = 0.0f;
+    // The ticks waited for that read (kRescueScanWaitMs, then the point counts as held), the earlier clear points
+    // read in turn when a held point has no group to join (kRescueBackReads), the one whose read is pending, and the
+    // point the next search starts below.
+    std::uint32_t rescueScanMs = 0;
+    std::uint32_t rescueBackReads = 0;
+    std::size_t rescueBackIdx = static_cast<std::size_t>(-1);
+    std::size_t rescueBackFrom = static_cast<std::size_t>(-1);
+    // The rescue's destination when it is no plan point (the party's spot, the point being held by live hostiles), and
+    // the hold's clock while there is neither a safe point nor a group to join.
+    bool strandParty = false;
+    float strandPartyX = 0.0f, strandPartyY = 0.0f, strandPartyZ = 0.0f;
+    std::uint32_t rescueHoldMs = 0;
     // Summons the portal dropped (UpdateSummonOutcomes): each bot's count as last seen, and this tick's new ones.
     std::unordered_map<std::string, std::uint32_t> summonCancelSeen;
     std::set<std::string> summonCancelled;
@@ -2351,6 +2526,9 @@ struct Run
     std::size_t otherPartRescueStep = static_cast<std::size_t>(-1);
     // Crowd control and kill-first (the plan's cc_priority / cc_always / kill_first).
     std::unordered_set<std::uint64_t> ccSent; // units this step put a `cc <mark>` on (once each)
+    // ... and the marks given up on (the aura did not show after the order and its one re-send): no body will be
+    // held by them, so they count in no threshold.
+    std::unordered_set<std::uint64_t> ccGaveUp;
     // Who holds which unit (issue #1159): one unit per bot and per mark while
     // that unit lives among the step's units; a unit is never given a second bot.
     struct CcHold
@@ -2387,6 +2565,21 @@ struct Run
     std::uint32_t ccAutoOrders = 0;
     std::uint32_t ccAutoGapMs = 0;
     bool ccAutoNoBotNoted = false;
+    // The fight's opening (set when it begins, kRunCcOpenWindowMs): the pre-pull
+    // marks are cast at once (ccOpenSent: those already re-sent) and the first
+    // kRunCcOpenOrders joiner orders go out without the 2 s gap (ccOpenOrders).
+    bool ccOpenDue = false;
+    std::uint32_t ccOpenOrders = 0;
+    std::unordered_set<std::uint64_t> ccOpenSent;
+    // The units marked before this fight began (the pull's pre-pull marks): the
+    // opening re-sends their orders, and only theirs.
+    std::unordered_set<std::uint64_t> ccOpenPrepull;
+    // A fight kept open only by the run's own holds (RunCcBreakTick): the unit being broken out of its hold now
+    // (never two at once), how long it has been tried, and when each held unit was first seen this fight (the
+    // oldest goes when no remaining hold time was read).
+    std::uint64_t ccBreakGuid = 0;
+    std::uint32_t ccBreakMs = 0;
+    std::unordered_map<std::uint64_t, std::uint32_t> ccBreakSeen;
     // The automatic cc order just sent, until the glue answers it
     // (CcOrderTaken): a refused order assigned nothing, so the unit, bot,
     // mark, budget and spacing it took go back. resend: CheckCc's re-send of
@@ -3307,6 +3500,7 @@ inline void DropFocus(Run& r)
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
 // fresh tries and ceilings).
+inline void ResetStragglerPull(Run& r); // defined below (the straggler pull)
 inline void ResetStep(Run& r)
 {
     ++r.stepPass;
@@ -3346,6 +3540,11 @@ inline void ResetStep(Run& r)
     r.openAtLastPull = 0;
     r.fruitlessPulls = 0;
     r.bossWaitMs = 0;
+    r.bossGateHeldMs = 0; // the pull gate's hold counts this step's ticks
+    // The run line's Hakkar notes belong to the fight: a step change or a resume starts them over.
+    r.bossBerserkSoonNoted = false;
+    r.bossBerserkNoted = false;
+    r.siphonNotedCycle = 0;
     // A boss of this step engaged on an earlier step (Run::bossFoughtEarly) was fought already: this step starts as
     // if he had been seen alive here, so his corpse near the lead bot is boss down.
     const PlanStep* const resetStep = Current(r);
@@ -3370,6 +3569,7 @@ inline void ResetStep(Run& r)
     r.hpWatch.clear();
     ClearFightProgress(r);
     r.patrolWaitMs = 0;
+    ResetStragglerPull(r);
     r.packRepulls = 0;
     r.residuePullGuid = 0;
     r.residueOutOfReach.clear();
@@ -3417,6 +3617,7 @@ inline void ResetStep(Run& r)
     r.directWaitMs = 0;
     r.memberYd.clear();
     r.ccSent.clear();
+    r.ccGaveUp.clear();
     r.joinerHeld.clear();
     r.joinerRest = false;
     r.restForJoiners = false;
@@ -3431,6 +3632,9 @@ inline void ResetStep(Run& r)
     r.ccWaitMs = 0;
     r.ccHolds.clear();
     r.ccWatch.clear();
+    r.ccBreakGuid = 0;
+    r.ccBreakMs = 0;
+    r.ccBreakSeen.clear();
     r.ccLandedDrop.clear();
     r.ccSapFailed = false;
     r.ccRegather = false;
@@ -3465,6 +3669,12 @@ inline void ResetStep(Run& r)
     r.strandFromOtherPart = false;
     r.strandMs = 0;
     r.strandSummon = false;
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
+    r.rescueScanWanted = false;
+    r.rescueScanMs = 0;
+    r.rescueBackReads = 0;
+    r.rescueBackIdx = r.rescueBackFrom = static_cast<std::size_t>(-1);
     r.strandSummoned.clear();
     r.strandArrived.clear();
     r.strandSummonTries.clear();
@@ -4183,6 +4393,22 @@ inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (use
 constexpr std::uint32_t kFetchTries = 3;
 constexpr std::uint32_t kFetchRetryMs = 5000;
 constexpr float kFetchClearMarginYd = 3.0f;      // a return point stands this far outside every unpulled unit's reach
+// A point is held by live hostiles when one stands within its own aggro reach plus this much of it (the rescue
+// teleports that must not happen; ZG walk 32: the pack spread 50 yd wider than its plan radius and engaged the lead
+// bot 0.6 yd after a "safe" teleport).
+constexpr float kLiveHostileMarginYd = 8.0f;
+// The glue's scan around a rescue point for those hostiles: a pack's units stand a few tens of yards off it, and the
+// widest aggro reach stays inside this.
+constexpr float kRescueScanYd = 80.0f;
+// A rescue with no safe point (live hostiles) and no out-of-combat member group to join holds this long, then pauses
+// for the party to be brought together.
+constexpr std::uint32_t kRescueHoldMs = 30000;
+// How long a rescue waits for the glue's live read of its point before it treats the point as held: a point nobody
+// read is never sent onto (StrandFailed's retry used to clear the request and send anyway).
+constexpr std::uint32_t kRescueScanWaitMs = 3 * kTickMs;
+// The earlier clear points of the way it came a held rescue with no group to join reads in turn before it holds (a
+// party that all revived together stands on the lead bot's own spot: there is no group).
+constexpr std::uint32_t kRescueBackReads = 3;
 constexpr std::uint32_t kStrandSummonTries = 3;  // the stranded lead bot's summons per bot left behind
 
 // Bot-only parties only: a real player would see his party mates teleport.
@@ -4261,16 +4487,60 @@ inline int FetchPoint(const Facts& f, ai::ApproachPoint& point, bool& clear)
     point.y = f.leadY;
     point.z = f.leadZ;
     clear = true;
-    if (FetchPointClear(f.leadX, f.leadY, f.leadZ, f.fetchReach))
+    if (!PointInLiquid(&f, f.leadX, f.leadY, f.leadZ) && FetchPointClear(f.leadX, f.leadY, f.leadZ, f.fetchReach))
         return -1;
     for (std::size_t i = 0; i < f.fetchSpots.size(); ++i)
-        if (FetchPointClear(f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z, f.fetchReach))
+        if (!PointInLiquid(&f, f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z) &&
+            FetchPointClear(f.fetchSpots[i].x, f.fetchSpots[i].y, f.fetchSpots[i].z, f.fetchReach))
         {
             point = f.fetchSpots[i];
             return static_cast<int>(i);
         }
     clear = false;
     return -1;
+}
+
+// Where a fetched member is brought back (FarReturnTick): never alone onto a point live hostiles hold. The lead bot's
+// own spot while it lives and is out of combat (FetchPoint moves it off the reach of a pack not pulled yet), else the
+// nearest living member out of combat (a real standing position). False: no such member — the member holds where it is
+// until the party regroups (a revived bot teleported into a fight dies again, and the next fetch finds nobody).
+inline bool FarReturnPoint(const Facts& f, const std::vector<std::string>& due, ai::ApproachPoint& point,
+    std::string& why)
+{
+    why.clear();
+    if (f.leadAlive && !f.leadInCombat)
+    {
+        bool clear = true;
+        int const at = FetchPoint(f, point, clear);
+        if (clear)
+        {
+            if (at >= 0)
+                why = "beside it, outside the reach of the pack it stands by";
+            return true;
+        }
+    }
+    const MemberFact* best = nullptr;
+    for (const MemberFact& m : f.members)
+    {
+        // The lead bot itself is no anchor here (its own spot is the first choice, and it is in a fight if this
+        // branch runs at all); a member fighting or on another map is none either.
+        if (m.name.empty() || m.name == f.carrier || m.yd <= kArriveYd || m.inCombat || m.attackers > 0 ||
+            m.yd >= 1000.0f)
+            continue;
+        if (std::find(due.begin(), due.end(), m.name) != due.end())
+            continue; // one of the members being brought back
+        if (PointInLiquid(&f, m.x, m.y, m.z))
+            continue; // a member swimming is no anchor to bring another bot to
+        if (!best || m.yd < best->yd)
+            best = &m;
+    }
+    if (!best)
+        return false;
+    point.x = best->x;
+    point.y = best->y;
+    point.z = best->z;
+    why = "beside " + best->name + ", out of combat";
+    return true;
 }
 
 constexpr std::uint32_t kWedgedMs = 15000;          // still this long on another floor: wedged (= kStuckSummonMs)
@@ -7046,6 +7316,7 @@ inline bool RefusedFromIsland(Run& r, const std::string& order, const std::strin
 
 inline std::size_t LastReachedBefore(const Run& r, std::size_t idx);
 inline bool ReplayWalkBack(Run& r, const Facts& f); // defined below (StrandFailed's fallback); body pins ReplayStartPoint
+inline bool RequestRescueScan(Run& r, std::size_t idx); // defined below (RescueDue): the rescue point's live read
 
 // The last resort for a stranded lead bot (owner decision 2026-10-23; Sunken
 // Temple r26 slot 6b step 233: the lead bot went 13 yd down a ledge onto an
@@ -7131,10 +7402,17 @@ inline void RearmStrandIfLeadMovedAway(Run& r, const Facts& f)
 inline void StrandFailed(Run& r, const std::string& why)
 {
     StrandCountsForStep(r);
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
+    r.rescueScanWanted = false; // a re-arm asks again
     ++r.strandTries;
     if (r.strandTries < kStrandTries)
     {
         r.strandDue = true;
+        // The retry reads its point again: StrandedTeleportTick never sends the lead bot onto a point with no read
+        // (the retry of ZG walk 32's teleport went onto the 573 pack: fail closed).
+        r.rescueScanMs = 0;
+        RequestRescueScan(r, r.strandIdx);
         r.note = "the teleport of the stranded lead bot failed (" + why + "): trying again (" +
             std::to_string(r.strandTries + 1) + " of " + std::to_string(kStrandTries) + ")";
         return;
@@ -7176,6 +7454,14 @@ inline bool OffMapReturnTick(Run& r, const Facts& f, std::string& order);
 
 inline void OrderRefused(Run& r, const std::string& order, const std::string& answer)
 {
+    // A refused straggler pull order (the tank's walk to the point, or its attack): that tank's try is over with that
+    // reason; the next tick moves to the next tank (or pauses there, the straggler's own line naming it).
+    if (!r.stragglerOrder.empty() && order == r.stragglerOrder)
+    {
+        r.stragglerFail = "its " + order + " was refused (" + answer + ")";
+        r.stragglerLost = true;
+        return;
+    }
     // The retreat at two dead (RetreatTick): a refused move ends it, the fight goes on as the bots' own; no pause.
     if (r.retreatOn && order == MoveOrder(r.anchorX, r.anchorY, r.anchorZ, false))
     {
@@ -7220,6 +7506,8 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
                 return;
             }
             r.strandDue = true;
+            r.rescueScanMs = 0;
+            RequestRescueScan(r, r.strandIdx); // the next try judges its point on a fresh read
             r.note = "the teleport of the stranded lead bot waits (" + answer + ") (" + std::to_string(r.strandWaits) +
                 " of " + std::to_string(kStrandWaits) + ")";
             return;
@@ -7510,6 +7798,10 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
                 r.strandX = r.leadLastX;
                 r.strandY = r.leadLastY;
                 r.strandZ = r.leadLastZ;
+                r.rescueScanMs = 0;
+                r.rescueBackReads = 0;
+                r.rescueBackIdx = r.rescueBackFrom = static_cast<std::size_t>(-1);
+                RequestRescueScan(r, r.walkBackIdx); // the rescue only goes onto a point the glue read
                 r.note = point + " refused (" + answer + ") where the hop off the island found no spot: the lead bot " +
                     "is stranded; it is teleported to the last reached point out of combat";
                 EnterPhase(r, Phase::Begin);
@@ -7610,6 +7902,7 @@ inline const PlanStep* EventHoldAhead(const Run& r);
 inline bool InEvent(const Run& r);
 inline std::size_t OpenUnits(const Run& r, const std::vector<UnitFact>& units);
 inline bool PlanBossEntry(const Run& r, std::uint32_t entry);
+inline bool LinkedDeathMemberEntry(const Run& r, const Facts& f, std::uint32_t entry); // below (the straggler pull's rule)
 
 // With the aggro estimate off (Facts::joinerCeiling 0): a pull step still to be pulled whose pack in sight has
 // kBigPackUnits open units or more (the Opus review of 0d9957be: a big pack had only the estimate to show it).
@@ -7858,7 +8151,7 @@ inline bool StallFallback(Run& r, const Facts& f, float x, float y, float z, boo
     return false;
 }
 
-inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last);
+inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last, const Facts* live = nullptr);
 inline bool ApproachWalkStuck(Run& r, const Facts& f, float dist, float x, float y, float z);
 
 // The rescue teleport's bounds (StrandedLead's): out of combat, at most once a step, kStrandTries failed tries a step,
@@ -7869,11 +8162,32 @@ inline bool RescueAllowed(const Run& r, const Facts& f)
         r.strandStep != r.step && !(r.strandCountStep == r.step && r.strandTries >= kStrandTries);
 }
 
+// Asks the glue for the live read of plan point `idx` (Facts::rescueRead on the tick after): a rescue never sends
+// the lead bot onto a point nobody read. False: no such point, and the caller holds the rescue instead.
+inline bool RequestRescueScan(Run& r, std::size_t idx)
+{
+    if (!r.plan || idx >= r.plan->steps.size())
+        return false;
+    r.rescueScanWanted = true;
+    r.rescueScanX = r.plan->steps[idx].x;
+    r.rescueScanY = r.plan->steps[idx].y;
+    r.rescueScanZ = r.plan->steps[idx].z;
+    return true;
+}
+
 inline void RescueDue(Run& r, const Facts& f, std::size_t target)
 {
     StrandCountsForStep(r);
     r.strandDue = true;
     r.strandIdx = target;
+    // The glue reads the live hostiles around the point next tick: StrandedTeleportTick never sends the lead bot
+    // alone onto a point they hold.
+    RequestRescueScan(r, target);
+    r.rescueScanMs = 0;
+    r.rescueBackReads = 0;
+    r.rescueBackIdx = r.rescueBackFrom = static_cast<std::size_t>(-1);
+    r.strandParty = false;
+    r.rescueHoldMs = 0;
     r.strandX = f.leadX;
     r.strandY = f.leadY;
     r.strandZ = f.leadZ;
@@ -7894,7 +8208,7 @@ inline std::size_t OtherPartSafePoint(const Run& r, const Facts& f)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (!r.plan || last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
-    return SafePointAtOrBefore(r, f.team, last);
+    return SafePointAtOrBefore(r, f.team, last, &f);
 }
 
 // Why the rescue teleport for a lead bot in another part (LeadInOtherPart, which the caller has asked) does not go
@@ -7979,7 +8293,7 @@ inline bool WalkBackStuckRescue(Run& r, const Facts& f, float dist, float x, flo
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, &f);
     if (target == static_cast<std::size_t>(-1))
     {
         // Never a teleport beside a live pack: the pause says so.
@@ -8549,6 +8863,11 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
     for (std::size_t i = 0; i < r.ccWatch.size();)
     {
         Run::CcWatch& w = r.ccWatch[i];
+        if (r.ccBreakGuid && w.guid == r.ccBreakGuid)
+        {
+            r.ccWatch.erase(r.ccWatch.begin() + static_cast<std::ptrdiff_t>(i));
+            continue; // a hold the run is breaking out of: no watch, no re-send
+        }
         // A joiner marked in the fight is an attacker, not one of the step's units: its aura must still count as
         // landed there (RunCcReapplyTick finds it the same way).
         const UnitFact* held = FightUnit(f, w.guid);
@@ -8624,6 +8943,7 @@ inline bool CheckCc(Run& r, const Facts& f, std::uint32_t dt, std::string& order
             sent = true;
             r.ccHolds.erase(hold);
         }
+        r.ccGaveUp.insert(held->guid);
         r.note = "fighting: cc did not land on " + std::to_string(held->entry);
         r.ccWatch.erase(r.ccWatch.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -8800,14 +9120,44 @@ inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFac
     return bodies;
 }
 
-// The step's units this step's cc orders marked and that are still alive.
+// The step's units this step's cc orders marked and whose crowd control is read
+// on them now: a mark whose aura is not there is a body that still comes (spec
+// 2.D3's "certain" is the aura, not the order: ZG walk 32 counted pre-pull marks
+// that never landed as sure and pulled on them).
 inline std::uint32_t CcMarkedLive(const Run& r, const Facts& f)
 {
     std::uint32_t marked = 0;
     for (std::uint64_t guid : r.ccSent)
-        if (StepUnit(f, guid))
+    {
+        const UnitFact* const u = StepUnit(f, guid);
+        if (u && u->polymorphed)
             ++marked;
+    }
     return marked;
+}
+
+// The step's marks whose order went out and whose aura is not read yet, none of them given up: a pre-pull mark shows
+// no aura before the pull, so the next mark's threshold counts the orders in flight too (ZG walk 32: four marks for
+// eight bodies over a threshold of six, until no crowd control bot was left).
+inline std::uint32_t CcMarksInFlight(const Run& r, const Facts& f)
+{
+    std::uint32_t inFlight = 0;
+    for (std::uint64_t guid : r.ccSent)
+    {
+        const UnitFact* const u = StepUnit(f, guid);
+        if (u && !u->polymorphed && !r.ccGaveUp.count(guid))
+            ++inFlight;
+    }
+    return inFlight;
+}
+
+// The pull's bodies still to handle: its bodies less the marks that will hold one, the auras read (2.D3's "certain",
+// CcMarkedLive) and the orders in flight (CcMarksInFlight). A pull at or under the threshold needs no more marks.
+inline std::uint32_t CcBodiesOpen(const Run& r, const Facts& f, std::uint32_t bodies)
+{
+    std::uint32_t const sure = CcMarkedLive(r, f);
+    std::uint32_t const inFlight = CcMarksInFlight(r, f);
+    return bodies > sure + inFlight ? bodies - sure - inFlight : 0;
 }
 
 inline int RunCcTierRank(RunCcSpell::Tier tier)
@@ -8878,6 +9228,8 @@ inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFac
     std::uint32_t const kept = f.raid.on ? kRunCcHealersKept : 1;
     auto const fits = [&](const MemberFact& m, const RunCcSpell& c)
     {
+        if (!c.autoPick)
+            return false;
         if (m.name.empty() || busy.count(m.name) || m.tank || m.name == f.carrier)
             return false;
         // Held still (a return or revive hold), frozen by a gaze row, or too far from the pack for the spell to
@@ -8913,6 +9265,11 @@ inline const MemberFact* RunCcBotFor(const Run& r, const Facts& f, const UnitFac
             if ((c.tier == RunCcSpell::Tier::R) != risky)
                 continue;
             if (!CcFits(c.family, u.creatureType) || (u.ccImmune & CcBit(c.family)))
+                continue;
+            // The party's DoT on a unit breaks its hold the moment it ticks, but a banished unit is immune while the
+            // banish lasts and a feared one is not broken by damage: Banish and Fear stay open (the legacy pick's own
+            // exemption, CcTargetValue).
+            if (u.partyDots && c.family != CcFamily::Banish && c.family != CcFamily::Fear)
                 continue;
             for (const MemberFact& m : f.members)
                 if (fits(m, c))
@@ -9184,6 +9541,84 @@ inline const UnitFact* PickCc(const Run& r, const Facts& f, std::uint64_t pullGu
     return PickCcOrder(r, f, pullGuid).unit;
 }
 
+// Facts::autoCc, the pull's opening: every unit whose cc order went out before
+// the pull and whose aura is not read on it yet gets that order again, at once:
+// no engaged-count threshold, no kRunCcFightGapMs. The pre-pull order only armed
+// the mark (the class's `cc` row is a combat one) and the walk in gave it
+// kCcPrePullWaitMs, so no pre-pull mark was on its unit when the fight began
+// (ZG walk 32: every pre-pull flow ended in "the crowd control did not land").
+// One order a tick (the glue runs one), each pre-marked unit once
+// (Run::ccOpenSent). Returns true when it sent one.
+inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    static_cast<void>(dt);
+    if (!f.autoCc || !r.ccOpenDue)
+        return false;
+    std::uint64_t guid = 0;
+    bool heldBot = false;
+    Run::CcHold hold;
+    for (std::uint64_t prepull : r.ccOpenPrepull)
+    {
+        auto const entry = r.ccHolds.find(prepull);
+        if (entry == r.ccHolds.end())
+            continue;
+        if (r.ccOpenSent.count(entry->first) || r.ccLandedSeen.count(entry->first))
+            continue; // sent once already, or its aura was seen: a break is RunCcReapplyTick's
+        const UnitFact* const u = FightUnit(f, entry->first);
+        if (!u || u->polymorphed || !u->hostile || !u->attackable || u->evading)
+            continue;
+        if (u->partyDots && entry->second.family != CcFamily::Banish && entry->second.family != CcFamily::Fear)
+            continue; // a party DoT's ticks break the hold; Banish and Fear are immune to that
+        // A bot held still (a return or revive hold), frozen by a gaze row or under a return hold obeys no order: the
+        // re-send would be wasted and the land clock would start over (MemberFact::frozen's invariant: every run order
+        // that would move it skips it). The burst is not over then: it goes on when the bot is free.
+        const MemberFact* bot = nullptr;
+        for (const MemberFact& m : f.members)
+            if (m.name == entry->second.bot)
+            {
+                bot = &m;
+                break;
+            }
+        if (!bot)
+            continue;
+        if (bot->frozen || bot->held || r.returnHold.count(bot->name))
+        {
+            heldBot = true;
+            continue;
+        }
+        if (!guid || entry->first < guid)
+        {
+            guid = entry->first;
+            hold = entry->second;
+        }
+    }
+    const UnitFact* const unit = guid ? FightUnit(f, guid) : nullptr;
+    if (!unit)
+    {
+        // Every pre-pull mark was sent once, held, or its unit/bot is gone: the burst is over (the fight tick's own
+        // opening grace, kRunCcOpenOrders without the gap, still runs on ccOpenDue and kRunCcOpenWindowMs). A bot only
+        // held still keeps the list: its mark goes when the hold ends.
+        if (!heldBot)
+            r.ccOpenPrepull.clear();
+        return false;
+    }
+    CcPick pick;
+    pick.unit = unit;
+    pick.bot = hold.bot;
+    pick.family = hold.family;
+    pick.mark = hold.mark;
+    pick.autoOrder = hold.autoOrder;
+    order = CcOrderText(pick, guid);
+    if (pick.autoOrder)
+        r.ccAutoPending = Run::CcAutoOrder{order, guid, false, false, true, r.ccAutoGapMs};
+    RegisterCcOrder(r, pick, guid);
+    r.ccOpenSent.insert(guid);
+    const RunCcSpell* const spell = RunCcOf(pick.family);
+    r.note = "auto cc: the pack is in combat: " + std::to_string(unit->entry) + " (" + pick.bot + ": " +
+        (spell ? spell->spell : "") + ") at once";
+    return true;
+}
+
 // Facts::autoCc, in a fight: the living hostiles engaged with the party, the
 // lead bot's own attackers included, that no run cc holds now; while more than
 // the row's threshold of them fight, one auto cc order a tick (kRunCcFightGapMs
@@ -9204,7 +9639,11 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         }
         return false;
     }
-    if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs)
+    // The fight's opening: its first kRunCcOpenOrders orders go out one tick
+    // after the other, no kRunCcFightGapMs (a walk-in fight starts over the
+    // threshold, and the healers are dying while the orders wait).
+    bool const opening = r.ccOpenDue && r.fightMs <= kRunCcOpenWindowMs && r.ccOpenOrders < kRunCcOpenOrders;
+    if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs && !opening)
         return false;
     // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
     // union is by guid so a guid reaching the count from two lists still counts once).
@@ -9243,8 +9682,10 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         for (const UnitFact& u : *list)
         {
             auto const reapplied = r.ccReapplied.find(u.guid);
-            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || r.ccSent.count(u.guid) ||
-                u.partyHits || u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
+            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
+                r.ccSent.count(u.guid) || u.partyHits || u.victimTank || u.guid == f.leadTargetGuid ||
+                u.guid == r.ccBreakGuid ||
+                (r.focusGuid && u.guid == r.focusGuid) ||
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
                 f.bossTacticNoCc.count(u.entry) || r.healerGuardAssigned.count(u.guid) ||
@@ -9276,6 +9717,8 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     r.ccAutoPending = Run::CcAutoOrder{order, best->guid, true, false, false, r.ccAutoGapMs};
     RegisterCcOrder(r, pick, best->guid);
     ++r.ccAutoOrders;
+    if (opening)
+        ++r.ccOpenOrders;
     r.ccAutoGapMs = 0;
     r.note = "auto cc: joiner " + std::to_string(best->entry) + " (" + pick.bot + ": " + RunCcOf(pick.family)->spell +
         "), engaged " + std::to_string(engaged - held) + " over " + std::to_string(threshold);
@@ -9302,24 +9745,31 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     std::uint32_t done = 0;
     for (auto const& entry : r.ccHolds)
     {
-        bool botAlive = false;
+        const MemberFact* bot = nullptr;
         for (const MemberFact& m : f.members)
             if (m.name == entry.second.bot)
             {
-                botAlive = true;
+                bot = &m;
                 break;
             }
-        if (!botAlive)
+        if (!bot)
         {
             deadBots.push_back(entry.first);
             continue;
         }
+        // Held still, frozen or under a return hold: no order reaches it, and the land clock would start over.
+        if (bot->frozen || bot->held || r.returnHold.count(bot->name))
+            continue;
+        if (r.ccBreakGuid && entry.first == r.ccBreakGuid)
+            continue; // a hold the run is breaking out of is never put back
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
-        if (!u || u->polymorphed || u->partyHits || u->victimTank || u->guid == f.leadTargetGuid ||
-            (r.focusGuid && u->guid == r.focusGuid))
+        if (!u || u->polymorphed || u->partyHits || u->victimTank ||
+            u->guid == f.leadTargetGuid || (r.focusGuid && u->guid == r.focusGuid))
             continue;
+        if (u->partyDots && entry.second.family != CcFamily::Banish && entry.second.family != CcFamily::Fear)
+            continue; // a party DoT's ticks break the hold; Banish and Fear are immune to that
         auto const had = r.ccReapplied.find(entry.first);
         std::uint32_t const times = had == r.ccReapplied.end() ? 0 : had->second;
         if (times >= kRunCcReapplies)
@@ -9353,6 +9803,81 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
     const RunCcSpell* const spell = RunCcOf(pick.family);
     r.note = "auto cc: " + std::to_string(unit->entry) + " broke free: " + (spell ? spell->spell : "") + " again (" +
         std::to_string(count) + "/" + std::to_string(kRunCcReapplies) + ")";
+    return true;
+}
+
+// Facts::autoCc, a fight kept open only by the run's own holds (ZG walk 33 d: Jin'do steps 540/550 stalled about 50
+// min with eight shackled Sacrificed Trolls 14826; "a fight lasted more than 180 s (kept on by nothing hostile
+// engaged)"). Every hostile still in combat with the party that the facts read (Facts::engagedUnits, and each
+// member's own threat read) is one of the run's held units (Facts::ccHeld), and nothing else engages. The run breaks
+// them ONE at a time: the tank takes the hold that ends soonest (UnitFact::ccRemainMs), or the oldest (the first
+// sight this fight) when no time was read, the party kills it, then the next. Never two at once: the unit being
+// broken stays the one until it is dead, gone from the read, or its hold broke. The hold of that unit is never
+// re-applied. Returns true while the fight is such a fight; `order` carries the break order when one went out.
+inline bool RunCcBreakTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    if (!f.autoCc || !f.ccHeldRead || !f.leadAlive)
+        return false;
+    // Nothing else may engage: a hostile the party attacks, is attacked by, or that holds a member on its threat
+    // list is a real fight, unless the run holds it.
+    auto const unheld = [](const UnitFact& u) { return u.guid && u.hostile && !u.polymorphed; };
+    for (const UnitFact& u : f.engagedUnits)
+        if (unheld(u))
+            return false;
+    for (const MemberFact& m : f.members)
+        for (const UnitFact& u : m.engaged)
+            if (unheld(u))
+                return false;
+    if (f.ccHeld.empty())
+    {
+        r.ccBreakGuid = 0;
+        r.ccBreakMs = 0;
+        return false;
+    }
+    for (const UnitFact& u : f.ccHeld)
+        r.ccBreakSeen.emplace(u.guid, r.fightMs); // the oldest hold goes when no remaining time was read
+    const UnitFact* active = nullptr;
+    for (const UnitFact& u : f.ccHeld)
+        if (u.guid == r.ccBreakGuid)
+            active = &u;
+    if (active)
+    {
+        // One at a time: the next goes when this one is gone. The grace runs while the hold stands, whether the
+        // party is already on it or not: a hold that does not break under the attack still ends in the pause.
+        r.ccBreakMs += dt;
+        return true;
+    }
+    const UnitFact* best = nullptr;
+    for (const UnitFact& u : f.ccHeld)
+    {
+        if (!u.guid || !u.attackable)
+            continue;
+        if (!best)
+        {
+            best = &u;
+            continue;
+        }
+        if (u.ccRemainMs && (!best->ccRemainMs || u.ccRemainMs < best->ccRemainMs))
+        {
+            best = &u;
+            continue;
+        }
+        if (!u.ccRemainMs && !best->ccRemainMs)
+        {
+            auto const a = r.ccBreakSeen.find(u.guid), b = r.ccBreakSeen.find(best->guid);
+            std::uint32_t const at = a == r.ccBreakSeen.end() ? r.fightMs : a->second;
+            std::uint32_t const bt = b == r.ccBreakSeen.end() ? r.fightMs : b->second;
+            if (at < bt || (at == bt && u.guid < best->guid))
+                best = &u;
+        }
+    }
+    if (!best)
+        return true;
+    r.ccBreakGuid = best->guid;
+    r.ccBreakMs = 0;
+    order = "attack " + std::to_string(best->guid) + " " + f.carrier;
+    r.note = "fighting: only the run's crowd control holds this fight: breaking " + std::to_string(best->entry) +
+        " one at a time (" + std::to_string(f.ccHeld.size()) + " held)";
     return true;
 }
 
@@ -9520,6 +10045,43 @@ inline bool FocusGone(const Run& r, const Facts& f)
         if (u.guid == r.focusGuid)
             return false;
     return true;
+}
+
+// Whether the run's kill-first focus leaves a bot out: a tank_hold target arms the DPS and the healers while the tanks
+// keep their own pick (the row's loose adds), and under the totem focus a totem is the DPS' alone: it dies in 1-2 s,
+// and a tank or a healer drawn off its job for it is a lost heal or a lost mob.
+inline bool FocusSkipsBot(bool isTank, bool isHealer, bool tankHoldTarget, bool totemTarget, bool totemKeyOn)
+{
+    if (totemKeyOn && totemTarget)
+        return isTank || isHealer;
+    return tankHoldTarget && isTank;
+}
+
+// The DPS-only totem focus is the run leader's own automated kill-first order, never a player's: an explicit
+// `.bot action focus` (or `.bot cmd focus`) on a totem is the player's order and arms every bot.
+inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool totemKeyOn)
+{
+    return automatedKillFirst && totemKeyOn && totemTarget;
+}
+
+// Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
+// like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
+// no order budget spent on it.
+inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
+{
+    return isPlayer && inLeadGroup;
+}
+
+// The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
+// skull stays until the new order lands, so it is remembered (FocusOrderRefused).
+inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k)
+{
+    r.prevFocusIconGuid = r.focusIconGuid;
+    r.focusGuid = k.guid;
+    r.focusIconGuid = k.guid;
+    r.focusIconClear = 0;
+    r.note = "fighting: kill " + std::to_string(k.entry) + " first";
+    return "focus " + std::to_string(k.guid);
 }
 
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
@@ -10023,6 +10585,44 @@ inline bool StandDisciplineOutOfPlace(const Run& r, const Facts& f, std::string&
     return out;
 }
 
+// The boss step's pull gate (ai_boss_tactic's `pull_gate` row, AiPlayerbot.DungeonRunPullGate): the boss wears its
+// stake aura above the most stacks the row allows, so the run never pulls it. Zul'Gurub walk 33 opened a fresh instance
+// at the Hakkar leg with the five High Priests alive: Hakkar wore five Hakkar Power 24692 stacks (one per living
+// priest, +20 % damage and +10 % max health each) and every pull died in 25-36 s. `entry` is the unit the pull would
+// target: only the step's boss (the entry the glue saw him alive as) is gated, never a pack's trash.
+inline bool BossPullGated(const Facts& f, std::uint32_t entry)
+{
+    return f.bossGateStacks > static_cast<std::int32_t>(f.bossGateMax) && entry == f.bossSearchAliveEntry;
+}
+
+// The pull gate's note: the boss, the aura he wears, its stacks, the band, and the living High Priests the glue read
+// off the instance data when it had them. The hold's tail (`; not pulling`) and the end's (`; the run ends`) are the
+// caller's.
+inline std::string BossGateNote(const Facts& f, std::uint32_t entry)
+{
+    std::string note = "boss gate: " + std::to_string(entry) + " wears " + std::to_string(f.bossGateSpell) + " x" +
+        std::to_string(f.bossGateStacks) + " (" + std::to_string(f.bossGateMax) + " allowed)";
+    if (!f.bossGatePriests.empty())
+        note += "; priests alive: " + f.bossGatePriests;
+    return note;
+}
+
+// One tick of the pull gate on a gated boss (BossPullGated): advances the hold, writes the gate's note and ends the run
+// at the row's seconds. True when the run must leave the boss alone this tick (no pull, no engage on arrival).
+inline bool BossGateTick(Run& r, const Facts& f, std::uint32_t entry, std::uint32_t dt)
+{
+    if (!BossPullGated(f, entry))
+        return false;
+    r.bossGateHeldMs += dt;
+    if (r.bossGateHeldMs >= static_cast<std::uint32_t>(f.bossGateHoldS * 1000.0f))
+    {
+        EndRunEarly(r, BossGateNote(f, entry) + "; the run ends");
+        return true;
+    }
+    r.note = BossGateNote(f, entry) + "; not pulling";
+    return true;
+}
+
 // Gathers the party, crowd-controls the plan's cc targets of the pack (a
 // `cc <mark> <guid> <bot>` each, once per unit and step, PickCcOrder), then
 // sends `pullback <guid>`.
@@ -10040,6 +10640,11 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     bool walkBack = false, std::uint32_t dt = kTickMs, bool hop = false)
 {
     hop = hop || walkBack;
+    // The pull gate: a boss that wears its stake aura above the row's band is never the pull's target. The run holds
+    // it for the row's seconds (the note names the living priests when the glue read them), then ends: a fresh
+    // instance with the priests alive is a wipe, not a step to retry.
+    if (BossGateTick(r, f, u.entry, dt))
+        return;
     // The owner's wait rule at the pull itself (Uldaman 19z11: 17 of 63 pulls
     // went out with a member dead, 15 with the healer, two of them into
     // wipes): no pull while a bot is dead, outside a scripted event. Tick's
@@ -11288,10 +11893,94 @@ inline bool WalkBackPackLive(const Run& r, std::size_t i)
     return i >= LiveFrom(r, true) || r.notCleared.count(i) || i < r.startStep;
 }
 
-// Whether (x, y, z) lies within a live pull or boss group's radius plus kPackClearanceYd (PathCrossesUnclearedPack's
-// reach), for the party's team.
-inline bool PointNearLivePack(const Run& r, std::uint32_t team, float x, float y, float z)
+// The rescue read's creature filter (the glue's RescueHostileNear): the creatures that hold a point. A creature the
+// group cannot attack (a trigger NPC, a not selectable one), one that never aggros, one running home, a summoned or
+// charmed one, and one a storey up or down holds nothing: it was a false "held" and a needless party jump or pause.
+inline bool RescueHostileHolds(float dz, float distance2d, float range, bool noAggro, bool notAttackable, bool evading,
+    bool owned, bool hostile)
 {
+    return hostile && !owned && !noAggro && !notAttackable && !evading && std::fabs(dz) <= ai::kAggroFloorDz &&
+        distance2d <= range;
+}
+
+// A live hostile stands within its own aggro reach plus kLiveHostileMarginYd of (x, y, z): the glue's rescue read
+// (Facts::rescueReach: living, not evading creatures with their aggro reach at the party's lowest level). An empty
+// read holds nothing; a read that never came (Facts::rescueRead false) is the caller's to refuse, not this test's.
+inline bool LiveHostileNearPoint(const std::vector<StandPackReach>& reach, float x, float y, float z)
+{
+    for (const StandPackReach& u : reach)
+        if (ai::PlanDistance(x, y, z, u.x, u.y, u.z) <= u.reachYd + kLiveHostileMarginYd)
+            return true;
+    return false;
+}
+
+// The biggest group of the party a rescued lead bot joins when its plan point is held by live hostiles: the living
+// members out of combat (no attackers, on the plan's map), clustered within kGatherYd of each other. The group's point
+// is one member's own spot (a real standing position), the cluster's member nearest the point being replaced on a tie,
+// then the first by name. False: no member stands out of combat (everyone fights or is dead) — the rescue then holds
+// and the party regroups.
+struct MemberGroup
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    float toPoint = 0.0f;
+    std::uint32_t count = 0;
+    std::string nearest;
+};
+inline bool MemberGroupPoint(const Facts& f, float px, float py, float pz, MemberGroup& out)
+{
+    auto const free = [&f](const MemberFact& m)
+    {
+        // The lead bot itself is the one being teleported; another map (yd 1000) cannot be reached.
+        return !m.name.empty() && m.name != f.carrier && m.yd > kArriveYd && !m.inCombat && m.attackers == 0 &&
+            m.yd < 1000.0f;
+    };
+    out = MemberGroup();
+    bool found = false;
+    for (const MemberFact& a : f.members)
+    {
+        if (!free(a))
+            continue;
+        std::uint32_t count = 0;
+        for (const MemberFact& b : f.members)
+            if (free(b) && ai::PlanDistance(a.x, a.y, a.z, b.x, b.y, b.z) <= kGatherYd)
+                ++count;
+        float const toPoint = ai::PlanDistance(a.x, a.y, a.z, px, py, pz);
+        bool const better = !found || count > out.count ||
+            (count == out.count &&
+                (toPoint < out.toPoint || (toPoint == out.toPoint && a.name < out.nearest)));
+        if (!better)
+            continue;
+        found = true;
+        out.x = a.x;
+        out.y = a.y;
+        out.z = a.z;
+        out.toPoint = toPoint;
+        out.count = count;
+        out.nearest = a.name;
+    }
+    return found;
+}
+
+// The glue's live-hostile read for exactly this point (Facts::rescueReach): another point's read is no answer for it,
+// and a stale one would judge the wrong place. Null: not read (or read for another point).
+inline const std::vector<StandPackReach>* RescueLiveReach(const Facts& f, float x, float y, float z)
+{
+    if (!f.rescueRead || ai::PlanDistance(x, y, z, f.rescueReadX, f.rescueReadY, f.rescueReadZ) > kArriveYd)
+        return nullptr;
+    return &f.rescueReach;
+}
+
+// Whether (x, y, z) lies within a live pull or boss group's radius plus kPackClearanceYd (PathCrossesUnclearedPack's
+// reach), for the party's team. `live` (the facts, whose rescue read is for this point): a live hostile within its
+// aggro reach of the point holds it too — the plan's radius says where the pack was authored to stand, not where its
+// units are (ZG walk 32: step 573 lay "clear" of the 574 pack and the lead bot was engaged 0.6 yd after the teleport).
+inline bool PointNearLivePack(const Run& r, std::uint32_t team, float x, float y, float z,
+    const Facts* live = nullptr)
+{
+    if (live)
+        if (const std::vector<StandPackReach>* const read = RescueLiveReach(*live, x, y, z))
+            if (LiveHostileNearPoint(*read, x, y, z))
+                return true;
     if (!r.plan)
         return false;
     for (std::size_t i = 0; i < r.plan->steps.size(); ++i)
@@ -11321,7 +12010,8 @@ inline std::unordered_set<std::size_t> UnclearedForPath(const Run& r)
 // checkpoint (the Opus re-review of a4a16e14: after a wipe the checkpoint is the stand beside the pack that wiped the
 // party, so a search from it found nothing and the rescue teleported there); a direct step still ends the search,
 // so no point behind a navmesh hole is chosen.
-inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_t from, float minYd)
+inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_t from, float minYd,
+    const Facts* live = nullptr)
 {
     if (!r.plan || from >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
@@ -11336,29 +12026,41 @@ inline std::size_t ClearPointBefore(const Run& r, std::uint32_t team, std::size_
             continue;
         if (minYd > 0.0f && ai::PlanDistance(p.x, p.y, p.z, t.x, t.y, t.z) < minYd)
             continue;
-        if (!PointNearLivePack(r, team, p.x, p.y, p.z))
+        if (PointInLiquid(live, p.x, p.y, p.z))
+            continue; // never a point in liquid: the next dry one back
+        if (!PointNearLivePack(r, team, p.x, p.y, p.z, live))
             return j;
     }
     return static_cast<std::size_t>(-1);
 }
 
+// The latest plain move point strictly before `idx` out of every live pack's reach (ClearPointBefore's own rule, one
+// point further back): the next earlier point a held rescue reads.
+inline std::size_t ClearPointBeforeExclusive(const Run& r, std::uint32_t team, std::size_t idx, const Facts* live)
+{
+    if (idx == 0 || !r.plan || idx > r.plan->steps.size())
+        return static_cast<std::size_t>(-1);
+    return ClearPointBefore(r, team, idx - 1, 0.0f, live);
+}
+
 // A safe point at or before `last`: `last` when no live pack is near it, else the latest plain move point before it
 // that is clear (ClearPointBefore); npos when there is none.
-inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last)
+inline std::size_t SafePointAtOrBefore(const Run& r, std::uint32_t team, std::size_t last, const Facts* live)
 {
     if (!r.plan || last >= r.plan->steps.size())
         return static_cast<std::size_t>(-1);
     const PlanStep& p = r.plan->steps[last];
-    if (!PointNearLivePack(r, team, p.x, p.y, p.z))
+    if (!PointInLiquid(live, p.x, p.y, p.z) && !PointNearLivePack(r, team, p.x, p.y, p.z, live))
         return last;
-    return ClearPointBefore(r, team, last, 0.0f);
+    return ClearPointBefore(r, team, last, 0.0f, live);
 }
 
 // The straight walk back's target: the safe point (SafePointAtOrBefore), or `last` itself when there is none (the walk
 // goes there as before; only the rescue's teleport refuses an unsafe point).
-inline std::size_t StraightWalkBackTarget(const Run& r, std::uint32_t team, std::size_t last)
+inline std::size_t StraightWalkBackTarget(const Run& r, std::uint32_t team, std::size_t last,
+    const Facts* live = nullptr)
 {
-    std::size_t const safe = SafePointAtOrBefore(r, team, last);
+    std::size_t const safe = SafePointAtOrBefore(r, team, last, live);
     return safe == static_cast<std::size_t>(-1) ? last : safe;
 }
 
@@ -11401,7 +12103,7 @@ inline bool PlacedRunRescue(Run& r, const Facts& f)
     {
         std::size_t const last = LastReachedBefore(r, r.step);
         if (last != static_cast<std::size_t>(-1) && last >= r.startStep && last < r.plan->steps.size())
-            target = SafePointAtOrBefore(r, f.team, last); // never before the start step (ClearPointBefore's floor)
+            target = SafePointAtOrBefore(r, f.team, last, &f); // never before the start step (ClearPointBefore's floor)
     }
     bool const byTheWipe = target != static_cast<std::size_t>(-1);
     for (std::size_t j = r.startStep; !byTheWipe && j < r.step && j < r.plan->steps.size(); ++j)
@@ -11409,7 +12111,8 @@ inline bool PlacedRunRescue(Run& r, const Facts& f)
         const PlanStep& p = r.plan->steps[j];
         if (p.kind == PlanStepKind::MoveDirect)
             break;
-        if (p.kind == PlanStepKind::Move && !PointNearLivePack(r, f.team, p.x, p.y, p.z))
+        if (p.kind == PlanStepKind::Move && !PointInLiquid(&f, p.x, p.y, p.z) &&
+            !PointNearLivePack(r, f.team, p.x, p.y, p.z))
         {
             target = j;
             break;
@@ -11466,7 +12169,7 @@ inline bool ReplayRescue(Run& r, const Facts& f, const std::string& why)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, &f);
     if (target == static_cast<std::size_t>(-1))
         return false; // never a teleport beside a live pack: the replay as before
     const PlanStep& p = r.plan->steps[target];
@@ -11521,7 +12224,7 @@ inline bool BackoffRescue(Run& r, const Facts& f, const std::string& why, std::s
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, &f);
     if (target == static_cast<std::size_t>(-1))
         return false; // never a teleport beside a live pack: the backoff as before
     const PlanStep& p = r.plan->steps[target];
@@ -11555,7 +12258,7 @@ inline bool IslandWalkBackRescue(Run& r, const Facts& f, const std::string& why)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, &f);
     if (target == static_cast<std::size_t>(-1))
         return false;
     const PlanStep& p = r.plan->steps[target];
@@ -11692,7 +12395,7 @@ inline void StartWalkBack(Run& r, const Facts& f)
         return; // back near the step already
     // The straight target clear of every live pack (StraightWalkBackTarget): the last point when it is, else the
     // latest point before it that is; the plan's points from there on are replayed.
-    std::size_t const target = StraightWalkBackTarget(r, f.team, last);
+    std::size_t const target = StraightWalkBackTarget(r, f.team, last, &f);
     r.walkBack = true;
     r.walkBackDirect = true;
     r.walkBackIdx = target;
@@ -11719,7 +12422,7 @@ inline bool HoleReplayRescue(Run& r, const Facts& f, std::size_t hole)
     std::size_t const last = LastReachedBefore(r, r.step);
     if (last == static_cast<std::size_t>(-1) || last >= r.plan->steps.size())
         return false;
-    std::size_t const target = SafePointAtOrBefore(r, f.team, last);
+    std::size_t const target = SafePointAtOrBefore(r, f.team, last, &f);
     if (target == static_cast<std::size_t>(-1) || target <= hole)
         return false; // a safe point before the hole: the straight walk there is the short way
     const PlanStep& t = r.plan->steps[target];
@@ -11825,21 +12528,29 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         r.strandOn = false;
         r.strandMs = 0;
         EnterPhase(r, Phase::Begin);
-        float const away = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
-        if (away > kArriveYd)
+        float const away = r.strandParty
+            ? ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.strandPartyX, r.strandPartyY, r.strandPartyZ)
+            : ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
+        if (away > (r.strandParty ? kGatherYd : kArriveYd))
         {
-            StrandFailed(r, "the lead bot stands " + Num(away) + " yd from the point after it");
+            StrandFailed(r, "the lead bot stands " + Num(away) + " yd from " + (r.strandParty ? "the party" : "the point") +
+                " after it");
             return true;
         }
         r.strandStep = r.step;
-        NoteCheckpoint(r, r.strandIdx); // the lead bot stands on that point (kArriveYd): past every hole before it
+        if (!r.strandParty)
+            NoteCheckpoint(r, r.strandIdx); // the lead bot stands on that point (kArriveYd): past every hole before it
         r.strandReplay = false; // used: no replay after it
         r.strandBotOnly = false; // used: no player recheck after it
         r.strandFromOtherPart = false; // used: no player pause after it
         r.strandSummon = true;
         r.strandSummoned.clear();
         r.strandSummonMs = 0;
-        r.note = "the lead bot was stranded at " + spot + " with no way back: teleported to " + target;
+        r.note = "the lead bot was stranded at " + spot + " with no way back: teleported " +
+            (r.strandParty ? "to the party, the point it would have gone to is held by live hostiles" : "to " + target);
+        r.strandParty = false;
+        r.rescueScanWanted = false;
+        r.rescueHoldMs = 0;
         return true;
     }
     if (r.strandSummon)
@@ -11926,6 +12637,10 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         return false;
     if (f.anyInCombat || f.leadInCombat)
     {
+        // A read taken now says nothing the send will use: the point's live hostiles have moved by the fight's end.
+        // The glue's bounded grid visit is not made every tick of a long fight; out of combat the rescue asks again
+        // (the fail-closed ask below).
+        r.rescueScanWanted = false;
         r.note = "the lead bot is stranded at " + Num(f.leadX) + " " + Num(f.leadY) + " " + Num(f.leadZ) +
             " with no way back: the teleport to " + target + " waits for the fight to end";
         return true;
@@ -11942,6 +12657,8 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         r.strandDue = false;
         r.strandBotOnly = false;
         r.strandFromOtherPart = false;
+        r.rescueScanWanted = false; // the rescue is dropped: no more reads of its point
+        r.strandParty = false;
         if (fromOtherPart)
         {
             PauseOtherPart(r, f, OtherPartBlock::Player);
@@ -11963,6 +12680,145 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         return true;
     }
 
+    // The point is held by live hostiles (the glue's read, alive and not evading, within their aggro reach plus
+    // kLiveHostileMarginYd): never send the lead bot there alone (ZG walk 32: step 573 lay "clear" of the 574 pack and
+    // the lead bot was engaged 0.6 yd after the teleport, with the party 360-475 yd away). It joins the biggest group
+    // of members out of combat instead; with none it holds and the party regroups.
+    // A point nobody read is no answer either: the rescue asks for the read and waits kRescueScanWaitMs, then treats
+    // the point as held (StrandFailed's retry cleared the request and the plan's own word sent the lead bot onto the
+    // 573 pack).
+    float tx = p.x, ty = p.y, tz = p.z;
+    std::size_t dest = r.strandIdx;
+    std::string chosen = target;
+    bool held = false;
+    // An earlier point's read is pending or just answered: the glue reads one point a tick, so the plan point's own
+    // read is gone meanwhile (rescueBackIdx says which point is being judged).
+    if (r.rescueBackIdx != static_cast<std::size_t>(-1))
+    {
+        const PlanStep& back = r.plan->steps[r.rescueBackIdx];
+        if (PointInLiquid(&f, back.x, back.y, back.z))
+        {
+            r.rescueBackFrom = r.rescueBackIdx; // in liquid: the next one back
+            r.rescueBackIdx = static_cast<std::size_t>(-1);
+            r.rescueScanMs = 0;
+        }
+        else if (const std::vector<StandPackReach>* const backRead = RescueLiveReach(f, back.x, back.y, back.z))
+        {
+            if (!LiveHostileNearPoint(*backRead, back.x, back.y, back.z))
+            {
+                dest = r.rescueBackIdx;
+                tx = back.x;
+                ty = back.y;
+                tz = back.z;
+                chosen = "the earlier point of step " + std::to_string(dest + 1) + " (out of every live hostile's reach)";
+            }
+            else
+            {
+                r.rescueBackFrom = r.rescueBackIdx; // held too: the next one back
+                r.rescueBackIdx = static_cast<std::size_t>(-1);
+                r.rescueScanMs = 0;
+            }
+        }
+        else if (r.rescueScanMs < kRescueScanWaitMs)
+        {
+            r.rescueScanMs += dt;
+            RequestRescueScan(r, r.rescueBackIdx);
+            r.note = "the lead bot is stranded: reading the earlier point of step " +
+                std::to_string(r.rescueBackIdx + 1) + " for live hostiles";
+            return true;
+        }
+        else
+        {
+            r.rescueBackFrom = r.rescueBackIdx; // no read after kRescueScanWaitMs: no answer is no safe point
+            r.rescueBackIdx = static_cast<std::size_t>(-1);
+            r.rescueScanMs = 0;
+        }
+    }
+    bool const destChosen = dest != r.strandIdx;
+    if (!destChosen)
+    {
+        if (r.rescueBackIdx != static_cast<std::size_t>(-1))
+        {
+            // The next earlier point was just asked for: its read comes next tick.
+            return true;
+        }
+        // The fail-closed ask for the plan point itself: no read, no teleport onto it. A point in liquid is held
+        // outright: the lead bot would stand in water there.
+        if (PointInLiquid(&f, p.x, p.y, p.z))
+            held = true;
+        else if (const std::vector<StandPackReach>* const liveRead = RescueLiveReach(f, p.x, p.y, p.z))
+            held = LiveHostileNearPoint(*liveRead, p.x, p.y, p.z);
+        else if (r.rescueBackFrom == static_cast<std::size_t>(-1) && r.rescueScanMs < kRescueScanWaitMs &&
+            RequestRescueScan(r, r.strandIdx))
+        {
+            r.rescueScanMs += dt;
+            r.note = "the lead bot is stranded: reading the point of step " + std::to_string(r.strandIdx + 1) +
+                " for live hostiles";
+            return true;
+        }
+        else
+            held = true; // no read answered (or an earlier point was just rejected): never the plan point's own word
+    }
+    // The group of members out of combat is the party join (the walk-22 rule); with none the held point steps back to
+    // the earlier clear points of the way it came, each its own read, before it holds. A party that all revived
+    // together after a wipe stands on the lead bot's spot: there is no group, and the held point used to pause the
+    // run after kRescueHoldMs.
+    MemberGroup group;
+    bool const groupFound = !destChosen && held && MemberGroupPoint(f, p.x, p.y, p.z, group);
+    if (groupFound)
+    {
+        r.strandParty = true;
+        r.strandPartyX = group.x;
+        r.strandPartyY = group.y;
+        r.strandPartyZ = group.z;
+        tx = group.x;
+        ty = group.y;
+        tz = group.z;
+        chosen = "the party (" + group.nearest + "'s spot, " + std::to_string(group.count) + " out of combat)";
+    }
+    else if (!destChosen && held)
+    {
+        if (r.rescueBackReads < kRescueBackReads)
+        {
+            std::size_t const from = r.rescueBackFrom == static_cast<std::size_t>(-1) ? r.strandIdx + 1 : r.rescueBackFrom;
+            std::size_t const back = ClearPointBeforeExclusive(r, f.team, from, &f);
+            if (back != static_cast<std::size_t>(-1))
+            {
+                ++r.rescueBackReads;
+                r.rescueBackIdx = back;
+                r.rescueScanMs = 0;
+                RequestRescueScan(r, back);
+                r.note = "the lead bot is stranded: reading the earlier point of step " + std::to_string(back + 1) +
+                    " for live hostiles (the point of step " + std::to_string(r.strandIdx + 1) + " is held)";
+                return true;
+            }
+        }
+        r.rescueHoldMs += dt;
+        if (r.rescueHoldMs >= kRescueHoldMs)
+        {
+            Pause(r, "the stranded lead bot has nowhere safe to go: the point of step " +
+                std::to_string(r.strandIdx + 1) + " is held by live hostiles and no member stands out of combat to " +
+                "join (put the party together, then .bot run resume)");
+            return true;
+        }
+        r.note = "the lead bot is stranded: the point of step " + std::to_string(r.strandIdx + 1) +
+            " is held by live hostiles and no member stands out of combat to join it to (regrouping)";
+        return true;
+    }
+    else if (!destChosen)
+    {
+        r.strandParty = false;
+        r.rescueHoldMs = 0;
+    }
+    if (dest != r.strandIdx)
+    {
+        // The earlier clear point replaces the held one: the walk back goes on from there, and a failed teleport's
+        // retry reads that point.
+        r.strandIdx = dest;
+        r.walkBackIdx = r.walkBackStart = dest;
+        r.strandParty = false;
+        r.rescueHoldMs = 0;
+    }
     // The spot as the facts read it now (the lead bot may have moved on the island); a send keeps strandReplay
     // and strandFromOtherPart (they say what the teleport was, cleared when StrandFailed gives it up or the lead
     // bot arrives).
@@ -11980,8 +12836,12 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     r.passSpotKnown = false;
     r.approachHops = 0;
     r.walkBackRefusals = 0;
-    order = "rescue from " + now + " to " + Num(p.x) + " " + Num(p.y) + " " + Num(p.z);
-    r.note = "the lead bot is stranded at " + now + " with no way back: teleporting it to " + target;
+    order = "rescue from " + now + " to " + Num(tx) + " " + Num(ty) + " " + Num(tz);
+    r.note = "the lead bot is stranded at " + now + " with no way back: teleporting it to " + chosen;
+    r.rescueScanWanted = false; // the read was used (a later rescue asks again)
+    r.rescueScanMs = 0;
+    r.rescueBackReads = 0;
+    r.rescueBackIdx = r.rescueBackFrom = static_cast<std::size_t>(-1);
     return true;
 }
 
@@ -12563,6 +13423,324 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
     return true;
 }
 
+// The straggler pull (AiPlayerbot.DungeonRunStragglerPull): a unit the step waits for (a spawn-owned patroller of a
+// pull step, or a stand-pull row's patrol) that did not come is pulled by the acting tank instead of the pause. The
+// acting tank is the lead bot while it lives and is a tank, else the off-tank that holds the main tank role; a failed
+// try - a refused order, no path, a blocked way or the 45 s run out - goes to one next untried off-tank, and only
+// then the run pauses. The tank walks to the unit (a patrol: to the nearest point of its loop on the party's side)
+// and pulls it with an `attack`, while the rest of the party stays where it stands (it follows the lead bot, or stands
+// with it at the stand). The way must not pass another not-yet-pulled pack within its aggro reach plus
+// kStragglerPullAggroMarginYd: the glue reads it (Run::stragglerPathWanted) right before each movement order and every
+// kStragglerRecheckMs while the tank walks or waits, and a blocked way aborts that tank's try. Never a boss, a
+// kill_first unit or a linked_death one.
+enum class StragglerVerdict : std::uint8_t { Held, NotThis, Failed };
+
+// Why a straggler pull never applies to `u` ("" when it may): the key off, no unit, or a unit the fight's own rules
+// own (a plan boss, a kill_first one, a linked_death member).
+inline std::string StragglerNever(const Run& r, const Facts& f, const UnitFact& u)
+{
+    if (!f.stragglerPull)
+        return "the straggler pull is off";
+    if (!u.guid)
+        return "no unit";
+    if (PlanBossEntry(r, u.entry))
+        return "it is a plan boss";
+    if (r.plan && r.plan->KillFirstRank(u.entry) >= 0)
+        return "it is a kill_first unit";
+    if (LinkedDeathMemberEntry(r, f, u.entry))
+        return "it is a linked_death unit";
+    return std::string();
+}
+
+// The bot a straggler pull goes to: the lead bot while it lives and is a tank, else the off-tank that holds the main
+// tank role (the first living tank member of the layout). `tried` lists the tanks this pull already sent (no bot is
+// sent twice). "" when there is none to send.
+inline std::string StragglerTankName(const Facts& f, const std::unordered_set<std::string>& tried)
+{
+    auto const usable = [&](const MemberFact& m)
+    {
+        // Never a bot off the plan's map or in another copy of the instance: it cannot walk to the unit, and the
+        // read of its way then paused the run though another tank stood right there.
+        return !m.name.empty() && !tried.count(m.name) && !m.frozen && !m.inCombat && !m.offPlanMap && !m.otherCopy;
+    };
+    if (tried.empty() && f.leadAlive && f.leadIsTank && !f.carrier.empty())
+        return f.carrier;
+    for (const MemberFact& m : f.members)
+        if (m.tank && !m.healer && usable(m))
+            return m.name;
+    return std::string();
+}
+
+// ... with just the last tank spent (the lead bot's first try): the same answer as above with `spent` in `tried`.
+inline std::string StragglerTankName(const Facts& f, const std::string& spent)
+{
+    std::unordered_set<std::string> tried;
+    if (!spent.empty())
+        tried.insert(spent);
+    return StragglerTankName(f, tried);
+}
+
+// The nearest point of a patrol's loop to the party (the lead bot's spot): the point on its path on the party's side.
+// False when the loop was not read (a special escorts path): the pull then pauses as before.
+inline bool StragglerLoopPoint(const Facts& f, const UnitFact& u, float& x, float& y, float& z)
+{
+    bool found = false;
+    float best = 0.0f;
+    for (const ai::ApproachPoint& p : u.loop)
+    {
+        float const d = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
+        if (!found || d < best)
+        {
+            found = true;
+            best = d;
+            x = p.x;
+            y = p.y;
+            z = p.z;
+        }
+    }
+    return found;
+}
+
+// Whether the straggler pull's tank stands within kArriveYd of its walk's point (the lead bot by its own spot, a bot
+// by the member read).
+inline bool StragglerTankAt(const Facts& f, const std::string& tank, float x, float y, float z)
+{
+    if (tank == f.carrier)
+        return ai::PlanDistance(f.leadX, f.leadY, f.leadZ, x, y, z) <= kArriveYd;
+    for (const MemberFact& m : f.members)
+        if (m.name == tank)
+            return ai::PlanDistance(m.x, m.y, m.z, x, y, z) <= kArriveYd;
+    return false;
+}
+
+// One full loop's time a stand-pull row waits for its patrol: the loop's own read (UnitFact::cycleMs), else
+// kPatrolPullCycleMs.
+inline std::uint32_t PatrolCycleWaitMs(const UnitFact& u)
+{
+    std::uint32_t const cycle = u.cycleMs ? u.cycleMs : kPatrolPullCycleMs;
+    return std::min(cycle, kStandPullWaitMs); // never past the gate's own 600 s, which turns it off before then
+}
+
+inline void ResetStragglerPull(Run& r)
+{
+    r.stragglerGuid = 0;
+    r.stragglerTank.clear();
+    r.stragglerTry = 0;
+    r.stragglerTried.clear();
+    r.stragglerMs = 0;
+    r.stragglerRecheckMs = 0;
+    r.stragglerX = r.stragglerY = r.stragglerZ = 0.0f;
+    r.stragglerWalkSent = false;
+    r.stragglerAttackSent = false;
+    r.stragglerAttackPath = false;
+    r.stragglerPathWanted = 0;
+    r.stragglerOrder.clear();
+    r.stragglerFail.clear();
+    r.stragglerPause.clear();
+    r.stragglerAdvice.clear();
+    r.stragglerLost = false;
+}
+
+// The order that walks the acting tank to a point: the lead bot's own `move`, another bot's `walk` (RunBotWalk).
+inline std::string StragglerWalkOrder(const std::string& tank, const std::string& lead, float x, float y, float z)
+{
+    return tank == lead ? MoveOrder(x, y, z, false)
+                        : "walk " + tank + " " + Num(x) + " " + Num(y) + " " + Num(z);
+}
+
+// Starts a straggler pull's try on `u`: the next untried tank, the point (a patrol's loop point on the party's side,
+// else the unit itself), the glue's read of the way. False with `r.stragglerFail` when no tank is left to send or the
+// loop was not read. `loopPoint`: the unit walks a patrol.
+inline bool StartStragglerTry(Run& r, const Facts& f, const UnitFact& u, bool loopPoint)
+{
+    std::string const tank = StragglerTankName(f, r.stragglerTried);
+    if (tank.empty())
+    {
+        r.stragglerFail = "no living tank is left to pull it";
+        return false;
+    }
+    if (loopPoint)
+    {
+        if (!StragglerLoopPoint(f, u, r.stragglerX, r.stragglerY, r.stragglerZ))
+        {
+            r.stragglerFail = "its patrol's loop was not read, so no point of it on the party's side is known";
+            return false;
+        }
+    }
+    else
+    {
+        r.stragglerX = u.x;
+        r.stragglerY = u.y;
+        r.stragglerZ = u.z;
+    }
+    r.stragglerTank = tank;
+    ++r.stragglerTry;
+    r.stragglerMs = 0;
+    r.stragglerRecheckMs = 0;
+    r.stragglerWalkSent = false;
+    r.stragglerAttackSent = false;
+    r.stragglerAttackPath = false;
+    r.stragglerPathWanted = u.guid;
+    r.stragglerOrder.clear();
+    r.stragglerFail.clear();
+    r.note = "pack not cleared: " + tank + (r.stragglerTry > 1 ? " (the off-tank)" : std::string()) + " walks to " +
+        std::to_string(u.entry) + " " + GuidArg(u.guid) + (loopPoint ? " at the nearest point of its loop on the party's side (" : " (") +
+        Num(r.stragglerX) + " " + Num(r.stragglerY) + " " + Num(r.stragglerZ) + ") and pulls it (try " +
+        std::to_string(r.stragglerTry) + ")";
+    return true;
+}
+
+// The transition every failure of a try takes (a refused order, a walk with no path or a blocked way, the 45 s run
+// out): `r.stragglerTank` is spent, and the pull's one next untried tank gets its try. False with `r.stragglerFail`
+// saying why (the failure and, when there is no tank left, that too) when the pull must pause. At most two tries go
+// out (the acting tank's and one off-tank's).
+inline bool StragglerNextTank(Run& r, const Facts& f, const UnitFact& u, bool loopPoint, const std::string& why)
+{
+    if (!r.stragglerTank.empty())
+        r.stragglerTried.insert(r.stragglerTank);
+    r.stragglerLost = false;
+    r.stragglerFail = why;
+    if (r.stragglerTry >= 2)
+        return false;
+    if (StartStragglerTry(r, f, u, loopPoint))
+        return true;
+    r.stragglerFail = why + "; " + r.stragglerFail;
+    return false;
+}
+
+// One tick of a straggler pull on `u` (the caller's pause line is used when it fails). `loopPoint`: the unit walks a
+// patrol, pulled at the nearest point of its loop on the party's side. Held: the pull holds this tick (the way is
+// being read, the tank walks, or the attack is out); Failed: the caller pauses as it did, `r.stragglerFail` saying
+// why; NotThis: the pull never applies (the key off, a boss, a kill_first or linked_death unit).
+inline StragglerVerdict StragglerPullTick(Run& r, const Facts& f, const UnitFact& u, bool loopPoint, std::uint32_t dt,
+    std::string& order)
+{
+    std::string const never = StragglerNever(r, f, u);
+    if (!never.empty())
+    {
+        if (r.stragglerGuid)
+            ResetStragglerPull(r); // the key went off, or the unit became one the pull never takes
+        return StragglerVerdict::NotThis;
+    }
+    if (r.stragglerGuid != u.guid)
+    {
+        ResetStragglerPull(r);
+        r.stragglerGuid = u.guid;
+    }
+    // One transition for every failure of a try: the refusal the glue reported, a way with no path or a blocked one,
+    // and the run out. It sends the one next untried tank, else the caller pauses with the reason.
+    if (r.stragglerLost)
+    {
+        std::string const why = r.stragglerFail.empty() ? "its order was refused" : r.stragglerFail;
+        return StragglerNextTank(r, f, u, loopPoint, why) ? StragglerVerdict::Held : StragglerVerdict::Failed;
+    }
+    if (r.stragglerTry == 0)
+        return StartStragglerTry(r, f, u, loopPoint) ? StragglerVerdict::Held : StragglerVerdict::Failed;
+    auto const timedOut = [&]() -> StragglerVerdict
+    {
+        std::string const why = r.stragglerTank + " did not pull it within " +
+            std::to_string(kStragglerPullMs / 1000) + " s";
+        return StragglerNextTank(r, f, u, loopPoint, why) ? StragglerVerdict::Held : StragglerVerdict::Failed;
+    };
+    // The way is read before the walk goes out and re-read right before movement, then every kStragglerRecheckMs while
+    // the tank walks or waits: a pack that comes into the remaining way aborts that tank's try like a blocked way did.
+    bool readNow = false;
+    if (r.stragglerPathWanted)
+    {
+        if (!f.stragglerPathRead || f.stragglerPathFor != u.guid || f.stragglerPathTank != r.stragglerTank ||
+            f.stragglerPathToUnit != r.stragglerAttackPath)
+        {
+            // The glue reads it next tick (for this tank); the try's clock keeps running meanwhile.
+            if (r.stragglerWalkSent || r.stragglerAttackSent)
+            {
+                r.stragglerMs += dt;
+                if (r.stragglerMs >= kStragglerPullMs)
+                    return timedOut();
+            }
+            return StragglerVerdict::Held;
+        }
+        r.stragglerPathWanted = 0;
+        r.stragglerRecheckMs = 0;
+        readNow = true;
+        if (!f.stragglerPathOk)
+            return StragglerNextTank(r, f, u, loopPoint, "the walk to it has no path that ends at the point")
+                ? StragglerVerdict::Held : StragglerVerdict::Failed;
+        if (f.stragglerPathBlockEntry)
+        {
+            std::string const why = "the walk to it passes " + std::to_string(f.stragglerPathBlockEntry) + " at " +
+                Num(f.stragglerPathBlockYd) + " yd (its " + Num(f.stragglerPathBlockReachYd) + " yd reach plus " +
+                Num(kStragglerPullAggroMarginYd) + " yd)";
+            return StragglerNextTank(r, f, u, loopPoint, why) ? StragglerVerdict::Held : StragglerVerdict::Failed;
+        }
+    }
+    else
+        r.stragglerRecheckMs += dt;
+    // A patrol is walked to its loop point first (the fight is pulled from there); a pack unit is pulled where it
+    // stands: the attack walks the tank at it.
+    if (loopPoint && !r.stragglerWalkSent)
+    {
+        if (!readNow)
+        {
+            r.stragglerPathWanted = u.guid; // a fresh look right before the walk goes out
+            r.stragglerAttackPath = false;
+            r.stragglerRecheckMs = 0;
+            return StragglerVerdict::Held;
+        }
+        order = StragglerWalkOrder(r.stragglerTank, f.carrier, r.stragglerX, r.stragglerY, r.stragglerZ);
+        r.stragglerOrder = order;
+        r.stragglerWalkSent = true;
+        return StragglerVerdict::Held;
+    }
+    if (!r.stragglerAttackSent)
+    {
+        if (loopPoint && !StragglerTankAt(f, r.stragglerTank, r.stragglerX, r.stragglerY, r.stragglerZ))
+        {
+            r.stragglerMs += dt;
+            if (r.stragglerMs >= kStragglerPullMs)
+                return timedOut();
+            if (r.stragglerRecheckMs >= kStragglerRecheckMs)
+            {
+                r.stragglerPathWanted = u.guid;
+                r.stragglerAttackPath = false;
+                r.stragglerRecheckMs = 0;
+            }
+            return StragglerVerdict::Held;
+        }
+        if (loopPoint &&
+            ai::PlanDistance(u.x, u.y, u.z, r.stragglerX, r.stragglerY, r.stragglerZ) > kStragglerPatrolReachYd)
+        {
+            // The patrol is elsewhere on its loop: wait at the point (inside the try's 45 s budget) until it comes
+            // within reach, then attack at where it stands.
+            r.stragglerMs += dt;
+            if (r.stragglerMs >= kStragglerPullMs)
+                return timedOut();
+            return StragglerVerdict::Held;
+        }
+        if (!readNow)
+        {
+            r.stragglerPathWanted = u.guid; // a fresh look right before the attack goes out
+            r.stragglerAttackPath = loopPoint; // to the patrol's live position, not the loop point
+            r.stragglerRecheckMs = 0;
+            return StragglerVerdict::Held;
+        }
+        order = "attack " + std::to_string(u.guid) + " " + r.stragglerTank;
+        r.stragglerOrder = order;
+        r.stragglerAttackSent = true;
+        r.stragglerMs = 0;
+        return StragglerVerdict::Held;
+    }
+    r.stragglerMs += dt;
+    if (r.stragglerMs >= kStragglerPullMs)
+        return timedOut();
+    if (r.stragglerRecheckMs >= kStragglerRecheckMs)
+    {
+        r.stragglerPathWanted = u.guid;
+        r.stragglerAttackPath = loopPoint;
+        r.stragglerRecheckMs = 0;
+    }
+    return StragglerVerdict::Held;
+}
+
 // A pull step whose units are all gone may still have one of its entries
 // walking a patrol outside the radius (Facts::patrollers). Uldaman r10-19z29
 // step 66: the Stone Steward's lane reaches the 10 yd radius only at its north
@@ -12588,7 +13766,8 @@ inline bool PatrollerToWaitFor(const Run& r, const Facts& f, const UnitFact& u)
     return !(r.plan && ai::OwnedByLaterStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team));
 }
 
-inline bool WaitForPatroller(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& timedOut)
+inline bool WaitForPatroller(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order,
+    std::string& timedOut)
 {
     if (s.kind != PlanStepKind::Pull || f.anyInCombat)
         return false;
@@ -12609,12 +13788,27 @@ inline bool WaitForPatroller(Run& r, const Facts& f, const PlanStep& s, std::uin
     {
         if (f.packClearMarginYd > 0.0f && p->spawnOwned)
         {
-            // It spawned in this step's radius and the wait is over: not "cleared", a pause that says so (the step
-            // no longer waits for it after a resume).
+            // It spawned in this step's radius and the wait is over: the acting tank goes for it
+            // (StragglerPullTick), and only a pull that cannot be made, or fails, pauses here as before (the
+            // step no longer waits for it after a resume).
+            std::string const why = "pack not cleared: " + std::to_string(p->entry) + " " + GuidArg(p->guid) +
+                " of this pack (spawned " + Num(p->spawnYd) + " yd from the centre) is " + Num(p->distSpot) +
+                " yd out and did not come within " + std::to_string(capMs / 1000) + " s";
+            std::string const advice =
+                ": pull it, then .bot run resume (the step no longer waits for it), or .bot run skip";
+            switch (StragglerPullTick(r, f, *p, false, dt, order))
+            {
+                case StragglerVerdict::Held:
+                    return true;
+                case StragglerVerdict::Failed:
+                    r.spawnPatrolGaveUp.insert(p->guid);
+                    Pause(r, why + (r.stragglerFail.empty() ? std::string() : "; " + r.stragglerFail) + advice);
+                    return true;
+                case StragglerVerdict::NotThis:
+                    break;
+            }
             r.spawnPatrolGaveUp.insert(p->guid);
-            Pause(r, "pack not cleared: " + what + " of this pack (spawned " + Num(p->spawnYd) + " yd from the centre) is " +
-                Num(p->distSpot) + " yd out and did not come within " + std::to_string(capMs / 1000) +
-                " s: pull it, then .bot run resume (the step no longer waits for it), or .bot run skip");
+            Pause(r, why + advice);
             return true;
         }
         r.patrolGaveUp.insert(p->guid);
@@ -12781,6 +13975,33 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     if (s.kind != PlanStepKind::Pull || f.anyInCombat || f.leadShotYd <= kShotMarginYd ||
         r.standPullMs >= kStandPullWaitMs)
         return nullptr;
+    // A straggler pull under way (StragglerPullTick) owns the row: no walk back to the stand, no shot and no wait of
+    // the gate until it ends, and the row's pause line (kept from the try's start) names why it failed.
+    if (r.stragglerGuid)
+    {
+        const UnitFact* dragging = nullptr;
+        for (const std::vector<UnitFact>* list : {&f.units, &f.packResidue, &f.patrollers})
+            for (const UnitFact& u : *list)
+                if (u.guid == r.stragglerGuid)
+                    dragging = &u;
+        if (!dragging)
+            ResetStragglerPull(r); // it died or left the read: the row goes on as before
+        else
+            switch (StragglerPullTick(r, f, *dragging, true, dt, order))
+            {
+                case StragglerVerdict::Held:
+                    held = true;
+                    return nullptr;
+                case StragglerVerdict::Failed:
+                    held = true;
+                    r.standPullMs = kStandPullWaitMs; // the gate is spent: a resume pulls as a plain pull
+                    Pause(r, r.stragglerPause + (r.stragglerFail.empty() ? std::string() : "; " + r.stragglerFail) +
+                        r.stragglerAdvice);
+                    return nullptr;
+                case StragglerVerdict::NotThis:
+                    break;
+            }
+    }
     const PlanStep* const st = StandPullStand(r, s);
     if (!st)
         return nullptr;
@@ -12976,11 +14197,36 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     r.standPullShotGuid = 0; // the pull never went out
     r.standPullMs += dt;
     std::string const what = std::to_string(pick->entry) + " " + GuidArg(pick->guid);
-    if (r.standPullMs >= kStandPullWaitMs)
+    // AiPlayerbot.DungeonRunStragglerPull: a patrol that did not come within one full loop is pulled by the acting tank
+    // at the nearest point of its loop on the party's side (StragglerPullTick); a unit the pull never applies to (a
+    // boss, kill_first, linked_death) keeps the 600 s wait and the pause. A unit in the row's shot is not waited for:
+    // the row holds it for another patrol near, which the straggler pull's own clearance does not stand in for.
+    bool const canPull = !inShotOf(*pick) && StragglerNever(r, f, *pick).empty();
+    std::uint32_t const waitMs = canPull ? PatrolCycleWaitMs(*pick) : kStandPullWaitMs;
+    if (r.standPullMs >= waitMs)
     {
-        Pause(r, "patrol pull: " + what + " did not come within " + Num(inShot) + " yd of the stand with no other "
-            "patrol within " + Num(clearYd) + " yd in " + std::to_string(kStandPullWaitMs / 1000) +
-            " s: pull it, then .bot run resume (the step then pulls as a plain pull), or .bot run skip");
+        std::string const base = "patrol pull: " + what + " did not come within " + Num(inShot) +
+            " yd of the stand with no other patrol within " + Num(clearYd) + " yd in " + std::to_string(waitMs / 1000) + " s";
+        std::string const advice = ": pull it, then .bot run resume (the step then pulls as a plain pull), or .bot run skip";
+        if (canPull)
+        {
+            r.stragglerPause = base;
+            r.stragglerAdvice = advice;
+            switch (StragglerPullTick(r, f, *pick, true, dt, order))
+            {
+                case StragglerVerdict::Held:
+                    held = true;
+                    return nullptr;
+                case StragglerVerdict::Failed:
+                    held = true;
+                    r.standPullMs = kStandPullWaitMs; // the gate is spent: a resume pulls as a plain pull
+                    Pause(r, base + (r.stragglerFail.empty() ? std::string() : "; " + r.stragglerFail) + advice);
+                    return nullptr;
+                case StragglerVerdict::NotThis:
+                    break;
+            }
+        }
+        Pause(r, base + advice);
         return nullptr;
     }
     r.stepIdleMs = dt > r.stepIdleMs ? 0 : r.stepIdleMs - dt; // the wait is the step's work, not idling
@@ -13274,11 +14520,10 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         {
             // Automatic crowd control: a mark only while the pull is over the
             // threshold (or the unit is one the plan lists, offered as today).
-            std::uint32_t const marked = CcMarkedLive(r, f);
             std::uint32_t const bodies = RunAutoCcBodies(r, f, *pick);
             std::uint32_t const threshold = RunAutoCcThreshold(s, f);
             bool const listed = ccPick.unit && r.plan && r.plan->CcRank(ccPick.unit->entry) >= 0;
-            bool const over = bodies > marked && bodies - marked > threshold;
+            bool const over = CcBodiesOpen(r, f, bodies) > threshold;
             if (r.ccAutoOrders >= kRunCcAutoOrdersPerStep)
             {
                 ccPick = CcPick();
@@ -13354,7 +14599,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         if (StandPullAwayWait(r, f, dt))
             return;
         std::string timedOut;
-        if (WaitForPatroller(r, f, s, dt, timedOut))
+        if (WaitForPatroller(r, f, s, dt, order, timedOut))
             return;
         bool const fought = r.pulls > 0;
         // Read before NextStep: its ResetStep clears the step's passes and zeroes its pulls.
@@ -15793,13 +17038,38 @@ inline bool RaidTrashOffTankHolds(const Facts& f, const std::string& name)
     return false;
 }
 
+// The engage tank (the main tank's role holder): the lead bot while it lives (a tank), else the first living off-tank
+// of the layout (RaidFacts::offTanksAlive, the layout's order). The lead bot dying mid-pull does not leave the fight
+// without a main tank: the first living off-tank takes the role for the rest of the fight (its pick-ups, the healer
+// guard and the engage on arrival), and the lead bot takes it back when it is up again. Empty: no tank at all.
+inline std::string MainTankName(const Facts& f)
+{
+    if (f.leadAlive)
+        return f.leadIsTank ? f.carrier : std::string();
+    for (std::string const& name : f.raid.offTanksAlive)
+        if (!name.empty())
+            return name;
+    return std::string();
+}
+
+// The role is held at all (a gate on it does not depend on the lead bot's name).
+inline bool MainTankRoleHeld(const Facts& f)
+{
+    return !MainTankName(f).empty();
+}
+
 // The healer guard's gate: a raid boss fight whose main tank holds a plan boss (LeadHoldsPlanBoss), or a raid trash
 // fight whose main tank held its current target when the guard turned on (Run::trashHealerGuard, its latch: the
 // target comes and goes as mobs die and reposition, and the guard does not flicker off with it). With it off the
-// off-tanks take the adds as before.
+// off-tanks take the adds as before. The role's holder decides the gate (MainTankRoleHeld): a trash fight keeps the
+// guard with the lead bot dead while an off-tank lives, which is the moment the healers need the ranged dps most (ZG
+// walk 32: with the lead dead the guard switched off and the adds on the healers had no answer). With the lead bot
+// dead the guard takes the healer adds alone: every other loose mob is the off-tank round robin's (CheckGuard). A boss
+// fight's guard is the one holding the plan boss, so with the lead bot dead it stays off there (RaidGuardTick owns
+// that fight).
 inline bool RaidHealerGuardOn(const Run& r, const Facts& f, bool trash)
 {
-    if (!f.raid.healerGuard || !f.leadAlive || !f.leadIsTank)
+    if (!f.raid.healerGuard || !MainTankRoleHeld(f))
         return false;
     return trash ? (RaidTrashFight(r, f) && (f.leadHasAttacker || r.trashHealerGuard)) : LeadHoldsPlanBoss(r, f);
 }
@@ -15809,10 +17079,38 @@ inline bool RaidHealerGuardOn(const Run& r, const Facts& f, bool trash)
 // tick whose gate dropped from the main tank's target still runs the healer guard (its clocks and assignments go on).
 inline void LatchTrashHealerGuard(Run& r, const Facts& f)
 {
-    if (r.trashHealerGuard || !f.raid.healerGuard || !f.leadAlive || !f.leadIsTank || !f.leadHasAttacker ||
-        !RaidTrashFight(r, f))
+    if (r.trashHealerGuard || !f.raid.healerGuard || !MainTankRoleHeld(f) || !RaidTrashFight(r, f))
         return;
+    // The main tank holds its current target, or (the lead bot dead) an off-tank holds one of its own: the guard turns
+    // on with a tank on a mob, never on the mere presence of a living off-tank.
+    if (f.leadAlive)
+    {
+        if (!f.leadHasAttacker)
+            return;
+    }
+    else
+    {
+        bool holds = false;
+        for (std::string const& name : f.raid.offTanksAlive)
+            if (RaidTrashOffTankHolds(f, name))
+            {
+                holds = true;
+                break;
+            }
+        if (!holds)
+            return;
+    }
     r.trashHealerGuard = true;
+}
+
+// Whether the guard leaves a unit alone on the run's own keys: an aura-gated entry (needs_aura: a bot without the aura
+// does 0 damage to it, and a taunt would only move its damage onto another tank) and, under the totem focus, a totem
+// the plan kills first (the focus kills it in 1-2 s, and a guard order would starve that tick; a totem that is no
+// kill_first unit is a normal add and stays the guard's).
+inline bool GuardSkipsUnit(const DungeonPlan* plan, const Facts& f, const UnitFact& u)
+{
+    return (f.auraGatedTargets && u.auraGated) ||
+        (f.totemFocus && u.creatureType == kCreatureTotem && plan && plan->KillFirstRank(u.entry) >= 0);
 }
 
 // A raid boss fight's or a raid trash fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank
@@ -15883,6 +17181,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
+            GuardSkipsUnit(r.plan, f, u) ||
             u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
             GuardLeavesCampAlone(u) ||
             CcOrderOut(r, u.guid) || GuardHeldByRun(r, u.guid) || RaidGuardUnitCapped(r, u))
@@ -15990,7 +17289,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
-                !u.hitting || u.evading ||
+                !u.hitting || u.evading || GuardSkipsUnit(r.plan, f, u) ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -16009,7 +17308,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     if (!pick)
         for (const UnitFact& u : f.partyAttackers)
         {
-            if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kRaidBossGuardYd)
+            if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+                GuardSkipsUnit(r.plan, f, u) || u.distLead > kRaidBossGuardYd)
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
@@ -16073,6 +17373,7 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
     auto const eligible = [&r, &f](const UnitFact& u)
     {
         if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+            GuardSkipsUnit(r.plan, f, u) ||
             u.distLead > kRaidWalkJoinYd || !u.victimTank || u.victimName == f.carrier)
             return false;
         auto const joined = r.raidBossJoined.find(u.guid);
@@ -16143,12 +17444,19 @@ inline bool GuardEligible(const UnitFact& u, float holdRadius, const Run* capped
 }
 
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
-    bool raidTrash = false)
+    bool raidTrash = false, bool skipHealer = false)
 {
+    // The run whose plan the totem skip reads: every live call passes its own run here (the tests' bare picks have no
+    // plan, and a totem is then no kill_first unit).
+    const DungeonPlan* const plan = capped && capped->plan ? capped->plan : (ccRun ? ccRun->plan : nullptr);
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
+        if (GuardSkipsUnit(plan, f, u))
+            continue;
         if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
+            continue;
+        if (skipHealer && u.victimHealer)
             continue;
         if (f.leadHit && !u.victimHealer)
             continue;
@@ -16178,7 +17486,7 @@ inline const UnitFact* GuardPickHealerAdd(const Run& r, const Facts& f)
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimHealer || u.victimLead || !GuardEligible(u, 0.0f, &r, &r, true))
+        if (!u.victimHealer || u.victimLead || GuardSkipsUnit(r.plan, f, u) || !GuardEligible(u, 0.0f, &r, &r, true))
             continue;
         if (GuardHeldByRun(r, u.guid) || r.healerGuardDps.count(u.guid) || HealerGuardHasFreeDps(r, f, u, taken))
             continue;
@@ -16213,10 +17521,10 @@ inline const PlanStep* InHoldArea(const Run& r, const Facts& f)
 
 inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
 {
-    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands a
+    // The lead bot (the run's main tank) dead: a party run's guard is over, but a raid's trash fight still hands every
     // loose mob to a living off-tank (GuardPick, and CheckGuard's off-tank round robin), so the mobs the main tank
     // held do not stay on the healers (ZG walk 22 test2 r4 step 99: the Mad Voidwalkers went to nobody once the
-    // main tank died). Nobody's stand: no guard return, no engage.
+    // main tank died). Nobody's stand: no guard return; the engage on arrival is the acting off-tank's (EngageTarget).
     if (!f.leadAlive)
         return RaidTrashOffTanks(r, f) ? GuardPick(f, 0.0f, &r, &r, true) : nullptr;
     // Watching: fightOrders too, so a refill (guardOrders and engageOrders back
@@ -16237,9 +17545,10 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
 {
     if (!RaidTrashFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.leadHasAttacker || f.carrier.empty())
         return nullptr;
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.victimTank && u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            !GuardSkipsUnit(r.plan, f, u) &&
             u.distLead <= kGuardYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid) &&
             !r.raidAssisted.count(u.guid);
     };
@@ -16268,9 +17577,10 @@ inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
     if (!RaidTrashFight(r, f) || !Current(r) || Current(r)->kind != PlanStepKind::Move || !f.leadAlive || !f.leadIsTank ||
         !f.leadStaying || f.leadHasAttacker || f.carrier.empty() || r.raidWalkJoined)
         return nullptr;
-    auto const eligible = [&r](const UnitFact& u)
+    auto const eligible = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            !GuardSkipsUnit(r.plan, f, u) &&
             u.distLead > kGuardYd && u.distLead <= kRaidWalkJoinYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
@@ -16352,15 +17662,20 @@ inline const UnitFact* HoldEngageTarget(const Run& r, const Facts& f)
 // fights nothing, so a mob that reaches it, or one hitting the healer, waited
 // for the guard's wait rule or for nothing (RFC 19z19 step 25: idle 21 s with a
 // Trogg on the mage and the rogue 2-4 yd away; Uldaman 19z19 step 85: three
-// mobs on it and no target for 14 s). While the lead bot, a living tank, is on
-// stay outside an event, the one to send it at at once: a healer's attacker
-// (hitting, not polymorphed or evading, within kGuardYd, the nearest), else the
-// nearest mob on the tank itself in melee reach (Facts::leadAttacker). A DPS's
-// attacker is not engaged here: it stays with GuardTarget's wait, so a mob
-// that will come to the tank does not draw it from its stand. Null for none.
+// mobs on it and no target for 14 s). While the engage tank (MainTankName: the
+// lead bot, or the first living off-tank that took the role when the lead bot
+// died) is on its stand outside an event, the one to send it at at once: a
+// healer's attacker (hitting, not polymorphed or evading, within kGuardYd, the
+// nearest), else the nearest mob on the tank itself (Facts::leadAttacker; a mob
+// an off-tank holds, with the lead bot dead). A DPS's attacker is not engaged
+// here: it stays with GuardTarget's wait, so a mob that will come to the tank
+// does not draw it from its stand. Null for none.
 inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
 {
-    if (!f.leadAlive || !f.leadIsTank || !f.leadStaying || InEvent(r) || f.carrier.empty())
+    std::string const tank = MainTankName(f);
+    if (tank.empty() || InEvent(r) || f.carrier.empty())
+        return nullptr;
+    if (f.leadAlive && !f.leadStaying)
         return nullptr;
     // A raid's boss fight with an off-tank (RaidBossRulesFight): the mob on the healer is an off-tank's (RaidGuardTick).
     // With none and the main tank holding a plan boss (LeadHoldsPlanBoss), it stays on her: only she is engaged.
@@ -16369,28 +17684,40 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     // A raid trash fight's healer guard (RaidHealerGuard): the healer's add is the ranged dps' first, not the main
     // tank's on arrival.
     bool const trashGuard = RaidHealerGuardOn(r, f, true);
-    const UnitFact* best = nullptr;
-    for (const UnitFact& u : f.partyAttackers)
+    // With the lead bot dead the acting off-tank engages in a raid's trash fight, behind the healer guard: a boss
+    // fight's adds are RaidGuardTick's, and an add on a healer is the ranged dps' first.
+    if (!f.leadAlive && (trashGuard || !RaidTrashFight(r, f)))
+        return nullptr;
+    auto const engageable = [&r, &f](const UnitFact& u)
     {
-        if (raidBoss || trashGuard || !u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed ||
-            !u.hitting || u.distLead > kGuardYd)
-            continue;
-        if (GuardUnitCapped(r, u.guid))
-            continue;
-        if (GuardLeavesCampAlone(u))
-            continue;
-        if (CcOrderOut(r, u.guid))
-            continue;
-        if (!best || u.distLead < best->distLead)
-            best = &u;
-    }
+        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
+            !GuardSkipsUnit(r.plan, f, u) && !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+    };
+    const UnitFact* best = nullptr;
+    // With the lead bot dead the healer's add is the healer guard's and the round robin's (the acting tank's mob is
+    // the one that reaches it), so only the living lead bot engages a healer's attacker here.
+    if (f.leadAlive && !raidBoss && !trashGuard)
+        for (const UnitFact& u : f.partyAttackers)
+        {
+            if (!u.victimHealer || !engageable(u))
+                continue;
+            if (!best || u.distLead < best->distLead)
+                best = &u;
+        }
     if (best)
         return best;
-    if (f.leadHasAttacker && f.leadAttacker.hostile && f.leadAttacker.attackable && !f.leadAttacker.evading &&
-        !f.leadAttacker.polymorphed && !GuardUnitCapped(r, f.leadAttacker.guid) &&
-        !CcOrderOut(r, f.leadAttacker.guid) && (!holdsBoss || PlanBossEntry(r, f.leadAttacker.entry)))
-        return &f.leadAttacker;
-    return nullptr;
+    if (f.leadAlive)
+    {
+        if (f.leadHasAttacker && engageable(f.leadAttacker) &&
+            (!holdsBoss || PlanBossEntry(r, f.leadAttacker.entry)))
+            return &f.leadAttacker;
+        return nullptr;
+    }
+    // The lead bot dead: the acting off-tank's own mob.
+    for (const UnitFact& u : f.partyAttackers)
+        if (u.victimTank && u.victimName == tank && engageable(u) && (!best || u.distLead < best->distLead))
+            best = &u;
+    return best;
 }
 
 // A hold's fight in which a living ranged bot (the healer too) is more than kHoldFollowRangedYd from the
@@ -16701,17 +18028,24 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // without the spacing and the cap an order went out every tick. Not
         // one of the pick-ups (guardOrders).
         const UnitFact* arrival = EngageTarget(r, f);
+        // A gated boss is no engage's target either: the gate's hold runs here too (the run ends at its seconds), and
+        // no order goes out while it holds. Accepted: this path only runs inside a fight, which a pull the gate let
+        // through already started (priests alive, a wipe either way), and ending the run at the row's seconds is the
+        // gate's answer; every other guard order waits those seconds out.
+        if (arrival && BossGateTick(r, f, arrival->entry, dt))
+            return true;
         if (arrival && arrival->guid != r.engageGuid && r.engageOrders < kGuardOrdersPerFight &&
             r.fightOrders < kGuardOrdersFightCap &&
             (r.fightOrders == 0 || r.guardSinceOrderMs >= kGuardRepeatMs))
         {
+            std::string const engageTank = MainTankName(f);
             r.engageGuid = arrival->guid;
             ++r.engageOrders;
             ++r.fightOrders;
             ++r.guardUnitOrders[arrival->guid];
             r.guardMs = 0;
             r.guardSinceOrderMs = 0; // a pick-up follows it no sooner than kGuardRepeatMs
-            if (!r.guardReturn)
+            if (!r.guardReturn && f.leadAlive)
             {
                 // The stand it leaves, as at the first pick-up.
                 r.guardReturn = true;
@@ -16721,7 +18055,8 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             }
             r.note = "fighting: the tank engages " + std::to_string(arrival->entry) + " on arrival (" +
                 Num(arrival->distLead) + " yd)" + RefillNote(r);
-            order = "attack " + std::to_string(arrival->guid) + " " + f.carrier;
+            order = "attack " + std::to_string(arrival->guid) + " " +
+                (engageTank.empty() ? f.carrier : engageTank);
             return true;
         }
         // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules has its own pick-ups (RaidGuardTick): the
@@ -16760,9 +18095,15 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
     // A raid trash fight's healer guard: every add on a healer the guard would take counts, not only GuardPick's nearest
     // one (GuardPickHealerAdd), so a covered or capped nearer add does not stall the off-tank fallback for a farther one.
+    // With the lead bot dead the off-tank round robin takes every loose mob (GuardTarget's dead-lead branch) and the
+    // healer guard adds only healer adds on top: the pick is narrowed to healer adds only while the lead bot lives (ZG
+    // walk 22: a mob on a dps went to nobody once the lead bot died).
     bool const trashGuardOn = !hold && RaidHealerGuardOn(r, f, true);
-    if (trashGuardOn && u)
+    if (trashGuardOn && u && f.leadAlive)
         u = GuardPickHealerAdd(r, f);
+    else if (trashGuardOn && u && u->victimHealer)
+        if (const UnitFact* const loose = GuardPick(f, 0.0f, &r, &r, true, true))
+            u = loose;
     const UnitFact* engage = hold && !u ? HoldEngageTarget(r, f) : nullptr;
     if (!u && !engage)
     {
@@ -16789,7 +18130,9 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     // busy no order goes out but the healer guard's last resort; the pick with
     // the key off is today's round robin over every living off-tank, busy ones included.
     bool const trashOffTank = !hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead;
-    bool const trashGuard = trashOffTank && trashGuardOn;
+    // With the lead bot dead the round robin keeps every living off-tank in turn, busy ones included (walk 22): the
+    // busy-off-tank filter is the living main tank's, which stays on its own target.
+    bool const trashGuard = trashOffTank && trashGuardOn && f.leadAlive;
     std::vector<const std::string*> free;
     if (trashOffTank)
         for (const std::string& name : f.raid.offTanksAlive)
@@ -16823,7 +18166,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             ((r.guardOrders > 0 || (!hold && r.fightOrders > 0) || r.healerGuardOrders > 0) &&
                 r.guardSinceOrderMs < kGuardRepeatMs))))
         return false;
-    if (free.empty() && (healerGuardAdd || trashGuard) && !mainTankLastResort)
+    if (free.empty() && (healerGuardAdd || trashGuard || (!f.leadAlive && trashOffTank)) && !mainTankLastResort)
         return false;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
@@ -16860,7 +18203,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             return true;
         }
     }
-    else if (!r.guardReturn)
+    else if (!r.guardReturn && f.leadAlive)
     {
         // The first pick-up: the tank's stay point (its stand), not where it
         // is now: a tank on stay may still be dragging a pullback in (Uldaman
@@ -17209,8 +18552,30 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         if (gaveUp.empty() && !due.empty() && f.fetchRead)
         {
             ai::ApproachPoint point;
-            bool clear = true;
-            int const at = FetchPoint(f, point, clear);
+            std::string why;
+            if (!FarReturnPoint(f, due, point, why))
+            {
+                // No member out of combat to bring them to (the party fights, and the lead bot's own spot is not
+                // clear): no teleport is attempted, so no try is spent and the member stays queued until an anchor
+                // stands free. Its own wait clock (kReturnHoldMs) bounds the note, not the queue: a revived bot used
+                // to be given up for good after three waits of about 15 s.
+                std::string names;
+                bool longWait = false;
+                for (const std::string& name : due)
+                {
+                    Run::FetchState& st = r.fetch[name];
+                    st.waitMs += dt;
+                    if (st.waitMs >= ai::kReturnHoldMs)
+                    {
+                        st.waitMs = 0;
+                        longWait = true;
+                    }
+                    names += (names.empty() ? "" : ", ") + name;
+                }
+                r.note = "the teleport return waits: no member stands out of combat to bring " + names + " to" +
+                    (longWait ? " (the party is regrouping: it holds where it stands)" : " (the party is regrouping)");
+                return true;
+            }
             order = "fetch " + Num(point.x) + " " + Num(point.y) + " " + Num(point.z);
             std::string names;
             for (const std::string& name : due)
@@ -17218,6 +18583,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 Run::FetchState& st = r.fetch[name];
                 ++st.tries;
                 st.lastMs = r.runMs;
+                st.waitMs = 0;
                 st.x = point.x;
                 st.y = point.y;
                 st.z = point.z;
@@ -17234,9 +18600,7 @@ inline bool FarReturnTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                     std::to_string(kFetchTries) + ")";
             }
             r.note = "teleporting " + names + " back to the lead bot" +
-                (at >= 0 ? std::string(": beside it, outside the reach of the pack it stands by")
-                         : clear ? std::string()
-                                 : std::string(": no point near it is outside the packs' reach, onto the lead bot"));
+                (why.empty() ? std::string() : ": " + why);
             return true;
         }
     }
@@ -19522,6 +20886,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     bool const objectDone = s->kind == PlanStepKind::WaitObject && r.staleRunMs >= kStaleConfirmMs &&
         ((f.objectState >= 0 && f.objectState == static_cast<int>(s->param)) || WaitObjectGoneIsDone(r, *s, f));
 
+    // Fight on: the straggler pull's tries are over (its attack drew the pack, or another fight came in).
+    if (f.anyInCombat)
+        ResetStragglerPull(r);
     // Fights are the bots' own; the run only bounds them.
     if (f.anyInCombat && !objectDone)
     {
@@ -19551,11 +20918,20 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (!r.fighting)
         {
             r.fighting = true;
+            r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
+            r.ccOpenOrders = 0;
+            r.ccOpenSent.clear();
+            r.ccOpenPrepull.clear();
+            for (auto const& hold : r.ccHolds)
+                r.ccOpenPrepull.insert(hold.first);
             r.restWalkDue = false; // a fight is on: the walk after the rest is over
             r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
             EndBigWalk(r);        // ... and so is the big pack's stand walk gate
             r.fightMs = 0;
             r.raidBossFight = false;
+            r.ccBreakGuid = 0;
+            r.ccBreakMs = 0;
+            r.ccBreakSeen.clear();
             r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
             r.linkedDeaths.clear();
             r.linkedNotePct = -1;
@@ -19642,7 +21018,19 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         bool const progressHolds = !event && (progress == FightProgress::Losing || progress == FightProgress::Young);
         bool const pastCeiling = r.fightMs > cap && !staleGrace;
         bool const hardCapped = pastCeiling && progressHolds && r.fightMs > std::max(cap, kFightHardCapMs);
-        if (pastCeiling && (!progressHolds || hardCapped))
+        // A fight kept open only by the run's own crowd control is broken one unit at a time before anything else,
+        // and before the ceiling's pause: a stalled fight of held units would only be paused into itself.
+        std::string breakOrder;
+        bool const ccOnly = RunCcBreakTick(r, f, dt, breakOrder);
+        if (!breakOrder.empty())
+        {
+            order = breakOrder;
+            return order;
+        }
+        // The break's own grace: while its order has not ended the hold, the ceiling waits (kCcBreakWaitMs), so a
+        // hold the party cannot reach still ends in the pause rather than a longer stall.
+        bool const breakingCc = ccOnly && r.ccBreakGuid != 0 && r.ccBreakMs < kCcBreakWaitMs;
+        if (pastCeiling && (!progressHolds || hardCapped) && !breakingCc)
         {
             // The units that kept it going, so the pause shows at once what to look at; with their hp when the
             // watch read it (the old note when it did not, and in an event).
@@ -19674,6 +21062,28 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                     : std::string("fighting");
         if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
+        // Hakkar's own clock, on his boss step: the enrage is a one-time warning at 540 s (Berserk 27680 lands at
+        // 600 s) and a second note when the aura is on him, and each accepted Blood Siphon's dose counts are reported
+        // once (SeekCycleSnapshot's read, Facts::seekSiphon*). Appended, so the line keeps the death counts above.
+        if (s->kind == PlanStepKind::Boss && s->entry == kHakkarEntry)
+        {
+            if (!r.bossBerserkSoonNoted && r.fightMs >= kHakkarBerserkSoonMs && f.bossHpPct >= 0)
+            {
+                r.note += "; Hakkar berserk in 60 s (" + std::to_string(f.bossHpPct) + " %)";
+                r.bossBerserkSoonNoted = true;
+            }
+            if (!r.bossBerserkNoted && f.bossBerserk)
+            {
+                r.note += "; Hakkar berserk (" + std::to_string(kHakkarBerserkSpell) + ")";
+                r.bossBerserkNoted = true;
+            }
+        }
+        if (f.seekSiphonCycle != 0 && f.seekSiphonCycle != r.siphonNotedCycle)
+        {
+            r.note += "; Hakkar siphon " + std::to_string(f.seekSiphonCycle) + ": " +
+                std::to_string(f.seekSiphonDosed) + " dosed, " + std::to_string(f.seekSiphonUndosed) + " not";
+            r.siphonNotedCycle = f.seekSiphonCycle;
+        }
         // A linked_death group of the boss step: the tactic stays in the run line while it runs, appended to what the
         // line already says rather than replacing it. The line moves at most once per 5 % of the highest living member
         // (the bracket alone is compared, never the whole text), and once more when a member's death was recorded, so
@@ -19721,6 +21131,8 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (CheckCc(r, f, dt, order))
             return order;
         // Automatic crowd control in the fight: a broken hold first, then a joiner (Facts::autoCc).
+        if (RunAutoCcPrePullOpenTick(r, f, dt, order))
+            return order;
         if (RunCcReapplyTick(r, f, dt, order))
             return order;
         if (RunAutoCcFightTick(r, f, *s, dt, order))
@@ -19729,6 +21141,14 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard would never send it anywhere while it stands there.
         if (order.empty() && WedgedSummon(r, f, dt, order))
             return order;
+        // The totem focus goes before the guard (AiPlayerbot.DungeonRunTotemFocus): a kill_first totem dies in 1-2 s,
+        // and a guard order spends the tick. Any other focus waits for the ordinary one below.
+        if (f.totemFocus)
+        {
+            const UnitFact* totem = PickKillFirst(r, f);
+            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
+                return IssueKillFirstFocus(r, *totem);
+        }
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -19740,17 +21160,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
-            {
-                // The order moves the skull onto k; the old skull stays until it lands (the order may be
-                // refused first: not visible/found/dead), so the old unit is remembered (cleared: a refusal of
-                // the new order).
-                r.prevFocusIconGuid = r.focusIconGuid;
-                r.focusGuid = k->guid;
-                r.focusIconGuid = k->guid;
-                r.focusIconClear = 0;
-                r.note = "fighting: kill " + std::to_string(k->entry) + " first";
-                order = "focus " + std::to_string(k->guid);
-            }
+                order = IssueKillFirstFocus(r, *k);
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);
@@ -19779,6 +21189,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidBossFight = false;
+        r.ccBreakGuid = 0;
+        r.ccBreakMs = 0;
+        r.ccBreakSeen.clear();
         r.linkedAlive.clear();
         r.linkedDeaths.clear();
         r.linkedNotePct = -1;

@@ -217,6 +217,7 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+                creators["hurricane channel check"] = [](PlayerbotAI* ai) { return new HurricaneChannelCheckTrigger(ai); };
                 creators["balance mana depleted"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::ENTER_MELEE); };
                 creators["balance mana recovered"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::RETURN_RANGED); };
                 creators["balance mana melee"] = [](PlayerbotAI* ai) { return new BalanceManaTrigger(ai, BalanceManaTrigger::KEEP_MELEE); };

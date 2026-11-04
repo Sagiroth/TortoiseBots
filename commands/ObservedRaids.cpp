@@ -95,6 +95,67 @@ std::vector<uint32_t> HeldGroupIds()
 
 } // namespace
 
+// The G2 detail (ready check + boss debuffs) of one group, at most every 5 s: the same reads the bound path does per bot
+// per 2 s (ready cache, aura holders), keyed by member. A group with no online bot member keeps no detail; the detail flag
+// off keeps every group empty. The cache holds the last read per group, so the cycles between two 5 s reads repeat it.
+struct DetailCache
+{
+    bool read = false; // no read yet: a group with no detail is still fresh after its first (empty) read
+    uint32_t atMs = 0;
+    std::vector<RaidTelemetry::DetailEntry> entries;
+};
+std::unordered_map<uint32_t, DetailCache>& DetailCaches()
+{
+    static std::unordered_map<uint32_t, DetailCache> caches;
+    return caches;
+}
+constexpr uint32_t kDetailCadenceMs = 5000;
+void FillRaidDetail(Group* group, RaidTelemetry::GroupInfo& info)
+{
+    if (!ObservabilityEmitter::Instance().RaidsDetailEnabled())
+        return;
+    uint32_t const now = WorldTimer::getMSTime();
+    DetailCache& cache = DetailCaches()[info.groupId];
+    // A group with nothing to report is cached as read too: without that it
+    // re-read every 2 s cycle instead of every kDetailCadenceMs.
+    if (cache.read && now - cache.atMs < kDetailCadenceMs)
+    {
+        info.detail = cache.entries;
+        return;
+    }
+    cache.entries.clear();
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        Player* bot = ObjectAccessor::FindPlayer(slot.guid);
+        // Bot members only: a real player's auras and ready facts are not the
+        // tab's data and not read (the detail is the bots' own).
+        if (!bot || !bot->IsInWorld() || !PlayerbotAIStorage::Instance().GetAI(bot))
+            continue;
+        RaidTelemetry::DetailEntry entry;
+        entry.guid = slot.guid.GetCounter();
+        CommanderTelemetry::BotExtra extra;
+        extra.id = slot.guid.GetRawValue();
+        ReadRaidReadyFacts(bot, extra, now);
+        FillRaidBotDebuffs(bot, extra);
+        if (extra.hasReady)
+        {
+            entry.hasReady = true;
+            entry.readyBuffs = extra.readyBuffs;
+            entry.readyCons = extra.readyCons;
+            entry.cdReady = extra.cdReady;
+            entry.cdKnown = extra.cdKnown;
+            entry.cdLongestS = extra.cdLongestS;
+        }
+        entry.debuffs = std::move(extra.debuffs);
+        entry.mc = extra.mc;
+        if (entry.hasReady || !entry.debuffs.empty() || entry.mc)
+            cache.entries.push_back(std::move(entry));
+    }
+    cache.atMs = now;
+    cache.read = true;
+    info.detail = cache.entries;
+}
+
 void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*> const& players,
                           std::vector<RaidTelemetry::GroupInfo>& out)
 {
@@ -172,6 +233,7 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
         }
         if (CombatMonitorService::Instance().InFight(groupId))
             info.combatJson = CombatMonitorService::Instance().WindowJson(groupId);
+        FillRaidDetail(group, info);
         found.push_back(std::move(info));
     }
 
@@ -185,6 +247,15 @@ void CollectObservedRaids(std::vector<Player*> const& bots, std::vector<Player*>
     });
     for (GroupInfo const& info : found)
         RaidSet()[info.groupId] = SelectedCopy{info.map, info.instance};
+    // The detail cache follows the collected set: a group that disbanded or
+    // left the raid maps would otherwise keep its entry for the process life.
+    for (auto cache = DetailCaches().begin(); cache != DetailCaches().end(); )
+    {
+        if (RaidSet().count(cache->first))
+            ++cache;
+        else
+            cache = DetailCaches().erase(cache);
+    }
     out.swap(found);
 }
 

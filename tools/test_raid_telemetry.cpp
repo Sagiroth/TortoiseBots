@@ -240,6 +240,36 @@ void TestEndMarker()
     Check(BuildRaidsParts(12, 1, 2, 3, 4, {}).size() == 1, "T-A8 one end-marker datagram");
 }
 
+// T-A9: the G2 detail goes last, after every G0/G1 key, and is dropped by
+// the level-1 trim with the window.
+void TestDetailTail()
+{
+    std::vector<GroupInfo> groups{ Group(9) };
+    groups[0].combatJson = "{\"win_s\":10}";
+    DetailEntry d;
+    d.guid = 1;
+    d.hasReady = true;
+    d.readyBuffs = 3;
+    d.readyCons = 5;
+    d.cdReady = 2;
+    d.cdKnown = 3;
+    TortoiseBots::CommanderTelemetry::AuraInfo aura;
+    aura.id = 100;
+    aura.name = "Burn";
+    d.debuffs.push_back(aura);
+    d.mc = true;
+    groups[0].detail.push_back(d);
+    std::string const got = BuildRaidsPayload(12, 1, 2, 3, 4, Refs(groups));
+    size_t const combatAt = got.find(",\"combat\":");
+    size_t const detailAt = got.find(",\"detail\":[");
+    Check(combatAt != std::string::npos && detailAt != std::string::npos && detailAt > combatAt,
+        "T-A9 the detail is appended after the window");
+    Check(Has(got, "\"g\":1,\"rdy\":{\"b\":3,\"c\":5,\"cr\":2,\"cn\":3},\"db\":[{\"id\":100,\"n\":\"Burn\"}],\"mc\":1"),
+        "T-A9 the detail entry shape");
+    Check(Has(BuildGroupJson(groups[0], 1), ",\"combat\":") == false, "T-A9 level 1 drops the window");
+    Check(Has(BuildGroupJson(groups[0], 1), "\"detail\"") == false, "T-A9 level 1 drops the detail with it");
+}
+
 } // namespace
 
 int main()
@@ -252,6 +282,7 @@ int main()
     TestQualification();
     TestRotation();
     TestEndMarker();
+    TestDetailTail();
     if (g_failures)
     {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);

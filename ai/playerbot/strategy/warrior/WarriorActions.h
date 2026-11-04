@@ -3,6 +3,8 @@
 #include "playerbot/AoeFearPolicy.h"
 #include "playerbot/RetaliationPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/values/CcMarkHoldPolicy.h"
 #include "playerbot/WarriorWwStancePolicy.h"
 #include "playerbot/policy/combat/RaidSnarePolicy.h"
 
@@ -160,9 +162,32 @@ namespace ai
         }
     };
 
+    // Sweeping Strikes copies the warrior's swings onto a mob in melee reach for
+    // its whole duration: it is not started, and a running one is cancelled,
+    // beside a sheeped mob or a CC mark whose CC bot will (re)hold it (the
+    // Blade Flurry rule, CcCancelSwingSplashBuff). The warrior's own victim is
+    // not counted, as for Blade Flurry: the proc picks another mob.
+    inline bool SweepingStrikesNearCc(PlayerbotAI* ai, Player* bot, float radius)
+    {
+        CcGuard ccGuard(ai);
+        bool const protectedNear = ccGuard.ProtectedEnemyNear(bot, radius, true, bot->GetVictim());
+        return CcCancelSwingSplashBuff(true, protectedNear, !protectedNear && ccGuard.ReadyCcMarkNear(bot, radius));
+    }
+
+    class CastSweepingStrikesAction : public CastBuffSpellAction
+    {
+    public:
+        CastSweepingStrikesAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "sweeping strikes") {}
+        bool isUseful() override
+        {
+            if (!CastBuffSpellAction::isUseful())
+                return false;
+            return !SweepingStrikesNearCc(ai, bot, CcSweepingStrikesRadius);
+        }
+    };
+
     // arms talents
     MELEE_ACTION(CastMortalStrikeAction, "mortal strike");
-    BUFF_ACTION(CastSweepingStrikesAction, "sweeping strikes");
 
     class CastMasterStrikeAction : public CastMeleeSpellAction
     {

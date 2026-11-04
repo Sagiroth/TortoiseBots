@@ -2,6 +2,7 @@
 
 #include "BotAddonAdapter.h"
 #include "BotPacketAdapter.h"
+#include "BotPacketBacklog.h"
 #include "../commands/BotCommandQueue.h"
 #include "../commands/BotCommands.h"
 #include "Chat.h"
@@ -100,6 +101,19 @@ uint64_t BotChatAdapter::DrainQueuedCommands()
                 return;
             }
             ChatHandler(requester->GetSession()).SendSysMessage(text.c_str());
+        },
+        [](Player* requester, PendingBotCommand const& command)
+        {
+            // The drain runs first: the chat and packets this command would
+            // overtake are exactly what it moves into the backlog, so the
+            // check sees them. Asking first would find no backlog and let the
+            // command overtake its own `/p stay`.
+            return DeferCommandForHeldPackets(requester->GetObjectGuid().GetRawValue(), command.seq,
+                [](uint64_t before) { BotPacketAdapter::DrainDeferredPackets(before); },
+                [](uint64_t masterGuid, uint64_t before)
+                {
+                    return BotPacketAdapter::HasHeldPacketsBefore(masterGuid, before);
+                });
         });
     return BotCommandQueue::Instance().DeferredRunLimit();
 }

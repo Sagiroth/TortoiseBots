@@ -543,8 +543,12 @@ void TestAuraSelection()
     Check(!IsBossDebuff(true, false, 900, members), "a debuff a human group member cast is not shown");
     Check(IsBossDebuff(true, true, 0, members), "a creature's debuff is shown");
     Check(IsBossDebuff(true, false, 999, members), "a debuff from a player outside the group is shown");
-    Check(!IsBossDebuff(false, true, 0, members) && !IsBossDebuff(false, false, 999, members),
-        "a positive aura is never a boss debuff");
+    // The bound path unions the binding's bots and the commander into the set before the check, so a negative aura a
+    // binding member in another group (or the commander) cast on the bot is not the boss's work. A group-only read
+    std::unordered_set<uint32_t> const bound{700, 704, 900, 701, 702, 800};
+    Check(!IsBossDebuff(true, false, 701, bound), "a debuff another binding bot cast is not shown");
+    Check(!IsBossDebuff(true, false, 800, bound), "a debuff the commander cast is not shown");
+    Check(IsBossDebuff(true, false, 701, members), "the same caster reads hostile without the binding union");
 
     Check(UnitFlags(false, false, false, false, false).empty(), "a calm unit has no flags");
     Check(UnitFlags(true, true, true, true, true) == "nihde", "the flags are in their fixed order");

@@ -87,6 +87,19 @@ struct WalkBackSim
     std::vector<std::string> notes;
 };
 
+// The glue's answer to the rescue's scan request: the point it asked for, with no live hostile there.
+// StrandedTeleportTick sends nothing onto a point nobody read, and these tests drive the policy by hand.
+static void AnswerRescueScan(Run& r, Facts& f)
+{
+    if (!r.rescueScanWanted)
+        return;
+    f.rescueRead = true;
+    f.rescueReadX = r.rescueScanX;
+    f.rescueReadY = r.rescueScanY;
+    f.rescueReadZ = r.rescueScanZ;
+    f.rescueReach.clear();
+}
+
 static WalkBackSim SimulateWalkBack(Run& r, Facts f, int ticks = 4000, bool shortcutOk = true)
 {
     WalkBackSim out;
@@ -121,6 +134,7 @@ static WalkBackSim SimulateWalkBack(Run& r, Facts f, int ticks = 4000, bool shor
         f.shortcutRead = r.shortcutWanted != static_cast<std::size_t>(-1);
         f.shortcutFor = r.shortcutWanted;
         f.shortcutOk = out.shortcutOk;
+        AnswerRescueScan(r, f);
         std::string const order = Tick(r, f);
         float tx = 0, ty = 0, tz = 0, fx = 0, fy = 0, fz = 0;
         if (std::sscanf(order.c_str(), "rescue from %f %f %f to %f %f %f", &fx, &fy, &fz, &tx, &ty, &tz) == 6)
@@ -426,6 +440,7 @@ static void TestStuckWalkBackIsRescuedNotPaused()
     bool rescue = false;
     for (int i = 0; i < 60 && r.state == State::Running && !rescue; ++i)
     {
+        AnswerRescueScan(r, f);
         order = Tick(r, f);
         rescue = order.compare(0, 7, "rescue ") == 0;
     }
@@ -564,6 +579,7 @@ static void TestRefusedReplayRescueReplaysThePlansPoints()
     CHECK(r.note == "walk back: the straight way to the point of step 2 passes an uncleared pack: the replay of the "
         "plan's points would walk 310.0 yd: the lead bot is teleported to a safe point on the way it came (step 6) out of "
         "combat");
+    AnswerRescueScan(r, f);
     std::string const rescue = Tick(r, f); // the send
     CHECK(rescue == "rescue from -210.0 0.0 0.0 to 100.0 0.0 0.0");
     for (std::uint32_t t = 1; t <= kStrandTries; ++t)
@@ -620,6 +636,7 @@ static void TestJoinedPlayerCancelsTheReplayRescue()
     Run b;
     Facts g = Party(0.0f);
     arm(b, g); // control: nobody joined, the teleport still goes out
+    AnswerRescueScan(b, g);
     CHECK(Tick(b, g) == "rescue from -210.0 0.0 0.0 to 100.0 0.0 0.0");
     CHECK(b.strandOn && !b.strandDue && b.strandTries == 0);
 }
@@ -1347,7 +1364,10 @@ static void TestStuckRescueGoesToASafePoint()
     r.walkBackIdx = r.walkBackStart = 3;
     std::string order;
     for (int i = 0; i < 60 && r.state == State::Running && order.compare(0, 7, "rescue ") != 0; ++i)
+    {
+        AnswerRescueScan(r, f);
         order = Tick(r, f);
+    }
     CHECK(order == "rescue from 10.0 40.0 30.0 to 80.0 0.0 0.0"); // not 110 0, 15 yd from the pack
     CHECK(r.walkBackIdx == 2);
     // Round 3 (the Opus re-review of a4a16e14): with the route checkpoint known on the stand beside the pack (MoveStep's
@@ -1361,7 +1381,10 @@ static void TestStuckRescueGoesToASafePoint()
     known.walkBackIdx = known.walkBackStart = 3;
     std::string ko;
     for (int i = 0; i < 60 && known.state == State::Running && ko.compare(0, 7, "rescue ") != 0; ++i)
+    {
+        AnswerRescueScan(known, f);
         ko = Tick(known, f);
+    }
     CHECK(ko == "rescue from 10.0 40.0 30.0 to 80.0 0.0 0.0");
     // Not past a direct step (a hole): the search ends there.
     DungeonPlan hole = plan;
@@ -1909,6 +1932,7 @@ static void TestLongHoleReplayIsRescued()
     // the later points on its own.
     Facts g = Party(0, 0);
     std::string order;
+    AnswerRescueScan(r, g);
     CHECK(WalkBack(r, g, kTickMs, order)); // the send: strandOn, settling (order "rescue from ... to ...")
     CHECK(!r.strandDue && r.strandOn);
     g.leadX = plan.steps[r.strandIdx].x;

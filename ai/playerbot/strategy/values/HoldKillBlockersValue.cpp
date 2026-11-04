@@ -2,7 +2,10 @@
 #include "HoldKillBlockersValue.h"
 #include <cstdlib>
 #include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/GroupMembers.h"
+#include "playerbot/ServerFacade.h"
 #include "TargetValue.h"
+#include "Objects/TemporarySummon.h"
 
 using namespace ai;
 
@@ -16,10 +19,20 @@ uint32 QualifierEntry(const std::string& qualifier)
 
 // The entry's living creatures within kHoldKillRangeYd of the bot, by grid search (the core's
 // AllCreaturesOfEntryInRange through the world object's entry-in-grid list).
-void ScanEntry(Player* bot, uint32 entry, std::list<Creature*>& found)
+void ScanEntry(Player* bot, uint32 entry, std::list<Creature*>& found, float range = kHoldKillRangeYd)
 {
     if (entry && bot)
-        bot->GetCreatureListWithEntryInGrid(found, entry, kHoldKillRangeYd);
+        bot->GetCreatureListWithEntryInGrid(found, entry, range);
+}
+
+// Whether `unit` is one of the bot's group: a member, or a pet or guardian whose owner is one. The bot alone counts
+// when it runs without a group.
+bool IsGroupUnit(Unit* unit, Player* bot, Group* group)
+{
+    if (!unit)
+        return false;
+    Player* const owner = unit->GetCharmerOrOwnerPlayerOrPlayerItself();
+    return owner && (owner == bot || (group && group->IsMember(owner->GetObjectGuid())));
 }
 }
 
@@ -64,4 +77,65 @@ std::vector<SoleCandidate> SoleKillCandidatesValue::Calculate()
         candidates.push_back(candidate);
     }
     return candidates;
+}
+
+// The kill_first grid: every living creature of the entry within kBossTacticsEngageRange of the bot, with its
+// engagement with our group and the unit that owns it (owner, else creator, else the temporary summon's summoner).
+// The caller decides who may be picked (KillFirstGridEligible): the owner has to be a unit of the fight, which only
+// the fight knows.
+std::vector<KillFirstGridUnit> KillFirstGridUnitsValue::Calculate()
+{
+    std::vector<KillFirstGridUnit> units;
+    std::list<Creature*> found;
+    ScanEntry(bot, QualifierEntry(qualifier), found, kBossTacticsEngageRange);
+    Group* const group = bot->GetGroup();
+    for (Creature* creature : found)
+    {
+        if (!creature->IsAlive())
+            continue;
+        KillFirstGridUnit unit;
+        unit.guid = creature->GetObjectGuid().GetRawValue();
+        unit.entry = creature->GetEntry();
+        unit.distance = bot->GetDistance(creature);
+        unit.alive = true;
+        unit.evading = creature->IsInEvadeMode();
+        unit.victimOurs = IsGroupUnit(creature->GetVictim(), bot, group);
+        for (Unit* attacker : creature->GetAttackers())
+        {
+            if (IsGroupUnit(attacker, bot, group))
+            {
+                unit.weHoldIt = true;
+                break;
+            }
+        }
+        // A member that pulled and stopped swinging is off the attackers list but still on the threat list: a hit in
+        // combat with an NPC or a stranger is neither, and stays out.
+        auto const holds = [creature](Unit* who)
+        {
+            return who && sServerFacade.GetThreatManager(creature).getThreat(who) > 0.0f;
+        };
+        unit.weHoldIt = holds(bot) || holds(bot->GetPet());
+        if (!unit.weHoldIt && group)
+        {
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (member && (holds(member) || holds(member->GetPet())))
+                {
+                    unit.weHoldIt = true;
+                    break;
+                }
+            }
+        }
+        ObjectGuid summoner = creature->GetOwnerGuid();
+        if (summoner.IsEmpty())
+            summoner = creature->GetCreatorGuid();
+        if (summoner.IsEmpty())
+        {
+            if (TemporarySummon* summon = dynamic_cast<TemporarySummon*>(creature))
+                summoner = summon->GetSummonerGuid();
+        }
+        unit.owner = summoner.GetRawValue();
+        units.push_back(unit);
+    }
+    return units;
 }

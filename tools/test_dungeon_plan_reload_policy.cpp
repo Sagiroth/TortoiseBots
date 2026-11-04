@@ -535,11 +535,30 @@ static void TestReloadSeesNeedPick()
     CHECK(!SamePlan(*a->Find("bfd"), *c->Find("bfd")));
 }
 
+// The reload's handoff runs before the install and receives the new tactic table: the seek_aura records reconcile
+// against the rows that replace the ones they were keyed from.
+static void TestBeforeInstallSeesTheNewTactics()
+{
+    ReloadableTable<DungeonPlanTable> plans;
+    ReloadableTable<BossTacticTable> tactics;
+    auto oldTactics = KillFirstOn4887(111);
+    plans.Install(JoinedSet(*oldTactics));
+    tactics.Install(oldTactics);
+    auto nextTactics = KillFirstOn4887(111);
+    const BossTacticTable* seen = nullptr;
+    PlanReloadOutcome const out = CommitPlanReload(plans, JoinedSet(*nextTactics), PlanLoadCounts(), tactics, nextTactics,
+        0, {}, {}, [&seen](const BossTacticTable& table) { seen = &table; });
+    CHECK(out.swapped);
+    CHECK(seen == nextTactics.get());
+    CHECK(tactics.Current().Size() == 1);
+}
+
 int main()
 {
     TestReloadSeesOpenProof();
     TestTacticTargetChangeMarksThePlanChanged();
     TestReloadSeesNeedPick();
+    TestBeforeInstallSeesTheNewTactics();
     TestGoodReloadSwaps();
     TestUnchangedReloadListsNothing();
     TestBadRowKeepsTheOldSet();

@@ -53,6 +53,11 @@ namespace ai
         FreezeOnAura = 12,    // a member carrying the row's aura stands still and does nothing
         TauntAfterCast = 13,  // the row's tank index taunts the subject back after the row's trigger
         SwapOnAura = 14,      // the tanks rotate the boss at `param` stacks of the row's aura
+        UseObject = 15,       // one bot clicks the ready game object of `target_entry` nearest the boss
+        SeekAura = 16,        // the raid gathers in the cloud of a dying `target_entry` to carry `spell_id`
+        PullGate = 17,        // the run leader never pulls the boss while it wears `spell_id` above the stack band
+        Spread = 18,          // the ranged raid keeps `param` yd apart while the boss fights
+        NeedsAura = 19,       // only a bot carrying `spell_id` may target `target_entry`
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -69,6 +74,7 @@ namespace ai
         Blink = 7,     // dps_hold_after, taunt_after_cast: the subject teleported
         UntilTank = 8, // dps_hold_after, taunt_after_cast: until the subject is on a tank
         Invalid = 9,
+        TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -107,6 +113,10 @@ namespace ai
                 if (text == "until_tank")
                     return TacticMode::UntilTank;
                 break;
+            case BossTacticKind::UseObject:
+                if (text == "tank_anchor")
+                    return TacticMode::TankAnchor;
+                break;
             default:
                 break;
         }
@@ -143,6 +153,16 @@ namespace ai
             return BossTacticKind::TauntAfterCast;
         if (text == "swap_on_aura")
             return BossTacticKind::SwapOnAura;
+        if (text == "use_object")
+            return BossTacticKind::UseObject;
+        if (text == "seek_aura")
+            return BossTacticKind::SeekAura;
+        if (text == "pull_gate")
+            return BossTacticKind::PullGate;
+        if (text == "spread")
+            return BossTacticKind::Spread;
+        if (text == "needs_aura")
+            return BossTacticKind::NeedsAura;
         return BossTacticKind::None;
     }
 
@@ -152,7 +172,7 @@ namespace ai
         std::uint32_t bossEntry = 0;    // creature whose presence in the fight activates the row
         BossTacticKind kind = BossTacticKind::None;
         std::uint32_t targetEntry = 0;  // creature the row is about; 0 = the boss itself
-        std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell
+        std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell; needs_aura: the aura the bot must carry
         std::uint8_t priority = 0;      // kill_first: lower is killed first
         float param = 0.0f;             // behind, avoid_cast: radius in yards
         // linked_death: the release burn's order, a comma list of the group's entries in `burn_order` (the loader
@@ -167,6 +187,13 @@ namespace ai
         TacticMode mode = TacticMode::Default;
         // linked_death: the release latch's window in seconds (`window_s`).
         float windowSec = 7.0f;
+        // seek_aura: the spell whose aura on a group member restarts the cycle (`cycle_spell`), the cycle's length in
+        // seconds (`cycle_s`), and the spot the source is held at (`spot_x/y/z`). 0 for every other kind.
+        std::uint32_t cycleSpell = 0;
+        float cycleSec = 0.0f;
+        float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+
+        bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
 
     // Whether the row carries a gate at all. Only the scan-read kinds may: hold_kill, tank_hold, one_at_a_time and
@@ -189,6 +216,13 @@ namespace ai
         if (row.botAura != 0 && !botHasGateAura)
             return false;
         return true;
+    }
+
+    // Whether a needs_aura row keeps this bot off the unit: the key is on, the unit's entry has a row, and the bot
+    // carries none of the row's aura. One rule for the attack pickers, the taunt picks and the run guard.
+    inline bool AuraGateRefuses(bool keyOn, std::uint32_t requiredAura, bool botHasAura)
+    {
+        return keyOn && requiredAura != 0 && !botHasAura;
     }
 
     // One living unit of a boss entry the fight sees: its max health, current health % and guid.
@@ -223,12 +257,21 @@ namespace ai
         return pick;
     }
 
-    // The creature a row is about.
+    // The creature a row is about. A use_object row is about its boss: the target is a game object, not a creature.
     inline std::uint32_t TacticSubjectEntry(const BossTacticRow& row)
     {
+        if (row.kind == BossTacticKind::UseObject)
+            return row.bossEntry;
         return row.targetEntry ? row.targetEntry : row.bossEntry;
     }
 
+    // A table's revision: unique for the process, assigned when the table is constructed. A freed table's address can
+    // come back for a changed table, so a cache of the table's content keys on the revision, never on the address.
+    inline std::uint64_t NextBossTacticRevision()
+    {
+        static std::atomic<std::uint64_t> counter{0};
+        return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
     // One linked_death group: its anchor (the anchor's rows) and its group id (`priority`). One anchor can carry
     // several groups on one map.
     struct LinkedDeathGroupKey
@@ -240,6 +283,10 @@ namespace ai
     class BossTacticTable
     {
     public:
+        BossTacticTable() : revision_(NextBossTacticRevision()) {}
+
+        std::uint64_t Revision() const { return revision_; }
+
         // Loading only. False after Seal(), for an unusable row, or when the
         // (map, boss, kind, target, spell, hp_min, hp_max) key is already there: the
         // first row wins, as it would under the table's primary key.
@@ -301,6 +348,45 @@ namespace ai
             // swap_on_aura: the aura and a rotation of at least two tanks (priority is the rotation's size).
             if (row.kind == BossTacticKind::SwapOnAura && (row.spellId == 0 || row.priority < 2))
                 return false;
+            // use_object: the game object to click; a clicker role of free DPS, healer or non-tank; the boss must
+            // stand within `param` yd and still. The timer restarts every click (or runs from first sight before any),
+            // so a row with no trigger at all could never fire, and a short non-zero window would refire faster than
+            // the object can arm: only 0 or at least 10 s.
+            if (row.kind == BossTacticKind::UseObject &&
+                (row.targetEntry == 0 || row.priority > 2 || !(row.param > 0.0f) || row.param > 60.0f ||
+                    (row.windowSec != 0.0f && row.windowSec < 10.0f) || (row.spellId == 0 && row.windowSec == 0.0f)))
+                return false;
+            // seek_aura: the source whose death leaves the cloud, the aura the bots must carry, the cycle spell and
+            // length, and the spot the source is held at. `param` is the gather radius around the source, `priority`
+            // the health % the DPS stop at, and the dose window has to fit inside the cycle.
+            if (row.kind == BossTacticKind::SeekAura &&
+                (row.targetEntry == 0 || row.spellId == 0 || row.cycleSpell == 0 || !row.HasSpot() ||
+                    !(row.param > 0.0f) || row.param > 10.0f || row.priority > 99 ||
+                    !(row.cycleSec > 0.0f) || row.cycleSec > 600.0f ||
+                    !(row.windowSec > 0.0f) || row.windowSec >= row.cycleSec))
+                return false;
+            // pull_gate: the boss itself (target_entry 0), the stake spell it wears and the seconds the run holds
+            // before it ends. priority is the most stacks allowed.
+            if (row.kind == BossTacticKind::PullGate &&
+                (row.targetEntry != 0 || row.spellId == 0 || !(row.param > 0.0f) || row.param > 300.0f))
+                return false;
+            // spread: the spacing the answer needs, in yards; the spell only documents the splash.
+            if (row.kind == BossTacticKind::Spread &&
+                (row.targetEntry != 0 || row.param < 5.0f || row.param > 30.0f))
+                return false;
+            // needs_aura: the entry and the aura a bot must carry, and nothing else. The aura is the row's own gate, so
+            // a health band or a bot aura could never be answered, and the kind takes no mode word.
+            if (row.kind == BossTacticKind::NeedsAura &&
+                (row.targetEntry == 0 || row.spellId == 0 || RowGateSet(row) || row.mode != TacticMode::Default))
+                return false;
+            // The cycle and spot columns are the seek_aura kind's.
+            if (row.kind != BossTacticKind::SeekAura &&
+                (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
+                return false;
+            // A gate is a fight-scan question; these three are not asked it (a pull gate already decides the run).
+            if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
+                    row.kind == BossTacticKind::Spread))
+                return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
             {
@@ -311,8 +397,10 @@ namespace ai
             rows.push_back(row);
             maps_[row.map] = true;
             // The automatic crowd control's exclusions (Commander's run facts): a kill_first unit is killed, a
-            // linked_death group's partner must die with it, so neither is ever held.
-            if (row.kind == BossTacticKind::KillFirst || row.kind == BossTacticKind::LinkedDeath)
+            // linked_death group's partner must die with it, and a seek_aura source is dragged to the spot and burned
+            // there (a polymorphed or trapped Son cannot be dragged), so none is ever held.
+            if (row.kind == BossTacticKind::KillFirst || row.kind == BossTacticKind::LinkedDeath ||
+                row.kind == BossTacticKind::SeekAura)
                 noCcEntries_[row.map].insert(row.targetEntry != 0 ? row.targetEntry : row.bossEntry);
             if (row.kind == BossTacticKind::FreezeOnAura)
                 freezeAuras_[row.map].push_back(row.spellId);
@@ -324,6 +412,19 @@ namespace ai
                 auraTacticMaps_[row.map] = true;
             if (row.kind == BossTacticKind::DispelPriority)
                 dispelMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::UseObject)
+                useObjectMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::SeekAura)
+            {
+                seekAuraMaps_[row.map] = true;
+                seekTargets_[row.map].insert(row.targetEntry);
+            }
+            if (row.kind == BossTacticKind::PullGate)
+                pullGateMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::Spread)
+                spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::NeedsAura)
+                requiredAura_[row.map][row.targetEntry] = row.spellId;
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -339,7 +440,13 @@ namespace ai
             return true;
         }
 
-        void Seal() { sealed_.store(true, std::memory_order_release); }
+        // The seal opens the table to readers. The revision moves here too, so a content read taken before the seal
+        // (empty rows) is never served for the sealed table.
+        void Seal()
+        {
+            revision_ = NextBossTacticRevision();
+            sealed_.store(true, std::memory_order_release);
+        }
         bool Sealed() const { return sealed_.load(std::memory_order_acquire); }
         std::size_t Size() const { return size_; }
 
@@ -385,6 +492,68 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && dispelMaps_.find(map) != dispelMaps_.end();
         }
 
+        // Whether the map has a use_object row (the clicker and the tank anchor run only there). False before the seal.
+        bool HasUseObjectMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && useObjectMaps_.find(map) != useObjectMaps_.end();
+        }
+
+        // Whether the map has a seek_aura row (the cloud exemption and the seek walk run only there). False before the
+        // seal.
+        bool HasSeekAuraMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && seekAuraMaps_.find(map) != seekAuraMaps_.end();
+        }
+
+        // The map's seek_aura source entries (the creatures whose death leaves the cloud): the third off-tank's pickup
+        // rule reads them without a fight scan. Empty before the seal.
+        const std::unordered_set<std::uint32_t>& SeekTargets(std::uint32_t map) const
+        {
+            static const std::unordered_set<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire))
+                return none;
+            auto it = seekTargets_.find(map);
+            return it == seekTargets_.end() ? none : it->second;
+        }
+
+        // Whether the map has a pull_gate row (the run leader's gate lookup runs only there). False before the seal.
+        bool HasPullGateMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && pullGateMaps_.find(map) != pullGateMaps_.end();
+        }
+
+        // Whether the map has a spread row (the ranged spacing widens only there). False before the seal.
+        bool HasSpreadMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
+        }
+
+        // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
+        // unit's, wherever it stands, so the lookup never names the row's boss. 0 before the seal.
+        std::uint32_t RequiredAura(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || requiredAura_.empty())
+                return 0;
+            auto const byMap = requiredAura_.find(map);
+            if (byMap == requiredAura_.end())
+                return 0;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? 0 : it->second;
+        }
+
+        // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
+        // before the seal.
+        bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
+        {
+            const std::vector<BossTacticRow>* rows = Rows(map, bossEntry);
+            if (!rows)
+                return false;
+            for (const BossTacticRow& row : *rows)
+                if (row.kind == kind)
+                    return true;
+            return false;
+        }
+
         // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link
         // scan reads these instead of a fight's rows, which under "focus rti targets" are the raid mark's entry only.
         // Empty before the seal or for a map without rows of the kind.
@@ -428,6 +597,31 @@ namespace ai
             return it == rows_.end() ? nullptr : &it->second;
         }
 
+        // Every row of one map, sorted by (bossEntry, kind, targetEntry, spellId):
+        // the decision capture stores the table once per capture segment and the
+        // replay rebuilds it from this list, so the order must not depend on the
+        // map's iteration. Empty before the seal.
+        std::vector<BossTacticRow> RowsOnMap(std::uint32_t map) const
+        {
+            std::vector<BossTacticRow> out;
+            if (!sealed_.load(std::memory_order_acquire))
+                return out;
+            for (const auto& entry : rows_)
+                if ((entry.first >> 32) == map)
+                    out.insert(out.end(), entry.second.begin(), entry.second.end());
+            std::sort(out.begin(), out.end(), [](const BossTacticRow& a, const BossTacticRow& b)
+            {
+                if (a.bossEntry != b.bossEntry)
+                    return a.bossEntry < b.bossEntry;
+                if (a.kind != b.kind)
+                    return a.kind < b.kind;
+                if (a.targetEntry != b.targetEntry)
+                    return a.targetEntry < b.targetEntry;
+                return a.spellId < b.spellId;
+            });
+            return out;
+        }
+
     private:
         static std::uint64_t Key(std::uint32_t map, std::uint32_t bossEntry)
         {
@@ -441,13 +635,19 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
+        std::unordered_map<std::uint32_t, bool> useObjectMaps_;
+        std::unordered_map<std::uint32_t, bool> seekAuraMaps_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
+        std::unordered_map<std::uint32_t, bool> pullGateMaps_;
+        std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
         std::size_t size_ = 0;
         std::atomic<bool> sealed_{false};
+        std::uint64_t revision_;
     };
-
     // Activation gate. The tactics change how bots play, so they are not on for
     // everybody: either the server owner opted in (AiPlayerbot.DungeonTactics = 1)
     // or this bot sits in a group a remote commander has bound (the commander
@@ -1725,6 +1925,133 @@ namespace ai
         return -1;
     }
 
+    // taunt_after_cast (mode until_tank), the `priority` tank of the raid order: the first ALIVE tank at or after it,
+    // wrapping to the front, so a dead first off-tank hands the taunt to the next one instead of leaving the subject
+    // loose. -1 when no tank is alive or the row names no index. `tankAlive` is the raid order (GetRaidTankRoles), so
+    // its own list already drops a tank that is dead or out of the group.
+    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted)
+    {
+        int const count = static_cast<int>(tankAlive.size());
+        if (count == 0 || wanted < 0)
+            return -1;
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (tankAlive[index])
+                return index;
+        }
+        return -1;
+    }
+
+    // The taunt_after_cast deadline: `triggered` is an episode the rising edge opened, `sinceMs` how long ago it did
+    // and `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
+    inline bool TauntAfterDue(bool triggered, std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
+    {
+        if (!triggered || victimIsAssigned)
+            return false;
+        return sinceMs < deadlineMs;
+    }
+
+    // Whether a tank in the raid order can still take the taunt: a creature-charmed tank yields its AI completely
+    // (AiPlayerbot.DungeonRunCharmYield), so it is as gone as a dead one and the order wraps past it.
+    inline bool TauntAfterTankUsable(bool hasCharmer, bool charmerIsPlayer)
+    {
+        return !(hasCharmer && !charmerIsPlayer);
+    }
+
+    enum class TauntEpisodeStep
+    {
+        None = 0,
+        Due = 1,      // an open episode inside its deadline and the victim is not its tank
+        Miss = 2,     // the deadline ran out on a non-tank: log once, no second attempt this charm
+        Regained = 3, // a tank has the subject back: the episode ends
+    };
+
+    struct TauntEpisodeRead
+    {
+        bool starts = false; // the rising edge: the caller opens the episode now
+        bool open = false;
+        bool spent = false;
+        TauntEpisodeStep step = TauntEpisodeStep::None;
+    };
+
+    // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
+    // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
+    // and one between victims (a pet, a transition) keeps its deadline.
+    inline TauntEpisodeRead TauntEpisodeTick(bool onNonTank, bool victimIsTank, bool open, bool spent,
+        std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
+    {
+        TauntEpisodeRead out;
+        out.open = open;
+        out.spent = spent;
+        if (onNonTank)
+        {
+            if (!open && !spent)
+            {
+                out.starts = true;
+                out.open = true;
+                if (TauntAfterDue(true, 0, deadlineMs, victimIsAssigned))
+                    out.step = TauntEpisodeStep::Due;
+                return out;
+            }
+            if (out.open)
+            {
+                if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
+                    out.step = TauntEpisodeStep::Due;
+                else
+                {
+                    out.step = TauntEpisodeStep::Miss;
+                    out.open = false;
+                    out.spent = true;
+                }
+            }
+            return out;
+        }
+        if (victimIsTank)
+        {
+            if (open)
+                out.step = TauntEpisodeStep::Regained;
+            out.open = false;
+            out.spent = false;
+        }
+        return out;
+    }
+
+    // The widest live spread row's spacing, never narrower than the fallback: the row widens a formation, it does not
+    // crowd the raid back into the splash.
+    inline float WidestSpreadYd(const std::vector<float>& params, float fallback)
+    {
+        float best = fallback;
+        for (float param : params)
+            if (param > best)
+                best = param;
+        return best;
+    }
+
+    // One living creature of a kill_first entry within kBossTacticsEngageRange of the bot, as the grid search saw it
+    // (the "kill first grid units" value). The fight decides who is pickable; this is only the search.
+    struct KillFirstGridUnit
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t entry = 0;
+        float distance = 0.0f;   // from the bot
+        bool alive = true;
+        bool evading = false;
+        bool victimOurs = false; // its victim is a member of the bot's group (or one of their pets)
+        bool weHoldIt = false;   // a member or their pet is on its threat list, or attacks it
+        std::uint64_t owner = 0; // owner, else creator, else the temporary summon's summoner (0: none)
+    };
+
+    // Whether a grid hit of a kill_first entry may join the pick: alive, not running home, and part of our fight --
+    // it is engaged with the group (its victim is ours, or one of ours holds it), or it is a ward or totem of a unit
+    // of this fight. Being in combat is not enough: a creature of the entry brawling with an NPC or a player outside
+    // the group within range is not this fight's, and keeps an idle add of the entry elsewhere on the map out too.
+    inline bool KillFirstGridEligible(bool alive, bool evading, bool victimOurs, bool weHoldIt,
+        bool ownerOrSummonerInFight)
+    {
+        return alive && !evading && (victimOurs || weHoldIt || ownerOrSummonerInFight);
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {
@@ -1769,9 +2096,12 @@ namespace ai
 
     // Index of the nearest candidate a free DPS bot may attack: the same candidate rules the kill_first pick applies
     // (pickable, kBossTacticsEngageRange) minus the entries a hold_kill row holds, so a bot switching off a held entry
-    // lands on the blocker or a loose add and never on another held entry. -1 when nothing is left.
+    // lands on the blocker or a loose add and never on another held entry. `seekHeldEntry`: a seek_aura source the row
+    // holds right now (its entry is not a hold_kill one), skipped too, so the drop never re-picks another Son. -1 when
+    // nothing is left.
     inline int PickNearestUnheld(const ActiveBossRows& rows, const std::vector<TacticCandidate>& candidates,
-                                 const std::function<std::uint32_t(std::uint32_t)>& countNear)
+                                 const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                                 std::uint32_t seekHeldEntry = 0)
     {
         int best = -1;
         float bestDistance = 0.0f;
@@ -1779,6 +2109,8 @@ namespace ai
         {
             const TacticCandidate& c = candidates[i];
             if (!c.pickable || c.distance > kBossTacticsEngageRange)
+                continue;
+            if (seekHeldEntry != 0 && c.entry == seekHeldEntry)
                 continue;
             if (KillHeld(rows, c.entry, countNear))
                 continue;

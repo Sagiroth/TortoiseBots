@@ -184,3 +184,75 @@ bool BossTacticsStandTrigger::IsActive()
     const BossStandTarget stand = FindBossStand(ai, bot);
     return stand.valid && !StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y);
 }
+
+bool BossTacticsUseObjectTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossUseObject(ai, bot).valid;
+}
+
+bool BossTacticsTankSwapTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Both keys gate the kind: it is one of the six aura kinds, and it changes what the tanks do mid-fight.
+    if (!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
+        !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    return FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot)).valid;
+}
+
+bool BossTacticsTankSwapHoldTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Both keys gate the kind: it is one of the six aura kinds, and it changes what the tanks do mid-fight.
+    if (!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
+        !GetBossTactics().HasAuraTacticMap(bot->GetMapId()) || !PlayerbotAI::IsTank(bot))
+        return false;
+    return TankSwapStandDownBoss(ai, bot, ScanBossTactics(ai, bot)) != nullptr;
+}
+
+bool BossTacticsObjectAnchorTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossUseObjectAnchor(ai, bot).valid;
+}
+
+bool BossTacticsSeekTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossSeek(ai, bot).valid;
+}
+
+bool BossTacticsSeekTankTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossSeekTank(ai, bot).valid;
+}
+
+bool BossTacticsSeekKillTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    Unit* pick = FindBossSeekKill(ai, bot);
+    if (!pick)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE(Unit*, "current target") != pick;
+}
+
+bool BossTacticsTauntAfterTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // The kind is the aura-tactics key's own (ScanBossTactics drops its rows otherwise), and the map flag keeps every
+    // other map at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
+        return false;
+    return FindBossTauntAfter(ai, bot, ScanBossTactics(ai, bot)).valid;
+}

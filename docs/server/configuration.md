@@ -94,6 +94,20 @@ Every configuration setting is documented across specialized settings pages:
 | [Performance & tick budget](settings/performance.md) | `aiplayerbot.conf` + `mangosd.conf` | Per-tick AI turn limits, self-tuning tick controllers, and core map caching. |
 | [Diagnostic logging](settings/logging.md) | `aiplayerbot.conf` + `tortoise_bots.conf` | Module log levels, telemetry streams, CSV logs, and per-bot action log rotation. |
 
+## Decision capture
+
+Off by default and meant for test servers: it writes every tick of a running run leader, roughly 12-40 KB a second. What it records, how the files rotate and how a live failure becomes a replay fixture: [Decision capture](decision-capture.md).
+
+| Key | Default | Meaning |
+| :--- | :--- | :--- |
+| `AiPlayerbot.DecisionCapture.Enabled` | `0` | Capture the run leader's ticks. |
+| `AiPlayerbot.DecisionCapture.Dir` | `decisions` | Output folder, relative to `LogsDir` unless it is an absolute path. |
+| `AiPlayerbot.DecisionCapture.SegmentMiB` | `32` | A segment rotates past this many MiB (1..256). |
+| `AiPlayerbot.DecisionCapture.CaptureMiB` | `512` | Per capture: segments past this many MiB go oldest first, never the open one. |
+| `AiPlayerbot.DecisionCapture.TotalMiB` | `4096` | Per folder: the oldest ended captures go past this many MiB, never a running one. |
+| `AiPlayerbot.DecisionCapture.RecordKiB` | `512` | A larger record becomes a stub (64..4096). |
+| `AiPlayerbot.DecisionCapture.KeyframeEvery` | `60` | A full keyframe every this many records (1..600). |
+
 ## Removed keys
 
 `aiplayerbot.conf.dist.in` once carried keys that were read into configuration and never used; they are gone now. An older `aiplayerbot.conf` that still sets one of them keeps loading, because the config reader ignores unknown keys. Nothing these keys appeared to control ever changed, so there is nothing to migrate: delete the lines. The one pair from that list that now has an effect is `RandomBotShowHelmet` / `RandomBotShowCloak`: they hide the helmet and cloak of pool bots (default: shown).

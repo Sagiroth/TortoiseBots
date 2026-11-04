@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include "../../HireSpecPolicy.h"
+#include "HireRespecPolicy.h"
 
 namespace TortoiseBots
 {
@@ -68,6 +69,14 @@ inline char const* ResolveHireGearSpecKey(uint8_t classId, int specIndex, uint8_
     if (key)
         return key;
     return HireGearRoleFallbackKey(classId, role);
+}
+
+// Spec key for a bot's own premade path (its talent spec). An empty path or
+// one that matches no menu option passes -1, so the role decides.
+inline char const* ResolveHireGearKeyForPath(uint8_t classId, char const* pathName, uint8_t role)
+{
+    int const specIndex = pathName && *pathName ? HireSpecIndexForPathName(classId, pathName, role) : -1;
+    return ResolveHireGearSpecKey(classId, specIndex, role);
 }
 
 // Effective hire tier for PR 1: the master switch gates everything, StartTier

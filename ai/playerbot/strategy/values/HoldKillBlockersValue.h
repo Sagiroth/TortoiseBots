@@ -32,4 +32,17 @@ namespace ai
             : CalculatedValue<std::vector<SoleCandidate>>(ai, "sole kill candidates", 1), Qualified() {}
         std::vector<SoleCandidate> Calculate() override;
     };
+
+    // "kill first grid units::<entry>": every living creature of the entry within kBossTacticsEngageRange of the bot,
+    // with what the kill_first grid rule needs (KillFirstGridUnit). Its reader is FindBossKillFirst: a kill_first unit
+    // the bot's attackers list never shows (a healing ward on the boss, a Shade it cannot see) is still found here.
+    // Never the bot's own "attackers" list, which "focus rti targets" collapses to the raid mark. One grid search per
+    // bot and entry per second.
+    class KillFirstGridUnitsValue : public CalculatedValue<std::vector<KillFirstGridUnit>>, public Qualified
+    {
+    public:
+        KillFirstGridUnitsValue(PlayerbotAI* ai)
+            : CalculatedValue<std::vector<KillFirstGridUnit>>(ai, "kill first grid units", 1), Qualified() {}
+        std::vector<KillFirstGridUnit> Calculate() override;
+    };
 }
