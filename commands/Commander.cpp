@@ -11471,19 +11471,22 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         // latest siphon. Read once per tick off the living plan boss.
                         if (f.bossHpPct < 0)
                             f.bossHpPct = static_cast<int>(creature->GetHealthPercent());
-                        if (!f.seekClockRead && sPlayerbotAIConfig.dungeonRunSeekAura && lead->GetMapId() == 309 &&
-                            creature->GetEntry() == TortoiseBots::DungeonRun::kHakkarEntry)
+                        if (lead->GetMapId() == 309 && creature->GetEntry() == TortoiseBots::DungeonRun::kHakkarEntry)
                         {
-                            f.seekClockRead = true;
+                            // The enrage aura is a note-only fact, so it is read with the seek key off too.
                             if (creature->GetSpellAuraHolder(TortoiseBots::DungeonRun::kHakkarBerserkSpell))
                                 f.bossBerserk = true;
-                            ai::SeekCycleView view;
-                            if (ai::SeekCycleSnapshot(lead->GetInstanceId(),
-                                                      creature->GetObjectGuid().GetRawValue(), view))
+                            if (!f.seekClockRead && sPlayerbotAIConfig.dungeonRunSeekAura)
                             {
-                                f.seekSiphonCycle = view.siphonCycle;
-                                f.seekSiphonDosed = view.siphonDosed;
-                                f.seekSiphonUndosed = view.siphonUndosed;
+                                f.seekClockRead = true;
+                                ai::SeekCycleView view;
+                                if (ai::SeekCycleSnapshot(lead->GetInstanceId(),
+                                                          creature->GetObjectGuid().GetRawValue(), view))
+                                {
+                                    f.seekSiphonCycle = view.siphonCycle;
+                                    f.seekSiphonDosed = view.siphonDosed;
+                                    f.seekSiphonUndosed = view.siphonUndosed;
+                                }
                             }
                         }
                     }
