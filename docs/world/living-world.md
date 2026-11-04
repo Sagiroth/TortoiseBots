@@ -17,7 +17,7 @@ This page explains how autonomous bots inhabit the realm, progress through level
 
 ## Overview
 
-TortoiseBots fills the world with autonomous characters on managed pool accounts. These bots travel through zones, complete quests, grind hostile creatures, gather crafting materials, and trade on the Auction House. They join a guild when a player invites them; they do not found guilds of their own in practice ([Guilds](social.md#guilds)). The world feels populated without needing a human in every zone.
+TortoiseBots fills the world with autonomous characters on managed pool accounts. These bots travel through zones, complete quests, grind hostile creatures, gather crafting materials, and trade on the Auction House. They join a guild when a player invites them; founding guilds of their own is off by default ([Guilds](social.md#guilds)). The world feels populated without needing a human in every zone.
 
 Managed pool accounts are tracked in the character-database registry ([The Managed Registry](../server/bot-pool.md#the-managed-pool-registry)).
 

@@ -17,7 +17,6 @@ TortoiseBots strives to make companion bots behave like human players. However, 
 ## Blocked & Incomplete Features
 
 - **Playing your own character as a bot:** Not possible. Bots are secondary characters on your account (headless logins) or hired mercenaries. You cannot turn the character you are playing into a bot.
-- **Founding guilds:** bots are meant to buy guild charters and found their own guilds ([`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild), on), but on test realms with 1000 bots none did. Invite pool bots to your own guild instead ([Guilds](../world/social.md#guilds)).
 - **Looting herbs and ore:** For creature corpses, bots check loot rights before walking over. For herbs and veins there is no such upfront check: a bot may walk to a node and only find out at the node that there is nothing to loot.
 
 <a id="opt-in-dungeon-clearing"></a>
