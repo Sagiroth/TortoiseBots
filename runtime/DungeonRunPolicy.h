@@ -11746,19 +11746,24 @@ inline bool DirectStepOnWay(const Run& r, std::size_t from)
     return false;
 }
 
-// The plan's move point nearest the lead bot before the current step (npos
-// for none). Proximity only: on a folded route it can lie past a hole the lead
-// bot has not crossed, so no walk back starts from it (StartWalkBack).
-inline std::size_t NearestMovePoint(const Run& r, const Facts& f)
+// The plan's move point nearest (x, y, z) before `before` (the plan's end by default, the whole route) and, when
+// `maxYd` is above 0, no farther than that (npos for none): the plan row a spot stands on.
+inline std::size_t NearestMoveRow(const Run& r, float x, float y, float z,
+    std::size_t before = static_cast<std::size_t>(-1), float maxYd = 0.0f)
 {
+    if (!r.plan)
+        return static_cast<std::size_t>(-1);
     std::size_t idx = static_cast<std::size_t>(-1);
     float best = 0.0f;
-    for (std::size_t i = 0; i < r.step; ++i)
+    std::size_t const end = std::min(before, r.plan->steps.size());
+    for (std::size_t i = 0; i < end; ++i)
     {
-        const PlanStep& p = r.plan->steps[i];
         if (!IsRunMovePoint(r, i))
             continue;
-        float const d = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
+        const PlanStep& p = r.plan->steps[i];
+        float const d = ai::PlanDistance(x, y, z, p.x, p.y, p.z);
+        if (maxYd > 0.0f && d > maxYd)
+            continue;
         if (idx == static_cast<std::size_t>(-1) || d < best)
         {
             best = d;
@@ -11766,6 +11771,30 @@ inline std::size_t NearestMovePoint(const Run& r, const Facts& f)
         }
     }
     return idx;
+}
+
+// The plan's move point nearest the lead bot before the current step (npos
+// for none). Proximity only: on a folded route it can lie past a hole the lead
+// bot has not crossed, so no walk back starts from it (StartWalkBack).
+inline std::size_t NearestMovePoint(const Run& r, const Facts& f)
+{
+    return NearestMoveRow(r, f.leadX, f.leadY, f.leadZ, r.step);
+}
+
+// Whether a move point of the run's own steps (the start step to the current one) lies within kSeeYd of (x, y, z):
+// what tells a spot on the walked route from one on the early pass of a folded route, where the nearest row of the
+// whole plan can be a row the run never walked (PlacedRunRescue's own-points test).
+inline bool RunPointNear(const Run& r, float x, float y, float z)
+{
+    for (std::size_t i = r.startStep; r.plan && i < r.step && i < r.plan->steps.size(); ++i)
+    {
+        if (!IsRunMovePoint(r, i))
+            continue;
+        const PlanStep& p = r.plan->steps[i];
+        if (ai::PlanDistance(x, y, z, p.x, p.y, p.z) <= kSeeYd)
+            return true;
+    }
+    return false;
 }
 
 // The last plan step before `idx` whose point the lead bot reached: the route checkpoint
@@ -12764,8 +12793,41 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
     // together after a wipe stands on the lead bot's spot: there is no group, and the held point used to pause the
     // run after kRescueHoldMs.
     MemberGroup group;
-    bool const groupFound = !destChosen && held && MemberGroupPoint(f, p.x, p.y, p.z, group);
+    bool groupFound = !destChosen && held && MemberGroupPoint(f, p.x, p.y, p.z, group);
+    // The join is bounded by the plan. A party that stands before the run's start step is never joined: the lead bot
+    // would be put back behind the placed run (ZG walk 35: the rescue of step 204 joined a party clustered at step
+    // 17, before the placed start step 37, and it walked back up for about 9 minutes). The group is classified
+    // against the reached rows only (the start step to the current one): a party whose only nearby rows are future
+    // rows of the plan is off the run and is not joined, since the join would put the lead bot forward over route
+    // content the run has not cleared (on a folded route the nearest row of the whole plan can be an early pass).
+    // With no reached row within kSeeYd the party is off the plan and is not joined either. Between the start step
+    // and the point the lead bot would go to, the earlier clear points are read first and the join is the last
+    // option (the base's join, so a party there never turns into a pause).
+    std::string partyOff;
+    bool groupBehindPoint = false;
     if (groupFound)
+    {
+        std::size_t const groupRow = NearestMoveRow(r, group.x, group.y, group.z, r.step + 1, kSeeYd);
+        if (groupRow == static_cast<std::size_t>(-1))
+        {
+            groupFound = false;
+            partyOff = "the party stands off the plan";
+        }
+        else if (groupRow < r.startStep && !RunPointNear(r, group.x, group.y, group.z))
+        {
+            groupFound = false;
+            partyOff = "the party stands at step " + std::to_string(groupRow + 1) + ", behind the run's start "
+                "step " + std::to_string(r.startStep + 1);
+        }
+        // A point before the start step is no bound: every row at or after the start step is past it too, so a
+        // party on the run is never behind the point then (a run placed past the point the lead bot reached).
+        else if (groupRow >= r.startStep && r.strandIdx >= r.startStep && groupRow < r.strandIdx)
+        {
+            groupFound = false;
+            groupBehindPoint = true;
+        }
+    }
+    auto joinParty = [&]()
     {
         r.strandParty = true;
         r.strandPartyX = group.x;
@@ -12775,7 +12837,9 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         ty = group.y;
         tz = group.z;
         chosen = "the party (" + group.nearest + "'s spot, " + std::to_string(group.count) + " out of combat)";
-    }
+    };
+    if (groupFound)
+        joinParty();
     else if (!destChosen && held)
     {
         if (r.rescueBackReads < kRescueBackReads)
@@ -12793,17 +12857,27 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
                 return true;
             }
         }
-        r.rescueHoldMs += dt;
-        if (r.rescueHoldMs >= kRescueHoldMs)
+        if (groupBehindPoint)
         {
-            Pause(r, "the stranded lead bot has nowhere safe to go: the point of step " +
-                std::to_string(r.strandIdx + 1) + " is held by live hostiles and no member stands out of combat to " +
-                "join (put the party together, then .bot run resume)");
+            joinParty();
+            r.rescueHoldMs = 0;
+        }
+        else
+        {
+            r.rescueHoldMs += dt;
+            if (r.rescueHoldMs >= kRescueHoldMs)
+            {
+                Pause(r, "the stranded lead bot has nowhere safe to go: the point of step " +
+                    std::to_string(r.strandIdx + 1) + " is held by live hostiles and " +
+                    (partyOff.empty() ? "no member stands out of combat to join" : partyOff) +
+                    " (put the party together, then .bot run resume)");
+                return true;
+            }
+            r.note = "the lead bot is stranded: the point of step " + std::to_string(r.strandIdx + 1) +
+                " is held by live hostiles and " +
+                (partyOff.empty() ? "no member stands out of combat to join it to" : partyOff) + " (regrouping)";
             return true;
         }
-        r.note = "the lead bot is stranded: the point of step " + std::to_string(r.strandIdx + 1) +
-            " is held by live hostiles and no member stands out of combat to join it to (regrouping)";
-        return true;
     }
     else if (!destChosen)
     {

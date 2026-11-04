@@ -512,8 +512,8 @@ class DungeonPlanSql(unittest.TestCase):
         # voidwalker wait and the Sorcerer's Gate wait (see the test after it). The floor-aware cut only shortens the
         # legs' path rows. Every pin fails when its row is cut.
         name, text = newest_plan_text("shadowfang_keep")
-        self.assertEqual(name, "20261104050000_world.sql")
-        self.assertIn("('shadowfang_keep', 33, '3855,61970,10000', '', '', 'turtle-agent 4ea1333 dungeons/shadowfang_keep.json', 'plan v1, live-checked');", text)
+        self.assertEqual(name, "20261105130000_world.sql")
+        self.assertIn("('shadowfang_keep', 33, '3855,61970,10000', '', '', 'turtle-agent 6ab6e4c dungeons/shadowfang_keep.json', 'plan v1, live-checked');", text)
         legs = leg_rows(text, "shadowfang_keep")
         self.assertEqual(list(legs[i][0] for i in range(10)),
                          ["rethilgore", "razorclaw_the_butcher", "baron_silverlaine", "commander_springvale",
@@ -521,7 +521,7 @@ class DungeonPlanSql(unittest.TestCase):
                           "fenrus_the_devourer", "wolf_master_nandos", "archmage_arugal"])
         self.assertEqual(len(legs), 10)
         rows = [r for r in self.step_rows(text) if r["plan"] == "shadowfang_keep"]
-        self.assertEqual(len(rows), 245)
+        self.assertEqual(len(rows), 369)
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(10)],
                          [4, 16, 21, 5, 0, 10, 4, 13, 3, 2])
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
@@ -564,8 +564,8 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(old_rows, mid_rows)
         # The re-export's leg 7 carries Fenrus' three approach moves, the boss and the two waits in seq order.
         self.assertEqual([(r["seq"], r["kind"]) for r in leg_steps(rows, 7)][-6:],
-                         [("14", "move"), ("15", "move"), ("16", "move"), ("17", "boss"), ("18", "wait_clear"),
-                          ("19", "wait_object")])
+                         [("84", "move"), ("85", "move"), ("86", "move"), ("87", "boss"), ("88", "wait_clear"),
+                          ("89", "wait_object")])
 
     def test_shadowfang_keep_voidwalkers_and_the_sorcerers_gate(self):
         # 20261024153300, r36 slotA + r30 slotB (shadowfang_keep): Fenrus' death summons four Arugal's Voidwalkers
@@ -574,21 +574,21 @@ class DungeonPlanSql(unittest.TestCase):
         # holds on the voidwalker wait_clear until the four are dead, then waits for the gate to be active.
         # (20261024154000 keeps these rows: the Adamant fix changed no row.)
         name, text = newest_plan_text("shadowfang_keep")
-        self.assertEqual(name, "20261104050000_world.sql")
+        self.assertEqual(name, "20261105130000_world.sql")
         rows = [r for r in self.step_rows(text) if r["plan"] == "shadowfang_keep"]
         fenrus = leg_steps(rows, 7)
         approach, boss, clear, gate = fenrus[-6:-3], fenrus[-3], fenrus[-2], fenrus[-1]
         self.assertEqual([(r["kind"], r["seq"]) for r in approach],
-                         [("move", "14"), ("move", "15"), ("move", "16")])
+                         [("move", "84"), ("move", "85"), ("move", "86")])
         self.assertEqual([(r["x"], r["y"]) for r in approach],
                          [("-145.07", "2182.13"), ("-150", "2175"), ("-152", "2168")])
-        self.assertEqual((boss["kind"], boss["seq"], boss["entry"]), ("boss", "17", "4274"))
+        self.assertEqual((boss["kind"], boss["seq"], boss["entry"]), ("boss", "87", "4274"))
         self.assertEqual((clear["kind"], clear["seq"], clear["radius"], clear["timeout_s"]),
-                         ("wait_clear", "18", "35", "120"))
+                         ("wait_clear", "88", "35", "120"))
         self.assertEqual((clear["x"], clear["y"], clear["z"]), ("-147.1", "2171.6", "128.6"))
         self.assertIn("4627", clear["comment"])
         self.assertEqual((gate["kind"], gate["seq"], gate["entry"], gate["param"], gate["timeout_s"], gate["flags"]),
-                         ("wait_object", "19", "18972", "1", "90", "0"))
+                         ("wait_object", "89", "18972", "1", "90", "0"))
         self.assertEqual((gate["x"], gate["y"], gate["z"]), ("-129.034", "2166.16", "129.187"))
         self.assertIn("voidwalker", gate["comment"])
         # Only the courtyard door's wait carries the gone flag: the gate is a plain wait for a state a script keeps.
@@ -661,10 +661,10 @@ class DungeonPlanSql(unittest.TestCase):
         # stand each (20 yd clear of every pack pulled later) and the rat out, and the walk up to the upper court is
         # three approach moves through the stair's real top. Every pin fails when its row is cut.
         name, text = newest_plan_text("shadowfang_keep")
-        self.assertEqual(name, "20261104050000_world.sql")
+        self.assertEqual(name, "20261105130000_world.sql")
         rows = [r for r in self.step_rows(text) if r["plan"] == "shadowfang_keep"]
         steps = leg_steps(rows, 2)
-        self.assertEqual(len(steps), 30)
+        self.assertEqual(len(steps), 32)
 
         def at(kind, x, y):
             found = [r for r in steps if r["kind"] == kind and dist(r, x, y) < 0.1]
@@ -955,14 +955,14 @@ class DungeonPlanSql(unittest.TestCase):
         # 81, r23 paused on him as step 51 of 133) and the two leg-0 fights that killed the lead and wiped the party are split
         # into pulls of at most 3-4 census units.
         name, text = newest_plan_text("scarlet_graveyard")
-        self.assertEqual(name, "20261104160000_world.sql")
-        self.assertIn("('scarlet_graveyard', 189, '', '', '6490', 'turtle-agent ca6fb6d dungeons/scarlet_graveyard.json',", text)
+        self.assertEqual(name, "20261105130000_world.sql")
+        self.assertIn("('scarlet_graveyard', 189, '', '', '6490', 'turtle-agent 6ab6e4c dungeons/scarlet_graveyard.json',", text)
         self.assertEqual(leg_rows(text, "scarlet_graveyard"),
                          {0: ("interrogator_vishas", ""), 1: ("graveyard_hall", ""), 2: ("bloodmage_thalnos", ""),
                           3: ("duke_dreadmoore", ""), 4: ("scorn", "")})
         rows = [r for r in self.step_rows(text) if r["plan"] == "scarlet_graveyard"]
-        self.assertEqual(len(rows), 129)
-        self.assertEqual({leg: len(leg_steps(rows, leg)) for leg in (0, 1, 2, 3, 4)}, {0: 15, 1: 33, 2: 25, 3: 39, 4: 17})
+        self.assertEqual(len(rows), 153)
+        self.assertEqual({leg: len(leg_steps(rows, leg)) for leg in (0, 1, 2, 3, 4)}, {0: 28, 1: 33, 2: 35, 3: 40, 4: 17})
         pulls = {leg: [(r["entries"], r["radius"], r["x"], r["y"]) for r in leg_steps(rows, leg) if r["kind"] == "pull"]
                  for leg in (0, 1, 2, 3, 4)}
         self.assertEqual([len(pulls[0]), len(pulls[1]), len(pulls[2]), len(pulls[3]), len(pulls[4])], [13, 19, 11, 6, 0])
@@ -1402,13 +1402,13 @@ class DungeonPlanSql(unittest.TestCase):
         # every pull, Ragglesnout 7354 is in leg 3's pack, Rakameg's four Worshippers are the last pull of leg 2, and every pull
         # radius stays short of the next pack (<= 16 yd).
         name, text = newest_plan_text("razorfen_downs")
-        self.assertEqual(name, "20261104160000_world.sql")
-        self.assertIn("('razorfen_downs', 129, '62676,7337,7335,62677', '', '7354,7342,7353,7341', 'turtle-agent ca6fb6d dungeons/razorfen_downs.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261105130000_world.sql")
+        self.assertIn("('razorfen_downs', 129, '62676,7337,7335,62677', '', '7354,7342,7353,7341', 'turtle-agent 6ab6e4c dungeons/razorfen_downs.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "razorfen_downs")
         self.assertEqual([legs[i][0] for i in range(4)],
                          ["mordresh_fire_eye", "glutton", "death_prophet_rakameg", "amnennar_the_coldbringer"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "razorfen_downs"]
-        self.assertEqual(len(rows), 396)
+        self.assertEqual(len(rows), 437)
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(4)], [10, 30, 19, 20])
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"], ["7357", "8567", "62679", "7358"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss"})
@@ -1455,7 +1455,7 @@ class DungeonPlanSql(unittest.TestCase):
             lo = pos[id(pulls3[n - 1])] if n else -1
             hi = pos[id(pull)]
             self.assertTrue(all(lo < i < hi for i in (pos[id(r)] for r in approach[c])), c)
-        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ['blackfathom_deeps', 'crescent_grove', 'deadmines', 'dragonmaw_retreat', 'frostmane_hollow', 'gnomeregan', 'lower_blackrock_spire', 'razorfen_downs', 'razorfen_kraul', 'scarlet_armory', 'scarlet_cathedral', 'scarlet_graveyard', 'scarlet_library', 'scholomance', 'stormwind_stockade', 'stormwind_vault', 'stratholme_live', 'uldaman', 'zul_gurub', 'ruins_of_ahnqiraj', 'naxxramas', 'ragefire_chasm', 'wailing_caverns'])
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ['maraudon_purple', 'scarlet_graveyard', 'razorfen_kraul', 'razorfen_downs', 'shadowfang_keep'])
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (129) AND `entry` IN (7357, 8567, 62679, 7358);", migrations_text())
 
     def test_maraudon_purple_is_the_split_and_stood_wipe_leg(self):
@@ -1467,13 +1467,13 @@ class DungeonPlanSql(unittest.TestCase):
         # pulls), bosses in leg order, no boss.first. The plan row carries the humanoid casters and kill_first; Meshlok
         # the Harvester 12237 (rank 2) is in the skip list, not a pull.
         name, text = newest_plan_text("maraudon_purple")
-        self.assertEqual(name, "20261104030000_world.sql")
-        self.assertIn("('maraudon_purple', 349, '11793,11794', '', '12224,13142,12220,12217', 'turtle-agent 1b9a5c6 dungeons/maraudon_purple.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261105130000_world.sql")
+        self.assertIn("('maraudon_purple', 349, '11793,11794', '', '12224,13142,12220,12217', 'turtle-agent 6ab6e4c dungeons/maraudon_purple.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         self.assertEqual(leg_rows(text, "maraudon_purple"),
                          {0: ("lord_vyletongue", ""), 1: ("celebras_the_cursed", ""), 2: ("landslide", ""),
                           3: ("tinkerer_gizlock", ""), 4: ("rotgrip", ""), 5: ("princess_theradras", "")})
         rows = [r for r in self.step_rows(text) if r["plan"] == "maraudon_purple"]
-        self.assertEqual(len(rows), 1091)
+        self.assertEqual(len(rows), 1273)
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
                          ["12236", "12225", "12203", "13601", "13596", "12201"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss"})
@@ -3381,11 +3381,11 @@ class DungeonPlanSql(unittest.TestCase):
         # packs that stand with a boss are that boss row's entries, not pulls; Halmgar 4842 and the Blind Hunter 4425 are pull
         # members.
         name, text = newest_plan_text("razorfen_kraul")
-        self.assertEqual(name, "20261104160000_world.sql")
-        self.assertIn("('razorfen_kraul', 47, '4427,4515,4522,4440', '4427', '', 'turtle-agent ca6fb6d dungeons/razorfen_kraul.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261105130000_world.sql")
+        self.assertIn("('razorfen_kraul', 47, '4427,4515,4522,4440', '4427', '', 'turtle-agent 6ab6e4c dungeons/razorfen_kraul.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         self.assertEqual(len(leg_rows(text, "razorfen_kraul")), 9)
         rows = [r for r in self.step_rows(text) if r["plan"] == "razorfen_kraul"]
-        self.assertEqual(len(rows), 636)
+        self.assertEqual(len(rows), 682)
         # The opening stand is the lower-floor pocket 1994 1615 (the old 1987.53 1600.03 has the upper walkway overhead); the five
         # corridor groups all have radius 10 (group 0 was 25 and owned the next group's Quilguards; group 5's default was 19.3), and
         # seq 5 is the explicit corridor regroup move before pull group 4 (r19-19z37: the two ranged bots climbed the west ramp while
@@ -3530,7 +3530,7 @@ class DungeonPlanSql(unittest.TestCase):
                           if r["comment"] == "pull group 1"], [("4623", "2092.61", "1774.1", "6")])
         self.assertFalse([r for r in up if r["kind"] == "pull" and abs(float(r["x"]) - 2094.39) < 0.5
                           and abs(float(r["y"]) - 1773.56) < 0.5], "87430 is booked twice")
-        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ['blackfathom_deeps', 'crescent_grove', 'deadmines', 'dragonmaw_retreat', 'frostmane_hollow', 'gnomeregan', 'lower_blackrock_spire', 'razorfen_downs', 'razorfen_kraul', 'scarlet_armory', 'scarlet_cathedral', 'scarlet_graveyard', 'scarlet_library', 'scholomance', 'stormwind_stockade', 'stormwind_vault', 'stratholme_live', 'uldaman', 'zul_gurub', 'ruins_of_ahnqiraj', 'naxxramas', 'ragefire_chasm', 'wailing_caverns'])
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ['maraudon_purple', 'scarlet_graveyard', 'razorfen_kraul', 'razorfen_downs', 'shadowfang_keep'])
         # The ai_dungeon_boss rows stay in 20261022210300 (the boss seed is per map and a repeat would trip test_boss_table_is_the_seed);
         # this file replaces the plan rows only.
 

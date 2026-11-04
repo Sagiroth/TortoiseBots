@@ -817,6 +817,9 @@ Whether the run leader teleports a stuck walk back's lead bot (and a placed run'
 - with `1`, a stuck walk back is not paused: the lead bot is teleported to the last point it reached on the plan
 - when a live pack is near that point: to the latest earlier point out of every live pack's reach (radius plus 10 yd)
 - never back before the start step or over a direct step; with no such point the run pauses
+- a point held by live hostiles is never used alone: the lead bot joins the biggest group of the party out of combat instead
+- that group must be on the part of the route the run has already walked (a reached row within 60 yd); a group before the start step or only near rows not yet walked is not joined
+- between the start step and the target point, earlier clear points are tried first; joining the party is the last option, and it never turns into a pause
 - a placed run's lead bot behind the start step is teleported to a safe point on the way it came
 - out of combat only, once a step; left-behind party is summoned only out of combat
 
